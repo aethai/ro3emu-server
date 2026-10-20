@@ -252,7 +252,7 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, GameSession, JsonElement, Task<bool>>? ReviveItemSkill { get; set; }
 
     public CombatService(World world, MonsterService monsters, CharacterService character, SkillService skills, SceneService scene, BuffService buffs,
-        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log)
+        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, PetService pets, ILogger<CombatService> log)
     {
         this.world = world;
         this.monsters = monsters;
@@ -264,6 +264,7 @@ public sealed partial class CombatService : IGameTicker
         this.sessions = sessions;
         this.data = data;
         this.loop = loop;
+        this.pets = pets;
         this.log = log;
         monsters.Attack = MonsterAttackAsync;
         buffs.ImmuneDeathDeclined = PlayerDiesAsync;
@@ -865,6 +866,7 @@ public sealed partial class CombatService : IGameTicker
         foreach (var s in sessions.All())
         {
             if (s.Role == null || s.Progress == null) continue;
+            TickGuardianPets(s, now);
             if (s.SkillObjects.Count > 0)
         foreach (var unit in s.SkillObjects.ToArray()) loop.TrackRuntimeDetached("skill object tick", () => TickSkillObjectAsync(unit));
             if (s.Attack is { } a && !s.Dead && now >= a.NextSwingMs)

@@ -1,9 +1,11 @@
 # Issue #15: profession choice and pet skills
 
 This note records the two separate failures reported in
-[#15](https://github.com/aethai/ro3emu-server/issues/15). The selection fix does **not**
-close the whole issue: profession combat effects and ordinary pet skill execution
-still require implementation and client verification.
+[#15](https://github.com/aethai/ro3emu-server/issues/15). The fixes cover profession
+selection and ordinary guardian execution for the explicitly classified skill
+families below. This is **not** complete pet/script parity or a reason to close
+the whole issue: remaining scripts, triggered core passives and client verification
+are still outstanding.
 
 ## Profession selection
 
@@ -45,7 +47,15 @@ public CI. They exercise initial selection, replacement, job/gate rejection,
 unrelated-choice and plan isolation, retry, persistence, relog, and failed-write
 rollback. These tests do not establish client rendering or combat-effect parity.
 
-## Pet investigation and remaining work
+The real-graph test purchases all prerequisites through `83550` before selecting
+the leaf; it no longer seeds talent levels. It sets up the character's quests,
+career, level and currency separately. In this export the first choice gate is in
+tree `10102`: 40 purchased levels, condition `80000001` (job rank >= 3 and base
+level >= 30), then the two preceding ten-level nodes. Merely changing a career
+without satisfying these conditions is not sufficient. The patch retains these
+configured requirements.
+
+## Ordinary guardian execution
 
 `PetStarConfig._iProtectSkill` is the ordinary guardian skill. Several rows are
 wrappers: for example, `2353301` (`petyinyue`) resolves through `_kLogicData` to
@@ -58,18 +68,60 @@ See `LC_PetHelper.GetPetAllSkill` and the distinct protect/reactive/active entri
 The existing ordinary stat contributions from `_kFightSkill`, `_kAssistSkill`
 and `_kCollectAttr` are separate from triggered guardian/core effects.
 
-The ordinary combat service currently has no guardian skill trigger/runner.
-The follower is presentation, while tower pets use a separate combat path.
-This confirms an implementation gap, rather than a failed learned-skill save.
-Examples show why a generic “cast the configured row” change is insufficient:
+Previously the ordinary combat service had no guardian trigger/runner. The follower
+is presentation, while tower pets use a separate combat path. This was an
+implementation gap, rather than a failed learned-skill save.
 
-- Rocker's guardian child uses `YaoGun` and adaptive attack to heal allies, even
-  though its presentation selector is hostile.
-- Zherlthsh's guardian child has multiple damage components and a temporary owner
-  buff; the presentation attack-point count is not the damage-component count.
-- Rare pets' `_iCorePassiveSkill` effects can require dedicated triggers rather
-  than static attributes or a permanent buff.
+`GuardianPetRules` resolves the exact star/stage's type-8 wrapper to its type-41
+child via `_kAutoLearnSkill`, choosing the primary group named by `_kLogicData`.
+It refuses ambiguous/unknown scripts. `LC_Scene_Sync._useExtraSkill` specifically
+requires the type-41 child and `petConfigId` to create the local guardian model;
+`31121` now carries both, with the owner as `srcID`.
 
-The report does not identify the pet, its star/stage, or the missing passive.
-Those details and an ordinary-client reproduction are still needed to validate
-the reported pet behavior. No pet combat behavior is changed by this selection fix.
+Only an owned pet in an unlocked fight slot of the active plan can act. Support
+slots supply their configured passive attributes but do not cast guardian skills.
+Direct client requests for internal type-41 effects are refused, even if an
+invalid saved skill level would otherwise admit them.
+
+The ordinary combat ticker starts eligible automatic guardian skills in combat.
+Manual type-8 requests use the same cooldown/admission path. Each extra action
+retains its original role, scene generation, attachment, plan, slot and star/stage;
+pending effects cannot survive source changes. It does not replace the player's
+cast or auto-attack. Damage goes through the existing combat/kill settlement path,
+while buffs, finite shields and healing use the corresponding shared services.
+
+**Inferred execution policies:** poll at most every 250 ms while in combat; use
+the owner's current monster target or a nearby monster attacking the owner;
+automatic heals wait for a wounded ally; allied support prioritizes the owner
+then nearby non-hostile players within the configured radius and target cap.
+Cooldown comes from the wrapper. Explicit multi-hit components are distributed
+over the child's action tail; visual attack-point count does not multiply damage.
+Already-applied timed buffs retain their configured duration after unequipping.
+
+Current explicit families (23 of the export's 56 guardian-bearing pet entries):
+
+- Owner support: Choco, Bobo, Goat, Sohee and Evil Nymph.
+- Allied support: Tikbalang; healing: Rocker, Fairy, Squidgitte, Alice and Is.
+- Direct damage: Wild Rose, Lava Lizard, Zherlthsh, Miguel, XieXinLianRen,
+  Goddess of Hope, Observation, Corrupted Wander Man, Nightmare Terror, Alicel
+  and Hodremlin.
+- Debuff: Marionette; its nonzero parameter is not treated as damage.
+
+Names above describe the selected families, not full emulation of every secondary
+script effect. In particular, the shared buff engine does not yet implement all
+control/immunity and reactive behaviors. Unknown periodic, displacement and proc
+scripts remain refused rather than being treated as generic damage. Miyabi's
+control-only guardian is also left unsupported.
+
+Ordinary `_kFightSkill`, `_kAssistSkill` and `_kCollectAttr` passive stat bonuses
+already existed. The patch makes lineup bonuses obey slot eligibility, including
+invalid persisted slots. Integration tests verify applying and removing deployed
+bonuses. The four rare-pet `_iCorePassiveSkill` families need dedicated event
+handlers; this patch does not present those as working.
+
+Real-export wire tests exercise Choco's automatic buff without interrupting the
+owner, Rocker's allied heal without damaging its presentation target, Wild Rose's
+damage, Bobo's finite shield, passive-stat removal, cooldown sharing, and stale
+plan/scene rejection. Public-CI tests use invented data to cover child resolution,
+concurrent cooldown admission, ownership/slot checks and pending-effect rejection
+after plan, equipment, star or scene changes.

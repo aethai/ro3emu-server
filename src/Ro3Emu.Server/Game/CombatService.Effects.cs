@@ -102,12 +102,13 @@ public sealed partial class CombatService
     {
         if (s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene || s.SceneLoading
             || s.SceneGeneration != action.SceneGeneration || field?.Removing == true
-            || !ReferenceEquals(s.Attachment, action.Attachment) || action.Attachment?.Cancelled == true) return;
+            || !ReferenceEquals(s.Attachment, action.Attachment) || action.Attachment?.Cancelled == true
+            || action.SourceEligible?.Invoke() == false) return;
         var row = action.Row;
         var castingRole = s.Role;
         bool CurrentCaster() => ReferenceEquals(s.Role, castingRole) && !s.SceneLoading
             && s.SceneGeneration == action.SceneGeneration && (field != null ? !field.Removing : !action.Cancelled)
-            && s.WorldScene == action.WorldScene && sessions.All().Contains(s);
+            && s.WorldScene == action.WorldScene && sessions.All().Contains(s) && (action.SourceEligible?.Invoke() ?? true);
         bool CanApplyMoreEffects() => CurrentCaster() && ReferenceEquals(s.Attachment, action.Attachment)
             && action.Attachment?.Cancelled != true;
         // A published death still owes its callbacks after the cast/field is cancelled.

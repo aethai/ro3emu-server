@@ -476,6 +476,26 @@ public sealed partial class PetService
         ? (GameData.Int(row, "_iProtectSkill"), GameData.Int(row, "_iPassiveMain"), Flat(row, "_kActiveSkill"), Flat(row, "_kStageSkill"))
         : (0, 0, [], []);
 
+    /// <summary>Only owned, currently deployed pets in unlocked fight slots can cast ordinary guardian skills.</summary>
+    internal IEnumerable<GuardianPetRules.Skill> Guardians(GameSession s)
+    {
+        if (s.Pets is not { } state || s.Progress == null || s.TowerAttempt != null || !functions.IsOpen(s, 33)
+            || !state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan)) yield break;
+        foreach (var (slot, id) in plan.SetUpPets.OrderBy(kv => kv.Key))
+            if (SlotOpen(s, 1, slot) && state.ListPet.TryGetValue(id, out var pet) && StarRow(pet) is { } star
+                && data.Row("SkillConfig", GameData.Int(star, "_iProtectSkill")) is { } active
+                && GameData.Int(active, "_iSystemType") == 8
+                && GuardianPetRules.Child(data, active) is { } effect
+                && GuardianPetRules.Classify(effect) is { } kind)
+                yield return new(slot, id, pet.Star, pet.StarProgress, state.CurrentPlan, active, effect, kind);
+    }
+
+    internal bool GuardianEquipped(GameSession s, GuardianPetRules.Skill skill) =>
+        s.Pets is { } state && s.Progress != null && s.TowerAttempt == null
+        && state.CurrentPlan == skill.Plan && functions.IsOpen(s, 33) && SlotOpen(s, 1, skill.Slot)
+        && state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan) && plan.SetUpPets.GetValueOrDefault(skill.Slot) == skill.PetId
+        && state.ListPet.TryGetValue(skill.PetId, out var pet) && pet.Star == skill.Star && pet.StarProgress == skill.Stage;
+
     /// <summary>
     /// Static lineup/collection bonuses from PetStarConfig. Scaling each slot by PetSetLimitConfig's addition and
     /// summing active collection attributes is inferred; skill triggers/buffs/damage and camp synergies are not invented.
@@ -489,7 +509,7 @@ public sealed partial class PetService
         if (s.Pets.SetupPlans.GetValueOrDefault(s.Pets.CurrentPlan) is not { } plan) yield break;
         foreach (var source in new[] { 1, 2 })
             foreach (var (slot, id) in Slots(plan, source))
-                if (s.Pets.ListPet.TryGetValue(id, out var pet) && StarRow(pet) is { } row && data.Row("PetSetLimitConfig", slot) is { } limit)
+                if (SlotOpen(s, source, slot) && s.Pets.ListPet.TryGetValue(id, out var pet) && StarRow(pet) is { } row && data.Row("PetSetLimitConfig", slot) is { } limit)
                     foreach (var (attr, value) in GameData.Pairs(row, source == 1 ? "_kFightSkill" : "_kAssistSkill"))
                         yield return (attr, value * GameData.Int(limit, source == 1 ? "_iFightAttrAddition" : "_iAssistAttrAddition") / 10000.0);
     }

@@ -25,6 +25,8 @@ public sealed class ActiveSkillCast
     public bool Cancelled { get; set; }
     public bool Resolved { get; set; }
     public SkillObject? Operator { get; init; }
+    /// <summary>Extra source ownership, e.g. a guardian still occupying its accepted lineup slot.</summary>
+    internal Func<bool>? SourceEligible { get; init; }
     public long SourceId => Operator?.Uid ?? OwnerId;
 }
 
@@ -58,6 +60,14 @@ public sealed partial class CombatService
 
     private async Task CastCoreAsync(GameSession s, CastSkillReq request)
     {
+        if (data.Row("SkillConfig", request.SkillId) is { } guardian && GameData.Int(guardian, "_iSystemType") is 8 or 41)
+        {
+            // Type 41 is an internal effect, never a separately learned player skill.
+            if (GameData.Int(guardian, "_iSystemType") == 41)
+                await RefuseCastAsync(s, request, ErrorCodes.SkillNotLearned, 0);
+            else await CastGuardianRequestAsync(s, request);
+            return;
+        }
         var req = request.Clone();
         var row = EffectiveSkillRow(s, req.SkillId);
         var owned = req.OpUnitId == 0 || req.OpUnitId == s.Role?.Id ? null
