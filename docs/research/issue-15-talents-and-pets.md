@@ -7,6 +7,36 @@ families below. This is **not** complete pet/script parity or a reason to close
 the whole issue: remaining scripts, triggered core passives and client verification
 are still outstanding.
 
+## Required fidelity: 1:1 with the original
+
+The maintainer explicitly requires original behavior, not a plausible substitute.
+**The current guardian implementation does not meet that requirement and must
+remain unmerged.** Passing regression tests, using client configuration values and
+producing a packet the client can display are not proof of original-server parity.
+The 23-family coverage count is an implementation count, not a verified-parity count.
+
+Audit of the current implementation:
+
+| Area | Evidence and current gap |
+| --- | --- |
+| Skill identity and presentation | `PetStarConfig._iProtectSkill`, the type-8/type-41 rows and `LC_Scene_Sync._useExtraSkill` support the configured IDs and the child-plus-`petConfigId` presentation path. These do not establish the server's complete cast policy. |
+| Automatic activation | The 250 ms poll, combat-state requirement and wounded-ally-only heal gate are emulator policies. No original execution trace establishes them. |
+| Target selection | `BehaviorTree/trees/normalpet.lua` branches on `IsFollowState`, calls `FindTargetGroupWithCamp`/`SortTargetGroup`, or `GetLeaderTarget(0, 2000)`. The recovered action nodes resolve/filter target lists; `CastSkill` selects a target and sets a result on its context. Our current target fallback and owner-first ally ordering do not reproduce that tree. Its invocation context and camp/party filtering must also be traced before porting it. |
+| Cooldown and manual requests | The wrapper supplies a configured cooldown value. Its exact start time, sharing rules and which manual requests the original admits have not been compared with the original server. |
+| Timing and multi-hit effects | Even where damage components are described, distributing them evenly over the remaining animation time is an assumption. Client presentation attack points alone do not establish authoritative hit timing. |
+| Numeric results | Selecting the larger PATK/MATK, rounding heals/shields and using the emulator's shared damage/defense/crit formula have not been verified against original guardian outcomes. Reading the same coefficients is insufficient. |
+| Lifecycle and passive effects | Cancellation after plan/equipment/star changes and retaining landed buffs are inferred. Static passive contributions have regression tests, but original equivalence has not been measured; triggered core passives and several secondary effects are missing. |
+| Coverage | 23 of 56 guardian-bearing entries have explicit handlers. Neither those 23 nor the four tested basic pets have a completed original-server comparison. |
+
+Before merging the pet portion, resolve these gaps from recovered executable
+logic and same-build original-client/server observations. For each relevant pet,
+star/stage and combat mode, compare activation conditions, selected recipients,
+cast/hit/cooldown times, numeric HP/stat changes, buff duration/stacking, passive
+triggers and equipment/scene transitions. Then turn those observations into
+regression expectations independent of the proposed implementation. Record
+unresolved behavior as unresolved; do not replace it with an arbitrary rule and
+label it verified.
+
 ## Profession selection
 
 The attached screenshot is the Season Talent profession selection panel, not
