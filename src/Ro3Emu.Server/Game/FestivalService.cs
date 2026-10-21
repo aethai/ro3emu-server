@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 
@@ -465,7 +466,7 @@ public sealed class FestivalService : IGameTicker
                     _awards.ResolveForProgress(_roles.LoadProgress(id), GameData.Int(reward, "_iAward"), 101).Grants.ToArray()));
         }
         // (inferred) The bet panel previews LuckyAwardPreview; a successful prediction receives that award once.
-        long betAward = _data.Table("PublicParamConfig").TryGetValue("LuckyAwardPreview", out var preview) ? (long)(GameData.Number(preview) ?? 0) : 0;
+        long betAward = PublicParams.Of(_data).LuckyAwardPreview ?? 0;
         foreach (var (id, target) in r.Bets)
             if (betAward > 0 && r.Candidates.TryGetValue(target, out var c) && c.Rank == 1 && !c.GiveUp)
                 frozen.Add((id, 1, betAward,

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -44,9 +45,7 @@ public sealed partial class BuffService
             && GameData.Int(row, "_iBuffID") is 20520 or 20521
             && p.BuffEffectCds.GetValueOrDefault(b.Guid) <= now);
         if (choice == null) return false;
-        long window = _data.Table("PublicParamConfig").TryGetValue("ImmuneDeadConfirmTimeMs", out var value)
-            ? (long)(GameData.Number(value) ?? 5000) : 5000;
-        window = Math.Clamp(window, 1000, 30000);
+        long window = Math.Clamp(PublicParams.Of(_data).ImmuneDeadConfirmTimeMs ?? 5000, 1000, 30000);
         p.ImmuneDeathOffer = new ImmuneDeathOffer(choice.Guid, choice.ConfigId, now + window);
         long cd = InternalCooldownMs(choice.ConfigId);
         if (cd > 0)

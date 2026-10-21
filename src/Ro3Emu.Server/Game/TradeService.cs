@@ -4,6 +4,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -100,7 +101,7 @@ public sealed partial class TradeService(
         var state = saved is { Length: > 0 } ? DBUserTradeInfo.Parser.ParseFrom(saved) : new DBUserTradeInfo
         {
             LastRefreshTime = NowMs, LastClientRefreshTime = NowMs,
-            CreditPoint = (int)Public("TradeCreditDefault", 1000),
+            CreditPoint = (int)(PublicParams.Of(data).TradeCreditDefault ?? 1000),
             StallsNum = 6, CreditScoreRatio = 1, // (inferred) initial six free TradeConfigUnlockPlace places.
         };
         if (state.LastRefreshTime == 0) state.LastRefreshTime = NowMs; // LC_DAL_Trade full sync divides this field.
@@ -145,9 +146,6 @@ public sealed partial class TradeService(
         return true;
     }
 
-    private long Public(string key, long fallback) => data.Table("PublicParamConfig").TryGetValue(key, out var value)
-        ? (long)(GameData.Number(value) ?? fallback) : fallback;
-
     private JsonElement? Eligible(int entry)
     {
         if (data.Row("TradeConfig", entry) is not { } row || GameData.Int(row, "_iTrade") != 1) return null;
@@ -161,7 +159,7 @@ public sealed partial class TradeService(
     private (int Min, int Max, int Base, int[] Ladder) PriceRule(JsonElement row)
     {
         int basis = (int)Math.Max(1, GameData.Int(row, "_iBasePrice"));
-        int ceiling = (int)Math.Min(int.MaxValue, Public("TradeLimitPrice", 999_999_999));
+        int ceiling = (int)Math.Min(int.MaxValue, PublicParams.Of(data).TradeLimitPrice ?? 999_999_999);
         // (inferred) _kStableRange [5,15] are tenths of the basic price. The hidden backend's
         // market-sensitive computation is unavailable; this deterministic config range keeps repricing useful.
         var range = row.TryGetProperty("_kStableRange", out var r) && r.ValueKind == JsonValueKind.Array && r.GetArrayLength() >= 2

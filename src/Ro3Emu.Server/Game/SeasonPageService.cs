@@ -4,6 +4,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -167,7 +168,7 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
                 if (group == 0 || next.RankRewardReceiveInfo.GetValueOrDefault(dan)?.Functions.Contains(function) == true)
                     continue;
                 var claimed = next.RankRewardReceiveInfo.GetValueOrDefault(dan);
-                if ((claimed?.Functions.Count ?? 0) >= Constant("MultiverseDanRewardLimit")) continue;
+                if ((claimed?.Functions.Count ?? 0) >= DanRewardLimit) continue;
                 long awardId = ResolveAward(group, session);
                 var grants = Award(awardId, session);
                 if (grants.Any(g => g.Bind != 0 || g.Count <= 0 || data.Row("ItemConfig", g.Entry) == null))
@@ -273,7 +274,7 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
                 { error = ErrorCodes.SeasonRankReward; break; }
                 var received = next!.RankRewardReceiveInfo.GetValueOrDefault(level);
                 if (received?.Functions.Contains(function) == true) { error = ErrorCodes.RewardClaimed; break; }
-                if ((received?.Functions.Count ?? 0) >= Constant("MultiverseDanRewardLimit")) { error = ErrorCodes.SeasonRankReward; break; }
+                if ((received?.Functions.Count ?? 0) >= DanRewardLimit) { error = ErrorCodes.SeasonRankReward; break; }
                 long groupId = GameData.Int(row, "_iNormalRewardGroup");
                 long award = ResolveAward(groupId, session);
                 var goods = Award(award, session);
@@ -327,8 +328,9 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
         return result;
     }
 
-    private int Constant(string name) => data.Table("MultiverseConstant").TryGetValue(name, out var value)
-        ? (int)(GameData.Number(value) ?? 0) : 0;
+    private long DanRewardLimit => MultiverseConstants.Of(data).MultiverseDanRewardLimit ?? 0;
+
+    private long MedalMaxWear => MultiverseConstants.Of(data).MultiverseMedalMaxWear ?? 0;
 
     /// <summary>
     /// 82903 changes only an owned honor record; the ID refers to ItemConfig in UI_Com_Tips_GloryPanelCtrl.
@@ -349,7 +351,7 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
         if (error == 0 && (!session.SeasonPage!.HonorBadgeData.TryGetValue(request.Id, out badge)
             || badge.Id != request.Id || data.Row("ItemConfig", request.Id) == null)) error = ErrorCodes.ItemMissing;
         if (error == 0 && request.IsPutOn && !badge!.IsPutOn
-            && session.SeasonPage!.HonorBadgeData.Values.Count(b => b.IsPutOn) >= Constant("MultiverseMedalMaxWear"))
+            && session.SeasonPage!.HonorBadgeData.Values.Count(b => b.IsPutOn) >= MedalMaxWear)
             error = ErrorCodes.Parameter; // (inferred) no dedicated honor-wall refusal code was recovered.
         if (error == 0 && badge!.IsPutOn != request.IsPutOn)
         {

@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -28,9 +29,9 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
     private readonly ConcurrentDictionary<long, byte> _pendingReady = new();
     internal Func<Task>? BeforeNoticeForTest { get; set; }
     private long Now => clock.GetUtcNow().ToUnixTimeSeconds();
-    private int RecordLimit => (int)Math.Clamp(Param("AuctionRecordLimit", 50), 1, 500);
+    private int RecordLimit => (int)Math.Clamp(PublicParams.Of(data).AuctionRecordLimit ?? 50, 1, 500);
     // UI_Sys_AuctionRecordPanelCtrl.lua:418-425 caps the World record list at WorldAuctionNumber (300).
-    private int WorldRecordLimit => (int)Math.Clamp(Param("WorldAuctionNumber", 300), 1, 1000);
+    private int WorldRecordLimit => (int)Math.Clamp(PublicParams.Of(data).WorldAuctionNumber ?? 300, 1, 1000);
 
     public int DungeonSrcType(int difficulty) => (int)data.Table("AuctionTabConfig").Values
         .Where(row => GameData.Int(row, "_iAuctionType") == (int)AuctionType.Dungeon
@@ -39,8 +40,6 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
         .Select(row => GameData.Int(row, "_iID")).FirstOrDefault();
 
     public IReadOnlyList<AuctionStore.Item> DungeonRows(long runId) => store.Items().Where(r => r.RunId == runId).ToArray();
-    private long Param(string key, long fallback) => data.Table("PublicParamConfig").TryGetValue(key, out var v)
-        ? (long)(GameData.Number(v) ?? fallback) : fallback;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -231,7 +230,7 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
                     int basePrice = (int)GameData.Int(cfg, "_iDungeonPrice");
                     int max = (int)GameData.Int(cfg, "_iDungeonPriceMax");
                     long duration = Math.Max(1, GameData.Int(cfg, "_iTimeLast"));
-                    long start = Now + Math.Max(0, Param("GamePlayAuctionAwaitTime", 30));
+                    long start = Now + Math.Max(0, PublicParams.Of(data).GamePlayAuctionAwaitTime ?? 30);
                     store.EnlistSave(new AuctionStore.Item
                     {
                         SourceKey = $"dungeon:{run.Id}:{index++}", Type = AuctionType.Dungeon,

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Romsg;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -442,8 +443,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     /// movement included (LC_Movement_AStarAgentNew -> LC_Movement_Smooth_Local -> LC_Movement_Smooth -> LC_Movement_Base).
     /// </summary>
     public bool MovesOnSurface(long sceneEntry) =>
-        sceneEntry != 0 && data.Table("PublicParamConfig").TryGetValue("NoviceDungeonReverseDungeonID", out var id)
-        && Data.GameData.Number(id) == sceneEntry;
+        sceneEntry != 0 && PublicParams.Of(data).NoviceDungeonReverseDungeonID == sceneEntry;
 
     /// <summary>
     /// Same-map teleport of the local player (MOVEMENT_CHANGE), then the watchers are told. (proven) The client applies

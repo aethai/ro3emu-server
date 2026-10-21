@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -31,8 +32,18 @@ public sealed class GuildLeagueCalendar(GameData data, ActivityClock clock, Time
     public int RegistrationActivity => Activity(0, 129);
     public int[] RoundActivities => [Activity(1, 109), Activity(2, 110), Activity(3, 111)];
 
-    private int Activity(int slot, int fallback) => data.Table("GuildSettingConfig").TryGetValue($"GuildLeagueActivityID{slot}", out var row)
-        && row.TryGetProperty("_kValue", out var value) && GameData.Number(value) is { } n ? (int)n : fallback;
+    private int Activity(int slot, int fallback)
+    {
+        var settings = GuildSettings.Of(data);
+        long? id = slot switch
+        {
+            0 => settings.GuildLeagueActivityID0,
+            1 => settings.GuildLeagueActivityID1,
+            2 => settings.GuildLeagueActivityID2,
+            _ => settings.GuildLeagueActivityID3,
+        };
+        return id is { } n ? (int)n : fallback;
+    }
 
     private (long Opened, int Count, Tournament[] Prefix, DateTime Anchor)? _memo;
 

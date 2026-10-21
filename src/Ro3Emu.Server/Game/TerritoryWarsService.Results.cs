@@ -3,6 +3,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 using System.Text.Json;
@@ -80,7 +81,9 @@ public sealed partial class TerritoryWarsService
             var goods = new List<Grant>();
             if (recipient.Role != null)
             {
-                AddAward(goods, Param(p.Guild == winner ? "TerritoryStrongHoldOccupyAuctionAward" : "TerritoryStrongHoldJoinAuctionAward", 1001006), recipient);
+                var param = PublicParams.Of(_data);
+                AddAward(goods, (p.Guild == winner ? param.TerritoryStrongHoldOccupyAuctionAward
+                    : param.TerritoryStrongHoldJoinAuctionAward) ?? 1001006, recipient);
                 // Settlement tables are rank/qualification awards. Roll once here and persist the exact goods.
                 AddRankAward(goods, "SiegeSettlementPrimaryAward", rank, recipient);
                 if (p.Score > 0) AddRankAward(goods, "SiegeSettlementHonorAward", rank, recipient);
@@ -182,7 +185,8 @@ public sealed partial class TerritoryWarsService
     private async Task SubmitDropAsync(GameSession s)
     {
         var guild = Own(s);
-        var npc = _maps.Map(s.SceneEntry)?.Npcs.FirstOrDefault(n => n.NpcId == Param("TerritoryWorldMaterialNPC", 200052)
+        var npc = _maps.Map(s.SceneEntry)?.Npcs.FirstOrDefault(n =>
+            n.NpcId == (PublicParams.Of(_data).TerritoryWorldMaterialNPC ?? 200052)
             && MonsterService.Distance(n.X, n.Z, s.Position.X, s.Position.Z) <= 5);
         if (guild == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryGuild); return; }
         if (s.Dead || s.SceneLoading || npc == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryInvalidPoint); return; }

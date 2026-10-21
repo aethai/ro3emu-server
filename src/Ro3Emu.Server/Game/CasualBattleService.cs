@@ -4,6 +4,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Maps;
 
@@ -132,8 +133,6 @@ public sealed class CasualBattleService : IGameTicker
     }
 
     private long Now => _time.GetUtcNow().ToUnixTimeSeconds();
-    private long Param(string key, long fallback) => _data.Table("PublicParamConfig").TryGetValue(key, out var v)
-        ? (long)(GameData.Number(v) ?? fallback) : fallback;
 
     private Match? Live(GameSession s) => _active.TryGetValue(s, out var m) && !m.Ending && s.InstanceId == m.Room.Id ? m : null;
 
@@ -408,7 +407,9 @@ public sealed class CasualBattleService : IGameTicker
         var mvp = match.Players.Values.Where(p => p.Camp == winCamp).OrderByDescending(p => p.Score)
             .ThenByDescending(p => p.Kills).ThenBy(p => p.Id).FirstOrDefault();
         string resultId = match.Room.Id.ToString(CultureInfo.InvariantCulture);
-        long start = Param("RelaxGVGStartMMR", 1000), win = Param("RelaxGVGWinMMR", 5), lose = Param("RelaxGVGLoseMMR", -3);
+        var param = PublicParams.Of(_data);
+        long start = param.RelaxGVGStartMMR ?? 1000, win = param.RelaxGVGWinMMR ?? 5;
+        long lose = param.RelaxGVGLoseMMR ?? -3;
         var rows = new List<CasualBattleObligationRow>();
         foreach (var p in match.Players.Values.Where(p => !p.Left).OrderBy(p => p.Id))
         {

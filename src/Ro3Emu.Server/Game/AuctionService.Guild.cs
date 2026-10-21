@@ -3,6 +3,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -120,8 +121,9 @@ public sealed partial class AuctionService
                         return ErrorCodes.RewardMissing;
                 bool created = false;
                 // (inferred) Guild exhibit/time values are minutes; dungeon _iTimeLast is separately in seconds.
-                long start = checked(Now + Math.Max(0, Param("GuildAuctionExhibit", 5)) * 60);
-                long end = checked(start + Math.Max(1, Param("GuildAuctionTime", 30)) * 60);
+                var param = PublicParams.Of(data);
+                long start = checked(Now + Math.Max(0, param.GuildAuctionExhibit ?? 5) * 60);
+                long end = checked(start + Math.Max(1, param.GuildAuctionTime ?? 30) * 60);
                 int itemCount = goods.Sum(g => g.Count);
                 var keys = RoleKeys(members).Concat([
                     Ownership.ReservationKey.Entity("guild", guildId.ToString()),

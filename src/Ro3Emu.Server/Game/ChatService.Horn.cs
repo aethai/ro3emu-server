@@ -1,6 +1,6 @@
 using System.Globalization;
 using Romsg;
-using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -30,7 +30,7 @@ public sealed partial class ChatService
             || use.Request.ItemParam[0].ChatCustomizeData.SoundTransmission is not { } horn) return ErrorCodes.Parameter;
         if (_data.Row("ChatConfig", chatId) == null) return ErrorCodes.ItemNoConfig;
         string words = horn.Words ?? "";
-        long limit = _data.Table("PublicParamConfig").TryGetValue("TrumpetWordLimit", out var v) && GameData.Number(v) is { } n ? (long)n : 50;
+        long limit = PublicParams.Of(_data).TrumpetWordLimit ?? 50;
         int length = new StringInfo(words).LengthInTextElements;
         if (words.Trim().Length == 0 || length > limit) return ErrorCodes.Parameter;
         if (_options.Value.GuildBlockedWords.Any(word => !string.IsNullOrWhiteSpace(word)

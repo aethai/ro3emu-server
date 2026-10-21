@@ -1,6 +1,7 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -67,7 +68,7 @@ public sealed partial class AuctionService
     /// Guild and guild-sourced World lots: the whole price. (inferred) Event lots follow the game-mode (dungeon)
     /// fraction, since their letters are the game-mode family 1053-1056.</summary>
     private long DividendBudget(AuctionStore.Item row) => row.Type is AuctionType.Dungeon or AuctionType.Act
-        ? row.Price * Math.Clamp(Param("GamePlayAuctionDividend", 8000), 0, 10000) / 10000
+        ? row.Price * Math.Clamp(PublicParams.Of(data).GamePlayAuctionDividend ?? 8000, 0, 10000) / 10000
         : row.Price;
 
     /// <summary>The tab id for the award letter: the row's leaf tab; a World row always names AuctionTabConfig row 2
@@ -245,11 +246,13 @@ public sealed partial class AuctionService
                         store.EnlistBonusClaim(s.Role.Id, bonus.Key, transaction);
                         mail.QueueTemplateLocked(s.Role.Id, $"auction:bonus:{bonus.Key}:{s.Role.Id}",
                             bonus.Guild == 0 ? 1054 : 1100,
-                            [new MailService.Attachment((int)Param("AUCTION_CURRENCY", 1), bonus.Amount)], transaction,
+                            [new MailService.Attachment(
+                                (int)(PublicParams.Of(data).AUCTIONCURRENCY ?? 1), bonus.Amount)], transaction,
                             bonus.Guild == 0 ? "Dungeon" : "Guild");
                         transaction.WithEscrowEconomy(AuctionIntent("auction/bonus-claim", s.Role.Id, s.Account ?? "",
                                 $"auction/bonus/{s.Role.Id}/{bonus.Key}/claim")
-                            .Evidence(new { bonus.Key, bonus.Amount, bonus.Guild, Currency = Param("AUCTION_CURRENCY", 1) }));
+                            .Evidence(new { bonus.Key, bonus.Amount, bonus.Guild,
+                                Currency = PublicParams.Of(data).AUCTIONCURRENCY ?? 1 }));
                         RequireScope(scope, transaction);
                         await roles.CommitAsync(transaction, "auction/bonus-claim");
                         amount = bonus.Amount;

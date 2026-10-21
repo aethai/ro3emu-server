@@ -3,6 +3,7 @@ using Google.Protobuf;
 using System.Globalization;
 using System.Text.Json;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Economy;
@@ -139,12 +140,10 @@ public sealed partial class TimedBattleService
     /// </summary>
     private IEnumerable<(int Item, long Restrict)> RiftVaultItems()
     {
-        var table = _data.Table("PublicParamConfig");
-        foreach (var key in new[] { "OnePieceRewardPreview1", "OnePieceRewardPreview2" })
-            if (table.TryGetValue(key, out var pair) && pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() == 2
-                && GameData.Number(pair[0]) is { } item && GameData.Number(pair[1]) is { } restrict)
-                yield return ((int)item, (long)restrict);
-        if (PublicValue("OnePieceMapBoxId") is > 0 and var box) yield return ((int)box, PublicValue("OnePieceMapBoxReId"));
+        var param = PublicParams.Of(_data);
+        foreach (var pair in new[] { param.OnePieceRewardPreview1, param.OnePieceRewardPreview2 })
+            if (pair is { Length: 2 }) yield return ((int)pair[0], pair[1]);
+        if (param.OnePieceMapBoxId is > 0 and var box) yield return ((int)box, param.OnePieceMapBoxReId ?? 0);
     }
 
     private long RiftRestrictMax(long id) => _data.Row("RestrictConfig", id) is { } row ? GameData.Int(row, "_iMaxRestrictNum") : 0;
@@ -215,9 +214,8 @@ public sealed partial class TimedBattleService
     private (int Min, int Max) RiftPartySize()
     {
         int min = 3, max = 5;
-        if (_data.Table("PublicParamConfig").TryGetValue("OnePieceMapMembersNum", out var range)
-            && range.ValueKind == JsonValueKind.Array && range.GetArrayLength() == 2)
-        { min = (int)(GameData.Number(range[0]) ?? 3); max = Math.Max(min, (int)(GameData.Number(range[1]) ?? 5)); }
+        if (PublicParams.Of(_data).OnePieceMapMembersNum is { Length: 2 } range)
+        { min = (int)range[0]; max = Math.Max(min, (int)range[1]); }
         if (RiftTestMinParty is { } test) min = Math.Min(test, max);
         return (min, max);
     }
@@ -264,7 +262,7 @@ public sealed partial class TimedBattleService
         foreach (var member in members) _riftVotes[member] = vote;
         await BroadcastRiftVoteAsync(vote);
         // The prepare panel counts down GetInPositionMaxTime from the first 42033 (LC_DAL_Team).
-        long seconds = PublicValue("GetInPositionMaxTime") is > 0 and var configured ? configured : 30;
+        long seconds = PublicParams.Of(_data).GetInPositionMaxTime is > 0 and var configured ? configured : 30;
         _loop.ScheduleRuntime(TimeSpan.FromSeconds(seconds),
             () => vote.Closed ? Task.CompletedTask : CancelRiftVoteAsync(vote, ErrorCodes.Parameter, 0));
         return true;

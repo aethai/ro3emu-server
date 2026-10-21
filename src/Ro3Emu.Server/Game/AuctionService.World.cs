@@ -3,6 +3,7 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 
@@ -72,8 +73,9 @@ public sealed partial class AuctionService
     /// <summary>Exhibit start and the next WorldAuctionEnd o'clock strictly after it, in the realm's civil time.</summary>
     private (long Start, long End) WorldWindow(bool startNow)
     {
-        long start = startNow ? Now : checked(Now + Math.Max(0, Param("WorldAuctionExhibit", 5)) * 60);
-        int hour = (int)Math.Clamp(Param("WorldAuctionEnd", 18), 0, 23);
+        var param = PublicParams.Of(data);
+        long start = startNow ? Now : checked(Now + Math.Max(0, param.WorldAuctionExhibit ?? 5) * 60);
+        int hour = (int)Math.Clamp(param.WorldAuctionEnd ?? 18, 0, 23);
         var local = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(start), clock.LocalTimeZone);
         var day = local.Date;
         for (int i = 0; i < 3; i++, day = day.AddDays(1))
@@ -153,8 +155,9 @@ public sealed partial class AuctionService
         if (string.IsNullOrWhiteSpace(completionKey) || goods.Count == 0 || !EventTabs().TryGetValue(srcType, out int activity))
             return ErrorCodes.Parameter;
         if (activity <= 0 || !timedEvents.IsActive(activity)) return ErrorCodes.ActivityClosed;
-        long start = startNow ? Now : checked(Now + Math.Max(0, Param("GuildAuctionExhibit", 5)) * 60);
-        long end = checked(start + Math.Max(1, Param("GuildAuctionTime", 30)) * 60);
+        var param = PublicParams.Of(data);
+        long start = startNow ? Now : checked(Now + Math.Max(0, param.GuildAuctionExhibit ?? 5) * 60);
+        long end = checked(start + Math.Max(1, param.GuildAuctionTime ?? 30) * 60);
         if (timedEvents.WindowEnd(activity) is { } windowEnd) end = Math.Min(end, windowEnd.ToUnixTimeSeconds());
         if (end <= start) return ErrorCodes.ActivityPeriod;
         long[] members = participants.Distinct().Order().ToArray();

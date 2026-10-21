@@ -2,6 +2,7 @@ using System.Globalization;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -108,8 +109,7 @@ public sealed partial class TaskService
             await TaskErrorAsync(session, TaskLuckyTurn, req.Type, ErrorCodes.Parameter);
             return;
         }
-        int ticket = _data.Table("PublicParamConfig").TryGetValue("RunRingTaskTurntableItem", out var configuredTicket)
-            && GameData.Number(configuredTicket) is { } ticketNumber and > 0 and <= int.MaxValue
+        int ticket = PublicParams.Of(_data).RunRingTaskTurntableItem is > 0 and <= int.MaxValue and var ticketNumber
             ? (int)ticketNumber : 0;
         if (ticket <= 0)
         {

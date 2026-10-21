@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -32,9 +33,6 @@ public sealed partial class PetService
         s.IncubateInfo.Remove(round);
         if (s.IncubateInfo.Count == 0) state.IncubationSlot.Remove(slot);
     }
-
-    private long PetParam(string name, long fallback) => _data.Table("PublicParamConfig").TryGetValue(name, out var v)
-        ? (long)(GameData.Number(v) ?? fallback) : fallback;
 
     /// <summary>
     /// A round takes new eggs (<paramref name="place"/>) only while the client offers it: LC_PetHelper.GetActivePoolTypeInfo
@@ -297,7 +295,7 @@ public sealed partial class PetService
     {
         using var held = await CharacterService.Lock(s);
         int code = RoundGate(s, req.RoundId, place: true);
-        if (code == 0 && s.Pets!.IncubationLv < PetParam("UnlockFastIncubationLv", 2))
+        if (code == 0 && s.Pets!.IncubationLv < (PublicParams.Of(_data).UnlockFastIncubationLv ?? 2))
             code = ErrorCodes.PetOperation;
         var config = code == 0 ? _data.Row("PetIncubationSlotConfig", req.RoundId) : null;
         var next = s.Pets?.Clone();
@@ -322,12 +320,12 @@ public sealed partial class PetService
                     seconds = Math.Max(0, GameData.Int(Room(next)!.Value, "_iIncubateTime"));
                 }
                 else seconds = Remaining(next, egg);
-                long interval = PetParam("PetIncubationAccelerate", 300);
+                long interval = PublicParams.Of(_data).PetIncubationAccelerate ?? 300;
                 if (interval <= 0) { code = ErrorCodes.PetNoConfig; break; }
                 long need = (seconds + interval - 1) / interval;
                 if (need > 0)
                 {
-                    int item = checked((int)PetParam("PetIncubationAccelerateItemId", 1250724));
+                    int item = checked((int)(PublicParams.Of(_data).PetIncubationAccelerateItemId ?? 1250724));
                     costs[item] = checked(costs.GetValueOrDefault(item) + need);
                 }
                 selected++;

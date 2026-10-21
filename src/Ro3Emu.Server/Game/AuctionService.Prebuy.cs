@@ -2,6 +2,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -17,7 +18,8 @@ public sealed partial class AuctionService
     /// </summary>
     private async Task<int> SetPrebuyAsync(GameSession s, AuctionType type, int src, int entry, long target)
     {
-        if (s.Role == null || entry <= 0 || target < 0 || target > Math.Max(1, Param("AUCTION_BATCH_NUM", 100)))
+        if (s.Role == null || entry <= 0 || target < 0
+            || target > Math.Max(1, PublicParams.Of(data).AUCTIONBATCHNUM ?? 100))
             return ErrorCodes.AuctionParameter;
         src = RowSrc(type, src);
         long requestRole = s.Role.Id;

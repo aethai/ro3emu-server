@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 
 namespace Ro3Emu.Server.Game;
@@ -588,7 +589,8 @@ public sealed partial class CardService
             bool unlocked = before?.Unlock == true;
             if (Observe(library, starred)) nextLibrary = library;
             int points = unlocked ? TierPoints(card.Entry, reached, library.Cards[card.Entry].CardStar) : 0;
-            if (points > 0 && Param("LibraryOverviewPointID") is var pointItem and > 0) tierGains.Add((pointItem, points));
+            if (points > 0 && (int)(PublicParams.Of(_data).LibraryOverviewPointID ?? 0) is var pointItem and > 0)
+                tierGains.Add((pointItem, points));
         }
         if (error == 0 && await _character.ExchangeLockedAsync(session, payment.Currency, tierGains, payment.Instances,
             popup: false, sync: false, reservedGuid: card!.Guid,
@@ -812,7 +814,8 @@ public sealed partial class CardService
                 else e.Unlock = true;
                 long role = session.Role.Id, epoch = session.Owner!.LifecycleEpoch;
                 byte[] bytes = next.ToByteArray();
-                int points = req.IsTreasure ? 0 : CardUnlockPoints(req.CardId, e.CardStar), item = Param("LibraryOverviewPointID");
+                int points = req.IsTreasure ? 0 : CardUnlockPoints(req.CardId, e.CardStar);
+                int item = (int)(PublicParams.Of(_data).LibraryOverviewPointID ?? 0);
                 if (points > 0 && item > 0)
                 {
                     try

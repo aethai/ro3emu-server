@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -378,7 +379,8 @@ public sealed partial class TerritoryWarsService
             foreach (var p in recipients)
             {
                 bool win = p.Guild == winner;
-                int template = (int)Param(win ? "SiegeWinMailId" : "SiegeLoseMailId", win ? 10500 : 10501);
+                var param = PublicParams.Of(_data);
+                int template = (int)(win ? param.SiegeWinMailId ?? 10500 : param.SiegeLoseMailId ?? 10501);
                 // SiegeConfig selects the city's player award; the royal city matches the
                 // win/loss mail template awards, while senior cities select group 30093.
                 int award = _data.Row("SiegeConfig", run.City) is { } row ? (int)GameData.Int(row,

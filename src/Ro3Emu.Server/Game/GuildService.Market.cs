@@ -1,7 +1,6 @@
-using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
-using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Economy;
 
@@ -22,20 +21,6 @@ public sealed partial class GuildService
             amount, EconomyReason.GuildMarketCapDiscard);
     }
 
-    private long MarketParam(string name, long fallback)
-    {
-        var table = data.Table("PublicParamConfig");
-        return table.TryGetValue(name, out JsonElement value) && GameData.Number(value) is { } number
-            ? (long)number : fallback;
-    }
-
-    private long[] MarketArray(string name, params long[] fallback)
-    {
-        var table = data.Table("PublicParamConfig");
-        return table.TryGetValue(name, out JsonElement value) && value.ValueKind == JsonValueKind.Array
-            ? value.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray() : fallback;
-    }
-
     private int MarketGate(GameSession s, GuildStore.State? guild, bool mutation)
     {
         if (guild == null) return ErrorCodes.NotInGuild;
@@ -46,7 +31,7 @@ public sealed partial class GuildService
 
     private int CheckMarketPrice(long price, GuildStore.MarketState market)
     {
-        var adjust = MarketArray("BlackMarketPriceAdjust", 500, 4, 4);
+        var adjust = PublicParams.Of(data).BlackMarketPriceAdjust ?? [500, 4, 4];
         if (adjust.Length < 3 || adjust[0] <= 0 || price <= 0 || price % adjust[0] != 0) return ErrorCodes.Parameter;
         long lower = Math.Max(0, market.RecentAvgPrice - adjust[0] * adjust[1]);
         long upper = market.RecentAvgPrice + adjust[0] * adjust[2];
@@ -206,22 +191,26 @@ public sealed partial class GuildService
                 {
                     var req = ListOnBlackMarketReq.Parser.ParseFrom(body.Span);
                     int code = gate != 0 ? gate : CheckMarketPrice(req.UnitPrice, market);
-                    long step = MarketParam("BlackMarketSellStep", 10);
+                    var p = PublicParams.Of(data);
+                    long step = p.BlackMarketSellStep ?? 10;
                     if (code == 0 && (step <= 0 || req.Count <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
-                    if (code == 0 && market.Stalls.Count(x => x.GuildId == guild!.Id) >= MarketParam("BlackMarketStallCount", 6)) code = ErrorCodes.GuildFull;
-                    if (code == 0 && market.LastListedMs.GetValueOrDefault(guild!.Id) + MarketParam("BlackMarketListCooldownSec", 1) * 1000 > MarketNowMs()) code = ErrorCodes.Cooldown;
+                    if (code == 0 && market.Stalls.Count(x => x.GuildId == guild!.Id) >= (p.BlackMarketStallCount ?? 6))
+                        code = ErrorCodes.GuildFull;
+                    if (code == 0 && market.LastListedMs.GetValueOrDefault(guild!.Id)
+                        + (p.BlackMarketListCooldownSec ?? 1) * 1000 > MarketNowMs()) code = ErrorCodes.Cooldown;
                     if (code == 0 && guild!.Materials < req.Count) code = ErrorCodes.ItemsShort;
                     if (code == 0)
                     {
                         long listedAt = MarketNowMs();
-                        var delay = MarketArray("BlackMarketDelayRangeSec", 300, 600);
+                        var delay = p.BlackMarketDelayRangeSec ?? [300, 600];
                         long seconds = delay.Length == 0 ? 300 : Math.Max(0, delay[0]);
                         guild!.Materials -= req.Count;
                         market.Stalls.Add(new GuildStore.MarketStall
                         {
                             Id = $"stall-{++market.NextId}", GuildId = guild.Id,
                             UnitPrice = req.UnitPrice, TotalCount = req.Count, RemainCount = req.Count, CreatedMs = listedAt,
-                            AvailableMs = listedAt + seconds * 1000, ExpiresMs = listedAt + MarketParam("BlackMarketItemValidSec", 86400) * 1000
+                            AvailableMs = listedAt + seconds * 1000,
+                            ExpiresMs = listedAt + (p.BlackMarketItemValidSec ?? 86400) * 1000
                         });
                         market.LastListedMs[guild.Id] = listedAt;
                         if (!await store.SaveMarketAsync(market, [guild], MarketEconomy(s, "list", req))) code = ErrorCodes.GuildMissing;
@@ -236,7 +225,7 @@ public sealed partial class GuildService
                     var req = UnlistFromBlackMarketReq.Parser.ParseFrom(body.Span);
                     var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
                     int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : 0;
-                    long cap = Setting("GuildMaterialsMax", 1000000)[0];
+                    long cap = GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
                     if (code == 0 && !req.Confirm && guild!.Materials > cap - stall!.RemainCount) code = ErrorCodes.Parameter;
                     if (code == 0)
                     {
@@ -267,7 +256,7 @@ public sealed partial class GuildService
                     long total = 0;
                     if (code == 0) { try { total = checked(req.UnitPrice * req.BuyCount); } catch (OverflowException) { code = ErrorCodes.Parameter; } }
                     if (code == 0 && guild!.Money < total) code = ErrorCodes.GuildFundsShort;
-                    long cap = Setting("GuildMaterialsMax", 1000000)[0];
+                    long cap = GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
                     if (code == 0 && !req.Confirm && guild!.Materials > cap - req.BuyCount) code = ErrorCodes.Parameter;
                     if (code == 0)
                     {
@@ -293,7 +282,8 @@ public sealed partial class GuildService
                                 if (previewRemain == 0) break;
                                 long count = Math.Min(previewRemain, stall.RemainCount);
                                 decimal amount = (decimal)count * req.UnitPrice;
-                                decimal fee = decimal.Truncate(amount * MarketParam("BlackMarketFeeRate", 250) / 10000m);
+                                decimal fee = decimal.Truncate(
+                                    amount * (PublicParams.Of(data).BlackMarketFeeRate ?? 250) / 10000m);
                                 prospectiveCredit[stall.GuildId] = prospectiveCredit.GetValueOrDefault(stall.GuildId) + amount - fee;
                                 previewRemain -= count;
                             }
@@ -310,7 +300,8 @@ public sealed partial class GuildService
                                 long count = Math.Min(remain, stall.RemainCount);
                                 long amount = checked(count * req.UnitPrice);
                                 // BlackMarketFeeRate=250 uses the project's 10000-unit percentage convention (inferred).
-                                long fee = (long)((decimal)amount * MarketParam("BlackMarketFeeRate", 250) / 10000m);
+                                long fee = (long)((decimal)amount
+                                    * (PublicParams.Of(data).BlackMarketFeeRate ?? 250) / 10000m);
                                 totalFees = checked(totalFees + fee);
                                 var seller = sellers[stall.GuildId];
                                 seller.Money = checked(seller.Money + amount - fee);
@@ -328,7 +319,8 @@ public sealed partial class GuildService
                             Journal(guild, EvPurchase, [s.Role!.Id], Str(s.Role.Name), Int(total), Int(req.BuyCount), Int(GuildMaterialItem));
                             guild.Materials = (long)Math.Min(cap, (decimal)guild.Materials + req.BuyCount);
                             market.RecentPrices.Add(req.UnitPrice);
-                            int sample = (int)Math.Clamp(MarketParam("BlackMarketRecentAvgSample", 10), 1, 1000);
+                            int sample = (int)Math.Clamp(PublicParams.Of(data).BlackMarketRecentAvgSample ?? 10,
+                                1, 1000);
                             while (market.RecentPrices.Count > sample) market.RecentPrices.RemoveAt(0);
                             market.RecentAvgPrice = (long)(market.RecentPrices.Sum(x => (decimal)x) / market.RecentPrices.Count);
                             int hour = (int)(tradedAt / 3_600_000);
@@ -398,11 +390,11 @@ public sealed partial class GuildService
                     var req = UpdateBlackMarketBoothReq.Parser.ParseFrom(body.Span);
                     var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
                     int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : CheckMarketPrice(req.UnitPrice, market);
-                    long step = MarketParam("BlackMarketSellStep", 10);
+                    long step = PublicParams.Of(data).BlackMarketSellStep ?? 10;
                     if (code == 0 && (req.Count <= 0 || step <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
                     long difference = stall == null ? 0 : req.Count - stall.RemainCount;
                     if (code == 0 && difference > 0 && guild!.Materials < difference) code = ErrorCodes.ItemsShort;
-                    long cap = Setting("GuildMaterialsMax", 1000000)[0];
+                    long cap = GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
                     if (code == 0 && difference < 0 && !req.Confirm && guild!.Materials > cap + difference) code = ErrorCodes.Parameter;
                     if (code == 0)
                     {
@@ -439,7 +431,7 @@ public sealed partial class GuildService
         var economy = MarketEconomy(null, "expire", new
         {
             Stalls = expiredIds.Order().ToArray(),
-            Cap = Setting("GuildMaterialsMax", 1000000)[0]
+            Cap = GuildSettings.Of(data).GuildMaterialsMax ?? 1000000
         });
         foreach (var (stall, owner) in stale)
         {
@@ -451,7 +443,7 @@ public sealed partial class GuildService
             }
             if (!guilds.TryGetValue(owner.Id, out var guild)) guilds.Add(owner.Id, guild = owner);
             long before = guild.Materials;
-            guild.Materials = Math.Min(Setting("GuildMaterialsMax", 1000000)[0],
+            guild.Materials = Math.Min(GuildSettings.Of(data).GuildMaterialsMax ?? 1000000,
                 checked(guild.Materials + stall.RemainCount)); // expiry overflow is capped (inferred)
             MarketDiscard(economy, checked(before + stall.RemainCount - guild.Materials));
             market.Stalls.Remove(stall);

@@ -1,5 +1,6 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -291,8 +292,8 @@ public sealed partial class AdventureGroupService
         var g = Own(s);
         long self = s.Role!.Id;
         var d = req.DeclarationData ?? new DeclarationInfo();
-        var (minText, maxText) = Range("AdventureGroupDeclareContentLength", 1, 30);
-        var (minVoice, maxVoice) = Range("AdventureGroupSpeechLength", 1, 15);
+        var (minText, maxText) = Range(PublicParams.Of(_data).AdventureGroupDeclareContentLength, 1, 30);
+        var (minVoice, maxVoice) = Range(PublicParams.Of(_data).AdventureGroupSpeechLength, 1, 15);
         int code = g == null ? ErrNotInGroup
             : d.DeclarationType == DeclarationType.TextType
                 ? (TextLength(d.Content) < minText || TextLength(d.Content) > maxText ? ErrDeclaration : Banned(d.Content) ? ErrBanned : 0)
@@ -364,7 +365,7 @@ public sealed partial class AdventureGroupService
                 await SyncRelationAsync(former, null);
             }
         var room = r.Room;
-        long life = Number("AdventureGroupDungeonLiveTime", 300);
+        long life = PublicParams.Of(_data).AdventureGroupDungeonLiveTime ?? 300;
         _loop.ScheduleLegacy(TimeSpan.FromSeconds(life), async () =>
         {
             _rituals.Remove(r.GroupId);

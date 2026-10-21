@@ -1,4 +1,5 @@
 using Romsg;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -48,7 +49,7 @@ public sealed partial class GuildService
                 .Where(p => p.Progress!.Level >= g!.JoinLevelLimit && !(p.Guild?.CantBeInvited ?? false))
                 .Where(p => store.ForRole(p.Role!.Id) == null)
                 .OrderBy(p => Math.Abs(p.Progress!.Level - level)).ThenBy(p => p.Role!.Id)
-                .Take((int)Math.Clamp(Setting("GuildRecruitInviteListNum", 20)[0], 1, 100));
+                .Take((int)Math.Clamp(GuildSettings.Of(data).GuildRecruitInviteListNum ?? 20, 1, 100));
             resp.RecommendList.AddRange(picks.Select(p => new RecommendPlayerInfo
             { PlayerId = p.Role!.Id, Area = options.Value.ClusterId, IsInvited = invited.Contains(p.Role.Id) }));
         }

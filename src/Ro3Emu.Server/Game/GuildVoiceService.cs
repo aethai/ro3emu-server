@@ -1,7 +1,7 @@
-using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -286,7 +286,8 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
                 if (code == 0)
                 {
                     Unseat(req.TargetPlayerId);
-                    channel!.Blocked[req.TargetPlayerId] = NowMs() + Setting("GuildVoiceChannelBlacklistDuration", DefaultBlockMs);
+                    channel!.Blocked[req.TargetPlayerId] = NowMs()
+                        + (GuildSettings.Of(data).GuildVoiceChannelBlacklistDuration ?? DefaultBlockMs);
                 }
             }
         await s.SendGameAsync(KickMsg, new GuildVoiceChannelKickPlayerRsp { ErrorCode = code });
@@ -479,12 +480,6 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
 
     private long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
 
-    private int ChannelCount() => (int)Math.Clamp(Setting("GuildVoiceChannelCount", DefaultChannelCount), 1, 16);
-
-    private long Setting(string key, long fallback)
-    {
-        if (!data.Table("GuildSettingConfig").TryGetValue(key, out var row)
-            || !row.TryGetProperty("_kValue", out var value)) return fallback;
-        return value.ValueKind == JsonValueKind.Number ? (long)(GameData.Number(value) ?? fallback) : fallback;
-    }
+    private int ChannelCount() =>
+        (int)Math.Clamp(GuildSettings.Of(data).GuildVoiceChannelCount ?? DefaultChannelCount, 1, 16);
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -53,8 +54,8 @@ public sealed partial class WorldCoreService
         await MoveFlightAsync(s, position, s.Face, new Vec3(), true, MovementTransitionType.MoveTransFlyUp);
     }
 
-    private float FlightSpeed(GameSession s) => _data.Table("PublicParamConfig").TryGetValue("MountFlyMaxSpeed", out var value)
-        ? Math.Max(1, (float)(GameData.Number(value) ?? s.Speed) / 100) : Math.Max(1, s.Speed / 100f);
+    private float FlightSpeed(GameSession s) =>
+        Math.Max(1, (float)(PublicParams.Of(_data).MountFlyMaxSpeed ?? s.Speed) / 100);
 
     /// <summary>31084: AStarAgentNew sends position plus a three-dimensional direction, not a ground yaw.</summary>
     public async Task FlyMoveAsync(GameSession s, FlyMoveReq req)

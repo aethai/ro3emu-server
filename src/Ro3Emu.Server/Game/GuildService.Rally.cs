@@ -1,6 +1,7 @@
 using System.Globalization;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
@@ -45,11 +46,12 @@ public sealed partial class GuildService
     {
         var g = Own(s);
         long now = NowMs();
-        var cost = Setting("GuildGatherCost", 104, 5);
+        var cost = GuildSettings.Of(data).GuildGatherCost ?? [104, 5];
         long price = cost.Length > 1 ? cost[1] : 5;
         int code = g == null ? ErrorCodes.NotInGuild : g.Status != (int)GuildStatus.Normal ? ErrorCodes.FeatureUnavailable
             : !HasRight(g, s.Role!.Id, RallyRight) ? ErrorCodes.GuildPermission
-            : _lastRallyMs.GetValueOrDefault(g.Id) + Setting("GuildGatherCD", 300)[0] * 1000 > now ? ErrRallyCooldown
+            : _lastRallyMs.GetValueOrDefault(g.Id) + (GuildSettings.Of(data).GuildGatherCD ?? 300) * 1000 > now
+                ? ErrRallyCooldown
             : !GuildWhitelisted(s, 0) ? ErrRallyArea
             : (s.StatusBits & (1L << 15)) != 0 ? ErrRallyArea
             : g.Money < price ? ErrorCodes.GuildFundsShort : 0;
@@ -68,7 +70,8 @@ public sealed partial class GuildService
         foreach (var stale in _rallies.Where(r => r.Value.ExpiresMs <= now).Select(r => r.Key).ToArray()) _rallies.Remove(stale);
         long token = ++_nextToken;
         _rallies[token] = new Rally(g.Id, s.Role!.Id, s.SceneEntry,
-            new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, s.Face), now + Setting("GuildGatherInviteTime", 60)[0] * 1000);
+            new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, s.Face),
+            now + (GuildSettings.Of(data).GuildGatherInviteTime ?? 60) * 1000);
         await PushBase(g, new GuildBaseInfoChangeNtf { Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeResource, Resource = Resource(g) });
         foreach (var member in g.Members.Values.Where(m => m.RoleId != s.Role.Id))
             if (Online(member.RoleId) is { } peer)

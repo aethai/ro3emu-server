@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Globalization;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -39,6 +40,7 @@ public sealed partial class StallsService
             bool fresh = row == null || row.Timeout <= Now;
             if (fresh)
             {
+                var param = PublicParams.Of(_data);
                 // Replacing an expired system stall retires its still-persisted stock exactly once.
                 if (row != null)
                     foreach (var old in row.Stock.Where(stock => stock.Item.Stack > 0))
@@ -46,11 +48,14 @@ public sealed partial class StallsService
                             EconomyCompartment.Stall, new(EconomyOwnerKind.System, id.ToString(CultureInfo.InvariantCulture)));
                 row = new StallRow
                 {
-                    Key = SystemKey(id), SystemId = id, Scene = location[2], Title = _data.Text(Param("StallsSystemDefaultName", 181000)),
-                    OwnerName = _data.Text(Param("StallsSystemDefaultRoleName", 182000)), Career = (int)Field(trigger, "_kJob").FirstOrDefault(1000),
+                    Key = SystemKey(id), SystemId = id, Scene = location[2],
+                    Title = _data.Text(param.StallsSystemDefaultName ?? 181000),
+                    OwnerName = _data.Text(param.StallsSystemDefaultRoleName ?? 182000),
+                    Career = (int)Field(trigger, "_kJob").FirstOrDefault(1000),
                     Level = (int)Field(trigger, "_kLevel").FirstOrDefault(1), Sex = 1,
-                    X = location[3], Z = location[4], OpenTime = Now, Timeout = Now + Param("StallsSystemTime", 259200),
-                    MaxGrid = goods.Length, RestockTime = Now + Param("StallsSystemRestockCD", 600),
+                    X = location[3], Z = location[4], OpenTime = Now,
+                    Timeout = Now + (param.StallsSystemTime ?? 259200),
+                    MaxGrid = goods.Length, RestockTime = Now + (param.StallsSystemRestockCD ?? 600),
                 };
             }
             bool restock = fresh || row!.RestockTime <= Now;
@@ -96,7 +101,7 @@ public sealed partial class StallsService
                 }
             }
             if (!touched) continue;
-            row!.RestockTime = Now + Param("StallsSystemRestockCD", 600);
+            row!.RestockTime = Now + (PublicParams.Of(_data).StallsSystemRestockCD ?? 600);
             Save(tx, row); changed.Add(row);
         }
     }
@@ -137,7 +142,9 @@ public sealed partial class StallsService
                 // unexplained StallsSafeFirstTime=3 is (inferred); its original unit remains unresolved.
                 if (timeout || (row.Stock.Count == 0 && Now - row.OpenTime >= 360))
                 {
-                    Close(tx, row, (int)Param(timeout ? "StallsCloseTimeMailId" : "StallsCloseNullMailId", timeout ? 1031 : 1032));
+                    var param = PublicParams.Of(_data);
+                    Close(tx, row, (int)(timeout
+                        ? param.StallsCloseTimeMailId ?? 1031 : param.StallsCloseNullMailId ?? 1032));
                     changed.Add(row);
                 }
                 else

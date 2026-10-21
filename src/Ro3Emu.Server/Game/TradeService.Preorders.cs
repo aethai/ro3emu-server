@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -31,7 +32,7 @@ public sealed partial class TradeService
                 || req.TotalQuantity > GameData.Int(row, "_iBuyLimit"))
                 return ErrorCodes.TradeQuantity;
             if (tx.All<PreorderRow>(Orders).Count(o => o.BuyerId == s.Role!.Id && o.Status == 0)
-                >= Public("TradePreMaxNum", 30)) return ErrorCodes.TradeQuantity;
+                >= (PublicParams.Of(data).TradePreMaxNum ?? 30)) return ErrorCodes.TradeQuantity;
             var buyer = tx.Role(s.Role!.Id);
             if (buyer.Currency.GetValueOrDefault(listing.Currency) < req.TotalPrice) return ErrorCodes.CurrencyShort;
             buyer.Currency[listing.Currency] -= req.TotalPrice;

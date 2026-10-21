@@ -3,6 +3,7 @@ using Romsg;
 using Google.Protobuf;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -106,9 +107,6 @@ public sealed class SkillService
         int activation = (int)GameData.Int(row, "_iActivateCondition");
         return activation <= 0 || p.Level >= activation ? (int)GameData.Int(row, "_iInitialLevel") : 0;
     }
-
-    private int Parameter(string key, int fallback) => _data.Table("PublicParamConfig").TryGetValue(key, out var value)
-        && GameData.Number(value) is { } number && number > 0 ? (int)number : fallback;
 
     /// <summary>Skill points per job rank: earned from JobLvConfig._iSkillPoint (whole earlier ranks, current rank up to the job level) minus spent.</summary>
     private Dictionary<int, int> SkillPoints(RoleProgress p)
@@ -287,7 +285,7 @@ public sealed class SkillService
             ImportLegacyLoads(source, "Auto", "AutoLevels", plan.AutoLoadSkill, plan, session.Progress!);
             var queueLevels = JsonMap(source, "QueueLevels");
             foreach (var (slot, group) in JsonMap(source, "Queue"))
-                if (slot >= 0 && slot < Parameter("QueueNum", 12))
+                if (slot >= 0 && slot < (PublicParams.Of(_data).QueueNum is > 0 and var queue ? (int)queue : 12))
                     plan.SkillQueue[slot] = new SkillData
                     {
                         SkillId = group,
@@ -519,9 +517,10 @@ public sealed class SkillService
     public async Task RenamePlanAsync(GameSession session, SkillPlanChangeNameReq req)
     {
         using var held = await CharacterService.Lock(session);
+        int nameMax = PublicParams.Of(_data).SchemeNameNumMax is > 0 and var max ? (int)max : 8;
         int result = req.Plan is < 0 or >= PlanCount || !session.SkillPlans!.SkillAssignPlans[req.Plan].IsUnlock
             || string.IsNullOrWhiteSpace(req.Name) || req.Name.Any(char.IsControl)
-            || req.Name.EnumerateRunes().Count() > Parameter("SchemeNameNumMax", 8) ? ErrorCodes.Parameter : 0;
+            || req.Name.EnumerateRunes().Count() > nameMax ? ErrorCodes.Parameter : 0;
         if (result == 0)
         {
             var next = session.SkillPlans!.Clone();
@@ -538,7 +537,8 @@ public sealed class SkillService
 
     /// <summary>Shared gate for direct skill switches and Build-window child switches.</summary>
     internal int PlanSwitchCooldownError(GameSession session) => InCombat(session) ? ErrorCodes.Parameter
-        : DateTime.UtcNow - session.SkillPlanSwitchUtc < TimeSpan.FromSeconds(Parameter("SchemeCD", 3))
+        : DateTime.UtcNow - session.SkillPlanSwitchUtc
+            < TimeSpan.FromSeconds(PublicParams.Of(_data).SchemeCD is > 0 and var cd ? (int)cd : 3)
             ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>
@@ -787,9 +787,10 @@ public sealed class SkillService
         var plans = Build(session);
         int op = (int)req.OpType;
         int group = req.Info?.SkillId ?? 0;
+        int queueSize = PublicParams.Of(_data).QueueNum is > 0 and var queue ? (int)queue : 12;
         int code = req.Plan is < 0 or >= PlanCount || !plans.SkillAssignPlans[req.Plan].IsUnlock
             || req.Plan != plans.CurrentPlanIndex || InCombat(session)
-            || req.QueueIndex < 0 || req.QueueIndex >= Parameter("QueueNum", 12) || op is < 1 or > 3
+            || req.QueueIndex < 0 || req.QueueIndex >= queueSize || op is < 1 or > 3
                 ? ErrorCodes.Parameter : 0;
         if (code == 0)
         {

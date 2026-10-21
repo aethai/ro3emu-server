@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -89,9 +90,6 @@ public sealed partial class EmojiService : IGameTicker
     }
 
     private long NowMs => _clock.GetUtcNow().ToUnixTimeMilliseconds();
-
-    private long Param(string key, long fallback) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var v) && GameData.Number(v) is { } n ? (long)n : fallback;
 
     private JsonElement? Row(int emojiId) => _data.Row("PerformanceConfig", emojiId);
 
@@ -373,7 +371,8 @@ public sealed partial class EmojiService : IGameTicker
     private bool Near(GameSession a, GameSession b)
     {
         float dx = a.Position.X - b.Position.X, dz = a.Position.Z - b.Position.Z;
-        float range = Param("PerformanceDistance", 1000) / 100f; // centimetres, like _iDisplacement (inferred)
+        // centimetres, like _iDisplacement (inferred)
+        float range = (PublicParams.Of(_data).PerformanceDistance ?? 1000) / 100f;
         return a.SceneEntry == b.SceneEntry && a.LineNumber == b.LineNumber && dx * dx + dz * dz <= range * range;
     }
 
@@ -394,7 +393,7 @@ public sealed partial class EmojiService : IGameTicker
         var rsp = new EmojiInviteRsp { Result = result, EmojiId = req.EmojiId };
         if (result != 0) { await session.SendGameAsync(Invite, rsp); return; }
         session.LastEmoteRequestMs = now;
-        long expire = now + Param("InviteWaitingTime", 30_000);
+        long expire = now + (PublicParams.Of(_data).InviteWaitingTime ?? 30_000);
         _invites.Add(new PendingInvite(session.Role!.Id, target!.Role!.Id, req.EmojiId, expire));
         rsp.ExpireTime = expire;
         rsp.InviteeId.Add((ulong)target.Role.Id);

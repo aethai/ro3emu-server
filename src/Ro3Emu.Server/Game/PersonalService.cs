@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -154,12 +155,14 @@ public sealed class PersonalService
     /// </summary>
     private PersonalInfo DefaultPlan()
     {
+        var parameters = PublicParams.Of(_data);
         var plan = new PersonalInfo
         {
-            ThemeId = (int)Param("PersonalDefaultTheme", 1001), BackgroundId = (int)Param("PersonalDefaultBackground", 2001),
-            Mood = (int)Param("PersonalEmoEmpty", 3001),
+            ThemeId = (int)(parameters.PersonalDefaultTheme ?? 1001),
+            BackgroundId = (int)(parameters.PersonalDefaultBackground ?? 2001),
+            Mood = (int)(parameters.PersonalEmoEmpty ?? 3001),
         };
-        foreach (long function in ParamList("PersonalShowcaseDefault"))
+        foreach (long function in (parameters.PersonalShowcaseDefault ?? []).Where(v => v > 0))
             if (ShowcaseOf(function) is { } showcase && !plan.ShowcaseVisibleList.Contains(showcase)) plan.ShowcaseVisibleList.Add(showcase);
         return plan;
     }
@@ -172,13 +175,6 @@ public sealed class PersonalService
         6307 => ShowcaseHonor,
         _ => null,
     };
-
-    private double Param(string key, double fallback) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var value) && GameData.Number(value) is { } number ? number : fallback;
-
-    private IEnumerable<long> ParamList(string key) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var value) && value.ValueKind == JsonValueKind.Array
-            ? value.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).Where(v => v > 0) : [];
 
     // ------------------------------------------------------------------ public card
 
@@ -250,7 +246,8 @@ public sealed class PersonalService
         int length = new StringInfo(name).LengthInTextElements;
         int result = Gate(s);
         if (result == 0 && !Preset(req.PlanId)) result = ErrPreset;
-        if (result == 0 && (name.Trim().Length == 0 || length > Param("PersonalTemplateLimit", 7))) result = ErrNameLength;
+        if (result == 0 && (name.Trim().Length == 0 || length > (PublicParams.Of(_data).PersonalTemplateLimit ?? 7)))
+            result = ErrNameLength;
         if (result == 0 && Sensitive(name)) result = ErrNameSensitive;
         if (result == 0 && s.Personal!.PlanInfos[req.PlanId].PlanName != name)
         {
@@ -335,7 +332,8 @@ public sealed class PersonalService
             || (await _roles.ReadRevisionVectorAsync(target)).Deleted)) result = ErrParameter;
         if (result == 0 && s.Personal!.UpvoteTimes.ContainsKey(target)) result = ErrUpvoted;
         if (result == 0 && s.Personal!.UpvoteTimes.Count > 0
-            && now - s.Personal.UpvoteTimes.Values.Max() < Param("PersonalLikeCD", 1000)) result = ErrUpvoteCooldown;
+            && now - s.Personal.UpvoteTimes.Values.Max() < (PublicParams.Of(_data).PersonalLikeCD ?? 1000))
+            result = ErrUpvoteCooldown;
         if (result == 0)
         {
             var next = s.Personal!.Clone();
@@ -424,6 +422,7 @@ public sealed class PersonalService
 
     private int Validate(GameSession s, PersonalInfo info)
     {
+        var parameters = PublicParams.Of(_data);
         if (!IsUnlocked(s, UnlockTheme, info.ThemeId) || !IsUnlocked(s, UnlockBackground, info.BackgroundId)) return ErrLocked;
         // Mood: a PersonalHomepageImageConfig mood image whose condition holds (all are [1002,1]); 0 is no mood.
         if (info.Mood != 0 && (_data.Row("PersonalHomepageImageConfig", info.Mood) is not { } mood
@@ -433,17 +432,18 @@ public sealed class PersonalService
         if (info.AvatarFrameId != 0 && _data.Row("PersonalAvatarFrameConfig", info.AvatarFrameId) == null) return ErrConfig;
         // PersonalTitleConfig exports no rows, so no title can be chosen.
         if (info.PersonalTitleId != 0 && _data.Row("PersonalTitleConfig", info.PersonalTitleId) == null) return ErrConfig;
-        if (new StringInfo(info.Sign ?? "").LengthInTextElements > Param("PersonalSignatureLimit", 30)) return ErrSignLength;
+        if (new StringInfo(info.Sign ?? "").LengthInTextElements > (parameters.PersonalSignatureLimit ?? 30))
+            return ErrSignLength;
         if (Sensitive(info.Sign ?? "")) return ErrSignSensitive;
-        if (info.ShowcaseVisibleList.Count > Param("PersonalMaxCabinet", 3)
+        if (info.ShowcaseVisibleList.Count > (parameters.PersonalMaxCabinet ?? 3)
             || info.ShowcaseVisibleList.Any(v => v is < ShowcaseCard or > ShowcaseHonor)
             || info.ShowcaseVisibleList.Distinct().Count() != info.ShowcaseVisibleList.Count) return ErrParameter;
-        if (info.RoleInfos.Count > Param("PersonalMaxCharacter", 1)) return ErrParameter;
+        if (info.RoleInfos.Count > (parameters.PersonalMaxCharacter ?? 1)) return ErrParameter;
         // The pose list is PerformanceConfig (UI_Sys_Personal_EditRoleAction_ListWidgetCtrl reads m_kCFG_PerformanceConfig),
         // so a pose is one of the role's unlocked emotes (5006 emojiUnlocks); the client preselects one (50001) unasked.
         if (info.RoleInfos.Any(r => r.ActionId != 0 && s.EmojiPlay?.EmojiUnlocks.Contains(r.ActionId) != true
             && !IsUnlocked(s, UnlockAction, r.ActionId))) return ErrLocked;
-        if (info.DecalInfos.Count > Param("PersonalMaxSticker", 20)) return ErrParameter;
+        if (info.DecalInfos.Count > (parameters.PersonalMaxSticker ?? 20)) return ErrParameter;
         // Stickers are currencies of item subtype 123 (ItemSubTypePersonalDecal); each placement uses one.
         foreach (var group in info.DecalInfos.GroupBy(d => d.DecalId))
         {

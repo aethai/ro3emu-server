@@ -4,6 +4,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -49,8 +50,9 @@ public sealed partial class TradeService
             // (inferred) Top class is public for TradeItemHideTime minimum 1800 s; the config
             // has a 1800..5400 range but no recovered selection algorithm.
             long publicity = GameData.Int(row, "_iTradeType") == 1 ? now + HideSeconds() * 1000 : 0;
-            long showHours = Public(publicity > 0 ? "TradeListingsTopShowTime" : "TradeListingsGeneralShowTime",
-                publicity > 0 ? 168 : 24);
+            var param = PublicParams.Of(data);
+            long showHours = publicity > 0
+                ? param.TradeListingsTopShowTime ?? 168 : param.TradeListingsGeneralShowTime ?? 24;
             created = new Listing
             {
                 Sku = sku, Spu = Spu(item.Entry), SellerId = owner.RoleId, Entry = item.Entry,
@@ -179,14 +181,17 @@ public sealed partial class TradeService
 
     private int ListingFee(int price, int count, int currency)
     {
-        string suffix = currency switch { 1 => "Miao", 2 => "Zeny", _ => "" };
-        if (suffix.Length == 0) return -1;
-        int rate = (int)Public("ShelvesTaxation_" + suffix, currency == 1 ? 700 : 800);
-        var interval = data.Table("PublicParamConfig").GetValueOrDefault("ShelvesTaxationInterval_" + suffix);
-        long min = interval.ValueKind == JsonValueKind.Array && interval.GetArrayLength() > 1
-            ? (long)(GameData.Number(interval[0]) ?? 0) : 0;
-        long max = interval.ValueKind == JsonValueKind.Array && interval.GetArrayLength() > 1
-            ? (long)(GameData.Number(interval[1]) ?? long.MaxValue) : long.MaxValue;
+        var param = PublicParams.Of(data);
+        var (rate, interval) = currency switch
+        {
+            1 => (param.ShelvesTaxationMiao ?? 700, param.ShelvesTaxationIntervalMiao),
+            2 => (param.ShelvesTaxationZeny ?? 800, param.ShelvesTaxationIntervalZeny),
+            _ => (-1L, (long[]?)null),
+        };
+        if (rate < 0) return -1;
+        // ShelvesTaxationInterval_* is [minimum, maximum]; without it the fee is unbounded.
+        long min = interval is [var low, _, ..] ? low : 0;
+        long max = interval is [_, var high, ..] ? high : long.MaxValue;
         long raw = ((long)price * count * rate + 9_999) / 10_000; // UI shows ceil.
         return (int)Math.Clamp(raw, min, max);
     }
@@ -317,7 +322,7 @@ public sealed partial class TradeService
             }
             else return ErrorCodes.TradeRequest;
             int count = next.AttentionUniqueItems.Count + next.AttentionItemTypes.Values.Sum(c => c.ItemIdList.Count);
-            if (count > Public("TradeConcernNum", 15)) return ErrorCodes.TradeQuantity;
+            if (count > (PublicParams.Of(data).TradeConcernNum ?? 15)) return ErrorCodes.TradeQuantity;
             tx.SaveBlob(s.Role!.Id, "trade_info", next.ToByteArray());
             return 0;
         });
@@ -331,7 +336,7 @@ public sealed partial class TradeService
         int code = await market.RunAsync(s, tx =>
         {
             long now = NowMs;
-            if (now - s.Trade!.LastClientRefreshTime < Public("TradeRefreshCd", 300) * 1000)
+            if (now - s.Trade!.LastClientRefreshTime < (PublicParams.Of(data).TradeRefreshCd ?? 300) * 1000)
                 return ErrorCodes.TradeRefreshCooldown;
             next = s.Trade.Clone(); next.LastRefreshTime = now; next.LastClientRefreshTime = now;
             tx.SaveBlob(s.Role!.Id, "trade_info", next.ToByteArray());

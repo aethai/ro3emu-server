@@ -6,6 +6,7 @@ using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 
 namespace Ro3Emu.Server.Game;
@@ -155,10 +156,11 @@ public sealed partial class TimedBattleService
                     delta = next.DragonScore - oldScore;
                     long today = TreasureDay();
                     if (next.DragonCurrencyDay != today) { next.DragonCurrencyDay = today; next.DragonCurrencyEarned = 0; }
-                    int cap = (int)Math.Max(0, Math.Min(PublicValue("DragonIslandCurrencyLimit"),
+                    var param = PublicParams.Of(_data);
+                    int cap = (int)Math.Max(0, Math.Min(param.DragonIslandCurrencyLimit ?? 0,
                         level is { } capRow ? GameData.Int(capRow, "_iSettleCurrencyLimit") : int.MaxValue));
-                    int currency = actualVictory ? (int)PublicValue(won
-                        ? "DragonIslandCurrencyBaseWin" : "DragonIslandCurrencyBaseLose") : 0;
+                    int currency = !actualVictory ? 0
+                        : (int)((won ? param.DragonIslandCurrencyBaseWin : param.DragonIslandCurrencyBaseLose) ?? 0);
                     currency = Math.Clamp(currency, 0, Math.Max(0, cap - next.DragonCurrencyEarned));
                     next.DragonCurrencyEarned += currency;
                     if (currency > 0) grants.Add(new AwardGrant(6, currency));

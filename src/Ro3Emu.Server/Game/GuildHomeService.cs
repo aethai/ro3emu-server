@@ -1,6 +1,7 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -39,9 +40,7 @@ public sealed class GuildHomeService : IGameTicker
     {
         this._data = data; this._guilds = guilds; this._functions = functions; this._instances = instances;
         this._scene = scene; this._dungeons = dungeons; this._loop = loop; this._time = time;
-        Scene = data.Table("GuildSettingConfig").TryGetValue("GuildMap", out var row)
-            && row.TryGetProperty("_kValue", out var value) && GameData.Number(value) is { } map && map > 0
-            ? (long)map : DefaultScene;
+        Scene = GuildSettings.Of(data).GuildMap is > 0 and var map ? map : DefaultScene;
         // (inferred, spec §6.5) Exiting the home revives a dead member on return, as ordinary dungeon runs do.
         dungeons.RecoverDeadOnLeave = roomId => GuildOfRoom(roomId) != null;
     }

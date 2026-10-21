@@ -1,6 +1,7 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -143,8 +144,9 @@ public sealed partial class AuctionService
                         next.LastBid = Now;
                         next.Revision++;
                         if (!next.Joined.Contains(role)) next.Joined.Add(role);
-                        long countdown = Math.Max(0, Param("AuctionCountdown", 5));
-                        if (next.End - Now <= countdown) next.End = checked(next.End + Math.Max(0, Param("AuctionExtendTime", 3)));
+                        long countdown = Math.Max(0, PublicParams.Of(data).AuctionCountdown ?? 5);
+                        if (next.End - Now <= countdown)
+                            next.End = checked(next.End + Math.Max(0, PublicParams.Of(data).AuctionExtendTime ?? 3));
                         if (op == BiddingType.Fixed) { next.State = AuctionState.Settled; next.Winner = role; next.End = Now; }
                         var paid = await character.ExchangeLockedAsync(s, debit == 0 ? [] : [(next.Currency, debit)], [],
                             popup: false, sync: false, asyncCommit: true, committed: () => committed = true, persist: tx =>

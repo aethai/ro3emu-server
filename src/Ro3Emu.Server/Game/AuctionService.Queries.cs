@@ -2,6 +2,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -269,7 +270,7 @@ public sealed partial class AuctionService
             await SendSessionAuctionAsync(s, requestRole, requestLease, BatchBid, res);
             return;
         }
-        if (req.BiddingItems.Count > Math.Max(1, Param("AUCTION_BATCH_NUM", 100)) || req.PreBuyNum < 0)
+        if (req.BiddingItems.Count > Math.Max(1, PublicParams.Of(data).AUCTIONBATCHNUM ?? 100) || req.PreBuyNum < 0)
             res.Result = ErrorCodes.AuctionParameter;
         else
         {
@@ -299,7 +300,8 @@ public sealed partial class AuctionService
         long requestRole = s.Role?.Id ?? 0;
         var requestLease = s.Attachment;
         var res = new BatchCancelBiddingAuctionRes { OptType = req.OptType };
-        if (req.AuctionIds.Count > Math.Max(1, Param("AUCTION_BATCH_NUM", 100))) res.Result = ErrorCodes.Parameter;
+        if (req.AuctionIds.Count > Math.Max(1, PublicParams.Of(data).AUCTIONBATCHNUM ?? 100))
+            res.Result = ErrorCodes.Parameter;
         else
         {
             foreach (long id in req.AuctionIds.Distinct())

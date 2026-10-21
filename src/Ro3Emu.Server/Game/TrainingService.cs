@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Maps;
@@ -44,8 +45,7 @@ public sealed class TrainingService : IGameTicker
         public bool Settling;
     }
     private long Now => _clock.UtcNow.ToUnixTimeMilliseconds();
-    private int Duration => _data.Table("PublicParamConfig").TryGetValue("TrainingChallengeTimeLimit", out var v)
-        ? checked((int)(GameData.Number(v) ?? 60)) : 60;
+    private int Duration => checked((int)(PublicParams.Of(_data).TrainingChallengeTimeLimit ?? 60));
 
     public TrainingService(GameData data, RoleStore roles, CharacterService character, FunctionService functions,
         ActivityClock clock, InstanceService instances, SceneService scene, MonsterService monsters,

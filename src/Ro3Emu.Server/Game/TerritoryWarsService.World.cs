@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
@@ -279,7 +280,7 @@ public sealed partial class TerritoryWarsService
     {
         Uid = WorldPickupUidBase | ++_nextWorldPickupUid, SceneEntry = drop.Scene,
         X = drop.X, Y = drop.Y, Z = drop.Z,
-        NpcId = (int)Param("TerritoryWorldDeathDropItem", 4910104), Amount = drop.Amount,
+        NpcId = (int)(PublicParams.Of(_data).TerritoryWorldDeathDropItem ?? 4910104), Amount = drop.Amount,
         InteractionId = 491000301, DropId = drop.Id,
     });
 
@@ -440,8 +441,8 @@ public sealed partial class TerritoryWarsService
 
     private long WorldCarryLimit()
     {
-        if (_data.Table("PublicParamConfig").TryGetValue("TerritoryWorldDropItemCarryLimit", out var limits)
-            && limits.ValueKind == JsonValueKind.Object && limits.TryGetProperty("133", out var amount))
+        if (PublicParams.Of(_data).TerritoryWorldDropItemCarryLimit is { ValueKind: JsonValueKind.Object } limits
+            && limits.TryGetProperty("133", out var amount))
             return (long)(GameData.Number(amount) ?? 5000);
         return 5000;
     }
@@ -467,9 +468,9 @@ public sealed partial class TerritoryWarsService
                     if (!victim.Dead || victim.SceneLoading || victim.InstanceId != 0 || victim.LineNumber != 1
                         || !IsWorldTerritory(victim.SceneEntry)) return;
                     int camp = victim.TerritoryWars?.Camp ?? LoadRole(victim.Role.Id).Camp;
-                    var rates = _data.Table("PublicParamConfig").GetValueOrDefault("TerritoryWorldDeathDropRate");
-                    if (rates.ValueKind != JsonValueKind.Array || camp < 1 || camp > rates.GetArrayLength()) return;
-                    double rate = GameData.Number(rates[camp - 1]) ?? 0;
+                    var rates = PublicParams.Of(_data).TerritoryWorldDeathDropRate ?? [];
+                    if (camp < 1 || camp > rates.Length) return;
+                    double rate = rates[camp - 1];
                     long carried = victim.Progress.Currency.GetValueOrDefault(SupplyCurrency);
                     int lost = (int)Math.Min(int.MaxValue, Math.Ceiling(carried * Math.Clamp(rate, 0, 1)));
                     if (lost <= 0) return;

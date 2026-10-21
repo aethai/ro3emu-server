@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -277,9 +278,7 @@ public sealed class GatheringService : IGameTicker
         {
             // The client starts the game after PublicParamConfig's countdown, then runs
             // LifeGameConfig._iDuration before posting 33516 (inferred from UI/config).
-            var param = _data.Table("PublicParamConfig");
-            int countdown = param.TryGetValue("LifeJobGameCountdown", out var seconds)
-                ? Math.Max(0, (int)(GameData.Number(seconds) ?? 0)) * 1000 : 0;
+            int countdown = Math.Max(0, (int)(PublicParams.Of(_data).LifeJobGameCountdown ?? 0)) * 1000;
             duration = countdown + Math.Max(1, (int)GameData.Int(game, "_iDuration"));
         }
         else gameId = 0;

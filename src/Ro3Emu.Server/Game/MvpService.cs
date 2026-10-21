@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Maps;
@@ -758,9 +759,8 @@ public sealed partial class MvpService : IGameTicker
     /// five or more 50 (order inferred: "the more such members, the greater the decay").</summary>
     internal static int DecayPercent(GameData data, int capped)
     {
-        if (capped <= 0 || !data.Table("PublicParamConfig").TryGetValue("RewardDecayRatio", out var list)
-            || list.ValueKind != JsonValueKind.Array) return 100;
-        var ratios = list.EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 100)).OrderByDescending(v => v).ToArray();
+        if (capped <= 0 || PublicParams.Of(data).RewardDecayRatio is not { } list) return 100;
+        var ratios = list.Select(v => (int)v).OrderByDescending(v => v).ToArray();
         return ratios.Length == 0 ? 100 : ratios[Math.Min(capped, ratios.Length) - 1];
     }
 

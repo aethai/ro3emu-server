@@ -1,7 +1,7 @@
-using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -56,7 +56,9 @@ public sealed partial class CardService
         long role = session.Role!.Id;
         var next = session.Library!.Clone();
         next.Monsters[monster].Unlock = true;
-        int points = Param("LibraryMonsterUnlockReward"), item = Param("LibraryOverviewPointID");
+        var parameters = PublicParams.Of(_data);
+        int points = (int)(parameters.LibraryMonsterUnlockReward ?? 0);
+        int item = (int)(parameters.LibraryOverviewPointID ?? 0);
         var plan = new AwardPlan(0, 0, points > 0 && item > 0 ? [new AwardGrant(item, points)] : []);
         byte[] bytes = next.ToByteArray();
         try
@@ -74,7 +76,4 @@ public sealed partial class CardService
             return ErrorCodes.Unknown;
         }
     }
-
-    private int Param(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var value)
-        && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number) ? number : 0;
 }

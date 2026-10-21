@@ -2,6 +2,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 using Ro3Emu.Server.Game.Ownership;
 using static Ro3Emu.Server.Game.ChickenRules;
@@ -473,8 +474,10 @@ public sealed partial class TimedBattleService
 
     private const long ChickenScene = 2240101;
 
-    private int PoisonBuff() => PublicValue("EatChickenPoisonBuffId") is var id and > 0 ? (int)id : DefaultPoisonBuff;
-    private int BagLimit() => PublicValue("ChickenBagLimit") is var limit and > 0 ? (int)limit : DefaultBagLimit;
+    private int PoisonBuff() =>
+        PublicParams.Of(_data).EatChickenPoisonBuffId is > 0 and var id ? (int)id : DefaultPoisonBuff;
+    private int BagLimit() =>
+        PublicParams.Of(_data).ChickenBagLimit is > 0 and var limit ? (int)limit : DefaultBagLimit;
 
     // ---- test aids ----
 

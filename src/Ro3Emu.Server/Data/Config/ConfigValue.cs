@@ -47,6 +47,48 @@ public static class ConfigValue
     public static JsonElement? Raw(JsonElement row, string field) =>
         row.TryGetProperty(field, out var value) && value.ValueKind != JsonValueKind.Null ? value : null;
 
+    /// <summary>The value of a key in a key/value table (the <paramref name="valueField"/> of its row, if set), or
+    /// null when the table lacks it.</summary>
+    public static JsonElement? Constant(IReadOnlyDictionary<string, JsonElement> values, string key, string? valueField)
+    {
+        if (!values.TryGetValue(key, out var value)) return null;
+        if (valueField != null && (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(valueField, out value)))
+            return null;
+        return value.ValueKind == JsonValueKind.Null ? null : value;
+    }
+
+    public static long? IntegralConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? IntegralValue(value) : null;
+
+    public static int? Integral32Constant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        IntegralConstant(values, key, field) is { } n ? (int)Math.Clamp(n, int.MinValue, int.MaxValue) : null;
+
+    public static double? NumberConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? Number(value) : null;
+
+    public static bool? BoolConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? IsTrue(value) : null;
+
+    public static string? TextConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
+
+    public static long[]? IntsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? IntList(value) : null;
+
+    public static double[]? NumbersConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? NumberList(value) : null;
+
+    public static long[][]? IntRowsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { ValueKind: JsonValueKind.Array } value
+            ? [.. value.EnumerateArray().Select(IntList)] : Constant(values, key, field) is null ? null : [];
+
+    public static string[]? TextsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field) is { ValueKind: JsonValueKind.Array } value
+            ? [.. value.EnumerateArray().Select(TextOf)] : Constant(values, key, field) is null ? null : [];
+
+    public static JsonElement? RawConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+        Constant(values, key, field);
+
     /// <summary>An integer number exactly, also beyond 2^53 (a double would round it); a fraction is
     /// truncated.</summary>
     public static long? IntegralValue(JsonElement value) => value.ValueKind != JsonValueKind.Number ? null

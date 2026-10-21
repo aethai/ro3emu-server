@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -106,27 +107,23 @@ public sealed partial class AdventureGroupService : IGameTicker
 
     // ---------------------------------------------------------------- config
 
-    private JsonElement? Param(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var value) ? value : null;
-    private long Number(string key, long fallback) => Param(key) is { } v && GameData.Number(v) is { } n ? (long)n : fallback;
-    private (long Min, long Max) Range(string key, long min, long max) =>
-        Param(key) is { ValueKind: JsonValueKind.Array } v && v.GetArrayLength() >= 2
-            ? ((long)(GameData.Number(v[0]) ?? min), (long)(GameData.Number(v[1]) ?? max)) : (min, max);
+    private static (long Min, long Max) Range(long[]? limits, long min, long max) =>
+        limits is { Length: >= 2 } ? (limits[0], limits[1]) : (min, max);
 
-    internal long DungeonScene => Number("AdventureGroupDungeonSceneId", 1010001);
-    internal long SaplingScene => Number("AdventureGroupCreateSnaplingSceneId", 10100);
-    private int MemberLimit => (int)Number("AdventureGroupMemberLimit", 10);
-    private int MinimumMembers => (int)Number("AdventureGroupHelperCreateSuccessLimit", 3);
-    private long HelperLifeSeconds => Number("AdventureGroupHelperCreateTimeLimit", 12) * 3600;
-    private int HelperApplyLimit => (int)Number("AdventureGroupApplyHelperLimit", 5);
-    private int NormalApplyLimit => (int)Number("AdventureGroupApplyNormalLimit", 10);
-    private int GroupApplicationLimit => (int)Number("AdventureGroupNormalApplyLimit", 20);
-    private long LeavePunishSeconds => Number("AdventureGroupLeavePunish", 1800);
-    private long ChangeOwnerCooldown => Number("AdventureGroupChangeOwnerCD", 86400);
-    private int WeeklyExpLimit => (int)Number("AdventureGroupMoneyWeeklyLimit", 1000);
-    private int WaterLimit => (int)Number("AdventureGroupWaterSaplingLimit", 1);
-    private int EventLimit => (int)Number("AdventureGroupMaxEventLimit", 100);
-    private long[] SwornTasks => Param("AdventureGroupSwornTask") is { ValueKind: JsonValueKind.Array } v
-        ? v.EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0)).ToArray() : [2000500, 2000501, 2000502];
+    internal long DungeonScene => PublicParams.Of(_data).AdventureGroupDungeonSceneId ?? 1010001;
+    internal long SaplingScene => PublicParams.Of(_data).AdventureGroupCreateSnaplingSceneId ?? 10100;
+    private int MemberLimit => (int)(PublicParams.Of(_data).AdventureGroupMemberLimit ?? 10);
+    private int MinimumMembers => (int)(PublicParams.Of(_data).AdventureGroupHelperCreateSuccessLimit ?? 3);
+    private long HelperLifeSeconds => (PublicParams.Of(_data).AdventureGroupHelperCreateTimeLimit ?? 12) * 3600;
+    private int HelperApplyLimit => (int)(PublicParams.Of(_data).AdventureGroupApplyHelperLimit ?? 5);
+    private int NormalApplyLimit => (int)(PublicParams.Of(_data).AdventureGroupApplyNormalLimit ?? 10);
+    private int GroupApplicationLimit => (int)(PublicParams.Of(_data).AdventureGroupNormalApplyLimit ?? 20);
+    private long LeavePunishSeconds => PublicParams.Of(_data).AdventureGroupLeavePunish ?? 1800;
+    private long ChangeOwnerCooldown => PublicParams.Of(_data).AdventureGroupChangeOwnerCD ?? 86400;
+    private int WeeklyExpLimit => (int)(PublicParams.Of(_data).AdventureGroupMoneyWeeklyLimit ?? 1000);
+    private int WaterLimit => (int)(PublicParams.Of(_data).AdventureGroupWaterSaplingLimit ?? 1);
+    private int EventLimit => (int)(PublicParams.Of(_data).AdventureGroupMaxEventLimit ?? 100);
+    private long[] SwornTasks => PublicParams.Of(_data).AdventureGroupSwornTask ?? [2000500, 2000501, 2000502];
 
     /// <summary>AdventureGroupLevelAwardConfig rows by _iLevel: (_iNum, _iLevelAward, _iConveneNum).</summary>
     private SortedDictionary<int, (long Num, long Award, int Convene)> Levels()
@@ -199,7 +196,7 @@ public sealed partial class AdventureGroupService : IGameTicker
     private int CheckName(string name, long except = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) return ErrNameEmpty;
-        var (min, max) = Range("AdventureGroupNameLimit", 2, 7);
+        var (min, max) = Range(PublicParams.Of(_data).AdventureGroupNameLimit, 2, 7);
         int length = TextLength(name);
         if (length < min || length > max || name != name.Trim()) return ErrNameInvalid;
         if (Banned(name)) return ErrBanned;
@@ -208,13 +205,13 @@ public sealed partial class AdventureGroupService : IGameTicker
 
     private int CheckAnnounce(string announce)
     {
-        var (_, max) = Range("AdventureGroupAnnounceLimit", 0, 30);
+        var (_, max) = Range(PublicParams.Of(_data).AdventureGroupAnnounceLimit, 0, 30);
         return TextLength(announce) > max ? ErrNameInvalid : Banned(announce) ? ErrBanned : 0;
     }
 
     private int CheckLabels(IReadOnlyCollection<int> labels)
     {
-        var (_, max) = Range("AdventureGroupLabelLimit", 0, 6);
+        var (_, max) = Range(PublicParams.Of(_data).AdventureGroupLabelLimit, 0, 6);
         return labels.Count > max || labels.Distinct().Count() != labels.Count || labels.Any(l => l is < 1 or > 1000)
             ? ErrorCodes.Parameter : 0;
     }

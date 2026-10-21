@@ -1,4 +1,5 @@
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -23,7 +24,8 @@ public sealed partial class GuildLeagueService
 
     /// <summary>GuildSettingConfig GuildLeagueEliteSettingMailTime (7200 s) before the preliminaries start.</summary>
     private bool MailDue(long now) => _state.Cup is { Settled: false } cup && _mailedCup != cup.Index && cup.Windows.Length > 0
-        && now >= cup.Windows[0] - Setting("GuildLeagueEliteSettingMailTime", 7200) && now < cup.Windows[0];
+        && now >= cup.Windows[0] - (GuildSettings.Of(_data).GuildLeagueEliteSettingMailTime ?? 7200)
+        && now < cup.Windows[0];
 
     private IEnumerable<long> CupGuilds(Cup cup) => cup.Groups.SelectMany(g => g.Pairs).SelectMany(p => p).Where(id => id > 0).Distinct();
 
@@ -47,7 +49,7 @@ public sealed partial class GuildLeagueService
     /// </summary>
     private Task<int> FillElitesAsync(long guild)
     {
-        long[] positions = SettingArray("GuildLeagueMainSceneNeedPosition");
+        long[] positions = GuildSettings.Of(_data).GuildLeagueMainSceneNeedPosition ?? [];
         return _guildService.FillLeagueElitesAsync(guild, m => !Temporary(m) && (positions.Length == 0 || positions.Contains(m.Official)));
     }
 
@@ -58,8 +60,9 @@ public sealed partial class GuildLeagueService
     /// </summary>
     private async Task EliteMailAsync(Cup cup)
     {
-        int template = (int)Setting("GuildLeagueEliteSettingMailID", 1125);
-        long wanted = Setting("GuildLeagueEliteNum", 40);
+        var settings = GuildSettings.Of(_data);
+        int template = (int)(settings.GuildLeagueEliteSettingMailID ?? 1125);
+        long wanted = settings.GuildLeagueEliteNum ?? 40;
         var recipients = new List<long>();
         foreach (long id in CupGuilds(cup))
             if (_guilds.Get(id) is { } g && GuildService.LeagueElites(g).Count < wanted)

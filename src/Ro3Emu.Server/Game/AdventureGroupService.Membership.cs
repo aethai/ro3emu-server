@@ -1,5 +1,6 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -105,7 +106,8 @@ public sealed partial class AdventureGroupService
         if (code == 0) code = CheckLabels(labels);
         int background = req.Background == 0 ? 1 : req.Background;
         if (code == 0 && !DefaultCard(background)) code = ErrorCodes.Parameter;
-        if (code == 0 && _store.List().Count >= Number("AdventureGroupMaxCreateLimit", 100000)) code = ErrMaxGroups;
+        if (code == 0 && _store.List().Count >= (PublicParams.Of(_data).AdventureGroupMaxCreateLimit ?? 100000))
+            code = ErrMaxGroups;
         // The mentor route needs the party at hand (LaunchBrotherhoodCreation, HLP:2333-2482); checked again at 34014.
         if (code == 0 && npc) code = PartyCheck(s, null);
         if (code == 0)
@@ -389,7 +391,7 @@ public sealed partial class AdventureGroupService
     {
         var g = Own(s);
         if (g == null) return ErrNotInGroup;
-        var (_, max) = Range("AdventureGroupNickNameLength", 0, 4);
+        var (_, max) = Range(PublicParams.Of(_data).AdventureGroupNickNameLength, 0, 4);
         if (TextLength(nickname) > max) return ErrorCodes.Parameter;
         if (Banned(nickname)) return ErrBanned;
         var member = g.Members[s.Role!.Id];

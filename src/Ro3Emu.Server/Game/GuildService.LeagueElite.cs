@@ -1,5 +1,6 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -17,7 +18,7 @@ public sealed partial class GuildService
     private const int EliteRight = 20;
 
     /// <summary>GuildGameplayMember01 [max, comparison, position] (LC_GuildHelper.GetEliteRight: op 6 is "position &lt;= 20").</summary>
-    private long[] EliteRule => Setting("GuildGameplayMember01", 40, 6, 20);
+    private long[] EliteRule => GuildSettings.Of(data).GuildGameplayMember01 ?? [40, 6, 20];
     internal int LeagueEliteMax => (int)Math.Clamp(EliteRule[0], 1, 40);
 
     private bool ElitePositionOk(int official)

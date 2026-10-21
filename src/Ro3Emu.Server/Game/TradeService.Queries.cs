@@ -3,6 +3,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -258,7 +259,7 @@ public sealed partial class TradeService
             UserRoleId = roleId.ToString(CultureInfo.InvariantCulture),
             UserCreditScore = state.CreditPoint, CreditScoreRatio = state.CreditScoreRatio,
             UserCreditScoreRate = state.CreditScoreRatio,
-            LowCreditScoreThreshold = (int)Public("TradeCreditMin", 0),
+            LowCreditScoreThreshold = (int)(PublicParams.Of(data).TradeCreditMin ?? 0),
         };
         await s.SendGameAsync(Credit, new CFindUserCreditScoreResponse { Data = info, QueryReason = req.QueryReason });
     }

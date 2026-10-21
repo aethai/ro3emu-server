@@ -1,4 +1,5 @@
 using Romsg;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -25,12 +26,8 @@ public sealed partial class GuildLeagueService
     /// Lua_ImageDefine.GuildLeagueOccupationCircleMap[state * 3 + id].</summary>
     private int CircleId(int region)
     {
-        if (_data.Table("GuildSettingConfig").TryGetValue("GuildLeagueOccupyNoticeType", out var row)
-            && row.TryGetProperty("_kValue", out var pairs) && pairs.ValueKind == System.Text.Json.JsonValueKind.Array)
-            foreach (var pair in pairs.EnumerateArray())
-                if (pair.ValueKind == System.Text.Json.JsonValueKind.Array && pair.GetArrayLength() > 1
-                    && Ro3Emu.Server.Data.GameData.Number(pair[0]) == region)
-                    return (int)(Ro3Emu.Server.Data.GameData.Number(pair[1]) ?? 0);
+        foreach (var pair in GuildSettings.Of(_data).GuildLeagueOccupyNoticeType ?? [])
+            if (pair.Length > 1 && pair[0] == region) return (int)pair[1];
         return Array.IndexOf(CapturePoints, region);
     }
 
@@ -85,7 +82,7 @@ public sealed partial class GuildLeagueService
     private async Task ShowCirclesAsync(GameSession s, Match m)
     {
         if (m.Main.Points.Count == 0) return;
-        long now = Now, stay = Setting("GuildLeagueTriggerStayAreaTime", 6);
+        long now = Now, stay = GuildSettings.Of(_data).GuildLeagueTriggerStayAreaTime ?? 6;
         var view = new AoIViewChangeData();
         foreach (var p in m.Main.Points.Values) view.Bases.Add(CircleEntity(m, p, now, stay));
         await s.SendGameAsync(GameAoiSink.SyncAoiView, view);

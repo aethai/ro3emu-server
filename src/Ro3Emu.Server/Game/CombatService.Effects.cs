@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -53,7 +54,7 @@ public sealed partial class CombatService
                 || s.WorldState.ResurrectionCastId != action.Id
                 || Distance(s.Position, target.Position) > Range(row) + 1.5f) return;
             s.WorldState.ResurrectionCastId = 0;
-            if (action.Request.SkillId == PublicSkill("WorldTreeSkillId"))
+            if (action.Request.SkillId == (PublicParams.Of(_data).WorldTreeSkillId ?? 0))
             {
                 if (ReviveItemSkill != null && await ReviveItemSkill(s, target, row))
                     await _buffs.NotifyWorldTreeReviveAsync(s, target.Role!.Name);

@@ -1,5 +1,6 @@
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -27,11 +28,12 @@ public sealed class SeasonClock(GameData data, DateTime start, int playBook, Tim
 
     public SeasonTimeInfoNotify Build()
     {
+        var constants = MultiverseConstants.Of(data);
         var notice = new SeasonTimeInfoNotify
         {
             SeasonStartTime = StartTime, SeasonBreakStartTime = BreakTime,
-            ShowCountDownTime = BreakTime - Constant("MainStageCountDownTime") * 3600,
-            ServerMatchUpCircle = Constant("ServerMatchUpCircle"),
+            ShowCountDownTime = BreakTime - (constants.MainStageCountDownTime ?? 0) * 3600,
+            ServerMatchUpCircle = constants.ServerMatchUpCircle ?? 0,
             // No next match/season has been scheduled. Zero means absent, not a promised rollover (inferred).
         };
         foreach (var row in data.Table("MultiverseStage").Values.Where(r => GameData.Int(r, "_iMultiverseID") == playBook)
@@ -44,9 +46,6 @@ public sealed class SeasonClock(GameData data, DateTime start, int playBook, Tim
         }
         return notice;
     }
-
-    private long Constant(string name) => data.Table("MultiverseConstant").TryGetValue(name, out var value)
-        ? (long)(GameData.Number(value) ?? 0) : 0;
 
     private long Resolve(long stage, bool end)
     {

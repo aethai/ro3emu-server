@@ -3,6 +3,7 @@ using System.Globalization;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -25,11 +26,11 @@ public sealed partial class StallsService
 
     private int MaxGrid(GameSession s)
     {
-        int skill = (int)Param("StallsPlaidMerchantSkill", 16005);
+        int skill = (int)(PublicParams.Of(_data).StallsPlaidMerchantSkill ?? 16005);
         int level = s.Progress!.Skills.GetValueOrDefault(skill);
         var row = _data.Table("SkillConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iSkillID") == skill && GameData.Int(r, "_iLevel") == level);
         var param = row.ValueKind == System.Text.Json.JsonValueKind.Object ? Field(row, "_kSpSkillParam") : [];
-        return (int)Param("StallsDefaultPlaidNum", 10) + (param.Length > 1 ? (int)param[1] : 0);
+        return (int)(PublicParams.Of(_data).StallsDefaultPlaidNum ?? 10) + (param.Length > 1 ? (int)param[1] : 0);
     }
 
     private async Task StartAsync(GameSession s, PlayerStartStallsReq req)
@@ -51,18 +52,19 @@ public sealed partial class StallsService
                 if (NameError(s, req.StallsTitle) is var name and not 0) return name;
                 var old = Own(tx, s);
                 if (Active(old)) return ErrorCodes.StallExists;
+                var param = PublicParams.Of(_data);
                 // Prontera allowlist wins over conflicting older all-open-world text (inferred).
-                if (!ParamList("StallsMapID").Contains(runtime.SceneEntry)) return ErrorCodes.StallArea;
+                if (!(param.StallsMapID ?? []).Contains(runtime.SceneEntry)) return ErrorCodes.StallArea;
                 if (!float.IsFinite(s.Position.X) || !float.IsFinite(s.Position.Y) || !float.IsFinite(s.Position.Z)) return ErrorCodes.Parameter;
                 if (tx.All<StallRow>(Kind).Any(r => !r.Ended && r.Scene == runtime.SceneEntry
                     && (r.SystemId > 0 || r.LineNumber == runtime.LineNumber) &&
-                    Distance(r, s) < Param("StallsIntervalRadius", 5))) return ErrorCodes.StallTooClose;
+                    Distance(r, s) < (param.StallsIntervalRadius ?? 5))) return ErrorCodes.StallTooClose;
                 int slots = MaxGrid(s);
                 if (req.Itembase.Count == 0) return ErrorCodes.StallItemMissing;
                 if (req.Itembase.Count > slots) return ErrorCodes.StallFull;
                 if (req.Itembase.Select(i => i.Itemid).Distinct().Count() != req.Itembase.Count) return ErrorCodes.Parameter;
-                int credit = s.Trade?.CreditPoint ?? (int)Param("TradeCreditDefault", 1000);
-                if (credit < Param("CreditBooth", 20)) return ErrorCodes.TradeLowCredit;
+                int credit = s.Trade?.CreditPoint ?? (int)(param.TradeCreditDefault ?? 1000);
+                if (credit < (param.CreditBooth ?? 20)) return ErrorCodes.TradeLowCredit;
                 var meta = Metadata(tx, s.Role!.Id);
                 row = new StallRow
                 {
@@ -70,13 +72,13 @@ public sealed partial class StallsService
                     Title = req.StallsTitle,
                     OwnerName = s.Role.Name, Career = s.Progress!.Career, Level = s.Progress.Level, Sex = s.Role.Sex,
                     Area = s.Role.Area, Appearance = RoleProto.Appearances(s.Role), X = s.Position.X, Y = s.Position.Y, Z = s.Position.Z,
-                    OpenTime = Now, Timeout = Now + Param("StallsTime", 604800), MaxGrid = slots,
+                    OpenTime = Now, Timeout = Now + (param.StallsTime ?? 604800), MaxGrid = slots,
                     NextItemId = old?.NextItemId ?? 1, TaxRate = meta.CurTax.Key,
                 };
                 var seller = tx.Role(s.Role.Id);
                 foreach (var put in req.Itembase)
                     if (TakeFromBag(s, seller, row, put) is var error and not 0) return error;
-                var fee = ParamList("StallsExpenses");
+                var fee = param.StallsExpenses ?? [];
                 if (fee.Length != 2) return ErrorCodes.Parameter;
                 if (seller.Currency.GetValueOrDefault((int)fee[0]) < fee[1]) return ErrorCodes.StallCurrency;
                 seller.Currency[(int)fee[0]] = seller.Currency.GetValueOrDefault((int)fee[0]) - fee[1]; // fee on open (inferred timing).
@@ -144,7 +146,7 @@ public sealed partial class StallsService
             if (!Active(row)) return ErrorCodes.StallNotOpen;
             var item = row!.Stock.FirstOrDefault(i => i.Id == req.StallsItemID);
             if (item == null) return ErrorCodes.StallItemMissing;
-            tx.DeliverMail(row.Owner, (int)Param("StallsTakenOffMailId", 1027), [item.Item]);
+            tx.DeliverMail(row.Owner, (int)(PublicParams.Of(_data).StallsTakenOffMailId ?? 1027), [item.Item]);
             row.Stock.Remove(item);
             Save(tx, row);
             return 0;
@@ -186,7 +188,7 @@ public sealed partial class StallsService
             else if (!req.BAdd && req.Num > 0)
             {
                 var back = offer.Item.Clone(); back.Stack = req.Num;
-                tx.DeliverMail(row.Owner, (int)Param("StallsTakenOffMailId", 1027), [back]);
+                tx.DeliverMail(row.Owner, (int)(PublicParams.Of(_data).StallsTakenOffMailId ?? 1027), [back]);
             }
             offer.Item.Stack = (int)next;
             offer.Price = req.Price;
@@ -216,7 +218,7 @@ public sealed partial class StallsService
             if (row!.Owner == s.Role!.Id) return ErrorCodes.TradeRequest;
             // Remote links may be browsed; purchase requires the displayed map/line and BoothRange (inferred).
             if (s.SceneLoading || s.SceneEntry != row.Scene || (row.SystemId == 0 && s.LineNumber != row.LineNumber)
-                || Distance(row, s) > Param("BoothRange", 5)) return ErrorCodes.StallDistance;
+                || Distance(row, s) > (PublicParams.Of(_data).BoothRange ?? 5)) return ErrorCodes.StallDistance;
             var offer = row.Stock.FirstOrDefault(i => i.Id == req.StallsItemID);
             if (offer == null) return ErrorCodes.StallItemMissing;
             if (req.Price != offer.Price) return ErrorCodes.StallPriceChanged;
@@ -239,7 +241,7 @@ public sealed partial class StallsService
             if (buyer.Currency.GetValueOrDefault(offer.Currency) < gross) return ErrorCodes.StallCurrency;
             buyer.Currency[offer.Currency] = buyer.Currency.GetValueOrDefault(offer.Currency) - gross;
             var bought = offer.Item.Clone(); bought.Stack = req.Num;
-            tx.DeliverMail(s.Role.Id, (int)Param("StallsBuyItemMailId", 1028), [bought]);
+            tx.DeliverMail(s.Role.Id, (int)(PublicParams.Of(_data).StallsBuyItemMailId ?? 1028), [bought]);
             offer.Item.Stack -= req.Num;
             if (row.SystemId == 0)
             {
@@ -250,7 +252,7 @@ public sealed partial class StallsService
                 if (tax > 0) tx.Economy.Sink(new(EconomyAssetKind.Currency, offer.Currency), tax, EconomyReason.StallTax,
                     EconomyCompartment.Currency, new(EconomyOwnerKind.Role, buyer.RoleId.ToString(CultureInfo.InvariantCulture)));
                 long net = gross - tax;
-                if (net > 0) tx.DeliverMail(row.Owner, (int)Param("StallsSellItemMailId", 1029),
+                if (net > 0) tx.DeliverMail(row.Owner, (int)(PublicParams.Of(_data).StallsSellItemMailId ?? 1029),
                     currency: new Dictionary<int, long> { [offer.Currency] = net }, contentParams:
                     [_data.ItemName(bought.Entry), req.Num.ToString(CultureInfo.InvariantCulture), s.Role.Name,
                         DateTimeOffset.FromUnixTimeSeconds(Now).UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
@@ -264,7 +266,8 @@ public sealed partial class StallsService
                     Gainmoney = net, Areaid = s.Role.Area, Buyerid = s.Role.Id, Buyername = s.Role.Name, CoinEntryID = offer.Currency
                 };
                 row.Records.Insert(0, record.ToByteArray());
-                if (row.Records.Count > Param("StallsLogsNumMax", 100)) row.Records.RemoveAt(row.Records.Count - 1);
+                if (row.Records.Count > (PublicParams.Of(_data).StallsLogsNumMax ?? 100))
+                    row.Records.RemoveAt(row.Records.Count - 1);
                 if (offer.Item.Stack == 0) row.Stock.Remove(offer);
                 Save(tx, row, meta);
             }
@@ -334,7 +337,7 @@ public sealed partial class StallsService
         {
             row = Own(tx, s);
             if (!Active(row)) return ErrorCodes.StallNotOpen;
-            Close(tx, row!, (int)Param("StallsCloseMailId", 1030));
+            Close(tx, row!, (int)(PublicParams.Of(_data).StallsCloseMailId ?? 1030));
             return 0;
         });
         await s.SendGameAsync(End, new PlayerStallsEndResp { Result = code });
@@ -373,8 +376,11 @@ public sealed partial class StallsService
     private Task ShareAsync(GameSession s, PlayerStallsShareCheckReq req)
     {
         // SellerWidgetCtrl allows empty text and caps it at StallsShareWordCount; rune counting is (inferred).
-        int code = req.ShareData.Any(char.IsControl) || req.ShareData.EnumerateRunes().Count() > Param("StallsShareWordCount", 20) ? ErrorCodes.Parameter
-            : _lastShare.TryGetValue(s.Role!.Id, out var then) && Now - then < Param("StallsShareCDTime", 180) ? ErrorCodes.StallShareCooldown : 0;
+        var param = PublicParams.Of(_data);
+        int code = req.ShareData.Any(char.IsControl)
+            || req.ShareData.EnumerateRunes().Count() > (param.StallsShareWordCount ?? 20) ? ErrorCodes.Parameter
+            : _lastShare.TryGetValue(s.Role!.Id, out var then) && Now - then < (param.StallsShareCDTime ?? 180)
+                ? ErrorCodes.StallShareCooldown : 0;
         // No profanity dictionary was recovered; this only validates shape/cooldown (inferred), and sends no chat.
         if (code == 0) _lastShare[s.Role!.Id] = Now;
         return s.SendGameAsync(Share, new PlayerStallsShareCheckResp { Result = code });

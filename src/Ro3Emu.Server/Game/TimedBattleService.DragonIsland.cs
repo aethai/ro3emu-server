@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -153,7 +154,8 @@ public sealed partial class TimedBattleService
         if (!_active.TryGetValue(s, out var match) || match.Dragon is not { } run || run.Boss != monster || match.Settled || damage <= 0) return;
         bool scored = !run.BossStruck;
         if (!run.BossStruck) { run.BossStruck = true; DragonScore(match, s, ScoreBossFirst); }
-        long step = Math.Max(1, monster.Template.MaxHp / Math.Max(1, PublicValue("DragonIslandBossPoints")));
+        long points = Math.Max(1, PublicParams.Of(_data).DragonIslandBossPoints ?? 0);
+        long step = Math.Max(1, monster.Template.MaxHp / points);
         long before = run.BossDamage.GetValueOrDefault(s);
         run.BossDamage[s] = before + damage;
         long steps = (before + damage) / step - before / step;

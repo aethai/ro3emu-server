@@ -2,6 +2,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -52,19 +53,20 @@ public sealed partial class NewActivityService
             var deliveries = new List<MailService.ActivityTemplateDelivery>();
             if (entered && eve != null)
             {
+                var constants = ActivityConstants.Of(_data);
                 long wishAward = eve.SelectWish > 0
                     ? _data.Row("SeasonEveWishConfig", eve.SelectWish) is { } row
                         ? GameData.Int(row, "_iRewardId") : 0
-                    : EveConstant("SeasonEveNoWishAward");
+                    : constants.SeasonEveNoWishAward ?? 0;
                 if (wishAward <= 0) throw new InvalidOperationException("Invalid Season Eve wish award.");
                 deliveries.Add(new MailService.ActivityTemplateDelivery(
-                    EveConstant("SeasonEveWishMailId"), ResolveEveMailAttachments(session, [wishAward])));
+                    (int)(constants.SeasonEveWishMailId ?? 0), ResolveEveMailAttachments(session, [wishAward])));
                 var unclaimed = EveProgressAwards()
                     .Where(award => global.Progress >= award.Threshold && !eve.ClaimedReward.ContainsKey(award.Id))
                     .Select(award => award.Award).ToArray();
                 if (unclaimed.Length > 0)
                     deliveries.Add(new MailService.ActivityTemplateDelivery(
-                        EveConstant("SeasonEveProgressMailId"), ResolveEveMailAttachments(session, unclaimed)));
+                        (int)(constants.SeasonEveProgressMailId ?? 0), ResolveEveMailAttachments(session, unclaimed)));
             }
 
             next.ActivityInfo[activityId].ActivityParam.SeasonEve = CreateSeasonEve();

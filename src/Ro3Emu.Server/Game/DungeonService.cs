@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -233,8 +234,7 @@ public sealed partial class DungeonService
         p.Ready.Add(s); // Initiating the request is the leader's affirmative answer (inferred).
         foreach (var member in members) _pending[member] = p;
         await BroadcastReadyAsync(p);
-        int seconds = _data.Table("PublicParamConfig").TryGetValue("GetInPositionMaxTime", out var timeout)
-            ? (int)(GameData.Number(timeout) ?? 30) : 30;
+        int seconds = (int)(PublicParams.Of(_data).GetInPositionMaxTime ?? 30);
         _loop.ScheduleLegacy(TimeSpan.FromSeconds(seconds), () => p.Closed ? Task.CompletedTask : CancelAsync(p, ErrorCodes.Parameter, 0));
     }
 

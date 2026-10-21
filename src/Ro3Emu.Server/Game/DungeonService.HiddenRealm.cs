@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -24,8 +25,7 @@ public sealed partial class DungeonService
     private static bool IsRandom(DungeonCatalog.Plan plan) => plan.Origin == null && plan.Multi is { } multi
         && GameData.Int(multi, "_iIsRandomDungeon") == 1;
 
-    private int RandomSeconds() => _data.Table("PublicParamConfig").TryGetValue("FiveGamePlay_RandomDuration", out var value)
-        ? (int)Math.Clamp(GameData.Number(value) ?? 10, 0, 600) : 10;
+    private int RandomSeconds() => (int)Math.Clamp(PublicParams.Of(_data).FiveGamePlayRandomDuration ?? 10, 0, 600);
 
     /// <summary>Every boss a party could be drawn: resolvable, in this playbook, unlocked for all members.</summary>
     internal List<DungeonCatalog.Plan> RandomPool(DungeonCatalog.Plan origin, IReadOnlyCollection<GameSession> members)

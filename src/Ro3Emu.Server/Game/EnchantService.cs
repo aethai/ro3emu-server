@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -143,14 +144,8 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
     }
 
     /// <summary>PublicParamConfig.EnchantStarsLevel (Config/ComplexConfig/PublicParamConfig.lua:5951-5995).</summary>
-    private long StarLevel(long stars)
-    {
-        if (data.Table("PublicParamConfig").TryGetValue("EnchantStarsLevel", out var levels) && levels.ValueKind == JsonValueKind.Array)
-            foreach (var pair in levels.EnumerateArray())
-                if (pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() == 2 && GameData.Number(pair[0]) == stars)
-                    return (long)(GameData.Number(pair[1]) ?? 0);
-        return 0;
-    }
+    private long StarLevel(long stars) => PublicParams.Of(data).EnchantStarsLevel
+        ?.FirstOrDefault(pair => pair.Length == 2 && pair[0] == stars) is { } level ? level[1] : 0;
 
     private static long[] Flat(JsonElement row, string field) =>
         row.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array

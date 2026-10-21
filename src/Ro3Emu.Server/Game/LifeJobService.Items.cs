@@ -2,6 +2,7 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -39,7 +40,8 @@ public sealed partial class LifeJobService
             long amount = checked(PotionAmount(s, Arg(2)) * count);
             if (amount <= 0) return ErrorCodes.LifeConfig;
             // Extra consumable energy uses VitalityExtraLimit, distinct from RestrictConfig's ordinary limitCount.
-            if (amount > Param("VitalityExtraLimit", 5000) - energy.Count) return ErrorCodes.LifeVigorOverflow;
+            if (amount > (PublicParams.Of(_data).VitalityExtraLimit ?? 5000) - energy.Count)
+                return ErrorCodes.LifeVigorOverflow;
             if (uses.Count < count) return ErrorCodes.AttemptsExhausted;
             energy.Count += amount; uses.Count -= count; uses.HistoryUseCount += count;
         }

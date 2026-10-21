@@ -4,6 +4,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Economy;
 
@@ -196,8 +197,7 @@ public sealed class GuildChallengeService : IGameTicker
     }
     private GuildStore.State? Guild(GameSession s) => s.Role == null ? null : _guilds.ForRole(s.Role.Id);
     private bool IsManager(GameSession s, GuildStore.State g) => g.Members.TryGetValue(s.Role!.Id, out var m)
-        && _data.Table("PublicParamConfig").TryGetValue("GuildChallengeSet", out var ranks)
-        && ranks.ValueKind == JsonValueKind.Array && ranks.EnumerateArray().Any(v => GameData.Number(v) == m.Official);
+        && (PublicParams.Of(_data).GuildChallengeSet ?? []).Contains(m.Official);
     private bool Available(GameSession s) => s.Progress != null && s.ActivitiesReady
         && s.SeasonState?.SeasonId == _seasons.SeasonId && s.SeasonState.PlayBookId == _seasons.PlayBook
         && _data.Row("DailyActivityConfig", Activity) is { } row && s.Progress.Level >= GameData.Int(row, "_iiLv")

@@ -2,6 +2,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -42,7 +43,7 @@ public sealed partial class GuildService
     /// <summary>Queue a journal row on the guild; it commits with the guild's next save.</summary>
     private void Journal(GuildStore.State g, int cfgId, long[] players, params LanguageParam[] values)
     {
-        store.JournalCap = (int)Math.Clamp(Setting("GuildEventDateMaxNum", 500)[0], 1, 10_000);
+        store.JournalCap = (int)Math.Clamp(GuildSettings.Of(data).GuildEventDateMaxNum ?? 500, 1, 10_000);
         g.PendingEvents.Add(JournalRow(cfgId, players, values));
     }
 

@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -39,11 +40,8 @@ public sealed class ValhallaService
     }
 
     /// <summary>PublicParamConfig HeroSpiritItemId (Einherjar Coin 2000001) and HeroSpiritItemExp (statue EXP per coin, 2).</summary>
-    private int CoinItem => Param("HeroSpiritItemId", 2000001);
-    private int ExpPerCoin => Math.Max(1, Param("HeroSpiritItemExp", 2));
-
-    private int Param(string key, int fallback) => _data.Table("PublicParamConfig").TryGetValue(key, out var row)
-        ? (int)(GameData.Number(row) ?? fallback) : fallback;
+    private int CoinItem => (int)(PublicParams.Of(_data).HeroSpiritItemId ?? 2000001);
+    private int ExpPerCoin => Math.Max(1, (int)(PublicParams.Of(_data).HeroSpiritItemExp ?? 2));
 
     // ------------------------------------------------------------------ state / 5046
 

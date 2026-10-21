@@ -1,5 +1,6 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -37,7 +38,7 @@ public sealed partial class GuildService
     private sealed record HelperInvitation(long GuildId, long Recipient, long Inviter, long ExpiresMs);
     private readonly Dictionary<long, HelperInvitation> _helperInvites = new();
 
-    private int ResponderLimit => (int)Setting("GuildResponsePeopleLimit", 3)[0];
+    private int ResponderLimit => (int)(GuildSettings.Of(data).GuildResponsePeopleLimit ?? 3);
 
     private bool Founding(GuildStore.State g) => g.Status == (int)GuildStatus.PreCreate && g.HelperDeadlineMs > NowMs();
 
@@ -108,9 +109,10 @@ public sealed partial class GuildService
         if (s.Progress!.Level < guild.JoinLevelLimit) return ErrorCodes.GuildJoinLevel;
         if (guild.AutoCreateHelper) return await AdmitHelperAsync(guild, s.Role!.Id) ? 0 : ErrorCodes.AlreadyInGuild;
         if (guild.HelperApplies.ContainsKey(s.Role!.Id)) return 0;
-        if (LiveResponses(guild).Count() >= Setting("GuildResponseMaxNum", 50)[0]) return ErrResponderListFull;
+        if (LiveResponses(guild).Count() >= (GuildSettings.Of(data).GuildResponseMaxNum ?? 50))
+            return ErrResponderListFull;
         if (store.List().Count(g => g.Id != guild.Id && Founding(g) && g.HelperApplies.ContainsKey(s.Role.Id))
-            >= Setting("GuildPersonResponseMaxNum", 10)[0]) return ErrResponderPersonalLimit;
+            >= (GuildSettings.Of(data).GuildPersonResponseMaxNum ?? 10)) return ErrResponderPersonalLimit;
         guild.HelperApplies[s.Role.Id] = new GuildStore.Application
         {
             RoleId = s.Role.Id, Name = s.Role.Name,
@@ -186,7 +188,7 @@ public sealed partial class GuildService
                 _helperInvites.Remove(stale);
             token = ++_nextToken;
             _helperInvites[token] = new HelperInvitation(g!.Id, target!.Role!.Id, s.Role!.Id,
-                now + Setting("GuildResponseInviteTime", 30)[0] * 1000);
+                now + (GuildSettings.Of(data).GuildResponseInviteTime ?? 30) * 1000);
             await target.SendGameAsync(InviteHelperNotify, new InviteCreateHelperNotify
             {
                 Token = token, PlayerId = s.Role.Id,

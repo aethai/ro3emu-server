@@ -2,6 +2,7 @@ using Romsg;
 using System.Globalization;
 using System.Text.Json;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -103,9 +104,8 @@ public sealed partial class TimedBattleService
             .Select(row => (Row: row, Map: GameData.Int(row, "_iId"), Points: RiftPoints(row)))
             .Where(m => m.Points.Count > 0).ToList();
         int low = 3, high = 4;
-        if (_data.Table("PublicParamConfig").TryGetValue("OnePieceMapRefresh", out var refresh)
-            && refresh.ValueKind == JsonValueKind.Array && refresh.GetArrayLength() == 2)
-        { low = (int)(GameData.Number(refresh[0]) ?? 3); high = Math.Max(low, (int)(GameData.Number(refresh[1]) ?? 4)); }
+        if (PublicParams.Of(_data).OnePieceMapRefresh is { Length: 2 } refresh)
+        { low = (int)refresh[0]; high = Math.Max(low, (int)refresh[1]); }
         int count = Math.Min(maps.Count, rng.Next(low, high + 1));
         var budget = _data.Table("OnePieceMonsterConfig").Values
             .ToDictionary(r => (int)GameData.Int(r, "_iStarId"), r => (int)GameData.Int(r, "_iRefreshCount"));

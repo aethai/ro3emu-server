@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -37,9 +38,7 @@ internal static class PetCombatRules
             if (data.Row("AttriMonsterConfig", battleType * 1000 + level) is not { } battle) return null;
             foreach (var (attr, value) in GameData.Pairs(battle, "_kAttri")) values[(int)attr] = value;
         }
-        var excluded = data.Table("PublicParamConfig").GetValueOrDefault("PetNotImproveBaseAttr");
-        var unscaled = excluded.ValueKind == JsonValueKind.Array
-            ? excluded.EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 0)).ToHashSet() : [];
+        var unscaled = (PublicParams.Of(data).PetNotImproveBaseAttr ?? []).Select(v => (int)v).ToHashSet();
         var change = AttrChange(data, (int)GameData.Int(cfg, "_iQuality"), pet.Star, pet.StarProgress);
         foreach (int attr in values.Keys.ToArray())
             if (!unscaled.Contains(attr))

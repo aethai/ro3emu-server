@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
@@ -94,7 +95,7 @@ public sealed partial class TerritoryEscortService
                 // (inferred) No 1258000 award source is configured. A guild formed before this trading
                 // window with the configured 20-member qualification receives one normal-cart load per round.
                 // StockRounds is committed with Goods so ticks, relogins and restarts cannot mint it twice.
-                int required = (int)(GameData.Number(_data.Table("PublicParamConfig")["TerritoryAuctionMinGuildMemberCount"]) ?? 20);
+                int required = (int)(PublicParams.Of(_data).TerritoryAuctionMinGuildMemberCount ?? 20);
                 int load = (int)GameData.Int(_data.Row("EscortCartConfig", 4910001)!.Value, "_iMaxTransportNum");
                 foreach (var guild in _guilds.List().Where(g => g.CreateTime <= _clock.Current.StartTime * 1000
                     && g.Members.Count >= required))

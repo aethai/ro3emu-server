@@ -5,6 +5,7 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -302,7 +303,7 @@ public sealed class ShopService(GameData data, CharacterService character, Funct
     /// </summary>
     private long MerchantDiscount(GameSession session)
     {
-        int skill = _data.Table("PublicParamConfig").TryGetValue("DiscountMerchantSkill", out var p) ? (int)(GameData.Number(p) ?? 16001) : 16001;
+        int skill = (int)(PublicParams.Of(_data).DiscountMerchantSkill ?? 16001);
         int level = session.Progress?.Skills.GetValueOrDefault(skill) ?? 0;
         if (level <= 0) return 0;
         var row = _data.Table("SkillConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iSkillID") == skill && GameData.Int(r, "_iLevel") == level);

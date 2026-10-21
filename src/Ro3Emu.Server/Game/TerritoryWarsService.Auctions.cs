@@ -1,6 +1,7 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -48,17 +49,20 @@ public sealed partial class TerritoryWarsService
     private AuctionRound NewRound(int round)
     {
         var final = _clock.RoundStage(round, 16, 17, 18);
-        var range = ParamArray("TerritoryAuctionFinalTimeRandomRange");
+        var range = PublicParams.Of(_data).TerritoryAuctionFinalTimeRandomRange ?? [];
         // PublicParam's secret final interval is drawn once and persisted (inferred placement within final stage).
         long seconds = range.Length == 2 ? Random.Shared.NextInt64(range[0], range[1] + 1) : 0;
         var r = new AuctionRound { Round = round, FinalEnd = final == null ? 0 : Math.Min(final.EndTime, final.StartTime + seconds) };
+        var param = PublicParams.Of(_data);
+        long seats = round switch
+        {
+            1 => param.TerritoryAuctionPointSeatCount ?? 9,
+            2 => param.TerritoryAuctionStateSeatCount ?? 2,
+            _ => param.TerritoryAuctionSiegeSeatCount ?? 2,
+        };
         foreach (int id in AuctionZones(round))
         {
-            var z = new AuctionZone
-            {
-                Id = id, Seats = (int)Param(round == 1 ? "TerritoryAuctionPointSeatCount"
-                : round == 2 ? "TerritoryAuctionStateSeatCount" : "TerritoryAuctionSiegeSeatCount", round == 1 ? 9 : 2)
-            };
+            var z = new AuctionZone { Id = id, Seats = (int)seats };
             // Qualified owners occupy reserved seats, as isOccupier in LC_DAL_TerritoryWarsAuction.lua:194-223.
             long owner = OwnerOf(id);
             if (owner == 0 && round > 1)
@@ -87,7 +91,8 @@ public sealed partial class TerritoryWarsService
         if (round.Settled || _clock.Now >= round.FinalEnd) return ErrorCodes.TerritoryAuctionSettled;
         var zones = round.Zones;
         if (!zones.TryGetValue(zone, out var target)) return ErrorCodes.TerritoryInvalidPoint;
-        if (g.Members.Count < Param("TerritoryAuctionMinGuildMemberCount", 20)) return ErrorCodes.TerritoryGuildMembers;
+        if (g.Members.Count < (PublicParams.Of(_data).TerritoryAuctionMinGuildMemberCount ?? 20))
+            return ErrorCodes.TerritoryGuildMembers;
         if (target.Entries.Any(e => e.GuildId == g.Id && e.Occupier) || OwnerOf(zone) == g.Id) return ErrorCodes.TerritoryOccupier;
         if (zones.Any(z => z.Key != zone && z.Value.Entries.Any(e => e.GuildId == g.Id))) return ErrorCodes.TerritoryOtherRegion;
         // Both UI protocols compete for the same seats. Preserve each bid's source treasury on refund.
@@ -98,16 +103,18 @@ public sealed partial class TerritoryWarsService
     // The legacy UI uses 126/min100 while the current UI uses 129/min1000. Both target one seat pool.
     // (inferred compatibility adapter) compare opening-bid multiples, not nominal amounts of unlike assets.
     // Escrow and refunds remain exact in their original treasury; this is not an item exchange operation.
-    private decimal BidUnit(bool legacy) => legacy ? Param("TerritoryAuctionMinBidCost", 1000)
-        / (decimal)Math.Max(1, Param("TerritoryStrongHoldAuctionDefaultPrice", 100)) : 1m;
+    private decimal BidUnit(bool legacy) => legacy ? (PublicParams.Of(_data).TerritoryAuctionMinBidCost ?? 1000)
+        / (decimal)Math.Max(1, PublicParams.Of(_data).TerritoryStrongHoldAuctionDefaultPrice ?? 100) : 1m;
     private decimal BidValue(BidEntry entry) => entry.Amount * BidUnit(entry.Legacy);
     private List<BidEntry> Ranked(AuctionZone zone) => zone.Entries.OrderByDescending(e => e.Occupier)
         .ThenByDescending(BidValue).ThenByDescending(e => e.EscortScore).ThenBy(e => e.Time).ThenBy(e => e.GuildId).ToList();
     private long Minimum(AuctionZone z, long guildId, bool legacy)
     {
-        long start = Param(legacy ? "TerritoryStrongHoldAuctionDefaultPrice" : "TerritoryAuctionMinBidCost", legacy ? 100 : 1000);
-        long inc = legacy ? Param("TerritoryStrongHoldBidNum", 100)
-            : (long)Math.Ceiling(start * (decimal)Param("TerritoryAuctionBidIncrementRatio", 1000) / 10000);
+        var param = PublicParams.Of(_data);
+        long start = legacy ? param.TerritoryStrongHoldAuctionDefaultPrice ?? 100
+            : param.TerritoryAuctionMinBidCost ?? 1000;
+        long inc = legacy ? param.TerritoryStrongHoldBidNum ?? 100
+            : (long)Math.Ceiling(start * (decimal)(param.TerritoryAuctionBidIncrementRatio ?? 1000) / 10000);
         long prior = z.Entries.FirstOrDefault(e => e.GuildId == guildId)?.Amount ?? 0;
         decimal lowest = z.Entries.Where(e => !e.Occupier).Select(e => BidValue(e) / BidUnit(legacy)).DefaultIfEmpty(long.MaxValue).Min();
         long threshold = z.Entries.Count < z.Seats ? start : (long)Math.Min(long.MaxValue, Math.Ceiling(lowest) + inc);
@@ -133,7 +140,8 @@ public sealed partial class TerritoryWarsService
         if (amount <= 0 || amount * BidUnit(legacy) > long.MaxValue || amount < Minimum(z, guildId, legacy)) return (legacy ? ErrorCodes.TerritoryLegacyBidLow : ErrorCodes.TerritoryBidLow, []);
         var guild = _guildStore.Get(guildId);
         if (guild == null) return (ErrorCodes.TerritoryGuild, []);
-        if (guild.Members.Count < Param("TerritoryAuctionMinGuildMemberCount", 20)) return (ErrorCodes.TerritoryGuildMembers, []);
+        if (guild.Members.Count < (PublicParams.Of(_data).TerritoryAuctionMinGuildMemberCount ?? 20))
+            return (ErrorCodes.TerritoryGuildMembers, []);
         if (z.Entries.Any(e => e.GuildId == guildId && e.Occupier)) return (ErrorCodes.TerritoryOccupier, []);
         if (round.Zones.Any(p => p.Key != zoneId && p.Value.Entries.Any(e => e.GuildId == guildId))) return (ErrorCodes.TerritoryOtherRegion, []);
         if (old != null && old.Legacy != legacy) return (ErrorCodes.TerritoryAlreadyQualified, []);
@@ -248,15 +256,25 @@ public sealed partial class TerritoryWarsService
 
     private long AutoDelay(int style)
     {
-        var range = ParamArray(style == 1 ? "TerritoryAuctionAutoBidDelayAggressive" : style == 2 ? "TerritoryAuctionAutoBidDelaySteady" : "TerritoryAuctionAutoBidDelayStealth");
+        var param = PublicParams.Of(_data);
+        var range = style switch
+        {
+            1 => param.TerritoryAuctionAutoBidDelayAggressive,
+            2 => param.TerritoryAuctionAutoBidDelaySteady,
+            _ => param.TerritoryAuctionAutoBidDelayStealth,
+        } ?? [];
         return range.Length == 2 ? Random.Shared.NextInt64(range[0], range[1] + 1) : 5;
     }
     private async Task AutoSetAsync(GameSession s, TerritoryAutoBidSetReq req)
     {
         var g = Own(s);
         int error = BidEligibility(s, g, Round(), req.ZoneId, false, setting: true);
-        if (error == 0 && req.InitialBid < Param("TerritoryAuctionMinBidCost", 1000)) error = ErrorCodes.TerritoryInitialBidLow;
-        if (error == 0 && (req.MaxBid <= 0 || (decimal)req.MaxBid * 10000 < (decimal)req.InitialBid * Param("TerritoryAuctionMaxBidMinMultiplier", 20000))) error = ErrorCodes.TerritoryMaxBidLow;
+        var param = PublicParams.Of(_data);
+        if (error == 0 && req.InitialBid < (param.TerritoryAuctionMinBidCost ?? 1000))
+            error = ErrorCodes.TerritoryInitialBidLow;
+        if (error == 0 && (req.MaxBid <= 0 || (decimal)req.MaxBid * 10000
+            < (decimal)req.InitialBid * (param.TerritoryAuctionMaxBidMinMultiplier ?? 20000)))
+            error = ErrorCodes.TerritoryMaxBidLow;
         if (error == 0 && (int)req.Style is < 1 or > 3) error = ErrorCodes.Parameter;
         if (error != 0) { await Error(s, AutoSet, error); return; }
         var next = Copy(state);
@@ -315,11 +333,13 @@ public sealed partial class TerritoryWarsService
             long min = Minimum(z, guildId, false);
             long amount = Math.Max(original.Initial, min);
             // AutoBidSteps are configured ceilings, then maxBid is the final ceiling (inferred step selection).
-            long step = ParamArray("TerritoryAuctionAutoBidSteps").FirstOrDefault(v => v >= amount && v <= original.Maximum);
+            long step = (PublicParams.Of(_data).TerritoryAuctionAutoBidSteps ?? [])
+                .FirstOrDefault(v => v >= amount && v <= original.Maximum);
             if (step > 0) amount = step;
             var guild = _guildStore.Get(guildId);
             int error = guild == null ? ErrorCodes.TerritoryGuild : !Right(guild, original.Creator, 25) ? ErrorCodes.NoPermission
-                : guild.Members.Count < Param("TerritoryAuctionMinGuildMemberCount", 20) ? ErrorCodes.TerritoryGuildMembers : 0;
+                : guild.Members.Count < (PublicParams.Of(_data).TerritoryAuctionMinGuildMemberCount ?? 20)
+                    ? ErrorCodes.TerritoryGuildMembers : 0;
             long[] changed = [];
             if (error == 0 && existing == null)
                 if (amount > original.Maximum) error = ErrorCodes.TerritoryBidLow;

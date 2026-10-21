@@ -4,6 +4,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -228,9 +229,9 @@ public sealed partial class GuildService
         if (m.EnterTime / 1000 >= WeekStart) return [];
         var guildRow = Salary(1, LastWeekActivity(g));
         long ageWeeks = (NowMs() - g.CreateTime) / (Week * 1000);
-        if (ageWeeks < Setting("GuildSpecialWeekActiveTime", 2)[0])
+        if (ageWeeks < (GuildSettings.Of(data).GuildSpecialWeekActiveTime ?? 2))
         {
-            long protectedId = Setting("GuildSpecialWeekActiveLevel", 2)[0];
+            long protectedId = GuildSettings.Of(data).GuildSpecialWeekActiveLevel ?? 2;
             if (guildRow is not { } r || GameData.Int(r, "_iServerRate") > protectedId)
                 guildRow = data.Table("GuildSalaryConfig").Values.Where(x => GameData.Int(x, "_iType") == 1
                     && GameData.Int(x, "_iServerRate") == protectedId).Select(x => (JsonElement?)x).FirstOrDefault() ?? guildRow;
