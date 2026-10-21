@@ -34,7 +34,8 @@ public sealed class ConfigTableGenerator : IIncrementalGenerator
     private const string Collections = "global::System.Collections.Generic";
     private const string Array = "global::System.Text.Json.JsonValueKind.Array";
     private const string Element = "System.Text.Json.JsonElement";
-    private const string Dictionary = "System.Collections.Generic.IReadOnlyDictionary<string, System.Text.Json.JsonElement>";
+    private const string Dictionary =
+        "System.Collections.Generic.IReadOnlyDictionary<string, System.Text.Json.JsonElement>";
 
     private static readonly DiagnosticDescriptor NotAView = new("RO3CFG001", "Not a config view",
         "'{0}' must be a partial record struct whose primary constructor is ({1})",
@@ -107,9 +108,11 @@ public sealed class ConfigTableGenerator : IIncrementalGenerator
             && record.Modifiers.Any(SyntaxKind.PartialKeyword)
             && record.ParameterList?.Parameters.Count == 1
             && record.ParameterList.Parameters[0].Identifier.Text == parameter
-            && type.GetMembers(parameter).OfType<IPropertySymbol>().FirstOrDefault()?.Type.ToDisplayString() == parameterType;
+            && type.GetMembers(parameter).OfType<IPropertySymbol>().FirstOrDefault()?.Type.ToDisplayString()
+                == parameterType;
         if (!shaped)
-            diagnostics.Add(new Diag(NotAView, record.Identifier.GetLocation(), type.Name, parameterType + " " + parameter));
+            diagnostics.Add(new Diag(NotAView, record.Identifier.GetLocation(), type.Name,
+                parameterType + " " + parameter));
         var fields = Fields(type, keyed, diagnostics);
         string ns = type.ContainingNamespace.IsGlobalNamespace ? "" : type.ContainingNamespace.ToDisplayString();
         return new View(ns, type.Name, type.IsReadOnly, FirstArgument(attribute), Named(attribute, "Optional"),

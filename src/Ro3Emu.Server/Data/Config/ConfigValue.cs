@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Constants = System.Collections.Generic.IReadOnlyDictionary<string, System.Text.Json.JsonElement>;
 
 namespace Ro3Emu.Server.Data.Config;
 
@@ -49,44 +50,43 @@ public static class ConfigValue
 
     /// <summary>The value of a key in a key/value table (the <paramref name="valueField"/> of its row, if set), or
     /// null when the table lacks it.</summary>
-    public static JsonElement? Constant(IReadOnlyDictionary<string, JsonElement> values, string key, string? valueField)
+    public static JsonElement? Constant(Constants values, string key, string? valueField)
     {
         if (!values.TryGetValue(key, out var value)) return null;
-        if (valueField != null && (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(valueField, out value)))
+        if (valueField != null
+            && (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(valueField, out value)))
             return null;
         return value.ValueKind == JsonValueKind.Null ? null : value;
     }
 
-    public static long? IntegralConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static long? IntegralConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { } value ? IntegralValue(value) : null;
 
-    public static int? Integral32Constant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static int? Integral32Constant(Constants values, string key, string? field) =>
         IntegralConstant(values, key, field) is { } n ? (int)Math.Clamp(n, int.MinValue, int.MaxValue) : null;
 
-    public static double? NumberConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static double? NumberConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { } value ? Number(value) : null;
 
-    public static bool? BoolConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static bool? BoolConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { } value ? IsTrue(value) : null;
 
-    public static string? TextConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static string? TextConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { ValueKind: JsonValueKind.String } value ? value.GetString() : null;
 
-    public static long[]? IntsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static long[]? IntsConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { } value ? IntList(value) : null;
 
-    public static double[]? NumbersConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static double[]? NumbersConstant(Constants values, string key, string? field) =>
         Constant(values, key, field) is { } value ? NumberList(value) : null;
 
-    public static long[][]? IntRowsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
-        Constant(values, key, field) is { ValueKind: JsonValueKind.Array } value
-            ? [.. value.EnumerateArray().Select(IntList)] : Constant(values, key, field) is null ? null : [];
+    public static long[][]? IntRowsConstant(Constants values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? Rows(value, IntList) : null;
 
-    public static string[]? TextsConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
-        Constant(values, key, field) is { ValueKind: JsonValueKind.Array } value
-            ? [.. value.EnumerateArray().Select(TextOf)] : Constant(values, key, field) is null ? null : [];
+    public static string[]? TextsConstant(Constants values, string key, string? field) =>
+        Constant(values, key, field) is { } value ? Rows(value, TextOf) : null;
 
-    public static JsonElement? RawConstant(IReadOnlyDictionary<string, JsonElement> values, string key, string? field) =>
+    public static JsonElement? RawConstant(Constants values, string key, string? field) =>
         Constant(values, key, field);
 
     /// <summary>An integer number exactly, also beyond 2^53 (a double would round it); a fraction is
@@ -111,6 +111,9 @@ public static class ConfigValue
 
     private static long[] IntList(JsonElement list) => list.ValueKind == JsonValueKind.Array
         ? [.. list.EnumerateArray().Select(v => IntegralValue(v) ?? (long)(Number(v) ?? 0))] : [];
+
+    private static T[] Rows<T>(JsonElement list, Func<JsonElement, T> read) =>
+        list.ValueKind == JsonValueKind.Array ? [.. list.EnumerateArray().Select(read)] : [];
 
     private static double[] NumberList(JsonElement list) => list.ValueKind == JsonValueKind.Array
         ? [.. list.EnumerateArray().Select(v => Number(v) ?? 0)] : [];

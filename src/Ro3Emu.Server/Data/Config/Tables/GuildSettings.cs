@@ -2,7 +2,8 @@ using System.Text.Json;
 
 namespace Ro3Emu.Server.Data.Config;
 
-/// <summary>The client's GuildSettingConfig (data/config/GuildSettingConfig.json): a setting name and its row, whose _kValue holds the value.</summary>
+/// <summary>The client's GuildSettingConfig (data/config/GuildSettingConfig.json): a setting name and its row, whose
+/// _kValue holds the value.</summary>
 [ConfigConstants("GuildSettingConfig", ValueField = "_kValue")]
 public readonly partial record struct GuildSettings(IReadOnlyDictionary<string, JsonElement> Values)
 {
