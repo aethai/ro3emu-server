@@ -40,6 +40,11 @@ public sealed partial class SkillCombatTests
 
         var after = await Built();
         Assert.Equal(LineupRow, after.SkillWheel.SkillQueue.SkillConfigId);
+        // LC_SkillGrowthHelper.GetCanUseSkillQueueSkillId reads the slot map, not skillWheel.skillQueue.
+        int queueSlot = (int)SkillWheelSlotType.SkillWheelSkillQueue;
+        Assert.Equal(LineupRow, after.SkillWheel.WhellSkills[queueSlot].SkillConfigId);
+        Assert.True(after.SkillWheel.WhellSkills[queueSlot].Enable);
+        Assert.Equal(LineupRow, after.OriginSkillWheel.WhellSkills[queueSlot].SkillConfigId);
         Assert.Contains(LineupGroup, after.SkillList);
     }
 

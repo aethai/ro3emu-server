@@ -439,7 +439,12 @@ public sealed partial class SkillService
         }
         if (selected.SkillQueue.Values.Any(skill => skill.SkillId > 0) && QueueGroup(session.Progress!.Career) is > 0 and var lineup
             && RealId(lineup, 1) is var lineupId and > 0)
+        {
             state.SkillWheel.SkillQueue = new SkillWheelSlot { SkillConfigId = lineupId, Enable = true };
+            // LC_System_Skill._refreshJoystickSkill copies whellSkills. GetCanUseSkillQueueSkillId in
+            // LC_SkillGrowthHelper reads slot 7 from that map; the separate skillQueue field cannot expose the button.
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelSkillQueue] = state.SkillWheel.SkillQueue.Clone();
+        }
         if (PetWheel?.Invoke(session) is { } pet)
             state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelPet] = pet;
         state.OriginSkillWheel = state.SkillWheel.Clone();
