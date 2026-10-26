@@ -89,7 +89,7 @@ public sealed partial class SkillService
         return 0;
     });
 
-    private const int QueueSystemType = 6;
+    internal const int QueueSystemType = 6;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _queueGroups = new();
 
     // Tree/Replacements are pure functions of the career and static game data. Level() asked for the tree of every

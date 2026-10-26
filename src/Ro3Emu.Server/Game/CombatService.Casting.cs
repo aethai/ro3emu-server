@@ -45,7 +45,11 @@ public sealed partial class CombatService
     /// Target/position come from CastSkillReq; m_kSelectInfo uses relation masks, never _iDmgType as a selector.
     /// Evidence: LC_Skill_Function.SendSkill, SkillConfig.GetCost*, MG_Skill.proto.
     /// </summary>
-    public async Task CastAsync(GameSession s, CastSkillReq request)
+    public Task CastAsync(GameSession s, CastSkillReq request) => CastAsync(s, request, lineup: false);
+
+    /// <param name="lineup">One skill of the Skill Bar's Lineup, cast by the server for the player: a skill that cannot
+    /// be cast now is skipped without a refusal, and the client gets no cast reply it did not ask for.</param>
+    private async Task CastAsync(GameSession s, CastSkillReq request, bool lineup)
     {
         LegacyOwnerScope? admission = null;
         OwnerNotices? notices = null;
@@ -59,7 +63,7 @@ public sealed partial class CombatService
             // retain the original order; an obsolete attachment cannot start a committed cast.
             if (s.Owners?.Current is { Notices: null } context) notices = new OwnerNotices(context);
             if (IsGuardianRequest(request)) await CastGuardianAsync(s, request.Clone());
-            else await CastCoreAsync(s, request);
+            else await CastCoreAsync(s, request, lineup);
         }
         finally { notices?.Dispose(); s.SkillCastGate.Release(); admission?.Dispose(); }
         if (notices != null) await notices.FlushAsync();
@@ -69,7 +73,7 @@ public sealed partial class CombatService
     private bool IsGuardianRequest(CastSkillReq request) => _data.Row("SkillConfig", request.SkillId) is { } row
         && GameData.Int(row, "_iSystemType") is GuardianPetRules.WrapperType or GuardianPetRules.EffectType;
 
-    private async Task CastCoreAsync(GameSession s, CastSkillReq request)
+    private async Task CastCoreAsync(GameSession s, CastSkillReq request, bool lineup = false)
     {
         var req = request.Clone();
         var row = EffectiveSkillRow(s, req.SkillId);
@@ -115,7 +119,7 @@ public sealed partial class CombatService
         if (error == 0 && !unlimited && !_buffs.CanSpendEnergy(s, row!.Value)) error = ErrorCodes.SkillEnergyShort;
         if (error != 0)
         {
-            await RefuseCastAsync(s, req, error, errorParam);
+            if (!lineup) await RefuseCastAsync(s, req, error, errorParam);
             return;
         }
 
@@ -126,7 +130,7 @@ public sealed partial class CombatService
         // is a new intent and pays again; a lost writer ACK resolves this exact source.
         if (!await AdmitCastCostAsync(s, row!.Value, req, costs, id))
         {
-            await RefuseCastAsync(s, req, ErrorCodes.SkillCostShort, costs.Items[0].Entry);
+            if (!lineup) await RefuseCastAsync(s, req, ErrorCodes.SkillCostShort, costs.Items[0].Entry);
             return;
         }
         if (lease?.Cancelled == true || !ReferenceEquals(s.Attachment, lease) ||
@@ -136,7 +140,7 @@ public sealed partial class CombatService
         await PayCostsAsync(s, costs);
         if (!unlimited) await _buffs.SpendEnergyAsync(s, row!.Value);
         int lead = owned == null && BeforeCast is { } before ? await before(s) : 0;
-        await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
+        if (!lineup) await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
         var target = FindMonster(s.WorldScene, req.TargetId);
         var playerTarget = EventTarget(s, req.TargetId);
         // _iIfAutoAtk 2 (enum_AutoNormalAttackType.AutoNormalAttack) follows the cast with the career's normal attack
@@ -161,6 +165,45 @@ public sealed partial class CombatService
         if (own != null) await OwnSkillCast!(s, req.SkillId);
         else await StartCooldownAsync(s, row.Value, SkillConfig.Get(_data, request.SkillId) is { } asked ? (int)asked.Mode : null);
         await StartCastAsync(s, row.Value, req, id, owned, lead);
+        if (owned == null && !lineup && new SkillConfig(row.Value).SystemType == SkillService.QueueSystemType)
+            StartLineup(s, s.SkillCast);
+    }
+
+    /// <summary>
+    /// The Skill Bar (SkillConfig._iSystemType 6, _kScriptLogic jinengduilie*): "Activating the Skill Bar casts each skill
+    /// in the Skill Bar that currently meets its activation requirements once" (client text). The client lists, checks and
+    /// shows the Lineup; the casting is this script. Each skill is cast on the player in slot order, one after the
+    /// previous one's action (a new cast ends the running one, and an ended cast never lands), and one that cannot be cast
+    /// now (cooldown, SP, state) is skipped.
+    /// </summary>
+    private void StartLineup(GameSession s, ActiveSkillCast? bar)
+    {
+        if (bar == null || s.SkillPlans is not { } plans || s.Progress == null) return;
+        var members = plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillQueue.OrderBy(kv => kv.Key)
+            .Select(kv => kv.Value).Where(m => m.SkillId > 0).Select(m => (m.SkillId, m.SkillLevel)).ToList();
+        if (members.Count == 0) return;
+        long generation = s.SceneGeneration, worldScene = s.WorldScene;
+        ScheduleRuntime(worldScene, TimeSpan.FromMilliseconds(Math.Max(0, bar.StartMs - Now) + bar.ChantMs + bar.ActionMs + 1),
+            () => LineupStepAsync(s, members, 0, generation, worldScene));
+    }
+
+    private async Task LineupStepAsync(GameSession s, List<(int Group, int Level)> members, int index, long generation, long worldScene)
+    {
+        for (; index < members.Count; index++)
+        {
+            if (s.Dead || s.SceneLoading || s.Role == null || s.Progress == null || s.SceneGeneration != generation || s.WorldScene != worldScene) return;
+            var (group, level) = members[index];
+            int learned = _skills.Level(s.Progress, group);
+            int id = learned > 0 ? _skills.RealId(group, Math.Min(level, learned)) : 0;
+            if (id <= 0) continue;
+            await CastAsync(s, new CastSkillReq { SkillId = id, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face }, lineup: true);
+            if (s.SkillCast is not { Cancelled: false } cast || cast.Request.SkillId != id) continue; // skipped
+            int next = index + 1;
+            if (next < members.Count)
+                ScheduleRuntime(worldScene, TimeSpan.FromMilliseconds(Math.Max(0, cast.StartMs - Now) + cast.ChantMs + cast.ActionMs + 1),
+                    () => LineupStepAsync(s, members, next, generation, worldScene));
+            return;
+        }
     }
 
     /// <summary>Cast item cost and frozen intent share one owner receipt; HP/SP/buffs remain runtime resources.

@@ -58,4 +58,39 @@ public sealed partial class SkillCombatTests
         Assert.DoesNotContain(14000, data.SkillList);
         Assert.Equal(0, skills.QueueGroup(1000));
     }
+
+    /// <summary>
+    /// The Skill Bar button (SkillConfig _iSystemType 6, script jinengduilie1) casts the Lineup: each skill in it, in slot
+    /// order, one after the other, once. A skill that cannot be cast is skipped.
+    /// </summary>
+    [ClientDataFact]
+    public async Task TheSkillBarCastsEverySkillInTheLineupInOrder()
+    {
+        const int Blessing = 14001, IncreaseAgi = 14010, SkillBar = 1400001, BlessingBuff = 1400101, IncreaseAgiBuff = 1401001;
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99 40");
+        await Gm("alice", "!job 4300");
+        var learn = new SkillGrowthSkillPlanUpdateReq { Plan = 0 };
+        foreach (var (group, level) in new[] { (14013, 5), (Blessing, 1), (14007, 5), (IncreaseAgi, 1) })
+            learn.LevelUpList[group] = new SkillData { SkillId = group, SkillLevel = level };
+        await alice.SendGameAsync(SkillService.PlanUpdate, learn);
+        Assert.Equal(0, (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result);
+        int slot = 0;
+        foreach (int group in new[] { IncreaseAgi, Blessing }) // slot order, not skill order
+        {
+            await alice.SendGameAsync(SkillService.QueueUpdate, new SkillQueueUpdateReq
+            {
+                Plan = 0, OpType = SkillLoadOperation.SkillLoadOpLoad, QueueIndex = slot++,
+                Info = new SkillData { SkillId = group, SkillLevel = 1 }
+            });
+            Assert.Equal(0, (await Next(alice, SkillService.QueueUpdate, SkillQueueUpdateResp.Parser)).Result);
+        }
+
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = SkillBar, TargetId = Session("alice").Role!.Id });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var first = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, x => x.Buffs.Any(b => b.ConfigId is IncreaseAgiBuff or BlessingBuff));
+        Assert.Contains(first.Buffs, b => b.ConfigId == IncreaseAgiBuff);
+        var second = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, x => x.Buffs.Any(b => b.ConfigId == BlessingBuff));
+        Assert.Contains(second.Buffs, b => b.ConfigId == BlessingBuff);
+    }
 }
