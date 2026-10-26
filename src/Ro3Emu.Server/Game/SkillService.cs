@@ -74,6 +74,24 @@ public sealed partial class SkillService
         return chain;
     }
 
+    /// <summary>
+    /// The career's Lineup skill group (JobConfig._iQueueSkillId, a row id: 1400001 for the Acolyte line, SkillConfig
+    /// _iSystemType 6 "SkillQueue"), or 0. It is in no SkillTreeConfig row. The client lists the skill window's Lineup tab only
+    /// when its skill list holds this skill (LC_SkillGrowthHelper.GetHasSkillQueue: a group whose row has that system
+    /// type), and puts the Lineup button on the bar when the wheel's queue slot holds its row id.
+    /// </summary>
+    internal int QueueGroup(int career) => _queueGroups.GetOrAdd(career, c =>
+    {
+        foreach (int chained in CareerChain(c).AsEnumerable().Reverse())
+            if (_data.Row("JobConfig", chained) is { } job && new JobConfig(job).QueueSkillId is > 0 and var id
+                && _data.Row("SkillConfig", id) is { } row && new SkillConfig(row) is { SystemType: QueueSystemType } queue)
+                return (int)queue.SkillId;
+        return 0;
+    });
+
+    private const int QueueSystemType = 6;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _queueGroups = new();
+
     // Tree/Replacements are pure functions of the career and static game data. Level() asked for the tree of every
     // passive group on every stat sheet (~60 full SkillTreeConfig scans per Stats, ~90% of a siege's loop time).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> _replacements = new();
@@ -142,6 +160,7 @@ public sealed partial class SkillService
         int initial = InTree(p.Career, group) ? Initial(p, group) : 0;
         if (_data.Row("SkillConfig", NormalAttack(p.Career)) is { } atk && GameData.Int(atk, "_iSkillID") == group)
             initial = Math.Max(1, initial);
+        if (group > 0 && group == QueueGroup(p.Career)) initial = Math.Max(1, initial); // everyone has the Lineup button
         int saved = Math.Max(p.Skills.GetValueOrDefault(group), p.GrantedSkills.GetValueOrDefault(group));
         foreach (var (old, replacement) in Replacements(p.Career))
             if (replacement == group) saved = Math.Max(saved, p.Skills.GetValueOrDefault(old));
@@ -157,6 +176,7 @@ public sealed partial class SkillService
         var skillData = new DBSkillData { MaxPlanCount = PlanCount, CurrentPlanIndex = 0, CurrentAtkSkillId = atk };
         if (atkGroup > 0) skillData.SkillList.Add(atkGroup);
         skillData.SkillList.Add(tree.Select(t => t.Group).Where(g => g != atkGroup).Distinct());
+        if (QueueGroup(p.Career) is > 0 and var queueGroup && !skillData.SkillList.Contains(queueGroup)) skillData.SkillList.Add(queueGroup);
 
         var plan = new SkillPlan { IsUnlock = true };
         foreach (int group in skillData.SkillList)
@@ -417,9 +437,9 @@ public sealed partial class SkillService
                     && RealId(group, group == skill.SkillId ? skill.SkillLevel : Level(session.Progress!, group)) is var id and > 0)
                     state.SkillWheel.WhellSkills[slot] = new SkillWheelSlot { SkillConfigId = id, Enable = true };
         }
-        foreach (var (_, skill) in selected.SkillQueue.OrderBy(kv => kv.Key))
-            if (skill.SkillId > 0 && RealId(skill.SkillId, skill.SkillLevel) is var id and > 0)
-            { state.SkillWheel.SkillQueue = new SkillWheelSlot { SkillConfigId = id, Enable = true }; break; }
+        if (selected.SkillQueue.Values.Any(skill => skill.SkillId > 0) && QueueGroup(session.Progress!.Career) is > 0 and var lineup
+            && RealId(lineup, 1) is var lineupId and > 0)
+            state.SkillWheel.SkillQueue = new SkillWheelSlot { SkillConfigId = lineupId, Enable = true };
         if (PetWheel?.Invoke(session) is { } pet)
             state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelPet] = pet;
         state.OriginSkillWheel = state.SkillWheel.Clone();
@@ -504,6 +524,7 @@ public sealed partial class SkillService
         foreach (var (group, assignment) in source.SkillAssigns)
         {
             if (assignment.SkillLevel == 1 && normalAttacks.Contains(group)) continue;
+            if (group == QueueGroup(progress.Career)) continue; // the Lineup button: free, in no skill tree row
             if (assignment.SkillLevel < 0 || assignment.SkillLevel > MaxLevel(group)
                 || (!tree.ContainsKey(group) && assignment.SkillLevel > 0)) return ErrorCodes.SkillNotInTree;
             if (assignment.SkillId != 0 && assignment.SkillId != group) return ErrorCodes.Parameter;
