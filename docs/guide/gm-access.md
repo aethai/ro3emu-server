@@ -34,6 +34,14 @@ Like every `Ro3Emu:` option, the list can be set in `appsettings.json`:
 or through environment variables, one per account: `Ro3Emu__GmAccounts__0=your-admin-login`,
 `Ro3Emu__GmAccounts__1=another-login`, and so on. The value is the game login (account name), not a character name.
 
+## Panel ops the emulator does not handle
+
+The client's GM panel offers more operations than the emulator handles (`GmCommands.OpAsync`). A button for an
+operation it does not handle answers `GM op <number> <name> is not implemented by the emulator.`, and the log has
+the same number. A preset button (`GMCombinationConfig`) runs the steps the emulator handles and ends with one line,
+`Skipped <n> steps the emulator does not implement: <op> x<count>, ...`, so a half-applied preset is visible. A step
+may name its op by proto name or by number.
+
 ## The loopback tool
 
 `POST http://127.0.0.1:5380/ro3emu/gm?account=<account>` (body `!warp 10111 150 190`) answers only on loopback and

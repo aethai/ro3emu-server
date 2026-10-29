@@ -127,7 +127,7 @@ public sealed class GmCommands(IOptions<ServerOptions> options, GameData data, S
             {
                 reply = (int)req.GmType == OpNone && req.GmListId > 0
                     ? await CombinationAsync(session, req.GmListId)
-                    : await OpAsync(session, (int)req.GmType, param.Split(',', StringSplitOptions.TrimEntries));
+                    : await OpAsync(session, (int)req.GmType, param.Split(',', StringSplitOptions.TrimEntries)) ?? NotImplemented((int)req.GmType);
             }
             catch (Exception e) when (e is FormatException or IndexOutOfRangeException or ArgumentException or OverflowException)
             {
@@ -144,6 +144,7 @@ public sealed class GmCommands(IOptions<ServerOptions> options, GameData data, S
             || script.ValueKind != JsonValueKind.Array)
             return $"No preset {listId}.";
         var results = new List<string>();
+        var skipped = new Dictionary<string, int>();
         foreach (var step in script.EnumerateArray())
         {
             if (step.ValueKind != JsonValueKind.Array || step.GetArrayLength() == 0) continue;
@@ -151,23 +152,39 @@ public sealed class GmCommands(IOptions<ServerOptions> options, GameData data, S
             var args = step.EnumerateArray().Skip(1).Select(a => a.ValueKind == JsonValueKind.String ? a.GetString()! : a.ToString()).ToArray();
             try
             {
-                results.Add(OpNumber(name) is { } op ? await OpAsync(session, op, args) : $"{name}: unknown op");
+                if (OpNumber(name) is not { } op) results.Add($"{name}: unknown op");
+                else if (await OpAsync(session, op, args) is { } result) results.Add(result);
+                else skipped[OpName(op) ?? name] = skipped.GetValueOrDefault(OpName(op) ?? name) + 1;
             }
             catch (ArgumentException e)
             {
                 results.Add($"{name} {string.Join(',', args)}: {e.Message}");
             }
         }
+        if (skipped.Count > 0)
+            results.Add($"Skipped {skipped.Values.Sum()} steps the emulator does not implement: "
+                + string.Join(", ", skipped.Select(k => $"{k.Key} x{k.Value}")));
         return string.Join("\n", results);
     }
 
-    /// <summary>GmOpEnum value by its proto name, case-insensitively ("GmOpAddItem", "GmSetLevel"...).</summary>
-    private static int? OpNumber(string name) =>
-        GeneralGMProcReq.Descriptor.FindFieldByName("gm_type").EnumType.Values
-            .FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase))?.Number;
+    private static Google.Protobuf.Reflection.EnumDescriptor OpEnum =>
+        GeneralGMProcReq.Descriptor.FindFieldByName("gm_type").EnumType;
 
-    /// <summary>One GM operation with the panel's comma-separated parameters.</summary>
-    private async Task<string> OpAsync(GameSession s, int op, string[] args)
+    /// <summary>
+    /// GmOpEnum value by its proto name, case-insensitively ("GmOpAddItem", "GmSetLevel"...). A preset step may also
+    /// name its op by number ("251"); only a number the enum defines counts.
+    /// </summary>
+    private static int? OpNumber(string name) =>
+        OpEnum.Values.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase))?.Number
+        ?? (int.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out int number) ? OpEnum.FindValueByNumber(number)?.Number : null);
+
+    private static string? OpName(int op) => OpEnum.FindValueByNumber(op)?.Name;
+
+    private static string NotImplemented(int op) =>
+        OpName(op) is { } name ? $"GM op {op} {name} is not implemented by the emulator." : $"GM op {op} is not implemented by the emulator.";
+
+    /// <summary>One GM operation with the panel's comma-separated parameters; null when the emulator does not handle the op.</summary>
+    private async Task<string?> OpAsync(GameSession s, int op, string[] args)
     {
         switch (op)
         {
@@ -194,7 +211,7 @@ public sealed class GmCommands(IOptions<ServerOptions> options, GameData data, S
             case OpSetJob:
                 return await character.SetJobAsync(s, I(args[0]));
             default:
-                return $"GM op {op} is not implemented by the emulator.";
+                return null;
         }
     }
 
@@ -356,7 +373,7 @@ public sealed class GmCommands(IOptions<ServerOptions> options, GameData data, S
     private async Task Op(GameSession s, int op, string[] args)
     {
         if (op != OpClearPack && args.Length == 0) throw new ArgumentException("parameters");
-        await ReplyAsync(s, await OpAsync(s, op, args));
+        await ReplyAsync(s, await OpAsync(s, op, args) ?? NotImplemented(op));
     }
 
     /// <summary>"!item 2010121", "!item 1000000 20", "!item beginner potion 20".</summary>

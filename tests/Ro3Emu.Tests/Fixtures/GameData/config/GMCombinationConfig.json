@@ -1,0 +1,4 @@
+{
+  "900": { "_iID": 900, "_kCNName": "synthetic preset", "_kCombinationScript": [ [ "GmClearPack" ], [ "GmOpStrengthen", "1", "5" ], [ "GmOpStrengthen", "2", "5" ], [ "251" ], [ "NoSuchOp" ] ] },
+  "901": { "_iID": 901, "_kCNName": "synthetic preset, handled only", "_kCombinationScript": [ [ "GmClearPack" ], [ "GmFullHpMp" ] ] }
+}
