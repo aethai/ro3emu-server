@@ -20,6 +20,12 @@ public sealed partial class TaskService
         TSkillRank = 311001, TCargo = 103053, TPydDownload = 106701, TAfkSeconds = 106901, TRestrictUse = 106906,
         TOnePieceCount = 103049, TTimedBattle = 106509, TCaravan = 104011, TDungeonPass = 101018, TAreaAction = 106903;
 
+    // 106012 [106012, n, npc] "Defeat MVP Angeling in a Party" and 107005 [107005, n, npc] "Defeat Golden Thief Bug (Normal)
+    // in a party" (the Connect quests, TaskConfig type 19: 1901000-1901xxx, 1904000-1904xxx). The client's
+    // LC_ConditionDefine does not define either id and the Localization text is the whole rule: a kill of that NPC while
+    // in a party. A party is two or more members (inferred); the difficulty in the 107005 text is carried by the NPC id.
+    private const int TMvpInParty = 106012, TBossInParty = 107005;
+
     // Growth-manual child targets (TaskService.GrowthManual.cs). Displays from ProgressConfig/Localization: 326002
     // "Activate ${1} talents" (zh_CN 激活的天赋达到${1}, its unmet tip 天赋等级不足 "talent level too low": counted as
     // talent levels, inferred), 103034 CheckSetUpPetCount "Deploy ${1} pets" and 101014 CheckClimbTowerLayer "Clear Floor
@@ -159,6 +165,11 @@ public sealed partial class TaskService
     // those are supported: this server has no Tavern, so the Tavern quest stays without a producer.
     private const int TBarroomActTime = 106010;
 
+    /// <summary>The size of the party a role is in (1 when solo); set by the host once TeamService exists (106012, 107005).</summary>
+    public Func<long, int>? PartySizeOf { get; set; }
+
+    private bool InParty(GameSession s) => s.Role != null && (PartySizeOf?.Invoke(s.Role.Id) ?? 0) >= 2;
+
     private readonly ConditionalWeakTable<MonsterUnit, HashSet<long>> _participants = new();
     private readonly HashSet<GameSession> _refreshQueued = new();
 
@@ -198,6 +209,7 @@ public sealed partial class TaskService
         [TOnePieceCount, _, _, var limit] => _data.Row("RestrictConfig", limit) is { } restrict
             ? GameData.Int(restrict, "_iMaxRestrictNum") : -1,
         [TKillOnMap, var n, _] => n,
+        [TMvpInParty or TBossInParty, var n, _] => n,
         [TMonsterHunt, _, var n] => n,
         [TDungeonPass, _, var n] => n,
         [TSaplingChosen or TDeclaration, var n] => n, // Adventure Group (TaskService.AdventureGroup.cs)
@@ -227,6 +239,7 @@ public sealed partial class TaskService
             TArea => _data.Row("MapConfig", t[1]) != null && t[2] > 0,
             TMapKill => _data.Row("MapConfig", t[1]) != null,
             TKillOnMap => _data.Row("MapConfig", t[2]) != null,
+            TMvpInParty or TBossInParty => _data.Row("NPCConfig", t[2]) != null,
             TDungeonPass => _data.Row("DungeonConfig", t[1]) != null,
             TAreaAction => _data.Row("MapConfig", t[1]) != null && t[2] > 0 && _data.Row("PerformanceConfig", t[3]) != null,
             TKill or TKillInvolved => t[1..^1].All(npc => _data.Row("NPCConfig", npc) != null),
@@ -438,6 +451,7 @@ public sealed partial class TaskService
                         TKillInvolved => target.Length >= 3 && target[1..^1].Contains(monster.Template.NpcId),
                         TMapKill => target.Length == 3 && target[1] == monster.SceneEntry,
                         TKillOnMap => ReferenceEquals(session, killer) && target.Length == 3 && target[2] == monster.SceneEntry,
+                        TMvpInParty or TBossInParty => target.Length == 3 && target[2] == monster.Template.NpcId && InParty(session),
                         _ => false
                     };
                     if (!matches) continue;
@@ -507,6 +521,7 @@ public sealed partial class TaskService
                 TKillInvolved when t.Length >= 3 && t[1..^1].Contains(monster.Template.NpcId) => 1,
                 TMapKill when t.Length == 3 && t[1] == monster.SceneEntry => 1,
                 TKillOnMap when s == killer && t.Length == 3 && t[2] == monster.SceneEntry => 1,
+                TMvpInParty or TBossInParty when t.Length == 3 && t[2] == monster.Template.NpcId && InParty(s) => 1,
                 _ => 0,
             }));
     }

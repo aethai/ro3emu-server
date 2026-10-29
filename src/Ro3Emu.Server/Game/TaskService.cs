@@ -661,7 +661,8 @@ public sealed partial class TaskService
         def.Pre.All(p => IsDelivered(session, p)) && (def.Condition == 0 || _functions.ConditionMet(session, def.Condition))
         && AcceptActionsSupported(def);
 
-    private void Accept(GameSession session, long id)
+    /// <param name="quiet">The caller logs one summary for a batch (a role's 51 Connect quests start together).</param>
+    private void Accept(GameSession session, long id, bool quiet = false)
     {
         session.Tasks!.Infos[id] = NewInfo(id, Running);
         StartLoginTargets(session, id);
@@ -672,7 +673,8 @@ public sealed partial class TaskService
         var info = session.Tasks.Infos[id];
         int step = Enumerable.Range(0, def.Targets.Length).FirstOrDefault(i => info.CompleteNum[i] != Required(session, def.Targets[i]), -1);
         if (step >= 0 && step < def.AcceptActions.Length && ServerOpcode(def.AcceptActions[step]) == 621) session.InCutScene = true;
-        _log.LogInformation("{Name} accepts task {Task} {TaskName}", session.Role?.Name, id, _data.TextOf(_data.Row("TaskConfig", id)!.Value, "_iName"));
+        if (!quiet)
+            _log.LogInformation("{Name} accepts task {Task} {TaskName}", session.Role?.Name, id, _data.TextOf(_data.Row("TaskConfig", id)!.Value, "_iName"));
     }
 
     private TaskInfo NewInfo(long id, TaskState status)

@@ -69,6 +69,11 @@ public sealed partial class TaskService
                     if ((questMount ?? session.MountState.QuestMount) == recycle) questMount = 0;
                     break;
                 case 621 when action.Length == 1: cutScene = true; break;
+                // Nothing in the client's Lua or config reads a sociality score, so delivery is not held for it and no
+                // score is kept (inferred).
+                case UpdateSocialityScore when action.Length == 2
+                    && int.TryParse(action[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int points) && points > 0:
+                    break;
                 case MarkGuildActivityJoin when action.Length == 2
                     && long.TryParse(action[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long activity)
                     && GuildActivityConfig.Get(_data, activity) != null:
@@ -99,6 +104,9 @@ public sealed partial class TaskService
 
     /// <summary>ActionConfig 115 MarkGuildActivityJoin (_iEXECHost 1).</summary>
     internal const int MarkGuildActivityJoin = 115;
+
+    /// <summary>ActionConfig 116 UpdateSocialityScore [points] (_iEXECHost 1): the only action of the 53 Connect quests.</summary>
+    internal const int UpdateSocialityScore = 116;
 
     /// <summary>A delivered task's 115 MarkGuildActivityJoin: the role and the GuildActivityConfig id.</summary>
     public List<Action<GameSession, long>> GuildActivityJoined { get; } = [];

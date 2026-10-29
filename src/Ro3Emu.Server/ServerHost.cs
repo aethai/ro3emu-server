@@ -389,6 +389,8 @@ public static class ServerHost
         league.MatchCommitted.Add(questTasks.OnGuildLeagueMatch); // 106603, 106019
         territory.SiegeSettled.Add(questTasks.OnSiegeSettled); // 106611, 106605, 106606
         questTasks.BattleMeritPoints = territory.GloryPoints; // 106610
+        var parties = app.Services.GetRequiredService<TeamService>();
+        questTasks.PartySizeOf = role => parties.MembersOf(role).Count; // 106012, 107005
         territory.SiegeSettled.Add((role, _, _) => questTasks.OnGuildEventJoined(role, TaskService.GuildEvent.RoyalCity)); // 106010
         territory.BattleSettled.Add(questTasks.OnTerritoryBattleSettled); // 106010 Stronghold / Regional Capital War
         escort.CartStarted.Add(s => questTasks.OnGuildEventJoined(s, TaskService.GuildEvent.Escort)); // 106010 Escort
