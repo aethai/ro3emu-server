@@ -742,6 +742,16 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(5, Saved(bot).IncubationCount);
         Assert.Equal(5, Saved(bot).IncubationHistory.Count);
         Assert.Empty(Saved(bot).IncubationSlot);
+        // Empty slots before and after: the drawn eggs travel as placed, then removed, so the client's slot data
+        // changes after the pity sync and the S-class countdown redraws (RefreshPoolSlot -> RefreshPetHit).
+        var events = bot.Inbox.Snapshot().ToList();
+        DBPetInfoIncrement Pets(int i) => DBPetInfoIncrement.Parser.ParseFrom(events[i].Body);
+        int placed = events.FindLastIndex(e => e.IsGame(5017) && DBPetInfoIncrement.Parser.ParseFrom(e.Body).IncubationSlot.Values.Any(v => v.All != null));
+        int removed = events.FindLastIndex(e => e.IsGame(5017) && DBPetInfoIncrement.Parser.ParseFrom(e.Body).IncubationSlot.Values.Any(v => v.Del));
+        Assert.True(placed >= 0 && placed < removed);
+        Assert.Equal(5, Pets(placed).IncubationSlot.Values.Count(v => v.All?.IncubateInfo.ContainsKey(10001) == true));
+        Assert.Equal(5, Pets(removed).IncubationSlot.Values.Count(v => v.Del));
+        Assert.True(events.FindLastIndex(e => e.IsGame(LotteryService.LotterySync)) < placed);
         var before = Saved(bot).ToByteArray();
         await bot.SendGameAsync(PetService.FastEgg, new FastIncubateReq { RoundId = 10001 });
         Assert.NotEqual(0, (await Next(bot, PetService.FastEgg, FastIncubateRes.Parser)).Result);
