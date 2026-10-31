@@ -408,6 +408,69 @@
           "fail": { "who": "all", "hpPercent": 15, "perObject": true, "capPercent": 45, "skill": 4321501 }
         }
       ]
+    },
+    "moonlight-flower": {
+      "name": "Moonlight Flower (five-player raid, 3120801)",
+      "bosses": [4380000, 4380001],
+      "evidence": [
+        "ChatConfig 5005 'A teammate is trapped inside a Bell! Hurry and smash the Bell!', 5007 'Focus on the charged Bell and smash it!', 5006 'Moonlight Flower is preparing to select a target. Stay out of the moonlight!', 5008 'Prioritize avoiding the charged Bells! They'll explode sooner'.",
+        "TenChallengeHandbookIDConfig 1050801 Hidden Bell (destroy the Bell that was initially charged), 1050802 Cat and Mouse (moonlight spotlights punish the exposed), 1050803 Nowhere to Hide (charged bells explode first).",
+        "NPCConfig 4380002 Moonlight Flower Bell Cage (with an HP bar), 4380004 Riddle Bell, 4380006 Spotlight Projectile (fx_moonlight_skill5), 4380008 Four-Corner Bells; BuffConfig 4380001 Charged Bell, 4382301 a target marker, 4381901 Blind; skills 4380501 Bell Cage ('traps one player inside a Bell, then attacks the Bell'), 4380601 Bell Charge Shuffle, 4380701 Spotlight Game, 4380801 Four-Corner Bell.",
+        "Scene editor sc_pm_pve5paydun_001_dg01: points 21-23 in a row beside the boss point 19 (the shuffle bells), 24-27 a diamond around it (the four-corner bells)."
+      ],
+      "guessed": [
+        "Bell Cage 25 s in and every 60 s: one random player is marked and a cage stands on them; 4 hits per player break it within 12 s, else the marked player takes 60%.",
+        "Hidden Bell 45 s in and every 60 s: three Riddle Bells at points 21-23, one shows the Charged Bell glow for 4 s (the shuffle is not animated: remember it); 3 hits per player break a bell; the charged one broken within 15 s solves it, else everyone takes 40%.",
+        "Moonlight 65 s in and every 60 s: a spotlight under every player; still within 3 m after 4 s: 35% and Blind for 3 s.",
+        "Charged bells 85 s in and every 60 s: the four-corner bells at 24-27; within 6 m of one after 6 s: 40%."
+      ],
+      "trials": [
+        {
+          "name": "Bell Cage",
+          "why": "tip 5005 and skill 4380501 'traps one player inside a Bell'",
+          "start": { "firstMs": 25000, "everyMs": 60000 },
+          "tips": [5005],
+          "windowMs": 12000,
+          "marks": { "count": 1, "buff": 4382301 },
+          "objects": [ { "npc": 4380002, "monster": true, "hits": 4, "at": { "onMarked": true } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "marked", "hpPercent": 60, "skill": 4380501, "why": "the bell is struck with the player inside" }
+        },
+        {
+          "name": "Hidden Bell",
+          "why": "tip 5007 and the guide's Hidden Bell",
+          "start": { "firstMs": 45000, "everyMs": 60000 },
+          "tips": [5007],
+          "windowMs": 15000,
+          "objects": [ { "npc": 4380004, "monster": true, "hits": 3, "chosen": true, "markBuff": 4380001, "markMs": 4000, "at": { "points": [21, 22, 23] } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 40, "skill": 4380601, "why": "the charged bell goes off" }
+        },
+        {
+          "name": "Moonlight",
+          "why": "tip 5006 and the guide's Cat and Mouse",
+          "start": { "firstMs": 65000, "everyMs": 60000 },
+          "tips": [5006],
+          "windowMs": 4000,
+          "objects": [ { "npc": 4380006, "at": { "onPlayers": true }, "why": "a spotlight under every player" } ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 35, "skill": 4380701, "buff": 4381901, "buffMs": 3000 }
+        },
+        {
+          "name": "Charged bells",
+          "why": "tip 5008 and the guide's Nowhere to Hide",
+          "start": { "firstMs": 85000, "everyMs": 60000 },
+          "tips": [5008],
+          "windowMs": 6000,
+          "objects": [ { "npc": 4380008, "at": { "points": [24, 25, 26, 27] } } ],
+          "rule": "avoid",
+          "radius": 6,
+          "fail": { "who": "failing", "hpPercent": 40, "skill": 4380801 }
+        }
+      ]
     }
   }
 }

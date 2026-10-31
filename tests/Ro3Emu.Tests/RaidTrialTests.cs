@@ -406,4 +406,46 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(2, puppets.Length); // at least two
         Assert.Equal(max * 30 / 100, (await MechanicHit(alice, 4321501)).Dsts.Single().Damage);
     }
+
+    /// <summary>Breaks a trial's destructible object with one hit (its HP brought down first).</summary>
+    private async Task Break(BotClient bot, MonsterUnit target)
+    {
+        await OnLoop(() => { target.Hp = 1; return Task.CompletedTask; });
+        await Strike(bot, target);
+        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == target.Uid && d.IsDead));
+    }
+
+    // Moonlight Flower: the bell cage on the marked player is broken in time; the charged bell (shown for a moment) is the
+    // one to break; standing in the moonlight costs HP and sight.
+    [ClientDataFact]
+    public async Task MoonlightFlowersBellsAreBrokenAndHerMoonlightPunishesTheStill()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, _) = await RaidFight(alice, 50103, 2, 3120801, 4380000);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 5005);
+        Assert.Equal(4382301, await BuffOf(alice, [4382301]));
+        var cage = Assert.Single(await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4380002 && !m.Dead));
+        await Break(alice, cage);
+        await UntilBuffGone(alice, 4382301); // set free
+
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 5007);
+        await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4380004 && !m.Dead, 3);
+        var charged = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
+            (MonsterUnit)Session(alice).DungeonAttempt!.Raid!.Active!.Objects.Single(o => o.Chosen).Unit));
+        await Break(alice, charged);
+        for (int i = 0; i < 100 && await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonAttempt!.Raid!.Active != null)); i++)
+            await Task.Delay(20);
+        Assert.Empty(await InRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4380004 && !m.Dead));
+
+        await Gm(alice, "!raidtrial 3");
+        await Tip(alice, 5006);
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4380006)); // under her
+        Assert.Equal(max * 35 / 100, (await MechanicHit(alice, 4380701)).Dsts.Single().Damage);
+        Assert.Equal(4381901, await BuffOf(alice, [4381901])); // Blind
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4380501 or 4380601);
+    }
 }

@@ -136,6 +136,18 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   mark points 18-27 and Drake throws Falling Cannonball 4320101 at a random player every 6 s; a cannonball
   (4320101/4321701) landing on a puppet destroys it, players need 12 hits per player; each puppet left after 30 s costs
   everyone 15% (at most 45%). Inferred: lanes, timing, hits and damage; the ships do not sail.
+- Moonlight Flower (five-player raid 3120801; easy 4380000, normal 4380001): **Bell Cage** (tip 5005 'A teammate is
+  trapped inside a Bell! Hurry and smash the Bell!'; skill 4380501 'Traps one player inside a Bell, then attacks the
+  Bell'): 25 s in and every 60 s one random player is marked (4382301) and the Bell Cage 4380002 stands on them; 4 hits
+  per player break it within 12 s, else the marked player takes 60% as 4380501. **Hidden Bell** (tip 5007; guide
+  1050801; skill 4380601): 45 s in and every 60 s three Riddle Bells 4380004 stand at points 21-23 beside her, one shows
+  Charged Bell 4380001 for 4 s; breaking that one (3 hits per player) within 15 s solves it, else everyone takes 40%.
+  **Moonlight** (tip 5006; guide 1050802 Cat and Mouse): 65 s in and every 60 s a Spotlight Projectile 4380006 lands
+  under every player; whoever is still within 3 m after 4 s takes 35% as Spotlight Game 4380701 and Blind 4381901 (3 s).
+  **Charged bells** (tip 5008; guide 1050803 Nowhere to Hide): 85 s in and every 60 s the Four-Corner Bells 4380008
+  stand at points 24-27; within 6 m of one after 6 s: 40% as 4380801. Inferred: all timing, hits and damage; the bells
+  do not visibly shuffle (remember the glowing one), the spotlights do not wander, and the second (uncharged) blast of
+  Nowhere to Hide is left out.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:
