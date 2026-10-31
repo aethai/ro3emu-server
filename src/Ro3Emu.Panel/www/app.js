@@ -254,6 +254,13 @@ function setMenu(open) {
   menuButton.setAttribute('aria-expanded', String(open));
 }
 menuButton.addEventListener('click', () => setMenu(!nav.classList.contains('open')));
+
+// The sun/moon button: switches away from the theme on screen and remembers the choice (theme.js applies it on load).
+document.getElementById('theme').addEventListener('click', () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  setTheme(dark ? 'light' : 'dark');
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && nav.classList.contains('open')) { setMenu(false); menuButton.focus(); } });
 
 // ---------------------------------------------------------------- router
