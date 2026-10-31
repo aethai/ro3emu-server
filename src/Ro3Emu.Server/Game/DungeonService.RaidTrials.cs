@@ -498,6 +498,9 @@ public sealed partial class DungeonService
             case Rule.Carry:
                 party = !run.Objects.All(o => o.Gone) || run.Objects.Count == 0;
                 break;
+            case Rule.Lure:
+                party = objects.Length > 0 && !objects.Any(o => InTrialArea(o, trial.Radius, boss.X, boss.Z));
+                break;
         }
         return ([.. fighters.Where(p => !failing.Contains(p))], failing, party);
     }

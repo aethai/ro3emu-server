@@ -79,7 +79,8 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   object's circle or lane), `shelter` (behind an object as seen from the boss), `guard` (a marked player with a carrier
   beside), `spread` (a marked player with nobody beside); for the party `occupy` (every object at once), `collect`
   (walk into every object; each one taken can reward its taker), `kill` (every object, or the chosen one), `carry`
-  (touch the object, then hit the boss with it). Boss `breakers` are skills whose landing area destroys the objects in it;
+  (touch the object, then hit the boss with it), `lure` (the boss stands in an object's area when the window closes).
+  Boss `breakers` are skills whose landing area destroys the objects in it;
   `casts` are skills the boss casts at a random player during the window.
 - A failure costs a share of each reached player's maximum HP, sent as the boss's hit of the named skill (inferred: it
   punishes the same at any gear, and no single failure wipes a full-HP party). A solved trial can reward (a buff, a
@@ -148,6 +149,16 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   stand at points 24-27; within 6 m of one after 6 s: 40% as 4380801. Inferred: all timing, hits and damage; the bells
   do not visibly shuffle (remember the glowing one), the spotlights do not wander, and the second (uncharged) blast of
   Nowhere to Hide is left out.
+- Golden Thief Bug (five-player raid, sewers 3120401; easy 4300001, normal 4300000): **Sandstorm** (tips 4802 'A
+  sandstorm is coming! Use the wormholes to avoid it!' and 4801; guide 1050101 Wormhole, 1050102 Sandstorm): 30 s in and
+  every 60 s he burrows (4301801) for 10 s while two storms 4300004 come in from random edge points of the editor's
+  'Sandstorm' group (21/23/24/25), each a 60 x 16 m lane across the field. The 'Wormhole 2' burrows 4300007 stand at the
+  corner points 41, 38, 42, 45 just outside both lanes; their interaction takes a player to the next one. Still in a lane
+  at the end: 40% as 4305201. **Burrow** (tips 4803 'Guide Golden Thief Bug toward a wormhole!' and 4809 'Golden Thief Bug
+  will burrow again in ${1} seconds!', 15 s): 55 s in and every 60 s two burrows 4300002 stand at random points of the
+  'Wormhole' group (27-36); the boss must be within 4 m of one when the count ends (he burrows there and resurfaces,
+  4305901, 4 s), else everyone takes 40% as 4305301. Inferred: lanes and their width, timing, damage, the lure rule
+  itself. Earthquake (guide 1050103; 4305601, easy 4307001/4307101) stays in his own rotation.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

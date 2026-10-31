@@ -471,6 +471,52 @@
           "fail": { "who": "failing", "hpPercent": 40, "skill": 4380801 }
         }
       ]
+    },
+    "golden-thief-bug": {
+      "name": "Golden Thief Bug (five-player raid, sewers 3120401)",
+      "bosses": [4300001, 4300000],
+      "evidence": [
+        "ChatConfig 4801 'Tap above a wormhole to enter it and emerge from another wormhole', 4802 'A sandstorm is coming! Use the wormholes to avoid it!', 4803 'Guide Golden Thief Bug toward a wormhole! Sandstorms will soon strike randomly from all sides of the map!', 4809 (CombatCountdownTip) 'Golden Thief Bug will burrow again in ${1} seconds!'.",
+        "TenChallengeHandbookIDConfig 1050101 Wormhole (two connected burrows, the Interaction skill takes a player out of the other one), 1050102 Sandstorm (sweeps the field, use the Wormholes to evade it), 1050103 Earthquake (two kinds, evaded by repositioning).",
+        "NPCConfig 4300002/4300003 Wormhole (unit 33107, interactions 37/38: 4306101/4306201 'Enter Wormhole: Emerges from the other end of the Wormhole'), 4300007/4300008 Wormhole (unit 33113 'Golden wormhole 2'), 4300004/4300006 'Sandstorm@{1}m' (bullet units 33110 'Sandstorm 40M' and 33111 'Sandstorm 80M').",
+        "Skills 4301801/4301901 GoldenBug_underground (8.3 s show), 4305901 GoldenBug_underground0 (4 s show), 4305201-4305501 GoldenBug_Storm1-4 (no cast time: the storm's hits).",
+        "Scene editor sc_pm_pve5sewb_001_dg01: group 20 'Sandstorm' (points 21/23/24/25, the middle of each edge facing inward), group 26 'Wormhole' (27-36, the middle rows z 52/68), group 37 'Wormhole 2' (38-45, the rows z 50/70 at x 32/45/55/68)."
+      ],
+      "guessed": [
+        "Sandstorm 30 s in and every 60 s: Golden Thief Bug burrows (4301801) and storms come in from two random edges, each a 60 x 16 m lane across the field (the two storm lines make a cross or a band); the Wormhole 2 burrows stand at the corner points 41, 38, 42, 45 just outside both lanes and their interaction takes a player to the next one. Still in a lane after 10 s: 40%.",
+        "Burrow 55 s in and every 60 s: two burrows of the Wormhole group stand at random; the boss must be within 4 m of one when the 15 s count ends, else he burrows elsewhere and the storm hits everyone for 40%. Lured in: he burrows and resurfaces (4 s, 4305901).",
+        "Earthquake (4305601, 4307001/4307101 easy) stays in the boss's own rotation: the client's show draws it."
+      ],
+      "trials": [
+        {
+          "name": "Sandstorm",
+          "why": "tips 4802 and 4801, the guide's Sandstorm and Wormhole",
+          "start": { "firstMs": 30000, "everyMs": 60000 },
+          "tips": [4802, 4801],
+          "windowMs": 10000,
+          "boss": { "hold": true, "show": 4301801 },
+          "objects": [
+            { "npc": 4300004, "lane": [60, 16], "at": { "points": [21, 23, 24, 25], "count": 2 }, "why": "storms from two random edges" },
+            { "npc": 4300007, "use": "warp", "at": { "points": [41, 38, 42, 45] }, "why": "the Wormhole 2 burrows at the safe corners, in order around them" }
+          ],
+          "rule": "avoid",
+          "radius": 2,
+          "fail": { "who": "failing", "hpPercent": 40, "skill": 4305201, "why": "caught by the sandstorm" }
+        },
+        {
+          "name": "Burrow",
+          "why": "tips 4803 and 4809: guide him toward a wormhole before he burrows again",
+          "start": { "firstMs": 55000, "everyMs": 60000 },
+          "tips": [4803, 4809],
+          "tipParam": "countdown",
+          "windowMs": 15000,
+          "objects": [ { "npc": 4300002, "at": { "points": [27, 28, 29, 30, 31, 32, 33, 34, 35, 36], "count": 2 }, "why": "two burrows of the Wormhole group" } ],
+          "rule": "lure",
+          "radius": 4,
+          "success": { "who": "all", "stagger": 4305901, "staggerMs": 4000, "why": "he burrows into it and resurfaces" },
+          "fail": { "who": "all", "hpPercent": 40, "skill": 4305301, "why": "he burrows elsewhere and the storm sweeps the field" }
+        }
+      ]
     }
   }
 }

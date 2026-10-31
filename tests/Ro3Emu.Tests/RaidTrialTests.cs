@@ -448,4 +448,64 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
             && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4380501 or 4380601);
     }
+
+    // Golden Thief Bug: a wormhole takes the player to the next one; a storm lane left too late costs HP. Lured onto a
+    // burrow when the count ends, he burrows there instead of sweeping the field.
+    [ClientDataFact]
+    public async Task GoldenThiefBugsWormholesCarryAndHisBurrowIsLured()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, bug) = await RaidFight(alice, 50101, 1, 3120401, 4300001);
+        long max = MaxHp(alice);
+        Pace(50); // the wormhole needs a little time
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4802);
+        var storms = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4300004, 2);
+        var holes = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4300007, 4);
+        Assert.Equal(4, holes.Length);
+        await WalkTo(alice, holes[0]);
+        long interaction = Service<DungeonCatalog>().Interactions(4300007).First();
+        await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+        { NpcUid = holes[0].Uid, InteractionId = (int)interaction, SceneConfigId = 3120401 });
+        Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser, r => r.Req.NpcUid == holes[0].Uid)).Result);
+        for (int i = 0; i < 100 && MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, holes[0].X, holes[0].Z) < 10; i++)
+            await Task.Delay(20);
+        Assert.True(MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, holes[0].X, holes[0].Z) >= 10); // came out of another
+        // 10 m into the first storm's lane.
+        double turn = storms[0].Face * Math.PI / 180;
+        await Gm(alice, FormattableString.Invariant($"!actors walk {storms[0].X + 10 * (float)Math.Sin(turn)} {storms[0].Z + 10 * (float)Math.Cos(turn)}"));
+        Assert.Equal(max * 40 / 100, (await MechanicHit(alice, 4305201)).Dsts.Single().Damage);
+
+        await Gm(alice, "!hp 999999999");
+        Pace(10);
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4803);
+        Assert.Equal("2", (await Tip(alice, 4809)).ParamList[1].Params[0]);
+        var burrow = (await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4300002, 2))[0];
+        await OnLoop(async () =>
+        {
+            await Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(burrow.X, burrow.Y, burrow.Z, 0));
+            // The tank brings him onto it (pinned there: the test does not drive his chase).
+            bug.Moving = false;
+            bug.X = burrow.X + 1;
+            bug.Z = burrow.Z;
+            bug.BusyUntilMs = MonsterService.NowMs + 60000;
+        });
+        await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == bug.Uid && u.SkillID == 4305901); // he burrows
+        await UntilGone(instance, 4300002);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4305301);
+    }
+
+    /// <summary>The scripted pace (percent of the real timing) for what follows.</summary>
+    private void Pace(int percent) => Service<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value.ScriptedScenePacePercent = percent;
+
+    private async Task UntilGone(long instance, int npc)
+    {
+        for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc
+            || u is MonsterUnit m && m.Template.NpcId == npc && !m.Dead)).Length > 0; i++)
+            await Task.Delay(20);
+        Assert.Empty(await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc
+            || u is MonsterUnit m && m.Template.NpcId == npc && !m.Dead));
+    }
 }

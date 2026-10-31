@@ -18,9 +18,10 @@ public sealed partial class ReconstructedDungeons
     /// every object's area, <see cref="Shelter"/> behind an object as seen from the boss, <see cref="Guard"/> (a marked
     /// player with a carrier beside), <see cref="Spread"/> (a marked player with nobody else beside). For the party:
     /// <see cref="Occupy"/> every object at once, <see cref="Collect"/> every object by walking into it, <see cref="Kill"/>
-    /// every object (or the chosen one), <see cref="Carry"/> an object to the boss (touch it, then hit the boss).
+    /// every object (or the chosen one), <see cref="Carry"/> an object to the boss (touch it, then hit the boss),
+    /// <see cref="Lure"/> the boss into an object's area (it stands there when the window closes).
     /// </summary>
-    public enum TrialRule { Stand, Avoid, Shelter, Guard, Spread, Occupy, Collect, Kill, Carry }
+    public enum TrialRule { Stand, Avoid, Shelter, Guard, Spread, Occupy, Collect, Kill, Carry, Lure }
 
     /// <summary>Who an outcome reaches: the players who failed (or passed), everyone present, the marked players, or the
     /// players inside an object left at the end (a ghost ship's lane).</summary>
