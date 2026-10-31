@@ -127,6 +127,10 @@ public sealed partial class TaskService
         || (t.CompleteTaskNum.TryGetValue(taskId, out int n) && n > 0)
         || (t.Infos.TryGetValue(taskId, out var info) && info.Status == Delivered);
 
+    /// <summary>The quest is accepted and not yet delivered (Running or Finish).</summary>
+    public static bool IsActive(GameSession session, long taskId) =>
+        session.Tasks is { } t && t.Infos.TryGetValue(taskId, out var info) && info.Status is Running or Finished;
+
     // ---- login ----
 
     /// <summary>Loads (or starts) the role's quests and sends the full 5027; before 5056, which reads them.</summary>
