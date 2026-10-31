@@ -390,14 +390,14 @@ public sealed partial class CombatService
         {
             // Released around the caster (0, 2-6): the client's point is only shown, but procs read it as the centre; one
             // beyond the skill's reach and area is not a point it could aim at (inferred), so the caster's is used.
-            float aim = Math.Max(Math.Max(Range(row), askedRange), (float)(Numbers(row, "_kRange").FirstOrDefault(0) / 100)) + 1 + slack;
+            float aim = Math.Max(Math.Max(Range(row), askedRange), new SkillConfig(row).Range.FirstOrDefault(0) / 100f) + 1 + slack;
             if (req.TargetPos == null || Distance(origin, req.TargetPos) > aim) req.TargetPos = origin.Clone();
             return 0;
         }
         if (!_buffs.CanSeePosition(s, targetPosition)) return ErrorCodes.SkillTargetInvalid;
         float d = Distance(origin, targetPosition);
         float reach = slack > 0 ? Distance(WalkPoint(s, origin, targetPosition, slack), targetPosition) - LegJitter : d;
-        if (d < GameData.Int(row, "_iDistanceMin") / 100f - slack || reach > Math.Max(Range(row), askedRange) + 0.5f)
+        if (d < new SkillConfig(row).DistanceMin / 100f - slack || reach > Math.Max(Range(row), askedRange) + 0.5f)
             return ErrorCodes.SkillDistance;
         float height = GameData.Int(row, "_iHeightRange") / 100f;
         if (height > 0 && MathF.Abs(origin.Y - targetPosition.Y) > height) return ErrorCodes.SkillHeight;
@@ -585,7 +585,7 @@ public sealed partial class CombatService
         s.SkillCast = action;
         // A caster that may not walk while casting (_bMovement 0) saves up no walking distance until the cast ends: a client
         // that walks on without reporting it cannot claim the distance afterwards (SceneService.AcceptWalkAsync).
-        if (actor == null && GameData.Int(row, "_bMovement") == 0)
+        if (actor == null && new SkillConfig(row).Movement == 0)
             SceneService.HoldWalk(s, DateTime.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
         s.WorldState.ResurrectionCastId = Script(row) == "Resurrection" ? id : 0;
         s.Face = face;
@@ -694,7 +694,7 @@ public sealed partial class CombatService
             }
             else s.Attack = null;
         }
-        if (s.SkillCast is not { } cast || GameData.Int(cast.Row, "_bMovement") != 0) return;
+        if (s.SkillCast is not { } cast || new SkillConfig(cast.Row).Movement != 0) return;
         // A walk that sets off (not a stop) after the arrival grace ends a cast that holds the caster in place, even before it
         // has moved: the client interrupts such a cast to walk, and the walk budget is held until the cast ends.
         if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.Walking && Now - cast.StartMs > 300)) return;
