@@ -36,6 +36,8 @@ public sealed class WorldSessionState
     public long ReviveHpRate { get; set; } = 10000;
     public long ReviveSpRate { get; set; } = 10000;
     public long TemporaryLeaveUntilMs { get; set; }
+    public long TypingWindowStartMs { get; set; }
+    public int TypingInWindow { get; set; }
 }
 
 /// <summary>

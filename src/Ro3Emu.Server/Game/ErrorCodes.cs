@@ -252,10 +252,13 @@ public static class ErrorCodes
     // channel's block list, already / not in the channel, not leader nor GuildVoice right, the leader cannot be kicked,
     // not blocked; Order mode: no mic in Free mode, managers need not apply, already may speak,
     // already / not applied, not Order mode, reason too long; already in another channel, the leader's mic stays,
-    // cannot kick yourself.
+    // cannot kick yourself. Invites: the target is not in the guild, its invite cooldown runs, it declines invites
+    // for now, it is offline, it already sits in a channel.
     public const int GuildVoiceNotInGuild = 97001, GuildVoiceBadChannel = 97002, GuildVoiceBlocked = 97003;
     public const int GuildVoiceAlreadyInChannel = 97004, GuildVoiceNotInChannel = 97005, GuildVoiceNoPermission = 97006;
     public const int GuildVoiceCannotKickLeader = 97007, GuildVoiceNotBlocked = 97008;
+    public const int GuildVoiceTargetNotInGuild = 97011, GuildVoiceInviteCooldown = 97025, GuildVoiceInviteDeclined = 97026;
+    public const int GuildVoiceTargetOffline = 97027, GuildVoiceTargetInChannel = 97028;
     public const int GuildVoiceFreeMode = 97016, GuildVoiceManagerNeedsNoApply = 97017, GuildVoiceAlreadyCanSpeak = 97018;
     public const int GuildVoiceAlreadyApplied = 97019, GuildVoiceNotApplied = 97020, GuildVoiceNotOrderMode = 97021;
     public const int GuildVoiceReasonTooLong = 97024, GuildVoiceInAnotherChannel = 97029, GuildVoiceLeaderCannotMute = 97030;
