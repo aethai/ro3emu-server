@@ -39,8 +39,9 @@ namespace Ro3Emu.Server.Game;
 /// carries): the sub-tasks stay offered until the cap (inferred). The day is DailyActivityService's game day
 /// (05:00): a new day drops the faction tasks and the count.</item>
 /// </list>
-/// TerritoryWarzoneTaskGuildAward 1021 names no MultiverseGroupConfig or AwardConfig row in this client, so the guild
-/// share is not paid.
+/// TerritoryWarzoneTaskGuildAward 1021 names no MultiverseGroupConfig or AwardConfig row in this client; the guild's
+/// share for a delivered 1101000 ("provide Guild Coins to the guild", its _iBeforeDescribe) is paid by
+/// <see cref="FactionGuildAward"/> (GuildCaravanService.FactionAward.cs, inferred).
 /// </summary>
 public sealed partial class TaskService
 {
@@ -55,6 +56,9 @@ public sealed partial class TaskService
 
     /// <summary>The killer earns 101023 for this victim (TerritoryWarsService.WorldRivals), set by the host.</summary>
     public Func<GameSession, GameSession, bool>? FactionRivals { get; set; }
+
+    /// <summary>The guild's share of a delivered 1101000: (role, game day); the owner posts its own work. Set by the host.</summary>
+    public Action<GameSession, long>? FactionGuildAward { get; set; }
 
     private Dictionary<long, long>? _factionPoints;
     private Dictionary<long, int>? _factionTiers;
@@ -97,6 +101,7 @@ public sealed partial class TaskService
     /// </summary>
     private void AddFactionPoints(GameSession s, long taskId, AwardPlan _)
     {
+        if (taskId == FactionQuest) FactionGuildAward?.Invoke(s, s.Daily?.DailyEpoch ?? 0);
         if (s.Tasks == null || !FactionPoints().TryGetValue(taskId, out long points)) return;
         TakeFactionDay(s);
         var runtime = s.TaskRuntime;

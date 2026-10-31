@@ -115,7 +115,7 @@ Evidence for the rest: `LC_DAL_BattleGlory._updateRealLevel` shows `Lua_CFG_Batt
 | Daily cap | `TerritoryWarzoneTaskPointsLimit` 3000 points counted per game day, past the 1000 included (`TaskRuntimeState.FactionPoints`); at the cap the sub-tasks are withdrawn |
 | New day | the faction tasks and the count start over |
 
-**Inferred:** the whole server side. The camp tier (the camps carry the world's rising risk, `TerritoryWorldDeathDropRate` [0, 0.2, 1], the tiers rising points); one sub-task per kind and its repetition; 107102's count being its last value, not the default formatter's 3010; the cap counting the exceed past 1000 (the server enum `TaskExceedKey_TerritoryWar`, `MG_DB.proto`); an unclaimed 1101001 lapsing with the day. `TerritoryWarzoneTaskGuildAward` 1021 names no award row in this client, so the guild's share is not paid.
+**Inferred:** the whole server side. The camp tier (the camps carry the world's rising risk, `TerritoryWorldDeathDropRate` [0, 0.2, 1], the tiers rising points); one sub-task per kind and its repetition; 107102's count being its last value, not the default formatter's 3010; the cap counting the exceed past 1000 (the server enum `TaskExceedKey_TerritoryWar`, `MG_DB.proto`); an unclaimed 1101001 lapsing with the day. `TerritoryWarzoneTaskGuildAward` 1021 names no award row in this client: a delivered 1101000 pays the member's guild the Guild Funds of the caravan's daily departure award (the smallest `GuildTransportTaskConfig` row's first group, 1000), credited like the caravan's funds in its own receipt (`GuildCaravanService.FactionAward`).
 
 ## War warehouse and machine permissions
 

@@ -112,6 +112,33 @@ public sealed class FactionQuestTests : IAsyncLifetime
         await Gone(CrystalThree);
     }
 
+    /// <summary>A delivered 1101000 pays the member's guild the caravan departure's 1000 Guild Funds (inferred).</summary>
+    [ClientDataFact]
+    public async Task CompletionPaysTheGuildItsShare()
+    {
+        await using var bot = await InWorld();
+        await Gm("!lvl 99");
+        await bot.SendGameAsync(GuildService.Create, new GuildCreateReq
+        { Name = "Faction", Icon = new GuildHeadIcon { BackgroundType = 100101, IconType = 200101 } });
+        var full = await bot.Inbox.WaitAsync(e => e.IsGame(GuildService.Full)
+            && GuildFullInfoNtf.Parser.ParseFrom(e.Body).Guid > 0, TimeSpan.FromSeconds(20));
+        long guild = GuildFullInfoNtf.Parser.ParseFrom(full.Body).Guid;
+        var store = Service<Server.Accounts.GuildStore>();
+        long before = await Read(() => store.Get(guild)!.Money);
+        Assert.Equal(1000, await Read(() => Service<GuildCaravanService>().FactionGuildFunds(Session)));
+
+        await Run(s => { s.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
+        await At(Quest, 0);
+        await Gm("!quest finish " + Quest);
+        await Offered(Claim);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        while (await Read(() => store.Get(guild)!.Money) != before + 1000)
+        {
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("guild funds not paid");
+            await Task.Delay(25);
+        }
+    }
+
     /// <summary>1000 points deliver the quest and offer the claim; a new game day starts the quest over.</summary>
     [ClientDataFact]
     public async Task CompletionClaimAndNewDay()

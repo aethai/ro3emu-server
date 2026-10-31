@@ -418,6 +418,7 @@ public static partial class ServerHost
         questTasks.FactionRivals = territory.WorldRivals; // 101023
         territory.CampChanged.Add(questTasks.OnFactionCampChanged);
         territory.CrystalCollected.Add(questTasks.OnFactionCrystalCollected); // 107102
+        questTasks.FactionGuildAward = app.Services.GetRequiredService<GuildCaravanService>().PayFactionAward;
         territory.SiegeSettled.Add((role, _, _) => questTasks.OnGuildEventJoined(role, TaskService.GuildEvent.RoyalCity)); // 106010
         territory.BattleSettled.Add(questTasks.OnTerritoryBattleSettled); // 106010 Stronghold / Regional Capital War
         territory.BattleSettled.Add((role, _) => questTasks.OnGuildWarScored(role)); // 106609
