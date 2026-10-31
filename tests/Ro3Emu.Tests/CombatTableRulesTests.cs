@@ -127,6 +127,19 @@ public sealed class CombatTableRulesTests
         Assert.Equal(0, PlayerRestraints.Apply(resonance, totems, shrined, bladeSoul, 0));
     }
 
+    [ClientDataFact]
+    public void ATitleLevelAboveTheTargetsAddsDamageAndBelowItTakesSome()
+    {
+        var titles = new TitleDamage(Data);
+        // TitleConfig 1 is level 1 (TitleBuffConfig 400), 6 level 2 (800), 21 level 5 (2000).
+        Assert.Equal((0, 400, 800, 2000), (titles.Term(0), titles.Term(1), titles.Term(6), titles.Term(21)));
+        Assert.Equal(1160, titles.Apply(21, 1, 1000));
+        Assert.Equal(840, titles.Apply(1, 21, 1000));
+        Assert.Equal(1000, titles.Apply(2, 6, 1000));
+        Assert.Equal(1040, titles.Apply(1, 0, 1000));
+        Assert.Equal(0, titles.Apply(21, 1, 0));
+    }
+
     // ---- 6. pet star scaling ----
 
     [ClientDataFact]
