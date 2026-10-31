@@ -475,6 +475,12 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     }
 
     /// <summary>A scene-editor point (m_kAllPoints) of the scene's map.</summary>
+    /// <summary>The reconstructions (raid trials, scripted scenes), when registered.</summary>
+    internal ReconstructedDungeons? Reconstructed => reconstructed;
+
+    /// <summary>A scene's map (points, regions, dungeon point groups).</summary>
+    internal MapWorld? Map(long scene) => worldData.Map(scene);
+
     public MapPoint? ScenePoint(long scene, long point) =>
         worldData.Map(scene)?.Points.TryGetValue(point, out var p) == true ? p : null;
 

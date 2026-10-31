@@ -243,6 +243,10 @@ public sealed partial class CombatService : IGameTicker
     /// <summary>A monster damaged a player; the flag says the hit was lethal (MVP statistics).</summary>
     public List<Action<MonsterUnit, GameSession, long, bool>> Taken { get; } = new();
 
+    /// <summary>A boss special's area landed (each hit moment): the boss, the skill, the cast's origin, the area's centre and
+    /// the facing it was marked with. A raid trial's breakers use it (DungeonService.RaidTrials: Drake's barrels).</summary>
+    internal List<Func<MonsterUnit, BossSkill, Vec3, Vec3, float, Task>> BossAreaLanded { get; } = [];
+
     /// <summary>Effective self-skill healing for authoritative dungeon statistics (MG_Common.RoleStatisticsInfo).</summary>
     public List<Action<GameSession, long>> Healed { get; } = new();
 

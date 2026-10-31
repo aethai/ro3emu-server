@@ -171,6 +171,7 @@ public sealed partial class DungeonService
     public async Task<bool> TryInteractAsync(GameSession s, NpcInteractionReq req)
     {
         if (req.NpcUid < SceneActorUidBase || req.NpcUid >= SceneActorUidBase << 1) return false;
+        if (await TryTrialInteractAsync(s, req)) return true;
         var a = Active(s);
         var actor = a?.SceneActors.FirstOrDefault(u => u.Uid == req.NpcUid);
         if (actor == null && a != null && a.RetiredActors.Contains(req.NpcUid))
@@ -296,6 +297,7 @@ public sealed partial class DungeonService
     /// <summary>A participant's accepted walk: server regions and points of the current step.</summary>
     public async Task PlayerMovedAsync(GameSession s)
     {
+        if (Active(s) is { Raid.Active: { } trial } raid) await TrialTouchesAsync(raid, trial);
         if (s.DungeonAttempt == null || Active(s) is not { } a || Step(a) is not { } step || a.StepDone) return;
         if (step.Seek != null) return; // a hiding place counts when the seeker looks (DungeonService.HideAndSeek)
         foreach (var t in step.Complete)
