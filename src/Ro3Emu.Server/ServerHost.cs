@@ -414,6 +414,10 @@ public static partial class ServerHost
         league.MatchCommitted.Add(questTasks.OnGuildLeagueMatch); // 106603, 106019
         territory.SiegeSettled.Add(questTasks.OnSiegeSettled); // 106611, 106605, 106606
         questTasks.BattleMeritPoints = territory.GloryPoints; // 106610
+        questTasks.FactionCamp = territory.WorldCampOf; // the Faction Quest (TaskService.FactionQuest.cs)
+        questTasks.FactionRivals = territory.WorldRivals; // 101023
+        territory.CampChanged.Add(questTasks.OnFactionCampChanged);
+        territory.CrystalCollected.Add(questTasks.OnFactionCrystalCollected); // 107102
         territory.SiegeSettled.Add((role, _, _) => questTasks.OnGuildEventJoined(role, TaskService.GuildEvent.RoyalCity)); // 106010
         territory.BattleSettled.Add(questTasks.OnTerritoryBattleSettled); // 106010 Stronghold / Regional Capital War
         territory.BattleSettled.Add((role, _) => questTasks.OnGuildWarScored(role)); // 106609
