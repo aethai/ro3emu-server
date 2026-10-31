@@ -2,6 +2,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -538,17 +539,27 @@ public sealed partial class TerritoryWarsService
             if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment)
                 || !Active(b) || !Member(s, b)) return;
             var pair = b.Actors.FirstOrDefault(x => x.Value == m);
-            if (pair.Value == null || !b.State.Points.TryGetValue(pair.Key, out var p)) return;
+            if (pair.Value == null) { await ScoreKillAsync(b, role!.Id, m); return; }
+            if (!b.State.Points.TryGetValue(pair.Key, out var p)) return;
             if (!b.CapturedActors.Add(m.Uid)) return;
             long guild = Own(s)!.Id;
             await CaptureAsync(b, p, guild, async () =>
             {
                 p.Hp = 0; p.RespawnAt = _clock.Now + Gvg("GVGEmperiumReviveTime", 30);
-                b.State.Players[role!.Id].Score += 50; // WarzoneTaskConfig type 1, 50; last-hit attribution inferred.
+                // WarzoneTaskConfig type 1 (50); last-hit attribution inferred.
+                b.State.Players[role!.Id].Score += WarzoneTaskConfig.ScoreOf(_data, WarzoneTaskConfig.CaptureLastHit, 0);
                 await SaveAsync(state);
             });
         }
         finally { stagedTerritoryState.Dispose(); _gate.Release(); reservation?.Dispose(); }
+    }
+    /// <summary>WarzoneTaskConfig type 2: the killer's score for a battle-room kill of a listed NPC.</summary>
+    private async Task ScoreKillAsync(Battle b, long role, MonsterUnit m)
+    {
+        long score = WarzoneTaskConfig.ScoreOf(_data, WarzoneTaskConfig.Kill, m.Template.NpcId);
+        if (score <= 0 || !b.State.Players.TryGetValue(role, out var player)) return;
+        player.Score += score;
+        await SaveAsync(state);
     }
     private async Task CaptureAsync(Battle b, CapturePoint p, long guild,
         Func<Task>? afterCapture = null)
