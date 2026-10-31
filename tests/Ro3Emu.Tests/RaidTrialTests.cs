@@ -371,8 +371,13 @@ public sealed class RaidTrialTests : IAsyncLifetime
         await WalkTo(alice, shield);
         Assert.Equal(4310601, await BuffOf(alice, [4310601]));
         await UntilBuffGone(alice, 4311601); // the trial is over
+
+        await Gm(alice, "!raidtrial 3"); // Blade Deflection: alone, nobody for the kunai to ricochet to
+        for (int i = 0; i < 100 && await BuffOf(alice, [4311601]) == 0; i++) await Task.Delay(20);
+        Assert.Equal(4311601, await BuffOf(alice, [4311601]));
+        await UntilBuffGone(alice, 4311601);
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4311801 or 4312501);
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4311801 or 4312501 or 4310901);
     }
 
     // Drake: a barrel landing on a ghost ship sinks it; the ship left charges its lane and hits whoever stands in it.

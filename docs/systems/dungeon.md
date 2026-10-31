@@ -129,7 +129,12 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   derived skill 4313601 is not handed out (the client's derived-skill slot comes from the skill wheel sync): any hit
   counts. **Giant-Blade Kunai** (tips 4314405, 4314406; guide 1050203): 55 s in and every 70 s the shield 43100004 lies at
   his feet and two players are marked (4311601); picking the shield up gives Shield 4310601 (-50% speed); after 12 s a
-  marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade 4312501.
+  marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade 4312501. **Blade
+  Deflection** (guide 1050201 'players must not approach one another'; skill 4310801 'if players are within 5 m of one
+  another, the Kunai ricochet between them'): 80 s in and every 70 s three random players get the Weapon Deflection
+  Mechanic Callout 4311601; after 6 s a marked player with anyone within 5 m, and those beside them, take 30% as
+  4310901 (three of the data's 10% ricochets). Inferred: the count for both difficulties, timing, damage; the speech
+  line 4314407 'Stay away from each other!!!' is not sent.
 - Drake (five-player raid, Silent Ship 3120201; easy 43200006, normal 43200000): **Ghost ships** (tips 5002 'Ghost ships
   will arrive in ${1} seconds! Destroy them with explosive barrels!', 17 s, and 5350035; guide 1050301): 35 s in and every
   60 s two ghost ships (43200007 easy, 43200002 normal, shown as the bullet units NPCConfig types them) stand at random

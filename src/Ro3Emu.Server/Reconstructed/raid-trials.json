@@ -295,14 +295,16 @@
       "bosses": [43100003, 43100000],
       "evidence": [
         "ChatConfig 4311 (CombatCountdownTip, 15 s) 'Orc Hero will unleash its ultimate skill in ${1} seconds. Pick up the Giant Blade and interrupt Orc Hero's charging!', 4314403 'Pick up the giant blade!!!', 4314404 'Use the skill granted by the giant blade while facing Orc Hero!', 4314405 'Orc Hero dropped his shield! Hurry and pick it up!', 4314406 'Use the shield to block the giant blade launched by Orc Hero!'.",
-        "TenChallengeHandbookIDConfig 1050202 Lost Giant Blade (pick up the blade, use Giant Blade Slash to interrupt the full-screen charge) and 1050203 Giant-Blade Kunai (blades at several players, massive damage to those without the specified status; shields block them).",
+        "TenChallengeHandbookIDConfig 1050202 Lost Giant Blade (pick up the blade, use Giant Blade Slash to interrupt the full-screen charge) and 1050203 Giant-Blade Kunai (blades at several players, massive damage to those without the specified status; shields block them), 1050201 Blade Deflection (players must not approach one another).",
+        "Skills 4310801 Blade Deflection ('throws 5 phantom Kunai; if players are within 5 m of one another, the Kunai ricochet between them'; easy 4314701: 3 Kunai), 4315101 'Blade Deflection Mechanic Warning' (a 5 m circle), 4310901 'Blade Deflection - Repeat Until Death' (each ricochet 10% of the maximum HP); BuffConfig 4311601 'Weapon Deflection Mechanic Callout'; ChatConfig 4314407 'Stay away from each other!!!' (a speech line, not sent).",
         "NPCConfig 43100002 (type 4, unit 40053 'the giant blade dropped in the five-player raid') and 43100004 (type 4, unit 40054 'the dropped shield'); skills 4311501 Raise Shield Start (15 s show), 4311701 Broken While Raising Shield, 4311801 Full-screen AOE, 4312501 Launch Blade (second hit 10 000 000), 4314401 Obtain Greatblade, 4314501 Obtain Shield.",
         "BuffConfig 4310401 'Blade Mountain-Greatsword' (10 s, 'face the boss and use the skill'), 4310601 Shield (30 s, -50% movement speed, blocks the flying blades), 4311601 the weapon deflection callout.",
         "Scene editor sc_pm_pve5orchero_001_dg01: mark points 18-25 in a ring of 18-20 m around the boss point 31."
       ],
       "guessed": [
         "Lost Giant Blade 30 s into the fight and every 70 s: Orc Hero holds his raised shield (4311501) for 15 s while the blade lies at a random ring point. Walking onto it picks it up (the blade's derived skill 4313601 is not handed out: the client's derived-skill slot is filled by the skill wheel sync); the carrier's next hit on Orc Hero breaks the shield: he staggers 3 s (4311701). Otherwise the full-screen AOE costs everyone 50%.",
-        "Giant-Blade Kunai 55 s in and every 70 s: the shield lies at his feet, two players (fewer when fewer fight) are marked; after 12 s each marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade."
+        "Giant-Blade Kunai 55 s in and every 70 s: the shield lies at his feet, two players (fewer when fewer fight) are marked; after 12 s each marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade.",
+        "Blade Deflection 80 s in and every 70 s: three random players get the callout (the easy count, for both difficulties); after 6 s a marked player with anyone within 5 m, and those beside them, take 30% as the ricochet (three bounces of the data's 10%). The Kunai cast itself stays in his rotation."
       ],
       "trials": [
         {
@@ -332,6 +334,16 @@
           "radius": 3,
           "carry": { "buff": 4310601, "ms": 30000 },
           "fail": { "who": "failing", "hpPercent": 60, "skill": 4312501, "why": "a marked player the shield does not cover" }
+        },
+        {
+          "name": "Blade Deflection",
+          "why": "the guide's Blade Deflection: players must not approach one another",
+          "start": { "firstMs": 80000, "everyMs": 70000 },
+          "windowMs": 6000,
+          "marks": { "count": 3, "buff": 4311601 },
+          "rule": "spread",
+          "radius": 5,
+          "fail": { "who": "failing", "hpPercent": 30, "skill": 4310901, "why": "the kunai ricochet between the players too close" }
         }
       ]
     },
