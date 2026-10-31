@@ -168,6 +168,14 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   (6 m) under them; anyone in a zone after 5 s takes 45% as 4331501. **Angry** (tip 4314411 'Infantry and cavalry will
   appear together'): at 50% HP she holds (4332101) while four north lanes and the two zones come together; 50% to those
   caught after 8 s. Inferred: all lanes, widths, timing and damage; no knockback, no eight-way charge.
+- Maya (five-player raid, Ant Hell 3120501; easy 4340005, normal 4340000): **Quicksand** (tip 5201 'Quicksand will strike
+  in ${1} seconds! Hide behind a stone pillar', 10 s; guide 1050502): 35 s in and every 70 s Maya holds (New Ultimate
+  4342601) while one stone pillar 4340006 per player (two to four) rises at the diagonal points 32-35, 14 m out; a player
+  not in a pillar's shadow (2 m either side, 6 m deep, as seen from Maya) takes 50%. **Petrify Mist** (guide 1050503;
+  4342301): 55 s in and every 70 s a mist circle 4340015 lands under every player; still within 4 m after 4 s: 30% and
+  Petrify 4340301 (3 s). **Sandstorm meteors** (tips 5202 and 5203, 8 s): at 40% HP the same shelter with the pillars at
+  the row points 36, 37, 40, 41 (4343401). Inferred: timing, shadow size, damage; the pull to the centre and Silk Spit's
+  link (guide 1050501) are not reproduced: the link's pull is a server-side movement the client data does not describe.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

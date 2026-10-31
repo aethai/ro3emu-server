@@ -589,6 +589,62 @@
           "fail": { "who": "failing", "hpPercent": 50, "skill": 4332101 }
         }
       ]
+    },
+    "maya": {
+      "name": "Maya (five-player raid, Ant Hell 3120501)",
+      "bosses": [4340005, 4340000],
+      "evidence": [
+        "ChatConfig 5201 (CombatCountdownTip) 'Quicksand will strike in ${1} seconds! Hide behind a stone pillar so you don't get pulled in!', 5202 'Maya is summoning quicksand again! Hide behind a stone pillar...', 5203 'Sandstorm meteors will strike in ${1} seconds! Get behind a stone pillar to avoid taking damage!'.",
+        "TenChallengeHandbookIDConfig 1050502 Quicksand Storm (pulled to the centre, meteors, then a quicksand storm; use the stone pillars generated on the field), 1050503 Petrify Mist (a sand tornado launching small tornadoes), 1050501 Silk Spit.",
+        "NPCConfig 4340006 'Magic Circle_Maya Stone Pillar' (unit 33114, the pillar's air-wall effect), 4340015 'Magic Circle_Petrifying Mist new' (unit 40058); skills 4342601 New Ultimate and 4343401 'New Ultimate@{1}' ('creates Stone Pillars, then pulls players toward the center... arena-wide circular AOEs from the edge'), 4342301 Petrifying Mist Tracking (a sand tornado at each targeted player's location); BuffConfig 4340301 Petrify (cannot use skills or move, 3 s).",
+        "Scene editor sc_pm_pve5anthell_001_dg01: mark points 32-35 on the diagonals 14 m from the boss point 17, 36-43 on rows 15 m north and south; six air walls 14 m out (the pillars' bodies)."
+      ],
+      "guessed": [
+        "Quicksand 35 s in and every 70 s: Maya holds (4342601) for 10 s while one stone pillar per player (two to four) rises at the inner diagonal points; a player not in a pillar's shadow (2 m either side, 6 m deep, as seen from Maya) takes 50%.",
+        "Petrify Mist 55 s in and every 70 s: a mist circle lands under every player; still within 4 m after 4 s: 30% and Petrify for 3 s.",
+        "Sandstorm meteors at 40% HP: as Quicksand with the pillars at the north and south row points 36, 37, 40, 41 (about 15 m out) and 8 s (4343401).",
+        "The pull to the centre and Silk Spit's link are not reproduced (the link's pull is a server movement the data does not describe)."
+      ],
+      "trials": [
+        {
+          "name": "Quicksand",
+          "why": "tip 5201 and the guide's Quicksand Storm",
+          "start": { "firstMs": 35000, "everyMs": 70000 },
+          "tips": [5201],
+          "tipParam": "countdown",
+          "windowMs": 10000,
+          "boss": { "hold": true, "show": 4342601 },
+          "objects": [ { "npc": 4340006, "at": { "points": [32, 33, 34, 35], "perPlayer": 1, "min": 2, "max": 4 }, "why": "the stone pillars" } ],
+          "rule": "shelter",
+          "width": 2,
+          "depth": 6,
+          "fail": { "who": "failing", "hpPercent": 50, "skill": 4342601, "why": "pulled into the quicksand" }
+        },
+        {
+          "name": "Petrify Mist",
+          "why": "the guide's Petrify Mist and Petrifying Mist Tracking 4342301",
+          "start": { "firstMs": 55000, "everyMs": 70000 },
+          "windowMs": 4000,
+          "objects": [ { "npc": 4340015, "at": { "onPlayers": true }, "why": "a mist circle under every player" } ],
+          "rule": "avoid",
+          "radius": 4,
+          "fail": { "who": "failing", "hpPercent": 30, "skill": 4342301, "buff": 4340301, "buffMs": 3000 }
+        },
+        {
+          "name": "Sandstorm meteors",
+          "why": "tips 5202 and 5203: behind a stone pillar again",
+          "start": { "hp": [40] },
+          "tips": [5202, 5203],
+          "tipParam": "countdown",
+          "windowMs": 8000,
+          "boss": { "hold": true, "show": 4343401 },
+          "objects": [ { "npc": 4340006, "at": { "points": [36, 37, 40, 41], "perPlayer": 1, "min": 2, "max": 4 }, "why": "the pillars on the north and south rows, 15 m out" } ],
+          "rule": "shelter",
+          "width": 2,
+          "depth": 6,
+          "fail": { "who": "failing", "hpPercent": 50, "skill": 4343401 }
+        }
+      ]
     }
   }
 }

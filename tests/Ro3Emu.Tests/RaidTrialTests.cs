@@ -533,6 +533,42 @@ public sealed class RaidTrialTests : IAsyncLifetime
         await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4330006, 4);
     }
 
+    /// <summary>Walks a player into an object's shadow: <paramref name="metres"/> past it as seen from the boss.</summary>
+    private Task WalkBehind(BotClient bot, WorldUnit cover, MonsterUnit boss, float metres)
+    {
+        float dx = cover.X - boss.X, dz = cover.Z - boss.Z, d = MathF.Sqrt(dx * dx + dz * dz);
+        return Gm(bot, FormattableString.Invariant($"!actors walk {cover.X + dx / d * metres} {cover.Z + dz / d * metres}"));
+    }
+
+    // Maya: the stone pillar's shadow keeps the quicksand off; the mist petrifies whoever stands in it; at 40% the meteors.
+    [ClientDataFact]
+    public async Task MayasPillarsShelterFromTheQuicksandAndHerMistPetrifies()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, maya) = await RaidFight(alice, 50102, 2, 3120501, 4340005);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 5201);
+        var pillars = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4340006, 2);
+        Assert.Equal(2, pillars.Length); // at least two
+        await WalkBehind(alice, pillars[0], maya, 3);
+        await UntilGone(instance, 4340006);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4342601);
+
+        await Gm(alice, "!raidtrial 2");
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4340015)); // under her
+        Assert.Equal(max * 30 / 100, (await MechanicHit(alice, 4342301)).Dsts.Single().Damage);
+        Assert.Equal(4340301, await BuffOf(alice, [4340301])); // Petrify
+
+        await Gm(alice, "!hp 999999999");
+        await OnLoop(() => { maya.Hp = maya.Template.MaxHp * 39 / 100; return Task.CompletedTask; });
+        await Tip(alice, 5202);
+        Assert.Equal("1", (await Tip(alice, 5203)).ParamList[1].Params[0]); // 8 s at the test pace
+        await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4340006, 2);
+        Assert.Equal(max * 50 / 100, (await MechanicHit(alice, 4343401)).Dsts.Single().Damage); // left in the open
+    }
+
     private async Task UntilGone(long instance, int npc)
     {
         for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc
