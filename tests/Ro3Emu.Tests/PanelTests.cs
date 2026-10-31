@@ -244,6 +244,44 @@ public sealed class PanelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WithRefuseUnknownAccountsOnlyTheSignUpCreatesAccounts()
+    {
+        var (host, panel) = await StartAsync(o => o.RefuseUnknownAccounts = true);
+        await using var _ = host;
+        // The client words only code 401 ("Incorrect Username or Password"), so an unknown name answers like a wrong
+        // password, and nothing is written.
+        Assert.Equal(401, await SdkLoginAsync(host, "panel_unknown", "secret-1"));
+        Assert.Null(await host.Service<AccountStore>().VerifiedAccountAsync("panel_unknown", "secret-1"));
+        using var browser = new PanelBrowser(panel);
+        Assert.Equal(HttpStatusCode.OK, (await browser.RegisterAsync("panel_unknown", "secret-1")).StatusCode);
+        Assert.Equal(0, await SdkLoginAsync(host, "Panel_Unknown", "secret-1"));
+        Assert.Equal(401, await SdkLoginAsync(host, "panel_unknown", "other-pw"));
+    }
+
+    [Fact]
+    public async Task SignUpsPerAddressCountCreatedAccountsByTheForwardedClient()
+    {
+        var (host, panel) = await StartAsync(o =>
+        {
+            o.Panel.TrustedProxies = ["127.0.0.1"];
+            o.Panel.SignUpsPerAddressPerDay = 2;
+        });
+        await using var _ = host;
+        using var first = new PanelBrowser(panel);
+        first.Http.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.5");
+        Assert.Equal(HttpStatusCode.OK, (await first.RegisterAsync("panel_limit_a", "secret-1")).StatusCode);
+        // A taken name creates nothing, so it gives its slot back.
+        Assert.Equal(HttpStatusCode.Conflict, (await first.RegisterAsync("panel_limit_a", "secret-1")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await first.RegisterAsync("panel_limit_b", "secret-1")).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await first.RegisterAsync("panel_limit_c", "secret-1")).StatusCode);
+        Assert.Null(await host.Service<AccountStore>().VerifiedAccountAsync("panel_limit_c", "secret-1"));
+
+        using var second = new PanelBrowser(panel);
+        second.Http.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.6");
+        Assert.Equal(HttpStatusCode.OK, (await second.RegisterAsync("panel_limit_c", "secret-1")).StatusCode);
+    }
+
+    [Fact]
     public async Task APasswordChangeNeedsTheCurrentPasswordAndSignsOutOtherBrowsers()
     {
         Assert.Equal(0, await SdkLoginAsync(_host, "panel-pw", "old-pass"));

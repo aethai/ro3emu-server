@@ -28,6 +28,8 @@ It is on by default, on port **5381**, next to the server's HTTP port 5380:
 | `Ro3Emu:Panel:TrustedProxies` | none | proxy addresses whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed (see below) |
 | `Ro3Emu:Panel:SessionHours` | `12` | hours a login stays valid without use |
 | `Ro3Emu:Panel:Registration` | `true` | `false` hides the sign-up page; accounts are then created only by a first login in the game |
+| `Ro3Emu:Panel:SignUpsPerAddressPerDay` | `0` (no limit) | accounts the sign-up creates for one client address (an IPv6 one by its /64) in any 24 hours; behind a reverse proxy list it in `TrustedProxies` |
+| `Ro3Emu:Panel:SignUpsPerHour` | `0` (no limit) | accounts the sign-up creates in any hour, from every address together |
 | `Ro3Emu:Panel:ImageDir` | `icons/` of the game data | the pictures the pages show (see [Pictures](#pictures)) |
 | `Ro3Emu:Panel:Branding:*` | RO3Emu's | your server's name, tagline, logo, footer and colour (see [Branding](#branding)) |
 | `Ro3Emu:Panel:Roles:<account>` | none | a staff role, `Moderator`, `GM` or `Admin` (see [Staff roles](#staff-roles)) |
