@@ -531,14 +531,16 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
         MainWindow.OpenExternal(url);
     }
 
-    /// <summary>After a join: the joined server's web panel, when it answers where RO3Emu puts it (PanelLink.JoinCandidates).</summary>
+    /// <summary>After a join: the joined server's web panel, when it answers where the server announces it or where RO3Emu
+    /// puts it (PanelLink.JoinCandidatesAsync).</summary>
     async Task FindJoinedPanelAsync(string serverUrl)
     {
         int probe = ++_joinProbe;
         _joinedPanel = null;
         _joinProbing = true;
         PostSettings();
-        string? panel = await PanelLink.FirstAnsweringAsync(PanelLink.JoinCandidates(serverUrl), Flows.PanelTimeout, _life.Token);
+        string? panel = await PanelLink.FirstAnsweringAsync(
+            await PanelLink.JoinCandidatesAsync(serverUrl, Flows.PanelTimeout, _life.Token), Flows.PanelTimeout, _life.Token);
         if (probe != _joinProbe) return;
         _joinedPanel = panel;
         _joinProbing = false;

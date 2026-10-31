@@ -120,6 +120,31 @@ internal static class PanelLink
         return [.. ports.Select(p => $"{uri.Scheme}://{uri.Host}:{p.ToString(System.Globalization.CultureInfo.InvariantCulture)}")];
     }
 
+    /// <summary>
+    /// Where a joined server's panel may be: the address the server announces (GET /ro3emu/panel, Ro3Emu:Panel:PublicUrl,
+    /// a panel behind a reverse proxy) first, then <see cref="JoinCandidates"/>.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> JoinCandidatesAsync(string serverUrl, TimeSpan timeout, CancellationToken token = default)
+    {
+        var list = new List<string>();
+        try
+        {
+            using var http = new HttpClient { Timeout = timeout };
+            using var response = await http.GetAsync(serverUrl.TrimEnd('/') + "/ro3emu/panel", token);
+            if (response.IsSuccessStatusCode)
+            {
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+                if (json.RootElement.ValueKind == JsonValueKind.Object && Configured(Text(json.RootElement, "url")) is { } announced)
+                    list.Add(announced.TrimEnd('/'));
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException or UriFormatException)
+        {
+        }
+        list.AddRange(JoinCandidates(serverUrl).Where(c => !list.Contains(c)));
+        return list;
+    }
+
     /// <summary>The first of <paramref name="candidates"/> (in their order) whose panel answers within <paramref name="timeout"/>, or null.</summary>
     public static async Task<string?> FirstAnsweringAsync(IEnumerable<string> candidates, TimeSpan timeout, CancellationToken token = default)
     {
