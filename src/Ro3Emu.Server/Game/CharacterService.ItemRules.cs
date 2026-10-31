@@ -2,6 +2,7 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -27,7 +28,8 @@ public sealed partial class CharacterService
     /// without 0 or the career, _iSexNeed other than 0 and the role's sex (the client only greys the item out; the
     /// server refusal and its codes are inferred). ItemCanUseInCurrentMap: MapConfig _iLimitType 1 forbids, 2 allows only
     /// the _kLimitItem [1, type] / [2, subtype] entries. _kUseLimit names ItemUseLimitConfig rows the client never reads:
-    /// _iLimitType 1 with maps _kParam is read like MapConfig's 1, a forbidden-map list (inferred). _kUseTimes
+    /// _iLimitType 1 with maps _kParam is read like MapConfig's 1, a forbidden-map list (inferred), refused with the
+    /// map's own code. _kUseTimes
     /// [period, limit] (enum_ItemUseLimit 1 day, 2 week, 3 month) caps the units used per period (GetItemUseTimeLimited).
     /// </summary>
     private int ItemRuleError(GameSession session, JsonElement row, int entry, int count)
@@ -54,10 +56,9 @@ public sealed partial class CharacterService
                 && (GameData.Number(l[0]) == 1 && GameData.Number(l[1]) == itemType || GameData.Number(l[0]) == 2 && GameData.Number(l[1]) == subType));
             if (listed == (type == 1)) return false;
         }
-        // ItemUseLimitConfig (_kUseLimit 1001/1002: maps 10110/10111 on the wings and quest items) is not enforced: no client
-        // code reads it, so whether it lists forbidden or the only allowed maps is unknown, and either guess would block the
-        // wings or quest items somewhere players need them (the starting maps, or every map but those two).
-        return true;
+        // ItemUseLimitConfig (_kUseLimit 1001/1002: maps 10110/10111 on the wings and quest items), which only the server
+        // read: the listed maps forbid the item (inferred, ItemUseLimitConfig.ForbidsScene).
+        return !ItemUseLimitConfig.Forbids(data, row, scene);
     }
 
     private static long[] Numbers(JsonElement row, string field) =>
