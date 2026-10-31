@@ -518,7 +518,7 @@ async function accountPage() {
     toast('Password changed. Use the new one in the game too.');
   });
   return [pageHead({ crumbs: [{ href: '/', label: 'Home' }, { label: 'Account' }], title: account.name,
-    after: account.admin ? chip('admin', 'Admin') : null,
+    after: account.admin ? chip('role-admin', 'Admin') : null, // not 'admin': that class is the admin area's grid layout
     actions: [densityToggle(), link('/account/security', { class: 'btn secondary sm' }, icon('key'), 'Security'),
       account.admin && link('/admin', { class: 'btn secondary sm' }, icon('shield'), 'Admin area')] }),
   state.session?.twoFactorRequired && twoFactorBanner(),
