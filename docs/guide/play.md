@@ -24,6 +24,7 @@ the current one); the 20 October release passes `RO3Emu.exe check` and the data 
 | `RO3Emu.exe` | play on your own server (same as `RO3Emu.exe start`) |
 | `RO3Emu.exe join <address>` | play on someone else's server (`host`, `host:port` or `http://host:port`) |
 | `RO3Emu.exe host` | your server, open to friends (`--gm <account>` for GM commands, once per account: `--gm you --gm friend`) |
+| `RO3Emu.exe panel [address]` | opens the [web panel](panel.md) of your server (or of the server at `address`) in the browser and prints its address |
 | `RO3Emu.exe install [folder]` / `update [folder]` | the game from Genesis' update servers, every file checked |
 | `RO3Emu.exe restore` | undo the patch: the game talks to Genesis' servers again |
 | `RO3Emu.exe check` | does this game version fit this RO3Emu? (changes nothing) |

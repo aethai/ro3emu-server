@@ -14,6 +14,19 @@ The same exe runs in one of two modes, chosen by its `launcher.json`:
   release (`RO3Emu-win-x64.zip`: downloaded, size and checksum checked, swapped in on restart; your game, `data`,
   `logs` and settings stay), and after an update it shows that release's notes once. Closing it stops the server it
   started. `RO3Emu.exe` stays for the command line.
+
+  **Web panel** on the title bar opens the [web panel](panel.md) of the server you play on in your browser:
+  - your own server: `http://127.0.0.1:5381` (the panel port the launcher starts the server with, on the bind address
+    of the server's own settings, `Ro3Emu:Panel:BindAddress` or `Ro3Emu:BindAddress`; none or every interface is
+    reached on loopback). When the server is not running yet, the entry starts it first (without the game);
+  - a server you joined: its panel on the joined host, next to its HTTP port (5381 next to 5380, 5391 next to 5390)
+    or on 5381. The launcher asks it once after the join, with a 3 second timeout; when nothing answers the entry is
+    dimmed and says the host has not shared its panel. A panel behind a proxy on another address is not found this
+    way: the host gives that address to its players;
+  - `panelUrl` in `launcher.json` (below) wins over both.
+
+  `RO3Emu.exe panel` prints and opens the same address from the command line (`RO3Emu.exe panel <address>` for
+  another server's).
 - **Operator mode** (`"mode": "operator"`, or a config with a `repository`): a server's own launcher, below. It shows
   only what the operator configures; nothing of RO3Emu.
 
@@ -65,7 +78,10 @@ file (`dotnet publish src/Ro3Emu.Launcher -c Release -p:LauncherConfigFile=<path
   "links": [
     { "label": "Website", "url": "https://example.com/" },
     { "label": "Discord", "url": "https://discord.gg/example" }
-  ]
+  ],
+  // Optional: your server's web panel (docs/guide/panel.md). The title bar's Web panel entry opens it; without it
+  // there is no entry.
+  "panelUrl": "https://panel.example.com/"
 }
 ```
 
@@ -74,6 +90,11 @@ Set `repository` to the public URL of your repository folder and `server` to you
 - `serverName` and `links` are all the branding there is: a fork for another server changes `launcher.json`, not the
   page. A link may set `"icon"` (`globe`, `chat`, `book`, `trophy`, `flag`, `code`, `link`); otherwise the page picks
   one from the label (Discord gets the chat bubble, a wiki or guide the book). Without `links` the title bar shows none.
+- `panelUrl` is the public address of your [web panel](panel.md), for example `https://playnusky.com:8443` behind
+  your https proxy (an `http` or `https` address; anything else is ignored). The title bar then shows **Web panel**
+  first among the links, and it opens that address in the player's browser. An operator's launcher never looks for a
+  panel by itself: without `panelUrl` there is no entry. In RO3Emu mode `panelUrl` also wins over the panel of the
+  server the player plays on.
 - The **hero** is the big framed picture. In order: `hero` from `launcher.json`, else `<repository>/hero.jpg`, else a
   built-in sky (no art needed). JPEG, PNG or WebP up to 8 MB; about
   1300 × 1050 px fills the frame on high-DPI screens, and the picture is cropped to the frame (centre, slightly above
@@ -85,6 +106,7 @@ Set `repository` to the public URL of your repository folder and `server` to you
 
 - **Install / Update / Play** in the bottom bar, with the installed and available version, the status, and the
   progress (speed, time left, Pause; a paused download continues where it stopped).
+- **Web panel** on the title bar (with `panelUrl`): the server's web panel in the browser.
 - **Settings** (the gear): the game folder (change, open), Repair, Desktop / Start menu shortcuts and **Uninstall**. Uninstall is
   offered only for a folder the launcher installed into while it was empty or new; a folder that already held a client
   (for example the player's own Genesis ROO_PC) is never deleted.
@@ -137,7 +159,7 @@ sync). Also put a copy of `Ro3EmuLauncher.exe` at the repository root (for examp
 - `RO3EMU_LAUNCHER_UI=<path to src/Ro3Emu.Launcher/ui>` serves the launcher page from disk and enables the dev tools.
 - `ui/index.html?mock=install|update|ready|downloading|repair|offline|error|checking|running` previews the page in a
   normal browser (serve the `ui` folder over HTTP); add `&panel=settings`, `&notes=1` (What's new), `&first=1` (the
-  shortcuts question), `&hero=<image url>`, `&links=0`, `&news=0` (no `news.json`) or `&fast=10` (a faster fake
-  download).
+  shortcuts question), `&hero=<image url>`, `&links=0`, `&news=0` (no `news.json`), `&webpanel=0` (no Web panel
+  entry; with `?app=ro3emu` a joined server without one) or `&fast=10` (a faster fake download).
 - A `launcher.json` beside the exe overrides the built-in one (for example a local repository such as
   `http://localhost:8790/`).

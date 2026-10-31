@@ -32,7 +32,7 @@ public partial class MainWindow : Window
         _exePath = exePath;
         Title = config.ServerName;
         _controller = config.IsRo3EmuMode
-            ? new Ro3EmuController(exePath, Post, PickFolder, OnGameRunningChanged)
+            ? new Ro3EmuController(exePath, Post, PickFolder, OnGameRunningChanged, config.PanelUrl)
             : new LauncherController(config, exePath, Post, PickFolder, OnGameRunningChanged);
         SourceInitialized += (_, _) => RoundCorners();
         Loaded += async (_, _) => await InitializeWebAsync();
@@ -208,7 +208,8 @@ public partial class MainWindow : Window
         return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
     }
 
-    static void OpenExternal(string url)
+    /// <summary>An http(s) address in the player's default browser (the page's links, the Web panel entry).</summary>
+    internal static void OpenExternal(string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
             Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });

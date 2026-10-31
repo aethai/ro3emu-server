@@ -24,4 +24,9 @@
     <ProjectReference Include="..\..\src\Ro3Emu.DataExport\Ro3Emu.DataExport.csproj" />
   </ItemGroup>
 
+  <!-- launcher.json parsing: the launcher is a WPF exe, its config class is plain .NET and is compiled in here. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Ro3Emu.Launcher\LauncherConfig.cs" Link="Launcher\LauncherConfig.cs" />
+  </ItemGroup>
+
 </Project>

@@ -1,12 +1,14 @@
 /* Launcher UI.
-   Host -> UI messages (LauncherController, Ro3EmuController): state, progress, server, settings, news, hero, notes, shortcuts, uninstall.
-   UI -> host commands: ready, primary, pause, repair, changeDir, openDir, shortcuts, notesSeen, uninstall, window, openUrl;
+   Host -> UI messages (LauncherController, Ro3EmuController): state, progress, server, settings, news, hero, notes, shortcuts, uninstall, toast.
+   UI -> host commands: ready, primary, pause, repair, changeDir, openDir, shortcuts, notesSeen, uninstall, window, openUrl, panel
+   (the title bar's Web panel entry, settings.panel: state open | start | checking | unavailable, url, hint);
    RO3Emu mode (settings.mode "ro3emu") also: later, host, join, stopServer, and its own phases nogame, gameupdate,
    appupdate, working. ?app=ro3emu runs the RO3Emu mode mock (see createRo3EmuMock).
    Inside the launcher the host is WebView2 (window.chrome.webview); in a plain browser a mock host simulates the flow:
    ?mock=install|update|ready|downloading|installing|repair|offline|error|checking|running (default update),
    &panel=settings, &notes=1 (What's new), &first=1 (the shortcuts question), &hero=<image url>, &links=0,
-   &news=0 (no news.json: the server's name and status only), &fast=10 (a faster fake download). */
+   &news=0 (no news.json: the server's name and status only), &fast=10 (a faster fake download), &webpanel=0 (no Web
+   panel entry; in the RO3Emu mock a joined server without a panel). */
 (function () {
   "use strict";
 
@@ -78,6 +80,9 @@
         break;
       case "uninstall":
         onUninstall(msg);
+        break;
+      case "toast":
+        if (msg.text) toast(String(msg.text));
         break;
       case "settings":
         S.settings = msg;
@@ -308,6 +313,7 @@
   function renderLinks() {
     var nav = $("links"), links = (S.settings && S.settings.links) || [];
     nav.innerHTML = "";
+    renderPanelLink(nav);
     links.forEach(function (l) {
       var u = safeUrl(l.url);
       if (!u || !l.label) return;
@@ -319,6 +325,25 @@
       b.addEventListener("click", function () { send({ cmd: "openUrl", url: u }); });
       nav.appendChild(b);
     });
+  }
+
+  // The server's web panel, first among the links. The host decides what a click does (open it, or start the
+  // player's own server first); without a panel (a joined server that has not shared one) it is dimmed and says why.
+  function renderPanelLink(nav) {
+    var pn = S.settings && S.settings.panel;
+    if (!pn || !pn.state) return;
+    var on = pn.state === "open" || pn.state === "start";
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "link" + (on ? "" : " off");
+    b.innerHTML = icon("i-panel") + "Web panel";
+    b.title = pn.state === "open" ? (safeUrl(pn.url) || "") : (pn.hint || "");
+    if (!on) b.setAttribute("aria-disabled", "true");
+    b.addEventListener("click", function () {
+      if (on) send({ cmd: "panel" });
+      else if (pn.hint) toast(pn.hint);
+    });
+    nav.appendChild(b);
   }
 
   function showHero(url) {
@@ -616,7 +641,8 @@
         links: Q.get("links") === "0" ? [] : [
           { label: "Website", url: "https://example.com/" },
           { label: "Discord", url: "https://discord.gg/example" }],
-        canUninstall: !!m.installed && m.owned };
+        canUninstall: !!m.installed && m.owned,
+        panel: Q.get("webpanel") === "0" ? null : { state: "open", url: "https://panel.example.com/" } };
     };
     var state = function (phase, message) {
       var o = { type: "state", phase: phase, installed: m.installed, remote: m.remote };
@@ -741,6 +767,7 @@
           case "pause": clearAll(); state(m.installed ? "update" : "install", "Paused. Downloaded parts are kept; continue any time."); break;
           case "repair": if (m.installed) startUpdate(null, true); break;
           case "openUrl": toast("Opens in your browser: " + c.url); break;
+          case "panel": toast("Opens in your browser: https://panel.example.com/"); break;
           case "openDir": toast("Opens " + m.dir); break;
           case "changeDir": m.dir = "E:\\Games\\Example Realm"; emit(settings()); break;
           case "window": if (c.action !== "drag") toast("Window: " + c.action); break;
@@ -763,7 +790,16 @@
     function settings() {
       return { type: "settings", mode: "ro3emu", dir: mode === "nogame" ? "" : m.dir, launcher: "1.0.20", serverName: "RO3Emu",
         links: [{ label: "GitHub", url: "https://github.com/aethai/ro3emu-server", icon: "code" }, { label: "Discord", url: "https://discord.gg/vVkcvMFKy3", icon: "chat" }],
-        canUninstall: false, lanAddress: "192.168.1.20", serverRunning: m.running, serverKind: m.kind, dataDir: "D:\\RO3Emu\\data" };
+        canUninstall: false, lanAddress: "192.168.1.20", serverRunning: m.running, serverKind: m.kind, dataDir: "D:\\RO3Emu\\data",
+        panel: panel() };
+    }
+    // the Web panel entry: the joined server's (found, still looking, or not shared: &webpanel=0), else the local server's
+    function panel() {
+      if (m.kind === "join") return m.joinPanel ? { state: "open", url: m.joinPanel }
+        : m.joinProbing ? { state: "checking", hint: "Looking for the web panel of the server you joined." }
+        : { state: "unavailable", hint: "The server you joined has not shared its web panel." };
+      return m.running ? { state: "open", url: "http://127.0.0.1:5381" }
+        : { state: "start", url: "http://127.0.0.1:5381", hint: "Starts your server on this PC and opens its web panel." };
     }
     function state(phase, message, title, link, remote) {
       m.phase = phase;
@@ -842,7 +878,24 @@
             break;
           case "later": ready(); break;
           case "host": exportThenPlay("host"); break;
-          case "join": state("working", null, "Contacting http://" + c.address + ":5380"); later(1200, function () { m.kind = "join"; state("running", "Playing on http://" + c.address + ":5380."); }); break;
+          case "join":
+            state("working", null, "Contacting http://" + c.address + ":5380");
+            later(1200, function () {
+              m.kind = "join"; m.joinPanel = null; m.joinProbing = true; emit(settings());
+              state("running", "Playing on http://" + c.address + ":5380.");
+              later(900, function () {
+                m.joinProbing = false;
+                m.joinPanel = new URLSearchParams(location.search).get("webpanel") === "0" ? null : "http://" + c.address + ":5381";
+                emit(settings());
+              });
+            });
+            break;
+          case "panel":
+            var pn = panel();
+            if (pn.state === "open") toast("Opens in your browser: " + pn.url);
+            else if (pn.state === "start" && m.phase === "ready") { m.running = true; m.kind = "local"; emit(settings()); server(); ready(); toast("Opens in your browser: " + pn.url); }
+            else if (pn.state === "start") toast("Your server is not running. Press Play to start it, then open the web panel.");
+            break;
           case "stopServer": m.running = false; m.kind = null; emit(settings()); server(); ready(); break;
           case "pause": timers.forEach(clearTimeout); state(m.phase === "updating" ? "nogame" : m.phase, "Paused. Downloaded parts are kept; continue any time.", "Download paused"); break;
           case "openUrl": toast("Opens in your browser: " + c.url); break;

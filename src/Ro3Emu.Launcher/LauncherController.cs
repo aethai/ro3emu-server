@@ -80,6 +80,9 @@ public sealed partial class LauncherController : ILauncherController
             case "uninstall":
                 await UninstallAsync();
                 break;
+            case "panel":
+                if (PanelUrl() is { } panel) MainWindow.OpenExternal(panel);
+                break;
         }
     }
 
@@ -111,7 +114,11 @@ public sealed partial class LauncherController : ILauncherController
         links = _config.Links.Where(l => l.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             || l.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)).Select(l => new { label = l.Label, url = l.Url, icon = l.Icon }),
         canUninstall = CanUninstall(),
+        panel = PanelUrl() is { } url ? new { state = Ro3Emu.Setup.PanelLink.Open, url } : null,
     });
+
+    /// <summary>The title bar's Web panel entry: only the operator's "panelUrl" (an operator's launcher looks for no panel itself).</summary>
+    string? PanelUrl() => Ro3Emu.Setup.PanelLink.Configured(_config.PanelUrl);
 
     void PostState(string phase, string? message = null, long? downloadBytes = null)
     {

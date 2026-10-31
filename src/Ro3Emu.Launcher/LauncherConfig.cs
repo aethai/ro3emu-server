@@ -25,6 +25,12 @@ public sealed class LauncherConfig
     [JsonPropertyName("hero")] public string? Hero { get; set; }
     /// <summary>The title bar's links (Website, Discord, Wiki…); none by default.</summary>
     [JsonPropertyName("links")] public List<LauncherLink> Links { get; set; } = [];
+    /// <summary>
+    /// The server's web panel (docs/guide/panel.md), for example https://panel.example.com: the title bar's Web panel
+    /// entry opens it, in either mode. Null: an operator's launcher shows no entry, RO3Emu's own app the panel of the
+    /// server it plays on (Ro3Emu.Setup.PanelLink).
+    /// </summary>
+    [JsonPropertyName("panelUrl")] public string? PanelUrl { get; set; }
 
     /// <summary>RO3Emu's own app rather than an operator's launcher (see the class summary).</summary>
     [JsonIgnore]

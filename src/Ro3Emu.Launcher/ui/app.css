@@ -106,6 +106,9 @@ svg.i{width:1em;height:1em;flex:none;overflow:visible}
   font-weight:700;font-size:13.5px;color:var(--ink);transition:background .15s}
 .link svg{font-size:15px;opacity:.75}
 .link:hover{background:rgba(255,255,255,.6)}
+/* the Web panel entry while the server's panel is not there (joined server without one, still looking): dimmed, a click says why */
+.link.off{opacity:.45}
+.link.off:hover{background:none}
 .winctl{display:flex;gap:6px;margin-left:8px;padding-left:12px;border-left:1px solid rgba(29,27,79,.14)}
 .ctl{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
   background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.75);

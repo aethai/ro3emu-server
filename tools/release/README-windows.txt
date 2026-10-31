@@ -17,13 +17,16 @@ The launcher:
 Log in with any account name and password: the account is created on first login.
 The server runs while the launcher is open (it waits in the tray while you play);
 exiting the launcher stops it. Settings > Play with friends hosts a server for
-friends or joins someone else's. The launcher updates itself from RO3Emu's
-releases and shows what changed.
+friends or joins someone else's. Web panel (top right) opens the server's web
+panel in your browser: your account, characters, rankings and, for GM accounts,
+the admin area. The launcher updates itself from RO3Emu's releases and shows
+what changed.
 
 RO3Emu.exe does the same from a console window, and more:
   RO3Emu.exe                       play on your own server (press Q to stop it)
   RO3Emu.exe join 203.0.113.10     play on a friend's server
   RO3Emu.exe host                  let friends on your network join your server
+  RO3Emu.exe panel                 open your server's web panel (panel <address>: another server's)
   RO3Emu.exe install               download the game from Genesis' update servers
   RO3Emu.exe update                update the game from Genesis' update servers
   RO3Emu.exe restore               undo the patch (the game talks to Genesis' servers again)
