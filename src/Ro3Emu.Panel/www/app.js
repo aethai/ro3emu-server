@@ -700,7 +700,7 @@ async function adminAccounts() {
   const href = p => '/admin/accounts?q=' + encodeURIComponent(q) + '&page=' + p;
   if (pastLastPage(result, href)) return null;
   const search = h('form', { class: 'row', role: 'search' },
-    h('span', { class: 'search' }, icon('search'), h('input', { class: 'input', name: 'q', value: q, placeholder: 'Account name', 'aria-label': 'Account name', spellcheck: 'false', autocapitalize: 'off' })),
+    h('span', { class: 'search' }, icon('search'), h('input', { class: 'input', type: 'search', name: 'q', value: q, placeholder: 'Search accounts', 'aria-label': 'Search accounts', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off' })),
     h('button', { type: 'submit', class: 'btn primary sm' }, 'Search'));
   search.addEventListener('submit', e => { e.preventDefault(); navigate('/admin/accounts?q=' + encodeURIComponent(new FormData(search).get('q').trim())); });
   const open = a => navigate('/admin/accounts/' + encodeURIComponent(a.name));
