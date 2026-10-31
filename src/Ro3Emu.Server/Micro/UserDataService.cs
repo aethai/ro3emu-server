@@ -14,7 +14,8 @@ namespace Ro3Emu.Server.Micro;
 /// including itself.
 /// </summary>
 public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners, GameLoop loop, SessionRegistry sessions, GuildService guilds,
-    GuildStore guildStore, GameData data, TimeProvider clock, IOptions<ServerOptions> options, ILogger<UserDataService> log) : IMicroService
+    TeamService teams, GuildStore guildStore, GameData data, TimeProvider clock, IOptions<ServerOptions> options,
+    ILogger<UserDataService> log) : IMicroService
 {
     // (inferred) Full profile replies use increasing versions, so a previous guild/online snapshot is replaceable.
     // The original per-field version allocation is not exported; this service already returns all requested roles.
@@ -145,6 +146,7 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
             ["ClusterId"] = options.Value.ClusterId,
             ["GuildSnap"] = (guild == null ? new GuildSnapInfo() : guilds.Snapshot(guild)).ToByteArray(),
         };
+        if (asked.Contains("Team")) fields["Team"] = teams.CacheTeam(role.Id).ToByteArray();
         // "Personal" (romsg.PersonalInfo bytes) only when asked for (UI_Sys_PersonalPanelModel.BindRoleGuid) and parseable.
         if (asked.Contains("Personal") && card != null && PersonalService.Parseable(card)) fields["Personal"] = card.ToByteArray();
         // The profile card asks for PopularityStar with resend-until-present (UI_Sys_Personal_InfoWidgetCtrl.GetPopularity:

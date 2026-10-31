@@ -123,6 +123,14 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     public (long TeamId, long Leader) TeamOf(long role) =>
         _byMember.TryGetValue(role, out var team) ? (team.Id, team.Leader) : (0, role);
 
+    /// <summary>
+    /// The role cache's "Team" (romsg.GlobalCacheTeam): UI_Com_AvatarInformationPanelCtrl shows another player's party,
+    /// its kind and head count from it, and offers "Invite to Party" when teamId is 0.
+    /// </summary>
+    public GlobalCacheTeam CacheTeam(long role) => _byMember.TryGetValue(role, out var team)
+        ? new GlobalCacheTeam { TeamId = team.Id, Teamstatus = (int)team.Type, Teamnum = team.Members.Count, TeamName = team.Name }
+        : new GlobalCacheTeam();
+
     /// <summary>Authoritative roster, including offline members; dungeon admission must not silently omit them.</summary>
     public IReadOnlyList<long> MembersOf(long role) =>
         _byMember.TryGetValue(role, out var team) ? team.Members.ToArray() : [role];
