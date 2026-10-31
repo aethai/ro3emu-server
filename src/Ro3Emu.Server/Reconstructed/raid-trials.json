@@ -177,6 +177,118 @@
           "fail": { "who": "all", "hpPercent": 50, "skill": 14769300 }
         }
       ]
+    },
+    "mirko-normal": {
+      "name": "Mirko, Normal (Realm of the Gods 3020108)",
+      "bosses": [14780007],
+      "evidence": [
+        "ChatConfig 4620/4621/4622 (CombatCountdownTip, 30 s) 'Activate three/four/two Safe Zones simultaneously. ${1} seconds until the beat explodes'; skill 14783601 'Mechanic Starts' (35 s, 9 999 999 damage) and 14782101 'Party-Wipe Mechanic'.",
+        "NPCConfig 14780006, the zone marker (born buffs 14789001/14789101), placed by NpcLevelPointRespawnConfig at points 118-120 for 3020108 (three zones) and at the corner points 25-28 for 3020104 (four zones).",
+        "ChatConfig 4607 'Players with the corresponding notes must Kill the matching Musical Instrument'; TenChallengeHandbookIDConfig 1100403 Summon Musical Instrument: Harp and Trumpet of different colours, players with the matching colour must destroy them.",
+        "NPCConfig 14780014/14780015 Golden Horn and Blue Harp (level 57, a 20 s timer buff 14789901/14789801); DungeonLua_3020108 buffid {1:147600, 2:147880, 3:147603, 4:147881}: BuffConfig 14788001 (gold note, _kUIParams [1,2]) and 14788101 (blue note, [1,4]); skills 14783501/14783801 Musical Instrument Full-Field AOE.",
+        "Scene editor sc_pm_shirenben_001_dg04 group 18: points 101-104 on the four edges, 16 m from the boss."
+      ],
+      "guessed": [
+        "Safe zones: 40 s into the fight and every 80 s Mirko holds for 30 s playing Mechanic Starts; every zone needs a player standing in it (3 m) at the end, else the beat costs everyone 50% of their maximum HP. Fewer players than zones: as many zones as players (a lone tester gets one, with the two-zone line).",
+        "Instruments: 75 s into the fight and every 80 s, every player gets a gold or blue note and one instrument per player (two to four) stands at the edge points; only a player of its colour damages it, 4 hits per player destroy it; each one left after 20 s costs everyone 20% (at most 60%) as the full-field AOE.",
+        "Compose and Perform Movement (the recorded 4-note scores of DungeonLua music/skill) are not reproduced; the recordable skills stay in the boss's own rotation."
+      ],
+      "trials": [
+        {
+          "name": "Safe zones",
+          "why": "tips 4620-4622 and Mechanic Starts 14783601",
+          "start": { "firstMs": 40000, "everyMs": 80000 },
+          "tipByCount": { "1": 4622, "2": 4622, "3": 4620, "4": 4621 },
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14783601 },
+          "objects": [ { "npc": 14780006, "at": { "points": [118, 119, 120], "perPlayer": 1, "min": 1, "max": 3 }, "why": "3020108's three zones" } ],
+          "rule": "occupy",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14782101, "why": "the beat explodes" }
+        },
+        {
+          "name": "Musical instruments",
+          "why": "tip 4607 and the guide's Summon Musical Instrument",
+          "start": { "firstMs": 75000, "everyMs": 80000 },
+          "tips": [4607],
+          "windowMs": 20000,
+          "colors": [14788001, 14788101],
+          "assign": true,
+          "objects": [ { "npc": [14780014, 14780015], "monster": true, "match": true, "hits": 4, "at": { "points": [101, 102, 103, 104], "perPlayer": 1, "min": 2, "max": 4 }, "why": "the Golden Horn and the Blue Harp, Normal" } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 20, "perObject": true, "capPercent": 60, "skill": 14783501, "why": "each instrument left plays its full-field AOE" }
+        }
+      ]
+    },
+    "mirko-hard": {
+      "name": "Mirko, Hard (Realm of the Gods 3020104)",
+      "bosses": [14780005],
+      "evidence": ["As Mirko Normal; 3020104 places the zone marker 14780006 at the corner points 25-28 (four zones), the instruments are the level 59 Golden Horn 14780016 and Blue Harp 14780017."],
+      "guessed": ["As Mirko Normal."],
+      "trials": [
+        {
+          "name": "Safe zones",
+          "why": "tips 4620-4622 and Mechanic Starts 14783601",
+          "start": { "firstMs": 40000, "everyMs": 80000 },
+          "tipByCount": { "1": 4622, "2": 4622, "3": 4620, "4": 4621 },
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14783601 },
+          "objects": [ { "npc": 14780006, "at": { "points": [25, 26, 27, 28], "perPlayer": 1, "min": 1, "max": 4 }, "why": "3020104's four corner zones" } ],
+          "rule": "occupy",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14782101 }
+        },
+        {
+          "name": "Musical instruments",
+          "why": "tip 4607 and the guide's Summon Musical Instrument",
+          "start": { "firstMs": 75000, "everyMs": 80000 },
+          "tips": [4607],
+          "windowMs": 20000,
+          "colors": [14788001, 14788101],
+          "assign": true,
+          "objects": [ { "npc": [14780016, 14780017], "monster": true, "match": true, "hits": 4, "at": { "points": [101, 102, 103, 104], "perPlayer": 1, "min": 2, "max": 4 } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 20, "perObject": true, "capPercent": 60, "skill": 14783501 }
+        }
+      ]
+    },
+    "mirko-final": {
+      "name": "Mirko, Final Trial (Realm of the Gods 3020104)",
+      "bosses": [14780008],
+      "evidence": ["As Mirko Hard; the Final Trial boss is born with 14783601 (Mechanic Starts) and its instruments are the level 99 Golden Horn 14780018 (Reflect Damage 14783401) and Blue Harp 14780019."],
+      "guessed": ["As Mirko Hard, the safe zones every 60 s (the Final Trial boss is born with the mechanic)."],
+      "trials": [
+        {
+          "name": "Safe zones",
+          "why": "tips 4620-4622 and Mechanic Starts 14783601",
+          "start": { "firstMs": 30000, "everyMs": 60000 },
+          "tipByCount": { "1": 4622, "2": 4622, "3": 4620, "4": 4621 },
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14783601 },
+          "objects": [ { "npc": 14780006, "at": { "points": [25, 26, 27, 28], "perPlayer": 1, "min": 1, "max": 4 } } ],
+          "rule": "occupy",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14782101 }
+        },
+        {
+          "name": "Musical instruments",
+          "why": "tip 4607 and the guide's Summon Musical Instrument",
+          "start": { "firstMs": 65000, "everyMs": 60000 },
+          "tips": [4607],
+          "windowMs": 20000,
+          "colors": [14788001, 14788101],
+          "assign": true,
+          "objects": [ { "npc": [14780018, 14780019], "monster": true, "match": true, "hits": 4, "at": { "points": [101, 102, 103, 104], "perPlayer": 1, "min": 2, "max": 4 } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 20, "perObject": true, "capPercent": 60, "skill": 14783801 }
+        }
+      ]
     }
   }
 }

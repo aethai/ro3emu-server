@@ -307,4 +307,29 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
             && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 14769000);
     }
+
+    // Mirko: a lone tester gets one safe zone (the two-zone line); leaving it empty lets the beat explode. Then the
+    // instruments of her colour stand at the edge; left alive, each plays its full-field AOE.
+    [ClientDataFact]
+    public async Task MirkosEmptySafeZoneAndLiveInstrumentsCostHp()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, _) = await RaidFight(alice, 100101, 4, 3020108, 14780007);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4622);
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 14780006));
+        Assert.Equal(max * 50 / 100, (await MechanicHit(alice, 14782101)).Dsts.Single().Damage);
+
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4607);
+        int note = await BuffOf(alice, [14788001, 14788101]);
+        int horn = note == 14788001 ? 14780014 : 14780015;
+        var instruments = await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId is 14780014 or 14780015, 2);
+        Assert.All(instruments, m => Assert.Equal(horn, m.Template.NpcId)); // alone: both of her colour
+        Assert.All(instruments, m => Assert.Equal(0, m.Template.SpeedCm)); // they stand
+        var aoe = await MechanicHit(alice, 14783501);
+        Assert.Equal(max * 40 / 100, aoe.Dsts.Single().Damage); // two left: 2 x 20%
+        Assert.Empty(await InRoom<MonsterUnit>(instance, m => m.Template.NpcId is 14780014 or 14780015 && !m.Dead));
+    }
 }

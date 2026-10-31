@@ -107,6 +107,16 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   `numbylevel`/`npcidbyregion`); a player carrying a circle's note who steps into it lights it. All lit within 30 s:
   Green Energy Barrier 14761401 and no damage; otherwise the cage costs everyone 50%. Inferred: the thresholds, the
   circle counts per gate, any order instead of the melody's order, 50% instead of the data's 100%.
+- Mirko (Normal 3020108 14780007; Hard 3020104 14780005; Final Trial 3020104 14780008): **Safe zones** (tips
+  4620/4621/4622 'Activate three/four/two Safe Zones simultaneously', 30 s; skill 14783601 Mechanic Starts): 40 s in
+  and every 80 s (Final Trial 30 s and 60 s) Mirko holds for 30 s while the zone markers 14780006 stand at points
+  118-120 (3020108, three) or the corners 25-28 (3020104, four), one per player at most; every zone needs a player in it
+  (3 m) at the end, else everyone takes 50% as 14782101. **Musical instruments** (tip 4607; guide 1100403): 75 s in and
+  every 80 s every player gets a gold or blue note (14788001/14788101, DungeonLua `buffid`) and one Golden Horn or Blue
+  Harp per player (two to four; 14780014/15 Normal, 16/17 Hard, 18/19 Final Trial) stands at the edge points 101-104.
+  Only a player of its colour damages it and 4 hits per player destroy it; each one left after 20 s costs everyone 20%
+  (at most 60%). Inferred: all timing and damage; Compose and Perform Movement (DungeonLua `music`/`skill`, the recorded
+  scores) are not reproduced.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:
