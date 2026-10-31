@@ -107,6 +107,12 @@ public sealed partial class TaskService
     //   guild GVE this client runs is Ilmata (GuildChallengeService; the client's GuildGVE/GVEWhaleRally, its result panel
     //   is UI_Sys_GVE_VictoryNewPanelCtrl). The classic GVE (GVEconfig, sc_GVE_MonsterDragon) has no server here. One per
     //   settled Ilmata stage attempt the member was present for, won or lost (participation, inferred).
+    // - 210006 [n] "Complete a Training Ground Dummy Challenge" (side quest 10200120; ProgressConfig 210006 has only the
+    //   generic "Attempt requirement Not Reached", LC_InteractCondition has no formatter for it): one per committed result
+    //   of a full challenge on 2100011, the moment the client's rule text says the countdown ends and the DMG/DPS are
+    //   calculated (TrainingService.ChallengeSettled). Practice, a reset or leaving early settles nothing; no DPS threshold,
+    //   since the target has none (inferred).
+    private const int TDummyChallenge = 210006;
     private const int TStunts = 302005, TPetRoom = 306004, TTenBossWin = 106602, TTreasureDig = 106802,
         TCoffinOrSurvivor = 210012, TDragonCoffin = 210009, TLeagueJoin = 106603, TGveJoin = 103014;
 
@@ -181,7 +187,8 @@ public sealed partial class TaskService
         [TPlot or TBaseLevel or TSkillPoints or TStatPoints or TResonance or TTotalRefine or TRefineSlots
             or TRefineCount or TMvp or TMvpOnce or TCargo or TAfkSeconds or TTimedBattle or TCaravan
             or TTalentLevels or TPetsDeployed or TTowerFloor or TGuildHunt or TDraculaWedding or TPetSupport
-            or TPetRoom or TTreasureDig or TCoffinOrSurvivor or TDragonCoffin or TGveJoin or TFriends or TEchoLevelSum
+            or TPetRoom or TTreasureDig or TDummyChallenge or TCoffinOrSurvivor or TDragonCoffin or TGveJoin or TFriends
+            or TEchoLevelSum
             or TEchoUpgrade or TTowerJoin or TTowerWin or TTowerFloorReached or TLike or TLiveness or TCampfire
             or TGvgJoin or TGvgWin or TLogin or TBarroomActTime or TBattleMerit, var n] => n,
         [TTenBossWin, var n, _, ..] => n,
