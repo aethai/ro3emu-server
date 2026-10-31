@@ -529,7 +529,7 @@ public sealed partial class TaskService
                     moved = true;
                     if (def.Type == ChickenTaskType) chickenFinished.Add(def.Id);
                 }
-                if (def.Deliver == ReceiveAuto)
+                if (def.Deliver == ReceiveAuto || DeliversItself(def))
                 {
                     int result = await DeliverCoreAsync(session, context, def.Id);
                     if (result == 0) moved = true;
@@ -660,7 +660,7 @@ public sealed partial class TaskService
             }
         }
         return accepted + AcceptGrowthTitle(session) + AcceptGrowthClass(session) + AcceptActivityTasks(session)
-            + AcceptChickenTasks(session) + AcceptRootTasks(session) + AcceptMiscTasks(session);
+            + AcceptChickenTasks(session) + AcceptTavernTasks(session) + AcceptRootTasks(session) + AcceptMiscTasks(session);
     }
 
     private bool Ready(GameSession session, TaskDef def) =>
@@ -708,7 +708,7 @@ public sealed partial class TaskService
             {
                 var t = def.Targets[i];
                 if (!Supported(t)) { info.CompleteNum[i] = 0; continue; }
-                long value = PassiveValue(session, t);
+                long value = TavernStay(session, def, t) is var stay and >= 0 ? stay : PassiveValue(session, t);
                 if (value < 0) continue;
                 info.CompleteNum[i] = Math.Min(Required(session, t), value);
             }

@@ -155,8 +155,8 @@ public sealed partial class TaskService
     public Func<GameSession, long>? BattleMeritPoints { get; set; }
 
     // 106010 BarroomToDayActTime [n] "Today's active time in the Tavern" is the Tavern quest's target (TaskConfig 2000,
-    // type 9, [106010,1200]); the guild To-Do tasks reuse it as a stand-in, [106010,5] (TaskService.GuildEvents). Only
-    // those are supported: this server has no Tavern, so the Tavern quest stays without a producer.
+    // type 9, [106010,1200]; today's seconds in a room, TaskService.TavernTasks); the guild To-Do tasks reuse it as a
+    // stand-in, [106010,5], an event counter (TaskService.GuildEvents). Other quests with it stay without a producer.
     private const int TBarroomActTime = 106010;
 
     private readonly ConditionalWeakTable<MonsterUnit, HashSet<long>> _participants = new();
@@ -253,7 +253,8 @@ public sealed partial class TaskService
 
     /// <summary>Every target of the quest has a supported reader and a positive R (a quest without one never ends).</summary>
     internal bool TargetsSupported(long taskId) => Defs().TryGetValue(taskId, out var def) && def.Targets.Length > 0
-        && def.Targets.All(t => Supported(t) && Required(null, t) > 0 && (t[0] != TBarroomActTime || GuildEventTask(def.Id)));
+        && def.Targets.All(t => Supported(t) && Required(null, t) > 0
+            && (t[0] != TBarroomActTime || GuildEventTask(def.Id) || def.Type == BarRoomTaskType));
 
     private bool ItemExists(long id) => id > 0 && id <= int.MaxValue && _data.Row("ItemConfig", id) != null;
 

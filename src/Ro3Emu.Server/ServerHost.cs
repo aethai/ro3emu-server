@@ -128,6 +128,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<StallsService>();
         builder.Services.AddSingleton<GuildService>();
         builder.Services.AddSingleton<GuildVoiceService>();
+        builder.Services.AddSingleton<TavernService>();
         builder.Services.AddSingleton<AdventureGroupStore>();
         builder.Services.AddSingleton<AdventureGroupService>();
         builder.Services.AddSingleton<GuildCaravanService>();
@@ -198,6 +199,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<Game.Messaging.IMessageModule, AdventureGroupMessages>();
         builder.Services.AddSingleton<Game.Messaging.IMessageModule, Voice.VoiceTicketService>();
         builder.Services.AddSingleton<Game.Messaging.IMessageModule>(sp => sp.GetRequiredService<GuildVoiceService>());
+        builder.Services.AddSingleton<Game.Messaging.IMessageModule>(sp => sp.GetRequiredService<TavernService>());
         builder.Services.AddSingleton<GameMessageHandler>();
         builder.Services.AddSingleton(sp => GateCrypto.LoadOrCreate(options.DataDir, sp.GetRequiredService<ILogger<GateCrypto>>()));
         builder.Services.AddSingleton<IMicroService, LoginService>();
@@ -435,6 +437,12 @@ public static partial class ServerHost
         app.Services.GetRequiredService<MountService>().RideChanged.Add(s => { questTasks.OnStateChanged(s); return Task.CompletedTask; }); // 101021
         app.Services.GetRequiredService<GuildService>().MembershipChanged.Add(app.Services.GetRequiredService<GuildVoiceService>().OnMembershipChanged);
         app.Services.GetRequiredService<GuildService>().RightsChanged.Add(app.Services.GetRequiredService<GuildVoiceService>().OnRightsChanged);
+        // The Tavern's achievements: 106007 counts the daily quest's deliveries, 106008 reads the Star Power.
+        var achievements = app.Services.GetRequiredService<AchievementService>();
+        var tavern = app.Services.GetRequiredService<TavernService>();
+        questTasks.QuestDelivered.Add((s, task, _) => achievements.OnTaskCompletions(s, task, 1));
+        tavern.TavernQuestsAdded.Add((s, count) => achievements.OnTaskCompletions(s, tavern.TaskId(), count));
+        tavern.PopularityChanged.Add(achievements.OnStateChanged);
         var social = app.Services.GetRequiredService<Micro.SocialOwnerCache>();
         questTasks.LoadFriendCount = async s => s.Role is { } role
             ? (await social.LoadSocialAsync([role.Id])).GetValueOrDefault(role.Id)?.Friends.LongLength : null; // 103019
@@ -618,6 +626,7 @@ internal sealed class GameLoopTickers(IServiceProvider services) : IHostedServic
         Add<PowerService>(); // throttled 31502/31503 republish of changed power
         Add<Voice.VoiceRooms>(); // VAD silence timeout every tick, team-membership sweep every second
         Add<GuildVoiceService>(); // guild voice channels: drops the offline and those no longer in the guild, every second
+        Add<TavernService>(); // Tavern rooms: time in a room, offline members, mutes and tags, every second
         return Task.CompletedTask;
     }
 
