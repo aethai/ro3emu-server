@@ -642,6 +642,47 @@ public sealed class RaidTrialTests : IAsyncLifetime
             && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4372101 or 4371101 or 4370401);
     }
 
+    // Baphomet: a stone pillar's shadow keeps his full-screen attack off, then the pillar blasts those beside it; the
+    // illusions stand still and are cut down in time; at 60% his scythes punish whoever stands still.
+    [ClientDataFact]
+    public async Task BaphometsPillarsShelterThenBlastAndHisIllusionsAreCutDown()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, baphomet) = await RaidFight(alice, 50103, 3, 3120901, 4390000);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4314472);
+        var pillars = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4390004, 6);
+        Assert.Equal(6, pillars.Length);
+        await WalkBehind(alice, pillars[0], baphomet, 3);
+        await UntilGone(instance, 4390004);
+
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4314475);
+        var again = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4390004, 6);
+        await WalkTo(alice, again[0]);
+        Assert.Equal(max * 30 / 100, (await MechanicHit(alice, 4392501)).Dsts.Single().Damage);
+
+        await Gm(alice, "!hp 999999999");
+        await Gm(alice, "!raidtrial 3");
+        await Tip(alice, 4314474);
+        var illusions = await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4390003 && !m.Dead, 2);
+        Assert.Equal(2, illusions.Length); // at least two
+        Assert.All(illusions, m => Assert.Equal(0, m.Template.SpeedCm)); // they stand
+        foreach (var illusion in illusions) await Break(alice, illusion);
+        for (int i = 0; i < 100 && await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonAttempt!.Raid!.Active != null)); i++)
+            await Task.Delay(20);
+
+        await Gm(alice, "!hp 999999999");
+        await OnLoop(() => { baphomet.Hp = baphomet.Template.MaxHp * 59 / 100; return Task.CompletedTask; });
+        await Tip(alice, 4314476);
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4390002)); // under her
+        Assert.Equal(max * 35 / 100, (await MechanicHit(alice, 4391601)).Dsts.Single().Damage);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body) is var hit
+            && (hit.SkillId is 4393301 or 4392801 || illusions.Any(m => m.Uid == hit.SrcID)));
+    }
+
     private async Task UntilGone(long instance, int npc)
     {
         for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc

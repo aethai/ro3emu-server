@@ -752,6 +752,72 @@
           "fail": { "who": "failing", "hpPercent": 50, "skill": 4375101 }
         }
       ]
+    },
+    "baphomet": {
+      "name": "Baphomet (five-player raid, Labyrinth 3120901)",
+      "bosses": [4390000, 4390001],
+      "evidence": [
+        "ChatConfig 4314472 'Baphomet is about to unleash a Full-screen attack! Quick, get behind a stone pillar!', 4314475 'The stone pillar is about to explode! Move Away!', 4314474 'Stop the illusions from approaching Baphomet!', 4314476 'Baphomet will continuously unleash scythes. Keep moving to dodge them!', 4314473 'Baphomet will Charge toward a player! Quickly, hide behind a Stone Pillar!'.",
+        "TenChallengeHandbookIDConfig 1050901 Scythe Dance (back to the centre, scythe slashes around him; keep evading), 1050902 Demonic Pillar (stone pillars, then a targeted skill; hide behind the pillars), 1050903 Summon Evil (illusions around the field move toward the centre; kill them before they reach it).",
+        "NPCConfig 4390004/4390005 and 4390012-4390017 the stone pillars (units 33132-33136 'pillar', sandpillar models), 4390003 the illusion (unit 33131, Baphomet's model, born buff 4390401 for 9 s), 4390002 'Baphomet AoE Magic Circle' (unit 33024 'Baphomet hell ring'); skills 4393301 Baphomet_Allground (6 s, 15x ATK), 4392501 Baphomet_Zhuzibaozha (the pillar blast), 4392801 Baphomet_Xiaoguai (the illusions), 4391601 Baphomet_Shanxing_270 (8.2 s scythe sweep).",
+        "Scene editor sc_pm_pve5maze_001_dg01: group 28 (points 29-34, a hexagon 20 m around the boss point 26 facing in) with group 27 (six air walls 17.5 m out: the pillars' bodies), group 35 (points 36-41, a hexagon 30 m out facing in)."
+      ],
+      "guessed": [
+        "Demonic Pillar 30 s in and every 70 s: Baphomet holds (4393301) for 8 s while the six pillars stand at 29-34; a player outside every pillar's shadow (2 m either side, 6 m deep, as seen from him) takes 50%.",
+        "Pillar blast 44 s in and every 70 s (right after it): the pillars stand again and explode after 5 s; within 5 m of one: 30%.",
+        "Summon Evil 60 s in and every 70 s: one illusion per player (two to six) at the outer hexagon 36-41; they stand where they appear (inferred: they do not walk to the centre) and never strike; 6 hits per player kill one; each left after 20 s costs everyone 15% (at most 45%).",
+        "Scythe Dance at 60% and 30% HP: he holds sweeping (4391601) while a hell ring lands under every player; still within 3 m after 5 s: 35%.",
+        "The charge at a player (4314473, Baphomet_Rush1) stays out: the pillar rule already asks for cover, and a marked-only shelter has no evidence."
+      ],
+      "trials": [
+        {
+          "name": "Demonic Pillar",
+          "why": "tip 4314472 and the guide's Demonic Pillar",
+          "start": { "firstMs": 30000, "everyMs": 70000 },
+          "tips": [4314472],
+          "windowMs": 8000,
+          "boss": { "hold": true, "show": 4393301 },
+          "objects": [ { "npc": 4390004, "at": { "points": [29, 30, 31, 32, 33, 34] }, "why": "the stone pillars" } ],
+          "rule": "shelter",
+          "width": 2,
+          "depth": 6,
+          "fail": { "who": "failing", "hpPercent": 50, "skill": 4393301, "why": "the full-screen attack" }
+        },
+        {
+          "name": "Pillar blast",
+          "why": "tip 4314475: the pillars explode",
+          "start": { "firstMs": 44000, "everyMs": 70000 },
+          "tips": [4314475],
+          "windowMs": 5000,
+          "objects": [ { "npc": 4390004, "at": { "points": [29, 30, 31, 32, 33, 34] } } ],
+          "rule": "avoid",
+          "radius": 5,
+          "fail": { "who": "failing", "hpPercent": 30, "skill": 4392501 }
+        },
+        {
+          "name": "Summon Evil",
+          "why": "tip 4314474 and the guide's Summon Evil",
+          "start": { "firstMs": 60000, "everyMs": 70000 },
+          "tips": [4314474],
+          "windowMs": 20000,
+          "objects": [ { "npc": 4390003, "monster": true, "still": true, "hits": 6, "at": { "points": [36, 37, 38, 39, 40, 41], "perPlayer": 1, "min": 2, "max": 6 }, "why": "the illusions on the outer hexagon" } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 15, "perObject": true, "capPercent": 45, "skill": 4392801, "why": "each illusion reaching him" }
+        },
+        {
+          "name": "Scythe Dance",
+          "why": "tip 4314476 and the guide's Scythe Dance",
+          "start": { "hp": [60, 30] },
+          "tips": [4314476],
+          "windowMs": 5000,
+          "boss": { "hold": true, "show": 4391601 },
+          "objects": [ { "npc": 4390002, "at": { "onPlayers": true }, "why": "a hell ring under every player" } ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 35, "skill": 4391601 }
+        }
+      ]
     }
   }
 }

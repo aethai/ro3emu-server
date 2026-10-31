@@ -52,7 +52,12 @@ public sealed partial class ReconstructedDungeons
     /// area is a rectangle (length, width) ahead of it along its facing instead of a circle.
     /// </summary>
     public sealed record TrialObject(IReadOnlyList<int> Npcs, TrialPlace Place, IReadOnlyList<int> Buffs, bool Monster, int Hits,
-        bool Match, TrialUse Use, bool Chosen, int MarkBuff, int MarkMs, (float Length, float Width)? Lane);
+        bool Match, TrialUse Use, bool Chosen, int MarkBuff, int MarkMs, (float Length, float Width)? Lane)
+    {
+        /// <summary>A destructible monster that stands still and never strikes back even though its NPC has an AI
+        /// (Baphomet's illusions).</summary>
+        public bool Still { get; init; }
+    }
 
     /// <summary>
     /// A result: <paramref name="HpPercent"/> of the maximum HP of each player it reaches (with <paramref name="PerObject"/>,
@@ -158,7 +163,10 @@ public sealed partial class ReconstructedDungeons
         return new TrialObject(npcs, place, Ints(o, "buffs"), Bool(o, "monster"), Int(o, "hits"), Bool(o, "match"),
             o.TryGetProperty("use", out var use) ? Enum.Parse<TrialUse>(use.GetString()!, ignoreCase: true) : TrialUse.None,
             Bool(o, "chosen"), Int(o, "markBuff"), Int(o, "markMs"),
-            o.TryGetProperty("lane", out var lane) ? (lane[0].GetSingle(), lane[1].GetSingle()) : null);
+            o.TryGetProperty("lane", out var lane) ? (lane[0].GetSingle(), lane[1].GetSingle()) : null)
+        {
+            Still = Bool(o, "still"),
+        };
     }
 
     private static TrialCast Cast(JsonElement c) => new(c.GetProperty("skill").GetInt64(), c.GetProperty("everyMs").GetInt32(),

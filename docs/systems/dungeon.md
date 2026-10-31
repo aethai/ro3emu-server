@@ -73,8 +73,9 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   down, `UI_Sys_GVE_MarqueeWidgetCtrl`), may hold the boss and play a show skill for its window, deals out colours
   (note buffs, one per player, so every colour in play is someone's), marks random players (a trap or a target), and
   puts out its objects: scene props shown as their NPCConfig `_iNPCType`, or destructible monsters outside the room's
-  counted actors (an object without its own AI stands still and never strikes back; `hits` per player destroy it at any
-  gear; `match` lets only a player of its colour damage it). Pickups hand out a colour through their 32700 interaction.
+  counted actors (an object without its own AI, or marked `still`, stands still and never strikes back; `hits` per
+  player destroy it at any gear; `match` lets only a player of its colour damage it). Pickups hand out a colour through
+  their 32700 interaction.
 - Rules judged when the window closes: per player `stand` (inside an object, of your colour), `avoid` (outside every
   object's circle or lane), `shelter` (behind an object as seen from the boss), `guard` (a marked player with a carrier
   beside), `spread` (a marked player with nobody beside); for the party `occupy` (every object at once), `collect`
@@ -198,6 +199,17 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   4370004 (with Pyramid Laser 4375101) stand at random inner corner points 22-25 facing the centre, each firing a 45 x
   6 m lane; in a lane after 6 s: 50% as 4375101. Inferred: all timing, sizes and damage; the coffin does not sink and the
   ray does not sweep.
+- Baphomet (five-player raid, Labyrinth 3120901; easy 4390000, normal 4390001): **Demonic Pillar** (tip 4314472 'Full-screen
+  attack! Quick, get behind a stone pillar!'; guide 1050902): 30 s in and every 70 s he holds (4393301) for 8 s while the
+  six stone pillars 4390004 stand at the hexagon 29-34, 20 m out (the editor's six air walls are their bodies); a player
+  outside every pillar's shadow (2 m either side, 6 m deep) takes 50%. **Pillar blast** (tip 4314475 'The stone pillar is
+  about to explode! Move Away!'): 44 s in and every 70 s the pillars stand again; within 5 m of one after 5 s: 30% as
+  4392501. **Summon Evil** (tip 4314474 'Stop the illusions from approaching Baphomet!'; guide 1050903): 60 s in and every
+  70 s one illusion 4390003 per player (two to six) appears on the outer hexagon 36-41; 6 hits per player kill one; each
+  left after 20 s costs everyone 15% (at most 45%) as 4392801. **Scythe Dance** (tip 4314476; guide 1050901): at 60% and
+  30% HP he holds sweeping (4391601) while a hell ring 4390002 lands under every player; still within 3 m after 5 s: 35%.
+  Inferred: timing, sizes and damage; the illusions stand where they appear and never strike (an object's `still`),
+  and the charge at a player (4314473) is not reproduced.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

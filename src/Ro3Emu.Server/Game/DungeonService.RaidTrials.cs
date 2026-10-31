@@ -312,16 +312,18 @@ public sealed partial class DungeonService
     }
 
     /// <summary>A destructible object: a monster outside the room's counted actors (its death never decides the run).
-    /// Without an AI of its own (NPCConfig _iAI 0: a bell, a horn, a coffin) it stands still and never strikes back.</summary>
+    /// Without an AI of its own (NPCConfig _iAI 0: a bell, a horn, a coffin), or held <c>Still</c>, it stands still and never
+    /// strikes back.</summary>
     private async Task<WorldUnit?> SpawnTrialMonsterAsync(Attempt a, MonsterUnit boss, int npc, MapPoint at,
         ReconstructedDungeons.TrialObject spec, int windowMs)
     {
         if (_monsters.Template(npc) is not { } template || NPCConfig.Get(_data, npc) is not { } row) return null;
-        if (row.Ai == 0) template = template with { SpeedCm = 0, RoamDistance = 0, AttackRange = 0, NormalSkill = 0, Aggressive = false };
+        bool still = row.Ai == 0 || spec.Still;
+        if (still) template = template with { SpeedCm = 0, RoamDistance = 0, AttackRange = 0, NormalSkill = 0, Aggressive = false };
         if (await _monsters.SpawnSingleAsync(boss.RuntimeMap, npc, at, customTemplate: template) is not { } monster) return null;
         if (!await _instances.TrackPropAsync(a.Room, monster)) return null;
         foreach (int buff in spec.Buffs) await _buffs.AddSupportAsync(monster, buff, (int)PacedMs(windowMs) + 1000, boss.Uid);
-        if (row.Ai != 0 && Fighters(a) is { Length: > 0 } fighters) _monsters.Engage(monster, fighters[Random.Shared.Next(fighters.Length)]);
+        if (!still && Fighters(a) is { Length: > 0 } fighters) _monsters.Engage(monster, fighters[Random.Shared.Next(fighters.Length)]);
         return monster;
     }
 
