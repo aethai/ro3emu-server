@@ -20,6 +20,8 @@ public sealed class WorldMessages(Maps.World world, CombatService combat, SceneS
         routes.AdmitRole(id => id is WorldInteractionService.Action or WorldInteractionService.SeatChange
             or WorldInteractionService.VehicleSync);
         routes.AdmitRole(id => id is WorldCoreService.ReliveItem); // owns the role payment and the exclusive revive claim
+        // The chat typing state changes only the sender's own unit custom data, shown to its viewers.
+        routes.AdmitRole(id => id is WorldCoreService.TypeDown);
 
         // Siege, territory battle and an ordinary dungeon answer the same statistics requests; escort cargo and
         // territory pickups are NPCs behind the ordinary interaction.
@@ -116,6 +118,10 @@ public sealed class WorldMessages(Maps.World world, CombatService combat, SceneS
         routes.Map(WorldCoreService.ReliveItem, "worldCore", async (session, msgId, body) =>
         {
             await worldCore.ItemReviveAsync(session);
+        });
+        routes.Map(WorldCoreService.TypeDown, "worldCore", async (session, msgId, body) =>
+        {
+            await worldCore.TypeDownAsync(session, GuildVoiceTypeDownMessageReq.Parser.ParseFrom(body.Span));
         });
         routes.Map(WorldCoreService.FlySwitch, "worldCore", async (session, msgId, body) =>
         {
