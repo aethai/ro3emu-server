@@ -60,6 +60,8 @@ public static partial class EconomySnapshotReader
     // Item actions: role.social_outfit is DBSocialOutfit (chat cosmetics unlocked by 349 items, with unlock and expiry
     // times, and the worn choices) and role.emoji_info is DBEmojiInfo (chat emoticon ids unlocked by 212 items). Unlocks,
     // no balance and no asset: the item is spent by the cd13a/character-item-action receipt that writes them.
+    // GM panel: role.gm_state is GmCommands.RoleGmState (AllFunctionsOpen, openallfunc kept across logins): a flag that
+    // opens client functions, no balance and no asset.
     // Tavern: role.barroom is TavernService.RoleState (Star Power received from Tavern gifts, its week, active days and
     // today's time in a room): counters, no balance and no asset; the gift drink is spent by the event/tavern-gift receipt.
     // Power: role.emblems EmblemState.Power (PowerService.Record) holds the role's last published power total and its
@@ -89,7 +91,7 @@ public static partial class EconomySnapshotReader
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
     // Faction Quest: role.task_runtime FactionDay/FactionPoints (TaskRuntimeState) are the game day and the Faction Quest
     // points counted that day against TerritoryWarzoneTaskPointsLimit. A counter, no balance and no asset.
-    public const string ExpectedFormatManifestHash = "FF26AEDB54224323AD67B5543B1C5CD8A8ED9D129F8DDB32DE40907A47F5B407";
+    public const string ExpectedFormatManifestHash = "4D5069526C13C525D39705F7F116BF1392BFFEB5B7F0B72494EAB9271E24E40E";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

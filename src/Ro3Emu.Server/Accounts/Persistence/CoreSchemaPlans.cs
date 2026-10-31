@@ -170,6 +170,8 @@ internal sealed class RoleSchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "role", "barroom", "BLOB");
         // Unix seconds of a deletion; deleted roles are kept (items, progress) but no longer listed or selectable.
         SchemaSql.AddColumn(db, tx, "role", "deleted_time", "INTEGER NOT NULL DEFAULT 0");
+        // JSON GmCommands.RoleGmState (GM panel grants that outlive the login: openallfunc).
+        SchemaSql.AddColumn(db, tx, "role", "gm_state", "BLOB");
         SchemaSql.Execute(db, tx, """
             CREATE TABLE IF NOT EXISTS role_lifecycle (
                 role_id INTEGER PRIMARY KEY,
