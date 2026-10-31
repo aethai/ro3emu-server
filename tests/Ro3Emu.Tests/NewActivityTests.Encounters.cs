@@ -216,6 +216,23 @@ public sealed partial class NewActivityTests
     }
 
     [ClientDataFact]
+    public void FestivalBetPayoutFollowsTheKoiBetTierOfTheWinnerCount()
+    {
+        var festival = Service<FestivalService>();
+        var tiers = Ro3Emu.Server.Data.Config.KoiBetRewardConfig.All(Service<GameData>()).OrderBy(t => t.WinnerMin).ToList();
+        Assert.Equal(0, festival.BetAward(0));
+        foreach (var tier in tiers)
+        {
+            Assert.Equal(tier.AwardId, festival.BetAward((int)tier.WinnerMin));
+            if (tier.WinnerMax > 0) Assert.Equal(tier.AwardId, festival.BetAward((int)tier.WinnerMax));
+        }
+        Assert.Equal(tiers[^1].AwardId, festival.BetAward(1_000_000)); // the last tier has no upper bound
+        // The fewer the winners, the more each right bet pays.
+        long Zeny(long award) => Service<AwardService>().ResolveForProgress(new RoleProgress(), award, 101).Grants.Sum(g => (long)g.Count);
+        Assert.True(Zeny(festival.BetAward(1)) > Zeny(festival.BetAward(1_000_000)));
+    }
+
+    [ClientDataFact]
     public async Task FestivalUsesAuthoredAnswerZonesAndPaysEachEntitlementOnce()
     {
         var bot = await InWorld("Festival");
@@ -276,6 +293,9 @@ public sealed partial class NewActivityTests
             Assert.True(arrived, "The authoritative player position did not reach the authored answer zone.");
             var plan = Service<AwardService>().Resolve(Session(bot), 85001, 101);
             var item = plan.Grants.First();
+            // The right bet pays the KoiBetRewardConfig tier of one winner, in the same currency.
+            var betItem = Service<AwardService>().Resolve(Session(bot), Service<FestivalService>().BetAward(1), 101).Grants[0];
+            Assert.Equal(item.Entry, betItem.Entry);
             long before = Service<CharacterService>().CountOf(Session(bot), item.Entry);
             _clock.SetLocal(2026, 10, 9, 18, 35, 1);
             await ReconcileFestival();
@@ -327,11 +347,11 @@ public sealed partial class NewActivityTests
             }
             finally { release.TrySetResult(); store.BeforeOwnedCommitForTest = null; }
             await Task.WhenAll(completion, retry).WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(before + item.Count * 2, Service<CharacterService>().CountOf(Session(bot), item.Entry));
+            Assert.Equal(before + item.Count + betItem.Count, Service<CharacterService>().CountOf(Session(bot), item.Entry));
             Assert.Equal(2, CountRows(rewardCount));
             Assert.Equal(1, CountRows(completionCount, completionSource));
             await ReconcileFestival();
-            Assert.Equal(before + item.Count * 2, Service<CharacterService>().CountOf(Session(bot), item.Entry));
+            Assert.Equal(before + item.Count + betItem.Count, Service<CharacterService>().CountOf(Session(bot), item.Entry));
             Assert.Equal(1, CountRows(completionCount, completionSource));
             using (var db = Service<AccountStore>().Open())
             using (var cmd = db.CreateCommand())
@@ -344,14 +364,14 @@ public sealed partial class NewActivityTests
                 {
                     var grants = System.Text.Json.JsonSerializer.Deserialize<AwardGrant[]>((byte[])frozen.GetValue(0));
                     Assert.NotNull(grants);
-                    Assert.Contains(grants, grant => grant.Entry == item.Entry && grant.Count == item.Count);
+                    Assert.Contains(grants, grant => grant.Entry == item.Entry && (grant.Count == item.Count || grant.Count == betItem.Count));
                     rows++;
                 }
                 Assert.Equal(2, rows);
             }
             await bot.DisposeAsync(); await WaitOffline("festival");
             await using var again = await InWorld("Festival", false);
-            Assert.Equal(before + item.Count * 2, Service<CharacterService>().CountOf(Session(again), item.Entry));
+            Assert.Equal(before + item.Count + betItem.Count, Service<CharacterService>().CountOf(Session(again), item.Entry));
         }
         catch (Exception error)
         {
