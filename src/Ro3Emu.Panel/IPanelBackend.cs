@@ -117,7 +117,11 @@ public sealed record PanelAccountPage(IReadOnlyList<PanelAccountSummary> Account
 /// <param name="Kicked">Game sessions of the account that were closed.</param>
 public sealed record PanelBanOutcome(bool Found, int Kicked);
 
-public sealed record PanelAuditEntry(long Id, DateTimeOffset Utc, string Admin, string Action, string Target, string Detail);
+public sealed record PanelAuditEntry(long Id, DateTimeOffset Utc, string Admin, string Action, string Target, string Detail)
+{
+    /// <summary>What the row's target is, for the audit log's link to it.</summary>
+    public PanelAuditTarget Subject => PanelAuditTarget.Of(Action, Target, Detail);
+}
 
 public sealed record PanelAuditPage(IReadOnlyList<PanelAuditEntry> Entries, int Total, int Page, int PageSize);
 

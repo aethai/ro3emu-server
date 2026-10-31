@@ -79,7 +79,7 @@ async function eventsPage() {
   h('section', { class: 'kpis', 'aria-label': 'Events' },
     kpi('Open now', 'calendar', num(open.length), open.length === 1 ? 'event' : 'events', open.map(o => o.event.name).join(', ') || 'none right now'),
     kpiLive('Next up', 'clock', next ? countdown(next.time.start, '', 'now') : '-', null, next ? next.event.name + ' · ' + localTime(next.time.start) : 'nothing this week'),
-    kpi('This week', 'list', num(all.length), all.length === 1 ? 'opening' : 'openings', `${num(cal.events.length)} timed events`),
+    kpi('This week', 'list', num(all.length), all.length === 1 ? 'opening' : 'openings', plural(cal.events.length, 'timed event')),
     kpi('Season', 'star', num(cal.season.length), null, cal.openContent ? 'the server keeps the season open' : 'long-running events')),
   h('div', { class: 'grid' }, h('div', { class: 'span-7' }, todayCard), h('div', { class: 'span-5' }, card('Every timed event', null, kinds || emptyState('calendar', 'No timed events', null)))),
   card('The week ahead', null, body(week)),

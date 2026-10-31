@@ -115,7 +115,11 @@ public sealed class PanelAdminTests : IAsyncLifetime
     /// <summary>Turns 2FA on: the secret, the code that confirmed it (spent) and the recovery codes.</summary>
     private static async Task<(string Secret, string Spent, List<string> Recovery)> EnableTwoFactorAsync(PanelBrowser browser)
     {
-        string secret = (await OkAsync(browser.PostAsync("/api/account/2fa/begin", new { }))).GetProperty("secret").GetString()!;
+        var begun = await OkAsync(browser.PostAsync("/api/account/2fa/begin", new { }));
+        string secret = begun.GetProperty("secret").GetString()!;
+        // The QR code of the otpauth URI: its side with the quiet zone, and the dark modules' path.
+        Assert.True(begun.GetProperty("qr").GetProperty("size").GetInt32() >= 21 + 8);
+        Assert.StartsWith("M", begun.GetProperty("qr").GetProperty("path").GetString());
         Assert.Equal(HttpStatusCode.BadRequest, (await browser.PostAsync("/api/account/2fa/enable", new { code = "abcdef" })).StatusCode);
         string code = CurrentCode(secret);
         var enabled = await OkAsync(browser.PostAsync("/api/account/2fa/enable", new { code }));
@@ -195,6 +199,14 @@ public sealed class PanelAdminTests : IAsyncLifetime
 
         using var moderator = await SignedInAsync(Moderator);
         Assert.Equal(3, (await moderator.GetJsonAsync("/api/admin/accounts/padmin-sessions/logins")).GetProperty("logins").GetArrayLength());
+
+        // An Admin's "log out of the panel" is audited, its target the account.
+        using var admin = await SignedInAsync(Admin);
+        Assert.Equal(1, (await OkAsync(admin.PostAsync("/api/admin/accounts/padmin-sessions/logout", new { }))).GetProperty("ended").GetInt32());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await first.Http.GetAsync("/api/account")).StatusCode);
+        var entry = (await admin.GetJsonAsync("/api/admin/audit")).GetProperty("entries")[0];
+        Assert.Equal(("panel-logout", "1 panel session ended"), (entry.GetProperty("action").GetString(), entry.GetProperty("detail").GetString()));
+        Assert.Equal(("account", "padmin-sessions"), (entry.GetProperty("subject").GetProperty("kind").GetString(), entry.GetProperty("subject").GetProperty("key").GetString()));
     }
 
     [Fact]
@@ -270,12 +282,22 @@ public sealed class PanelAdminTests : IAsyncLifetime
         int before = await HeldAsync();
         await OkAsync(admin.PostAsync($"/api/admin/characters/{id}/items", new { item = Bagged, count = 3 }));
         Assert.Equal(before + 3, await HeldAsync());
-        await OkAsync(admin.PostAsync($"/api/admin/characters/{id}/items", new { item = Bagged, count = -2 }));
+        // Taking more than the character holds takes nothing and says how much it holds.
+        var tooMany = await admin.PostAsync($"/api/admin/characters/{id}/items", new { item = Bagged, count = -(before + 4) });
+        Assert.Equal(HttpStatusCode.Conflict, tooMany.StatusCode);
+        Assert.Contains("holds only " + (before + 3), await tooMany.Content.ReadAsStringAsync());
+        Assert.Equal(before + 3, await HeldAsync());
+        var taken = await OkAsync(admin.PostAsync($"/api/admin/characters/{id}/items", new { item = Bagged, count = -2 }));
+        Assert.StartsWith("Removed 2 ", taken.GetProperty("message").GetString());
         Assert.Equal(before + 1, await HeldAsync());
 
         await OkAsync(admin.PostAsync($"/api/admin/characters/{id}/kick", new { reason = "test" }));
         await bot.Inbox.WaitAsync(e => e.Kind == BotEventKind.Disconnect, Wait);
         Assert.Equal(["char-kick", "char-item", "char-item"], await AuditActionsAsync(admin));
+        // A character action's target is the character (its id, for the link to its page) under its name.
+        var subject = (await admin.GetJsonAsync("/api/admin/audit")).GetProperty("entries")[0].GetProperty("subject");
+        Assert.Equal(("character", id.ToString(System.Globalization.CultureInfo.InvariantCulture), "Holder"),
+            (subject.GetProperty("kind").GetString(), subject.GetProperty("key").GetString(), subject.GetProperty("label").GetString()));
     }
 
     /// <summary>Retries an offline action while the logout of the character still holds it.</summary>
@@ -321,6 +343,26 @@ public sealed class PanelAdminTests : IAsyncLifetime
         // The restored character plays again.
         await using var back = await _host.InWorldAsync("Wanderer", create: false);
         Assert.Equal(["char-restore", "char-teleport", "char-rename"], await AuditActionsAsync(admin));
+        Assert.All((await admin.GetJsonAsync("/api/admin/audit")).GetProperty("entries").EnumerateArray(), e =>
+            Assert.Equal(("character", id.ToString(System.Globalization.CultureInfo.InvariantCulture), "Strider"), (e.GetProperty("subject").GetProperty("kind").GetString(),
+                e.GetProperty("subject").GetProperty("key").GetString(), e.GetProperty("subject").GetProperty("label").GetString())));
+    }
+
+    [Fact]
+    public void AuditTargetsLinkToWhatTheRowIsAbout()
+    {
+        Assert.Equal(new PanelAuditTarget("character", "100001", "QaBotOne"), PanelAuditTarget.Of("char-kick", "QaBotOne (100001)", "kicked"));
+        // Rows written before the "Name (id)" target of a rename or restore: the name comes from the detail.
+        Assert.Equal(new PanelAuditTarget("character", "100001", "NewName"), PanelAuditTarget.Of("char-rename", "role:100001", "Old => NewName"));
+        Assert.Equal(new PanelAuditTarget("character", "100001", "Back"), PanelAuditTarget.Of("char-restore", "role:100001", "Back of qa1"));
+        Assert.Equal(new PanelAuditTarget("character", "7", "Character 7"), PanelAuditTarget.Of("char-rename", "role:7", ""));
+        Assert.Equal("account", PanelAuditTarget.Of("ban", "qa1", "").Kind);
+        Assert.Equal(new PanelAuditTarget("report", "12", "Report #12"), PanelAuditTarget.Of("report", "report:12", ""));
+        Assert.Equal(new PanelAuditTarget("character-name", "Alice", "Alice"), PanelAuditTarget.Of("mail", "character:Alice (online)", ""));
+        Assert.Equal(new PanelAuditTarget("account", "qa1", "qa1"), PanelAuditTarget.Of("mail", "account:qa1", ""));
+        Assert.Equal("none", PanelAuditTarget.Of("mail", "everyone from level 10", "").Kind);
+        Assert.Equal("server", PanelAuditTarget.Of("schedule", "server", "").Kind);
+        Assert.Equal(new PanelAuditTarget("character-name", "Alice", "Alice"), PanelAuditTarget.Of("gm", "Alice", "!where"));
     }
 
     // ---------------------------------------------------------------- server control

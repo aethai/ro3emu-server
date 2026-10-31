@@ -50,7 +50,7 @@ async function craftingPage() {
 /** The item page's crafting cards: what makes this item, and what it is a material of. */
 function recipeCards(crafting, itemId) {
   return [crafting.from.length ? card('Crafted from', null, body(recipeGrid(crafting.from, Number(itemId)))) : null,
-    crafting.into.length ? card('Used in', h('span', { class: 'muted' }, num(crafting.into.length) + (crafting.into.length === 1 ? ' recipe' : ' recipes')),
+    crafting.into.length ? card('Used in', h('span', { class: 'muted' }, plural(crafting.into.length, 'recipe')),
       body(recipeGrid(crafting.into.slice(0, 24), Number(itemId))), crafting.into.length > 24 ? 'The first 24 shown; the crafting page has them all.' : null) : null];
 }
 

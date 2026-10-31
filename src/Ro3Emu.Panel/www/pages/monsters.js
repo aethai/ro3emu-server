@@ -21,7 +21,7 @@ async function monstersPage() {
       { label: 'Monster', grow: true, value: m => [monsterName(m.id, m.name, m.rank, m.icon), variantsChip(m.variants)] },
       { label: 'ID', num: true, opt: true, value: m => mono(String(m.id)) },
       { label: 'Level', num: true, value: m => range(m.level, m.maxLevel) },
-      { label: 'HP', num: true, value: m => range(m.hp, m.maxHp) },
+      { label: 'HP', num: true, shrink: true, value: m => range(m.hp, m.maxHp) },
       { label: 'Element', opt: true, value: m => m.elementName || '-' },
       { label: 'Race', opt: true, value: m => m.race || '-' },
       { label: 'Size', opt: true, value: m => m.size || '-' },
@@ -70,7 +70,7 @@ function dropsCard(detail, m, rewards) {
 /** The monsters of this name: one row each, with where it spawns. */
 function variantsCard(detail, m) {
   if (detail.variants.length <= 1) return null;
-  return card('Monsters of this name', h('span', { class: 'muted' }, num(detail.variants.length) + ' variants'), table([
+  return card('Monsters of this name', h('span', { class: 'muted' }, plural(detail.variants.length, 'variant')), table([
     { label: 'ID', value: v => v.id === m.id || v.ids.includes(m.id) ? h('span', { class: 'mono strong' }, String(v.id)) : link('/monsters/' + v.id, { class: 'text-link mono' }, String(v.id)) },
     { label: 'Level', num: true, value: v => num(v.level) },
     { label: 'HP', num: true, value: v => num(v.hp) },

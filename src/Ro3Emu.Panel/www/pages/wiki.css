@@ -10,7 +10,7 @@
 .amount{display:inline-flex;align-items:center;gap:var(--s1);max-width:100%;min-height:28px;padding:0 var(--s2) 0 2px;border-radius:var(--r1);
   background:var(--surface-sub);border:1px solid var(--line-soft);font-size:var(--t-sm);font-weight:700}
 .amount .thumb,.amount .glyph{width:22px;height:22px;margin:0}
-.amount span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.amount span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .amount .x{color:var(--ink);font-variant-numeric:tabular-nums}
 a.amount:hover{border-color:var(--line-strong)}
 .amount .chip{height:18px;margin-left:var(--s1)}
@@ -48,7 +48,7 @@ a.amount:hover{border-color:var(--line-strong)}
 .effects li{padding-left:var(--s3);position:relative}
 .effects li::before{content:"";position:absolute;left:0;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--faint)}
 .effects.flash li::before{background:var(--amber)}
-.notes{display:grid;gap:var(--s1)}
+.card-rules{display:grid;gap:var(--s1)}
 .card-art{max-height:420px;width:auto}
 
 /* recipes */

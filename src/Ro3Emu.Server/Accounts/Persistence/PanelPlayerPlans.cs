@@ -101,3 +101,26 @@ internal sealed class PanelLedgerTotalsRead(long? asset) : DbReadPlan
         return rows;
     }
 }
+
+/// <summary>
+/// Characters (deleted ones too: their kit entered the realm) that have their starter kit but no ledger receipt of
+/// the kind <paramref name="kitKind"/>: they got it before the kit was written to the ledger. Without the ledger
+/// tables every character with a kit counts.
+/// </summary>
+internal sealed class PanelUnrecordedStarterKitsRead(string kitKind) : DbReadPlan
+{
+    internal override int Bytes => 256;
+    internal override string Label => "panel/unrecorded-starter-kits";
+
+    internal override object Execute(SqliteConnection db, SqliteTransaction tx)
+    {
+        bool ledger;
+        using (var exists = DbSql.Command(db, tx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='operation_receipt'"))
+            ledger = (long)exists.ExecuteScalar()! > 0;
+        // One pass over the receipts (an uncorrelated IN), not one per character.
+        using var count = DbSql.Command(db, tx, "SELECT COUNT(*) FROM role WHERE starter_kit<>0" + (ledger
+            ? " AND id NOT IN (SELECT actor_role FROM operation_receipt WHERE command_kind=$kind)" : ""));
+        count.Parameters.AddWithValue("$kind", kitKind);
+        return (long)count.ExecuteScalar()!;
+    }
+}

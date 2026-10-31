@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Ro3Emu.Panel;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data.Config;
@@ -32,21 +33,27 @@ public sealed partial class PanelOperations
 
     private static PanelActionResult Refused(string message) => new(false, message);
 
-    private static string Target(long character, string? name) =>
-        (name ?? "?") + " (" + character.ToString(CultureInfo.InvariantCulture) + ")";
+    private static string Target(long character, string? name) => AdminAudit.Character(name, character);
 
     /// <summary>The character's session in the game, on the loop.</summary>
     private GameSession? Online(long character) => sessions.All().FirstOrDefault(s => s.Role?.Id == character);
 
     /// <summary>Runs a GM line for the character's live session as the panel's GM console does; null when it is not in
-    /// the game, else the replies.</summary>
-    private async Task<List<string>?> RunLineAsync(long character, string line)
+    /// the game, else the replies. A <paramref name="refuse"/> that answers (on the loop, before the line runs) stops it:
+    /// its text is the only reply, and <paramref name="refused"/> is set.</summary>
+    private async Task<List<string>?> RunLineAsync(long character, string line, Func<GameSession, string?>? refuse = null,
+        StrongBox<bool>? refused = null)
     {
         try
         {
             return await loop.InvokeAsync(async () =>
             {
                 if (Online(character) is not { Role: not null } session) return null;
+                if (refuse?.Invoke(session) is { } no)
+                {
+                    if (refused != null) refused.Value = true;
+                    return [no];
+                }
                 List<string> replies = [];
                 session.GmReplies = replies;
                 try { await gm.RunForPanelAdminAsync(session, line); }
@@ -150,13 +157,22 @@ public sealed partial class PanelOperations
         var role = await roles.GetAsync(character);
         if (role == null) return Refused("There is no such character.");
         if (ItemConfig.Get(data, item) == null) return Refused("Item " + item.ToString(CultureInfo.InvariantCulture) + " is not in the item table.");
-        string amount = Math.Min(Math.Abs(count), int.MaxValue).ToString(CultureInfo.InvariantCulture);
+        long wanted = Math.Min(Math.Abs(count), int.MaxValue);
+        string amount = wanted.ToString(CultureInfo.InvariantCulture);
         string line = (count > 0 ? "!item " : "!delitem ") + item.ToString(CultureInfo.InvariantCulture) + " " + amount;
-        if (await RunLineAsync(character, line) is not { } replies)
+        string name = item == Zeny ? "Zeny" : data.ItemName(item);
+        // !delitem takes what there is (a currency down to 0): the panel takes all of it or nothing, checked on the
+        // loop right before the line runs, so nothing is spent in between.
+        var refused = new StrongBox<bool>();
+        Func<GameSession, string?>? enough = count > 0 ? null : session => characters.CountOf(session, item) is var held && held < wanted
+            ? role.Name + " holds only " + held.ToString("N0", CultureInfo.InvariantCulture) + " " + name + ", so nothing was taken."
+            : null;
+        if (await RunLineAsync(character, line, enough, refused) is not { } replies)
             return Refused(role.Name + " is not in the game. Send items by mail (Mail & rewards) instead; they arrive at the next login.");
         string reply = replies.Count > 0 ? replies[0] : "";
+        if (refused.Value) return Refused(reply);
         if (reply.StartsWith("Usage", StringComparison.Ordinal)) return Refused("The server refused it: " + reply);
-        string what = (item == Zeny ? "Zeny" : data.ItemName(item)) + " (" + item.ToString(CultureInfo.InvariantCulture) + ")";
+        string what = name + " (" + item.ToString(CultureInfo.InvariantCulture) + ")";
         await AuditAsync(admin, AdminAudit.CharacterItem, Target(character, role.Name),
             (count > 0 ? "+" : "-") + amount + " " + what + (reply.Length > 0 ? " => " + reply : ""));
         return new PanelActionResult(true, reply.Length > 0 ? reply : "Done.");

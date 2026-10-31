@@ -27,7 +27,8 @@ function scheduleCard(scheduled) {
       try { await api('POST', '/api/admin/server/cancel'); toast('Cancelled; the players were told.'); route(); } catch (e) { toast(e.message); }
     } }, 'Cancel');
     return card('Planned', chip('event', scheduleKinds[scheduled.kind]), body(
-      h('p', { class: 'countdown' }, left(scheduled.at)),
+      // The live countdown of pages/wiki.js (its ticker moves it); its own class here, not the countdown's.
+      h('p', { class: 'planned-countdown' }, countdown(scheduled.at, 'In ', 'Stopping now')),
       facts([['At', stamp(scheduled.at)], ['By', mono(scheduled.by)], ['Reason', scheduled.reason || h('span', { class: 'muted' }, '-')],
         scheduled.backup && ['Backup', mono(scheduled.backup)]].filter(Boolean)),
       h('div', { class: 'row tools-gap-top' }, cancel)));
@@ -50,12 +51,6 @@ function scheduleCard(scheduled) {
     plan));
 }
 
-/** The time until a planned stop, as the countdown shows it. */
-function left(iso) {
-  const seconds = (new Date(iso) - Date.now()) / 1000;
-  return seconds < 60 ? 'Under a minute left' : duration(seconds) + ' left';
-}
-
 function backupsCard(backups) {
   const make = h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
     await busy(make, async () => {
@@ -74,7 +69,7 @@ function backupsCard(backups) {
   return card('Backups', make, [h('div', { class: 'confirm-slot' }, confirmHost),
     backups.length
       ? table([
-        { label: 'File', grow: true, value: b => [mono(b.name), b.compressed ? h('span', { class: 'sub' }, 'compressed') : null] },
+        { label: 'File', grow: true, value: b => [mono(b.name, { class: 'mono break' }), b.compressed ? h('span', { class: 'sub' }, 'compressed') : null] },
         { label: 'Made', opt: true, value: b => stamp(b.created) },
         { label: 'Size', num: true, value: b => [megabytes1(b.bytes), ' MB'] },
         { label: '', value: b => h('div', { class: 'row nowrap' },

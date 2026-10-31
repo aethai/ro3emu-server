@@ -35,6 +35,27 @@ function recoveryList(codes) {
     h('div', { class: 'codes', 'aria-label': 'Recovery codes' }, codes.map(c => h('span', null, c)))];
 }
 
+/** The server's QR code ({ size, path }: the dark modules as one SVG path), drawn as SVG elements (the page's policy
+ *  allows no inline style); dark on light in both themes, as a camera reads it best. */
+function qrCode(qr) {
+  if (!qr) return null;
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('class', 'qr');
+  svg.setAttribute('viewBox', `0 0 ${qr.size} ${qr.size}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'QR code of the key, for the authenticator app');
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  const back = document.createElementNS(SVG, 'rect');
+  back.setAttribute('class', 'qr-light');
+  back.setAttribute('width', String(qr.size));
+  back.setAttribute('height', String(qr.size));
+  const dark = document.createElementNS(SVG, 'path');
+  dark.setAttribute('class', 'qr-dark');
+  dark.setAttribute('d', qr.path);
+  svg.append(back, dark);
+  return svg;
+}
+
 /** The 2FA card: setting it up (secret, app, first code), or the codes and turning it off. */
 function twoFactorCard(state2fa) {
   const host = h('div');
@@ -45,8 +66,10 @@ function twoFactorCard(state2fa) {
     const groups = setup.secret.match(/.{1,4}/g).join(' ');
     show(h('ol', { class: 'steps' },
       h('li', null, 'Open an authenticator app (Google Authenticator, Microsoft Authenticator, Aegis, 1Password, ...).'),
-      h('li', null, 'Add an account with this key, time based, 6 digits: ', h('a', { class: 'text-link', href: setup.uri }, 'or open it in the app'), '.'),
+      h('li', null, 'Scan this QR code with it. Or add an account by hand with the key below (time based, 6 digits), or ',
+        h('a', { class: 'text-link', href: setup.uri }, 'open it in the app'), ' on this device.'),
       h('li', null, 'Type the code the app shows.')),
+    qrCode(setup.qr),
     h('code', { class: 'secret' }, groups),
     form([codeField('Code from the app')], 'Turn on', async values => {
       const done = await api('POST', '/api/account/2fa/enable', { code: values.code });
@@ -92,7 +115,7 @@ function sessionsCard(sessions, addresses) {
   const end = async s => { await api('POST', `/api/account/sessions/${encodeURIComponent(s.id)}/end`); toast('That browser is signed out.'); route(); };
   const endOthers = async () => {
     const { ended } = await api('POST', '/api/account/sessions/end-others');
-    toast(ended ? `${ended} other browser${ended === 1 ? '' : 's'} signed out.` : 'No other browser was signed in.');
+    toast(ended ? `${plural(ended, 'other browser')} signed out.` : 'No other browser was signed in.');
     route();
   };
   return card('Signed-in browsers', h('button', { type: 'button', class: 'btn secondary sm', onclick: () => endOthers().catch(e => toast(e.message)) }, icon('out'), 'Log out everywhere else'),

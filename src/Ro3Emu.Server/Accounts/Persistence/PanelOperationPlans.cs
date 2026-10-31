@@ -150,7 +150,7 @@ internal sealed class PanelRoleRenamePlan(long role, string name, string admin, 
         rename.Parameters.AddWithValue("$name", name);
         rename.Parameters.AddWithValue("$id", role);
         rename.ExecuteNonQuery();
-        AdminAudit.Insert(db, tx, now, admin, AdminAudit.CharacterRename, "role:" + role.ToString(CultureInfo.InvariantCulture),
+        AdminAudit.Insert(db, tx, now, admin, AdminAudit.CharacterRename, AdminAudit.Character(name, role),
             previous + " => " + name);
         return PanelRoleResult.Done;
     }
@@ -184,7 +184,7 @@ internal sealed class PanelRoleRestorePlan(long role, string admin, long now) : 
         using var lifecycle = DbSql.Command(db, tx, "UPDATE role_lifecycle SET epoch=epoch+1, deleted=0 WHERE role_id=$id AND deleted=1");
         lifecycle.Parameters.AddWithValue("$id", role);
         if (lifecycle.ExecuteNonQuery() != 1) throw new RolePlanConflictException();
-        AdminAudit.Insert(db, tx, now, admin, AdminAudit.CharacterRestore, "role:" + role.ToString(CultureInfo.InvariantCulture),
+        AdminAudit.Insert(db, tx, now, admin, AdminAudit.CharacterRestore, AdminAudit.Character(name, role),
             name + " of " + account);
         return PanelRoleResult.Done;
     }

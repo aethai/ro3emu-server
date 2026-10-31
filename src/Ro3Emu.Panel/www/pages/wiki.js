@@ -28,7 +28,7 @@ function localWhen(iso) {
 }
 
 /** "2d 4h", "3h 05m", "4m 09s": the time left until an instant. */
-function left(ms) {
+function timeLeft(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const d = Math.floor(s / 86400), hr = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
   if (d > 0) return `${d}d ${hr}h`;
@@ -38,7 +38,7 @@ function left(ms) {
 
 /**
  * A live countdown to an instant: "in 3h 05m", then the text of done() once it passes. One timer moves every
- * countdown on the page.
+ * countdown on the page: the nodes with a target time (data-until), nothing else of the class.
  */
 function countdown(iso, prefix = 'in ', done = 'now') {
   const node = h('span', { class: 'countdown mono', 'data-until': String(new Date(iso).getTime()), 'data-prefix': prefix, 'data-done': done });
@@ -47,10 +47,10 @@ function countdown(iso, prefix = 'in ', done = 'now') {
 }
 function tick(node) {
   const rest = Number(node.dataset.until) - Date.now();
-  node.textContent = rest > 0 ? node.dataset.prefix + left(rest) : node.dataset.done;
+  node.textContent = rest > 0 ? node.dataset.prefix + timeLeft(rest) : node.dataset.done;
   node.classList.toggle('done', rest <= 0);
 }
-setInterval(() => { for (const node of document.querySelectorAll('.countdown')) tick(node); }, 1000);
+setInterval(() => { for (const node of document.querySelectorAll('.countdown[data-until]')) tick(node); }, 1000);
 
 /** A percentage of damage: "+50%", "-25%", "±0". */
 const signed = p => p > 0 ? `+${p}%` : p < 0 ? `−${-p}%` : '±0';

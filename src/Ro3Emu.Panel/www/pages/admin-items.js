@@ -23,7 +23,7 @@ function itemSearch(q) {
 }
 
 async function adminItems() {
-  requireAdmin();
+  requireRole('admin');
   const q = queryOf().q || '';
   const found = q ? await api('GET', '/api/items?q=' + encodeURIComponent(q)) : null;
   const results = found
@@ -53,7 +53,7 @@ async function adminItems() {
 function dupeTable(report) {
   const since = report.ledgerSince ? ['Ledger since ', stamp(report.ledgerSince)] : 'The ledger is empty';
   if (!report.items.length)
-    return h('div', null, emptyState('shield', 'Nothing flagged', `${num(report.checked)} different items held, none beyond what the ledger explains.`), h('div', { class: 'card-foot' }, h('span', null, since)));
+    return h('div', null, emptyState('shield', 'Nothing flagged', `${plural(report.checked, 'different item')} held, none beyond what the ledger explains.`), h('div', { class: 'card-foot' }, h('span', null, since)));
   return h('div', null, table([
     { label: 'Item', grow: true, value: r => link('/admin/items/' + r.item.id, { class: 'named q' + r.item.quality }, thumb(r.item.icon, r.item.name, 'q' + r.item.quality), h('span', null, r.item.name)) },
     { label: 'Held', num: true, value: r => num(r.held) },
@@ -64,7 +64,7 @@ function dupeTable(report) {
 }
 
 async function adminItem(id) {
-  requireAdmin();
+  requireRole('admin');
   const t = await api('GET', `/api/admin/items/${encodeURIComponent(id)}/trace`);
   const item = t.item, l = t.ledger;
   const holders = t.currency
@@ -94,15 +94,16 @@ async function adminItem(id) {
       meta: [['ID', mono(String(item.id))], ['Type', item.subType || item.typeName]],
       actions: [link('/items/' + item.id, { class: 'btn secondary sm' }, icon('book'), 'Item page'), densityToggle()] }),
     h('section', { class: 'kpis', 'aria-label': 'Totals' },
-      kpi('Held now', 'box', t.currency ? '-' : num(t.held), null, t.currency ? 'in purses' : `${num(t.holders.length)} ${t.holders.length === 1 ? 'holder' : 'holders'}`),
+      kpi('Held now', 'box', t.currency ? '-' : num(t.held), null, t.currency ? 'in purses' : plural(t.holders.length, 'holder')),
       kpi('Entered', 'arrow', '+' + num(l.entered), null, 'ledger sources'),
       kpi('Left', 'back', num(l.left), null, 'ledger sinks'),
-      kpi('Ledger net', 'coins', num(l.entered + l.left), null, l.first ? ['since ', stamp(l.first)] : 'no ledger entry', { warn: !t.currency && t.held > l.entered + l.left })),
+      kpi('Ledger net', 'coins', num(l.net), null, l.starterKits ? `+${num(l.starterKits)} in unrecorded starter kits`
+        : l.first ? ['since ', stamp(l.first)] : 'no ledger entry', { warn: !t.currency && t.held > l.explained })),
     h('div', { class: 'stack' },
       t.flags.length ? card('Flags', null, flagList(t.flags), 'Inferred rules: see the panel guide.') : null,
       card('Holders', null, holders),
       card('Latest movements', link('/admin/economy?asset=' + item.id, { class: 'more' }, 'Economy log', icon('arrow')), recent)));
 }
 
-registerAdminPage({ id: 'item-tracking', label: 'Item tracking', icon: 'search', path: '/admin/items', pattern: /^\/admin\/items$/, page: adminItems });
+registerAdminPage({ id: 'item-tracking', label: 'Item tracking', icon: 'search', path: '/admin/items', pattern: /^\/admin\/items$/, page: adminItems, role: 'admin' });
 routes.push([/^\/admin\/items\/(\d+)$/, adminItem, 'admin']);

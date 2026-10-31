@@ -94,9 +94,20 @@ public sealed partial class PanelBackend
         var first = rows.FirstOrDefault();
         var at = rows.LastOrDefault(r => r.Level <= level.Level);
         bool known = first.Row.ValueKind != JsonValueKind.Undefined;
-        return new PanelAchievementType(type, known ? data.TextOf(first.Name) : "Category " + type.ToString(CultureInfo.InvariantCulture),
-            at.Row.ValueKind != JsonValueKind.Undefined ? data.TextOf(at.LevelName) : "", level.Level, level.Point, known ? Image("achievements", first.Icon) : "");
+        string name = known ? data.TextOf(first.Name) : "";
+        if (name.Length == 0) name = "Category " + type.ToString(CultureInfo.InvariantCulture);
+        return new PanelAchievementType(type, name, at.Row.ValueKind != JsonValueKind.Undefined ? LevelName(name, data.TextOf(at.LevelName)) : "",
+            level.Level, level.Point, known ? Image("achievements", first.Icon) : "");
     }
+
+    /// <summary>
+    /// A category level's name for the page. The English texts are the category's name with the rank glued on
+    /// ("Growth@{1}" with 1: "Growth1"), which reads as a raw key under the category's own name: "Level 1" instead.
+    /// Any other text is kept.
+    /// </summary>
+    internal static string LevelName(string category, string text) =>
+        text.Length > category.Length && text.StartsWith(category, StringComparison.Ordinal) && text[category.Length..].Trim().All(char.IsAsciiDigit)
+            ? "Level " + text[category.Length..].Trim() : text;
 
     /// <summary>The character's place on each character board it is on (the rankings page's boards).</summary>
     private async Task<List<PanelRankPosition>> RoleRanksAsync(Role role)

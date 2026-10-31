@@ -46,7 +46,7 @@ function rankTable(ranks) {
 function achievementCard(a) {
   if (!a) return card('Achievements', null, emptyState('sparkle', 'No achievements yet', null));
   const level = h('div', { class: 'named plain' }, thumb(a.icon, a.levelName || 'A', 'q5', 'lg'),
-    h('div', null, h('b', null, a.levelName || 'Level ' + a.level), h('span', { class: 'sub' }, `${num(a.points)} points · ${num(a.reached)} of ${num(a.total)} reached`)));
+    h('div', null, h('b', null, a.levelName || 'Level ' + a.level), h('span', { class: 'sub' }, `${plural(a.points, 'point')} · ${num(a.reached)} of ${num(a.total)} reached`)));
   return card('Achievements', null, [
     body(level, a.types.length ? h('ul', { class: 'badges' }, a.types.map(t => h('li', null, thumb(t.icon, t.name, 'q3'),
       h('div', null, h('b', null, t.name), h('span', { class: 'sub' }, t.levelName || 'Level ' + t.level))))) : null),
@@ -128,7 +128,7 @@ async function guildPage(id) {
   h('section', { class: 'kpis', 'aria-label': 'Key figures' },
     kpi('Members', 'users', num(s.members), null, `${num(g.members.filter(m => m.online).length)} online now`),
     kpi('Prestige', 'trophy', num(s.prestige), null, 'guild prestige'),
-    kpi('Territories', 'map', num(s.territories), null, g.castles.length ? `defends ${g.castles.length} ${g.castles.length === 1 ? 'city' : 'cities'}` : 'no city defended'),
+    kpi('Territories', 'map', num(s.territories), null, g.castles.length ? `defends ${plural(g.castles.length, 'city', 'cities')}` : 'no city defended'),
     kpi('Battle Merit', 'shield', num(g.merit), null, 'the members\' this season')),
   h('div', { class: 'grid' },
     h('div', { class: 'span-8 stack' }, card('Members', null, members)),
