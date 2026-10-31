@@ -27,6 +27,8 @@ public sealed partial class CharacterService
         session.DungeonSyncMinute = 0;
         var progress = roles.LoadProgress(role.Id);
         session.Progress = progress;
+        session.GmAllFunctionsOpen = roles.LoadGmState(role.Id) is { Length: > 0 } gm
+            && JsonSerializer.Deserialize<GmCommands.RoleGmState>(gm)?.AllFunctionsOpen == true; // GM panel openallfunc
         session.Pets = null; // The next role's pets load before 5056; never reuse a previous role's stat contributions.
         session.Items = itemStore.Load(role.Id);
         session.BagState = new RoleBagState(roles.LoadBagState(role.Id));
@@ -50,6 +52,13 @@ public sealed partial class CharacterService
         session.SyncVersions.Clear();
         // Stats are current before the selection awaits anything: the loop may tick this session meanwhile.
         Refresh(session);
+    }
+
+    /// <summary>GM panel openallfunc: every function counts as open for the role, now and at its later logins.</summary>
+    internal void OpenAllFunctions(GameSession session)
+    {
+        roles.SaveGmState(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(new GmCommands.RoleGmState { AllFunctionsOpen = true }));
+        session.GmAllFunctionsOpen = true;
     }
 
     /// <summary>The rest of <see cref="Load"/>: a new role's starter kit.</summary>
