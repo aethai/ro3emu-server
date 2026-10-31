@@ -374,4 +374,36 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
             && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4311801 or 4312501);
     }
+
+    // Drake: a barrel landing on a ghost ship sinks it; the ship left charges its lane and hits whoever stands in it.
+    // Then the puppets left at the end strike everyone.
+    [ClientDataFact]
+    public async Task DrakesBarrelsSinkAShipAndTheOtherChargesItsLane()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, drake) = await RaidFight(alice, 50101, 3, 3120201, 43200006);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        Assert.Equal("2", (await Tip(alice, 5002)).ParamList[1].Params[0]);
+        var ships = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43200007, 2);
+        Assert.Equal(2, ships.Length);
+        Assert.All(ships, s => Assert.Equal(10, s.EntityType)); // a bullet unit, as NPCConfig types it
+        var barrels = drake.Template.Skills!.Skills.Single(k => k.Id == 4323101);
+        await OnLoop(async () =>
+        {
+            foreach (var landed in Service<CombatService>().BossAreaLanded) await landed(drake, barrels, ships[1].Pos, ships[1].Pos, 0);
+        });
+        Assert.Single(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43200007));
+        // 20 m ahead of the other ship, in its lane.
+        double turn = ships[0].Face * Math.PI / 180;
+        await Gm(alice, FormattableString.Invariant($"!actors walk {ships[0].X + 20 * (float)Math.Sin(turn)} {ships[0].Z + 20 * (float)Math.Cos(turn)}"));
+        Assert.Equal(max * 60 / 100, (await MechanicHit(alice, 4323201)).Dsts.Single().Damage);
+
+        await Gm(alice, "!hp 999999999");
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 5001);
+        var puppets = await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 43200001 && !m.Dead, 2);
+        Assert.Equal(2, puppets.Length); // at least two
+        Assert.Equal(max * 30 / 100, (await MechanicHit(alice, 4321501)).Dsts.Single().Damage);
+    }
 }

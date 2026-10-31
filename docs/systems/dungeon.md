@@ -126,6 +126,16 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   counts. **Giant-Blade Kunai** (tips 4314405, 4314406; guide 1050203): 55 s in and every 70 s the shield 43100004 lies at
   his feet and two players are marked (4311601); picking the shield up gives Shield 4310601 (-50% speed); after 12 s a
   marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade 4312501.
+- Drake (five-player raid, Silent Ship 3120201; easy 43200006, normal 43200000): **Ghost ships** (tips 5002 'Ghost ships
+  will arrive in ${1} seconds! Destroy them with explosive barrels!', 17 s, and 5350035; guide 1050301): 35 s in and every
+  60 s two ghost ships (43200007 easy, 43200002 normal, shown as the bullet units NPCConfig types them) stand at random
+  lane points (31-35 on the east edge facing west, 36-40 on the north edge facing south) and Drake throws Falling
+  Explosive Barrels 4323101 at a random player every 5 s. A barrel (4323101/4322501) landing on a ship sinks it (a boss
+  `breaker`); after 17 s each ship left charges its lane (60 x 8 m ahead of it): 60% to every player in it.
+  **Puppets** (tip 5001; guide 1050303): 70 s in and every 60 s one Puppet 43200001 per player (two to four) fights at the
+  mark points 18-27 and Drake throws Falling Cannonball 4320101 at a random player every 6 s; a cannonball
+  (4320101/4321701) landing on a puppet destroys it, players need 12 hits per player; each puppet left after 30 s costs
+  everyone 15% (at most 45%). Inferred: lanes, timing, hits and damage; the ships do not sail.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

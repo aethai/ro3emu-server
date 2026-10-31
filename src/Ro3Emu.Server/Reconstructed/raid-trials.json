@@ -334,6 +334,80 @@
           "fail": { "who": "failing", "hpPercent": 60, "skill": 4312501, "why": "a marked player the shield does not cover" }
         }
       ]
+    },
+    "drake-easy": {
+      "name": "Drake, easy (five-player raid, Silent Ship 3120201)",
+      "bosses": [43200006],
+      "evidence": [
+        "ChatConfig 5002 (CombatCountdownTip, 17 s) 'Ghost ships will arrive in ${1} seconds! Destroy them with explosive barrels!', 5350035 'Explosive barrels blast a cross-shaped area. Be sure to dodge!', 5001 'Bombard the puppets with cannon fire'.",
+        "TenChallengeHandbookIDConfig 1050301 Deep-Sea Ghost Ship (massive damage to any player it touches; a following explosive barrel destroys it), 1050303 Cannonball Barrage (guide the cannonballs onto the Puppet to kill it).",
+        "NPCConfig 43200007 Pirate Ship (Projectile), level 30 (43200002 level 60), born buff 'Ghost Ship Second Wave Buff'; 43200001 Puppet (AI RaidFive_Boss02_minion); skills 4323101 'Falling Explosive Barrels' (targets three players, cross-shaped blasts), 4322501 Falling Explosives, 4320101 Falling Cannonball, 4321701 Falling Cross Cannonballs, 4323201 'Ghost Ship Horizontal Easy', 4321501 Minion Wave Attack.",
+        "Scene editor sc_pm_pve5treasure_001_dg01: spawn points 31-35 on the east edge facing west and 36-40 on the north edge facing south, 11.65 m apart (the ship lanes); mark points 18-27 just inside them."
+      ],
+      "guessed": [
+        "Ghost ships 35 s in and every 60 s: two ships at random lane points; Drake throws Falling Explosive Barrels at a random player every 5 s. A barrel landing on a ship sinks it; after 17 s each ship left charges its lane (60 x 8 m ahead of it): 60% to every player in it.",
+        "Puppets 70 s in and every 60 s: one puppet per player (two to four) at the mark points; Drake throws Falling Cannonball at a random player every 6 s; a cannonball landing on a puppet destroys it, players need 12 hits per player each. Each puppet left after 30 s costs everyone 15% (at most 45%)."
+      ],
+      "trials": [
+        {
+          "name": "Ghost ships",
+          "why": "tips 5002 and 5350035 and the guide's Deep-Sea Ghost Ship",
+          "start": { "firstMs": 35000, "everyMs": 60000 },
+          "tips": [5002, 5350035],
+          "tipParam": "countdown",
+          "windowMs": 17000,
+          "boss": { "breakers": [4323101, 4322501], "casts": [ { "skill": 4323101, "everyMs": 5000 } ] },
+          "objects": [ { "npc": 43200007, "lane": [60, 8], "at": { "points": [31, 32, 33, 34, 35, 36, 37, 38, 39, 40], "count": 2 }, "why": "the easy ghost ship at the lane points" } ],
+          "rule": "kill",
+          "radius": 4,
+          "fail": { "who": "inside", "hpPercent": 60, "skill": 4323201, "why": "each ship left charges its lane" }
+        },
+        {
+          "name": "Puppets",
+          "why": "tip 5001 and the guide's Cannonball Barrage",
+          "start": { "firstMs": 70000, "everyMs": 60000 },
+          "tips": [5001],
+          "windowMs": 30000,
+          "boss": { "breakers": [4320101, 4321701], "casts": [ { "skill": 4320101, "everyMs": 6000 } ] },
+          "objects": [ { "npc": 43200001, "monster": true, "hits": 12, "at": { "points": [18, 19, 20, 21, 22, 23, 24, 25, 26, 27], "perPlayer": 1, "min": 2, "max": 4 } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 15, "perObject": true, "capPercent": 45, "skill": 4321501, "why": "each puppet left strikes" }
+        }
+      ]
+    },
+    "drake": {
+      "name": "Drake (five-player raid, Silent Ship 3120201)",
+      "bosses": [43200000],
+      "evidence": ["As Drake easy, with the level 60 ship 43200002 and Ghost Ship Grand Charge 4320501."],
+      "guessed": ["As Drake easy."],
+      "trials": [
+        {
+          "name": "Ghost ships",
+          "why": "tips 5002 and 5350035 and the guide's Deep-Sea Ghost Ship",
+          "start": { "firstMs": 35000, "everyMs": 60000 },
+          "tips": [5002, 5350035],
+          "tipParam": "countdown",
+          "windowMs": 17000,
+          "boss": { "breakers": [4323101, 4322501], "casts": [ { "skill": 4323101, "everyMs": 5000 } ] },
+          "objects": [ { "npc": 43200002, "lane": [60, 8], "at": { "points": [31, 32, 33, 34, 35, 36, 37, 38, 39, 40], "count": 2 } } ],
+          "rule": "kill",
+          "radius": 4,
+          "fail": { "who": "inside", "hpPercent": 60, "skill": 4320501 }
+        },
+        {
+          "name": "Puppets",
+          "why": "tip 5001 and the guide's Cannonball Barrage",
+          "start": { "firstMs": 70000, "everyMs": 60000 },
+          "tips": [5001],
+          "windowMs": 30000,
+          "boss": { "breakers": [4320101, 4321701], "casts": [ { "skill": 4320101, "everyMs": 6000 } ] },
+          "objects": [ { "npc": 43200001, "monster": true, "hits": 12, "at": { "points": [18, 19, 20, 21, 22, 23, 24, 25, 26, 27], "perPlayer": 1, "min": 2, "max": 4 } } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "all", "hpPercent": 15, "perObject": true, "capPercent": 45, "skill": 4321501 }
+        }
+      ]
     }
   }
 }
