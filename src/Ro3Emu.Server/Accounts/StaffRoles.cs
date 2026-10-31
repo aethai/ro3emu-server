@@ -8,17 +8,21 @@ namespace Ro3Emu.Server.Accounts;
 /// The web panel's staff roles (docs/guide/panel.md, Roles): Ro3Emu:Panel:Roles and Ro3Emu:GmAccounts (Admin) from the
 /// configuration, which the panel cannot change, and the panel_role rows an Admin gave on the panel. The rows are kept
 /// in memory (read at start, replaced after each change), so a role check never waits on the database. Maintenance
-/// mode lets every staff account in. These roles are the panel's: in the game, GM commands still follow GmAccounts.
+/// mode lets every staff account in. Whoever has GM in game is an Admin here too; the other roles are the panel's only.
 /// </summary>
 public sealed class StaffRoles(IOptions<ServerOptions> options, AccountStore accounts, TimeProvider clock)
 {
     private volatile Dictionary<string, StaffRoleRow>? _panel;
 
-    /// <summary>The configured role of <paramref name="account"/>, or null: Ro3Emu:Panel:Roles, then Ro3Emu:GmAccounts.</summary>
+    /// <summary>
+    /// The configured role of <paramref name="account"/>, or null: Admin for whoever has GM in game (the same check,
+    /// GmCommands.Allowed: the listed GmAccounts, or every account while the list is empty and GM is open), then
+    /// Ro3Emu:Panel:Roles.
+    /// </summary>
     public PanelRole? Configured(string account)
     {
         var o = options.Value;
-        if (o.GmAccounts.Contains(account, StringComparer.Ordinal)) return PanelRole.Admin;
+        if (Game.GmCommands.Allowed(o, account, loopbackTool: false)) return PanelRole.Admin;
         return o.Panel.Roles.TryGetValue(account, out string? text) && PanelRoles.Parse(text) is { } role && role != PanelRole.None ? role : null;
     }
 
