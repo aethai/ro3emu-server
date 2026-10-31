@@ -165,7 +165,9 @@ From an account's page a GM opens **Character actions** for each of its characte
   again.
 - **Teleport**: in the game, the server's own `!warp` moves the character now (to the given x and z, or the map's
   arrival point). Out of the game, the stored position changes and the character logs in there; the login puts it on
-  the ground or, where the point is not walkable, at the map's arrival point.
+  the ground or, where the point is not walkable, at the map's arrival point. A map the game client has no scene for
+  (Glast Heim and five eastern towns, listed in the export's `client-scenes.json`) is refused: the client would never
+  finish loading it.
 - **Rename**: the game's name rule (2 to 16 characters once trimmed, unique in any letter case). Only while the
   character is out of the game; the old name is free the moment it commits.
 - **Items and currencies**: while the character is in the game, through the GM grant (`!item`, `!delitem`): the bag

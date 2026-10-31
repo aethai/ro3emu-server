@@ -99,6 +99,8 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         if (map == null && data.Table("MapConfig").Count > 0) return false;
         // Dungeon admission belongs to 30400 / 32801; a generic teleport must not create a public dungeon.
         if (data.Row("DungeonConfig", scene) != null && instanceId == 0) return false;
+        // (inferred) A scene the client has no Unity scene for never loads: its loading screen retries forever.
+        if (map != null && !worldData.ClientHasScene(scene)) return false;
         if (s.SceneRecoveryRequired || s.Handoff is { Completing: false }) return false;
         if (s.Handoff is { Completing: true } completing && completing.Destination.SceneEntry == scene)
         {
@@ -195,6 +197,19 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             finally { RequireReconnect(s, handoff); }
             throw;
         }
+    }
+
+    /// <summary>
+    /// Why a plain map change (warp, login) cannot place a player on <paramref name="scene"/>, or null when it can:
+    /// the same rules <see cref="EnterSceneAsync"/> applies before it sends 70010.
+    /// </summary>
+    public string? Unplaceable(long scene)
+    {
+        if (worldData.Map(scene) == null) return data.Table("MapConfig").Count > 0 ? "there is no such scene" : null;
+        if (data.Row("DungeonConfig", scene) != null) return "it is a dungeon scene, entered only through its dungeon";
+        if (!worldData.ClientHasScene(scene))
+            return "the game client has no scene for it (its map files are not in this client), so the client would never finish loading";
+        return null;
     }
 
     /// <summary>A server-chosen position for a login: the saved one when it is walkable, else the map's born point.</summary>
@@ -409,7 +424,8 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             RequireReconnect(s, pending); // failed load has no nonce: do not arm an ambiguous same-map retry
             return;
         }
-        bool ok = data.Row("MapConfig", req.TargetMapId) != null && worldData.Map(req.TargetMapId) != null;
+        bool ok = data.Row("MapConfig", req.TargetMapId) != null && worldData.Map(req.TargetMapId) != null
+            && worldData.ClientHasScene(req.TargetMapId);
         await s.SendGameAsync(SceneTeleport, new SceneTeleportRsp { Result = ok ? 0 : ErrorCodes.SceneMissing });
         if (ok) await EnterSceneAsync(s, req.TargetMapId);
     }

@@ -8,7 +8,7 @@ namespace Ro3Emu.Server.Game;
 /// A role's session: create and select, the login -> world sequence, position and
 /// settings persistence, the handover cleanup and role switching. Its messages are mapped by CoreMessages.
 /// </summary>
-public sealed class RoleSessionService(RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends, SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines, Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions, Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems, ILogger<RoleSessionService> log)
+public sealed partial class RoleSessionService(RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends, SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines, Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions, Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems, ILogger<RoleSessionService> log)
 {
     /// <summary>Novice; JobConfig[1000] picks the male/female unit.</summary>
     private const int NoviceCareer = 1000;
@@ -322,7 +322,10 @@ public sealed class RoleSessionService(RoleStore roles, Data.GameData data, Buff
         if (!await scene.EnterSceneAsync(session, role.SceneEntry, arrival, reason: 7))
         {
             EnsureSelection(session, lease);
-            // Unknown scene in the database (no MapConfig row): fall back to the spawn map.
+            // (inferred) A saved scene the server cannot place the role on (unknown, a dungeon scene outside its
+            // instance, one the client has no scene for): the spawn map's born point, where a new character starts.
+            LogMovedToSpawn(log, role.Name, role.Id, role.SceneEntry, data.MapName(role.SceneEntry),
+                scene.Unplaceable(role.SceneEntry) ?? "refused", RoleStore.SpawnSceneEntry);
             await scene.EnterSceneAsync(session, RoleStore.SpawnSceneEntry, null, reason: 7);
             EnsureSelection(session, lease);
         }
@@ -340,6 +343,9 @@ public sealed class RoleSessionService(RoleStore roles, Data.GameData data, Buff
         positions.MarkDirty(session, urgent: walk.BStop); // C/D 18: written lazily, never on the loop
         await systems.MovedAsync(session, walk);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Role {Name} ({Id}) was saved on scene {Scene} {Map}, where it cannot log in ({Why}): moved to the spawn map {Spawn}")]
+    private static partial void LogMovedToSpawn(ILogger logger, string name, long id, long scene, string map, string why, long spawn);
 
     /// <summary>The entity a remote client renders for this player (same shape as ENTITYSELF).</summary>
     public static EntityBase PlayerEntity(GameSession session) => SelfEntity(session);
