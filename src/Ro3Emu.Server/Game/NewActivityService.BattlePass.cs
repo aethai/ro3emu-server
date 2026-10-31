@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -252,9 +253,9 @@ public sealed partial class NewActivityService
             {
                 updated.Premium = true;
                 updated.PremiumTime = Now;
-                if (config.TryGetProperty("_iPrivilegeIds", out var privileges) && privileges.ValueKind == JsonValueKind.Array)
-                    foreach (var id in privileges.EnumerateArray())
-                        if (id.TryGetInt32(out int privilege) && privilege > 0) updated.ActivatedPrivilegeIds.Add(privilege);
+                // The privileges they hold apply while the pass is open (PassPrivileges).
+                foreach (long privilege in new BattlePassConfig(config).PrivilegeIds)
+                    if (privilege is > 0 and <= int.MaxValue) updated.ActivatedPrivilegeIds.Add((int)privilege);
             }
             var nextRuntime = CloneRuntime(session);
             nextRuntime.PassProgress[activityId] = new PassProgressRuntime

@@ -103,6 +103,8 @@ public sealed class RewardService
             if (!_outcomes.TryGetValue(monster, out var outcome))
             {
                 var (items, baseExp, jobExp) = ResolveKill(player, monster, bonus);
+                // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
+                items = PassPrivileges.BoostDrops(_data, player, items);
                 outcome = new KillOutcome { Role = role, Items = items, BaseExp = baseExp, JobExp = jobExp };
                 _outcomes.Add(monster, outcome);
             }

@@ -6,6 +6,16 @@ The server observes the configured EXP-currency balance when inventory changes a
 
 Premium and MonthCard are **owned item entitlements**, never implicit purchases. ProductConfig product 7 awards item 703; products 4/5 award 701/702. The server atomically consumes an owned entitlement token once and updates pass premium or MonthCard expiry. This conversion is **(inferred)**; the client confirms product award item IDs and reads the resulting activity state, but payment verification and original server conversion are not exposed. A pass gift spends owned 1020001/920704 and atomically delivers the configured premium item as a claimable mail attachment to the recipient. The gift UI opened by `LC_ItemHelper._useBattlePassGiftItem` and 82976 request are proven; ordinary mail delivery and one pending gift per recipient/activity are **(inferred)**. Mail claim activates the recipient's pass when its activity is live. The gift path checks configured tokens, recipient existence and pending mail; it does not assert friendship or a gift-day rule.
 
+## Advanced pass privileges
+
+When a pass turns premium, its `BattlePassConfig._iPrivilegeIds` are stored in `activated_privilege_ids`; they apply while that pass is open (`PassPrivileges`), counted once when Pass I and II list the same id. The client only lists them (`UI_Sys_Season_PassBuyPrivilegeListWidgetCtrl`, texts 11490000000-02); the server applies every `BattlePassPrivilegeConfig` type (`EBattlePassPrivilegeType`):
+
+| Type | Params | Effect |
+|---|---|---|
+| 1 StallSlotAdd | [2] | "Number of stalls increased by 2": two more stall slots in `StallsService.MaxGrid`; the client shows the server's `maxgrid` while the stall is open |
+| 2 TradeFavAdd | [3] | "Trade Exchange Collect limit increased by 3": the favourites limit `TradeConcernNum` (15) rises to 18; the client's counter still prints /15 |
+| 3 CopperEffAdd | [1, 10] | "Zeny acquisition efficiency increased by 10%": currency 1 from monster drops +10%, rounded down **(inferred: which gains it covers)** |
+
 ## Where pass EXP comes from
 
 The client data grants no currency 132 at all (no AwardConfig, task or drop row), so the original server's sources are unknown. With `Ro3Emu:Pass:Play` on, this server uses its own design (**inferred** as a whole), in `NewActivityService.PassPlay.cs`:
