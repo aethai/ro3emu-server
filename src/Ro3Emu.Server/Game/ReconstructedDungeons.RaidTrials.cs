@@ -97,8 +97,8 @@ public sealed partial class ReconstructedDungeons
     /// <summary>A raid boss's trials, for each of its difficulty NPCs (<paramref name="Bosses"/>).</summary>
     public sealed record RaidScript(string Key, string Name, IReadOnlyList<int> Bosses, IReadOnlyList<RaidTrial> Trials);
 
-    private readonly Dictionary<int, RaidScript> _raids = new();
-    private readonly List<RaidScript> _raidList = new();
+    private readonly Dictionary<int, RaidScript> _raids = [];
+    private readonly List<RaidScript> _raidList = [];
 
     public IReadOnlyList<RaidScript> AllRaids => _raidList;
 

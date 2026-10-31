@@ -469,7 +469,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         var holes = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4300007, 4);
         Assert.Equal(4, holes.Length);
         await WalkTo(alice, holes[0]);
-        long interaction = Service<DungeonCatalog>().Interactions(4300007).First();
+        long interaction = Service<DungeonCatalog>().Interactions(4300007)[0];
         await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
         { NpcUid = holes[0].Uid, InteractionId = (int)interaction, SceneConfigId = 3120401 });
         Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser, r => r.Req.NpcUid == holes[0].Uid)).Result);

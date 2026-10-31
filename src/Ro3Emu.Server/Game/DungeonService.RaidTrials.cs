@@ -89,7 +89,7 @@ public sealed partial class DungeonService
     private static MonsterUnit? TrialBoss(Attempt a) => a.Raid is { } raid
         ? a.Room.Monsters.FirstOrDefault(m => !m.Dead && m.Hp > 0 && raid.Script.Bosses.Contains(m.Template.NpcId)) : null;
 
-    private GameSession[] Fighters(Attempt a) =>
+    private static GameSession[] Fighters(Attempt a) =>
         [.. Present(a).Where(m => a.Loaded.Contains(m) && !m.SceneLoading && !m.Dead)];
 
     private async Task TrialTickAsync(Attempt a)
@@ -147,8 +147,7 @@ public sealed partial class DungeonService
         var run = new TrialRun { Trial = trial, Index = index, Boss = boss, EndsAtMs = now + window, Players = fighters.Length };
         raid.Active = run;
         raid.NextDueMs[index] = trial.EveryMs > 0 ? now + window + PacedMs(trial.EveryMs) : long.MaxValue;
-        _log.LogInformation("Raid {Raid} trial '{Trial}' starts ({Players} players, boss at {Hp}/{Max} HP)", raid.Script.Key, trial.Name,
-            fighters.Length, boss.Hp, boss.Template.MaxHp);
+        LogTrialStart(_log, raid.Script.Key, trial.Name, fighters.Length, boss.Hp, boss.Template.MaxHp);
 
         // Colours: dealt out so that every colour in play is someone's (a shuffled round), or picked up later.
         var colorOf = new Dictionary<GameSession, int>();
@@ -452,8 +451,7 @@ public sealed partial class DungeonService
         if (judge && bossFights)
         {
             var (passed, failing, partyFailed) = Judge(trial, run, boss, fighters);
-            _log.LogInformation("Raid {Raid} trial '{Trial}': {Verdict} ({Failing} failing)", raid.Script.Key, trial.Name,
-                partyFailed || failing.Count > 0 ? "failed" : "solved", failing.Count);
+            LogTrialVerdict(_log, raid.Script.Key, trial.Name, partyFailed || failing.Count > 0 ? "failed" : "solved", failing.Count);
             int left = run.Objects.Count(o => !o.Gone && !o.Pickup);
             if (partyFailed) await TrialOutcomeAsync(a, run, trial.Fail, fighters, fighters, left);
             else if (failing.Count > 0) await TrialOutcomeAsync(a, run, trial.Fail, failing, fighters, left);
@@ -473,6 +471,12 @@ public sealed partial class DungeonService
                          || b.ConfigId == trial.Carry.Buff).ToArray())
                 await _buffs.RemoveAsync(p, buff);
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Raid {Raid} trial '{Trial}' starts ({Players} players, boss at {Hp}/{Max} HP)")]
+    private static partial void LogTrialStart(ILogger logger, string raid, string trial, int players, long hp, long max);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Raid {Raid} trial '{Trial}': {Verdict} ({Failing} failing)")]
+    private static partial void LogTrialVerdict(ILogger logger, string raid, string trial, string verdict, int failing);
 
     private static bool IsPerPlayer(Rule rule) => rule is Rule.Stand or Rule.Avoid or Rule.Shelter or Rule.Guard or Rule.Spread;
 

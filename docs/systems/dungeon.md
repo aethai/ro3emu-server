@@ -81,15 +81,21 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   beside), `spread` (a marked player with nobody beside); for the party `occupy` (every object at once), `collect`
   (walk into every object; each one taken can reward its taker), `kill` (every object, or the chosen one), `carry`
   (touch the object, then hit the boss with it), `lure` (the boss stands in an object's area when the window closes).
-  Boss `breakers` are skills whose landing area destroys the objects in it;
-  `casts` are skills the boss casts at a random player during the window; a cast with a `beam` (length, width) is only
-  the skill's show aimed at that player, and the objects on its line from the boss are destroyed (no hit, the boss keeps
-  fighting).
+  Boss `breakers` are skills whose landing area destroys the objects in it; `casts` are skills the boss casts at a
+  random player during the window; a cast with a `beam` (length, width) is only the skill's show aimed at that player,
+  and the objects on its line from the boss are destroyed (no hit, the boss keeps fighting).
 - A failure costs a share of each reached player's maximum HP, sent as the boss's hit of the named skill (inferred: it
   punishes the same at any gear, and no single failure wipes a full-HP party). A solved trial can reward (a buff, a
   line) and stagger the boss (its show interrupted, a stagger show, the boss held).
 - Test aid: `!raidtrial [list | n | stop]` lists the boss's trials, starts trial n now (engaging the GM if the boss is
   idle) or ends the running one without a verdict.
+- Coverage: every raid boss of TenGameplayBossConfig with an AI script has trials: Realm of the Gods 100101-100103
+  (Isti, Nasha, Ilmo, Mirko) and the five-player raids 50101/50104 (Golden Thief Bug, Orc Hero, Drake), 50102/50105
+  (Mistress, Maya, Osiris) and 50103/50106 (Pharaoh, Moonlight Flower, Baphomet), each boss at its `_kBoss` mark 1-3.
+  Not covered: the Hidden Realm's 4300099 'Unknown Boss' (50199): no AI script, and its guide only says its skills are
+  'the same as those of the General Boss', without naming which. A mechanic whose boss skill the generic rotation
+  already casts with the client's own show stays there (Golden Thief Bug's Earthquake, Drake's Tidal Tornado 4321001/
+  4321101 and Powder Keg Party 4320401, Orc Hero's Blade Deflection cast 4310801).
 - Isti (Realm of the Gods 3020101; 14720026/14720010/14720027), **Ocean Concerto** (tip 4110011; guide 1100105): from
   60% HP and then every 70 s Isti holds still playing her 40 s channel 14724101 for a 25 s window. Every player gets a
   note (14720201 Red, 14720501 Yellow, 14720601 Blue, 14720701 Green; the HUD shows it), and two bubbles per player (4 to
