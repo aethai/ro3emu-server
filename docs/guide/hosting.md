@@ -26,7 +26,11 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
 - **Monsters that attack on sight as in RO1** (on by default, as a trial): set `Ro3Emu__Ro1AggressiveMonsters=false` (or
   `"Ro1AggressiveMonsters": false` under `Ro3Emu` in `appsettings.json`) to turn it off. The field monsters whose Ragnarok Online 1
   counterpart is aggressive then attack players they see, like the few that already do. This follows RO1
-  (rAthena's monster database), not the original RO3 server.
+  (rAthena's monster database), not the original RO3 server. RO3 mixes levels on one map (Payon Forest: Greatest
+  Generals at 55 among Horns at 16, on the level 16 story's path), so such a monster stays passive, as in the client,
+  on an open field whose own spawns hold a common monster (at least 10% of them) more than
+  `Ro3Emu__Ro1AggressiveMaxLevelGap` levels below it (default 15; `0` turns the gate off). Dungeons, towns, Territory
+  War sandboxes, story and team rooms, bosses and MVPs, and monsters a map's spawns do not place keep the RO1 behaviour.
 - **Backups:** the database is backed up to `data/backups/` at start and every 6 hours (newest 20 kept). All but the
   newest two are gzip-compressed (`.db.gz`, about a quarter of the size); `Ro3Emu.Server --restore-backup` takes either
   kind. `Ro3Emu__Backup__Keep`, `Ro3Emu__Backup__IntervalHours` and `Ro3Emu__Backup__Uncompressed` (or `Backup` under

@@ -36,6 +36,12 @@ public sealed class ServerOptions
     /// reference, not client evidence (inferred); on by default as a trial (owner's decision, 28.10), off changes nothing.</summary>
     public bool Ro1AggressiveMonsters { get; set; } = true;
 
+    /// <summary>The RO1 aggression stays off for a monster on an open field (not a dungeon, town or sandbox) whose own field
+    /// spawns hold a common monster (MonsterService.Ro1GateMinSharePercent of the population) more than this many levels
+    /// below it (Payon Forest: Greatest General 55 and Elder Willow 34 among Horns 16), so new characters can follow the
+    /// story there; bosses and MVPs are never gated; 0 or negative: no gate. (inferred, owner's decision 31.10)</summary>
+    public int Ro1AggressiveMaxLevelGap { get; set; } = 15;
+
     /// <summary>Monsters whose Ragnarok Online 1 counterpart is much tougher than the client makes them get the RO1 HP
     /// (Reconstructed/ro1-monster-hp.json: the Pupa, 4 HP in the client, 427 here). An RO1 reference, not
     /// client evidence (inferred). Off by default: the client cuts their HP on purpose (_kAttriScale), so the 1:1 server
