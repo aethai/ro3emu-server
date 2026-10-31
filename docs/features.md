@@ -66,7 +66,7 @@ show is playable from day one, without season or server-day gates ([details](gui
 **Not yet**
 - **Boss script mechanics:** the special skills are in, but mechanics that lived only in the original server's scripts
   (bubbles, bells, rhythm stages) are plain area attacks.
-- **Mock Battle extras:** the arena's monsters.
+- **Mock Battle extras:** the arena's Adamantine Madogear vehicle.
 - **Smaller missing pieces:** some stages of the story dungeons
   that are still simplified.
 
