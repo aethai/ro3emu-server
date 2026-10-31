@@ -237,6 +237,8 @@ Code: `TerritoryWarsService.CannonFire.cs`, `TerritoryWarsService.CannonShots.cs
 
 ### War vehicles (32281, 32700, 32708, 31074)
 
+The seats (boarding, getting off, seat changes, the driver's walk, the seat's buttons and skills) are `VehicleSeats`, which Mock Battle's Madogear shares; `TerritoryWarsService` keeps its vehicles, who may board them and their damage and repair.
+
 Code: `GuildService.WarVehicles.cs`, `TerritoryWarsService.WarVehicles.cs`.
 
 - **Using one.** A vehicle item of the siege battle bag (ItemConfig `_iSubType` 1402) sends 32281 from its "use" button

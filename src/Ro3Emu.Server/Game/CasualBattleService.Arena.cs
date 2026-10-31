@@ -33,13 +33,12 @@ namespace Ro3Emu.Server.Game;
 /// (inferred) The timeline from the main stage's start: Battle Starts with the edge monsters, the outer supplies 10 s
 /// later, the central monsters and supplies at 130 s, Pharaoh at 250 s and 120 s after each death until the death
 /// fight; a monster's point refills 30 s after its death, a supply's 60 s after its pickup; one supply on a third of the
-/// buff points and on every high supply point. A pickup grants one random battlefield skill of the supply's pool (the
-/// SkillConfig 163xxxxx skills with names: Combat Supplies the 16300x01 strikes, heals and boosts, Large Combat
-/// Supplies the 1630x001 ones) in slot 900 with buff 16300001 while held; casting it or dying spends it. A killing
+/// buff points and on every high supply point. A pickup grants one battlefield skill (the SkillConfig rows of
+/// _kSkillCategory 16300101): Large Combat Supplies 16305501 "Summon Madogear Pilot", Combat Supplies one of the
+/// others at random; it sits in slot 900 with buff 16300001 while held, and casting it or dying spends it. A killing
 /// hit on a monster scores the NPC's own 148 rows, else its tag's 107 rows; every full 1% of Pharaoh's HP a player
 /// deals scores the 156 rows. The death fight doubles every score and halves the 30 s revive countdown. The Adamantine
-/// Madogear 16300008 (a vehicle: 1630000801 boards, 4900025 leaves, 41009 / chat 5702, 41031 for 16305501 "Summon
-/// Madogear Pilot") is not placed: its seats are TerritoryWarsService's war-vehicle machinery.
+/// Madogear is in CasualBattleService.Madogear.cs.
 /// </summary>
 public sealed partial class CasualBattleService
 {
@@ -65,8 +64,9 @@ public sealed partial class CasualBattleService
     private static readonly int[] EdgeBuffGroups = [103, 109, 117, 123];
     private static readonly int[] NormalMonsters = [16300001, 16300002, 16300003, 16300004];
     private static readonly int[] EliteMonsters = [16300009, 16300010, 16300011];
-    private static readonly int[] SupplySkills = [16300101, 16300201, 16300401, 16300501, 16300701, 16300801, 16300901];
-    private static readonly int[] LargeSupplySkills = [16303001, 16303501, 16304001, 16304501, 16305001];
+    /// <summary>SkillConfig _kSkillCategory of the battlefield skills.</summary>
+    private const int BattlefieldCategory = 16300101;
+    private int[]? _battlefieldSkills;
 
     private long _supplySerial;
     private long _announcedSoon = -1, _announcedBegun = -1;
@@ -78,6 +78,7 @@ public sealed partial class CasualBattleService
         /// <summary>A live monster → its scene group and point.</summary>
         public readonly Dictionary<MonsterUnit, (int Group, SpawnPoint Point)> Monsters = new(ReferenceEqualityComparer.Instance);
         public readonly Dictionary<long, SupplyUnit> Supplies = [];
+        public readonly Dictionary<long, MadogearUnit> Madogears = [];
         /// <summary>Refills due: (elapsed second, group, point).</summary>
         public readonly List<(long Due, int Group, SpawnPoint Point)> Refills = [];
         public MonsterUnit? Boss;
@@ -122,7 +123,10 @@ public sealed partial class CasualBattleService
         combat.PlayerDied.Add(DiedAsync);
         combat.CastLanded.Add(CastLandedAsync);
         combat.GrantedSkill.Add((s, skill) => Live(s) is { } m && m.Players[s].Battlefield == skill);
+        combat.GrantedSkill.Add((s, skill) => Live(s) != null && MadogearRiders.SeatSkill(s, skill));
         combat.ReviveInfoOwners.Add(s => Live(s) != null);
+        _scene.Leaving.Add(s => MadogearRiders.GetOffAsync(s, interrupt: true));
+        _world.PlayerEntered.Add(MadogearRiderSeenAsync);
     }
 
     // ---- timeline ----
@@ -306,6 +310,7 @@ public sealed partial class CasualBattleService
             arena.BossDue = t + BossRespawn;
             await ObjectiveAsync(m, ObjectiveCenter);
         }
+        if (monster is MadogearUnit madogear) { await MadogearDestroyedAsync(m, madogear); return; }
         if (m.Ending || Live(killer) != m) return;
         var rows = Rows(TypeKillingHit, monster.Template.NpcId).ToArray();
         if (rows.Length == 0 && NPCConfig.Get(_data, monster.Template.NpcId) is { } npc)
@@ -353,6 +358,11 @@ public sealed partial class CasualBattleService
         var req = NpcInteractionReq.Parser.ParseFrom(body.Span);
         if (req.NpcUid < SupplyUidBase || req.NpcUid >= SupplyUidEnd) return false;
         var m = Live(s);
+        if (m != null && m.Arena.Madogears.TryGetValue(req.NpcUid, out var madogear))
+        {
+            await MadogearInteractAsync(s, m, madogear, req);
+            return true;
+        }
         int code = m == null || !m.Arena.Supplies.TryGetValue(req.NpcUid, out var unit) ? ErrorCodes.NpcMissing
             : PickupError(s, m, unit, req);
         await s.SendGameAsync(id, new NpcInteractionRsp { Result = code, Req = req });
@@ -373,7 +383,9 @@ public sealed partial class CasualBattleService
         m.Arena.Supplies.Remove(unit.Uid);
         await _instances.RemovePropAsync(m.Room, unit);
         m.Arena.Refills.Add((Now - m.Open - PrepareSeconds + SupplyRespawn, unit.Group, unit.Point));
-        var pool = unit.NpcId == LargeSupplies ? LargeSupplySkills : SupplySkills;
+        _battlefieldSkills ??= [.. SkillConfig.All(_data).Where(r => r.SkillCategory.Contains(BattlefieldCategory)).Select(r => (int)r.Id)];
+        int[] pool = unit.NpcId == LargeSupplies ? [SummonMadogear]
+            : [.. _battlefieldSkills.Where(id => id != SummonMadogear)];
         int skill = pool[Random.Shared.Next(pool.Length)];
         m.Players[s].Battlefield = skill;
         await _buffs.AddAsync(s, HoldBuff, (int)Math.Max(1000, (m.Deadline - Now) * 1000), unit.Uid);
@@ -392,9 +404,15 @@ public sealed partial class CasualBattleService
         if (s.Buffs.FirstOrDefault(b => b.ConfigId == HoldBuff) is { } buff) await _buffs.RemoveAsync(s, buff);
     }
 
-    private Task CastLandedAsync(GameSession s, JsonElement skill) =>
-        _active.TryGetValue(s, out var m) && m.Players[s] is { Battlefield: > 0 } me
-            && me.Battlefield == new SkillConfig(skill).Id ? SpendAsync(s, me) : Task.CompletedTask;
+    /// <summary>The held battlefield skill was cast: it is spent, and Summon Madogear Pilot brings the Madogear.</summary>
+    private async Task CastLandedAsync(GameSession s, JsonElement skill)
+    {
+        if (!_active.TryGetValue(s, out var m) || m.Players[s] is not { Battlefield: > 0 } me
+            || me.Battlefield != new SkillConfig(skill).Id) return;
+        int cast = me.Battlefield;
+        await SpendAsync(s, me);
+        if (cast == SummonMadogear) await SummonMadogearAsync(s, m);
+    }
 
     // ---- death and revive ----
 
@@ -406,6 +424,7 @@ public sealed partial class CasualBattleService
         me.Streak = 0;
         me.DeadUntil = Now + (m.Stage == 2 ? ReviveSeconds / 2 : ReviveSeconds);
         await SpendAsync(s, me);
+        await MadogearRiders.GetOffAsync(s, interrupt: true);
         await s.SendGameAsync(CombatService.ReviveInfo, new SyncClientPlayerReviveInfoNtf
         { BDead = true, ReviveTime = me.DeadUntil, SceneEntry = s.SceneEntry });
     }

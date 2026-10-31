@@ -77,6 +77,48 @@ public sealed partial class GroupContentTests
         await CampScore(alice, 5);
     }
 
+    /// <summary>A Large Combat Supplies gives Summon Madogear Pilot; its cast raises a Madogear of the caster's camp
+    /// (5702, 41031 +1) that the caster boards (the seat's skills granted) and leaves.</summary>
+    [ClientDataFact]
+    public async Task MockBattleMadogearIsSummonedBoardedAndLeft()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!lvl 99");
+        await Gm(alice, "!casual open");
+        Assert.Equal(0, (await SignUp(alice)).Result);
+        await Gm(alice, "!casual start");
+        var (instance, _) = await Load(alice, CasualBattleService.Scene);
+        _clock.Advance(TimeSpan.FromSeconds(71));
+        await Tick();
+        await Notice(alice, 5704);
+
+        var box = (await UnitsIn(instance, 16300012)).First(); // Large Combat Supplies on an edge high-supply point
+        await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(box.X + 1, box.Y, box.Z, 0)));
+        await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq { NpcUid = box.Uid, InteractionId = 1630001201 });
+        Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
+        Assert.Equal(16305501, (await Next(alice, CombatService.SkillSlotModify, SkillSlotModifyNotify.Parser)).SkillId);
+
+        var at = Session(alice).Position;
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq
+        { SkillId = 16305501, TargetPos = new Vec3 { X = at.X, Y = at.Y, Z = at.Z } });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Notice(alice, 5702); // "${1} Adamantine Madogear Pilot has respawned."
+        await CampScore(alice, 1); // 41031
+        var madogear = (await UnitsIn(instance, 16300008)).Single();
+
+        await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq { NpcUid = madogear.Uid, InteractionId = 1630000801 });
+        Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
+        await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser,
+            n => n.DataInfo.EType == InteractInfo.Types.EState.Vehicle && n.DataInfo.ActiveObjId == madogear.Uid);
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
+            Service<CombatService>().GrantedSkill.Any(granted => granted(Session(alice), 16301001))))); // Hammer Strike
+
+        await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq { NpcUid = madogear.Uid, InteractionId = 4900025 });
+        Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser,
+            r => r.Req.InteractionId == 4900025)).Result);
+        await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser, n => n.DataInfo.EType == InteractInfo.Types.EState.Idle);
+    }
+
     /// <summary>Pharaoh comes with 5701 and is worth its 148 rows; the death fight doubles every score.</summary>
     [ClientDataFact]
     public async Task MockBattleArenaBossAndDeathFight()

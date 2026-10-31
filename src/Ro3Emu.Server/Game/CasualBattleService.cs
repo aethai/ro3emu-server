@@ -78,6 +78,7 @@ public sealed partial class CasualBattleService : IGameTicker
     private readonly DungeonService _dungeons;
     private readonly BuffService _buffs;
     private readonly MonsterService _monsters;
+    private readonly World _world;
     private readonly ILogger<CasualBattleService> _log;
 
     private sealed record Group(GameSession[] Members, long Window);
@@ -149,13 +150,13 @@ public sealed partial class CasualBattleService : IGameTicker
         TeamService teams, SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData worldData,
         CharacterService character, RewardService rewards, TimedBattleService timedBattles, PraiseService praise,
         CombatService combat, DungeonService dungeons, GameLoop loop, GmCommands gm, RoleStore roles, AccountStore accounts,
-        BuffService buffs, MonsterService monsters, ILogger<CasualBattleService> log)
+        BuffService buffs, MonsterService monsters, World world, ILogger<CasualBattleService> log)
     {
         this._data = data; this._activityClock = activityClock; this._time = time; this._functions = functions; this._teams = teams;
         this._sessions = sessions; this._instances = instances; this._scene = scene; this._worldData = worldData;
         this._character = character; this._rewards = rewards; this._timedBattles = timedBattles; this._praise = praise;
         this._loop = loop; this._roles = roles; this._accounts = accounts; this._dungeons = dungeons; this._log = log;
-        this._buffs = buffs; this._monsters = monsters;
+        this._buffs = buffs; this._monsters = monsters; this._world = world;
         _obligations = new RoleObligations<CasualBattleObligationRow>("Mock Battle payout", accounts, loop, time, Online,
             s => s.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
         scene.Loaded.Add(LoadedAsync);

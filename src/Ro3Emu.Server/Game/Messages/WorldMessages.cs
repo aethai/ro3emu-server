@@ -41,6 +41,9 @@ public sealed class WorldMessages(Maps.World world, CombatService combat, SceneS
         routes.Intercept("territory/siege-bag", NpcInteraction, territory.SiegeBagSharedAsync);
         // Mock Battle's supply boxes are NPCs of its room.
         routes.Intercept("casual/supply", NpcInteraction, casual.SupplySharedAsync);
+        // A Madogear rider's buttons, seat changes and facing (after the territory's own riders).
+        routes.Intercept("casual/madogear", id => id is WorldInteractionService.Action or WorldInteractionService.SeatChange
+            or WorldInteractionService.VehicleSync, casual.MadogearSharedAsync);
         // A war vehicle is an NPC of the siege room too; its riders' buttons, seat changes and facing follow it.
         routes.Intercept("territory/vehicle", id => NpcInteraction(id) || id is WorldInteractionService.Action
             or WorldInteractionService.SeatChange or WorldInteractionService.VehicleSync, territory.VehicleSharedAsync);
