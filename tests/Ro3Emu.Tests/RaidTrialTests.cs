@@ -500,6 +500,39 @@ public sealed class RaidTrialTests : IAsyncLifetime
     /// <summary>The scripted pace (percent of the real timing) for what follows.</summary>
     private void Pace(int percent) => Service<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value.ScriptedScenePacePercent = percent;
 
+    /// <summary>Walks a player <paramref name="metres"/> ahead of an object along its facing (into its lane).</summary>
+    private Task WalkAhead(BotClient bot, WorldUnit from, float metres)
+    {
+        double turn = from.Face * Math.PI / 180;
+        return Gm(bot, FormattableString.Invariant($"!actors walk {from.X + metres * (float)Math.Sin(turn)} {from.Z + metres * (float)Math.Cos(turn)}"));
+    }
+
+    // Mistress: a hornet lane costs HP; standing in the targeted zone too; at half HP she grows angry.
+    [ClientDataFact]
+    public async Task MistresssHornetsPunishTheirLanesAndHerChargeItsZone()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, mistress) = await RaidFight(alice, 50102, 1, 3120301, 4330001);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4314409);
+        var hornets = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4330006, 8);
+        Assert.Equal(8, hornets.Length); // four from the north, four from the west
+        await WalkAhead(alice, hornets[0], 30);
+        Assert.Equal(max * 40 / 100, (await MechanicHit(alice, 4331301)).Dsts.Single().Damage);
+
+        await Gm(alice, "!hp 999999999");
+        await Gm(alice, "!raidtrial 3");
+        await Tip(alice, 4314410);
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4330004)); // under her
+        Assert.Equal(max * 45 / 100, (await MechanicHit(alice, 4331501)).Dsts.Single().Damage);
+
+        await Gm(alice, "!hp 999999999");
+        await OnLoop(() => { mistress.Hp = mistress.Template.MaxHp * 49 / 100; return Task.CompletedTask; });
+        await Tip(alice, 4314411); // angry at half HP
+        await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4330006, 4);
+    }
+
     private async Task UntilGone(long instance, int npc)
     {
         for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc

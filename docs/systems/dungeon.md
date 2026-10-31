@@ -159,6 +159,15 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   'Wormhole' group (27-36); the boss must be within 4 m of one when the count ends (he burrows there and resurfaces,
   4305901, 4 s), else everyone takes 40% as 4305301. Inferred: lanes and their width, timing, damage, the lure rule
   itself. Earthquake (guide 1050103; 4305601, easy 4307001/4307101) stays in his own rotation.
+- Mistress (five-player raid, Mjolnir 3120301; easy 4330001, normal 4330000): **Hornet Formation** (tip 4314409 'A swarm
+  of Bee Infantry is approaching'; guide 1050401): 25 s in and every 75 s four Marching Hornets 4330006 from the north
+  edge points 22-27 and four from the west edge points 48-53, each a 60 x 5 m lane; in a lane after 8 s: 40% as Swarming
+  Bees 4331301. **Hornet Advance** (tip 4314409; guide 1050402): 50 s in and every 75 s five of the six offset west rows
+  61-66 march (60 x 10 m), one gap left; in a lane after 8 s: 30% as 4331601. **Hornet Charge** (tip 4314410 'Bee Cavalry
+  will target players and charge'; guide 1050403): 70 s in and every 75 s two random players get a warning zone 4330004
+  (6 m) under them; anyone in a zone after 5 s takes 45% as 4331501. **Angry** (tip 4314411 'Infantry and cavalry will
+  appear together'): at 50% HP she holds (4332101) while four north lanes and the two zones come together; 50% to those
+  caught after 8 s. Inferred: all lanes, widths, timing and damage; no knockback, no eight-way charge.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

@@ -517,6 +517,78 @@
           "fail": { "who": "all", "hpPercent": 40, "skill": 4305301, "why": "he burrows elsewhere and the storm sweeps the field" }
         }
       ]
+    },
+    "mistress": {
+      "name": "Mistress (five-player raid, Mjolnir 3120301)",
+      "bosses": [4330001, 4330000],
+      "evidence": [
+        "ChatConfig 4314409 'A swarm of Bee Infantry is approaching. Watch your positioning', 4314410 'Bee Cavalry will target players and charge. Watch your positioning', 4314411 'Mistress is Angry! Infantry and cavalry will appear together. Watch out!'.",
+        "TenChallengeHandbookIDConfig 1050401 Hornet Formation (hornets charging horizontally and vertically), 1050402 Hornet Advance (an advancing line of hornets with random gaps, knocking back those they touch), 1050403 Hornet Charge (random players targeted, warning zones, then hornets in eight directions).",
+        "NPCConfig 4330006 Marching Hornet (bullet unit 33121 'marching bee soldiers'), 4330004 Area Effect (unit 33120, the field warning), 4330005 Charge Projectile; skills 4331301 Swarming Bees, 4331501/4331601 Hornet Assault, 4332101 'Hornet Assault+Falling Beehive', Mistress_Rush8 4335301 (eight directions), Mistress_Move1/Move2 4333101-4334801 (the marching rows).",
+        "Scene editor sc_pm_pve5mjolnir_001_dg01: groups 21/34 (points 22-46 on the north and south edges, 10 m apart, facing across) and 47/60 (points 48-72 on the west and east edges); the arena is 60 x 60 m around the boss point 20."
+      ],
+      "guessed": [
+        "Hornet Formation 25 s in and every 75 s: four marching hornets from the north edge (22-27) and four from the west edge (48-53), each a 60 x 5 m lane; still in a lane after 8 s: 40%.",
+        "Hornet Advance 50 s in and every 75 s: five of the six offset west-edge rows (61-66) march, 60 x 10 m each, leaving one 10 m gap; in a lane after 8 s: 30%.",
+        "Hornet Charge 70 s in and every 75 s: two random players are targeted and a warning zone (6 m) stands under each; anyone in a zone after 5 s takes 45%.",
+        "Angry at 50% HP: she holds (4332101) while four north-edge lanes and the targeted zones come together; 50% to those caught after 8 s.",
+        "The knockback and the eight hornet directions are not reproduced: being in the area is the hit."
+      ],
+      "trials": [
+        {
+          "name": "Hornet Formation",
+          "why": "tip 4314409 and the guide's Hornet Formation",
+          "start": { "firstMs": 25000, "everyMs": 75000 },
+          "tips": [4314409],
+          "windowMs": 8000,
+          "objects": [
+            { "npc": 4330006, "lane": [60, 5], "at": { "points": [22, 23, 24, 25, 26, 27], "count": 4 }, "why": "hornets charging north to south" },
+            { "npc": 4330006, "lane": [60, 5], "at": { "points": [48, 49, 50, 51, 52, 53], "count": 4 }, "why": "hornets charging west to east" }
+          ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 40, "skill": 4331301 }
+        },
+        {
+          "name": "Hornet Advance",
+          "why": "tip 4314409 and the guide's Hornet Advance: a line with a gap",
+          "start": { "firstMs": 50000, "everyMs": 75000 },
+          "tips": [4314409],
+          "windowMs": 8000,
+          "objects": [ { "npc": 4330006, "lane": [60, 10], "at": { "points": [61, 62, 63, 64, 65, 66], "count": 5 }, "why": "five of six rows march: one gap" } ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 30, "skill": 4331601 }
+        },
+        {
+          "name": "Hornet Charge",
+          "why": "tip 4314410 and the guide's Hornet Charge",
+          "start": { "firstMs": 70000, "everyMs": 75000 },
+          "tips": [4314410],
+          "windowMs": 5000,
+          "marks": { "count": 2 },
+          "objects": [ { "npc": 4330004, "at": { "onMarked": true }, "why": "a warning zone under each targeted player" } ],
+          "rule": "avoid",
+          "radius": 6,
+          "fail": { "who": "failing", "hpPercent": 45, "skill": 4331501 }
+        },
+        {
+          "name": "Angry",
+          "why": "tip 4314411: infantry and cavalry together",
+          "start": { "hp": [50] },
+          "tips": [4314411],
+          "windowMs": 8000,
+          "boss": { "hold": true, "show": 4332101 },
+          "marks": { "count": 2 },
+          "objects": [
+            { "npc": 4330006, "lane": [60, 5], "at": { "points": [22, 23, 24, 25, 26, 27], "count": 4 } },
+            { "npc": 4330004, "at": { "onMarked": true } }
+          ],
+          "rule": "avoid",
+          "radius": 6,
+          "fail": { "who": "failing", "hpPercent": 50, "skill": 4332101 }
+        }
+      ]
     }
   }
 }
