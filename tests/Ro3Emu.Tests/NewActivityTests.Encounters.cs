@@ -362,14 +362,15 @@ public sealed partial class NewActivityTests
     }
 
     [Fact]
-    public async Task CashOrdersAndClientPaymentReportsAreRefused()
+    public async Task UnknownCashOrdersAndForgedPaymentReportsAreRefused()
     {
+        // The shop is free (Ro3Emu:Shop:FreeProducts, PaidProductsTests), but only for the client's own products and orders.
         await using var bot = await InWorld("CashRefused");
         await bot.SendGameAsync(2001, new CreateOrderReq { ChargeType = 2, ChargeId = 199, Amount = 1 });
-        Assert.Equal(ErrorCodes.FeatureUnavailable, (await Next(bot, 2001, CreateOrderResp.Parser)).Result);
+        Assert.Equal(ErrorCodes.TopUpOption, (await Next(bot, 2001, CreateOrderResp.Parser)).Result);
         await bot.SendGameAsync(2002, new PayResultReq { OrderId = "client-forged" });
         var reply = await Next(bot, 2002, PayResultResp.Parser);
-        Assert.Equal(ErrorCodes.FeatureUnavailable, reply.Result); Assert.Equal("client-forged", reply.OrderId);
+        Assert.Equal(ErrorCodes.ShopGiftOrderMissing, reply.Result); Assert.Equal("client-forged", reply.OrderId);
     }
 
     private async Task WaitOffline(string account)

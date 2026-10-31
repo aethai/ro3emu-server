@@ -91,7 +91,10 @@ public static partial class EconomySnapshotReader
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
     // Faction Quest: role.task_runtime FactionDay/FactionPoints (TaskRuntimeState) are the game day and the Faction Quest
     // points counted that day against TerritoryWarzoneTaskPointsLimit. A counter, no balance and no asset.
-    public const string ExpectedFormatManifestHash = "4D5069526C13C525D39705F7F116BF1392BFFEB5B7F0B72494EAB9271E24E40E";
+    // Free cash shop: role.activity_runtime Purchases (NewActivityService.Purchases) counts each top-up or product a role
+    // took, in total and on its game day. Counters, no balance and no asset: the goods come with the order's own
+    // newactivity receipt that also saves them.
+    public const string ExpectedFormatManifestHash = "AB6A72179619EA176E91523C57052FD630E1ADD4F62ED32DE96BA34CF2DD51E9";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State
