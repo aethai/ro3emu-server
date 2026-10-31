@@ -90,6 +90,11 @@ public sealed partial class SkillService
     });
 
     internal const int QueueSystemType = 6;
+
+    /// <summary>Any career's Lineup group (LC_CFG_SkillConfig.GetSkillIsSkillQueue at level 1): a job advance (Swordman 11399
+    /// to Knight 11430) leaves the earlier one at its free level 1 in every saved plan.</summary>
+    private bool IsQueueGroup(int group) => SkillConfig.Get(_data, RealId(group, 1)) is { SystemType: QueueSystemType };
+
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _queueGroups = new();
 
     // Tree/Replacements are pure functions of the career and static game data. Level() asked for the tree of every
@@ -421,7 +426,7 @@ public sealed partial class SkillService
             // A rebuilt plan (a job change, an invalid saved plan) keeps no bar, Auto-Battle or queue slot for a skill
             // the plan no longer has: the client casts its AutoLoadSkill list as is and every cast came back 3002.
             PruneLoads(plan, preview);
-            if (plan.SkillQueue.Count == 0) plan.SkillQueue[0] = new SkillData();
+            CompactQueue(plan);
             if (plan.ManualLoadSkill.Count == 0) plan.ManualLoadSkill.Add(new SkillData());
             if (plan.AutoLoadSkill.Count == 0) plan.AutoLoadSkill.Add(new SkillData());
         }
@@ -529,7 +534,7 @@ public sealed partial class SkillService
         foreach (var (group, assignment) in source.SkillAssigns)
         {
             if (assignment.SkillLevel == 1 && normalAttacks.Contains(group)) continue;
-            if (group == QueueGroup(progress.Career)) continue; // the Lineup button: free, in no skill tree row
+            if (assignment.SkillLevel <= 1 && IsQueueGroup(group)) continue; // the Lineup button: free, in no skill tree row
             if (assignment.SkillLevel < 0 || assignment.SkillLevel > MaxLevel(group)
                 || (!tree.ContainsKey(group) && assignment.SkillLevel > 0)) return ErrorCodes.SkillNotInTree;
             if (assignment.SkillId != 0 && assignment.SkillId != group) return ErrorCodes.Parameter;
@@ -763,9 +768,22 @@ public sealed partial class SkillService
         {
             var load = plan.SkillQueue[key];
             int level = Level(progress, load.SkillId);
-            if (load.SkillId > 0 && level <= 0) plan.SkillQueue[key] = new SkillData();
+            if (load.SkillId > 0 && level <= 0) plan.SkillQueue.Remove(key);
             else if (load.SkillId > 0) load.SkillLevel = Math.Min(load.SkillLevel, level);
         }
+        CompactQueue(plan);
+    }
+
+    /// <summary>
+    /// The queue holds its skills only, plus an empty slot 0 while it is empty: the client pairs() it unguarded
+    /// (LC_DAL_SkillDevelop.RefreshSkillDalInfo), but counts every entry as a Lineup slot in use, one dot on the Skill Bar
+    /// button each (UI_Sys_Main_JoyStickSkillQueueItemWidgetCtrl._refreshQueuePointNum: table.count), and looks up each
+    /// entry's cooldown for the button (_refreshQueueSkillCDInfo). An emptied slot left as an empty entry showed as a dot.
+    /// </summary>
+    private static void CompactQueue(SkillPlan plan)
+    {
+        foreach (var (slot, queued) in plan.SkillQueue.ToArray())
+            if (queued.SkillId <= 0) plan.SkillQueue.Remove(slot);
         if (plan.SkillQueue.Count == 0) plan.SkillQueue[0] = new SkillData();
     }
 
@@ -898,20 +916,31 @@ public sealed partial class SkillService
             {
                 var row = _data.Row("SkillConfig", RealId(group, 1));
                 int learned = Level(session.Progress!, group);
+                // The Lineup tab lists a learned skill whose level row has _iQueue 1 (or the dynamic override), but not a
+                // base skill whose upgrade is learned (LC_SkillGrowthHelper.GetSkillQueueCanEquipList, CheckSkillCanEquip,
+                // CheckHasUpgradAndLevel; its passive check reads an unset global, bNotPassivity, and never runs).
                 if (group <= 0 || learned <= 0 || row is not { }
                     || !(QueueEligibility?.Invoke(session, group) ?? GameData.Int(row.Value, "_iQueue") == 1)
+                    || UpgradeGroups().TryGetValue(group, out int upgrade) && Level(session.Progress!, upgrade) > 0
                     || req.Info!.SkillLevel < 1 || req.Info.SkillLevel > learned)
                     code = ErrorCodes.SkillNotLearned;
             }
             if (code == 0 && op == 2 && (group <= 0 || old is not { SkillId: > 0 } || old.SkillId != group))
                 code = ErrorCodes.Parameter;
-            if (code == 0 && op == 1 && old is { SkillId: > 0 } && old.SkillId != group)
-                code = ErrorCodes.Parameter;
             if (code == 0 && op == 3 && old is not { SkillId: > 0 }) code = ErrorCodes.Parameter;
             if (code == 0)
             {
-                selected.SkillQueue[req.QueueIndex] = op == 2 ? new SkillData() : req.Info!.Clone();
-                if (!selected.SkillQueue.ContainsKey(0)) selected.SkillQueue[0] = new SkillData();
+                // The Lineup tab sends only Load and Unload (UI_Sys_Skill_QueueWidgetBaseCtrl): a skill dropped on a taken
+                // slot loads over it, and a swap is two Loads, the dragged skill to the target slot, then the target's
+                // skill back to the dragged one's. (inferred) A Load moves the skill: it leaves any other slot it held.
+                if (op == 2) selected.SkillQueue.Remove(req.QueueIndex);
+                else
+                {
+                    foreach (var (slot, queued) in selected.SkillQueue.ToArray())
+                        if (queued.SkillId == group) selected.SkillQueue.Remove(slot);
+                    selected.SkillQueue[req.QueueIndex] = req.Info!.Clone();
+                }
+                CompactQueue(selected);
                 await CommitAsync(session, plans, kind: "cd13c/skill-queue");
                 await SyncAsync(session);
             }

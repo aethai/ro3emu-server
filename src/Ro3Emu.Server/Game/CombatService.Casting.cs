@@ -171,10 +171,12 @@ public sealed partial class CombatService
 
     /// <summary>
     /// The Skill Bar (SkillConfig._iSystemType 6, _kScriptLogic jinengduilie*): "Activating the Skill Bar casts each skill
-    /// in the Skill Bar that currently meets its activation requirements once" (client text). The client lists, checks and
-    /// shows the Lineup; the casting is this script. Each skill is cast on the player in slot order, one after the
-    /// previous one's action (a new cast ends the running one, and an ended cast never lands), and one that cannot be cast
-    /// now (cooldown, SP, state) is skipped.
+    /// in the Skill Bar that currently meets its activation requirements once" (client text). The client only lists,
+    /// checks and shows the Lineup: its button sends a plain 31102 for the Skill Bar row (UI_Sys_Main_JoyStickSkillQueueItem
+    /// WidgetCtrl, usable while any member is off cooldown) and on its success lights the members' dots in slot order,
+    /// skipping those on cooldown (_startShowSkillQueueFX); it never sends the members. The casting is this script (inferred
+    /// timing): each member is cast on the player in slot order, one after the previous one's action (a new cast ends the
+    /// running one, and an ended cast never lands), and one that cannot be cast now (cooldown, SP, state) is skipped.
     /// </summary>
     private void StartLineup(GameSession s, ActiveSkillCast? bar)
     {
@@ -182,28 +184,46 @@ public sealed partial class CombatService
         var members = plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillQueue.OrderBy(kv => kv.Key)
             .Select(kv => kv.Value).Where(m => m.SkillId > 0).Select(m => (m.SkillId, m.SkillLevel)).ToList();
         if (members.Count == 0) return;
-        long generation = s.SceneGeneration, worldScene = s.WorldScene;
-        ScheduleRuntime(worldScene, TimeSpan.FromMilliseconds(Math.Max(0, bar.StartMs - Now) + bar.ChantMs + bar.ActionMs + 1),
-            () => LineupStepAsync(s, members, 0, generation, worldScene));
+        var run = new object();
+        s.LineupRun = run; // a second press replaces a Lineup still running (inferred)
+        var step = new LineupStep(s, run, members, s.SceneGeneration, s.WorldScene);
+        ScheduleRuntime(step.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, bar.StartMs - Now) + bar.ChantMs + bar.ActionMs + 1),
+            () => LineupStepAsync(step, 0, waited: false));
     }
 
-    private async Task LineupStepAsync(GameSession s, List<(int Group, int Level)> members, int index, long generation, long worldScene)
+    private sealed record LineupStep(GameSession Session, object Run, List<(int Group, int Level)> Members, long Generation, long WorldScene);
+
+    private async Task LineupStepAsync(LineupStep step, int index, bool waited)
     {
-        for (; index < members.Count; index++)
+        var s = step.Session;
+        for (; index < step.Members.Count; index++, waited = false)
         {
-            if (s.Dead || s.SceneLoading || s.Role == null || s.Progress == null || s.SceneGeneration != generation || s.WorldScene != worldScene) return;
-            var (group, level) = members[index];
+            if (!ReferenceEquals(s.LineupRun, step.Run) || s.Dead || s.SceneLoading || s.Role == null || s.Progress == null
+                || s.SceneGeneration != step.Generation || s.WorldScene != step.WorldScene)
+                return;
+            // Another cast still in its action (the player's own, pressed meanwhile) would refuse the member as busy:
+            // the member waits for it once, then is skipped if a cast is still running (inferred).
+            if (!waited && s.SkillCast is { Cancelled: false } running && Now < running.StartMs + running.ChantMs + running.ActionMs)
+            {
+                int resume = index;
+                ScheduleRuntime(step.WorldScene, TimeSpan.FromMilliseconds(running.StartMs + running.ChantMs + running.ActionMs + 1 - Now),
+                    () => LineupStepAsync(step, resume, waited: true));
+                return;
+            }
+            var (group, level) = step.Members[index];
             int learned = _skills.Level(s.Progress, group);
             int id = learned > 0 ? _skills.RealId(group, Math.Min(level, learned)) : 0;
             if (id <= 0) continue;
             await CastAsync(s, new CastSkillReq { SkillId = id, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face }, lineup: true);
             if (s.SkillCast is not { Cancelled: false } cast || cast.Request.SkillId != id) continue; // skipped
             int next = index + 1;
-            if (next < members.Count)
-                ScheduleRuntime(worldScene, TimeSpan.FromMilliseconds(Math.Max(0, cast.StartMs - Now) + cast.ChantMs + cast.ActionMs + 1),
-                    () => LineupStepAsync(s, members, next, generation, worldScene));
+            if (next < step.Members.Count)
+                ScheduleRuntime(step.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, cast.StartMs - Now) + cast.ChantMs + cast.ActionMs + 1),
+                    () => LineupStepAsync(step, next, waited: false));
+            else if (ReferenceEquals(s.LineupRun, step.Run)) s.LineupRun = null;
             return;
         }
+        if (ReferenceEquals(s.LineupRun, step.Run)) s.LineupRun = null;
     }
 
     /// <summary>Cast item cost and frozen intent share one owner receipt; HP/SP/buffs remain runtime resources.
