@@ -43,7 +43,8 @@ arguments (`--Ro3Emu:Panel:Port=8081`). The startup log says `Web panel on http:
 `server.sh` on Linux and `scripts/server.sh`. RO3Emu.exe checks the panel's port with the others before it starts the
 server, so a second server on the same PC needs its own (`--panel-port 5391`) or `--no-panel`.
 
-When you play on your own PC the panel listens on loopback only: open `http://127.0.0.1:5381`. On a public host it
+When you play on your own PC the panel listens on loopback only: open `http://127.0.0.1:5381`, or press **Web panel**
+on the launcher's title bar, or run `RO3Emu.exe panel` ([launcher](launcher.md)). On a public host it
 listens on every interface like the game ports; open TCP 5381 in the firewall, or better, put it behind a proxy with
 https as below and keep 5381 closed to the outside.
 

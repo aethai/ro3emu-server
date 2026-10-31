@@ -45,15 +45,22 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
     /// <summary>The address and GM accounts the running host server was started with ("" for local play).</summary>
     string _serverSetup = "";
     bool _serverStarting;
+    /// <summary>launcher.json "panelUrl": the Web panel entry's address whatever the server (PanelLink.ForLauncher).</summary>
+    readonly string? _panelUrl;
+    /// <summary>The joined server's web panel once found; <see cref="_joinProbing"/> while looking; <see cref="_joinProbe"/> drops an older join's answer.</summary>
+    string? _joinedPanel;
+    bool _joinProbing;
+    int _joinProbe;
     Process? _game;
     string _unit = "bytes";
     string _stage = "";
     readonly SpeedMeter _meter = new();
     readonly Stopwatch _sinceProgress = Stopwatch.StartNew();
 
-    public Ro3EmuController(string exePath, Action<object> post, Func<string, string?> pickFolder, Action<bool> gameRunningChanged)
+    public Ro3EmuController(string exePath, Action<object> post, Func<string, string?> pickFolder, Action<bool> gameRunningChanged, string? panelUrl = null)
     {
         _exePath = exePath;
+        _panelUrl = panelUrl;
         _post = post;
         _pickFolder = pickFolder;
         _gameRunningChanged = gameRunningChanged;
@@ -117,6 +124,9 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
                 break;
             case "notesSeen":
                 break;
+            case "panel":
+                await OpenPanelAsync();
+                break;
         }
     }
 
@@ -157,6 +167,7 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
             serverRunning = _server != null,
             serverKind = _serverKind,
             dataDir = SetupHome.DataDir,
+            panel = PanelBody(),
         });
     }
 
@@ -286,30 +297,8 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
         _busy = true;
         try
         {
-            // Hosting again with another address or other GM accounts needs a server started with them.
-            string setup = kind == "host" ? $"{publicAddress}|{string.Join(',', gms)}" : "";
-            if (_server == null || _serverKind != kind || _serverSetup != setup || _server.Process is { HasExited: true })
-            {
-                await StopServerAsync();
-                _unit = "items";
-                PostState("working", null, "Getting ready");
-                await Task.Run(() =>
-                {
-                    Flows.CheckClient(client, needExport: true);
-                    Flows.EnsureGameData(client, force: false);
-                });
-                _unit = "none";
-                _serverStarting = true;
-                PostServer();
-                var server = await Task.Run(() => Flows.StartServerAsync(client, kind == "host", publicAddress, gms, _options.Ports));
-                _server = server;
-                _serverKind = kind;
-                _serverSetup = setup;
-                _serverStarting = false;
-                PostServer();
-                PostSettings();
-            }
-            await LaunchAsync(client, kind == "host" ? $"Friends join with the address {_server.PublicHost}." : null);
+            var server = await EnsureServerAsync(client, kind, publicAddress, gms);
+            await LaunchAsync(client, kind == "host" ? $"Friends join with the address {server.PublicHost}." : null);
         }
         catch (Exception e)
         {
@@ -321,6 +310,61 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
             _busy = false;
             PostServer();
         }
+    }
+
+    /// <summary>The server Play or Host needs: the running one when it fits, else game data, then a new server.</summary>
+    async Task<Flows.LocalServer> EnsureServerAsync(string client, string kind, string? publicAddress, IReadOnlyList<string> gms)
+    {
+        // Hosting again with another address or other GM accounts needs a server started with them.
+        string setup = kind == "host" ? $"{publicAddress}|{string.Join(',', gms)}" : "";
+        if (_server is { } running && _serverKind == kind && _serverSetup == setup && running.Process is not { HasExited: true }) return running;
+        await StopServerAsync();
+        _unit = "items";
+        PostState("working", null, "Getting ready");
+        await Task.Run(() =>
+        {
+            Flows.CheckClient(client, needExport: true);
+            Flows.EnsureGameData(client, force: false);
+        });
+        _unit = "none";
+        _serverStarting = true;
+        PostServer();
+        var server = await Task.Run(() => Flows.StartServerAsync(client, kind == "host", publicAddress, gms, _options.Ports));
+        _server = server;
+        _serverKind = kind;
+        _serverSetup = setup;
+        _serverStarting = false;
+        PostServer();
+        PostSettings();
+        return server;
+    }
+
+    /// <summary>The local server without the game, for the Web panel entry while it is stopped: the same start as Play.</summary>
+    async Task<bool> StartServerOnlyAsync()
+    {
+        if (Client() is not { } client)
+        {
+            await CheckAsync();
+            return false;
+        }
+        _busy = true;
+        try
+        {
+            await EnsureServerAsync(client, "local", null, []);
+        }
+        catch (Exception e)
+        {
+            _serverStarting = false;
+            Fail(e);
+            return false;
+        }
+        finally
+        {
+            _busy = false;
+            PostServer();
+        }
+        await CheckAsync();
+        return true;
     }
 
     /// <summary>Someone else's server: patch the game for it and start the game (our own server is not needed).</summary>
@@ -348,6 +392,7 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
                 return Flows.PrepareJoinAsync(client, url);
             });
             _serverKind = "join";
+            _ = FindJoinedPanelAsync(url);
             await LaunchAsync(client, $"Playing on {url}.");
         }
         catch (Exception e) { Fail(e); }
@@ -444,6 +489,64 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
         PostSettings();
         await CheckAsync();
     }
+
+    // ---------- the Web panel entry ----------
+
+    /// <summary>
+    /// The title bar's Web panel entry (PanelLink.ForLauncher): launcher.json's panelUrl, else the joined server's panel,
+    /// else the local server's (started by the entry when it is not running).
+    /// </summary>
+    PanelLink.Entry? PanelEntry() => PanelLink.ForLauncher(_panelUrl, ro3emuMode: true, joined: _serverKind == "join", _joinedPanel, _joinProbing,
+        LocalPanel(), localRunning: _server != null && _server.Process is not { HasExited: true });
+
+    /// <summary>The local server's panel: the ports it runs with (or will start with) and the bind address of its settings.</summary>
+    string? LocalPanel() => Flows.LocalPanelUrl(_server?.Ports ?? _options.Ports, host: _serverKind == "host");
+
+    object? PanelBody() => PanelEntry() is { } entry ? new { state = entry.State, url = entry.Url, hint = entry.Hint } : null;
+
+    async Task OpenPanelAsync()
+    {
+        var entry = PanelEntry();
+        if (entry?.State == PanelLink.Start)
+        {
+            if (_busy || _phase != "ready")
+            {
+                Toast("Your server is not running. Press Play to start it, then open the web panel.");
+                return;
+            }
+            if (!await StartServerOnlyAsync()) return;
+            entry = PanelEntry();
+        }
+        if (entry is not { State: PanelLink.Open, Url: { } url })
+        {
+            if (entry?.Hint is { } hint) Toast(hint);
+            return;
+        }
+        // The local panel can be off in the server's own settings (Ro3Emu:Panel:Enabled); a joined one answered already.
+        if (url == LocalPanel() && !await PanelLink.AnswersAsync(_ping, url, _life.Token))
+        {
+            Toast($"Your server's web panel does not answer on {url}. It may be turned off in the server's settings.");
+            return;
+        }
+        MainWindow.OpenExternal(url);
+    }
+
+    /// <summary>After a join: the joined server's web panel, when it answers where RO3Emu puts it (PanelLink.JoinCandidates).</summary>
+    async Task FindJoinedPanelAsync(string serverUrl)
+    {
+        int probe = ++_joinProbe;
+        _joinedPanel = null;
+        _joinProbing = true;
+        PostSettings();
+        string? panel = await PanelLink.FirstAnsweringAsync(PanelLink.JoinCandidates(serverUrl), Flows.PanelTimeout, _life.Token);
+        if (probe != _joinProbe) return;
+        _joinedPanel = panel;
+        _joinProbing = false;
+        SetupLog.Write($"launcher: web panel of {serverUrl}: {panel ?? "none"}");
+        PostSettings();
+    }
+
+    void Toast(string text) => _post(new { type = "toast", text });
 
     // ---------- the local server pill ----------
 
