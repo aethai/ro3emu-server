@@ -342,6 +342,7 @@ public sealed partial class CharacterService
                 }
                 for (int i = 0; i < granted.Count; i++) granted[i] = mapped[granted[i]];
                 CopyProgress(p, stagedProgress);
+                if (baseExp > 0 || jobExp > 0) foreach (var credited in ExpCredited) credited(session, baseExp, jobExp);
                 if (rewardSettlement != null) rewardSettlement.Committed = true;
                 foreach (var item in granted) session.NewItems.Add(item.Guid);
                 cardSight?.Apply();

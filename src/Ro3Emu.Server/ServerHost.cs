@@ -183,6 +183,8 @@ public static partial class ServerHost
         // A singleton too: the panel's server control lists backups and makes one on demand.
         builder.Services.AddSingleton<DatabaseBackup>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackup>());
+        builder.Services.AddSingleton<CheatMonitor>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<CheatMonitor>());
         builder.Services.AddSingleton<ReceiptRetention>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ReceiptRetention>());
         builder.Services.AddSingleton<Game.Persistence.PositionPersistence>();
@@ -252,6 +254,9 @@ public static partial class ServerHost
         if (options.Panel.Enabled) Ro3Emu.Panel.PanelSite.Map(app, options.Panel.Port);
         // Mount energy meters (EnergyConfig._iBelongMount): BuffService cannot take MountService (MountService -> SceneService -> BuffService).
         app.Services.GetRequiredService<MountService>().Changed.Add(app.Services.GetRequiredService<BuffService>().MountsChangedAsync);
+        app.Services.GetRequiredService<CharacterService>().ExpCredited.Add(app.Services.GetRequiredService<CheatMonitor>().ExpGained);
+        // Team chat channels (ChatService cannot take TeamService: TeamService -> ChatService).
+        app.Services.GetRequiredService<ChatService>().TeamChannelAllowed = app.Services.GetRequiredService<TeamService>().ChannelAllowed;
         app.Use(async (context, next) =>
         {
             if (HttpMethods.IsPost(context.Request.Method) && app.Services.GetRequiredService<GameLoop>().Phase != GameLoopPhase.Accepting)

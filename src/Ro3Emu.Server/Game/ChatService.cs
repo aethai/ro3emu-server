@@ -29,10 +29,13 @@ public sealed partial class ChatService
     private readonly IOptions<ServerOptions> _options;
     private readonly ChatFloodGuard _flood;
     private readonly ILogger<ChatService> _log;
+    private readonly CheatMonitor _cheats;
 
     public ChatService(GmCommands gm, FeedbackService feedback, GuildStore guilds, FriendStore friends, CharacterService character,
-        GameData data, SessionRegistry sessions, IOptions<ServerOptions> options, ChatFloodGuard flood, ILogger<ChatService> log)
+        GameData data, SessionRegistry sessions, IOptions<ServerOptions> options, ChatFloodGuard flood, ILogger<ChatService> log,
+        CheatMonitor cheats)
     {
+        this._cheats = cheats;
         this._gm = gm; this._feedback = feedback; this._guilds = guilds; this._friends = friends; this._character = character; this._data = data;
         this._sessions = sessions; this._options = options; this._flood = flood; this._log = log;
         character.RegisterItemAction(SoundTransmissionAction, UseHornAsync, takesParam: true);
@@ -185,10 +188,42 @@ public sealed partial class ChatService
             return long.TryParse(group.AsSpan(2), out long groupId) && groupId > 0 && group == $"5_{groupId}"
                 && session.Role != null && _friends.Group(groupId.ToString()) is { } chatGroup
                 && chatGroup.Members.Any(m => m.Role == session.Role.Id);
+        if (TeamChannelId(group) is { } teamId) return session.Role != null && TeamChannelAllowed?.Invoke(session, teamId) != false;
         if (!GuildChannel(group)) return true;
         // Canonical spelling is required so leaving 2_<id> always removes the exact joined group.
         return long.TryParse(group.AsSpan(2), out long guildId) && guildId > 0
             && group == $"2_{guildId}" && session.Role != null && _guilds.ForRole(session.Role.Id)?.Id == guildId;
+    }
+
+    /// <summary>
+    /// Why a chat line is refused before it is looked at, or null: longer than AntiCheatOptions.ChatMaxLength (its text or
+    /// extra parameter), or over the session's AntiCheatOptions.ChatLines budget (a GM's commands excepted). The client's own
+    /// input field is far shorter and nobody types that fast (inferred). It is the hard per-session cap, checked first and
+    /// counted by CheatMonitor; a line it refuses never reaches the operator's flood policy (FloodRefusedAsync, Ro3Emu:ChatFlood,
+    /// with its mute), which is stricter when on and so decides first for ordinary spam.
+    /// </summary>
+    private string? ChatRefusal(GameSession sender, SendTextChatMessageRequest req)
+    {
+        var limits = _options.Value.AntiCheat;
+        if (req.Content.Length > limits.ChatMaxLength || req.ExtraParam.Length > limits.ChatMaxLength * 8)
+            return $"line of {req.Content.Length} characters (extra {req.ExtraParam.Length}) to {req.ReceiveId}";
+        if (_gm.IsCommand(req.Content) && _gm.Allowed(sender)) return null; // a GM's command lines are not chat
+        sender.ChatLines ??= RateBucket.Parse(limits.ChatLines) ?? new RateBucket(1, 10);
+        return sender.ChatLines.TryTake(Environment.TickCount64) ? null : $"line to {req.ReceiveId} over the chat rate";
+    }
+
+    /// <summary>
+    /// Set by TeamService: whether the session may use team channel <c>3_&lt;teamId&gt;</c> (LC_ChatHelper builds it from the
+    /// prefix, "3_" and the party's or the Survivor team's id). Unset, every team channel is open as before.
+    /// </summary>
+    public Func<GameSession, long, bool>? TeamChannelAllowed { get; set; }
+
+    private static long? TeamChannelId(string group)
+    {
+        string rest = group.StartsWith("@TGS#_3_", StringComparison.Ordinal) ? group[8..]
+            : group.StartsWith("3_", StringComparison.Ordinal) ? group[2..] : "";
+        return long.TryParse(rest, NumberStyles.None, CultureInfo.InvariantCulture, out long id) && id.ToString(CultureInfo.InvariantCulture) == rest
+            ? id : null;
     }
 
     public void GuildMembershipChanged(GameSession session, long formerGuildId) => Leave(session, $"2_{formerGuildId}");
@@ -305,6 +340,12 @@ public sealed partial class ChatService
 
     private async Task SendTextAsync(GameSession sender, SendTextChatMessageRequest req)
     {
+        if (ChatRefusal(sender, req) is { } refusal)
+        {
+            _cheats.Refused(sender, CheatMonitor.Chat, refusal);
+            await DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false });
+            return;
+        }
         if (!GuildAllowed(sender, req.ReceiveId))
         {
             await DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false });
@@ -377,6 +418,8 @@ public sealed partial class ChatService
             }
             recipients = recipients.Where(p => GuildAllowed(p, req.ReceiveId)).ToList();
         }
+        if (req.ChatType != ChatTypePrivate && TeamChannelId(req.ReceiveId) != null)
+            recipients = [.. recipients.Where(p => p == sender || GuildAllowed(p, req.ReceiveId))];
         if (req.ChatType != ChatTypePrivate) Remember(message, sender);
         _log.LogInformation("Chat {Name} -> {Target} ({Count} recipient(s)): {Text}", sender.Role.Name, req.ReceiveId, recipients.Count, req.Content);
 

@@ -105,8 +105,9 @@ public sealed class QuestWalkTests : IAsyncLifetime
             {
                 switch (t[0])
                 {
-                    case 104003: // reach area [map, area]
+                    case 104003: // reach area [map, area]: the client reports the region it stands in
                         if (scene != t[1]) await WarpAsync(bot, t[1]);
+                        if (world.Map(t[1])?.Regions.GetValueOrDefault(t[2]) is { } region) await WarpAsync(bot, t[1], region.X, region.Z);
                         await bot.SendGameAsync(SceneService.ClientEnterArea, new ClientEnterAreaReq { AreaId = t[2] });
                         break;
                     case 309002: // cutscene ended

@@ -62,8 +62,15 @@ public sealed class ServerOptions
     /// </summary>
     public string? GameDataDir { get; set; }
 
-    /// <summary>Walk check against the client's nav grid: "off", "log" (report only) or "enforce" (snap back).</summary>
-    public string WalkCheck { get; set; } = "log";
+    /// <summary>
+    /// Walk check (SceneService.AcceptWalkAsync): the distance budget of the speed attribute and the client's nav grid.
+    /// "enforce" (default) snaps a refused walk back to the last good position, "log" only reports it (CheatMonitor), "off"
+    /// skips the check. A walk to a position that is not a number is refused in every mode but "off".
+    /// </summary>
+    public string WalkCheck { get; set; } = "enforce";
+
+    /// <summary>Anti-cheat limits and the web panel's suspicious-activity thresholds (CheatMonitor, docs/systems/anticheat.md).</summary>
+    public AntiCheatOptions AntiCheat { get; set; } = new();
 
     public int ClusterId { get; set; } = 1;
 

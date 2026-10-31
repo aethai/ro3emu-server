@@ -95,6 +95,7 @@ Keep it readable by the server's account only, and do not share it or attach it 
 
 - **Denial of service by a determined attacker.** The limits above stop accidents and cheap abuse. Volumetric
   attacks need protection in front of the server.
-- **A modified client** sending requests that pass validation. The server enforces the original's rules, not
-  anti-cheat.
+- **A modified client** sending requests that pass validation. The server enforces the original's rules and the checks
+  in [anti-cheat](anticheat.md) (walk and flight budgets, message rates, quest reports, chat limits); a well-made bot on
+  the unmodified client sends what a player sends.
 - **The client's own security.** The patcher changes only what `ClientPatcher` lists.

@@ -35,5 +35,6 @@ internal static class DatabaseSchema
         new AccountBanSchemaPlan(),
         new PanelSchemaPlan(),
         new PanelSecuritySchemaPlan(),
+        new AntiCheatSchemaPlan(),
     ];
 }
