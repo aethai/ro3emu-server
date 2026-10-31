@@ -90,10 +90,13 @@ public sealed partial class PanelOperations
         if (role == null) return Refused("There is no such character.");
         if (world.Map(action.Map) is not { } map) return Refused("There is no map " + action.Map.ToString(CultureInfo.InvariantCulture) + ".");
         string where = data.MapName(action.Map) is { Length: > 0 } mapName ? mapName : "map " + action.Map.ToString(CultureInfo.InvariantCulture);
+        if (!world.ClientHasScene(action.Map))
+            return Refused("The game client has no scene for " + where + ": a character sent there would never finish loading.");
         string point = action.X is { } x && action.Z is { } z ? string.Create(CultureInfo.InvariantCulture, $" {x:0.##} {z:0.##}") : "";
         if (await RunLineAsync(character, "!warp " + action.Map.ToString(CultureInfo.InvariantCulture) + point) is { } replies)
         {
-            if (replies.Any(r => r.StartsWith("Usage", StringComparison.Ordinal))) return Refused("The server could not move " + role.Name + " there.");
+            if (replies.Any(r => r.StartsWith("Usage", StringComparison.Ordinal) || r.StartsWith(GmCommands.WarpRefused, StringComparison.Ordinal)))
+                return Refused("The server could not move " + role.Name + " there.");
             await AuditAsync(admin, AdminAudit.CharacterTeleport, Target(character, role.Name), where + point + " (in the game)");
             return new PanelActionResult(true, role.Name + " was moved to " + where + ".");
         }
