@@ -983,6 +983,7 @@ public sealed partial class DungeonService
                     await s.SendGameAsync(Result, result);
                     if (success) await HideGuideWaysAsync(s, a);
                     if (success && LeavesAfterClear(a)) ScheduleLeaveAfterClear(s, a);
+                    else if (success && ContinuationOf(a.Plan.SceneEntry) is long nextScene and not 0) ScheduleContinuation(s, a, nextScene);
                     if (success && a.Plan.Multi != null)
                     {
                         var award = new SyncMultiDungeonAwardNotify
