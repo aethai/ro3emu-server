@@ -168,6 +168,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<WorldInteractionService>();
         builder.Services.AddSingleton<FriendExtraService>();
         builder.Services.AddSingleton<ChatService>();
+        builder.Services.AddSingleton<ChatFloodGuard>();
         builder.Services.AddSingleton<FeedbackService>();
         builder.Services.AddSingleton<GmCommands>();
         builder.Services.AddSingleton<Ro3Emu.Server.Data.GameData>();
@@ -463,6 +464,7 @@ public static partial class ServerHost
         app.Logger.LogInformation("Data dir {DataDir}", options.DataDir);
         LogGmPolicy(app.Logger, options, builder.Environment.EnvironmentName);
         LogTesting(app.Logger, options.Testing);
+        if (options.RefuseUnknownAccounts && !(options.Panel.Enabled && options.Panel.Registration)) LogNoSignUp(app.Logger);
         // D1 inventory across many short-lived servers (a whole test suite): each appends its loop waits on stop.
         if (Environment.GetEnvironmentVariable("RO3EMU_LOOPWAIT_DUMP") is { Length: > 0 } dump)
             app.Lifetime.ApplicationStopped.Register(() => Diagnostics.LoopWaitDump.Append(dump, app.Services.GetRequiredService<AccountStore>().AccessMetrics));
@@ -546,6 +548,10 @@ public static partial class ServerHost
         "Vault and Dodo's Request reward counts never run out. TEST AID, not original behaviour; turn it off for a real realm " +
         "(docs/guide/hosting.md).")]
     private static partial void LogUnlimitedRewards(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:RefuseUnknownAccounts is on but the web panel's sign-up is " +
+        "off: no new account can be created. Turn on Ro3Emu:Panel:Enabled and Ro3Emu:Panel:Registration (docs/guide/hosting.md).")]
+    private static partial void LogNoSignUp(ILogger logger);
 
     private static string RepositoryRoot()
     {

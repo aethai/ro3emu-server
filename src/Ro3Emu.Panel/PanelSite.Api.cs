@@ -111,7 +111,18 @@ public sealed partial class PanelSite
         string name = form?.Account?.Trim() ?? "", password = form?.Password ?? "";
         if ((NameProblem(name) ?? PasswordProblem(password)) is { } problem) return Reply.Error(StatusCodes.Status400BadRequest, problem);
         if (!_backend.TryAcquireCredentialCheck(call.Client)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
+        if (_signUps.TryReserve(call.Client, out var slot) is var refusal and not PanelSignUps.Refusal.None)
+        {
+            bool perAddress = refusal == PanelSignUps.Refusal.Address;
+            // The address only where the operator keeps addresses (PanelOptions.LoginAddresses).
+            string? address = _options.LoginAddresses ? call.Client?.ToString() : null;
+            LogSignUpLimited(_log, name, address, perAddress ? "per address" : "per hour");
+            return Reply.Error(StatusCodes.Status429TooManyRequests, perAddress
+                ? "Too many accounts were made from your network today. Try again tomorrow."
+                : "Sign-up is busy right now. Try again in an hour.");
+        }
         var result = await _backend.RegisterAsync(name, password);
+        if (result != PanelRegistration.Created) _signUps.Release(slot);
         LogRegistration(_log, name, result);
         return result switch
         {
@@ -210,6 +221,9 @@ public sealed partial class PanelSite
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Panel sign-up {Account}: {Result}")]
     private static partial void LogRegistration(ILogger logger, string account, PanelRegistration result);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Panel sign-up {Account} from {Address}: refused, the {Budget} sign-up limit is used up")]
+    private static partial void LogSignUpLimited(ILogger logger, string account, string? address, string budget);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Panel password change {Account}")]
     private static partial void LogPasswordChanged(ILogger logger, string account);

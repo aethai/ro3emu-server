@@ -42,6 +42,7 @@ public sealed partial class PanelSite
     private readonly TimeProvider _clock;
     private readonly ILogger<PanelSite> _log;
     private readonly PanelSessions _sessions;
+    private readonly PanelSignUps _signUps;
     private readonly PanelAssets _assets = new();
     private readonly IPAddress[] _proxies;
     private readonly Route[] _routes;
@@ -57,6 +58,7 @@ public sealed partial class PanelSite
         _clock = clock;
         _log = log;
         _sessions = new PanelSessions(clock, TimeSpan.FromHours(Math.Max(1, options.SessionHours)));
+        _signUps = new PanelSignUps(options, clock);
         _proxies = [.. options.TrustedProxies.Select(IPAddress.Parse).Select(Normalize)];
         _routes = [.. PublicRoutes(), .. PlayerRoutes(), .. AdminRoutes(), .. ToolRoutes(), .. DatabaseRoutes(), .. CharacterRoutes(),
             .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. UpdateRoutes(), .. PlayerPageRoutes(), .. WikiRoutes()];

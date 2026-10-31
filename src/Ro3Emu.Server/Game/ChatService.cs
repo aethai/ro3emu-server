@@ -27,13 +27,14 @@ public sealed partial class ChatService
     private readonly GameData _data;
     private readonly SessionRegistry _sessions;
     private readonly IOptions<ServerOptions> _options;
+    private readonly ChatFloodGuard _flood;
     private readonly ILogger<ChatService> _log;
 
     public ChatService(GmCommands gm, FeedbackService feedback, GuildStore guilds, FriendStore friends, CharacterService character,
-        GameData data, SessionRegistry sessions, IOptions<ServerOptions> options, ILogger<ChatService> log)
+        GameData data, SessionRegistry sessions, IOptions<ServerOptions> options, ChatFloodGuard flood, ILogger<ChatService> log)
     {
         this._gm = gm; this._feedback = feedback; this._guilds = guilds; this._friends = friends; this._character = character; this._data = data;
-        this._sessions = sessions; this._options = options; this._log = log;
+        this._sessions = sessions; this._options = options; this._flood = flood; this._log = log;
         character.RegisterItemAction(SoundTransmissionAction, UseHornAsync, takesParam: true);
     }
 
@@ -314,6 +315,8 @@ public sealed partial class ChatService
             await _gm.RunAsync(sender, req.Content.Trim());
             return;
         }
+
+        if (await FloodRefusedAsync(sender, req)) return;
 
         List<GameSession> recipients;
         bool local = req.ChatType != ChatTypePrivate && MapChannel(req.ReceiveId);

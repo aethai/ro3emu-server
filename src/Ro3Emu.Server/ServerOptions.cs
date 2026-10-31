@@ -137,6 +137,16 @@ public sealed class ServerOptions
     public bool LoginLimitIncludesLoopback { get; set; }
 
     /// <summary>
+    /// A game login (SDK login) with an account name that has no account is refused instead of creating the account,
+    /// so accounts come only from the web panel's sign-up (a closed test). The client shows its wrong-credentials
+    /// popup, as for a wrong password. Off: the first login creates the account, as before.
+    /// </summary>
+    public bool RefuseUnknownAccounts { get; set; }
+
+    /// <summary>Chat flood protection (ChatService.Flood.cs). Off by default.</summary>
+    public ChatFloodOptions ChatFlood { get; set; } = new();
+
+    /// <summary>
     /// Gift code attempts (POST /gift-card/use/v2, docs/systems/gift-codes.md) one remote address, and separately one
     /// account, may make per minute; past it the server answers the refusal code GiftCardRateLimited without looking
     /// the code up. Loopback is exempt from the address budget, as for <see cref="LoginAttemptsPerMinute"/>, but not
@@ -340,6 +350,32 @@ public sealed class FeedbackOptions
     /// keeps reports in the file only. The URL lets anyone post to that channel, so keep it out of committed config.
     /// </summary>
     public string? DiscordWebhookUrl { get; set; }
+}
+
+/// <summary>
+/// Ro3Emu:ChatFlood (Game.ChatFloodGuard): per-account chat limits for a public server, off by default. The numbers
+/// stay above the client's own channel cooldowns (ChatChannelConfig _iCD: world 5 s), so an unmodified client typing
+/// at its fastest is never refused. GM accounts (Ro3Emu:GmAccounts) are exempt.
+/// </summary>
+public sealed class ChatFloodOptions
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>The window the two line budgets count in.</summary>
+    public int WindowSeconds { get; set; } = 10;
+
+    /// <summary>Lines per window on the open channels: world, map, recruitment and every other channel anyone can join.</summary>
+    public int OpenLines { get; set; } = 5;
+
+    /// <summary>Lines per window on whispers, party, guild and friend-group chat, counted apart from the open channels.</summary>
+    public int PrivateLines { get; set; } = 10;
+
+    /// <summary>A line whose text (letter case and spaces aside) went to the same channel or player this many seconds
+    /// before is dropped; 0 turns the check off.</summary>
+    public int DuplicateSeconds { get; set; } = 30;
+
+    /// <summary>How long an account that went past a budget cannot chat.</summary>
+    public int MuteSeconds { get; set; } = 60;
 }
 
 /// <summary>
