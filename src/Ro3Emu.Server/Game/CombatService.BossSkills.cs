@@ -271,14 +271,15 @@ public sealed partial class CombatService
 
     /// <summary>
     /// A raid trial's boss performance (DungeonService.RaidTrials): the row's show for <paramref name="ms"/> on the cast
-    /// wire, without hits (Orc Hero raising his shield, Ilmo beating the drum). Returns its session for an interrupt.
+    /// wire, without hits (Orc Hero raising his shield, Ilmo beating the drum), at the boss or aimed at
+    /// <paramref name="at"/> facing <paramref name="face"/> (Osiris's Dark Pulse). Returns its session for an interrupt.
     /// </summary>
-    internal async Task<long> PlayBossShowAsync(MonsterUnit boss, int skillId, int ms)
+    internal async Task<long> PlayBossShowAsync(MonsterUnit boss, int skillId, int ms, Vec3? at = null, float? face = null)
     {
         long session = ++_sessionIds;
         await SendMonsterTimelineAsync(boss, new UseInSkillInfo
         {
-            SrcID = boss.Uid, SkillID = skillId, TargetPos = boss.Pos, Face = boss.Face, SessionId = session, SkillMs = ms,
+            SrcID = boss.Uid, SkillID = skillId, TargetPos = at ?? boss.Pos, Face = face ?? boss.Face, SessionId = session, SkillMs = ms,
             StartTime = Now,
         });
         return session;

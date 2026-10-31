@@ -645,6 +645,48 @@
           "fail": { "who": "failing", "hpPercent": 50, "skill": 4343401 }
         }
       ]
+    },
+    "osiris": {
+      "name": "Osiris (five-player raid, Pyramid 3120601)",
+      "bosses": [4360004, 4360000],
+      "evidence": [
+        "ChatConfig 5003 (CombatCountdownTip) 'Dark Pulse will be unleashed in ${1} seconds! Use Dark Pulse to destroy the Horongs!', 5004 'Star Shift will strike in ${1} seconds! Keep moving to dodge it!'.",
+        "TenChallengeHandbookIDConfig 1050601 Summon Horong (they land, explode and remain), 1050602 Dark Pulse (a beam launched at a player passes between players, who reposition to steer it and detonate the Horongs), 1050603 Astral Shift (walls of fire rotating around the centre).",
+        "NPCConfig 4360006 'Side-by-Side Horongs' (type 4, unit 33127 the Horong's blue fire), 4360008 Astral Shift (unit 33038 'Osiris star-shift circle'); skills 4361301 Dark Pulse, 4361401 Horong Split ('all Horongs launch energy orbs'), 4361701 Astral Shift ('every Horong moves in a circle around the centre').",
+        "Scene editor sc_pm_pve5pryd_001_dg01: monster points 58-63 and 65-73 scattered 10-25 m around the boss point 19; point 20 'Star Shift' at the centre."
+      ],
+      "guessed": [
+        "Dark Pulse 25 s in and every 60 s: one Horong per player (two to four) stands at random scattered points; every 4 s Osiris aims a Dark Pulse at a random player, a 40 x 4 m line from him through that player that detonates the Horongs on it. Each Horong left after 20 s splits for 15% to everyone (at most 45%).",
+        "The pulse itself deals no damage and does not bounce: standing behind a Horong (as seen from Osiris) is how the players steer it.",
+        "Astral Shift 55 s in and every 60 s: a star-shift circle under every player; still within 3 m after 5 s: 35%."
+      ],
+      "trials": [
+        {
+          "name": "Dark Pulse",
+          "why": "tip 5003 and the guide's Summon Horong and Dark Pulse",
+          "start": { "firstMs": 25000, "everyMs": 60000 },
+          "tips": [5003],
+          "tipParam": "countdown",
+          "windowMs": 20000,
+          "boss": { "casts": [ { "skill": 4361301, "everyMs": 4000, "beam": [40, 4] } ] },
+          "objects": [ { "npc": 4360006, "at": { "points": [58, 59, 60, 61, 62, 63, 65, 66, 67, 68, 69, 70, 71, 72, 73], "perPlayer": 1, "min": 2, "max": 4 }, "why": "the Horongs" } ],
+          "rule": "kill",
+          "radius": 2,
+          "fail": { "who": "all", "hpPercent": 15, "perObject": true, "capPercent": 45, "skill": 4361401, "why": "each Horong left splits into energy orbs" }
+        },
+        {
+          "name": "Astral Shift",
+          "why": "tip 5004: keep moving",
+          "start": { "firstMs": 55000, "everyMs": 60000 },
+          "tips": [5004],
+          "tipParam": "countdown",
+          "windowMs": 5000,
+          "objects": [ { "npc": 4360008, "at": { "onPlayers": true }, "why": "a star-shift circle where every player stands" } ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 35, "skill": 4361701 }
+        }
+      ]
     }
   }
 }

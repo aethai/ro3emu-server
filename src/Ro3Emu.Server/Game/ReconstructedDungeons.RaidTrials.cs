@@ -73,13 +73,21 @@ public sealed partial class ReconstructedDungeons
     /// start. <paramref name="Marks"/> random players get <paramref name="MarkBuff"/> (a trap or a target; taken off at the
     /// end). <paramref name="Carry"/> is the buff a touched object gives, for its time, with a line to its carrier.
     /// <paramref name="Breakers"/>: boss skills whose landing area destroys the objects inside; <paramref name="Casts"/>:
-    /// boss skills it casts at a random player every so often during the window.
+    /// boss skills it casts at a random player every so often during the window (or beams it aims at one, <see cref="TrialCast"/>).
     /// </summary>
     public sealed record RaidTrial(string Name, int FirstMs, int EveryMs, IReadOnlyList<int> Hp, IReadOnlyList<int> Tips,
         IReadOnlyDictionary<int, int> TipByCount, string TipParam, int WindowMs, bool Hold, long Show, IReadOnlyList<int> Colors, bool Assign,
         int Marks, int MarkBuff, (int Buff, int Ms, int Say) Carry, TrialRule Rule, float Radius, float Width, float Depth,
         IReadOnlyList<TrialObject> Objects, TrialOutcome Fail, TrialOutcome? Success, IReadOnlyList<long> Breakers,
-        IReadOnlyList<(long Skill, int EveryMs)> Casts);
+        IReadOnlyList<TrialCast> Casts);
+
+    /// <summary>
+    /// A boss skill during a trial's window, every <paramref name="EveryMs"/> at a random player: cast from the boss's set,
+    /// or with a <paramref name="BeamWidth"/>, a beam: the skill's show aimed at the player (no hit, and the boss keeps
+    /// fighting), whose line from the boss, <paramref name="BeamLength"/> metres long and that wide, destroys the trial's
+    /// objects on it (Osiris's Dark Pulse detonating the Horongs).
+    /// </summary>
+    public sealed record TrialCast(long Skill, int EveryMs, float BeamLength, float BeamWidth);
 
     /// <summary>A raid boss's trials, for each of its difficulty NPCs (<paramref name="Bosses"/>).</summary>
     public sealed record RaidScript(string Key, string Name, IReadOnlyList<int> Bosses, IReadOnlyList<RaidTrial> Trials);
@@ -133,7 +141,7 @@ public sealed partial class ReconstructedDungeons
             boss.ValueKind == JsonValueKind.Object && boss.TryGetProperty("breakers", out var breakers)
                 ? [.. breakers.EnumerateArray().Select(v => v.GetInt64())] : [],
             boss.ValueKind == JsonValueKind.Object && boss.TryGetProperty("casts", out var casts)
-                ? [.. casts.EnumerateArray().Select(v => (v.GetProperty("skill").GetInt64(), v.GetProperty("everyMs").GetInt32()))] : []);
+                ? [.. casts.EnumerateArray().Select(Cast)] : []);
         if (trial.WindowMs <= 0 || trial.FirstMs <= 0 && trial.Hp.Count == 0 || trial.EveryMs is > 0 and < 10000)
             throw new InvalidOperationException($"Raid trial '{trial.Name}' has no window or no start.");
         return trial;
@@ -152,6 +160,9 @@ public sealed partial class ReconstructedDungeons
             Bool(o, "chosen"), Int(o, "markBuff"), Int(o, "markMs"),
             o.TryGetProperty("lane", out var lane) ? (lane[0].GetSingle(), lane[1].GetSingle()) : null);
     }
+
+    private static TrialCast Cast(JsonElement c) => new(c.GetProperty("skill").GetInt64(), c.GetProperty("everyMs").GetInt32(),
+        c.TryGetProperty("beam", out var beam) ? beam[0].GetSingle() : 0, c.TryGetProperty("beam", out var wide) ? wide[1].GetSingle() : 0);
 
     private static TrialOutcome Outcome(JsonElement o) => new(
         o.TryGetProperty("who", out var who) ? Enum.Parse<TrialWho>(who.GetString()!, ignoreCase: true) : TrialWho.Failing,

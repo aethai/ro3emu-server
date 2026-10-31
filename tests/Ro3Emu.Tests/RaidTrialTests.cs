@@ -569,6 +569,44 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(max * 50 / 100, (await MechanicHit(alice, 4343401)).Dsts.Single().Damage); // left in the open
     }
 
+    // Osiris: his Dark Pulse, aimed at a player standing behind a Horong, detonates it; every Horong gone, no split. The
+    // star-shift circle punishes a player who stands still.
+    [ClientDataFact]
+    public async Task OsirissDarkPulseDetonatesTheHorongsAndHisStarShiftTheStill()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, osiris) = await RaidFight(alice, 50102, 3, 3120601, 4360004);
+        long max = MaxHp(alice);
+        Pace(50); // a pulse every 2 s
+        await OnLoop(() => { osiris.Moving = false; osiris.BusyUntilMs = MonsterService.NowMs + 60000; return Task.CompletedTask; });
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 5003);
+        var horongs = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4360006, 2);
+        Assert.Equal(2, horongs.Length); // at least two
+        foreach (var horong in horongs)
+        {
+            await OnLoop(() =>
+            {
+                float dx = horong.X - osiris.X, dz = horong.Z - osiris.Z, d = MathF.Sqrt(dx * dx + dz * dz);
+                return Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(horong.X + dx / d * 3, horong.Y, horong.Z + dz / d * 3, 0));
+            });
+            await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == osiris.Uid && u.SkillID == 4361301);
+            for (int i = 0; i < 100 && (await InRoom<DungeonService.SceneActorUnit>(instance, u => u.Uid == horong.Uid)).Length > 0; i++)
+                await Task.Delay(20);
+            Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.Uid == horong.Uid)); // detonated
+        }
+        for (int i = 0; i < 100 && await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonAttempt!.Raid!.Active != null)); i++)
+            await Task.Delay(20);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4361401);
+
+        Pace(10);
+        await Gm(alice, "!raidtrial 2");
+        Assert.Equal("1", (await Tip(alice, 5004)).ParamList[1].Params[0]);
+        Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4360008));
+        Assert.Equal(max * 35 / 100, (await MechanicHit(alice, 4361701)).Dsts.Single().Damage);
+    }
+
     private async Task UntilGone(long instance, int npc)
     {
         for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc

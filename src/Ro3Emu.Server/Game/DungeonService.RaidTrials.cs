@@ -188,19 +188,37 @@ public sealed partial class DungeonService
         }
         if (trial.Hold) boss.BusyUntilMs = Math.Max(boss.BusyUntilMs, now + window);
         if (trial.Show > 0) run.ShowSession = await _combat.PlayBossShowAsync(boss, (int)trial.Show, (int)window);
-        foreach (var (skill, every) in trial.Casts) TrialCastLater(a, run, skill, every);
+        foreach (var cast in trial.Casts) TrialCastLater(a, run, cast);
         TrialLater(a, trial.WindowMs, () => EndTrialAsync(a, run, judge: true));
     }
 
-    /// <summary>A forced boss cast every so often during the window, at a random fighter (Drake's barrels).</summary>
-    private void TrialCastLater(Attempt a, TrialRun run, long skill, int every) => TrialLater(a, every, () =>
+    /// <summary>A forced boss cast every so often during the window, at a random fighter (Drake's barrels), or a beam
+    /// aimed at one (Osiris's Dark Pulse).</summary>
+    private void TrialCastLater(Attempt a, TrialRun run, ReconstructedDungeons.TrialCast cast) => TrialLater(a, cast.EveryMs, async () =>
     {
-        if (run.Over || run.Boss.Dead) return Task.CompletedTask;
+        if (run.Over || run.Boss.Dead) return;
         if (Fighters(a) is { Length: > 0 } fighters)
-            _monsters.CastBossSkillNow(run.Boss, fighters[Random.Shared.Next(fighters.Length)], (int)skill);
-        TrialCastLater(a, run, skill, every);
-        return Task.CompletedTask;
+        {
+            var target = fighters[Random.Shared.Next(fighters.Length)];
+            if (cast.BeamWidth > 0) await TrialBeamAsync(a, run, cast, target);
+            else _monsters.CastBossSkillNow(run.Boss, target, (int)cast.Skill);
+        }
+        if (!run.Over) TrialCastLater(a, run, cast);
     });
+
+    /// <summary>A beam (inferred): the skill's show from the boss toward the player, and the trial's objects on its line
+    /// destroyed. It hits no one: the players steer it by where they stand.</summary>
+    private async Task TrialBeamAsync(Attempt a, TrialRun run, ReconstructedDungeons.TrialCast cast, GameSession target)
+    {
+        var boss = run.Boss;
+        float face = MathF.Atan2(target.Position.X - boss.X, target.Position.Z - boss.Z) * 180 / MathF.PI;
+        await _combat.PlayBossShowAsync(boss, (int)cast.Skill, 2000, target.Position.Clone(), face);
+        await BreakTrialObjectsAsync(a, run, o =>
+        {
+            var (forward, side) = CombatService.FacingOffset(o.Unit.X - boss.X, o.Unit.Z - boss.Z, face);
+            return forward >= 0 && forward <= cast.BeamLength && Math.Abs(side) <= cast.BeamWidth / 2;
+        });
+    }
 
     private async Task SetColorAsync(GameSession p, ReconstructedDungeons.RaidTrial trial, int color, int ms, long source)
     {
@@ -402,13 +420,19 @@ public sealed partial class DungeonService
     {
         var a = _sessions.All().Select(s => s.DungeonAttempt).FirstOrDefault(x => x?.Raid?.Active?.Boss == boss);
         if (a?.Raid?.Active is not { } run || run.Over || !run.Trial.Breakers.Contains(skill.Id)) return;
-        foreach (var o in run.Objects.Where(o => !o.Gone && !o.Pickup && CombatService.InBossArea(skill, origin, center, face, o.Unit.X, o.Unit.Z)))
+        await BreakTrialObjectsAsync(a, run, o => CombatService.InBossArea(skill, origin, center, face, o.Unit.X, o.Unit.Z));
+    }
+
+    /// <summary>Destroys the trial's standing objects that <paramref name="hit"/> reaches; a Kill trial solved by it ends.</summary>
+    private async Task BreakTrialObjectsAsync(Attempt a, TrialRun run, Func<TrialUnit, bool> hit)
+    {
+        foreach (var o in run.Objects.Where(o => !o.Gone && !o.Pickup && hit(o)).ToArray())
         {
             o.Gone = true;
             if (o.Unit is MonsterUnit m) { _trialMonsters.TryRemove(m.Uid, out _); await _monsters.KillAsync(m); }
             else await _instances.RemovePropAsync(a.Room, o.Unit);
         }
-        if (run.Trial.Rule == Rule.Kill && KillSolved(run)) await EndTrialAsync(a, run, judge: true);
+        if (!run.Over && run.Trial.Rule == Rule.Kill && KillSolved(run)) await EndTrialAsync(a, run, judge: true);
     }
 
     // ---- the verdict ----

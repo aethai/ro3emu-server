@@ -81,7 +81,9 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   (walk into every object; each one taken can reward its taker), `kill` (every object, or the chosen one), `carry`
   (touch the object, then hit the boss with it), `lure` (the boss stands in an object's area when the window closes).
   Boss `breakers` are skills whose landing area destroys the objects in it;
-  `casts` are skills the boss casts at a random player during the window.
+  `casts` are skills the boss casts at a random player during the window; a cast with a `beam` (length, width) is only
+  the skill's show aimed at that player, and the objects on its line from the boss are destroyed (no hit, the boss keeps
+  fighting).
 - A failure costs a share of each reached player's maximum HP, sent as the boss's hit of the named skill (inferred: it
   punishes the same at any gear, and no single failure wipes a full-HP party). A solved trial can reward (a buff, a
   line) and stagger the boss (its show interrupted, a stagger show, the boss held).
@@ -176,6 +178,14 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   Petrify 4340301 (3 s). **Sandstorm meteors** (tips 5202 and 5203, 8 s): at 40% HP the same shelter with the pillars at
   the row points 36, 37, 40, 41 (4343401). Inferred: timing, shadow size, damage; the pull to the centre and Silk Spit's
   link (guide 1050501) are not reproduced: the link's pull is a server-side movement the client data does not describe.
+- Osiris (five-player raid, Pyramid 3120601; easy 4360004, normal 4360000): **Dark Pulse** (tip 5003 'Dark Pulse will be
+  unleashed in ${1} seconds! Use Dark Pulse to destroy the Horongs!', 20 s; guide 1050601/1050602): 25 s in and every 60 s
+  one Horong 4360006 per player (two to four) stands at random points of 58-63/65-73; every 4 s Osiris aims a Dark Pulse
+  (4361301, a beam) at a random player: the 40 x 4 m line from him through that player detonates the Horongs on it, so
+  the players steer it by standing behind them. Each Horong left costs everyone 15% (at most 45%) as Horong Split
+  4361401. **Astral Shift** (tip 5004 'Star Shift will strike in ${1} seconds! Keep moving to dodge it!', 5 s; guide
+  1050603): 55 s in and every 60 s a star-shift circle 4360008 lands under every player; still within 3 m: 35% as
+  4361701. Inferred: the beam's size, that it neither hurts nor bounces, timing and damage; the walls do not rotate.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:
