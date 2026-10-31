@@ -45,6 +45,10 @@ public interface IPanelOperations
     /// <summary>New recovery codes replacing the old ones; null when 2FA is off.</summary>
     Task<IReadOnlyList<string>?> NewRecoveryCodesAsync(string account);
 
+    /// <summary>Records that <paramref name="admin"/> signed <paramref name="account"/> out of every panel browser
+    /// (the sessions live in the panel; the server only keeps the audit row).</summary>
+    Task RecordPanelLogoutAsync(string admin, string account, int ended);
+
     // ---------------------------------------------------------------- reports
 
     /// <summary>In-game reports (FeedbackService), newest first, with their triage; <paramref name="status"/> empty = all.</summary>

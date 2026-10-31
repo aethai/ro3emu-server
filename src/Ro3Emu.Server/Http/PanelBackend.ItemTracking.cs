@@ -28,7 +28,8 @@ public sealed partial class PanelBackend
     {
         var catalog = await CatalogAsync();
         if (catalog.ItemSummary(id) is not { } item) return null;
-        var ledger = Ledger(await accounts.ReadAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(id)), id);
+        var kits = await UnrecordedKitsAsync();
+        var ledger = Ledger(await accounts.ReadAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(id)), id, kits);
         var recent = (await EconomyAsync(new PanelEconomyQuery("", "", id, "", null, null, 1, TraceEntries))).Entries;
         if (ItemConfig.Get(data, id)?.Type == (long)ItemTypeEnum.ItemTypeCurrency)
             return new PanelItemTrace(item, true, [], 0, ledger, recent, []);
@@ -45,13 +46,14 @@ public sealed partial class PanelBackend
     {
         var catalog = await CatalogAsync();
         var ledgerRows = await accounts.ReadAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(null));
-        var byAsset = ledgerRows.GroupBy(r => r.Asset).ToDictionary(g => g.Key, g => Ledger(g, g.Key));
+        var kits = await UnrecordedKitsAsync();
+        var byAsset = ledgerRows.GroupBy(r => r.Asset).ToDictionary(g => g.Key, g => Ledger(g, g.Key, kits));
         var stacks = await HeldStacksAsync(null);
         var rows = new List<PanelDupeRow>();
         foreach (var group in stacks.GroupBy(s => s.Entry))
         {
             if (catalog.ItemSummary(group.Key) is not { } item) continue;
-            var ledger = byAsset.GetValueOrDefault(group.Key) ?? new PanelLedgerTotals(0, 0, 0, null, null);
+            var ledger = byAsset.GetValueOrDefault(group.Key) ?? Ledger([], group.Key, kits);
             long held = group.Sum(s => s.Count);
             var flags = Flags([.. group], held, ledger);
             if (flags.Count > 0) rows.Add(new PanelDupeRow(item, held, ledger.Net, flags));
@@ -72,25 +74,35 @@ public sealed partial class PanelBackend
     {
         var flags = stacks.Where(s => s.Guid != 0).GroupBy(s => s.Guid).Where(g => g.Count() > 1)
             .Select(g => new PanelDupeFlag("Instance seen twice", string.Join(" and ", g.Select(s => $"{s.Place} of {s.Owner}")), g.Key)).ToList();
-        if (ledger.Entries == 0 && held > 0)
+        if (ledger.Entries == 0 && held > ledger.StarterKits)
             flags.Add(new PanelDupeFlag("Unrecorded", $"{held.ToString("N0", CultureInfo.InvariantCulture)} held, the ledger never recorded this item."));
-        else if (held > ledger.Net)
+        else if (ledger.Entries > 0 && held > ledger.Explained)
             flags.Add(new PanelDupeFlag("Exceeds ledger", $"{held.ToString("N0", CultureInfo.InvariantCulture)} held, the ledger let in " +
-                $"{ledger.Entered.ToString("N0", CultureInfo.InvariantCulture)} and out {(-ledger.Left).ToString("N0", CultureInfo.InvariantCulture)}: " +
-                $"{(held - ledger.Net).ToString("N0", CultureInfo.InvariantCulture)} more than it explains."));
+                $"{ledger.Entered.ToString("N0", CultureInfo.InvariantCulture)} and out {(-ledger.Left).ToString("N0", CultureInfo.InvariantCulture)}" +
+                (ledger.StarterKits > 0 ? $" (and {ledger.StarterKits.ToString("N0", CultureInfo.InvariantCulture)} in starter kits it never recorded)" : "") +
+                $": {(held - ledger.Explained).ToString("N0", CultureInfo.InvariantCulture)} more than it explains."));
         return flags;
     }
 
     private static int Severity(string kind) => kind switch { "Instance seen twice" => 0, "Exceeds ledger" => 1, _ => 2 };
 
-    /// <summary>An asset's source and sink legs (EconomyLegKind) added up; transfers only move what is already held.</summary>
-    private static PanelLedgerTotals Ledger(IEnumerable<PanelLedgerRow> rows, long asset)
+    /// <summary>
+    /// (inferred) Characters that got their starter kit before the kit was written to the ledger (no
+    /// CharacterService.StarterKitEconomyKind receipt): their kits are explained, though the ledger never saw them.
+    /// </summary>
+    private async Task<long> UnrecordedKitsAsync() =>
+        await accounts.ReadAsync<long>(new PanelUnrecordedStarterKitsRead(CharacterService.StarterKitEconomyKind));
+
+    /// <summary>An asset's source and sink legs (EconomyLegKind) added up, with what <paramref name="kits"/> unrecorded
+    /// starter kits hold of it; transfers only move what is already held.</summary>
+    private static PanelLedgerTotals Ledger(IEnumerable<PanelLedgerRow> rows, long asset, long kits)
     {
+        long starter = kits * CharacterService.StarterKit.Where(k => k.Entry == asset).Sum(k => (long)k.Count);
         var mine = rows.Where(r => r.Asset == asset).ToList();
         long first = mine.Count > 0 ? mine.Min(r => r.FirstMs) : 0, last = mine.Count > 0 ? mine.Max(r => r.LastMs) : 0;
         return new PanelLedgerTotals(mine.Where(r => r.LegKind == (int)EconomyLegKind.Source).Sum(r => r.Sum),
             mine.Where(r => r.LegKind == (int)EconomyLegKind.Sink).Sum(r => r.Sum), mine.Sum(r => r.Count),
-            first > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(first) : null, last > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(last) : null);
+            first > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(first) : null, last > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(last) : null, starter);
     }
 
     /// <summary>Every stack of the item (or of every item) where the server keeps it.</summary>

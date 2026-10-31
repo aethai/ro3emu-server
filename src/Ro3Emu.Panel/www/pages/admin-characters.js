@@ -72,18 +72,22 @@ async function adminCharacterPage(id) {
 adminAccountCards.push((account, self) => lazyCard('Security', null, async () => {
   const s = await api('GET', `/api/admin/accounts/${encodeURIComponent(account.name)}/logins`);
   const admin = mayUse('admin') && !self;
+  // Both ask first, in the card itself (confirmBox), like the other actions that cannot be taken back.
+  const confirmHost = h('div', { class: 'confirm-after' });
   const reset = admin && s.twoFactor.enabled && h('button', { type: 'button', class: 'btn danger sm', onclick: async () => {
+    if (!await confirmBox(confirmHost, `Turn off two-factor authentication of ${account.name}? Its browsers are signed out, and it logs in with the password alone until it sets 2FA up again.`, 'Reset 2FA')) return;
     try { await api('POST', `/api/admin/accounts/${encodeURIComponent(account.name)}/2fa-reset`); toast('Two-factor authentication is off for this account.'); route(); }
     catch (e) { toast(e.message); }
   } }, 'Reset 2FA');
   const logout = admin && s.sessions > 0 && h('button', { type: 'button', class: 'btn secondary sm', onclick: async () => {
-    try { const { ended } = await api('POST', `/api/admin/accounts/${encodeURIComponent(account.name)}/logout`); toast(`${ended} panel session${ended === 1 ? '' : 's'} ended.`); route(); }
+    if (!await confirmBox(confirmHost, `Sign ${account.name} out of ${plural(s.sessions, 'panel browser')}? The game is not affected.`, 'Log out')) return;
+    try { const { ended } = await api('POST', `/api/admin/accounts/${encodeURIComponent(account.name)}/logout`); toast(`${plural(ended, 'panel session')} ended.`); route(); }
     catch (e) { toast(e.message); }
   } }, icon('out'), 'Log out of the panel');
   return h('div', null, body(facts([
     ['Two-factor', s.twoFactor.enabled ? chip('active', 'On') : chip('', 'Off')],
     ['Panel sessions', h('span', { class: 'num' }, num(s.sessions))]]),
-  (reset || logout) && h('div', { class: 'row tools-gap-top' }, reset, logout)),
+  (reset || logout) && [h('div', { class: 'row tools-gap-top' }, reset, logout), confirmHost]),
   loginsTable(s.logins.slice(0, 8), s.addresses));
 }));
 

@@ -74,7 +74,7 @@ function territoryHolders(zones, castles) {
   return body(h('ul', { class: 'legend' }, rows.map(r => {
     const sw = h('i', { class: 'swatch' });
     sw.style.background = guildColor(r.guild.id);
-    return h('li', null, sw, guildName(r.guild), h('span', { class: 'num' }, `${r.zones} ${r.zones === 1 ? 'zone' : 'zones'}`));
+    return h('li', null, sw, guildName(r.guild), h('span', { class: 'num' }, plural(r.zones, 'zone')));
   })));
 }
 

@@ -45,6 +45,8 @@
   --amber-line:rgba(122,74,0,.22); --red-line:rgba(180,40,63,.3); --blue-line:rgba(36,87,194,.25);
   --glass:rgba(255,255,255,.72); --foot-bg:rgba(255,255,255,.5); --cloud:rgba(255,255,255,.8);
   --rank-2:#dfe1f2; --rank-3:#f3dfcc;
+  /* a QR code: dark on light in both themes (a camera reads that best), so the dark theme keeps these */
+  --qr-dark:#16152e; --qr-light:#fff;
   --page-bg:#fde7f1; --sky-glow:rgba(255,255,255,.55);
   --sky:linear-gradient(172deg,#cfe6ff 0%,#dcdffb 40%,#efe1f6 75%,#fde7f1 100%);
 
@@ -168,9 +170,10 @@ svg.i{width:1em;height:1em;flex:none}
 .link:hover{background:var(--tint)}
 .link[aria-current="page"]{background:var(--tint-2);color:var(--ink);font-weight:700}
 .link[aria-current="page"] svg{color:var(--ink)}
-/* the menu's links sit close, so a long menu fits beside the account; on a narrow desktop they drop their icons */
+/* the menu's links sit close, so a long menu fits beside the account; where it still does not, they drop their icons
+   (.top.bare, app.js fitNav) */
 .nav-links .link{padding:0 var(--s2);gap:var(--s1)}
-@media (min-width:861px) and (max-width:1180px){ .nav-links .link svg{display:none} }
+.top.bare .nav-links .link svg{display:none}
 .auth{display:flex;align-items:center;gap:var(--s2);margin-left:auto}
 .me{display:inline-flex;align-items:center;gap:var(--s2);height:32px;padding:0 var(--s3) 0 var(--s1);border-radius:var(--r2);
   border:1px solid var(--line);background:var(--surface);font-weight:700;max-width:220px}
@@ -204,10 +207,10 @@ svg.i{width:1em;height:1em;flex:none}
 
 /* ---------- surfaces ---------- */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r3);box-shadow:var(--shadow-1);min-width:0}
-.card-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);min-height:48px;padding:var(--s2) var(--s4);
+.card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2) var(--s3);min-height:48px;padding:var(--s2) var(--s4);
   border-bottom:1px solid var(--line-soft)}
 .card-head h2{font:700 var(--t-md)/20px var(--body)}
-.card-head .actions{margin-left:auto}
+.card-head .actions{margin-left:auto;min-width:0} /* a long control (a level picker) scrolls in itself */
 .card-body{padding:var(--s4)}
 .card-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);min-height:48px;padding:var(--s2) var(--s4);
   border-top:1px solid var(--line-soft);font-size:var(--t-sm);color:var(--muted)}
@@ -388,6 +391,17 @@ select.input{padding-right:var(--s6)}
   .side a[aria-current="page"]::before{display:none}
 }
 @media (min-width:861px){ .nav .menu-auth{display:none} }
+/* A desktop width where the links do not fit beside the account (a long server or account name, the Admin link): the
+   links go into the phone's menu, the account and the theme button stay in the bar. app.js (fitNav) sets it. */
+.top.compact .menu-btn{display:grid}
+.top.compact .theme-btn + .menu-btn{margin-left:calc(var(--s2) - var(--s5))}
+.top.compact .nav{position:fixed;left:auto;right:var(--s4);width:min(360px,calc(100% - 2 * var(--s4)));top:calc(var(--bar) + var(--s2));
+  flex-direction:column;align-items:stretch;gap:var(--s2);padding:var(--s2);border:1px solid var(--line);border-radius:var(--r3);
+  background:var(--surface);box-shadow:var(--shadow-2);opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .15s,transform .15s}
+.top.compact .nav.open{opacity:1;transform:none;pointer-events:auto}
+.top.settling .nav{transition:none}
+.top.compact .nav-links{flex-direction:column}
+.top.compact .nav .link{height:40px}
 @media (max-width:600px){
   :root{--gutter:var(--s4);--pad:var(--s4);--t-2xl:24px;--t-3xl:28px}
   .view{padding-top:var(--s4)}
@@ -399,6 +413,7 @@ select.input{padding-right:var(--s6)}
   /* the growing column takes what is left and cuts its text, so a list fits a phone without scrolling sideways */
   .data td.grow{max-width:0;overflow:hidden;text-overflow:ellipsis}
   .data td.grow.wrap-text{min-width:0}
+  .data td.shrink,.data th.shrink{white-space:normal}
   /* a table with long text: one small card per row, the first cell as its title, the others as label and value */
   .data.stack,.data.stack tbody,.data.stack tr,.data.stack td{display:block;width:auto}
   .data.stack thead{display:none}
@@ -408,6 +423,7 @@ select.input{padding-right:var(--s6)}
   .data.stack td{height:auto;padding:2px 0;border:0;white-space:normal;max-width:none;overflow:visible;min-width:0}
   .data.stack td:first-child{padding:0 0 var(--s1);font-size:var(--t-lg)}
   .data.stack td:not(:first-child):not(.wrap-text){display:flex;justify-content:space-between;gap:var(--s3)}
+  .data.stack td:not(:first-child):not(.wrap-text)>*{min-width:0}
   .data.stack td:not(:first-child)::before{content:attr(data-label);font:700 var(--t-xs)/20px var(--body);letter-spacing:.08em;
     text-transform:uppercase;color:var(--muted);flex:none}
   .data.stack td.wrap-text::before{display:block}

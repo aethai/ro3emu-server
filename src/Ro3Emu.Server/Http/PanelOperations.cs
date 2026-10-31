@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Http;
 /// </summary>
 public sealed partial class PanelOperations(IOptions<ServerOptions> options, AccountStore accounts, RoleStore roles, StaffRoles staff,
     MaintenanceMode maintenance, FeedbackService feedback, DatabaseBackup backups, GameData data, WorldData world, GameLoop loop,
-    SessionRegistry sessions, ReconnectService reconnect, GmCommands gm, Game.Ownership.OwnerRegistry owners,
+    SessionRegistry sessions, ReconnectService reconnect, GmCommands gm, CharacterService characters, Game.Ownership.OwnerRegistry owners,
     IHostApplicationLifetime lifetime, TimeProvider clock, ILogger<PanelOperations> log) : IPanelOperations, IDisposable
 {
     /// <summary>Recovery codes per account: ten of ten base32 characters (50 bits each), shown once.</summary>
@@ -107,6 +107,10 @@ public sealed partial class PanelOperations(IOptions<ServerOptions> options, Acc
         var (codes, hashes) = NewRecovery();
         return await TotpWriteAsync(TotpWriteKind.ReplaceRecovery, account, recovery: hashes) ? codes : null;
     }
+
+    public Task RecordPanelLogoutAsync(string admin, string account, int ended) =>
+        AuditAsync(admin, AdminAudit.PanelLogout, account, ended == 1 ? "1 panel session ended"
+            : ended.ToString(System.Globalization.CultureInfo.InvariantCulture) + " panel sessions ended");
 
     /// <summary>Fresh recovery codes ("ABCDE-FGHJK") and the comma-joined SHA-256 hashes the database keeps.</summary>
     private static (IReadOnlyList<string> Codes, string Hashes) NewRecovery()

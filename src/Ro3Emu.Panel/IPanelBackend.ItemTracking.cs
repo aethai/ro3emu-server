@@ -23,9 +23,14 @@ public sealed record PanelHolding(string Place, string Owner, long CharacterId, 
 /// <param name="Entered">What the ledger says entered the economy (its source legs).</param>
 /// <param name="Left">What the ledger says left it (its sink legs, a negative number).</param>
 /// <param name="First">The ledger's first entry for the item; null when it has none.</param>
-public sealed record PanelLedgerTotals(long Entered, long Left, int Entries, DateTimeOffset? First, DateTimeOffset? Last)
+/// <param name="StarterKits">What the starter kits of characters that got theirs before the ledger recorded kits hold
+/// of the item: explained, though the ledger never saw it.</param>
+public sealed record PanelLedgerTotals(long Entered, long Left, int Entries, DateTimeOffset? First, DateTimeOffset? Last, long StarterKits = 0)
 {
     public long Net => Entered + Left;
+
+    /// <summary>What the ledger and the unrecorded starter kits explain together.</summary>
+    public long Explained => Net + StarterKits;
 }
 
 /// <param name="Kind">"Exceeds ledger" (more held than the ledger let in), "Unrecorded" (held, but the ledger never

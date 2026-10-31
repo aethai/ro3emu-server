@@ -56,6 +56,8 @@ function toast(text) {
 const numberFormat = new Intl.NumberFormat('en-US');
 const num = n => numberFormat.format(n ?? 0);
 const pad = n => String(n).padStart(2, '0');
+/** A count with its noun: "1 character", "3 characters" (many: the plural when it is not one + "s"). */
+const plural = (n, one, many = one + 's') => `${num(n)} ${n === 1 ? one : many}`;
 
 /** A technical timestamp in local time, 2026-10-30 12:22; the full ISO time in its tooltip. */
 function stamp(iso) {
@@ -63,6 +65,10 @@ function stamp(iso) {
   const d = new Date(iso);
   return mono(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`, { title: d.toISOString() });
 }
+
+/** A server text with UTC times in it ("2026-10-30 07:02:04Z", the audit log's details): each one in local time. */
+const localTimes = text => String(text ?? '').replace(/\b(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?Z\b/g,
+  (whole, date, time) => { const d = new Date(`${date}T${time}Z`); return isNaN(d) ? whole : stamp(d.toISOString()).textContent; });
 
 function day(iso) {
   const d = new Date(iso);
@@ -112,7 +118,7 @@ function kpi(label, iconName, value, unit, detail, opts = {}) {
 
 /**
  * A data table: columns of { label, value(row) -> node, num (right-aligned numbers), opt (hidden on phones),
- * grow }. Numbers right, text left; the header sticks while the rows scroll.
+ * grow, shrink (wraps on phones, so the growing name column keeps its room) }. Numbers right, text left; the header sticks while the rows scroll.
  */
 /** A data table. One with a long-text (wrap) column stacks into a small card per row on a phone (.stack) and cuts
  *  its long text to three lines (the full text is on the row's own page). */
@@ -123,7 +129,7 @@ function table(columns, rows, opts = {}) {
     h('tbody', null, rows.map(row => h('tr', opts.onrow ? { class: 'clickable', onclick: e => { if (!e.target.closest('a')) opts.onrow(row); } } : null,
       columns.map(c => h('td', { class: cls(c), 'data-label': c.label }, c.wrap ? h('div', { class: 'clamp' }, c.value(row)) : c.value(row))))))));
 }
-const cls = c => [c.num && 'num', c.opt && 'opt', c.grow && 'grow', c.wrap && 'wrap-text'].filter(Boolean).join(' ') || null;
+const cls = c => [c.num && 'num', c.opt && 'opt', c.grow && 'grow', c.wrap && 'wrap-text', c.shrink && 'shrink'].filter(Boolean).join(' ') || null;
 
 /** Compact or comfortable rows, remembered in this browser. */
 function densityToggle() {
@@ -154,11 +160,19 @@ function pageHead({ crumbs, title, big, art, after, subtitle, meta, actions }) {
 }
 
 function pager(result, href) {
-  const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
-  return [h('span', null, mono(`${num(result.total)}`), result.total === 1 ? ' row' : ' rows', pages > 1 ? [' · page ', mono(String(result.page)), ' of ', mono(String(pages))] : null),
+  const pages = Math.max(1, Math.ceil(result.total / result.pageSize)), page = Math.min(result.page, pages);
+  return [h('span', null, mono(`${num(result.total)}`), result.total === 1 ? ' row' : ' rows', pages > 1 ? [' · page ', mono(String(page)), ' of ', mono(String(pages))] : null),
     pages > 1 && h('div', { class: 'actions' },
-      result.page > 1 ? link(href(result.page - 1), { class: 'btn secondary sm' }, icon('back'), 'Newer') : null,
-      result.page < pages ? link(href(result.page + 1), { class: 'btn secondary sm' }, 'Older', icon('arrow')) : null)];
+      page > 1 ? link(href(page - 1), { class: 'btn secondary sm' }, icon('back'), 'Newer') : null,
+      page < pages ? link(href(page + 1), { class: 'btn secondary sm' }, 'Older', icon('arrow')) : null)];
+}
+
+/** A page number past the last page (an old link, rows deleted since): the last page instead. True when it moved. */
+function pastLastPage(result, href) {
+  const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
+  if (result.page <= pages) return false;
+  navigate(href(pages), true);
+  return true;
 }
 
 function facts(pairs) {
@@ -185,8 +199,19 @@ async function api(method, path, payload, retried) {
     await loadSession();
     return api(method, path, payload, true);
   }
+  // The session ended elsewhere (logged out, banned, a password change, an Admin's "log out"): this page is a visitor's
+  // now, so the login page shows instead of sending the browser back where it came from. A login's own 401 is a
+  // wrong password or code, not an ended session.
+  if (response.status === 401 && !path.startsWith('/api/login')) dropSession();
   if (!response.ok) throw new ApiError(data.error || `The server answered ${response.status}.`, response.status);
   return data;
+}
+
+/** Signed out without asking the server: no account, no staff role, and no token (the next POST fetches a visitor's). */
+function dropSession() {
+  if (!state.session?.account) return;
+  state.session = { ...state.session, account: null, admin: false, role: '', twoFactorRequired: false, csrf: '' };
+  drawChrome();
 }
 
 async function loadSession() {
@@ -233,6 +258,7 @@ function drawChrome() {
   document.getElementById('nav-admin').hidden = !s?.admin;
   document.getElementById('auth').replaceChildren(...authControls(false).filter(Boolean));
   document.getElementById('menu-auth').replaceChildren(...authControls(true).filter(Boolean));
+  fitNav();
 }
 
 async function logout() {
@@ -254,6 +280,28 @@ function setMenu(open) {
   menuButton.setAttribute('aria-expanded', String(open));
 }
 menuButton.addEventListener('click', () => setMenu(!nav.classList.contains('open')));
+
+/**
+ * The full menu only where it fits beside the account and the theme button: with its icons, else without them
+ * (.top.bare), else the menu button (.top.compact, the phone's menu). Measured, as the server's name, the account's
+ * name and the Admin link change the width it needs.
+ */
+const topBar = document.getElementById('top');
+const phoneWidth = matchMedia('(max-width:860px)');
+function fitNav() {
+  const was = topBar.classList.contains('compact');
+  // no fade while the bar changes layout: the menu would flash open and fade out on every page load
+  topBar.classList.add('settling');
+  requestAnimationFrame(() => requestAnimationFrame(() => topBar.classList.remove('settling')));
+  topBar.classList.remove('compact', 'bare');
+  const overflows = () => !phoneWidth.matches && nav.scrollWidth > nav.clientWidth + 1;
+  if (overflows()) topBar.classList.add('bare');
+  if (overflows()) topBar.classList.replace('bare', 'compact');
+  if (was && !topBar.classList.contains('compact')) setMenu(false);
+}
+// The bar's own width (a window resize, a zoom, a scrollbar coming or going); the classes it sets keep that width.
+new ResizeObserver(fitNav).observe(topBar);
+document.fonts?.ready.then(fitNav);
 
 // The sun/moon button: switches away from the theme on screen and remembers the choice (theme.js applies it on load).
 document.getElementById('theme').addEventListener('click', () => {
@@ -295,8 +343,14 @@ async function route() {
     if (token === routeToken && content) render(content);
   } catch (error) {
     if (token !== routeToken) return;
-    if (error.status === 401) { navigate('/login?next=' + encodeURIComponent(location.pathname + location.search), true); return; }
-    render(failure(error));
+    // Signed out (api() dropped the session, so the login page stays put): log in and come back. Never from the
+    // login page itself, so a 401 there cannot turn into a loop.
+    if (error.status === 401 && path !== '/login') {
+      dropSession();
+      navigate('/login?next=' + encodeURIComponent(location.pathname + location.search), true);
+      return;
+    }
+    render(error.status === 404 ? notFound(error.message) : failure(error));
   }
   document.title = (state.session?.server?.name || 'RO3Emu') + (section && section !== 'home' ? ' · ' + titles[section] : '');
 }
@@ -315,9 +369,10 @@ document.addEventListener('click', event => {
 });
 addEventListener('popstate', route);
 
-function notFound() {
-  return [pageHead({ title: 'Page not found' }),
-    card(null, null, emptyState('search', 'This page does not exist', 'The link may be old.'),
+/** No such page, or (with the server's words) no such item, monster, map, character, guild... behind a page's id. */
+function notFound(message) {
+  return [pageHead({ title: message ? 'Not found' : 'Page not found' }),
+    card(null, null, emptyState('search', message || 'This page does not exist', 'The link may be old.'),
       link('/', { class: 'btn secondary sm' }, icon('back'), 'Back home'))];
 }
 
@@ -489,7 +544,7 @@ async function registerPage() {
   if (!state.session?.registration)
     return authCard('Sign-up is closed', 'On this server your first login in the game creates your account.', null, null);
   return authCard('Create an account', 'The account you log in to the game with. Characters are created in the game.', form([
-    field('Account name', 'account', 'text', { autocomplete: 'username', maxlength: '64' }),
+    field('Account name (4 to 24 letters, digits or _)', 'account', 'text', { autocomplete: 'username', minlength: '4', maxlength: '24', pattern: '[A-Za-z0-9_]{4,24}' }),
     field('Password', 'password', 'password', { autocomplete: 'new-password', minlength: '6', maxlength: '128' }),
     field('Password again', 'again', 'password', { autocomplete: 'new-password' })],
   'Create account', async values => {
@@ -621,13 +676,13 @@ async function adminDashboard() {
     h('section', { class: 'kpis', 'aria-label': 'Players' },
       kpi('In the world', 'users', num(d.inWorld), d.inWorld === 1 ? 'player' : 'players', `${num(d.loading)} loading`),
       kpi('Character screen', 'user', num(d.login), null, 'signed in, no character yet'),
-      kpi('Accounts', 'shield', num(d.accounts), null, `${num(d.characters)} characters`),
+      kpi('Accounts', 'shield', num(d.accounts), null, plural(d.characters, 'character')),
       kpi('Connections', 'pulse', num(d.connections), null, 'micro and game gates')),
     h('section', { class: 'kpis', 'aria-label': 'Server' },
       kpi('Tick p99', 'clock', d.tickP99Ms.toFixed(1), 'ms', `p50 ${d.tickP50Ms.toFixed(1)} ms · max ${d.tickMaxMs.toFixed(0)} ms`, { warn: d.tickP99Ms > 50 }),
-      kpi('Ticks', 'pulse', d.ticksPerSecond.toFixed(1), '/ s', `${num(d.overruns)} overruns · queue ${num(d.queueLength)}`),
-      kpi('Memory', 'box', num(megabytes(d.workingSetBytes)), 'MB', `${d.cpuSeconds.toFixed(0)} s CPU · ${num(d.gen2Collections)} gen 2 GCs`),
-      kpi('Errors', 'alert', num(d.exceptions + d.errorLogs), null, `${num(d.exceptions)} exceptions · ${num(d.errorLogs)} error logs`, { warn: d.exceptions + d.errorLogs > 0 })),
+      kpi('Ticks', 'pulse', d.ticksPerSecond.toFixed(1), '/ s', `${plural(d.overruns, 'overrun')} · queue ${num(d.queueLength)}`),
+      kpi('Memory', 'box', num(megabytes(d.workingSetBytes)), 'MB', `${d.cpuSeconds.toFixed(0)} s CPU · ${plural(d.gen2Collections, 'gen 2 GC')}`),
+      kpi('Errors', 'alert', num(d.exceptions + d.errorLogs), null, `${plural(d.exceptions, 'exception')} · ${plural(d.errorLogs, 'error log')}`, { warn: d.exceptions + d.errorLogs > 0 })),
     h('div', { class: 'grid' },
       h('div', { class: 'span-7' }, card('Busiest maps', null, maps)),
       h('div', { class: 'span-5' }, card('Server', null, body(facts([
@@ -642,6 +697,8 @@ async function adminAccounts() {
   const params = new URLSearchParams(location.search);
   const q = params.get('q') || '', page = Number(params.get('page')) || 1;
   const result = await api('GET', `/api/admin/accounts?q=${encodeURIComponent(q)}&page=${page}`);
+  const href = p => '/admin/accounts?q=' + encodeURIComponent(q) + '&page=' + p;
+  if (pastLastPage(result, href)) return null;
   const search = h('form', { class: 'row', role: 'search' },
     h('span', { class: 'search' }, icon('search'), h('input', { class: 'input', name: 'q', value: q, placeholder: 'Account name', 'aria-label': 'Account name', spellcheck: 'false', autocapitalize: 'off' })),
     h('button', { type: 'submit', class: 'btn primary sm' }, 'Search'));
@@ -659,7 +716,7 @@ async function adminAccounts() {
   return adminLayout('accounts',
     pageHead({ crumbs: adminCrumbs({ label: 'Accounts' }), title: 'Accounts', actions: densityToggle() }),
     h('section', { class: 'card' }, h('div', { class: 'card-head' }, search), rows,
-      h('div', { class: 'card-foot' }, pager(result, p => '/admin/accounts?q=' + encodeURIComponent(q) + '&page=' + p))));
+      h('div', { class: 'card-foot' }, pager(result, href))));
 }
 
 async function adminAccount(name) {
@@ -710,22 +767,39 @@ function unbanForm(account) {
     }, 'secondary')];
 }
 
+/** An audit row's target (the server's subject: its kind, key and label), linking to its own page where it has one. */
+function auditTarget({ kind, key, label }) {
+  const href = {
+    character: mayUse('gm') ? '/admin/characters/' + key : '/characters/' + key,
+    account: '/admin/accounts/' + encodeURIComponent(key),
+    'character-name': '/profiles/' + encodeURIComponent(key),
+    report: '/admin/reports/' + key,
+    news: mayUse('gm') && '/admin/news',
+    'gift-code': mayUse('gm') && '/admin/gift-codes',
+    server: mayUse('admin') && '/admin/server',
+  }[kind];
+  const text = kind === 'account' ? mono(label) : label;
+  return href ? link(href, { class: 'text-link' }, text) : h('span', { class: 'muted' }, text || '-');
+}
+
 async function adminAudit() {
   requireAdmin();
   const page = Number(new URLSearchParams(location.search).get('page')) || 1;
   const result = await api('GET', '/api/admin/audit?page=' + page);
+  const href = p => '/admin/audit?page=' + p;
+  if (pastLastPage(result, href)) return null;
   const rows = result.entries.length
     ? table([
       { label: 'Time', value: e => stamp(e.utc) },
       { label: 'Admin', opt: true, value: e => mono(e.admin) },
       { label: 'Action', value: e => chip(e.action, e.action) },
-      { label: 'Account', value: e => link('/admin/accounts/' + encodeURIComponent(e.target), { class: 'text-link mono' }, e.target) },
-      { label: 'Detail', opt: true, wrap: true, grow: true, value: e => e.detail },
+      { label: 'Target', value: e => auditTarget(e.subject) },
+      { label: 'Detail', opt: true, wrap: true, grow: true, value: e => localTimes(e.detail) },
     ], result.entries)
     : emptyState('list', 'Nothing recorded yet', 'Every admin action is listed here: who, what and when.');
   return adminLayout('audit',
     pageHead({ crumbs: adminCrumbs({ label: 'Audit log' }), title: 'Audit log', subtitle: 'Every change made in the admin area, newest first.', actions: densityToggle() }),
-    h('section', { class: 'card' }, rows, h('div', { class: 'card-foot' }, pager(result, p => '/admin/audit?page=' + p))));
+    h('section', { class: 'card' }, rows, h('div', { class: 'card-foot' }, pager(result, href))));
 }
 
 // ---------------------------------------------------------------- start

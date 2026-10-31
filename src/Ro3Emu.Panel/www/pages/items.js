@@ -15,7 +15,7 @@ async function itemsPage() {
     ? table([
       { label: 'Item', grow: true, value: i => [itemName(i.id, i.name, i.quality, false, i.icon), variantsChip(i.variants)] },
       { label: 'ID', num: true, opt: true, value: i => mono(String(i.id)) },
-      { label: 'Type', value: i => [i.typeName, i.subType && h('span', { class: 'muted' }, ' · ' + i.subType)] },
+      { label: 'Type', shrink: true, value: i => [i.typeName, i.subType && h('span', { class: 'muted' }, ' · ' + i.subType)] },
       { label: 'Quality', opt: true, value: i => chip('q' + i.quality, i.qualityName) },
       { label: 'Level', num: true, value: i => i.level > 0 || i.maxLevel > 0 ? range(i.level, i.maxLevel) : h('span', { class: 'muted' }, '-') },
     ], result.items, { onrow: i => navigate('/items/' + i.id) })

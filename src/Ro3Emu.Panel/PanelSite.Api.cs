@@ -122,10 +122,17 @@ public sealed partial class PanelSite
         };
     }
 
+    /// <summary>
+    /// A new account's name on the panel's sign-up: 4 to 24 ASCII letters, digits and underscores. (inferred) The game
+    /// itself has no rule beyond "not empty once trimmed" (SdkEndpoints, AccountStore), so this is the panel's own, for
+    /// names typed on a public website; it never applies to logins, so an account the game created can always log in.
+    /// </summary>
+    internal const int SignUpNameMin = 4, SignUpNameMax = 24;
+
     internal static string? NameProblem(string name) =>
         name.Length == 0 ? "Choose an account name."
-        : name.Length > NameMax ? "An account name has at most 64 characters."
-        : name.Any(char.IsControl) ? "An account name cannot contain control characters."
+        : name.Length is < SignUpNameMin or > SignUpNameMax ? "An account name has 4 to 24 characters."
+        : !name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') ? "An account name has only letters (A to Z), digits and underscores."
         : null;
 
     internal static string? PasswordProblem(string password) =>

@@ -77,7 +77,7 @@ async function cardPage(id) {
         ['Card library', c.library ? 'Yes' : 'No'],
         ['Breaks down into', amounts(detail.decompose) || '-'],
         ['Revert costs', detail.returnCost ? amount(detail.returnCost, { always: true }) : '-']])),
-        detail.rules.length ? h('ul', { class: 'notes' }, detail.rules.map(r => h('li', null, r))) : null)))];
+        detail.rules.length ? h('ul', { class: 'card-rules' }, detail.rules.map(r => h('li', null, r))) : null)))];
 }
 
 routes.push([/^\/cards$/, cardsPage, 'database'], [/^\/cards\/(\d+)$/, cardPage, 'database']);

@@ -38,6 +38,20 @@ async function adminReportsPage() {
       h('div', { class: 'card-foot' }, pager(result, p => href(status, p)))));
 }
 
+/**
+ * A server log line ("05:48:12.345 info Category: text", the time of day in UTC, RecentLogBuffer) with its time in
+ * local time. The lines come from the minutes before the report, so the date is the report's UTC date, or the day
+ * before when the line's time is later than the report's.
+ */
+function logLineLocal(line, reportIso) {
+  const m = /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?(?= )/.exec(line);
+  if (!m) return line;
+  const report = new Date(reportIso);
+  const at = new Date(Date.UTC(report.getUTCFullYear(), report.getUTCMonth(), report.getUTCDate(), +m[1], +m[2], +m[3]));
+  if (at - report > 60_000) at.setUTCDate(at.getUTCDate() - 1);
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}${m[4] || ''}` + line.slice(m[0].length);
+}
+
 async function adminReportPage(id) {
   requireRole('moderator');
   const r = await api('GET', '/api/admin/reports/' + id);
@@ -66,8 +80,10 @@ async function adminReportPage(id) {
     h('div', { class: 'grid' },
       h('div', { class: 'span-8 stack' },
         card('What the player wrote', r.truncated ? chip('', 'Cut to the length limit') : null, body(h('p', { class: 'quote' }, r.text))),
-        card('Server log about the player', h('span', { class: 'muted' }, num(r.context.length) + ' lines'),
-          body(r.context.length ? h('pre', { class: 'log' }, r.context.join('\n')) : h('p', { class: 'hint' }, 'No log lines named this player in the minutes before the report.')))),
+        card('Server log about the player', h('span', { class: 'muted' }, plural(r.context.length, 'line')),
+          body(r.context.length ? h('pre', { class: 'log' }, r.context.map(l => logLineLocal(l, r.time)).join('\n'))
+            : h('p', { class: 'hint' }, 'No log lines named this player in the minutes before the report.')),
+          r.context.length ? 'Times in your local time.' : null)),
       h('div', { class: 'span-4 stack' },
         card('Player', null, body(facts([
           ['Character', r.characterId ? link('/characters/' + r.characterId, { class: 'text-link' }, r.character || '#' + r.characterId) : '-'],

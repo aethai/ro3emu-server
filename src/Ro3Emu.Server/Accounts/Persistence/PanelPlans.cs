@@ -46,7 +46,12 @@ internal static class AdminAudit
     /// <summary>Staff roles, security, the report inbox, character actions and server control.</summary>
     internal const string Role = "role", TwoFactorReset = "2fa-reset", Report = "report", CharacterKick = "char-kick",
         CharacterTeleport = "char-teleport", CharacterRename = "char-rename", CharacterItem = "char-item",
-        CharacterRestore = "char-restore", Maintenance = "maintenance", Schedule = "schedule", Backup = "backup";
+        CharacterRestore = "char-restore", Maintenance = "maintenance", Schedule = "schedule", Backup = "backup",
+        PanelLogout = "panel-logout";
+
+    /// <summary>A character action's target: "Name (id)" (Ro3Emu.Panel.PanelAuditTarget reads it back for the link).</summary>
+    internal static string Character(string? name, long id) =>
+        (name ?? "?") + " (" + id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
 
     internal static void Insert(SqliteConnection db, SqliteTransaction tx, long now, string admin, string action, string target, string detail)
     {

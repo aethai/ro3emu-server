@@ -291,4 +291,47 @@ public sealed class PanelPlayersTests : IAsyncLifetime
         Assert.Contains(report.GetProperty("items").EnumerateArray(), r => r.GetProperty("item").GetProperty("id").GetInt64() == 3990001);
         Assert.Equal(HttpStatusCode.OK, (await admin.Http.GetAsync("/admin/items/3990001")).StatusCode);
     }
+
+    [Fact]
+    public async Task ANewCharactersStarterKitIsInTheLedgerAndOlderKitsAreCounted()
+    {
+        await using (var newcomer = await _host.InWorldAsync("Newcomer")) { }
+        var connection = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        { DataSource = Path.Combine(_host.DataDir, "ro3emu.db"), Pooling = false, DefaultTimeout = 10 };
+        using var db = new Microsoft.Data.Sqlite.SqliteConnection(connection.ToString());
+        db.Open();
+        // The kit's items and Zeny are starter grants (EconomyReason.StarterGrant source legs) of one receipt.
+        var granted = new Dictionary<long, long>();
+        using (var legs = db.CreateCommand())
+        {
+            legs.CommandText = "SELECT asset_id,SUM(delta) FROM economy_entry WHERE reason_code=$reason AND leg_kind=$source GROUP BY asset_id";
+            legs.Parameters.AddWithValue("$reason", (int)Ro3Emu.Server.Economy.EconomyReason.StarterGrant);
+            legs.Parameters.AddWithValue("$source", (int)Ro3Emu.Server.Economy.EconomyLegKind.Source);
+            using var rows = legs.ExecuteReader();
+            while (rows.Read()) granted[rows.GetInt64(0)] = rows.GetInt64(1);
+        }
+        Assert.Equal(CharacterService.StarterKit.ToDictionary(k => (long)k.Entry, k => (long)k.Count), granted);
+        var accounts = _host.Service<AccountStore>();
+        var unrecorded = new PanelUnrecordedStarterKitsRead(CharacterService.StarterKitEconomyKind);
+        Assert.Equal(0L, await accounts.ReadAsync<long>(unrecorded));
+
+        // A character that got its kit before kits were recorded (no starter receipt) is counted, so the duplication
+        // check explains its kit.
+        using (var forget = db.CreateCommand())
+        {
+            forget.CommandText = "UPDATE operation_receipt SET command_kind='test/older' WHERE command_kind=$kind";
+            forget.Parameters.AddWithValue("$kind", CharacterService.StarterKitEconomyKind);
+            Assert.Equal(1, forget.ExecuteNonQuery());
+        }
+        Assert.Equal(1L, await accounts.ReadAsync<long>(unrecorded));
+    }
+
+    [Fact]
+    public void AnAchievementCategorysLevelReadsAsALevel()
+    {
+        Assert.Equal("Level 1", Ro3Emu.Server.Http.PanelBackend.LevelName("Growth", "Growth1"));
+        Assert.Equal("Level 12", Ro3Emu.Server.Http.PanelBackend.LevelName("Server", "Server 12"));
+        Assert.Equal("Master Explorer", Ro3Emu.Server.Http.PanelBackend.LevelName("Growth", "Master Explorer"));
+        Assert.Equal("Growth", Ro3Emu.Server.Http.PanelBackend.LevelName("Growth", "Growth"));
+    }
 }

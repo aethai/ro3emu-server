@@ -5,7 +5,7 @@
 .chip.in-progress,.chip.role-gm,.chip.schedule,.chip.char-teleport,.chip.char-rename,.chip.char-item{background:var(--amber-bg);color:var(--amber-ink)}
 .chip.done,.chip.char-restore,.chip.backup{background:var(--green-bg);color:var(--green-ink)}
 .chip.wont-fix{background:var(--grey-bg);color:var(--muted)}
-.chip.char-kick,.chip.\32 fa-reset{background:var(--red-bg);color:var(--red-ink)}
+.chip.char-kick,.chip.panel-logout,.chip.\32 fa-reset{background:var(--red-bg);color:var(--red-ink)}
 .chip.role,.chip.role-admin{background:var(--ink);color:var(--on-ink)}
 
 /* a notice above a page's cards: an action the account must take, or a state the server is in */
@@ -23,6 +23,9 @@
 .codes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2);margin-bottom:var(--s4)}
 .codes span{padding:var(--s2);border:1px solid var(--line);border-radius:var(--r2);background:var(--surface-sub);
   font:500 var(--t-md)/1 var(--mono);text-align:center;user-select:all}
+.qr{display:block;width:200px;max-width:100%;height:auto;margin:0 auto var(--s4);border:1px solid var(--line);border-radius:var(--r2)}
+.qr-light{fill:var(--qr-light)}
+.qr-dark{fill:var(--qr-dark)}
 .code-input{font-family:var(--mono);font-size:var(--t-xl);letter-spacing:.3em;text-align:center}
 .steps{display:grid;gap:var(--s2);margin-bottom:var(--s4);padding-left:var(--s5);list-style:decimal;font-size:var(--t-md)}
 
@@ -45,7 +48,9 @@
 .inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s2);align-items:end}
 .inline .field{margin-bottom:0}
 .pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 var(--s3)}
-.countdown{font:700 var(--t-xl)/1.2 var(--body);font-variant-numeric:tabular-nums}
+/* a planned stop's live countdown, large (its span is the database pages' .countdown, which stays small there) */
+.planned-countdown{margin-bottom:var(--s3);font:700 var(--t-xl)/1.2 var(--body);font-variant-numeric:tabular-nums}
+.planned-countdown .countdown{font:inherit}
 
 @media (max-width:600px){
   .codes{grid-template-columns:minmax(0,1fr)}
@@ -56,6 +61,11 @@
 }
 .loading-sm{display:grid;place-items:center;padding:var(--s5)}
 .confirm-slot:has(.confirm){padding:var(--s4) var(--s4) 0}
+/* a confirmation under the buttons that asked for it */
+.confirm-after:has(.confirm){margin-top:var(--s3)}
+.confirm-after .confirm{margin-bottom:0}
 .data select.input{width:auto;height:32px;min-width:120px}
 .row.nowrap{flex-wrap:nowrap;justify-content:flex-end}
+/* a long technical name in a table (a backup's file) breaks anywhere rather than being cut */
+.data .break{display:block;white-space:normal;overflow-wrap:anywhere}
 @media (max-width:600px){.row.nowrap{flex-wrap:wrap}}
