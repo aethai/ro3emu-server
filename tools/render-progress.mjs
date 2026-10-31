@@ -10,7 +10,7 @@ const areas = [
   ['Guilds', 100, 'done'],
   ['Survivor Battle', 100, 'done'],
   ['War of Emperium', 100, 'done'],
-  ['Web panel', 70, 'now'],
+  ['Web panel', 100, 'done'],
   ['Tavern and smaller features', 15, 'next'],
   ['Remaining client tables', 10, 'next'],
   ['Tested with many players', 5, 'next'],

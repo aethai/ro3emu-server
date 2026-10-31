@@ -20,7 +20,7 @@ async function itemsPage() {
       { label: 'Level', num: true, value: i => i.level > 0 || i.maxLevel > 0 ? range(i.level, i.maxLevel) : h('span', { class: 'muted' }, '-') },
     ], result.items, { onrow: i => navigate('/items/' + i.id) })
     : emptyState('search', 'No item matches', 'Try part of the name, or fewer filters.');
-  return [pageHead({ crumbs: [{ href: '/', label: 'Home' }, { label: 'Items' }], title: 'Items',
+  return [pageHead({ crumbs: dbCrumbs({ label: 'Items' }), title: 'Items',
     subtitle: 'Every item in the game, from the server\'s own data.', actions: densityToggle() }),
   h('section', { class: 'card' }, h('div', { class: 'card-head' }, filters), rows,
     h('div', { class: 'card-foot' }, listPager(result, p => listHref('/items', { ...query, page: p }), 'item')))];
@@ -65,7 +65,7 @@ async function itemPage(id) {
     : null;
   const picture = item.picture ? h('img', { class: 'picture', src: item.picture, alt: i.name, loading: 'lazy' }) : null;
   if (picture) picture.addEventListener('error', () => picture.closest('.card')?.remove(), { once: true });
-  return [pageHead({ crumbs: [{ href: '/', label: 'Home' }, { href: '/items', label: 'Items' }, { label: i.name }],
+  return [pageHead({ crumbs: dbCrumbs({ href: '/items', label: 'Items' }, { label: i.name }),
     title: i.name, art: thumb(i.icon, i.name, 'q' + i.quality, 'xl'), after: [chip('q' + i.quality, i.qualityName), chip('plain', i.typeName)],
     subtitle: variantLine(item.ids),
     meta: [['ID', mono(String(i.id))], ['Type', [i.typeName, i.subType ? ' · ' + i.subType : '']], ['Level', i.level > 0 ? num(i.level) : 'Any']] }),
