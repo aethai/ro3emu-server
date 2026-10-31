@@ -59,16 +59,18 @@ The admin area is for staff. Each role has everything of the one before it:
 
 An account gets its role from, in this order:
 
-1. `Ro3Emu:GmAccounts` ([GM access](gm-access.md)): every account listed there is an Admin, as before.
+1. GM in game ([GM access](gm-access.md)): whoever may use GM commands in the game is an Admin. That is every account
+   listed in `Ro3Emu:GmAccounts`, and, while that list is empty and GM is open (local play, `GmOpenWhenEmpty`), every
+   account.
 2. `Ro3Emu:Panel:Roles`, account to role, spelled as stored: `Ro3Emu__Panel__Roles__anna=Moderator`, or in
    `appsettings.json` `"Panel": { "Roles": { "anna": "Moderator", "tomek": "GM" } }`.
 3. The **Staff roles** page, where an Admin gives an existing account a role or takes it away. These are stored by
    the server (`panel_role`) and audited; the roles of 1 and 2 are shown there but changed only in the configuration.
    Nobody changes their own role.
 
-**When nobody has a role, nobody is staff in the panel**, whatever `GmOpenWhenEmpty` says: the open-GM rule of local
-play applies to the game only. To administer a server, list your account in `GmAccounts` even on your own PC. A panel
-role is the panel's only: GM commands in the game still follow `GmAccounts`.
+**The panel follows the game's GM rule**: on your own PC with an empty `GmAccounts` every account is GM in game and an
+Admin in the panel; on a server started as Production with an empty list nobody is either. A public server lists its
+admins in `GmAccounts`. The roles of 2 and 3 are the panel's only: GM commands in the game still follow `GmAccounts`.
 
 Every route of the API names the least role it needs and refuses the others (403); the sidebar shows each role only
 the pages it may use.

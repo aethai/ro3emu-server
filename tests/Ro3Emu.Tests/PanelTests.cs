@@ -143,11 +143,11 @@ public sealed class PanelTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task WithAnEmptyGmListNobodyIsAdminAndLoginsAreThrottled()
+    public async Task AnEmptyGmListFollowsTheGamesGmRuleAndLoginsAreThrottled()
     {
         var (host, panel) = await StartAsync(o =>
         {
-            o.GmOpenWhenEmpty = true; // GM for everyone in game; the panel still has no admin
+            o.GmOpenWhenEmpty = true; // GM for everyone in game, so an Admin of the panel too
             o.LoginLimitIncludesLoopback = true;
             o.LoginAttemptsPerMinute = 3;
         });
@@ -155,14 +155,26 @@ public sealed class PanelTests : IAsyncLifetime
         Assert.Equal(0, await SdkLoginAsync(host, "panel-anyone", "pw-game"));
         using var browser = new PanelBrowser(panel);
         var login = await browser.LoginAsync("panel-anyone", "pw-game");
-        Assert.False((await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("admin").GetBoolean());
-        Assert.Equal(HttpStatusCode.Forbidden, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
+        Assert.True((await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("admin").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
 
         // The server's credential budget (CredentialLimiter), shared with the game's login: the third check of the
         // minute is the last, then 429 before any hashing.
         Assert.Equal(HttpStatusCode.Unauthorized, (await browser.LoginAsync("panel-anyone", "wrong")).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await browser.LoginAsync("panel-anyone", "pw-game")).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await browser.RegisterAsync("panel_another", "secret-1")).StatusCode);
+    }
+
+    [Fact]
+    public async Task WithAnEmptyGmListAndGmClosedNobodyIsAdmin()
+    {
+        var (host, panel) = await StartAsync(o => o.GmOpenWhenEmpty = false); // a Production server without a GM list
+        await using var _ = host;
+        Assert.Equal(0, await SdkLoginAsync(host, "panel-closed", "pw-game"));
+        using var browser = new PanelBrowser(panel);
+        var login = await browser.LoginAsync("panel-closed", "pw-game");
+        Assert.False((await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("admin").GetBoolean());
+        Assert.Equal(HttpStatusCode.Forbidden, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
     }
 
     [Fact]
