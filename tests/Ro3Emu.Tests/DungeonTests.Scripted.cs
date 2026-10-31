@@ -186,6 +186,12 @@ public sealed partial class DungeonTests
         Assert.Equal((DungeonRes)1, result.Res);
         await StoryMovesOn(alice, 10104290, 10104300);
         Assert.DoesNotContain(Service<World>().AllUnits(), u => u.InstanceId == instance);
+
+        // 1000301 continues 1000201 (_iSameDupLoadingType 2): the server moves the player on into the Deniro's scene,
+        // instead of leaving them at the bottom of the dark passage with nothing happening.
+        Assert.Equal(0, (await Next(alice, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
+        await Load(alice, 1000301);
+        await Stage(alice, 1, quest: 1);
     }
 
     // Issue #181: a player inside the vortex's region 20 before the client's auto interaction came had step 2 done, the
@@ -559,6 +565,37 @@ public sealed partial class DungeonTests
         Assert.Equal(new ReconstructedDungeons.Response(5310009, 5402101, 400138), louie.Steps[1].React!.Complete);
         Assert.All(new ReconstructedDungeons(Options.Create(new ServerOptions())).Scripted(3120802)!.Steps,
             step => Assert.Null(step.React)); // a scene without reactions keeps none
+    }
+
+    // The Ant Queen's Nest 1000301 starts the player and Bobo outside its server nav (303 cells, far to the east). With the
+    // walk check enforced the destination was tested first, so every step there was snapped back and the player who
+    // arrived could not move at all.
+    [ClientDataFact]
+    public async Task AWalkOffTheScenesNavIsNotSnappedBack()
+    {
+        const long scene = 1000301;
+        var options = Service<IOptions<ServerOptions>>().Value;
+        options.WalkCheck = "enforce";
+        try
+        {
+            await using var alice = await InWorld("Alice");
+            await Gm(alice, "!quest accept 10104300"); // Explore the Ant Queen's Nest: [101018, 1000301, 1]
+            Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
+            await Load(alice, scene);
+            var from = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).Position));
+            Assert.Null(Service<WorldData>().Map(scene)!.Nav!.NearestWalkable(from.X, from.Z, from.Y));
+            await Task.Delay(600); // the walk budget of the arrival
+            float x = from.X + 1.5f, z = from.Z;
+            await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = new Vec3 { X = x, Y = from.Y, Z = z }, BStop = true, SpeedRate = 1 });
+            for (int i = 0; i < 100; i++)
+            {
+                var at = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).Position));
+                if (Math.Abs(at.X - x) < 0.01f && Math.Abs(at.Z - z) < 0.01f) return;
+                await Task.Delay(20);
+            }
+            Assert.Fail("the walk off the nav was snapped back");
+        }
+        finally { options.WalkCheck = "log"; }
     }
 
     [ClientDataFact]

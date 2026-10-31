@@ -26,7 +26,7 @@
         "The jump is a teleport to point 21 at the top of the passage; the original fall/slide (and its camera) is not reproduced.",
         "Region 20 does not end step 2: a player inside it before the auto interaction came had the step done, the vortex gone and the interaction refused (801), so the client never jumped and stayed above the abyss (#181).",
         "The exploding ant eggs are not reproduced: their creation trigger is not in the client data.",
-        "The original continued seamlessly into 1000301 (DungeonConfig 1000301 _iSameDupLoadingType 2 from 1000201); here the player leaves and enters 1000301 from the quest tracker (action 3000)."
+        "The original continued seamlessly into 1000301 (DungeonConfig 1000301 _iSameDupLoadingType 2 from 1000201); here the server enters the player into 1000301 three seconds after the clear (DungeonService.Continuation; the delay is inferred), as the quest tracker's action 3000 would."
       ],
       "steps": [
         {
