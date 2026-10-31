@@ -85,7 +85,10 @@ public static partial class EconomySnapshotReader
     // Daily compensation: role.daily DailyState.Compensation lists, per ended day, the goods of the To-Do boxes that day
     // reached and left unclaimed. An obligation, not a holding: the goods are sourced only by the 1058 letter's
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
-    public const string ExpectedFormatManifestHash = "C99D38A7E3C57714CB7F363C3296CB1CD3255D33D2CFB739999F4E1BFF0D98B6";
+    // Fashion cart: role.shop ShopState.Cart (ShopService.Cart.cs) lists the commodity ids a role means to buy, with a
+    // count and the add time. No balance and no asset: nothing is reserved or paid until the 82332/82340 purchase
+    // receipt, whose shop blob also drops the bought entry.
+    public const string ExpectedFormatManifestHash = "DE15241BB2CED13BAE7AC137870AF7E58355A44FEE753E237781DE2636238B53";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

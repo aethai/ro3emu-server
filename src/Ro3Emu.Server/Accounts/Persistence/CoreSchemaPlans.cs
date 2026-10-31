@@ -81,7 +81,7 @@ internal sealed class RoleSchemaPlan : DbPlan
         // Serialized romsg.DBLibraryInfo (card collection, AUTO_SYNC 5057).
         SchemaSql.AddColumn(db, tx, "role", "library", "BLOB");
         SchemaSql.AddColumn(db, tx, "role", "card_plans", "BLOB");
-        // JSON ShopService.ShopState (purchase counters with their period, favourites; AUTO_SYNC 5024).
+        // JSON ShopService.ShopState (purchase counters with their period, favourites, Fashion cart; AUTO_SYNC 5024).
         SchemaSql.AddColumn(db, tx, "role", "shop", "BLOB");
         SchemaSql.AddColumn(db, tx, "role", "trade_info", "BLOB");
         SchemaSql.AddColumn(db, tx, "role", "stalls_info", "BLOB");

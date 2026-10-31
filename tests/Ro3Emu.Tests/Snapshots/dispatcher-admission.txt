@@ -752,8 +752,8 @@
 82338	session role:WholeRole dispatcher/82338	refused
 82339	session role:WholeRole dispatcher/unrouted	refused
 82340	session role:WholeRole dispatcher/82340	refused
-82341	session Realm:legacy: dispatcher/unrouted	refused
-82342	session Realm:legacy: dispatcher/unrouted	refused
+82341	session role:WholeRole dispatcher/82341	refused
+82342	session role:WholeRole dispatcher/82342	refused
 82361	session Realm:legacy: dispatcher/unrouted	refused
 82362	session role:WholeRole dispatcher/82362	refused
 82363	session role:WholeRole dispatcher/82363	refused

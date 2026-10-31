@@ -17,7 +17,7 @@ public sealed class EconomyMessages(ShopService shops, MailService mail, Auction
         routes.AdmitEconomic(id => id is MailService.ClaimMail);
         // Present/Pick reserve the recipient's own "gifts" blob themselves (another role, not the sender's).
         routes.AdmitEconomic(id => id is ShopService.CommodityPresent or ShopService.CommodityPick);
-        routes.AdmitRole(id => id is >= 82332 and <= 82340); // ordinary shops
+        routes.AdmitRole(id => id is >= 82332 and <= 82342); // ordinary shops and the Fashion cart
         routes.Intercept("trade", id => id is >= 32601 and <= 32630, (session, msgId, body) =>
             session.Role != null && session.Progress != null ? trade.HandleAsync(session, msgId, body) : Task.FromResult(false));
         routes.Intercept("stalls", id => id is >= StallsService.Start and <= StallsService.Share, (session, msgId, body) =>
@@ -38,6 +38,14 @@ public sealed class EconomyMessages(ShopService shops, MailService mail, Auction
         routes.Map(ShopService.CommodityCollect, "shops", async (session, msgId, body) =>
         {
             await shops.CollectAsync(session, CommodityCollectReq.Parser.ParseFrom(body.Span));
+        });
+        routes.Map(ShopService.ShoppingCartAdd, "shops", async (session, msgId, body) =>
+        {
+            await shops.CartAddAsync(session, ShoppingCartAddReq.Parser.ParseFrom(body.Span));
+        });
+        routes.Map(ShopService.ShoppingCartRemove, "shops", async (session, msgId, body) =>
+        {
+            await shops.CartRemoveAsync(session, ShoppingCartRemoveReq.Parser.ParseFrom(body.Span));
         });
         routes.Map(ShopService.CommodityPresent, "shops", async (session, msgId, body) =>
         {

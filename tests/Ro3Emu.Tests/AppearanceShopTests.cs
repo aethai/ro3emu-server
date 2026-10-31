@@ -311,6 +311,129 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         Assert.Equal(crystals - 480, Crystals);
     }
 
+    // ---- the Fashion cart (82341/82342, 5024 shoppingCart) ----
+
+    private static async Task<int> CartAdd(BotClient bot, int commodity, int count = 1)
+    {
+        await bot.SendGameAsync(ShopService.ShoppingCartAdd, new ShoppingCartAddReq { CommodityId = commodity, Count = count });
+        return (await Next(bot, ShopService.ShoppingCartAdd, ShoppingCartAddResp.Parser)).Result;
+    }
+
+    private static async Task<int> CartRemove(BotClient bot, int commodity)
+    {
+        await bot.SendGameAsync(ShopService.ShoppingCartRemove, new ShoppingCartRemoveReq { CommodityId = commodity });
+        return (await Next(bot, ShopService.ShoppingCartRemove, ShoppingCartRemoveResp.Parser)).Result;
+    }
+
+    private static int ShopSyncs(BotClient bot) => bot.Inbox.Snapshot().Count(e => e.IsGame(ShopService.ShopSync));
+
+    private static bool Dropped(DBShopInfoIncrement sync, int commodity) =>
+        sync.ShoppingCart.TryGetValue(commodity, out var entry) && entry.Del;
+
+    private async Task<BotClient> Relog(BotClient bot)
+    {
+        await bot.DisposeAsync();
+        var deadline = DateTime.UtcNow + Wait;
+        while (Service<SessionRegistry>().All().Any(s => s.Account == "fashionalice" && s.Role != null) && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+        var again = new BotClient(_http, File.ReadAllText(Path.Combine(_directory, "gate_rsa_public.pem")));
+        await again.LoginAsync("fashionalice", "pw"); await again.EnterGateAsync();
+        await again.EnterWorldAsync(again.Roles.Single().Id);
+        return again;
+    }
+
+    [ClientDataFact]
+    public async Task CartIsKeptOnTheServerAndComesBackAfterRelog()
+    {
+        var first = await Enter();
+        // Protocol 1 makes the client send 82341/82342 and read the cart only from 5024 (LC_DAL_Shop.lua:265-272).
+        var full = DBShopInfoIncrement.Parser.ParseFrom(first.Inbox.Snapshot().First(e => e.IsGame(ShopService.ShopSync)).Body);
+        Assert.True(full.SyncAllMark);
+        Assert.Equal(ShopService.CartProtocolVersion, full.ShoppingCartProtocolVersion);
+        Assert.Empty(full.ShoppingCart);
+        long added = _clock.GetUtcNow().ToUnixTimeSeconds();
+
+        Assert.Equal(0, await CartAdd(first, TeaParty));
+        var tea = (await Next(first, ShopService.ShopSync, DBShopInfoIncrement.Parser, s => s.ShoppingCart.ContainsKey(TeaParty)))
+            .ShoppingCart[TeaParty].All;
+        Assert.Equal((TeaParty, 1, added), (tea.CommodityId, tea.Count, tea.AddTime));
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(0, await CartAdd(first, Macaron));
+        var macaron = (await Next(first, ShopService.ShopSync, DBShopInfoIncrement.Parser, s => s.ShoppingCart.ContainsKey(Macaron)))
+            .ShoppingCart[Macaron].All;
+        Assert.Equal((Macaron, 1, added + 60), (macaron.CommodityId, macaron.Count, macaron.AddTime));
+
+        // Adding an entry already there changes nothing (no 5024, addTime kept); removing an absent one succeeds.
+        int syncs = ShopSyncs(first);
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Equal(0, await CartAdd(first, TeaParty));
+        Assert.Equal(syncs, ShopSyncs(first));
+        Assert.Equal(0, await CartRemove(first, Macaron));
+        await Next(first, ShopService.ShopSync, DBShopInfoIncrement.Parser, s => Dropped(s, Macaron));
+        syncs = ShopSyncs(first);
+        Assert.Equal(0, await CartRemove(first, Macaron));
+        Assert.Equal(syncs, ShopSyncs(first));
+        var saved = Assert.Single(SavedShop.Cart);
+        Assert.Equal((TeaParty, 1, added), (saved.Key, saved.Value.Count, saved.Value.AddTime));
+
+        await using var bot = await Relog(first);
+        var back = await Next(bot, ShopService.ShopSync, DBShopInfoIncrement.Parser);
+        Assert.Equal(ShopService.CartProtocolVersion, back.ShoppingCartProtocolVersion);
+        var entry = Assert.Single(back.ShoppingCart);
+        Assert.Equal((TeaParty, TeaParty, 1, added), (entry.Key, entry.Value.All.CommodityId, entry.Value.All.Count, entry.Value.All.AddTime));
+    }
+
+    [ClientDataFact]
+    public async Task CartRefusesWhatItCannotHoldAndChangesNothing()
+    {
+        await using var bot = await Enter();
+        Assert.Equal(ErrorCodes.ShopNoConfig, await CartAdd(bot, 424242));
+        Assert.Equal(ErrorCodes.Parameter, await CartAdd(bot, Potions));      // an item commodity, not a look
+        Assert.Equal(ErrorCodes.Parameter, await CartAdd(bot, Stroll, count: 2)); // a look is bought one at a time
+        Assert.Equal(ErrorCodes.Parameter, await CartAdd(bot, Stroll, count: 0));
+        Assert.Equal(0, (await Buy(bot, Macaron, price: 480)).Result);
+        Assert.Equal(ErrorCodes.ShopAppearanceOwned, await CartAdd(bot, Macaron));
+        Assert.Empty(Alice.Shop!.Cart);
+        Assert.Empty(SavedShop.Cart);
+        Assert.DoesNotContain(bot.Inbox.Snapshot(), e => e.IsGame(ShopService.ShopSync)
+            && DBShopInfoIncrement.Parser.ParseFrom(e.Body).ShoppingCart.Count > 0);
+
+        // A full cart (stale entries count too) refuses the next look until one entry goes.
+        await Service<GameLoop>().InvokeAsync(() =>
+        {
+            for (int i = 0; i < ShopService.CartLimit - 1; i++)
+                Alice.Shop!.Cart[9800000 + i] = new ShopService.CartEntry { Count = 1, AddTime = 1 };
+            return Task.CompletedTask;
+        });
+        Assert.Equal(0, await CartAdd(bot, TeaParty));
+        Assert.Equal(ErrorCodes.Parameter, await CartAdd(bot, Stroll));
+        Assert.Equal(0, await CartRemove(bot, 9800000)); // a stale id: no ShopCommodityConfig row
+        Assert.Equal(0, await CartAdd(bot, Stroll));
+        Assert.Equal(ShopService.CartLimit, SavedShop.Cart.Count);
+        Assert.False(SavedShop.Cart.ContainsKey(9800000));
+    }
+
+    [ClientDataFact]
+    public async Task BoughtLooksLeaveTheCartInTheirPurchaseCommit()
+    {
+        await using var bot = await Enter();
+        foreach (int look in (int[])[TeaParty, Macaron, Stroll]) Assert.Equal(0, await CartAdd(bot, look));
+
+        // UI_Sys_AppearanceShopCart_PanelCtrl._doBuySelected buys the selection with 82340 and, with protocol 1,
+        // leaves its own copy alone: the 5024 delta drops what was bought, a refused entry stays.
+        var reply = await Batch(bot, (Stroll, 1, 680), (TeaParty, 2, 1880));
+        Assert.Equal([0, ErrorCodes.Parameter], reply.Results.Select(r => r.Result));
+        var dropped = await Next(bot, ShopService.ShopSync, DBShopInfoIncrement.Parser, s => Dropped(s, Stroll));
+        Assert.False(dropped.ShoppingCart.ContainsKey(TeaParty));
+        Assert.Equal([TeaParty, Macaron], SavedShop.Cart.Keys.Order());
+
+        // 82332 of a look in the cart drops it too.
+        Assert.Equal(0, (await Buy(bot, Macaron, price: 480)).Result);
+        await Next(bot, ShopService.ShopSync, DBShopInfoIncrement.Parser, s => Dropped(s, Macaron));
+        Assert.Equal([TeaParty], SavedShop.Cart.Keys);
+        Assert.Equal([TeaParty], Alice.Shop!.Cart.Keys);
+    }
+
     // ---- gifting (82335/82336/82337/82339) ----
 
     private async Task<(BotClient Bot, long RoleId)> EnterRecipient(string account, string name)

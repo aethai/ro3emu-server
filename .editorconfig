@@ -127,7 +127,7 @@ dotnet_diagnostic.CA1869.severity = suggestion
 dotnet_diagnostic.CA1873.severity = suggestion
 # 15: instantiate argument exceptions correctly
 dotnet_diagnostic.CA2208.severity = suggestion
-# 777: use a collection initializer or expression
+# 776: use a collection initializer or expression
 dotnet_diagnostic.IDE0028.severity = suggestion
 # 139: use a collection expression for an array
 dotnet_diagnostic.IDE0300.severity = suggestion

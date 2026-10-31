@@ -13,8 +13,9 @@ namespace Ro3Emu.Server.Game;
 /// The common shop engine: NPC, point, card (class 220) and tower (240) shops
 /// all buy through 82332 / 82340 against the client's ShopConfig + ShopCommodityConfig catalogue. The server resolves
 /// payment and goods from the commodity (the request's price is only a quote), pays and grants in one bag transaction,
-/// and keeps the personal purchase counters and favourites in 5024 DBShopInfo. Fashion-tab commodities (shop type 7)
-/// carry _iAppearanceId instead of _iItemId: WardrobeService.BuyFromShopLockedAsync unlocks the look in the same commit.
+/// and keeps the personal purchase counters, favourites and the Fashion-tab cart in 5024 DBShopInfo. Fashion-tab
+/// commodities (shop type 7) carry _iAppearanceId instead of _iItemId: WardrobeService.BuyFromShopLockedAsync unlocks
+/// the look in the same commit.
 /// </summary>
 public sealed partial class ShopService(GameData data, CharacterService character, FunctionService functions, RoleStore roles, SeasonService seasons,
     WardrobeService wardrobe, AwardService awards, TimeProvider clock, SessionRegistry sessions, GameLoop loop,
@@ -22,7 +23,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
 {
     public const uint ShopSync = 5024;
     public const uint BuyCommodity = 82332, CommodityCollect = 82333, CommodityPresent = 82335, CommodityGetInfo = 82338,
-        BatchBuyCommodity = 82340;
+        BatchBuyCommodity = 82340, ShoppingCartAdd = 82341, ShoppingCartRemove = 82342;
 
     private readonly GameData _data = data;
     private readonly CharacterService _character = character;
@@ -59,11 +60,13 @@ public sealed partial class ShopService(GameData data, CharacterService characte
                 _loop.PostOwned(session, () => session.Shop != null && session.Role != null ? SyncAsync(session) : Task.CompletedTask);
     }
 
-    /// <summary>Saved per role: purchase counters with the period they were counted in, and favourites.</summary>
+    /// <summary>Saved per role: purchase counters with the period they were counted in, favourites and the cart.</summary>
     public sealed class ShopState
     {
         public Dictionary<int, Counter> Bought { get; set; } = new();
         public HashSet<int> Favorites { get; set; } = new();
+        /// <summary>The Fashion-tab cart by commodity id (ShopService.Cart.cs). Absent in blobs saved before it.</summary>
+        public Dictionary<int, CartEntry> Cart { get; set; } = [];
     }
 
     public sealed class Counter
@@ -91,10 +94,13 @@ public sealed partial class ShopService(GameData data, CharacterService characte
 
     private Task SyncAsync(GameSession session)
     {
-        var info = new DBShopInfo { ShoppingCartProtocolVersion = 0 }; // 0: the client keeps its own appearance cart
+        // 1: the server keeps the cart (LC_DAL_Shop.IsShoppingCartProtocolSupported); 0 left it in the client's memory.
+        var info = new DBShopInfo { ShoppingCartProtocolVersion = CartProtocolVersion };
         foreach (var (id, counter) in session.Shop!.Bought)
             if (Current(session, id, counter) is var n and > 0) info.CommodityBuyTimes[id] = n;
         foreach (var id in session.Shop.Favorites) info.CollectCommodities[id] = true; // removed favourites are deleted keys
+        foreach (var (id, entry) in session.Shop.Cart) // removed entries are deleted keys too
+            info.ShoppingCart[id] = new ShoppingCartItem { CommodityId = id, Count = entry.Count, AddTime = entry.AddTime };
         return CharacterService.SyncAsync(session, ShopSync, info);
     }
 
@@ -147,6 +153,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             var cost = currency > 0 && unit > 0 ? new[] { (currency, (long)unit) } : [];
             var next = Copy(session.Shop!);
             next.Bought[commodityId] = new Counter { Count = bought + 1, Period = Period(Family(row.Value), session) };
+            next.Cart.Remove(commodityId); // a bought look leaves the cart in the same commit (ShopService.Cart.cs)
             long awardGroup = GameData.Int(row.Value, "_iAppearanceAwardId");
             AwardPlan? bonus = null;
             try { bonus = _awards.Resolve(session, awardGroup, (int)(session.SeasonState?.PlayBookId ?? _seasons.PlayBook)); }
@@ -174,6 +181,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             {
                 var next = Copy(session.Shop!);
                 next.Bought[commodityId] = new Counter { Count = bought + count, Period = Period(Family(row.Value), session) };
+                next.Cart.Remove(commodityId);
                 var economy = NpcPurchase(session, row.Value, commodityId, count, unit, currency, entry,
                     perUnit, bought, next.Bought[commodityId]) ?? _character.FamilyEconomy(session, "cd13a/shop-buy",
                         cost, [(entry, perUnit * count)], new
@@ -336,6 +344,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
     {
         Favorites = new HashSet<int>(state.Favorites),
         Bought = state.Bought.ToDictionary(p => p.Key, p => new Counter { Count = p.Value.Count, Period = p.Value.Period }),
+        Cart = state.Cart.ToDictionary(p => p.Key, p => new CartEntry { Count = p.Value.Count, AddTime = p.Value.AddTime }),
     };
 
     /// <summary>A refusal: the ErrorCodes result for the client and the reason for the log.</summary>
@@ -382,11 +391,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         bool ok = code == 0;
         if (ok)
         {
-            var next = new ShopState
-            {
-                Favorites = new HashSet<int>(session.Shop!.Favorites),
-                Bought = session.Shop.Bought.ToDictionary(p => p.Key, p => new Counter { Count = p.Value.Count, Period = p.Value.Period }),
-            };
+            var next = Copy(session.Shop!);
             if (req.OpType == CollectOperateType.Add) next.Favorites.Add(req.CommodityId);
             else next.Favorites.Remove(req.CommodityId);
             var tx = _roles.NewTransaction();

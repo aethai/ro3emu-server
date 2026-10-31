@@ -31,6 +31,7 @@ namespace Ro3Emu.ClientHooks
     /// <item>Map config modules this build does not ship (Dracula's Lair, the territory maps) go into package.loaded
     /// before any scene needs them (MapModules).</item>
     /// <item>Profile cards without stickers parse (LC_DAL_Personal.ParsePersonalInfo walks a nil list; PersonalCards).</item>
+    /// <item>The Fashion cart's UI asks LC_DAL_Shop's class table, which never holds the 5024 cart version (ShopCart).</item>
     /// </list>
     /// </summary>
     public static class LuaPatches
@@ -104,6 +105,7 @@ namespace Ro3Emu.ClientHooks
                     global.Obf_RuA<Obf_R.Obf_ff>("LC_SeasonExplorationHelper") ?? Module(manager, global, "lc_seasonexplorationhelper"));
                 LevelCapTip.Install(Module(manager, global, "lua_cfg_baselvlimitconfig"));
                 PersonalCards.Install((Obf_R.Obf_Cf)env, Module(manager, global, "lc_dal_personal"));
+                ShopCart.Install(global, Module(manager, global, "lc_dal_shop"));
                 Debug.Log("[Ro3Emu.LuaPatches] lc_itemshowfunc: " + added + " card show-func method(s) added; stall name limit "
                     + (param != null ? StallNameMaxLength.ToString() : "not set (publicparamconfig missing)"));
             }

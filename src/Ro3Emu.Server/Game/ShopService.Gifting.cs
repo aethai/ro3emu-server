@@ -166,8 +166,11 @@ public sealed partial class ShopService
     /// <summary>Whether another role already owns (and still holds, if timed) this appearance: read-only, no lock
     /// needed since it is someone else's state being peeked, not mutated.</summary>
     private async Task<bool> RecipientOwnsAsync(long recipientId, int appearanceId) =>
-        await _roles.LoadWardrobeAsync(recipientId) is { } bytes
-        && DBWardRobeInfo.Parser.ParseFrom(bytes).AllLightUpAppearances.TryGetValue(appearanceId, out var owned)
+        await _roles.LoadWardrobeAsync(recipientId) is { } bytes && Owns(DBWardRobeInfo.Parser.ParseFrom(bytes), appearanceId);
+
+    /// <summary>A look is owned while it is lit and not past its OverdueTimeMs (0: permanent), as WardrobeService.Owns.</summary>
+    private bool Owns(DBWardRobeInfo wardrobe, int appearanceId) =>
+        wardrobe.AllLightUpAppearances.TryGetValue(appearanceId, out var owned)
         && (owned.OverdueTimeMs == 0 || owned.OverdueTimeMs > _clock.GetUtcNow().ToUnixTimeMilliseconds());
 
     /// <summary>82336 COMMODITY_PICK: the recipient claims a gift order and unlocks its appearance (and the
