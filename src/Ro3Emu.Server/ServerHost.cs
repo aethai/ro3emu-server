@@ -231,6 +231,9 @@ public static partial class ServerHost
         builder.Services.AddSingleton<MaintenanceMode>();
         builder.Services.AddSingleton<PanelOperations>();
         builder.Services.AddSingleton<Ro3Emu.Panel.IPanelOperations>(sp => sp.GetRequiredService<PanelOperations>());
+        builder.Services.AddSingleton<Updates.UpdateManager>();
+        builder.Services.AddSingleton<Ro3Emu.Panel.IPanelUpdates>(sp => sp.GetRequiredService<Updates.UpdateManager>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<Updates.UpdateManager>());
         builder.Services.AddSingleton<Ro3Emu.Panel.PanelSite>();
         builder.Services.AddSingleton<GiftCodeLimiter>();
         builder.Services.AddSingleton<GiftCodeService>();

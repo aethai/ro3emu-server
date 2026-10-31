@@ -10,7 +10,7 @@ the player at once, and the panel never writes the database behind the server's 
 | a player, logged in with the game account | My account (created, last played, characters with class, level, map and guild) · the sheet of each own character · password change |
 | a Moderator | Dashboard (the server's own metrics) · Accounts (search, detail, login history, deleted characters, ban and unban) · every character's sheet and mailbox · Reports · Audit log |
 | a GM | the Moderator's pages and Mail & rewards · Gift codes · GM console · News editor · Broadcasts · Economy log · Character actions (kick, teleport, rename, items and currencies, restore) · Item tracking |
-| an Admin | the GM's pages and Staff roles · Server control (restart, shutdown, maintenance, backups) · 2FA resets |
+| an Admin | the GM's pages and Staff roles · Server control (restart, shutdown, maintenance, backups, updates) · 2FA resets |
 
 Players log in with the same account name and password as in the game. An account the game created logs in here,
 and an account made on the panel's sign-up page logs in to the game: both paths write the same record
@@ -53,7 +53,7 @@ The admin area is for staff. Each role has everything of the one before it:
 |---|---|
 | Moderator | open the dashboard, accounts (with their login history and deleted characters), every character's sheet and mailbox, the reports and the audit log; ban and unban; triage reports |
 | GM | also send mail, make gift codes, run the GM console, edit news, broadcast, read the economy log, and act on characters |
-| Admin | also give and take staff roles, control the server (restart, shutdown, maintenance, backups) and reset another account's 2FA |
+| Admin | also give and take staff roles, control the server (restart, shutdown, maintenance, backups, updates) and reset another account's 2FA |
 
 An account gets its role from, in this order:
 
@@ -195,6 +195,81 @@ game, loading or waiting for a reconnect, as the HTTP character deletion is. Eve
   database is never swapped. The request is `data/restore-request.txt`, removed as the restore starts, so a refused
   restore is not tried again at every start; what it did is in `data/restore-result.txt` and on this page. The replaced
   database is kept in `data/restore-saved/`.
+
+## Updates
+
+**Server control > Updates** (Admins) keeps the server on the newest release. Nothing installs by itself: the page
+checks, downloads and checks again, and an Admin plans the install like a restart.
+
+- **Version.** The running version and commit against the releases of `aethai/ro3emu-server` on GitHub: the latest
+  one, every newer one with its date, its package size and its release notes (shown as plain text; the newest five
+  open, the rest behind *Show older releases*). The server asks GitHub's API without a token (60 requests an hour per
+  address) when *Check now* is pressed, at most once a minute, and every 6 hours in the background while the panel is
+  on, the first time 2 minutes after a start. It sends the last answer's ETag, so an unchanged list does not count
+  against the limit; a spent limit is waited out, and a failed check keeps the last good list and says why. The answer
+  is kept in `data/updates/releases.json`.
+- **Download** takes this server's package (`RO3Emu-server-linux-x64.tar.gz` on Linux x64, `RO3Emu-win-x64.zip` on
+  Windows x64; other platforms have none) into `data/updates/downloads`, and refuses it unless its size and SHA-256 are
+  the ones GitHub lists for it (`digest`); a release without a digest is not downloaded. The package is unpacked into
+  `data/updates/staging/<tag>`: only plain files under its one folder (`RO3Emu-server/`, `RO3Emu/`), no link, no path
+  out of it, bounded sizes. Then the server, the RO3Emu tool and `appsettings.json` must be there and the server must
+  say it is the tag's version (read from its single-file bundle, without running it). The page follows the download and
+  can cancel it; a failure says why.
+- **Install** (only where the server can come back by itself, below) plans a restart with the countdown notices of
+  *Restart or shut down* (*The server restarts for an update in ...*). When it ends, the server makes a database backup
+  with its own backup (and keeps a copy in `data/updates/backups`, the newest three, out of reach of the rotation),
+  copies the files it is about to replace to `data/updates/previous`, then swaps the release's files in one by one: the
+  current file is renamed to `*.old` in its folder (Linux and Windows both let a running executable be renamed) and the
+  new one moved in; a failure puts every file back and the restart is cancelled (the players are told). An
+  `appsettings*.json` you edited stays; the release's own lands beside it as `.new`. The process exits with code 75
+  and the process manager starts the new version, whose first start writes the outcome to the history and the audit
+  log and deletes the `*.old` files. Another plan waiting refuses an install; a planned install is cancelled like any
+  restart.
+- **Roll back** (same modes) plans a restart that puts the previous version's files back the same way (the version it
+  replaces becomes the previous one). It can also restore the database backup made just before the update: the next
+  start restores it before the realm opens, as *Restore* does, and keeps the replaced database in
+  `data/restore-saved/`. **Whether an older server can open the newer one's database:** the database has no schema
+  version. Every start runs the same idempotent steps (`DatabaseSchema`): create the tables that are missing, add the
+  columns that are missing, rebuild a table only to relax a constraint. Nothing removes a table or a column, so an
+  older server usually opens a database a newer one used and ignores what it does not know. Nothing checks that,
+  though, and rows the newer version wrote (new states, new kinds of records) may not mean the same to the older one.
+  Restoring the pre-update backup is the sure way back and loses every change since the update.
+- **Install history**: every install, rollback, failure and the start that followed, in `data/updates/history.jsonl`
+  (a database restore does not rewind it). Every action (download, cancel, delete, install, rollback and their
+  outcome) is also in the audit log as `update` on the server.
+
+What the page may do depends on how the server runs. It finds out at start, or `Ro3Emu:Updates:Hosting` says it:
+
+| Hosting | Found by | Install and rollback |
+|---|---|---|
+| systemd (`server.sh --service`) | `INVOCATION_ID`, set by systemd | yes: the unit's `Restart=always` starts the new files (`RestartPreventExitStatus=0` keeps a shutdown down) |
+| Windows service (NSSM, WinSW, ...) | no interactive session | yes, when the wrapper starts the server again after it exits with code 75; the running exe is renamed aside, not overwritten |
+| `server.sh` in a terminal, the exe in a console | none of the others | no: nothing would start it again. The page downloads and checks, then lists the steps (stop, `cp -a '<staging>/.' '<install>/'`, start) |
+| RO3Emu.exe or the launcher | `RO3EMU_STARTER`, set by them | no: they stop with the server. Quit RO3Emu and start Ro3EmuLauncher.exe, which updates itself from the same release, or copy the staged files over the folder |
+| Docker | `/.dockerenv`, `/run/.containerenv`, `DOTNET_RUNNING_IN_CONTAINER` | no: build or pull an image of the new release and recreate the container with the same data volume. The page still downloads a checked copy of the package |
+| a build of the source tree | not in a release folder | no download: `git pull` and build |
+
+The release folder is the one above the server's own `server/` folder, with the RO3Emu tool beside it (the layout of
+both packages). The server must be able to write there; an install checks every folder first and changes nothing when
+it cannot.
+
+If a new version does not start, put the previous one back with the server stopped:
+
+```
+Ro3Emu.Server --rollback-update [your config arguments]
+```
+
+It moves the files of `data/updates/previous` back (they are plain copies, so copying them by hand works too) and
+prints the `--restore-backup` command for the pre-update database backup, which it never restores by itself.
+
+| Option | Default | What |
+|---|---|---|
+| `Ro3Emu:Updates:Check` | `true` | ask GitHub for releases; `false`: no request leaves the server and the page shows the installed version only |
+| `Ro3Emu:Updates:Repository` | `aethai/ro3emu-server` | the repository whose releases are offered |
+| `Ro3Emu:Updates:CheckHours` | `6` | hours between background checks (at least 1) |
+| `Ro3Emu:Updates:Hosting` | `auto` | `systemd`, `service`, `docker`, `app` or `manual` instead of what the server finds |
+| `Ro3Emu:Updates:InstallDir` | found | the release folder, when the server runs from somewhere else |
+| `Ro3Emu:Updates:ApiUrl` | `https://api.github.com` | another releases feed with the same API, for testing; plain http only on loopback, and its downloads must be https or on the feed's own address |
 
 ## Branding
 
@@ -480,7 +555,8 @@ proxy's.
 | `feedback_triage`, `feedback_note` | the report inbox's status, assignee and notes |
 | `panel_setting` | maintenance mode |
 
-They are created by the server at startup like its other tables and are part of every backup.
+They are created by the server at startup like its other tables and are part of every backup. The update manager keeps
+its files outside the database, in `data/updates/` ([Updates](#updates)).
 
 ## For developers
 
@@ -494,9 +570,11 @@ rectangle). Bundles are read with AssetsTools.NET and BC1/BC3/BC7 textures decod
 launcher's; the colours, spacing scale, type scale and components are the tokens at the top of `app.css`), the JSON API under `/api/` (`PanelSite`), sessions and CSRF. It knows nothing of the game: everything
 goes through `IPanelBackend`, `IPanelAdminTools` and `IPanelOperations` (roles, security, reports, character actions,
 server control), which the server implements in `Http/PanelBackend*.cs`, `Http/PanelAdminTools*.cs` and
-`Http/PanelOperations*.cs` over its stores, writer and loop. A page in its own file registers with
+`Http/PanelOperations*.cs` over its stores, writer and loop, and `IPanelUpdates`, which `Updates/UpdateManager` implements
+(`ReleaseFeed`, `UpdatePackage`, `BundleVersion`, `UpdateInstaller`, `UpdateHosting`). A page in its own file registers with
 `registerAdminPage({ ..., role })`; `adminAccountCards` takes cards for an account's admin page.
 `ServerHost` routes every request that arrives on the panel's port to `PanelSite` before the server's own
 middleware, so neither port serves the other's paths. Tests: `PanelTests`; the test hosts keep the panel off unless a
-test turns it on with a free port (`TestHostDefaults`). `PanelAdminTests` cover roles, security, reports, character
-actions and server control.
+test turns it on with a free port, and their update checks off (`TestHostDefaults`). `PanelAdminTests` cover roles,
+security, reports, character actions and server control; `UpdateTests` and `PanelUpdateTests` the update manager, with a
+fake HTTP stack or a loopback releases feed and invented packages.

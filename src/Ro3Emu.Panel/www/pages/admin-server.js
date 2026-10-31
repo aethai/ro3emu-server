@@ -1,11 +1,12 @@
 // Admin: server control. A restart, shutdown or backup restore at a set time with countdown notices in the game,
 // maintenance mode (only staff get into the game), and the database backups: make one now, download, restore. A
 // restore is a restart whose next start puts the backup back before the realm opens; nothing swaps the live database.
+// The Updates section below them is pages/admin-updates.js.
 'use strict';
 
 registerAdminPage({ id: 'server', label: 'Server control', icon: 'pulse', path: '/admin/server', pattern: /^\/admin\/server$/, page: adminServerPage, role: 'admin' });
 
-const scheduleKinds = { restart: 'Restart', shutdown: 'Shutdown', restore: 'Restore and restart' };
+const scheduleKinds = { restart: 'Restart', shutdown: 'Shutdown', restore: 'Restore and restart', update: 'Update and restart', rollback: 'Roll back and restart' };
 const megabytes1 = n => (n / (1 << 20)).toFixed(n < 10 << 20 ? 1 : 0);
 
 function maintenanceCard(m) {
@@ -30,7 +31,7 @@ function scheduleCard(scheduled) {
       // The live countdown of pages/wiki.js (its ticker moves it); its own class here, not the countdown's.
       h('p', { class: 'planned-countdown' }, countdown(scheduled.at, 'In ', 'Stopping now')),
       facts([['At', stamp(scheduled.at)], ['By', mono(scheduled.by)], ['Reason', scheduled.reason || h('span', { class: 'muted' }, '-')],
-        scheduled.backup && ['Backup', mono(scheduled.backup)]].filter(Boolean)),
+        scheduled.backup && ['Backup', mono(scheduled.backup)], scheduled.version && ['Version', mono(scheduled.version)]].filter(Boolean)),
       h('div', { class: 'row tools-gap-top' }, cancel)));
   }
   const confirmHost = h('div');
@@ -84,15 +85,17 @@ function stampText(iso) { return stamp(iso).textContent; }
 
 async function adminServerPage() {
   requireRole('admin');
-  const s = await api('GET', '/api/admin/server');
+  const [s, updates] = await Promise.all([api('GET', '/api/admin/server'), api('GET', '/api/admin/updates')]);
   return adminLayout('server',
     pageHead({ crumbs: adminCrumbs({ label: 'Server control' }), title: 'Server control', actions: densityToggle(),
-      subtitle: 'Restarts, maintenance and backups. Every action here is in the audit log.' }),
+      subtitle: 'Restarts, maintenance, backups and updates. Every action here is in the audit log.' }),
     s.maintenance.on && h('div', { class: 'notice danger', role: 'status' }, icon('alert'),
       h('div', null, h('b', null, 'Maintenance is on'), 'Only staff can log in to the game.')),
     s.lastRestore && h('div', { class: 'notice', role: 'status' }, icon('clock'), h('div', null, h('b', null, 'Last restore'), s.lastRestore)),
     h('div', { class: 'grid' },
       h('div', { class: 'span-6' }, scheduleCard(s.scheduled)),
       h('div', { class: 'span-6' }, maintenanceCard(s.maintenance))),
-    h('div', { class: 'grid' }, h('div', { class: 'span-12' }, backupsCard(s.backups))));
+    h('div', { class: 'grid' }, h('div', { class: 'span-12' }, backupsCard(s.backups))),
+    h('h2', { class: 'section-title' }, 'Updates'),
+    updatesSection(updates));
 }

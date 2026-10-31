@@ -8,8 +8,8 @@ Runtime, which Windows 10 and 11 normally have.
 
 The launcher:
   1. finds your Ragnarok 3 game folder (the one with ro3.exe), or lets you pick it,
-     or downloads the game from the official Genesis servers (about 24 GB; every
-     file is checked against the publisher's signature);
+     or downloads the game from Genesis' update servers (about 24 GB; every
+     file is checked against Genesis' signature);
   2. exports the game data it needs from your game folder (about a minute, first time);
   3. starts the server on this PC when you press Play;
   4. patches the game to talk to it and starts the game.
@@ -24,9 +24,9 @@ RO3Emu.exe does the same from a console window, and more:
   RO3Emu.exe                       play on your own server (press Q to stop it)
   RO3Emu.exe join 203.0.113.10     play on a friend's server
   RO3Emu.exe host                  let friends on your network join your server
-  RO3Emu.exe install               download the game from the official servers
-  RO3Emu.exe update                update the game from the official servers
-  RO3Emu.exe restore               undo the patch (the game talks to the official servers again)
+  RO3Emu.exe install               download the game from Genesis' update servers
+  RO3Emu.exe update                update the game from Genesis' update servers
+  RO3Emu.exe restore               undo the patch (the game talks to Genesis' servers again)
   RO3Emu.exe diag                  write RO3Emu-diagnostics.zip for a bug report
   RO3Emu.exe help                  everything else
 
@@ -36,7 +36,7 @@ What it changes on your PC
     (English texts made from your own game files).
   - In this folder: data\ (game data and your characters), logs\, downloads\ and
     RO3Emu.settings.json. Delete the folder to remove RO3Emu.
-  - Do not use the publisher's launcher to repair the game while you play on
+  - Do not use the Genesis launcher to repair the game while you play on
     RO3Emu: it undoes the patch (RO3Emu.exe patches again on the next start).
 
 If something goes wrong
