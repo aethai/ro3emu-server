@@ -205,6 +205,7 @@ table.data{width:100%;border-collapse:separate;border-spacing:0;font-size:var(--
 .data .num{text-align:right;font-variant-numeric:tabular-nums}
 .data .grow{width:100%}
 .data td.wrap-text{white-space:normal;min-width:240px;padding-top:var(--s2);padding-bottom:var(--s2)}
+.data .clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
 .data .strong{font-weight:700}
 .data a.row-link{font-weight:700}
 .data a.row-link:hover,.data a.text-link:hover{color:var(--blue-ink);text-decoration:underline}
@@ -290,10 +291,11 @@ select.input{padding-right:var(--s6)}
 .admin{display:grid;grid-template-columns:224px minmax(0,1fr);gap:var(--gutter);align-items:start}
 .side{position:sticky;top:calc(var(--bar) + var(--s5));padding:var(--s2)}
 .side .label{display:block;padding:var(--s3) var(--s3) var(--s2)}
-.side a,.side .later{display:flex;align-items:center;gap:var(--s3);height:36px;padding:0 var(--s3);border-radius:var(--r2);font-weight:500;color:var(--ink-2)}
+.side a,.side .later{position:relative;display:flex;align-items:center;gap:var(--s3);height:36px;padding:0 var(--s3);border-radius:var(--r2);font-weight:500;color:var(--ink-2)}
 .side a svg,.side .later svg{font-size:16px;color:var(--muted)}
 .side a:hover{background:var(--hover)}
-.side a[aria-current="page"]{background:var(--hover);color:var(--ink);font-weight:700;box-shadow:inset 3px 0 0 var(--ink)}
+.side a[aria-current="page"]{background:var(--hover);color:var(--ink);font-weight:700}
+.side a[aria-current="page"]::before{content:"";position:absolute;left:4px;top:50%;width:3px;height:16px;margin-top:-8px;border-radius:2px;background:var(--ink)}
 .side a[aria-current="page"] svg{color:var(--ink)}
 .side .later{color:var(--faint);cursor:default}
 .side .later svg{color:var(--faint)}
@@ -329,6 +331,7 @@ select.input{padding-right:var(--s6)}
   .side{position:static;display:flex;flex-wrap:wrap;gap:var(--s1);padding:var(--s1)}
   .side .label,.side hr,.side .later{display:none}
   .side a{flex:none}
+  .side a[aria-current="page"]::before{display:none}
 }
 @media (min-width:861px){ .nav .menu-auth{display:none} }
 @media (max-width:600px){
@@ -342,6 +345,21 @@ select.input{padding-right:var(--s6)}
   /* the growing column takes what is left and cuts its text, so a list fits a phone without scrolling sideways */
   .data td.grow{max-width:0;overflow:hidden;text-overflow:ellipsis}
   .data td.grow.wrap-text{min-width:0}
+  /* a table with long text: one small card per row, the first cell as its title, the others as label and value */
+  .data.stack,.data.stack tbody,.data.stack tr,.data.stack td{display:block;width:auto}
+  .data.stack thead{display:none}
+  .table-wrap:has(> .data.stack){max-height:none;overflow:visible}
+  .data.stack tr{padding:var(--s3) var(--s3);border-bottom:1px solid var(--line-soft)}
+  .data.stack tbody tr:last-child{border-bottom:0}
+  .data.stack td{height:auto;padding:2px 0;border:0;white-space:normal;max-width:none;overflow:visible;min-width:0}
+  .data.stack td:first-child{padding:0 0 var(--s1);font-size:var(--t-lg)}
+  .data.stack td:not(:first-child):not(.wrap-text){display:flex;justify-content:space-between;gap:var(--s3)}
+  .data.stack td:not(:first-child)::before{content:attr(data-label);font:700 var(--t-xs)/20px var(--body);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);flex:none}
+  .data.stack td.wrap-text::before{display:block}
+  .data.stack td.wrap-text{padding-top:var(--s1)}
+  .data.stack .num{text-align:right}
+  .data.stack tbody tr:hover td{background:none}
   .page-head{align-items:flex-start}
   .auth-card{margin-top:var(--s4)}
 }

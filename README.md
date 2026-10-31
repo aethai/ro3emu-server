@@ -66,7 +66,7 @@ Hosting on Linux, a VPS or a home server? One script, nothing to install: see [h
 
 ## What works today
 
-<p align="center"><img src="docs/assets/progress.svg" alt="Progress: world, combat and bosses, story dungeons, character progress, guilds, Survivor Battle and War of Emperium are done; the web panel is in progress; the Tavern, the remaining client tables and a many-player test are next" width="100%"></p>
+<p align="center"><img src="docs/assets/progress.svg" alt="Progress: world, combat and bosses, story dungeons, character progress, guilds, Survivor Battle, War of Emperium and the web panel are done; the Tavern, the remaining client tables and a many-player test are next" width="100%"></p>
 
 Everything the client can show is playable from day one, without season gates. The full list is in
 [What works](docs/features.md), and each release lists what is new in its [release notes](https://github.com/aethai/ro3emu-server/releases).

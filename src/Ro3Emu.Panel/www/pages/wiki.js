@@ -61,9 +61,6 @@ function elementCell(percent) {
   return h('span', { class: 'el ' + level }, signed(percent));
 }
 
-/** The database's own breadcrumb root. */
-const dbCrumbs = (...rest) => [{ href: '/', label: 'Home' }, { href: '/database', label: 'Database' }, ...rest];
-
 // ---------------------------------------------------------------- the hub
 
 const sections = [

@@ -16,7 +16,7 @@ async function mapsPage() {
       h('span', { class: 'sub' }, levels(m), m.monsters ? ` · ${m.monsters} ${m.monsters === 1 ? 'monster' : 'monsters'}` : '',
         m.players ? ` · ${m.players} online` : '')))))
     : emptyState('search', 'No map matches', 'Try part of the name.');
-  return [pageHead({ crumbs: [{ href: '/', label: 'Home' }, { label: 'Maps' }], title: 'Maps',
+  return [pageHead({ crumbs: dbCrumbs({ label: 'Maps' }), title: 'Maps',
     subtitle: 'Every map in the game, with the monsters that live there and who is on it now.' }),
   h('section', { class: 'card' }, h('div', { class: 'card-head' }, filters), body(tiles),
     h('div', { class: 'card-foot' }, h('span', null, mono(num(shown.length)), shown.length === 1 ? ' map' : ' maps')))];
@@ -43,7 +43,7 @@ async function mapPage(id) {
     : emptyState('users', 'Nobody is here right now', null);
   const picture = map.image ? h('img', { class: 'picture map', src: map.image, alt: map.name }) : null;
   if (picture) picture.addEventListener('error', () => picture.closest('.card')?.remove(), { once: true });
-  return [pageHead({ crumbs: [{ href: '/', label: 'Home' }, { href: '/maps', label: 'Maps' }, { label: map.name }], title: map.name,
+  return [pageHead({ crumbs: dbCrumbs({ href: '/maps', label: 'Maps' }, { label: map.name }), title: map.name,
     after: world ? chip('plain', world.type) : null,
     meta: [['ID', mono(String(map.id))], ['Levels', map.monsters ? `${map.minLevel}-${map.maxLevel}` : '-'],
       world && world.minLevel ? ['Recommended', `Lv ${world.minLevel}-${world.maxLevel}`] : null, ['Online', num(map.players)]].filter(Boolean) }),

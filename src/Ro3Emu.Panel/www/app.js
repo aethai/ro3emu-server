@@ -114,11 +114,14 @@ function kpi(label, iconName, value, unit, detail, opts = {}) {
  * A data table: columns of { label, value(row) -> node, num (right-aligned numbers), opt (hidden on phones),
  * grow }. Numbers right, text left; the header sticks while the rows scroll.
  */
+/** A data table. One with a long-text (wrap) column stacks into a small card per row on a phone (.stack) and cuts
+ *  its long text to three lines (the full text is on the row's own page). */
 function table(columns, rows, opts = {}) {
-  return h('div', { class: 'table-wrap' + (opts.short ? ' short' : '') }, h('table', { class: 'data' },
+  const stack = columns.some(c => c.wrap);
+  return h('div', { class: 'table-wrap' + (opts.short ? ' short' : '') }, h('table', { class: 'data' + (stack ? ' stack' : '') },
     h('thead', null, h('tr', null, columns.map(c => h('th', { class: cls(c), scope: 'col' }, c.label)))),
     h('tbody', null, rows.map(row => h('tr', opts.onrow ? { class: 'clickable', onclick: e => { if (!e.target.closest('a')) opts.onrow(row); } } : null,
-      columns.map(c => h('td', { class: cls(c) }, c.value(row))))))));
+      columns.map(c => h('td', { class: cls(c), 'data-label': c.label }, c.wrap ? h('div', { class: 'clamp' }, c.value(row)) : c.value(row))))))));
 }
 const cls = c => [c.num && 'num', c.opt && 'opt', c.grow && 'grow', c.wrap && 'wrap-text'].filter(Boolean).join(' ') || null;
 
@@ -580,6 +583,8 @@ const roleName = role => ({ moderator: 'Moderator', gm: 'GM', admin: 'Admin' })[
 const roleChip = role => chip('role-' + role, roleName(role));
 
 const adminCrumbs = (...rest) => [{ href: '/', label: 'Home' }, { href: '/admin', label: 'Admin' }, ...rest];
+/** The database's own breadcrumb root. */
+const dbCrumbs = (...rest) => [{ href: '/', label: 'Home' }, { href: '/database', label: 'Database' }, ...rest];
 
 function requireAdmin() {
   if (!state.session?.account) throw new ApiError('Please log in.', 401);
