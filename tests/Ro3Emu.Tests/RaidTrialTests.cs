@@ -272,4 +272,39 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(14742501, await BuffOf(alice, [14742501])); // Perfect State
         Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 14740002));
     }
+
+    // Ilmo's Beat Prison: the notes are picked up from their NPCs; every circle lit by its note raises the barrier.
+    [ClientDataFact]
+    public async Task IlmosBeatPrisonIsSolvedByLightingEveryCircleWithItsNote()
+    {
+        int[] pickups = [14760001, 14760002, 14760003, 14760004], circles = [14760005, 14760006, 14760007, 14760008];
+        int[] notes = [14760001, 14760101, 14760201, 14760301];
+        await using var alice = await InWorld("Alice");
+        var (instance, _) = await RaidFight(alice, 100101, 3, 3020103, 14761100);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4606);
+        var shown = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => circles.Contains(u.NpcId), 2);
+        var notesShown = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => pickups.Contains(u.NpcId), 4);
+        // Walking into a circle without its note lights nothing.
+        await WalkTo(alice, shown[0]);
+        Assert.Equal(2, (await InRoom<DungeonService.SceneActorUnit>(instance, u => circles.Contains(u.NpcId))).Length);
+        foreach (var circle in shown)
+        {
+            int color = Array.IndexOf(circles, circle.NpcId);
+            var pickup = notesShown.Single(n => n.NpcId == pickups[color]);
+            await WalkTo(alice, pickup);
+            long interaction = Service<DungeonCatalog>().Interactions(pickup.NpcId).Single();
+            await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+            { NpcUid = pickup.Uid, InteractionId = (int)interaction, SceneConfigId = 3020103 });
+            Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser, r => r.Req.NpcUid == pickup.Uid)).Result);
+            for (int i = 0; i < 100 && await BuffOf(alice, notes) != notes[color]; i++) await Task.Delay(20);
+            Assert.Equal(notes[color], await BuffOf(alice, notes));
+            await WalkTo(alice, circle);
+        }
+        for (int i = 0; i < 100 && await BuffOf(alice, [14761401]) == 0; i++) await Task.Delay(20);
+        Assert.Equal(14761401, await BuffOf(alice, [14761401])); // Green Energy Barrier
+        Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => circles.Contains(u.NpcId) || pickups.Contains(u.NpcId)));
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 14769000);
+    }
 }

@@ -99,6 +99,14 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   creation points 601-623. A player inside a circle (2 m) at the end gets Perfect State 14742501 (+30% speed and damage)
   and line 4616; one outside takes 35% as Dazzling Dance Step 14740500 and line 4615. Inferred: the timing, the circle
   count, the damage; the four-direction step copying is not reproduced.
+- Ilmo (3020103; 14761100/14761000/14761200), **Beat Prison** (tip 4606 'Enter the circles in order to compose the
+  melody', 30 s; guide 1100301): at 80, 60, 40 and 20% HP (the four Lock Life gates 14761601-14761901) Ilmo holds,
+  drumming the Drumbeat Cage 14769000-14769300. The note NPCs 14760001-14760004 stand at points 17-20; their own
+  interactions (33-36) give the Red/Blue/Yellow/Green note 14760001/14760101/14760201/14760301. Coloured circles
+  14760005-14760008 appear in the editor's region groups 34, 61, 71 and 48 (2, 3, 4 and 6 circles, DungeonLua
+  `numbylevel`/`npcidbyregion`); a player carrying a circle's note who steps into it lights it. All lit within 30 s:
+  Green Energy Barrier 14761401 and no damage; otherwise the cage costs everyone 50%. Inferred: the thresholds, the
+  circle counts per gate, any order instead of the melody's order, 50% instead of the data's 100%.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

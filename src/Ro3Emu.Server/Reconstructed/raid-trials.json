@@ -86,6 +86,97 @@
           "fail": { "who": "failing", "hpPercent": 35, "skill": 14740500, "say": 4615, "why": "left in the dark: Dazzling Dance Step" }
         }
       ]
+    },
+    "ilmo": {
+      "name": "Ilmo (Realm of the Gods 3020103)",
+      "bosses": [14761100, 14761000, 14761200],
+      "evidence": [
+        "TenChallengeHandbookIDConfig 1100301 Beat Prison: Ilmo keeps beating a drum to charge an ultimate; several areas appear, players collect the notes shown above the areas and enter the areas to raise a damage immunity barrier.",
+        "ChatConfig 4606 (CombatCountdownTip, 30 s) 'Enter the circles in order to compose the melody. ${1} seconds remaining', 4603 'The drumbeat will explode in ${1} seconds' (30 s).",
+        "NPCConfig 14760001-14760004 'Collect Red/Blue/Yellow/Green Note' at scene points 17-20 (NpcLevelPointRespawnConfig 14760000-14760003), interactions 33-36 casting 'Obtain Red/Blue/Yellow/Green Note' 14772000-14772300; BuffConfig 14760001/14760101/14760201/14760301 Red/Blue/Yellow/Green Note (_kUIParams [1,1]/[1,4]/[1,2]/[1,3]).",
+        "NPCConfig 14760005-14760008: the coloured circles (born buffs 14760501-14760801 Red/Blue/Yellow/Green Note and a ring).",
+        "DungeonLua_3020103 numbylevel {1:2, 2:3, 3:5, 4:6, 5:8, 6:4} and npcidbyregion tables naming the 5 x 5 m regions of the editor's groups 34 (24, 27), 61 (28, 29, 66), 71 (72-75), 48 (49-54).",
+        "Skills 14769000-14769300 Drumbeat Cage (36.6 s, _kDamageParamExtra [2,100000,101,3]: all of the maximum HP), BuffConfig 14761401 Green Energy Barrier, 14761601-14761901 four 'Lock Life at X%' buffs (four phase gates)."
+      ],
+      "guessed": [
+        "Beat Prison comes at 80, 60, 40 and 20% HP (the four Lock Life gates), with 2, 3, 4 and 6 circles (groups 34, 61, 71, 48), each of a random colour.",
+        "A circle is lit by a player carrying its note stepping into it (2.5 m); the order is not enforced. All lit within 30 s: Green Energy Barrier on everyone and no damage; otherwise the cage costs everyone 50% of their maximum HP (not the data's 100%: no instant wipe).",
+        "The note pickups stand at points 17-20 during the trial (their own respawn rows; the editor puts the blue one on 18-20 by mistake)."
+      ],
+      "trials": [
+        {
+          "name": "Beat Prison I",
+          "why": "the first Lock Life gate: two circles (group 34, numbylevel 1)",
+          "start": { "hp": [80] },
+          "tips": [4606],
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14769000 },
+          "colors": [14760001, 14760101, 14760201, 14760301],
+          "objects": [
+            { "npc": [14760001, 14760002, 14760003, 14760004], "use": "color", "at": { "points": [17, 18, 19, 20] }, "why": "the Red, Blue, Yellow and Green notes to collect" },
+            { "npc": [14760005, 14760006, 14760007, 14760008], "match": true, "at": { "regions": [24, 27] }, "why": "the circles of group 34" }
+          ],
+          "rule": "collect",
+          "radius": 2.5,
+          "success": { "who": "all", "buff": 14761401, "buffMs": 5000, "why": "Green Energy Barrier: the drumbeat explodes harmlessly" },
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14769000, "why": "the Drumbeat Cage explodes" }
+        },
+        {
+          "name": "Beat Prison II",
+          "why": "the second gate: three circles (group 61, numbylevel 2)",
+          "start": { "hp": [60] },
+          "tips": [4606],
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14769100 },
+          "colors": [14760001, 14760101, 14760201, 14760301],
+          "objects": [
+            { "npc": [14760001, 14760002, 14760003, 14760004], "use": "color", "at": { "points": [17, 18, 19, 20] } },
+            { "npc": [14760005, 14760006, 14760007, 14760008], "match": true, "at": { "regions": [28, 29, 66] } }
+          ],
+          "rule": "collect",
+          "radius": 2.5,
+          "success": { "who": "all", "buff": 14761401, "buffMs": 5000 },
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14769100 }
+        },
+        {
+          "name": "Beat Prison III",
+          "why": "the third gate: four circles (group 71)",
+          "start": { "hp": [40] },
+          "tips": [4606],
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14769200 },
+          "colors": [14760001, 14760101, 14760201, 14760301],
+          "objects": [
+            { "npc": [14760001, 14760002, 14760003, 14760004], "use": "color", "at": { "points": [17, 18, 19, 20] } },
+            { "npc": [14760005, 14760006, 14760007, 14760008], "match": true, "at": { "regions": [72, 73, 74, 75] } }
+          ],
+          "rule": "collect",
+          "radius": 2.5,
+          "success": { "who": "all", "buff": 14761401, "buffMs": 5000 },
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14769200 }
+        },
+        {
+          "name": "Beat Prison IV",
+          "why": "the last gate: six circles (group 48, numbylevel 4)",
+          "start": { "hp": [20] },
+          "tips": [4606],
+          "tipParam": "countdown",
+          "windowMs": 30000,
+          "boss": { "hold": true, "show": 14769300 },
+          "colors": [14760001, 14760101, 14760201, 14760301],
+          "objects": [
+            { "npc": [14760001, 14760002, 14760003, 14760004], "use": "color", "at": { "points": [17, 18, 19, 20] } },
+            { "npc": [14760005, 14760006, 14760007, 14760008], "match": true, "at": { "regions": [49, 50, 51, 52, 53, 54] } }
+          ],
+          "rule": "collect",
+          "radius": 2.5,
+          "success": { "who": "all", "buff": 14761401, "buffMs": 5000 },
+          "fail": { "who": "all", "hpPercent": 50, "skill": 14769300 }
+        }
+      ]
     }
   }
 }
