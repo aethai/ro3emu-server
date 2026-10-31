@@ -93,6 +93,12 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   34. A player who walks into a bubble of their note takes it and gains Bubble Movement 14720301 (+5% damage per stack);
   each bubble left at the end costs everyone 10% of their maximum HP (at most 50%) as Full-Arena Wave 14721101.
   Inferred: the phase threshold, the period, the window, standing bubbles instead of moving ones, the damage.
+- Nasha (3020102; 14740100/14740000/14740200), **Dance test** (tips 4618 'It's time for your test!' and 4611 'Reach your
+  performance position within ${1} seconds', 15 s; guide 1100201 Backup Dancers): 25 s into the fight and every 50 s
+  Nasha dances in place (14744200) while one Circle-Stepping Magic Circle 14740002 per player stands at the circle
+  creation points 601-623. A player inside a circle (2 m) at the end gets Perfect State 14742501 (+30% speed and damage)
+  and line 4616; one outside takes 35% as Dazzling Dance Step 14740500 and line 4615. Inferred: the timing, the circle
+  count, the damage; the four-direction step copying is not reproduced.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

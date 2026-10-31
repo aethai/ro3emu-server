@@ -22,8 +22,13 @@ public sealed partial class ReconstructedDungeons
     /// </summary>
     public enum TrialRule { Stand, Avoid, Shelter, Guard, Spread, Occupy, Collect, Kill, Carry }
 
-    /// <summary>Who an outcome reaches: the players who failed (or passed), everyone present, or the marked players.</summary>
-    public enum TrialWho { Failing, All, Marked, Passing }
+    /// <summary>Who an outcome reaches: the players who failed (or passed), everyone present, the marked players, or the
+    /// players inside an object left at the end (a ghost ship's lane).</summary>
+    public enum TrialWho { Failing, All, Marked, Passing, Inside }
+
+    /// <summary>What a trial object's interaction does: nothing (it is judged), hand its colour, or take the player to the
+    /// next object of its kind.</summary>
+    public enum TrialUse { None, Color, Warp }
 
     /// <summary>
     /// Where a trial's objects stand: scene-editor <paramref name="Points"/> or <paramref name="Regions"/> (their centres),
@@ -40,13 +45,13 @@ public sealed partial class ReconstructedDungeons
     /// A trial's objects. <paramref name="Npcs"/> lists one NPCConfig id per colour (the trial's <see cref="RaidTrial.Colors"/>);
     /// a single id has no colour. A <paramref name="Monster"/> is a destructible unit: <paramref name="Hits"/> damaging hits
     /// per present player destroy it whatever their damage (0: its own HP), and with <paramref name="Match"/> only a player
-    /// of its colour damages it. An <paramref name="Interaction"/> (NPCInteractConfig id of the NPC) hands the player the
-    /// object's colour. <paramref name="Chosen"/>: one object of them is the one that counts, shown by
+    /// of its colour damages it. An object with a <paramref name="Use"/> is not judged: its NPC's own 32700 interaction
+    /// hands the player the object's colour (Ilmo's notes) or takes the player to the next object of its kind (a wormhole). <paramref name="Chosen"/>: one object of them is the one that counts, shown by
     /// <paramref name="MarkBuff"/> for <paramref name="MarkMs"/> (0: the whole window). <paramref name="Lane"/>: the object's
     /// area is a rectangle (length, width) ahead of it along its facing instead of a circle.
     /// </summary>
     public sealed record TrialObject(IReadOnlyList<int> Npcs, TrialPlace Place, IReadOnlyList<int> Buffs, bool Monster, int Hits,
-        bool Match, int Interaction, bool Chosen, int MarkBuff, int MarkMs, (float Length, float Width)? Lane);
+        bool Match, TrialUse Use, bool Chosen, int MarkBuff, int MarkMs, (float Length, float Width)? Lane);
 
     /// <summary>
     /// A result: <paramref name="HpPercent"/> of the maximum HP of each player it reaches (with <paramref name="PerObject"/>,
@@ -141,7 +146,8 @@ public sealed partial class ReconstructedDungeons
         var place = new TrialPlace(Longs(at, "points"), Longs(at, "regions"), Int(at, "group"), Bool(at, "onMarked"), Bool(at, "onPlayers"),
             Bool(at, "atBoss"), Int(at, "count"), Int(at, "perPlayer"), Int(at, "min"), at.TryGetProperty("max", out var max) ? max.GetInt32() : int.MaxValue,
             Float(at, "inward"));
-        return new TrialObject(npcs, place, Ints(o, "buffs"), Bool(o, "monster"), Int(o, "hits"), Bool(o, "match"), Int(o, "interaction"),
+        return new TrialObject(npcs, place, Ints(o, "buffs"), Bool(o, "monster"), Int(o, "hits"), Bool(o, "match"),
+            o.TryGetProperty("use", out var use) ? Enum.Parse<TrialUse>(use.GetString()!, ignoreCase: true) : TrialUse.None,
             Bool(o, "chosen"), Int(o, "markBuff"), Int(o, "markMs"),
             o.TryGetProperty("lane", out var lane) ? (lane[0].GetSingle(), lane[1].GetSingle()) : null);
     }

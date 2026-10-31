@@ -144,8 +144,8 @@ public sealed class RaidTrialTests : IAsyncLifetime
                             {
                                 Assert.True(data.Row("NPCConfig", npc) != null, $"{where}: NPC {npc}");
                                 if (o.Monster) Assert.True(Service<MonsterService>().Template(npc) != null, $"{where}: {npc} cannot be a monster");
-                                if (o.Interaction != 0)
-                                    Assert.Contains(o.Interaction, Service<DungeonCatalog>().Interactions(npc));
+                                if (o.Use != ReconstructedDungeons.TrialUse.None)
+                                    Assert.NotEmpty(Service<DungeonCatalog>().Interactions(npc));
                             }
                             Assert.All(o.Buffs.Append(o.MarkBuff).Where(b => b != 0), b => Assert.True(data.Row("BuffConfig", b) != null, $"{where}: buff {b}"));
                             Assert.All(o.Place.Points, p => Assert.True(map.Points.ContainsKey(p), $"{where}: point {p}"));
@@ -165,7 +165,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
             Uid = 1, SceneEntry = 1, X = 0, Z = 0, Face = 0, NpcId = 1, Point = 0, EntityType = 4, Camp = 0, Name = "",
         };
         var spec = new ReconstructedDungeons.TrialObject([1], new ReconstructedDungeons.TrialPlace([], [], 0, false, false, false, 0, 0, 0, 0, 0),
-            [], false, 0, false, 0, false, 0, 0, (40, 6));
+            [], false, 0, false, ReconstructedDungeons.TrialUse.None, false, 0, 0, (40, 6));
         var lane = new DungeonService.TrialUnit { Unit = unit, Spec = spec };
         Assert.True(DungeonService.InTrialArea(lane, 3, 0, 20)); // ahead along its facing (0 degrees: +z)
         Assert.True(DungeonService.InTrialArea(lane, 3, 2.9f, 39));
@@ -192,6 +192,8 @@ public sealed class RaidTrialTests : IAsyncLifetime
         var actor = await BossIn(instance, boss);
         await OnLoop(async () =>
         {
+            // The boss's own blows are not under test: they barely scratch, so the trials' hits are what the player feels.
+            actor.Template = actor.Template with { Atk = 1, Matk = 1 };
             await Service<SceneService>().TeleportInMapAsync(Session(bot), new MapPoint(actor.X + 3, actor.Y, actor.Z, actor.Face));
             Service<MonsterService>().Engage(actor, Session(bot));
         });
@@ -250,5 +252,24 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(max * 30 / 100, hit.Dsts.Single().Damage);
         Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => bubbles.Contains(u.NpcId)));
         Assert.Equal(0, await BuffOf(alice, notes)); // the note ends with the concerto
+    }
+
+    private Task WalkTo(BotClient bot, WorldUnit at) => Gm(bot, FormattableString.Invariant($"!actors walk {at.X} {at.Z}"));
+
+    // Nasha's dance test: a dancer in a circle when the 15 s run out keeps up (Perfect State and her praise).
+    [ClientDataFact]
+    public async Task NashasDancerInTheCircleKeepsUp()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, _) = await RaidFight(alice, 100101, 2, 3020102, 14740100);
+        await Gm(alice, "!raidtrial 1");
+        await Tip(alice, 4618);
+        Assert.Equal("2", (await Tip(alice, 4611)).ParamList[1].Params[0]); // 15 s at the test pace: the window's seconds
+        var circle = Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 14740002));
+        Assert.Equal(4, circle.EntityType); // a trigger, as NPCConfig types it
+        await WalkTo(alice, circle);
+        await Tip(alice, 4616); // "someone who can keep up with my steps"
+        Assert.Equal(14742501, await BuffOf(alice, [14742501])); // Perfect State
+        Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 14740002));
     }
 }

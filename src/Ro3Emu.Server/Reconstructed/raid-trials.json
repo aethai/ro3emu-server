@@ -48,6 +48,44 @@
           "fail": { "who": "all", "hpPercent": 10, "perObject": true, "capPercent": 50, "skill": 14721101, "why": "each bubble left reaches the orb" }
         }
       ]
+    },
+    "nasha": {
+      "name": "Nasha (Realm of the Gods 3020102)",
+      "bosses": [14740100, 14740000, 14740200],
+      "evidence": [
+        "ChatConfig 4618 'Ta-da! It's time for your test!', 4611 (CombatCountdownTip, 15 s) 'Reach your performance position within ${1} seconds', 4616 'Wonderful... Finally, someone who can keep up with my steps...', 4615 'Too slow! Go practice and come back later...'.",
+        "TenChallengeHandbookIDConfig 1100201 Backup Dancers: move into the glowing circle within 15 s and follow Nysha's steps; 1100202 Dazzling Dance Step: damage outside the spotlights.",
+        "NPCConfig 14740002 'Circle-Stepping Magic Circle' (type 4, interaction distance 2 m); scene editor sc_pm_shirenben_001_dg02 points 601-623 'circle creation points' on a 10 m grid in front of the boss.",
+        "BuffConfig 14742501 Perfect State (+30% movement speed, +30% damage, 30 s), the reward of a correct dance step; skill 14744200 'Dance Machine_New' (14.66 s), skill 14740500 Dazzling Dance Step.",
+        "BGM Boss2_Dance: a separate dance phase."
+      ],
+      "guessed": [
+        "The dance test comes 25 s into the fight and every 50 s; Nasha holds still dancing (14744200) for its 15 s.",
+        "One circle per player (at least one) at random circle creation points; a player inside any circle (2 m) when the time runs out keeps up and gets Perfect State; one outside takes 35% of their maximum HP as Dazzling Dance Step.",
+        "The four-direction step copying (Dance Move skills, rhythm buttons) is not reproduced: reaching the circle is the test."
+      ],
+      "trials": [
+        {
+          "name": "Dance test",
+          "why": "tips 4618 and 4611 and the guide's Backup Dancers: reach your performance position in 15 s",
+          "start": { "firstMs": 25000, "everyMs": 50000 },
+          "tips": [4618, 4611],
+          "tipParam": "countdown",
+          "windowMs": 15000,
+          "boss": { "hold": true, "show": 14744200 },
+          "objects": [
+            {
+              "npc": 14740002,
+              "why": "the Circle-Stepping Magic Circle at the circle creation points",
+              "at": { "points": [601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622, 623], "perPlayer": 1, "min": 1, "max": 10 }
+            }
+          ],
+          "rule": "stand",
+          "radius": 2,
+          "success": { "who": "passing", "buff": 14742501, "buffMs": 30000, "say": 4616, "why": "a dancer who keeps up" },
+          "fail": { "who": "failing", "hpPercent": 35, "skill": 14740500, "say": 4615, "why": "left in the dark: Dazzling Dance Step" }
+        }
+      ]
     }
   }
 }

@@ -57,7 +57,7 @@ public sealed partial class DungeonService
         public int Color { get; init; } = -1;
         public bool Chosen { get; init; }
         public bool Gone { get; set; }
-        public bool Pickup => Spec.Interaction != 0;
+        public bool Pickup => Spec.Use != ReconstructedDungeons.TrialUse.None;
     }
 
     /// <summary>The trials' destructible monsters, for the damage rules (their colour, their hits).</summary>
@@ -230,14 +230,14 @@ public sealed partial class DungeonService
                 : spec.Place.PerPlayer > 0 ? Math.Clamp(spec.Place.PerPlayer * fighters.Length, spec.Place.Min, spec.Place.Max)
                 : places.Count;
             bool everyPlace = spec.Place.OnMarked || spec.Place.OnPlayers || spec.Place.AtBoss;
-            var drawn = everyPlace ? places : [.. places.OrderBy(_ => Random.Shared.Next()).Take(wanted)];
+            var drawn = everyPlace || wanted >= places.Count ? places : [.. places.OrderBy(_ => Random.Shared.Next()).Take(wanted)];
             int chosen = spec.Chosen && drawn.Count > 0 ? Random.Shared.Next(drawn.Count) : -1;
             for (int i = 0; i < drawn.Count; i++)
             {
                 // A coloured object takes the colours the players hold in turn (every one of them can be matched); a pickup
                 // stands for its own colour; without dealt colours they are mixed at random.
                 int color = spec.Npcs.Count <= 1 ? -1
-                    : spec.Interaction != 0 ? i % spec.Npcs.Count
+                    : spec.Use != ReconstructedDungeons.TrialUse.None ? i % spec.Npcs.Count
                     : heldColors.Length > 0 ? heldColors[i % heldColors.Length] : Random.Shared.Next(spec.Npcs.Count);
                 int npc = color >= 0 ? spec.Npcs[color] : spec.Npcs[0];
                 var at = map.Grounded(drawn[i]);
@@ -251,7 +251,7 @@ public sealed partial class DungeonService
                 {
                     int markMs = spec.MarkMs > 0 ? (int)PacedMs(spec.MarkMs) : (int)PacedMs(run.Trial.WindowMs);
                     if (unit is MonsterUnit chosenMonster) await _buffs.AddSupportAsync(chosenMonster, spec.MarkBuff, markMs, boss.Uid);
-                    else if (unit is SceneActorUnit actor) await SetActorBuffsAsync(actor, [.. spec.Buffs, spec.MarkBuff]);
+                    else if (unit is SceneActorUnit actor) await SetActorBuffsAsync(actor, [.. actor.Buffs.Select(b => b.ConfigId), spec.MarkBuff]);
                 }
             }
         }
@@ -285,7 +285,11 @@ public sealed partial class DungeonService
             EntityType = type, Camp = row.Camp, Name = type == 2 && row.Name.Length > 0 ? _data.Text(row.Name[0]) : "",
             Template = type == 1 ? _monsters.Template(npc) : null, BornMs = MonsterService.NowMs,
         };
-        unit.Buffs.AddRange(buffs.Select(id => ActorBuff(unit, id)));
+        // Its standing buffs as a monster has them from birth (NPCConfig _kBornEventBuff: a bell's glow, a circle's note), then
+        // the trial's own; only rows the client has.
+        var shown = row.BornEventBuff.Where(b => b.Length > 0).Select(b => (int)b[0]).Concat(buffs).Distinct()
+            .Where(id => BuffConfig.Get(_data, id) is { BuffId: > 0 });
+        unit.Buffs.AddRange(shown.Select(id => ActorBuff(unit, id)));
         return await _instances.AddPropAsync(a.Room, unit) ? unit : null;
     }
 
@@ -339,14 +343,25 @@ public sealed partial class DungeonService
             }
     }
 
-    /// <summary>A trial's pickup (an object with an interaction, Ilmo's notes): 32700 hands the player its colour.</summary>
+    /// <summary>A trial's object with a use (its NPC's own interaction, NPCConfig _iInteractID): 32700 hands the player its
+    /// colour (Ilmo's notes) or takes the player to the next object of its kind (the wormholes, inferred: their interaction
+    /// skill says "Emerges from the other end of the Wormhole").</summary>
     private async Task<bool> TryTrialInteractAsync(GameSession s, NpcInteractionReq req)
     {
         if (Active(s) is not { Raid.Active: { } run } || run.Objects.FirstOrDefault(o => o.Unit.Uid == req.NpcUid) is not { } o) return false;
-        int code = !o.Pickup || o.Gone || req.InteractionId != o.Spec.Interaction ? ErrorCodes.NpcParameter
+        int code = !o.Pickup || o.Gone || o.Unit is not SceneActorUnit actor || !_catalog.Interactions(actor.NpcId).Contains(req.InteractionId)
+            ? ErrorCodes.NpcParameter
             : MonsterService.Distance(s.Position.X, s.Position.Z, o.Unit.X, o.Unit.Z) > SceneActorReach ? ErrorCodes.NpcTooFar : 0;
         await s.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = code, Req = req });
-        if (code == 0 && o.Color >= 0) await SetColorAsync(s, run.Trial, o.Color, (int)Math.Max(1000, run.EndsAtMs - MonsterService.NowMs + 2000), run.Boss.Uid);
+        if (code != 0) return true;
+        if (o.Spec.Use == ReconstructedDungeons.TrialUse.Color && o.Color >= 0)
+            await SetColorAsync(s, run.Trial, o.Color, (int)Math.Max(1000, run.EndsAtMs - MonsterService.NowMs + 2000), run.Boss.Uid);
+        else if (o.Spec.Use == ReconstructedDungeons.TrialUse.Warp)
+        {
+            var kind = run.Objects.Where(x => ReferenceEquals(x.Spec, o.Spec) && !x.Gone).ToList();
+            var to = kind[(kind.IndexOf(o) + 1) % kind.Count].Unit;
+            if (!ReferenceEquals(to, o.Unit)) await _scenes.TeleportInMapAsync(s, new MapPoint(to.X + 1, to.Y, to.Z, s.Face));
+        }
         return true;
     }
 
@@ -497,6 +512,8 @@ public sealed partial class DungeonService
         {
             Who.All => fighters,
             Who.Marked => [.. fighters.Where(p => run.Marked.Contains(p.Role!.Id))],
+            Who.Inside => [.. fighters.Where(p => run.Objects.Any(o => !o.Gone && !o.Pickup
+                && InTrialArea(o, run.Trial.Radius, p.Position.X, p.Position.Z)))],
             _ => chosen,
         };
         int percent = outcome.PerObject ? Math.Min(outcome.CapPercent, outcome.HpPercent * Math.Max(1, left)) : outcome.HpPercent;
