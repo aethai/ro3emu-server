@@ -224,7 +224,7 @@ public sealed class PanelPlayersTests : IAsyncLifetime
         bagGuid = saved.Single(i => i.Entry == 3990001).Guid;
 
         // The exchange's records as TradeService writes them (market_record JSON): one listing whose escrowed instance
-        // carries the guid of the bag's stack (a duplicate), and two sales on different UTC days (two days and one hour back, so never the same day).
+        // carries the guid of the bag's stack (more than the ledger let in), and two sales on different UTC days (two days and one hour back, so never the same day).
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var listing = new TradeService.Listing
         {
@@ -281,7 +281,9 @@ public sealed class PanelPlayersTests : IAsyncLifetime
         Assert.Equal(["Bag", "Exchange"], trace.GetProperty("holders").EnumerateArray().Select(h => h.GetProperty("place").GetString()).Order());
         Assert.All(trace.GetProperty("holders").EnumerateArray(), h => Assert.Equal("Merchant", h.GetProperty("owner").GetString()));
         var kinds = trace.GetProperty("flags").EnumerateArray().Select(f => f.GetProperty("kind").GetString()).ToList();
-        Assert.Contains("Instance seen twice", kinds);
+        // One seller's bag stack and an exchange listing with its guid is what a partial listing looks like, so the shared
+        // instance alone flags nothing (AntiCheatPanelTests has the two-owner case); the count does.
+        Assert.DoesNotContain("Instance seen twice", kinds);
         var ledger = trace.GetProperty("ledger");
         // The ledger saw the GM grant of 3; the listing's 2 came from nowhere it recorded.
         Assert.Contains(ledger.GetProperty("entries").GetInt32() > 0 ? "Exceeds ledger" : "Unrecorded", kinds);

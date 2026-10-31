@@ -61,7 +61,8 @@ public sealed partial class PanelSite
         _signUps = new PanelSignUps(options, clock);
         _proxies = [.. options.TrustedProxies.Select(IPAddress.Parse).Select(Normalize)];
         _routes = [.. PublicRoutes(), .. PlayerRoutes(), .. AdminRoutes(), .. ToolRoutes(), .. DatabaseRoutes(), .. CharacterRoutes(),
-            .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. UpdateRoutes(), .. PlayerPageRoutes(), .. WikiRoutes()];
+            .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. UpdateRoutes(), .. PlayerPageRoutes(), .. WikiRoutes(),
+            .. SuspicionRoutes()];
     }
 
     /// <summary>

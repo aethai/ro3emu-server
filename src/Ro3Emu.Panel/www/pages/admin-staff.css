@@ -88,3 +88,6 @@
 .release-notes summary{cursor:pointer;font-size:var(--t-sm);font-weight:700;color:var(--blue-ink)}
 .release-text{max-height:360px;overflow:auto;margin-top:var(--s2);padding:var(--s3);border:1px solid var(--line);border-radius:var(--r2);
   background:var(--surface-sub);font-size:var(--t-sm);white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* suspicious activity: an account's refusals by kind under the row's detail */
+.counts{flex-wrap:wrap;gap:var(--s1);margin-top:var(--s1)}
