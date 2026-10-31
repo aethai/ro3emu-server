@@ -436,6 +436,9 @@ Ro3Emu.Server.Accounts.Persistence.ProgressionEconomyTransactionPlan/<child>P
 Ro3Emu.Server.Accounts.Persistence.ProgressionEconomyTransactionPlan/<mutation>P
 Ro3Emu.Server.Accounts.Persistence.ProgressionEconomyTransactionPlan/isReplay
 Ro3Emu.Server.Accounts.Persistence.ProgressionEconomyTransactionPlan/pendingAcknowledgementFault
+Ro3Emu.Server.Accounts.Persistence.PronteraDefenseGuildPrepPlan/<exp>P
+Ro3Emu.Server.Accounts.Persistence.PronteraDefenseGuildPrepPlan/<guild>P
+Ro3Emu.Server.Accounts.Persistence.PronteraDefenseGuildPrepPlan/<open>P
 Ro3Emu.Server.Accounts.Persistence.PronteraDefensePointPlan/<map>P
 Ro3Emu.Server.Accounts.Persistence.PronteraDefensePointPlan/<open>P
 Ro3Emu.Server.Accounts.Persistence.PronteraDefensePointPlan/<point>P

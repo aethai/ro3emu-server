@@ -293,6 +293,11 @@ public sealed class TimedEventTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.FunctionLocked,
             (await Next(bot, NewActivityService.Common, CommonActivityRes.Parser)).Result);
         await Gm(bot, "!lvl 99");
+        // The widget only donates for a guild member (_checkCanDonate: HaveGuild).
+        await bot.SendGameAsync(NewActivityService.Common, request);
+        Assert.Equal(ErrorCodes.NotInGuild,
+            (await Next(bot, NewActivityService.Common, CommonActivityRes.Parser)).Result);
+        long guild = await FoundGuildAsync(bot);
         await bot.SendGameAsync(NewActivityService.Common, request);
         Assert.Equal(ErrorCodes.ItemsShort,
             (await Next(bot, NewActivityService.Common, CommonActivityRes.Parser)).Result);
@@ -355,6 +360,53 @@ public sealed class TimedEventTests : IAsyncLifetime
         var saved = Service<RoleStore>().LoadTimedActivity(role);
         Assert.NotNull(saved);
         Assert.Contains("ContributionPoint", System.Text.Encoding.UTF8.GetString(saved));
+        // The two supplies are the guild's preparation exp: level 1, 2/1000 on the bar.
+        var info = await OnLoop2(() => Service<PronteraDefenseService>().BuildPlayerState(Session(bot)).GlobalInfo.GuildInfo[guild]);
+        Assert.Equal((1, 2, 2), (info.GuildPrepLv, info.GuildPrepExp, info.GuildContribution));
+        using (var db = Service<AccountStore>().Open())
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT exp FROM prontera_defense_guild_prep WHERE guild_id=$guild";
+            cmd.Parameters.AddWithValue("$guild", guild);
+            Assert.Equal(2L, cmd.ExecuteScalar());
+        }
+        // On a Battle for Prontera map (PronteraDefenseMapConfig 10101) a member carries level 1's buff 8000101.
+        using (var sw = bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine)))
+        {
+            await Gm(bot, "!warp 10101");
+            await sw.WaitAsync(TimeSpan.FromSeconds(8));
+        }
+        using (var buff = bot.Inbox.Expect(e => e.IsGame(BuffService.BuffUpdate)
+            && BuffUpdateNotify.Parser.ParseFrom(e.Body).Buffs.Any(b => b.ConfigId == 8000101)))
+        {
+            await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 10101 });
+            await buff.WaitAsync(TimeSpan.FromSeconds(8));
+        }
+    }
+
+    [ClientDataFact]
+    public void GuildPreparationFillsEachLevelsBarAndCarriesTheRest()
+    {
+        var data = Service<GameData>();
+        // PronteraDefenseGuildPrepConfig: levels 1-5, _iExp 1000/2000/3000/4000/5000.
+        Assert.Equal((1L, 0L), PronteraDefenseService.PrepLevel(data, 0));
+        Assert.Equal((1L, 999L), PronteraDefenseService.PrepLevel(data, 999));
+        Assert.Equal((2L, 0L), PronteraDefenseService.PrepLevel(data, 1000));
+        Assert.Equal((3L, 500L), PronteraDefenseService.PrepLevel(data, 3500));
+        Assert.Equal((5L, 0L), PronteraDefenseService.PrepLevel(data, 10000));
+        Assert.Equal((5L, 7000L), PronteraDefenseService.PrepLevel(data, 17000));
+    }
+
+    private Task<T> OnLoop2<T>(Func<T> work) => Service<GameLoop>().InvokeAsync(() => Task.FromResult(work()));
+
+    private static async Task<long> FoundGuildAsync(BotClient leader)
+    {
+        await leader.SendGameAsync(GuildService.Create, new GuildCreateReq
+        {
+            Name = "Testers", Icon = new GuildHeadIcon { BackgroundType = 100101, IconType = 200101 },
+        });
+        Assert.Equal(0, (await Next(leader, GuildService.Create, GuildCreateResp.Parser)).Result);
+        return (await Next(leader, GuildService.Full, GuildFullInfoNtf.Parser, n => n.Guid > 0)).Guid;
     }
 
     [ClientDataTheory]

@@ -17,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// placement/once-per-seed collection are (inferred) because the scene editor has no static NPCs and
 /// CampFirePosition is an empty export.
 /// </summary>
-public sealed class GuildCampfireService : IGameTicker
+public sealed partial class GuildCampfireService : IGameTicker
 {
     public const uint Lucky = 83240, Stage = 83241, Info = 83242, Accelerant = 83243,
         PlayerInfo = 83244, Fruit = 83245, Hurray = 83246, BossDead = 83247, Finish = 83248;
@@ -69,8 +69,9 @@ public sealed class GuildCampfireService : IGameTicker
     public GuildCampfireService(GameData data, AccountStore accounts, CharacterService character, BuffService buffs,
         FunctionService functions, TimedTodoSchedule schedule, ActivityClock clock, TimeProvider time,
         InstanceService instances, SceneService scene, WorldData maps, CombatService combat, GameLoop loop,
-        GuildHomeService home)
+        GuildHomeService home, AwardService awards)
     {
+        this._awards = awards;
         this._data = data; this._accounts = accounts; this._character = character; this._buffs = buffs;
         this._functions = functions; this._schedule = schedule; this._clock = clock; this._time = time;
         this._instances = instances; this._maps = maps; this._combat = combat;
@@ -88,6 +89,8 @@ public sealed class GuildCampfireService : IGameTicker
         public HashSet<int> DrawnStages { get; set; } = new();
         public bool BossDead { get; set; }
         public Dictionary<int, int> FruitKills { get; set; } = new();
+        /// <summary>The stages whose prize draw ran (GuildCampfireService.Bonus.cs).</summary>
+        public HashSet<int> PrizeStages { get; set; } = [];
     }
 
     private StateData Read(long guildId)
@@ -247,10 +250,6 @@ public sealed class GuildCampfireService : IGameTicker
     private long MaxExp() => _data.Table("CampFireLevel").Values
         .Select(r => GameData.Int(r, "_iExp")).DefaultIfEmpty(300).Max();
 
-    private int Level(long exp) => _data.Table("CampFireLevel").Values
-        .Where(r => exp >= GameData.Int(r, "_iExp"))
-        .Select(r => (int)GameData.Int(r, "_iLevel")).DefaultIfEmpty(0).Max();
-
     private int Show(long guild, int stage)
     {
         var shows = _data.Table("CampFireShow").Values.Select(r => (int)GameData.Int(r, "_iShowId"))
@@ -266,7 +265,7 @@ public sealed class GuildCampfireService : IGameTicker
         int stage = CurrentStage();
         var result = new GuildCampFireStageInfo
         {
-            NowStage = stage, StartTime = StartTime(), BossDead = Read(guild).BossDead,
+            NowStage = stage, StartTime = StartTime(), BossDead = Read(guild).BossDead, NowHenshinType = HenshinType(guild, stage),
         };
         int show = stage is >= 2 and <= 4 ? Show(guild, stage) : 0;
         if (show > 0)
@@ -296,6 +295,7 @@ public sealed class GuildCampfireService : IGameTicker
         var view = new AoIViewChangeData();
         AddNpc(view, room, 413, 7020004, fire);
         if (stage == 1) AddSeeds(view, room);
+        AddManuals(view, room);
         await session.SendGameAsync(GameAoiSink.SyncAoiView, view);
         await session.SendGameAsync(Stage, StageInfo(GuildId(session)!.Value));
         await PlayerInfoAsync(session);
@@ -333,6 +333,7 @@ public sealed class GuildCampfireService : IGameTicker
         else if (pointId == 413)
             error = req.InteractionId == 41002101 && FirePoint() is { } fire && Near(session, fire, 10)
                 ? 0 : ErrorCodes.NpcParameter;
+        else if (IsManualPoint(pointId)) error = await UseManualAsync(session, room!, req);
         else
         {
             var seed = SeedAt(pointId);
@@ -408,6 +409,7 @@ public sealed class GuildCampfireService : IGameTicker
     {
         int error = await AddAccelerantAsync(session, req);
         await session.SendGameAsync(Accelerant, new GuildCampFireAddAccelerantRsp { Result = error });
+        if (error == 0 && RoomFor(session) is { } here) await PerformFuelAsync(session, here, req.AcceleantCfgId);
         if (error == 0 && CurrentStage() is >= 2 and <= 4 && RoomFor(session) is { } room
             && GuildId(session) is { } guild) await DrawAsync(guild, room, CurrentStage());
     }
@@ -467,6 +469,8 @@ public sealed class GuildCampfireService : IGameTicker
             _sentStage.Remove(closed);
             Forget(closed);
         }
+        FinishPerformances();
+        ExpireManuals(second);
         if (live.Count == 0) return;
         long day = Today();
         // Pitfall 1: home rooms exist at any hour. Outside the event window nothing is pushed, except the Finish of
@@ -482,6 +486,7 @@ public sealed class GuildCampfireService : IGameTicker
             bool fresh = seen == 0;
             _loop.TrackLegacyDetached("campfire stage", () => AdvanceAsync(guild, room, stage, day, fresh));
         }
+        RunDueDraws(live.Select(r => (r.Guild, r.Room)), stage, day, second);
     }
 
     /// <summary>Drop a room's transient fruit/boss bookkeeping (its actors are cleared separately).</summary>
@@ -492,6 +497,7 @@ public sealed class GuildCampfireService : IGameTicker
         foreach (var key in _fruitCreated.Keys.Where(k => k.Room == roomId).ToArray())
         { _fruitCreated.Remove(key); _fruitInitialKills.Remove(key); }
         foreach (var id in _fruitActors.Where(p => p.Value.Room == roomId).Select(p => p.Key).ToArray()) _fruitActors.Remove(id);
+        foreach (var id in _manuals.Where(p => p.Value.Room == roomId).Select(p => p.Key).ToArray()) _manuals.Remove(id);
     }
 
     /// <summary>Pitfall 2: a long-lived home room starts each event day (and ends each event) without the previous
@@ -613,17 +619,14 @@ public sealed class GuildCampfireService : IGameTicker
                 state.FruitKills[fruit.Stage] = state.FruitKills.GetValueOrDefault(fruit.Stage) + 1;
                 await SaveAsync(fruit.Guild, state, killer);
                 _fruitActors.Remove(monster.Uid);
-                if (Open(killer) && CurrentStage() == fruit.Stage && FruitPlan(fruit.Stage) is { } plan
-                    && await SpawnOneFruitAsync(fruit.Guild, fruitRoom, fruit.Stage, plan) is { } child)
+                if (Open(killer) && CurrentStage() == fruit.Stage)
                 {
                     var notice = new GuildCampFireCreateMonsterFruitNotify { DeadPosiiton = monster.Pos };
-                    notice.Infos.Add(new CreateMonsterFruitInfo { NpcGuid = child.Uid, CreatePosition = child.Pos });
-                    foreach (var member in fruitRoom.ActiveMembers)
-                    {
-                        var session = member.Session;
-                        if (session.SceneEntry == Dungeon && !session.SceneLoading)
-                            await session.SendGameAsync(Fruit, notice);
-                    }
+                    if (FruitPlan(fruit.Stage) is { } plan
+                        && await SpawnOneFruitAsync(fruit.Guild, fruitRoom, fruit.Stage, plan) is { } child)
+                        notice.Infos.Add(new CreateMonsterFruitInfo { NpcGuid = child.Uid, CreatePosition = child.Pos });
+                    await DropManualsAsync(fruitRoom, monster.Pos, notice);
+                    if (notice.Infos.Count > 0) await ToRoomAsync(fruitRoom, Fruit, notice);
                 }
             }
             finally { Gate(fruit.Guild).Release(); }
@@ -686,14 +689,8 @@ public sealed class GuildCampfireService : IGameTicker
             int buff = buffIds[Random.Shared.Next(buffIds.Length)];
             state.DrawnStages.Add(stage);
             await SaveAsync(guild, state, winner);
+            // (inferred) No 83240 here: its panel is the prize draw's (First/Second/Third Prize, GuildCampfireService.Bonus.cs).
             await _buffs.AddAsync(winner, buff, 0, winner.Role!.Id);
-            var notice = new GuildCampFireLuckyPlayerNotify { AwardLevel = Level(state.Exp) };
-            notice.PlayerList.Add(new GuildCampFireLuckyPlayerInfo { PlayerId = winner.Role.Id, BuffId = buff });
-            foreach (var member in room.ActiveMembers)
-            {
-                var session = member.Session;
-                if (session.SceneEntry == Dungeon && !session.SceneLoading) await session.SendGameAsync(Lucky, notice);
-            }
         }
         finally { Gate(guild).Release(); }
     }
