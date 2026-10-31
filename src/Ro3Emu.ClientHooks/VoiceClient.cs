@@ -16,8 +16,9 @@ namespace Ro3Emu.ClientHooks
     /// (ClientTools VoiceStubPatch) keeps its own join/leave bookkeeping and Lua OnJoinChannel/OnLeaveChannel, and also
     /// calls the static methods here with the same arguments as Lua gave it.
     /// <list type="bullet">
-    /// <item>JoinChannel (team channels only: the team id in decimal) asks the game server for a ticket (77015), connects
-    /// to the relay the ticket names (77016), authenticates and joins. One connection; Leave closes it.</item>
+    /// <item>JoinChannel (a party: its team id in decimal; a guild channel "2_&lt;guild&gt;_&lt;index&gt;"; a Tavern room: its
+    /// guid in decimal) asks the game server for a ticket (77015), connects to the relay the ticket names (77016),
+    /// authenticates and joins. One connection; Leave closes it.</item>
     /// <item>SetMicrophoneMute / SetSpeakerMute become Mic / Speaker on the relay and start or stop capture and playback.
     /// The relay echoes MicState to the sender too, and that echo is what turns on the client's Talk state.</item>
     /// <item>Relay events become the VoiceCall_Util callbacks GME used to fire: OnMemberChange, OnMemberMicMute
@@ -401,8 +402,9 @@ namespace Ro3Emu.ClientHooks
             manager.Obf_OD(tips, "PopCommonTips", text);
         }
 
-        /// <summary>What the relay serves: a party (its team id) or a guild voice channel "2_&lt;guildId&gt;_&lt;index&gt;"
-        /// (LC_VoiceHelper.GetGuildVoiceChannelId); the relay checks the rest (Ro3Emu.Server.Voice.VoiceRoomKey).</summary>
+        /// <summary>What the relay serves: a party (its team id) or a Tavern room (its guid), both in decimal, or a guild
+        /// voice channel "2_&lt;guildId&gt;_&lt;index&gt;" (LC_VoiceHelper.GetGuildVoiceChannelId); the relay checks the rest
+        /// (Ro3Emu.Server.Voice.VoiceRoomKey).</summary>
         private static bool IsServedChannel(string channel)
         {
             if (IsDigits(channel)) return true;

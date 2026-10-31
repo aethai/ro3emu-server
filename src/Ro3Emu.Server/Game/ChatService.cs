@@ -152,7 +152,8 @@ public sealed partial class ChatService
     {
         if (!GuildAllowed(session, req.GroupId))
         {
-            await session.SendGameAsync(JoinChannel, new JoinChatChannelRsp { Result = ErrorCodes.NotInGuild, Req = req });
+            int refusal = req.GroupId.StartsWith(TavernPrefix, StringComparison.Ordinal) ? ErrorCodes.TavernNotInRoom : ErrorCodes.NotInGuild;
+            await session.SendGameAsync(JoinChannel, new JoinChatChannelRsp { Result = refusal, Req = req });
             return;
         }
         bool newlyJoined = Join(session, req.GroupId);
@@ -176,6 +177,9 @@ public sealed partial class ChatService
 
     private bool GuildAllowed(GameSession session, string group)
     {
+        if (group.StartsWith(TavernPrefix, StringComparison.Ordinal))
+            return long.TryParse(group.AsSpan(TavernPrefix.Length), out long room) && room > 0 && group == TavernPrefix + room
+                && session.Role != null && TavernMember?.Invoke(session.Role.Id, room) == true;
         if (group.StartsWith("5_", StringComparison.Ordinal))
             return long.TryParse(group.AsSpan(2), out long groupId) && groupId > 0 && group == $"5_{groupId}"
                 && session.Role != null && _friends.Group(groupId.ToString()) is { } chatGroup
@@ -187,6 +191,29 @@ public sealed partial class ChatService
     }
 
     public void GuildMembershipChanged(GameSession session, long formerGuildId) => Leave(session, $"2_{formerGuildId}");
+
+    /// <summary>A Tavern room's chat is public channel 10, group "10_&lt;guid&gt;" (LC_ChatHelper, ChatChannelType
+    /// EChannelBarRoom); only the room's members may join it or write there (TavernService).</summary>
+    public const string TavernPrefix = "10_";
+
+    /// <summary>Whether role may use Tavern room guid's channel; set by TavernService.</summary>
+    public Func<long, long, bool>? TavernMember { get; set; }
+
+    /// <summary>A member left (or was removed from) a Tavern room: its subscription goes before the next line.</summary>
+    public void TavernLeft(GameSession session, long room) => Leave(session, TavernPrefix + room);
+
+    /// <summary>A Tavern room closed: its channel and the lines kept for late joiners go with it.</summary>
+    public void TavernClosed(long room)
+    {
+        string group = TavernPrefix + room;
+        lock (_sync)
+        {
+            _recent.Remove((group, 0));
+            if (_groups.Remove(group, out var members))
+                foreach (var member in members) member.ChatGroups.Remove(group);
+        }
+    }
+
     /// <summary>Friend group removal revokes an already joined IM channel before the next message.</summary>
     public void FriendMembershipChanged(GameSession session, string formerGroupId) => Leave(session, $"5_{formerGroupId}");
     private readonly Dictionary<(string Group, long Runtime), Queue<TextChatMessage>> _recent = new();

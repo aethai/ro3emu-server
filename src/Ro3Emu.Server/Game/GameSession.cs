@@ -256,6 +256,9 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>Chat emoticons unlocked by items (5041, role blob "emoji_info"); EmojiService.</summary>
     public Romsg.DBEmojiInfo? EmojiInfo { get; set; }
 
+    /// <summary>Tavern Star Power, active days and today's time in a room (5043, role blob "barroom"); TavernService.</summary>
+    public TavernService.RoleState? Tavern { get; set; }
+
     /// <summary>Profile card presets and 620 item unlocks (5016, role blob "personal"; other unlockInfos are derived); PersonalService.</summary>
     public Romsg.DBPersonalInfo? Personal { get; set; }
 

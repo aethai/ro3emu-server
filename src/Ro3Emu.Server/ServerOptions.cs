@@ -225,6 +225,13 @@ public sealed class ServerOptions
     public int TitleCrestPercent { get; set; } = 25;
 
     /// <summary>
+    /// (inferred) Every Tavern active day (20 minutes in a room) also brings one higher drink: Grape Wine every 7th
+    /// active day, Craft Brew every 3rd, Gingerbread otherwise (TavernService). The client data gives only Hot Cocoa a
+    /// source (the daily quest's award); false leaves it at that.
+    /// </summary>
+    public bool TavernDayDrinks { get; set; } = true;
+
+    /// <summary>
     /// (inferred) Seconds from a raid boss fight's start to its enrage, against which the Final Trial "more than N minutes
     /// remaining until enrage" honors (TenGameplayFinalTrialConfig, condition 7004) are judged. The enrage timer lives in
     /// the boss's server script, which the client does not carry.
@@ -402,6 +409,10 @@ public sealed class VoiceOptions
 
     /// <summary>Members a single voice room (one party/team) may hold.</summary>
     public int MaxRoomSize { get; set; } = 40;
+
+    /// <summary>Listeners a Tavern room's voice may hold. The room itself takes PublicParamConfig.BarroomPersonNum (1000)
+    /// members; (inferred) the relay bounds its own fan-out, everyone past this keeps the room's text chat.</summary>
+    public int MaxTavernRoomSize { get; set; } = 200;
 
     /// <summary>Audio frames a connection may send per second before the token bucket drops the extra ones.</summary>
     public int FramesPerSecond { get; set; } = 50;
