@@ -477,7 +477,7 @@ held changes by exactly the ledger's sources minus its sinks.
 
 | Flag | When |
 |---|---|
-| Instance seen twice | one instance guid is in two places. A guid is unique in the item table, and a clone in escrow or mail keeps its guid only while the table row is gone |
+| Instance seen twice | one instance guid is in two places. A guid is unique in the item table, and a clone in escrow or mail keeps its guid only while the table row is gone. One character's stack and the part of it they listed (an exchange listing, a stall offer, a stall's partial take-back mail) share the guid by design and are not flagged |
 | Exceeds ledger | more is held than the ledger's sources minus its sinks |
 | Unrecorded | the item is held but the ledger never recorded it |
 
@@ -550,6 +550,25 @@ proxy's.
 - **Load.** The online list is read on the game loop at most once every 5 seconds, the level board from the database
   at most every 30; the other boards are RankService's own cache. Heavy traffic does not reach the loop.
 
+## Suspicious activity
+
+**Suspicious activity** (`/admin/suspicious`, moderators and up) lists what the server's anti-cheat saw over a window
+(1 hour by default; the page switches between 1 h, 6 h, 24 h and 7 days). It is read only. What the server checks is in
+[anti-cheat](../systems/anticheat.md).
+
+| Alert | Listed when |
+|---|---|
+| Refused requests | an account had at least `Alerts:Refusals` (20) requests refused as forged or impossible in the window. The row names the character with the most and the counts by kind (`walk`, `flight`, `flood`, `quest-area`, ...) |
+| Zeny gain | a character gained Zeny from the game (the ledger's source legs) past `Alerts:GainFactor` (10) times the median of the characters that gained any in the window, and at least `Alerts:ZenyFloor` |
+| Item gain | the same for items, all items counted together; floor `Alerts:ItemFloor` |
+| EXP gain | the same for base EXP, from `anticheat_exp` (the ledger has no EXP); floor `Alerts:ExpFloor` |
+| Duplication | the duplication check's *Exceeds ledger* and *Instance seen twice* flags, when an Admin adds the check (it reads every holding) |
+
+Each row links to the account and the character, or to the item for a duplication. The thresholds are server options
+(`Ro3Emu:AntiCheat:Alerts`); the page shows the ones in force and the medians. The same refusals are in the server log as
+`Anticheat <kind> account <name> role <id> <character>: <detail>`: the first five of each account and kind, then every
+50th.
+
 ## What it stores
 
 | Table | What |
@@ -561,6 +580,7 @@ proxy's.
 | `account_totp` | each account's two-factor secret, last used step and recovery code hashes |
 | `feedback_triage`, `feedback_note` | the report inbox's status, assignee and notes |
 | `panel_setting` | maintenance mode |
+| `anticheat_refusal`, `anticheat_exp` | the anti-cheat's refusal counts and the EXP per character and hour, kept `AntiCheat:KeepDays` (30) days |
 
 They are created by the server at startup like its other tables and are part of every backup. The update manager keeps
 its files outside the database, in `data/updates/` ([Updates](#updates)).

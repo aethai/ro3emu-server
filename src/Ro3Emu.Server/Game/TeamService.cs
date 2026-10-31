@@ -92,6 +92,13 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         foreach (var handler in RosterChanged) await handler(roles);
     }
 
+    /// <summary>
+    /// ChatService.TeamChannelAllowed: a party's channel is its members'; an id that is no party (a Survivor team, whose ids are
+    /// small, while party ids start at 2^24) stays open.
+    /// </summary>
+    public bool ChannelAllowed(GameSession s, long teamId) =>
+        !_teams.ContainsKey(teamId) || s.Role is { } role && TeamOf(role.Id).TeamId == teamId;
+
     /// <summary>The party a role is in: (team id, leader), or (0, the role itself) when solo.</summary>
     public (long TeamId, long Leader) TeamOf(long role) =>
         _byMember.TryGetValue(role, out var team) ? (team.Id, team.Leader) : (0, role);

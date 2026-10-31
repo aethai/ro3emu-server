@@ -194,8 +194,20 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>Time of the last accepted walk (speed check).</summary>
     public DateTime LastWalkUtc { get; set; }
 
-    /// <summary>Walk check refusals of this session (logged sparsely).</summary>
-    internal int WalkCheckWarnings { get; set; }
+    /// <summary>The distance the walk check still lets this client report (SceneService.AcceptWalkAsync).</summary>
+    internal WalkAllowance WalkAllowance { get; } = new();
+
+    /// <summary>The game message budgets of this connection (GameMessageHandler.WithinRate).</summary>
+    internal SessionRates? MessageRates { get; set; }
+
+    /// <summary>The chat line budget of this connection (ChatService).</summary>
+    internal RateBucket? ChatLines { get; set; }
+
+    /// <summary>The same for flight moves (WorldCoreService.FlyMoveAsync), at the flight speed.</summary>
+    internal WalkAllowance FlightAllowance { get; } = new();
+
+    /// <summary>WalkReq.dir of the last accepted walk: degrees, 0 = +z, clockwise toward +x.</summary>
+    public float WalkDir { get; set; }
 
     /// <summary>The last accepted walk was a move, not a stop: the client is somewhere along it now.</summary>
     public bool Walking { get; set; }

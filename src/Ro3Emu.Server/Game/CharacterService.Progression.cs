@@ -67,6 +67,9 @@ public sealed partial class CharacterService
         return $"Base level {p.Level}, job level {p.JobLevel}.";
     }
 
+    /// <summary>EXP just committed to a character: base and job (CheatMonitor.ExpGained keeps it per hour).</summary>
+    public List<Action<GameSession, long, long>> ExpCredited { get; } = [];
+
     /// <summary>Adds exp, levelling up through BaseLvConfig / JobLvConfig as needed.
     /// A kill reward may pass its role-owner check so a queued StateLock cannot credit a later role.</summary>
     public async Task<string> AddExpAsync(GameSession session, long baseExp, long jobExp, Func<bool>? stillOwner = null)
@@ -88,6 +91,7 @@ public sealed partial class CharacterService
         builder.WithEconomy(RewardMutation(session, expSource, p, staged, [], [],
             Math.Max(0, baseExp), Math.Max(0, jobExp), new ItemAutoDecomposeTipsNtf()));
         await roles.CommitAsync(builder, "character/exp", _ => CopyProgress(p, staged));
+        foreach (var credited in ExpCredited) credited(session, baseExp, Math.Max(0, jobExp));
         if (stillOwner?.Invoke() == false || session.Attachment?.Cancelled == true) return string.Empty;
         var rewards = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
         if (baseExp > 0) rewards.Rewards.Add(ItemInfo(new InvItem { Entry = BaseExpItem, Stack = (int)Math.Min(baseExp, int.MaxValue) }));

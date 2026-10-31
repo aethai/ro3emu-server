@@ -72,7 +72,7 @@ public sealed partial class PanelBackend
     /// </summary>
     private static List<PanelDupeFlag> Flags(IReadOnlyList<HeldStack> stacks, long held, PanelLedgerTotals ledger)
     {
-        var flags = stacks.Where(s => s.Guid != 0).GroupBy(s => s.Guid).Where(g => g.Count() > 1)
+        var flags = stacks.Where(s => s.Guid != 0).GroupBy(s => s.Guid).Where(g => g.Count() > 1 && !PartialListing([.. g]))
             .Select(g => new PanelDupeFlag("Instance seen twice", string.Join(" and ", g.Select(s => $"{s.Place} of {s.Owner}")), g.Key)).ToList();
         if (ledger.Entries == 0 && held > ledger.StarterKits)
             flags.Add(new PanelDupeFlag("Unrecorded", $"{held.ToString("N0", CultureInfo.InvariantCulture)} held, the ledger never recorded this item."));
@@ -83,6 +83,14 @@ public sealed partial class PanelBackend
                 $": {(held - ledger.Explained).ToString("N0", CultureInfo.InvariantCulture)} more than it explains."));
         return flags;
     }
+
+    /// <summary>
+    /// One seller's stack and the part of it they listed: an exchange listing or a stall offer of part of a stack keeps the
+    /// stack's guid in escrow while the rest stays in the bag (TradeService.Mutations, StallsService.Player), and a stall's
+    /// partial take-back mails that clone. Whatever the escrow part is later claimed into gets a new guid. Not a duplicate.
+    /// </summary>
+    private static bool PartialListing(IReadOnlyList<HeldStack> stacks) =>
+        stacks.Select(s => s.RoleId).Distinct().Count() == 1 && stacks.Count(s => s.Place is "Bag" or "Worn" or "Cart") <= 1;
 
     private static int Severity(string kind) => kind switch { "Instance seen twice" => 0, "Exceeds ledger" => 1, _ => 2 };
 

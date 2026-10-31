@@ -207,18 +207,36 @@ public sealed partial class TaskService
                 || (npcId != 0 && t[1] == npcId)) ? 1 : 0);
     }
 
-    /// <summary>31209 CLIENT_ENTERAREA: target 104003 [map, area] (the region itself is trusted to the client).</summary>
-    public Task OnAreaAsync(GameSession session, ClientEnterAreaReq req) =>
-        ProgressAsync(session, TArea, t => t.Length >= 3 && t[1] == session.SceneEntry && t[2] == req.AreaId ? 1 : 0);
+    /// <summary>
+    /// 31209 CLIENT_ENTERAREA: target 104003 [map, area]. The client tests the region itself; the server holds it to the
+    /// player being near that region (SceneService.NearRegion), so a report from across the map is refused and counted.
+    /// </summary>
+    public Task OnAreaAsync(GameSession session, ClientEnterAreaReq req)
+    {
+        if (!_scene.NearRegion(session, req.AreaId))
+        {
+            _scene.Cheats.Refused(session, CheatMonitor.QuestArea,
+                $"area {req.AreaId} of scene {session.SceneEntry} reported at {session.Position.X:F0},{session.Position.Z:F0}");
+            return Task.CompletedTask;
+        }
+        return ProgressAsync(session, TArea, t => t.Length >= 3 && t[1] == session.SceneEntry && t[2] == req.AreaId ? 1 : 0);
+    }
 
-    /// <summary>31214 TASK_TRIGGER_EVENT: target 103046 [interactId, n]; the request's taskId field carries the interaction id.</summary>
+    /// <summary>
+    /// 31214 TASK_TRIGGER_EVENT: target 103046 [interactId, n]; the request's taskId field carries the interaction id. The
+    /// interaction is an NPCInteractConfig row of the NPCs whose _iInteractID lists it (40004201 is NPC 400042's): when the
+    /// map places such an NPC, the player must stand within <see cref="InteractReach"/> m of one.
+    /// </summary>
     public async Task OnClientInteractAsync(GameSession session, TriggerTaskEventReq req)
     {
         using var gate = await LockTasksAsync(session);
         if (BeforeProgress is { } before) await before(session);
-        // C3 reports the final required value, never a delta. Active task + configured map are the available
-        // context (inferred); this packet cannot prove that the local interaction animation actually ran.
-        bool matches = req.GoalCount > 0 && session.Tasks?.Infos.Values.Any(i => i.Status == Running
+        // C3 reports the final required value, never a delta. Active task + configured map + the NPC nearby are the
+        // available context (inferred); this packet cannot prove that the local interaction animation actually ran.
+        bool near = InteractNear(session, req.TaskId);
+        if (!near) _scene.Cheats.Refused(session, CheatMonitor.QuestInteract,
+            $"interaction {req.TaskId} in scene {session.SceneEntry} reported at {session.Position.X:F0},{session.Position.Z:F0}");
+        bool matches = near && req.GoalCount > 0 && session.Tasks?.Infos.Values.Any(i => i.Status == Running
             && Defs().TryGetValue(i.TaskId, out var d) && ContextMapMatches(session, d)
             && d.Targets.Any(t => t is [TClientInteract, var id, var required] && id == req.TaskId && required == req.GoalCount)) == true;
         if (matches) await ProgressCoreAsync(session, TClientInteract,
@@ -226,6 +244,15 @@ public sealed partial class TaskService
             d => ContextMapMatches(session, d));
         await session.SendGameAsync(TriggerTaskEvent, new TriggerTaskEventResp
         { Result = matches ? 0 : ErrorCodes.TaskRequirements, TaskId = req.TaskId, GoalCount = req.GoalCount });
+    }
+
+    /// <summary>(inferred) As a dialog's 12 m (TaskActions.NearPoint), plus the interaction's own approach.</summary>
+    private const float InteractReach = 15;
+
+    private bool InteractNear(GameSession session, long interactId)
+    {
+        long npc = interactId / 100;
+        return Data.Config.NPCConfig.Get(_data, npc) is not { } row || !row.InteractId.Contains(interactId) || _scene.NearNpc(session, npc, InteractReach);
     }
 
     /// <summary>

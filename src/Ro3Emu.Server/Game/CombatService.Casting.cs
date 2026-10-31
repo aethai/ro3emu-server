@@ -135,11 +135,12 @@ public sealed partial class CombatService
         }
         if (lease?.Cancelled == true || !ReferenceEquals(s.Attachment, lease) ||
             s.SceneGeneration != scene || s.WorldScene != worldScene || s.SceneLoading) return;
+        int turn = owned == null ? SwingTurnLeft(s.SkillCast, row!.Value) : 0;
         await CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Skill);
         _eventAttacks.Remove(s);
         await PayCostsAsync(s, costs);
         if (!unlimited) await _buffs.SpendEnergyAsync(s, row!.Value);
-        int lead = owned == null && BeforeCast is { } before ? await before(s) : 0;
+        int lead = (owned == null && BeforeCast is { } before ? await before(s) : 0) + turn;
         if (!lineup) await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
         var target = FindMonster(s.WorldScene, req.TargetId);
         var playerTarget = EventTarget(s, req.TargetId);
@@ -261,15 +262,25 @@ public sealed partial class CombatService
 
     /// <summary>
     /// A normal attack (_bCancelCast 1) may cut a skill's action short, but not the swing before it at the same target:
-    /// otherwise a burst of clicks restarts the swing each time and hits at click speed (issue #121). Turning to another
-    /// target (the last one died) is left to the client, which plays the swing out anyway. The client paces swings at the same
-    /// ASPD-scaled action time (the normal attack shows' m_fInterruptTime is their whole length) from its own send, so
-    /// network jitter can bring a legitimate next swing a little early: <see cref="SwingJitterMs"/> of slack (inferred).
+    /// otherwise a burst of clicks restarts the swing each time and hits at click speed (issue #121). The client paces swings
+    /// at the same ASPD-scaled action time (the normal attack shows' m_fInterruptTime is their whole length) from its own
+    /// send, so network jitter can bring a legitimate next swing a little early: <see cref="SwingJitterMs"/> of slack (inferred).
     /// </summary>
     private bool SwingInFlight(ActiveSkillCast active, JsonElement row, CastSkillReq req) =>
-        req.TargetId != 0 && req.TargetId == active.Request.TargetId
-        && new Data.Config.SkillConfig(row).IsNormalAttack(_data) && new Data.Config.SkillConfig(active.Row).IsNormalAttack(_data)
-        && Now < active.StartMs + active.ChantMs + active.ActionMs - SwingJitterMs;
+        req.TargetId != 0 && req.TargetId == active.Request.TargetId && SwingTurnLeft(active, row) > 0;
+
+    /// <summary>
+    /// Turning to another target during a swing is the client's own business (it plays the swing out), so the turn is taken,
+    /// but the new swing starts when the one in flight would have ended: the milliseconds left, 0 when it is no such turn.
+    /// Starting it at once let clicks alternating between two targets swing at click speed (inferred from the same pacing).
+    /// </summary>
+    private int SwingTurnLeft(ActiveSkillCast? active, JsonElement row)
+    {
+        if (active is not { Cancelled: false } || !new SkillConfig(row).IsNormalAttack(_data) || !new SkillConfig(active.Row).IsNormalAttack(_data))
+            return 0;
+        long left = active.StartMs + active.ChantMs + active.ActionMs - SwingJitterMs - Now;
+        return left > 0 ? (int)Math.Min(left, int.MaxValue) : 0;
+    }
 
     internal const int SwingJitterMs = 150;
 
@@ -320,6 +331,29 @@ public sealed partial class CombatService
     private static double WalkedSeconds(DateTime since) => Math.Clamp((DateTime.UtcNow - since).TotalSeconds, 0, MaxWalkSlackSeconds);
     private static float WalkSlack(GameSession s) => !s.Walking ? 0 : (float)(s.Speed / 100.0 * WalkedSeconds(s.LastWalkUtc));
 
+    /// <summary>
+    /// Where along the walk in progress the caster can be nearest to the target: the walk goes straight from the last walk's
+    /// position in its direction (WalkReq.dir, or the facing), <paramref name="travelled"/> metres at most. The slack is no
+    /// circle: a forged "walking" report does not reach behind or beside the caster. <see cref="LegJitter"/> metres of
+    /// sideways tolerance (inferred) cover a direction the client rounds.
+    /// </summary>
+    private static Vec3 WalkPoint(GameSession s, Vec3 origin, Vec3 target, float travelled)
+    {
+        var best = origin;
+        float bestDistance = Distance(origin, target);
+        foreach (float degrees in new[] { s.WalkDir, s.Face })
+        {
+            double angle = degrees * Math.PI / 180;
+            float ux = (float)Math.Sin(angle), uz = (float)Math.Cos(angle);
+            float along = Math.Clamp((target.X - origin.X) * ux + (target.Z - origin.Z) * uz, 0, travelled);
+            var point = new Vec3 { X = origin.X + ux * along, Y = origin.Y, Z = origin.Z + uz * along };
+            if (Distance(point, target) < bestDistance) (best, bestDistance) = (point, Distance(point, target));
+        }
+        return best;
+    }
+
+    internal const float LegJitter = 1f;
+
     /// <param name="askedRange">The range of the row the client asked for: it walks into that range, not into the
     /// range of a mode row a talent or a mount selects (Arrow Smash 18 m, its wolf row 5 m; issue #62).</param>
     private int ValidateTarget(GameSession s, JsonElement row, CastSkillReq req, Vec3 origin, float slack = 0, float askedRange = 0)
@@ -352,10 +386,18 @@ public sealed partial class CombatService
             if (req.TargetPos == null) return ErrorCodes.SkillTargetInvalid;
             targetPosition = req.TargetPos;
         }
-        else { req.TargetPos ??= origin.Clone(); return 0; }
+        else
+        {
+            // Released around the caster (0, 2-6): the client's point is only shown, but procs read it as the centre; one
+            // beyond the skill's reach and area is not a point it could aim at (inferred), so the caster's is used.
+            float aim = Math.Max(Math.Max(Range(row), askedRange), new SkillConfig(row).Range.FirstOrDefault(0) / 100f) + 1 + slack;
+            if (req.TargetPos == null || Distance(origin, req.TargetPos) > aim) req.TargetPos = origin.Clone();
+            return 0;
+        }
         if (!_buffs.CanSeePosition(s, targetPosition)) return ErrorCodes.SkillTargetInvalid;
         float d = Distance(origin, targetPosition);
-        if (d < GameData.Int(row, "_iDistanceMin") / 100f - slack || d > Math.Max(Range(row), askedRange) + 0.5f + slack)
+        float reach = slack > 0 ? Distance(WalkPoint(s, origin, targetPosition, slack), targetPosition) - LegJitter : d;
+        if (d < new SkillConfig(row).DistanceMin / 100f - slack || reach > Math.Max(Range(row), askedRange) + 0.5f)
             return ErrorCodes.SkillDistance;
         float height = GameData.Int(row, "_iHeightRange") / 100f;
         if (height > 0 && MathF.Abs(origin.Y - targetPosition.Y) > height) return ErrorCodes.SkillHeight;
@@ -541,6 +583,10 @@ public sealed partial class CombatService
             StartMs = Now + leadMs, ChantMs = ChantMs(s, row), ActionMs = SkillMs(s, row), Operator = actor,
         };
         s.SkillCast = action;
+        // A caster that may not walk while casting (_bMovement 0) saves up no walking distance until the cast ends: a client
+        // that walks on without reporting it cannot claim the distance afterwards (SceneService.AcceptWalkAsync).
+        if (actor == null && new SkillConfig(row).Movement == 0)
+            SceneService.HoldWalk(s, DateTime.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
         s.WorldState.ResurrectionCastId = Script(row) == "Resurrection" ? id : 0;
         s.Face = face;
         req.Face = face;
@@ -594,6 +640,17 @@ public sealed partial class CombatService
 
     public async Task InterruptAsync(GameSession s, SkillInterruptReq? req = null)
     {
+        // 31124 with a normal attack as nxtSkill during a swing: at the same target it is the click burst the cast rule refuses
+        // (SwingInFlight), at another the turn CastCoreAsync paces (SwingTurnLeft), which needs the swing still in flight.
+        if (req?.NxtSkill is { } nextSwing && s.SkillCast is { Cancelled: false } swinging
+            && EffectiveSkillRow(s, nextSwing.SkillId) is { } nextRow && SwingTurnLeft(swinging, nextRow) > 0)
+        {
+            bool same = SwingInFlight(swinging, nextRow, nextSwing);
+            await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = !same });
+            if (same) await RefuseCastAsync(s, nextSwing, ErrorCodes.SkillBusy, 0);
+            else await CastAsync(s, nextSwing);
+            return;
+        }
         bool valid = req == null || req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId
             || req.InterruptSkillId == s.Attack?.SkillId || _eventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
         bool interrupted = valid && (s.SkillCast != null || s.Attack != null || _eventAttacks.ContainsKey(s));
@@ -613,6 +670,7 @@ public sealed partial class CombatService
         if (s.SkillCast is not { } action) return;
         action.Cancelled = true;
         s.SkillCast = null;
+        s.WalkAllowance.Release(DateTime.UtcNow);
         await ToPlayerAndViewersAsync(s, SkillEnd, new SkillEndNotify
         {
             SrcID = action.SourceId, SessionId = action.Id, Type = SkillEndNotify.Types.SkillEndType.Interrupted,
@@ -636,7 +694,10 @@ public sealed partial class CombatService
             }
             else s.Attack = null;
         }
-        if (s.SkillCast is not { } cast || Distance(cast.Origin, s.Position) <= 0.1f || GameData.Int(cast.Row, "_bMovement") != 0) return;
+        if (s.SkillCast is not { } cast || new SkillConfig(cast.Row).Movement != 0) return;
+        // A walk that sets off (not a stop) after the arrival grace ends a cast that holds the caster in place, even before it
+        // has moved: the client interrupts such a cast to walk, and the walk budget is held until the cast ends.
+        if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.Walking && Now - cast.StartMs > 300)) return;
         // The client casts on reaching range and stops 1 ms later (in-game 11.10): that first stop is the cast's real
         // origin, within the distance the walk can have covered, not a move that interrupts it.
         if (cast.StartedWalking && !s.Walking && Now - cast.StartMs <= 300

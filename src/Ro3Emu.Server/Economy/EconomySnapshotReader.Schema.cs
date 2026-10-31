@@ -17,6 +17,8 @@ public static partial class EconomySnapshotReader
         ["feedback_triage"] = "report_id status assignee updated_utc updated_by",
         ["feedback_note"] = "id report_id utc author text",
         ["panel_setting"] = "key value",
+        ["anticheat_refusal"] = "account role_id kind hour count last_utc last_detail",
+        ["anticheat_exp"] = "role_id hour account base_exp job_exp",
         ["role_lifecycle"] = "role_id epoch deleted",
         ["owner_revision"] = "kind id part revision",
         ["owner_operation_receipt"] = "operation_id family result",

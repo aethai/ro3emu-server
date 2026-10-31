@@ -155,6 +155,42 @@ public sealed partial class TerritoryWarsTests
     }
 
     [ClientDataFact]
+    public async Task ACannonShotThatWouldLandBeyondTheAimIsRefused()
+    {
+        // LC_GVGFireCannon sends the speed and gravity it worked out for the aimed point; a modified client sent no gravity
+        // and reached anywhere along its aim. The shot is refused where it lands beyond _fIndicatorRadius (and counted).
+        var (a, b, _, _) = await CapitalBattle("K");
+        await using var _ = a;
+        await using var __ = b;
+        Assert.Equal(0, await AssignSelf(a, WartimeToolType.Firearm));
+        Assert.Equal(0, await Prepay(a, 1006001));
+        Assert.Equal(0, await Build(a, Session(a).Position.Clone()));
+        var cannon = await Appeared(a, CannonNpc);
+        await Next(a, WorldInteractionService.Change, InteractChangeNtf.Parser,
+            n => n.Uid == Session(a).Role!.Id && n.DataInfo.EType == InteractInfo.Types.EState.Idle);
+        Assert.Equal(0, await Interact(a, cannon.Uuid, 4900005));
+        var cheats = Service<CheatMonitor>();
+        Task Fire(int gravity, Vec3 aim) => a.SendGameAsync(WorldInteractionService.Action, new UseInteractActionReq
+        {
+            ButtonId = 2,
+            CannonUseSkill = new CannonUseSkill
+            {
+                UseSkillParam = new CastSkillReq { SkillId = 4900701 },
+                BulletExtraParam = { new BulletExtraParam { Gravity = gravity, Speed = 4000, FaceVector3D = aim } },
+            },
+        });
+        await Fire(0, new Vec3 { Y = 0.2f, Z = 1 }); // no gravity: it would fly its 12 s, some 470 m
+        await Next(a, WorldInteractionService.Action, UseInteractActionRes.Parser);
+        Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));
+        // The volley started the cannon's cooldown: the skill's _iCD or its reload, the longer.
+        var skill = Ro3Emu.Server.Data.Config.SkillConfig.Get(Service<Ro3Emu.Server.Data.GameData>(), 4900701)!.Value;
+        await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(skill.Cd, 3000) + 300));
+        await Fire(1500, new Vec3 { Y = 1, Z = 0.02f }); // what the client sends: up and down near the cannon
+        Assert.Equal(0, (await Next(a, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
+        Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));
+    }
+
+    [ClientDataFact]
     public async Task AnotherGuildCannotBoardATankAndTheSettlementTakesItAway()
     {
         var (a, b, ga, _) = await CapitalBattle("V");
