@@ -5,8 +5,8 @@ using Ro3Emu.Server.Game;
 namespace Ro3Emu.Tests;
 
 /// <summary>
-/// A party seen on the units: EntityBase.teamId (31049 TeamInfo) makes members the same group for the client
-/// (LC_Scene_Sync, LC_CampRelationStrategy_Default).
+/// A party seen on the units: EntityBase.teamId (31049 TeamInfo) makes members the same group for the client, and a
+/// member's death reaches the others' party frames through 31024 and 31049 (LC_Scene_Sync, LC_DAL_Team).
 /// </summary>
 public sealed class PartyUnitTests
 {
@@ -48,5 +48,27 @@ public sealed class PartyUnitTests
 
         await bob.SendGameAsync(TeamService.TeamLeave, new LeaveTeamReq());
         Assert.Equal(0, (await Next(alice, CombatService.EntityBaseChange, EntityBase.Parser, e => TeamInfo(e, bobId))).TeamId);
+    }
+
+    [Fact]
+    public async Task ADeathSendsTheLifeStatusBeforeTheBaseChangeThatCarriesIt()
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        await using var alice = await host.InWorldAsync("Alice");
+        await using var bob = await host.InWorldAsync("Bob");
+        long bobId = (long)bob.Self!.Uuid;
+        await PartyOfTwoAsync(alice, bob, bobId);
+
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == bobId);
+        await host.Service<GameLoop>().InvokeAsync(() => host.Service<CombatService>().KillPlayerAsync(session));
+        var dead = await Next(alice, CombatService.EntityBaseChange, EntityBase.Parser,
+            e => e.Uuid == (ulong)bobId && e.NotifyType == EntityBase.Types.NotifyType.Base);
+        Assert.Equal(EPlayerLifeStatus.Dead, dead.PlayerLifeStatus);
+        var order = alice.Inbox.Snapshot().Where(e => e.IsGame(WorldCoreService.LifeStatus) || e.IsGame(CombatService.EntityBaseChange)
+            && EntityBase.Parser.ParseFrom(e.Body) is { NotifyType: EntityBase.Types.NotifyType.Base } b && b.Uuid == (ulong)bobId).ToList();
+        int status = order.FindIndex(e => e.IsGame(WorldCoreService.LifeStatus)
+            && PlayerLifeStatusNotify.Parser.ParseFrom(e.Body) is { PlayerLifeStatus: EPlayerLifeStatus.Dead } n && n.EntityId == bobId);
+        int change = order.FindIndex(e => e.IsGame(CombatService.EntityBaseChange));
+        Assert.InRange(status, 0, change - 1);
     }
 }
