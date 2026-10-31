@@ -102,7 +102,7 @@ public sealed partial class CharacterService
 
         if (p.Level != oldLevel || p.JobLevel != oldJob)
         {
-            await AfterLevelChangeAsync(session, stillOwner, persist: false);
+            await AfterLevelChangeAsync(session, stillOwner, persist: false, levelUp: p.Level > oldLevel);
         }
         else
         {
@@ -123,9 +123,12 @@ public sealed partial class CharacterService
         while (p.JobLevel < maxJob && JobLvRow(p.Career, p.JobLevel) is { } row && GameData.Int(row, "_iJobeExp") == 0) p.JobLevel++;
     }
 
-    private async Task AfterLevelChangeAsync(GameSession session, Func<bool>? stillOwner = null, bool persist = true)
+    /// <param name="levelUp">The base level rose: HP and SP refill to the new maximum (inferred: classic RO heals fully on
+    /// a base level up and the client shows no rule of its own; from akreao's fork).</param>
+    private async Task AfterLevelChangeAsync(GameSession session, Func<bool>? stillOwner = null, bool persist = true, bool levelUp = false)
     {
         var p = session.Progress!;
+        if (levelUp && !session.Dead) (session.CurrentHp, session.CurrentSp) = (null, null); // unset = full (Stats)
         if (persist) Save(session);
         await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
         if (stillOwner?.Invoke() == false) return;
