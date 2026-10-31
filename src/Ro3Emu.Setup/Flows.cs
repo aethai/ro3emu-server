@@ -545,9 +545,10 @@ internal static class Flows
         {
             var serverUrl = ServerUrl(address)
                 ?? throw new SetupException($"'{address}' is not a server address.", "Use the server's address, for example RO3Emu.exe panel 203.0.113.10");
-            url = await PanelLink.FirstAnsweringAsync(PanelLink.JoinCandidates(serverUrl), PanelTimeout);
+            var candidates = await PanelLink.JoinCandidatesAsync(serverUrl, PanelTimeout);
+            url = await PanelLink.FirstAnsweringAsync(candidates, PanelTimeout);
             if (url == null)
-                return PanelMissing($"The server at {serverUrl} has not shared its web panel (nothing answers on {string.Join(" or ", PanelLink.JoinCandidates(serverUrl))}).",
+                return PanelMissing($"The server at {serverUrl} has not shared its web panel (nothing answers on {string.Join(" or ", candidates)}).",
                     "Ask the server owner for the panel's address.");
         }
         else

@@ -286,6 +286,12 @@ public static partial class ServerHost
                 return Results.Ok("done");
             });
         });
+        // The web panel's public address for launchers that joined (Ro3Emu:Panel:PublicUrl); 404 without one.
+        app.MapGet("/ro3emu/panel", (Microsoft.Extensions.Options.IOptions<ServerOptions> options) =>
+            options.Value.Panel is { Enabled: true, PublicUrl: { Length: > 0 } url } && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                && uri.Scheme is "http" or "https"
+                ? Results.Json(new { url = uri.ToString().TrimEnd('/') })
+                : Results.NotFound());
         // In-game bug reports (loopback only, docs/guide/feedback.md): GET /ro3emu/reports?since=<id or ISO time>&limit=&format=text
         app.MapGet("/ro3emu/reports", (HttpContext context, FeedbackService feedback) =>
         {

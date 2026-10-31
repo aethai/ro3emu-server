@@ -14,6 +14,13 @@ public sealed class PanelOptions
     public string? BindAddress { get; set; }
 
     /// <summary>
+    /// The panel's public address when players reach it some other way than the server's host and panel port, such as
+    /// behind a reverse proxy (https://example.com:8443). The server announces it on GET /ro3emu/panel of its HTTP port,
+    /// so a launcher that joined finds it. Empty: launchers look on the host's panel port.
+    /// </summary>
+    public string? PublicUrl { get; set; }
+
+    /// <summary>
     /// Addresses of reverse proxies whose X-Forwarded-For and X-Forwarded-Proto are believed: the client address for
     /// the login budget and https for the cookie's Secure flag. Empty: both headers are ignored, whoever sends them.
     /// </summary>

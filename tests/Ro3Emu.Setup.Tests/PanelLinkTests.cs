@@ -122,6 +122,21 @@ public class PanelLinkTests
     }
 
     [Fact]
+    public async Task AJoinedServerAnnouncesItsPanelBehindAProxy()
+    {
+        await using var panel = await FakeServer("""{ "name": "Nusky", "uptimeSeconds": 5 }""");
+        await using var game = await FakeServer("{}", announce: panel.Url + "/");
+        var candidates = await PanelLink.JoinCandidatesAsync(game.Url, TimeSpan.FromSeconds(3));
+        Assert.Equal(panel.Url, candidates[0]);
+        Assert.Equal(PanelLink.JoinCandidates(game.Url), candidates.Skip(1));
+        Assert.Equal(panel.Url, await PanelLink.FirstAnsweringAsync(candidates, TimeSpan.FromSeconds(3)));
+
+        // A server that announces nothing (404): only the usual places.
+        await using var plain = await FakeServer("{}");
+        Assert.Equal(PanelLink.JoinCandidates(plain.Url), await PanelLink.JoinCandidatesAsync(plain.Url, TimeSpan.FromSeconds(3)));
+    }
+
+    [Fact]
     public void LauncherJsonReadsPanelUrl()
     {
         var dir = Directory.CreateTempSubdirectory("ro3emu-launcher-");
@@ -156,8 +171,9 @@ public class PanelLinkTests
         }
     }
 
-    /// <summary>A loopback HTTP server answering /api/status with <paramref name="status"/>.</summary>
-    private static async Task<Fake> FakeServer(string status)
+    /// <summary>A loopback HTTP server answering /api/status with <paramref name="status"/>, and /ro3emu/panel with
+    /// <paramref name="announce"/> when given.</summary>
+    private static async Task<Fake> FakeServer(string status, string? announce = null)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -165,6 +181,11 @@ public class PanelLinkTests
         var app = builder.Build();
         app.Run(async context =>
         {
+            if (announce != null && context.Request.Path == "/ro3emu/panel")
+            {
+                await context.Response.WriteAsJsonAsync(new { url = announce });
+                return;
+            }
             if (context.Request.Path != "/api/status") { context.Response.StatusCode = 404; return; }
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(status);
