@@ -93,6 +93,7 @@ public sealed partial class DungeonService
         this._world = world;
         this._vehicles = vehicles;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
+        WireRaidTrials(combat, gm);
         teams.MultiDungeonInfo = TeamDungeonInfo;
         combat.DamageAdjusters.Add((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
         combat.IncomingDamageAdjusters.Add((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
@@ -177,6 +178,8 @@ public sealed partial class DungeonService
         /// <summary>The companions (NPC, point) that fell in this run: they do not come back.</summary>
         internal HashSet<(int NpcId, long Point)> FallenCompanions { get; } = [];
         internal GuildChallengeService.Run? GuildChallenge { get; set; }
+        /// <summary>A raid boss's scripted trials in this run (DungeonService.RaidTrials); null: none.</summary>
+        internal RaidRun? Raid { get; set; }
         /// <summary>Dracula's Lair: DraculaWeddingService owns admission, the bride, the key and the settlement.</summary>
         internal DraculaWeddingService.Run? Dracula { get; set; }
     }
@@ -581,6 +584,7 @@ public sealed partial class DungeonService
         a.StartedAt = _loop.Now; a.StartMs = MonsterService.NowMs;
         await BroadcastAsync(a, BaseInfo, Snapshot(a));
         await SpawnWaveAsync(a);
+        StartRaidTrials(a);
         _loop.ScheduleLegacy(TimeSpan.FromMilliseconds(a.Plan.DurationMs), () => a.Settled || a.Room.Closed ? Task.CompletedTask : SettleAsync(a, false));
     }
 

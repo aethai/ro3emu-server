@@ -59,6 +59,41 @@ Realm of the Gods extras (`DungeonService.RealmOfGods`, TenGameplayConfig 100101
 - Test aids: `!dungeonsolo on` also admits a lone 30400 entry to a team boss; `!firstclear <boss> [daysAgo] | clear`
   sets the realm's first clear of a boss.
 
+Raid boss trials (`DungeonService.RaidTrials`, `Reconstructed/raid-trials.json`), **inferred as a whole**: the raid
+bosses ran server AI scripts (NPCConfig `_iAISpecial`, "Raid_S01_Boss01_Test", "RaidFive_Boss01") that the client does
+not ship. Their scripted mechanics are rebuilt from what it does ship: the raid's tips (ChatConfig), the encounter
+guide (TenChallengeHandbookIDConfig), the mechanic's NPCs and buffs, and the scene editor's points. Every number and
+placement has its reason in the json (`why`, `evidence`, `guessed`).
+
+- A raid boss with a script gets a 0.5 s trial tick when the fight begins. Its trials take turns: one starts
+  `start.firstMs` after the boss engages and then every `start.everyMs`, and once at each `start.hp` threshold (percent
+  of the boss's HP; a big hit fires the passed thresholds once). No trial starts within 6 s of the previous one's end.
+  A boss that leaves combat ends its trial without a verdict and restarts its clock.
+- A trial sends its tips (1022; a CombatCountdownTip's `${1}` is sent as the window's seconds, which the client counts
+  down, `UI_Sys_GVE_MarqueeWidgetCtrl`), may hold the boss and play a show skill for its window, deals out colours
+  (note buffs, one per player, so every colour in play is someone's), marks random players (a trap or a target), and
+  puts out its objects: scene props shown as their NPCConfig `_iNPCType`, or destructible monsters outside the room's
+  counted actors (an object without its own AI stands still and never strikes back; `hits` per player destroy it at any
+  gear; `match` lets only a player of its colour damage it). Pickups hand out a colour through their 32700 interaction.
+- Rules judged when the window closes: per player `stand` (inside an object, of your colour), `avoid` (outside every
+  object's circle or lane), `shelter` (behind an object as seen from the boss), `guard` (a marked player with a carrier
+  beside), `spread` (a marked player with nobody beside); for the party `occupy` (every object at once), `collect`
+  (walk into every object; each one taken can reward its taker), `kill` (every object, or the chosen one), `carry`
+  (touch the object, then hit the boss with it). Boss `breakers` are skills whose landing area destroys the objects in it;
+  `casts` are skills the boss casts at a random player during the window.
+- A failure costs a share of each reached player's maximum HP, sent as the boss's hit of the named skill (inferred: it
+  punishes the same at any gear, and no single failure wipes a full-HP party). A solved trial can reward (a buff, a
+  line) and stagger the boss (its show interrupted, a stagger show, the boss held).
+- Test aid: `!raidtrial [list | n | stop]` lists the boss's trials, starts trial n now (engaging the GM if the boss is
+  idle) or ends the running one without a verdict.
+- Isti (Realm of the Gods 3020101; 14720026/14720010/14720027), **Ocean Concerto** (tip 4110011; guide 1100105): from
+  60% HP and then every 70 s Isti holds still playing her 40 s channel 14724101 for a 25 s window. Every player gets a
+  note (14720201 Red, 14720501 Yellow, 14720601 Blue, 14720701 Green; the HUD shows it), and two bubbles per player (4 to
+  16, the NPCs 14720013-14720016 of the notes in play) stand 45% of the way in from the 16 ring points of groups 17 and
+  34. A player who walks into a bubble of their note takes it and gains Bubble Movement 14720301 (+5% damage per stack);
+  each bubble left at the end costs everyone 10% of their maximum HP (at most 50%) as Full-Arena Wave 14721101.
+  Inferred: the phase threshold, the period, the window, standing bubbles instead of moving ones, the damage.
+
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:
 

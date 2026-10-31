@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "about": "Reconstructed raid boss trials (inferred as a whole). The original raid bosses ran server AI scripts (NPCConfig _iAISpecial) that the client does not ship; their scripted mechanics are rebuilt from what the client does ship: the raid's tips (ChatConfig), the encounter guide (TenChallengeHandbookIDConfig), the mechanic's NPCs and buffs, and the scene editor's points. Each trial: a start (time after the boss engages, repeat, HP thresholds), tips, a window, the objects and colours it deals out, a rule judged when the window closes, and the outcomes. A failed rule costs a share of the maximum HP (never a wipe by itself); a solved one may reward and stagger the boss. Engine: DungeonService.RaidTrials.",
+  "contract": {
+    "tips": "1022 SystemBoardCastMsgNtf {chatId}. A CombatCountdownTip (ChatConfig _iType 16) counts its ${1} down from param 1 in seconds (UI_Sys_GVE_MarqueeWidgetCtrl: m_fTargetTimestamp = params[1] + GetSystemTime()).",
+    "colours": "A note buff with _kUIParams [1, colour] shows the local player's note on the HUD (UI_Sys_Main_DungeonNoteWidgetBaseCtrl: Red 1, Yellow 2, Green 3, Blue 4).",
+    "objects": "Props are shown as their NPCConfig _iNPCType (1 monster unit, 2 NPC, 4 trigger, 10 bullet), like the scripted scenes' actors and the field MVPs' ground objects; destructible ones are monsters outside the room's counted actors.",
+    "hits": "A failed trial's hit is the boss's 31101 of the named skill with a share of each player's maximum HP (inferred)."
+  },
+  "raids": {
+    "isti": {
+      "name": "Isti (Realm of the Gods 3020101)",
+      "bosses": [14720026, 14720010, 14720027],
+      "evidence": [
+        "ChatConfig 4110011 (type 12): 'Isti invites you to perform an Ocean Concerto! Quickly touch the bubble matching your note to gain a buff.'",
+        "TenChallengeHandbookIDConfig 1100105 Ocean Concerto: every player gets a note, many bubbles move toward the centre; a bubble touching a player with the matching note disappears and gives that player a damage buff, one reaching the Crystal Orb explodes.",
+        "BuffConfig 14720201/14720501/14720601/14720701: the Red/Yellow/Blue/Green note (_kUIParams [1,1]/[1,2]/[1,4]/[1,3], the HUD note widget), 14720301 Bubble Movement (+5% damage per stack, 30 stacks, 30 s).",
+        "NPCConfig 14720013-14720016: 'P@{1} Red/Yellow/Blue/Green Bubble NPC' (the second phase's bubbles); boss skill 14724101 'P@{1} Action', a 40 s channel whose show is the ground flow, water balls and note tails.",
+        "Scene editor sc_pm_shirenben_001_dg01: groups 17 'P2 bubble points 45 degrees' and 34 'P2 bubble points 22.5 degrees', 16 points on a ring of about 28 m around the BOSS point 93; BGM BGM_S1Ten_Boss1_P1 and _P2 (two phases)."
+      ],
+      "guessed": [
+        "The concerto is the second phase: it starts when Isti falls to 60% HP and comes back every 70 s.",
+        "The moving bubbles stand still, 45% of the way in from the ring toward Isti, two per player (4 to 16); each takes the colour of a note someone holds.",
+        "The window is 25 s; every bubble left then reaches the orb and costs everyone 10% of their maximum HP (at most 50%), shown as Full-Arena Wave 14721101.",
+        "Other first-phase patterns (Bubble Dream, colliding bubbles, Underwater Fireworks) are left to the boss's own skills."
+      ],
+      "trials": [
+        {
+          "name": "Ocean Concerto",
+          "why": "tip 4110011 and the guide's Ocean Concerto: touch the bubble of your note",
+          "start": { "hp": [60], "everyMs": 70000 },
+          "tips": [4110011],
+          "windowMs": 25000,
+          "boss": { "hold": true, "show": 14724101 },
+          "colors": [14720201, 14720501, 14720601, 14720701],
+          "assign": true,
+          "objects": [
+            {
+              "npc": [14720013, 14720014, 14720015, 14720016],
+              "why": "the second phase's Red/Yellow/Blue/Green bubbles, in the order of the note buffs",
+              "at": { "points": [18, 19, 20, 21, 22, 23, 24, 26, 25, 27, 28, 29, 30, 31, 32, 33], "perPlayer": 2, "min": 4, "max": 16, "inward": 0.45 },
+              "match": true
+            }
+          ],
+          "rule": "collect",
+          "radius": 2,
+          "success": { "buff": 14720301, "buffMs": 30000, "why": "Bubble Movement for the player who took a bubble of their note" },
+          "fail": { "who": "all", "hpPercent": 10, "perObject": true, "capPercent": 50, "skill": 14721101, "why": "each bubble left reaches the orb" }
+        }
+      ]
+    }
+  }
+}

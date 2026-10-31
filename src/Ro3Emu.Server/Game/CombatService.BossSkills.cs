@@ -128,6 +128,8 @@ public sealed partial class CombatService
             room -= pets.Count;
             if (companions.Count > room) companions.RemoveRange(room, companions.Count - room);
         }
+        if (skill.Area != BossSkillArea.Target)
+            foreach (var landed in BossAreaLanded) await landed(boss, skill, origin, center, face);
         if (victims.Count > 0)
             await MonsterSkillHitAsync(boss, skill.Row, victims, boss.Uid, session, skill.Damages ? options.DamagePercent : 0, bossDebuffsOnly: true);
         if (skill.PushEffect > 0)
@@ -266,6 +268,29 @@ public sealed partial class CombatService
     /// <summary>A blast row's radius: _kRange in cm when real, else the default.</summary>
     private float BossSkillRadius(JsonElement row) => Numbers(row, "_kRange") is { Length: > 0 } range && range[0] >= 100
         ? (float)range[0] / 100 : _monsters.BossOptions.DefaultRadius;
+
+    /// <summary>
+    /// A raid trial's boss performance (DungeonService.RaidTrials): the row's show for <paramref name="ms"/> on the cast
+    /// wire, without hits (Orc Hero raising his shield, Ilmo beating the drum). Returns its session for an interrupt.
+    /// </summary>
+    internal async Task<long> PlayBossShowAsync(MonsterUnit boss, int skillId, int ms)
+    {
+        long session = ++_sessionIds;
+        await SendMonsterTimelineAsync(boss, new UseInSkillInfo
+        {
+            SrcID = boss.Uid, SkillID = skillId, TargetPos = boss.Pos, Face = boss.Face, SessionId = session, SkillMs = ms,
+            StartTime = Now,
+        });
+        return session;
+    }
+
+    /// <summary>Ends a performance early (31103 Interrupted, its warnings cleared): the trial was solved.</summary>
+    internal Task InterruptBossShowAsync(MonsterUnit boss, long session) => session <= 0 || boss.Dead ? Task.CompletedTask
+        : _world.ToUnitViewersAsync(boss, SkillEnd, new SkillEndNotify
+        {
+            SrcID = boss.Uid, SessionId = session, Type = SkillEndNotify.Types.SkillEndType.Interrupted, ClearEffect = true,
+            InterruptedInfo = new SkillInterruptedInfo { Type = SkillInterruptedInfo.Types.SkillInterruptType.State },
+        });
 
     /// <summary>The boss's specials ended: interrupt the cast in flight (31103, its warnings cleared) and despawn its summons.</summary>
     private async Task EndBossSkillsAsync(MonsterUnit boss, BossSkillRuntime rt, bool interrupt)

@@ -475,9 +475,31 @@ public sealed class InstanceService
         finally { lock (room.Gate) room.SpawnFinished(); }
     }
 
+    /// <summary>
+    /// Tracks a unit some other service already put in the room's world (a raid trial's destructible object, spawned as a
+    /// monster outside the room's counted actors) so that settlement and room cleanup remove it like a prop. False, and
+    /// the unit removed, when the room closed meanwhile.
+    /// </summary>
+    public Task<bool> TrackPropAsync(Room room, WorldUnit prop) => _loop.TrackAsync("room prop tracking", async () =>
+    {
+        bool keep;
+        lock (room.Gate)
+        {
+            keep = !room.IsClosed;
+            if (keep) room.Props.Add(prop);
+        }
+        if (!keep)
+        {
+            if (prop is MonsterUnit monster) monster.Dead = true;
+            await _world.RemoveUnitAsync(prop);
+        }
+        return keep;
+    });
+
     public Task RemovePropAsync(Room room, WorldUnit prop) => _loop.TrackAsync("room prop removal", async () =>
     {
         lock (room.Gate) room.Props.Remove(prop);
+        if (prop is MonsterUnit tracked) { tracked.Dead = true; tracked.Target = null; }
         await _world.RemoveUnitAsync(prop);
     });
 
@@ -513,7 +535,11 @@ public sealed class InstanceService
                 props = room.Props.ToArray();
                 room.Props.Clear();
             }
-            foreach (var prop in props) await _world.RemoveUnitAsync(prop);
+            foreach (var prop in props)
+            {
+                if (prop is MonsterUnit tracked) { tracked.Dead = true; tracked.Target = null; }
+                await _world.RemoveUnitAsync(prop);
+            }
             foreach (var actor in actors)
             {
                 actor.Dead = true;
