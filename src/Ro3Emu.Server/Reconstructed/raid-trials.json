@@ -687,6 +687,71 @@
           "fail": { "who": "failing", "hpPercent": 35, "skill": 4361701 }
         }
       ]
+    },
+    "pharaoh": {
+      "name": "Pharaoh (five-player raid, Sphinx 3120701)",
+      "bosses": [4370000, 4370001],
+      "evidence": [
+        "ChatConfig 4370001 'Your teammate ${1} is trapped in a coffin! Break it open and rescue them!', 4370004 'Kill the Pharaoh's Coffin as soon as possible!', 4370002 'Pharaoh is unleashing Cleansing Light! Quickly, hide behind the Pyramid!', 4314408 'Pharaoh is about to unleash powerful Damage Skills. Get behind an obstacle!', 4370005 'Move Away from the marked player!'.",
+        "TenChallengeHandbookIDConfig 1050701 Death Ray (the Eye of the Pyramid emits a ray; players hit take heavy damage), 1050702 Coffin Trap (the coffin pulls a selected player inside; break it before it sinks), 1050703 Divine Light Purification (a brief charge, then an enormous area; hide behind the Pyramid).",
+        "NPCConfig 4370002 Pharaoh's Coffin (unit 33123), 4370003/4370004 Pyramid (unit 33124, AI RaidFive_Boss07_Jzt1); BuffConfig 4370501 Shroud ('entangled in the Pharaoh's burial shroud'), 4374901 'AOE Marker', 4375101 Pyramid Laser; skills 4372101 Coffin Bandage Restraint, 4371101 Divine Light Purification (8 s), 4370401 Grasp of the Dead, 4375101 Death Ray.",
+        "Scene editor sc_pm_pve5sphinx_001_dg01: group 52 (points 53, 66-69; 66-69 are the four corners with an air wall each, the pyramids' bodies), points 22-25 one step inside each corner facing the centre."
+      ],
+      "guessed": [
+        "Coffin Trap 25 s in and every 60 s: a random player is wrapped in the Shroud and a coffin stands on them; 4 hits per player break it within 12 s, else the trapped player takes 60%.",
+        "Divine Light Purification 45 s in and every 60 s: Pharaoh holds charging (4371101) for 8 s while the pyramids stand at the four corners; a player outside every pyramid's shadow (2 m either side, 6 m deep, as seen from him) takes 55%.",
+        "Marked 65 s in and every 60 s: two random players get the AOE Marker; after 6 s a marked player with anyone else within 6 m, and those beside them, take 40% as Grasp of the Dead.",
+        "Death Ray 85 s in and every 60 s: two pyramids at random inner corner points fire across the arena, each a 45 x 6 m lane toward the centre; in a lane after 6 s: 50%."
+      ],
+      "trials": [
+        {
+          "name": "Coffin Trap",
+          "why": "tips 4370001 and 4370004 and the guide's Coffin Trap",
+          "start": { "firstMs": 25000, "everyMs": 60000 },
+          "tips": [4370001, 4370004],
+          "tipParam": "marked",
+          "windowMs": 12000,
+          "marks": { "count": 1, "buff": 4370501 },
+          "objects": [ { "npc": 4370002, "monster": true, "hits": 4, "at": { "onMarked": true }, "why": "the coffin around the trapped player" } ],
+          "rule": "kill",
+          "radius": 3,
+          "fail": { "who": "marked", "hpPercent": 60, "skill": 4372101, "why": "the coffin sinks with the player" }
+        },
+        {
+          "name": "Divine Light Purification",
+          "why": "tips 4370002 and 4314408 and the guide's Divine Light Purification",
+          "start": { "firstMs": 45000, "everyMs": 60000 },
+          "tips": [4370002, 4314408],
+          "windowMs": 8000,
+          "boss": { "hold": true, "show": 4371101 },
+          "objects": [ { "npc": 4370003, "at": { "points": [66, 67, 68, 69] }, "why": "the pyramids at the corners" } ],
+          "rule": "shelter",
+          "width": 2,
+          "depth": 6,
+          "fail": { "who": "failing", "hpPercent": 55, "skill": 4371101 }
+        },
+        {
+          "name": "Marked",
+          "why": "tip 4370005",
+          "start": { "firstMs": 65000, "everyMs": 60000 },
+          "tips": [4370005],
+          "windowMs": 6000,
+          "marks": { "count": 2, "buff": 4374901 },
+          "rule": "spread",
+          "radius": 6,
+          "fail": { "who": "failing", "hpPercent": 40, "skill": 4370401 }
+        },
+        {
+          "name": "Death Ray",
+          "why": "the guide's Death Ray: the Eye of the Pyramid",
+          "start": { "firstMs": 85000, "everyMs": 60000 },
+          "windowMs": 6000,
+          "objects": [ { "npc": 4370004, "lane": [45, 6], "buffs": [4375101], "at": { "points": [22, 23, 24, 25], "count": 2 }, "why": "two pyramids firing toward the centre" } ],
+          "rule": "avoid",
+          "radius": 3,
+          "fail": { "who": "failing", "hpPercent": 50, "skill": 4375101 }
+        }
+      ]
     }
   }
 }

@@ -186,6 +186,18 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   4361401. **Astral Shift** (tip 5004 'Star Shift will strike in ${1} seconds! Keep moving to dodge it!', 5 s; guide
   1050603): 55 s in and every 60 s a star-shift circle 4360008 lands under every player; still within 3 m: 35% as
   4361701. Inferred: the beam's size, that it neither hurts nor bounces, timing and damage; the walls do not rotate.
+- Pharaoh (five-player raid, Sphinx 3120701; easy 4370000, normal 4370001): **Coffin Trap** (tips 4370001 'Your teammate
+  ${1} is trapped in a coffin!' with the player's name, and 4370004; guide 1050702): 25 s in and every 60 s a random
+  player is wrapped in the Shroud 4370501 and Pharaoh's Coffin 4370002 stands on them; 4 hits per player break it within
+  12 s, else the trapped player takes 60% as 4372101. **Divine Light Purification** (tips 4370002 'hide behind the
+  Pyramid!' and 4314408; guide 1050703): 45 s in and every 60 s he holds charging (4371101) for 8 s while the pyramids
+  4370003 stand at the four corner points 66-69 (each with an air wall in the editor); a player outside every pyramid's
+  shadow (2 m either side, 6 m deep) takes 55%. **Marked** (tip 4370005 'Move Away from the marked player!'): 65 s in and
+  every 60 s two random players get the AOE Marker 4374901; after 6 s a marked player with anyone within 6 m, and those
+  beside them, take 40% as Grasp of the Dead 4370401. **Death Ray** (guide 1050701): 85 s in and every 60 s two pyramids
+  4370004 (with Pyramid Laser 4375101) stand at random inner corner points 22-25 facing the centre, each firing a 45 x
+  6 m lane; in a lane after 6 s: 50% as 4375101. Inferred: all timing, sizes and damage; the coffin does not sink and the
+  ray does not sweep.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

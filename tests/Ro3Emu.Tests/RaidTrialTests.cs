@@ -607,6 +607,41 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(max * 35 / 100, (await MechanicHit(alice, 4361701)).Dsts.Single().Damage);
     }
 
+    // Pharaoh: the coffin around the trapped player is broken in time; the pyramid's shadow keeps the Divine Light off;
+    // a lone marked player has nobody to hurt; the pyramid's Death Ray burns its lane.
+    [ClientDataFact]
+    public async Task PharaohsCoffinIsBrokenHisLightShelteredAndHisRayBurnsItsLane()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, pharaoh) = await RaidFight(alice, 50103, 1, 3120701, 4370000);
+        long max = MaxHp(alice);
+        await Gm(alice, "!raidtrial 1");
+        Assert.Equal("Alice", (await Tip(alice, 4370001)).ParamList[1].Params[0]); // "Your teammate Alice is trapped"
+        Assert.Equal(4370501, await BuffOf(alice, [4370501])); // the Shroud
+        var coffin = Assert.Single(await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4370002 && !m.Dead));
+        await Break(alice, coffin);
+        await UntilBuffGone(alice, 4370501);
+
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4370002);
+        var pyramids = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4370003, 4);
+        Assert.Equal(4, pyramids.Length);
+        await WalkBehind(alice, pyramids[0], pharaoh, 3);
+        await UntilGone(instance, 4370003);
+
+        await Gm(alice, "!raidtrial 3");
+        await Tip(alice, 4370005);
+        Assert.Equal(4374901, await BuffOf(alice, [4374901]));
+        await UntilBuffGone(alice, 4374901); // alone: nobody beside her
+
+        await Gm(alice, "!raidtrial 4");
+        var eyes = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4370004, 2);
+        await WalkAhead(alice, eyes[0], 15);
+        Assert.Equal(max * 50 / 100, (await MechanicHit(alice, 4375101)).Dsts.Single().Damage);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4372101 or 4371101 or 4370401);
+    }
+
     private async Task UntilGone(long instance, int npc)
     {
         for (int i = 0; i < 200 && (await InRoom<WorldUnit>(instance, u => u is DungeonService.SceneActorUnit a && a.NpcId == npc
