@@ -14,7 +14,8 @@ namespace Ro3Emu.Server.Game;
 /// changes, 42051 when HP, SP, position or life state does. Parties live in memory (a server restart dissolves them).
 /// </summary>
 public sealed partial class TeamService(SessionRegistry sessions, CharacterService character, ChatService chat, RoleStore roles, FriendStore friends,
-    GameData data, SeasonService seasons, IOptions<ServerOptions> options, GameLoop loop, ILogger<TeamService> log) : IGameTicker
+    GameData data, SeasonService seasons, IOptions<ServerOptions> options, GameLoop loop, Maps.World world, ILogger<TeamService> log)
+    : IGameTicker
 {
     /// <summary>DungeonService supplies the authoritative role preference, allowances and Light of Bonds projection.</summary>
     public Func<GameSession, IReadOnlyList<long>, TeamMultiDungeonInfo>? MultiDungeonInfo { get; set; }
@@ -89,7 +90,26 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
 
     private async Task NotifyRosterAsync(IReadOnlyList<long> roles)
     {
+        foreach (long role in roles)
+            if (Session(role) is { } member) await SyncUnitTeamAsync(member);
         foreach (var handler in RosterChanged) await handler(roles);
+    }
+
+    /// <summary>
+    /// 31049 SYNC_ENTITY_BASE_CHANGE with NotifyType TeamInfo puts the party id on the member's unit (EntityBase.teamId,
+    /// LC_Scene_Sync._syncEntityBaseViewChange) for itself and everyone who sees it. LC_CampRelationStrategy_Default
+    /// .IsSameTeamAndGroupByUnit compares these ids: only then are party members the same group, whose 31049 life status
+    /// reaches the party frame at once (UpdateAOIPlayerLifeStatus) instead of with the next 42051.
+    /// </summary>
+    private async Task SyncUnitTeamAsync(GameSession s)
+    {
+        if (s.Role is not { } role) return;
+        long teamId = TeamOf(role.Id).TeamId;
+        if (s.UnitTeamId == teamId) return;
+        s.UnitTeamId = teamId;
+        var change = new EntityBase { Uuid = (ulong)role.Id, TeamId = teamId, NotifyType = EntityBase.Types.NotifyType.TeamInfo };
+        await s.SendGameAsync(CombatService.EntityBaseChange, change);
+        foreach (var viewer in world.Viewers(s)) await viewer.SendGameAsync(CombatService.EntityBaseChange, change);
     }
 
     /// <summary>
@@ -252,6 +272,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     public async Task OnEnteredAsync(GameSession s)
     {
         if (s.Role is { } role && _byMember.TryGetValue(role.Id, out var team)) await s.SendGameAsync(TeamAll, All(team));
+        await SyncUnitTeamAsync(s);
     }
 
     // ---- membership ----
