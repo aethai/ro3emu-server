@@ -94,7 +94,7 @@ a.skill-cell:hover,a.skill-cell:focus-visible{border-color:var(--line-strong);ba
 /* the calendar */
 .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--s2)}
 .day{min-width:0;padding:var(--s2);border:1px solid var(--line-soft);border-radius:var(--r2);background:var(--surface-sub)}
-.day.today{background:var(--blue-bg);border-color:rgba(36,87,194,.25)}
+.day.today{background:var(--blue-bg);border-color:var(--blue-line)}
 .day h3{margin-bottom:var(--s2);font:700 var(--t-sm)/1.3 var(--body)}
 .day ul{display:grid;gap:var(--s1)}
 .day li{display:grid;gap:0;font-size:var(--t-xs)}

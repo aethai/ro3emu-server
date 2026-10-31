@@ -6,13 +6,13 @@
 .chip.done,.chip.char-restore,.chip.backup{background:var(--green-bg);color:var(--green-ink)}
 .chip.wont-fix{background:var(--grey-bg);color:var(--muted)}
 .chip.char-kick,.chip.\32 fa-reset{background:var(--red-bg);color:var(--red-ink)}
-.chip.role,.chip.role-admin{background:var(--ink);color:#fff}
+.chip.role,.chip.role-admin{background:var(--ink);color:var(--on-ink)}
 
 /* a notice above a page's cards: an action the account must take, or a state the server is in */
 .notice{display:flex;align-items:flex-start;gap:var(--s3);margin-bottom:var(--gutter);padding:var(--s3) var(--s4);
-  border:1px solid rgba(122,74,0,.22);border-radius:var(--r3);background:var(--amber-bg);color:var(--ink);font-size:var(--t-md)}
+  border:1px solid var(--amber-line);border-radius:var(--r3);background:var(--amber-bg);color:var(--ink);font-size:var(--t-md)}
 .notice svg{margin-top:3px;font-size:16px;color:var(--amber-ink)}
-.notice.danger{border-color:rgba(180,40,63,.3);background:var(--red-bg)}
+.notice.danger{border-color:var(--red-line);background:var(--red-bg)}
 .notice.danger svg{color:var(--red-ink)}
 .notice b{display:block}
 .notice .actions{margin-left:auto;align-self:center}
