@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 
@@ -464,10 +465,11 @@ public sealed class FestivalService : IGameTicker
                 frozen.Add((id, 0, GameData.Int(reward, "_iAward"),
                     _awards.ResolveForProgress(_roles.LoadProgress(id), GameData.Int(reward, "_iAward"), 101).Grants.ToArray()));
         }
-        // (inferred) The bet panel previews LuckyAwardPreview; a successful prediction receives that award once.
-        long betAward = _data.Table("PublicParamConfig").TryGetValue("LuckyAwardPreview", out var preview) ? (long)(GameData.Number(preview) ?? 0) : 0;
-        foreach (var (id, target) in r.Bets)
-            if (betAward > 0 && r.Candidates.TryGetValue(target, out var c) && c.Rank == 1 && !c.GiveUp)
+        var winners = r.Bets.Where(b => r.Candidates.TryGetValue(b.Value, out var c) && c.Rank == 1 && !c.GiveUp)
+            .Select(b => b.Key).ToList();
+        long betAward = BetAward(winners.Count);
+        foreach (long id in winners)
+            if (betAward > 0)
                 frozen.Add((id, 1, betAward,
                     _awards.ResolveForProgress(_roles.LoadProgress(id), betAward, 101).Grants.ToArray()));
         foreach (var row in frozen)
@@ -493,6 +495,20 @@ public sealed class FestivalService : IGameTicker
         }
         await transaction.CommitAsync(_accounts, "festival/complete", _ => _current = r);
         _deliverOnline = true;
+    }
+
+    /// <summary>
+    /// What each right bet pays: the KoiBetRewardConfig tier holding the number of players who bet right, the fewer the
+    /// richer (the bet panel lists "${1}~ ${2} players placed the correct bet" per tier, a max of -1 unbounded). The
+    /// winner count is every bet on a candidate who won (inferred: the panel names players, not candidates). Without a
+    /// tier the face-photo panel's single preview, PublicParamConfig LuckyAwardPreview, is paid (inferred).
+    /// </summary>
+    internal long BetAward(int winners)
+    {
+        if (winners <= 0) return 0;
+        if (KoiBetRewardConfig.All(_data).FirstOrDefault(t => t.WinnerMin <= winners && (t.WinnerMax < 0 || winners <= t.WinnerMax))
+            is { AwardId: > 0 } tier) return tier.AwardId;
+        return _data.Table("PublicParamConfig").TryGetValue("LuckyAwardPreview", out var preview) ? (long)(GameData.Number(preview) ?? 0) : 0;
     }
 
     private async Task DeliverAsync(GameSession session)

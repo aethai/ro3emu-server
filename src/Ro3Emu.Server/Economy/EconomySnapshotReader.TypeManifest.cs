@@ -91,7 +91,12 @@ public static partial class EconomySnapshotReader
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
     // Faction Quest: role.task_runtime FactionDay/FactionPoints (TaskRuntimeState) are the game day and the Faction Quest
     // points counted that day against TerritoryWarzoneTaskPointsLimit. A counter, no balance and no asset.
-    public const string ExpectedFormatManifestHash = "4D5069526C13C525D39705F7F116BF1392BFFEB5B7F0B72494EAB9271E24E40E";
+    // Free cash shop: role.activity_runtime Purchases (NewActivityService.Purchases) counts each top-up or product a role
+    // took, in total and on its game day. Counters, no balance and no asset: the goods come with the order's own
+    // newactivity receipt that also saves them.
+    // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
+    // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
+    public const string ExpectedFormatManifestHash = "BC011E48EF2B8ABA2764D9F0CE1F65B551EDF6DDFAB1AADF724D5EA5D149E2F2";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State
@@ -162,6 +167,7 @@ public static partial class EconomySnapshotReader
             TypeShape(typeof(Ro3Emu.Server.Game.FestivalService.Round));
             entries.Add("server_state/season_history:Ro3Emu.Server.Game.SeasonService.Season");
             TypeShape(typeof(Ro3Emu.Server.Game.SeasonService.Season));
+            entries.Add("server_state/rank_rewards:board id -> yyyyMMddHH settlement");
             entries.Add("server_state/multi_dungeon_server:romsg.DBMultiDungeonServerInfo");
             Message(Romsg.DBMultiDungeonServerInfo.Descriptor);
             return Hash(string.Join("\n", entries));

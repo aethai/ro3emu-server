@@ -103,6 +103,9 @@ public sealed class ServerOptions
     /// <summary>Battle pass policy: the premium track is free for now.</summary>
     public PassOptions Pass { get; set; } = new();
 
+    /// <summary>Paid products and top-ups: free for now (owner decision 2026-10-31).</summary>
+    public ShopOptions Shop { get; set; } = new();
+
     /// <summary>
     /// Accounts allowed to use GM commands in game ("!" lines in chat, the client's GM panel, 1031/1034). Empty:
     /// <see cref="GmOpenWhenEmpty"/> decides. docs/guide/gm-access.md.
@@ -491,6 +494,19 @@ public sealed class VoiceOptions
 
     /// <summary>Seconds without any frame before an authed connection is closed as idle. A test host lowers this.</summary>
     public int IdleTimeoutSeconds { get; set; } = 30;
+}
+
+/// <summary>
+/// The client's cash shop (2001 CREATE_ORDER from the top-up panel, the pass and the month card): on this server a purchase
+/// costs nothing (owner decision 2026-10-31, docs/systems/shop-currency.md). Off: every order is refused as unavailable.
+/// </summary>
+public sealed class ShopOptions
+{
+    /// <summary>Products, packs and top-ups are granted without payment.</summary>
+    public bool FreeProducts { get; set; } = true;
+
+    /// <summary>Free top-ups of one package a role may take per game day (inferred cap, at least 1).</summary>
+    public int FreeTopUpsPerDay { get; set; } = 1;
 }
 
 /// <summary>Both off by default so the tests keep the original's pass; a realm turns them on (docs/systems/activities-battlepass-monthcard.md).</summary>

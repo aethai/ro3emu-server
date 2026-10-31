@@ -83,6 +83,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<TimedBattleService>();
         builder.Services.AddSingleton<DungeonMatchService>();
         builder.Services.AddSingleton<FestivalService>();
+        builder.Services.AddSingleton<RankRewardService>();
         builder.Services.AddSingleton<TrainingService>();
         builder.Services.AddSingleton<LotteryService>();
         builder.Services.AddSingleton<GuildHomeService>();
@@ -615,6 +616,7 @@ internal sealed class GameLoopTickers(IServiceProvider services) : IHostedServic
         Add<TimedBattleService>();
         Add<CasualBattleService>();
         Add<FestivalService>();
+        Add<RankRewardService>();
         Add<TrainingService>();
         Add<GuildHomeService>();
         Add<GuildCampfireService>();

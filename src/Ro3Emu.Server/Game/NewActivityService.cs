@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// MG_NewActivity (13): configuration-driven 5013 state and 82951/82975/82976 operations. Sources:
 /// LC_DAL_NewActivity and LC_ActivityServer. All claims use the
 /// existing award transaction, including source state, costs, bound items and virtual EXP. ActivityGate
-/// serializes source requests; CharacterService owns inventory locking. Cash-shop purchases stay refused.
+/// serializes source requests; CharacterService owns inventory locking. Cash-shop orders: NewActivityService.Purchases.
 /// </summary>
 public sealed partial class NewActivityService
 {
@@ -44,7 +44,8 @@ public sealed partial class NewActivityService
     private readonly DungeonService _dungeons;
     private readonly PronteraDefenseService _defense;
     private readonly TeamService _teams;
-    private readonly bool _freePremiumPass, _passPlay;
+    private readonly bool _freePremiumPass, _passPlay, _freeProducts;
+    private readonly int _freeTopUpsPerDay;
     private readonly ILogger<NewActivityService> _log;
     private readonly HashSet<(GameSession Session, long Attachment)> _queued = new();
     private long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
@@ -65,6 +66,8 @@ public sealed partial class NewActivityService
         this._teams = teams;
         _freePremiumPass = options.Value.Pass.FreePremium;
         _passPlay = options.Value.Pass.Play;
+        _freeProducts = options.Value.Shop.FreeProducts;
+        _freeTopUpsPerDay = options.Value.Shop.FreeTopUpsPerDay;
         if (_passPlay) InitializePassPlay(combat, dungeons, mvps, tasks, chat);
         dungeons.JourneyWon = JourneyDungeonWonAsync;
         dungeons.CanStageJourneyVictory = session => ActivityError(session, 112, 15) == 0;
