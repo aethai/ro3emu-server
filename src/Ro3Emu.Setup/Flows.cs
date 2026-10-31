@@ -74,7 +74,7 @@ internal static class Flows
                 "Start RO3Emu.exe with --client \"<folder with ro3.exe>\", or run RO3Emu.exe install to download the game.");
         Ui.Warn("No Ragnarok 3 game folder was found on this PC.");
         Ui.Info("[1] I have the game: pick its folder (the one with ro3.exe)");
-        if (offerInstall) Ui.Info("[2] Download the game from the official Genesis servers (about 24 GB)");
+        if (offerInstall) Ui.Info("[2] Download the game from Genesis' update servers (about 24 GB)");
         Ui.Info("[3] Quit");
         var answer = Ui.Ask("Your choice:", "1");
         if (answer == "2" && offerInstall)

@@ -27,6 +27,16 @@ public sealed partial class PanelOperations
     private readonly object _scheduleGate = new();
     private PanelScheduled? _scheduled;
     private CancellationTokenSource? _scheduleCancel;
+    /// <summary>The last step of an update's or rollback's restart (Updates.UpdateManager), and whether it runs now:
+    /// from then on the plan can no longer be cancelled or replaced.</summary>
+    private Func<Task<string?>>? _step;
+    private bool _stepping;
+
+    /// <summary>The kind of the plan waiting for its countdown (restart, update...), or null.</summary>
+    internal string? PlannedKind
+    {
+        get { lock (_scheduleGate) return _scheduled?.Kind; }
+    }
 
     public async Task<PanelServerState> ServerStateAsync()
     {
@@ -90,13 +100,36 @@ public sealed partial class PanelOperations
         CancellationTokenSource cancel;
         lock (_scheduleGate)
         {
+            if (_stepping) return Refused("The server is installing an update and restarts now.");
             _scheduleCancel?.Cancel();
             _scheduled = plan;
+            _step = null;
             cancel = _scheduleCancel = new CancellationTokenSource();
         }
         await AuditAsync(admin, AdminAudit.Schedule, "server", plan.Kind + (plan.Backup != null ? " from " + plan.Backup : "") + " at "
             + plan.At.ToString("yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture) + (plan.Reason.Length > 0 ? ": " + plan.Reason : ""));
         _ = RunScheduleAsync(plan, backup, cancel.Token);
+        return new PanelActionResult(true, "Planned for " + plan.At.ToString("HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) + ".");
+    }
+
+    /// <summary>
+    /// A restart the update manager plans (<paramref name="kind"/> update or rollback): the same countdown, then
+    /// <paramref name="step"/>, its install or rollback, right before the stop. A step that refuses (its message)
+    /// cancels the restart and the players are told. Refused while another plan waits, so an update never replaces one
+    /// silently; the update manager audits it.
+    /// </summary>
+    internal PanelActionResult ScheduleStep(string admin, string kind, int minutes, string reason, string version, Func<Task<string?>> step)
+    {
+        var plan = new PanelScheduled(kind, clock.GetUtcNow().AddMinutes(minutes), reason, admin, null, version);
+        CancellationTokenSource cancel;
+        lock (_scheduleGate)
+        {
+            if (_scheduled is { } other) return Refused("A " + Word(other.Kind) + " is already planned; cancel it first.");
+            _scheduled = plan;
+            _step = step;
+            cancel = _scheduleCancel = new CancellationTokenSource();
+        }
+        _ = RunScheduleAsync(plan, null, cancel.Token);
         return new PanelActionResult(true, "Planned for " + plan.At.ToString("HH:mm:ss 'UTC'", CultureInfo.InvariantCulture) + ".");
     }
 
@@ -112,9 +145,9 @@ public sealed partial class PanelOperations
         lock (_scheduleGate)
         {
             plan = _scheduled;
-            if (plan == null) return false;
+            if (plan == null || _stepping) return false;
             _scheduleCancel?.Cancel();
-            (_scheduled, _scheduleCancel) = (null, null);
+            (_scheduled, _scheduleCancel, _step) = (null, null, null);
         }
         await MarqueeAsync("The planned " + Word(plan.Kind) + " is cancelled.");
         await AuditAsync(admin, AdminAudit.Schedule, "server", "cancelled the " + plan.Kind + " planned for "
@@ -135,14 +168,42 @@ public sealed partial class PanelOperations
             }
             var left = plan.At - clock.GetUtcNow();
             if (left > TimeSpan.Zero) await Task.Delay(left, clock, cancel);
+            Func<Task<string?>>? step;
             lock (_scheduleGate)
             {
                 if (cancel.IsCancellationRequested || !ReferenceEquals(_scheduled, plan)) return;
+                step = _step;
+                _stepping = step != null;
+            }
+            if (step != null && await RunStepAsync(plan, step) is { } refused)
+            {
+                LogStepRefused(log, plan.Kind, refused);
+                await MarqueeAsync("The planned restart is cancelled.");
+                return;
             }
             StopServer(plan, backup);
         }
         catch (OperationCanceledException) { } // cancelled or replaced
         catch (Exception e) { LogScheduleFailed(log, e, plan.Kind); }
+    }
+
+    /// <summary>The plan's last step; a refusal (or a failure) ends the plan so the server keeps running.</summary>
+    private async Task<string?> RunStepAsync(PanelScheduled plan, Func<Task<string?>> step)
+    {
+        string? refused;
+        try { refused = await step(); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            LogScheduleFailed(log, e, plan.Kind);
+            refused = e.Message;
+        }
+        if (refused == null) return null;
+        lock (_scheduleGate)
+        {
+            _stepping = false;
+            if (ReferenceEquals(_scheduled, plan)) (_scheduled, _scheduleCancel, _step) = (null, null, null);
+        }
+        return refused;
     }
 
     private void StopServer(PanelScheduled plan, string? backup)
@@ -160,7 +221,12 @@ public sealed partial class PanelOperations
     {
         string when = left.TotalSeconds < 60 ? Math.Max(1, (int)Math.Round(left.TotalSeconds)).ToString(CultureInfo.InvariantCulture) + " seconds"
             : (int)Math.Round(left.TotalMinutes) is var m && m == 1 ? "1 minute" : m.ToString(CultureInfo.InvariantCulture) + " minutes";
-        string what = plan.Kind == "shutdown" ? "The server shuts down in " : "The server restarts in ";
+        string what = plan.Kind switch
+        {
+            "shutdown" => "The server shuts down in ",
+            "update" => "The server restarts for an update in ",
+            _ => "The server restarts in ",
+        };
         return what + when + "." + (plan.Reason.Length > 0 ? " " + plan.Reason : "");
     }
 
@@ -188,6 +254,9 @@ public sealed partial class PanelOperations
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Panel: the planned {Kind} failed")]
     private static partial void LogScheduleFailed(ILogger logger, Exception error, string kind);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Panel: the planned {Kind} is cancelled: {Reason}")]
+    private static partial void LogStepRefused(ILogger logger, string kind, string reason);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Panel: planned {Kind} by {Admin}, the server stops now")]
     private static partial void LogStopping(ILogger logger, string kind, string admin);

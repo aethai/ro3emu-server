@@ -119,6 +119,9 @@ public sealed class ServerOptions
     /// <summary>Database copies in DataDir/backups (DatabaseBackup).</summary>
     public BackupOptions Backup { get; set; } = new();
 
+    /// <summary>The web panel's update manager (Updates.UpdateManager, docs/guide/panel.md).</summary>
+    public UpdateOptions Updates { get; set; } = new();
+
     /// <summary>How long economic receipts keep their payload and outcome bytes (ReceiptRetention).</summary>
     public ReceiptRetentionOptions ReceiptRetention { get; set; } = new();
 
@@ -337,6 +340,37 @@ public sealed class FeedbackOptions
     /// keeps reports in the file only. The URL lets anyone post to that channel, so keep it out of committed config.
     /// </summary>
     public string? DiscordWebhookUrl { get; set; }
+}
+
+/// <summary>
+/// The update manager of the web panel's Server control (Updates.UpdateManager): the releases on GitHub, a checked
+/// download and an install or rollback planned like a restart (docs/guide/panel.md, Updates).
+/// </summary>
+public sealed class UpdateOptions
+{
+    /// <summary>Ask GitHub for new releases: when the page asks and every <see cref="CheckHours"/>. Off: no request leaves
+    /// the server and the page shows the installed version only.</summary>
+    public bool Check { get; set; } = true;
+
+    /// <summary>The GitHub repository whose releases are offered (owner/name).</summary>
+    public string Repository { get; set; } = "aethai/ro3emu-server";
+
+    /// <summary>Hours between two checks in the background; at least 1.</summary>
+    public double CheckHours { get; set; } = 6;
+
+    /// <summary>The GitHub API's address. Another one (a local copy of the releases list) is for testing; its own
+    /// address may then serve the downloads too.</summary>
+    public string ApiUrl { get; set; } = "https://api.github.com";
+
+    /// <summary>
+    /// How the server is run, which decides whether the page can install: auto (found from the environment), systemd,
+    /// service (a Windows service wrapper that restarts it), docker, app (RO3Emu.exe or the launcher) or manual.
+    /// </summary>
+    public string Hosting { get; set; } = "auto";
+
+    /// <summary>The release folder the server runs from (the one with server/ and RO3Emu). Empty: the folder above
+    /// the server's own executable when it is a release's.</summary>
+    public string? InstallDir { get; set; }
 }
 
 /// <summary>

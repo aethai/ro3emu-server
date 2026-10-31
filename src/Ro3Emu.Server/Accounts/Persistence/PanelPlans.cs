@@ -47,7 +47,7 @@ internal static class AdminAudit
     internal const string Role = "role", TwoFactorReset = "2fa-reset", Report = "report", CharacterKick = "char-kick",
         CharacterTeleport = "char-teleport", CharacterRename = "char-rename", CharacterItem = "char-item",
         CharacterRestore = "char-restore", Maintenance = "maintenance", Schedule = "schedule", Backup = "backup",
-        PanelLogout = "panel-logout";
+        PanelLogout = "panel-logout", Update = "update";
 
     /// <summary>A character action's target: "Name (id)" (Ro3Emu.Panel.PanelAuditTarget reads it back for the link).</summary>
     internal static string Character(string? name, long id) =>

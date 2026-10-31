@@ -38,6 +38,7 @@ public sealed partial class PanelSite
     private readonly IPanelBackend _backend;
     private readonly IPanelAdminTools _tools;
     private readonly IPanelOperations _ops;
+    private readonly IPanelUpdates _updates;
     private readonly TimeProvider _clock;
     private readonly ILogger<PanelSite> _log;
     private readonly PanelSessions _sessions;
@@ -45,18 +46,20 @@ public sealed partial class PanelSite
     private readonly IPAddress[] _proxies;
     private readonly Route[] _routes;
 
-    public PanelSite(PanelOptions options, IPanelBackend backend, IPanelAdminTools tools, IPanelOperations ops, TimeProvider clock, ILogger<PanelSite> log)
+    public PanelSite(PanelOptions options, IPanelBackend backend, IPanelAdminTools tools, IPanelOperations ops, IPanelUpdates updates,
+        TimeProvider clock, ILogger<PanelSite> log)
     {
         _options = options;
         _backend = backend;
         _tools = tools;
         _ops = ops;
+        _updates = updates;
         _clock = clock;
         _log = log;
         _sessions = new PanelSessions(clock, TimeSpan.FromHours(Math.Max(1, options.SessionHours)));
         _proxies = [.. options.TrustedProxies.Select(IPAddress.Parse).Select(Normalize)];
         _routes = [.. PublicRoutes(), .. PlayerRoutes(), .. AdminRoutes(), .. ToolRoutes(), .. DatabaseRoutes(), .. CharacterRoutes(),
-            .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. PlayerPageRoutes(), .. WikiRoutes()];
+            .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. UpdateRoutes(), .. PlayerPageRoutes(), .. WikiRoutes()];
     }
 
     /// <summary>
