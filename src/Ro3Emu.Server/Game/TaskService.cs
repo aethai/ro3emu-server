@@ -102,7 +102,8 @@ public sealed partial class TaskService
         character.GetKillTaskParticipantKeys = GetKillTaskParticipantKeys;
         character.StageKillTaskObligations = StageKillTaskObligations;
         ExtraTasks.Add(DungeonRunTasks); // TaskService.DungeonTasks.cs
-        QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.MiscTargets.cs)
+        QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
+        combat.PlayerKilled.Add(OnFactionPlayerKilledAsync); // 101023
     }
 
     /// <summary>Delivered = completeTaskNum &gt; 0 or status 4 (the client's CheckTaskDeliveryed). Without quest state: true.</summary>
@@ -294,6 +295,7 @@ public sealed partial class TaskService
             Accept(session, id);
             changed = true;
         }
+        if (AcceptFactionTasks(session) > 0) changed = true; // a new game day (TaskService.FactionQuest.cs)
         if (changed) await FlushAsync(session);
     }
 
@@ -601,7 +603,11 @@ public sealed partial class TaskService
             int? playBook = session.Synced.GetValueOrDefault(SeasonService.SeasonSync) is DBSeasonInfo { Current: { } current }
                 ? (int)current.PlayBookId : null;
             var plan = _awards.ResolveTask(session, def.Award, playBook);
-            var runtime = new TaskRuntimeState { CompletedGuides = session.TaskRuntime.CompletedGuides.ToHashSet(), InCutScene = session.InCutScene || cutScene };
+            var runtime = new TaskRuntimeState
+            {
+                CompletedGuides = session.TaskRuntime.CompletedGuides.ToHashSet(), InCutScene = session.InCutScene || cutScene,
+                FactionDay = session.TaskRuntime.FactionDay, FactionPoints = session.TaskRuntime.FactionPoints,
+            };
             string awardSource = $"task/{session.Role!.Id}/{id}/{next.CompleteTaskNum[id]}/" +
                 $"{session.Daily?.DailyEpoch ?? 0}/{session.Daily?.WeeklyEpoch ?? 0}";
             if (!await _character.ApplyAwardAsync(session, plan, def.Exp, costs, next.ToByteArray(),

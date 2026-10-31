@@ -87,7 +87,9 @@ public static partial class EconomySnapshotReader
     // Daily compensation: role.daily DailyState.Compensation lists, per ended day, the goods of the To-Do boxes that day
     // reached and left unclaimed. An obligation, not a holding: the goods are sourced only by the 1058 letter's
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
-    public const string ExpectedFormatManifestHash = "C99D38A7E3C57714CB7F363C3296CB1CD3255D33D2CFB739999F4E1BFF0D98B6";
+    // Faction Quest: role.task_runtime FactionDay/FactionPoints (TaskRuntimeState) are the game day and the Faction Quest
+    // points counted that day against TerritoryWarzoneTaskPointsLimit. A counter, no balance and no asset.
+    public const string ExpectedFormatManifestHash = "FF26AEDB54224323AD67B5543B1C5CD8A8ED9D129F8DDB32DE40907A47F5B407";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

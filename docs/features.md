@@ -47,6 +47,7 @@ show is playable from day one, without season or server-day gates ([details](gui
 - Guild League with elite rosters and capture rings
 - Territory Wars and the castle siege: commander tools, Battle Merit, the war warehouse,
   cannons and vehicles, gates and stages, rams, ladders, archers, summon platforms
+- the territory world's daily Faction Quest
 
 **Instances and activities**
 - story dungeons and scripted story scenes (reconstructed)
@@ -65,7 +66,6 @@ show is playable from day one, without season or server-day gates ([details](gui
 **Not yet**
 - **Boss script mechanics:** the special skills are in, but mechanics that lived only in the original server's scripts
   (bubbles, bells, rhythm stages) are plain area attacks.
-- **Mock Battle extras:** the arena's monsters.
 - **Smaller missing pieces:** some stages of the story dungeons
   that are still simplified.
 

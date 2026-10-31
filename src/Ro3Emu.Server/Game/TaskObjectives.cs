@@ -600,4 +600,8 @@ public sealed class TaskRuntimeState
 {
     public HashSet<long> CompletedGuides { get; set; } = new();
     public bool InCutScene { get; set; }
+    /// <summary>The game day (DailyActivityService epoch) of <see cref="FactionPoints"/> (TaskService.FactionQuest.cs).</summary>
+    public long FactionDay { get; set; }
+    /// <summary>The Faction Quest points counted that day, the exceed past 1101000's 1000 included.</summary>
+    public long FactionPoints { get; set; }
 }
