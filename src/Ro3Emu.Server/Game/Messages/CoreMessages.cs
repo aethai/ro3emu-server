@@ -58,10 +58,6 @@ public sealed class CoreMessages(RoleSessionService roleSessions, ChatService ch
         routes.Map(2004, "handler", async (session, msgId, body) =>
         {
         });
-        routes.Map(2005, "handler", async (session, msgId, body) =>
-        {
-            await session.SendGameAsync(2005, new ItemExchangeResp { Result = ErrorCodes.FeatureUnavailable });
-        });
         routes.Map(WorldCoreService.TeleportObject, "handler", async (session, msgId, body) =>
         {
             // In the reverse dungeon (SceneService.MovesOnSurface) the client reports where it shows an NPC before every
