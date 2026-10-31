@@ -117,6 +117,15 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   Only a player of its colour damages it and 4 hits per player destroy it; each one left after 20 s costs everyone 20%
   (at most 60%). Inferred: all timing and damage; Compose and Perform Movement (DungeonLua `music`/`skill`, the recorded
   scores) are not reproduced.
+- Orc Hero (five-player raid, Orc Village 3120101; 43100003/43100000): **Lost Giant Blade** (tips 4311 'Pick up the Giant
+  Blade and interrupt Orc Hero's charging!', 15 s, and 4314403; guide 1050202): 30 s in and every 70 s he raises his
+  shield (4311501) for 15 s while the dropped blade 43100002 lies at one of the ring points 18-25. Walking onto it gives
+  the carrier 'Blade Mountain-Greatsword' 4310401 (10 s) and line 4314404; the carrier's next hit on Orc Hero breaks the
+  shield (he staggers 3 s, 4311701; line 4314405). Otherwise the full-screen AOE 4311801 costs everyone 50%. The blade's
+  derived skill 4313601 is not handed out (the client's derived-skill slot comes from the skill wheel sync): any hit
+  counts. **Giant-Blade Kunai** (tips 4314405, 4314406; guide 1050203): 55 s in and every 70 s the shield 43100004 lies at
+  his feet and two players are marked (4311601); picking the shield up gives Shield 4310601 (-50% speed); after 12 s a
+  marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade 4312501.
 
 Policies below remain **(inferred)** except for explicitly identified client contracts; they do not establish
 original-server encounter parity:

@@ -289,6 +289,51 @@
           "fail": { "who": "all", "hpPercent": 20, "perObject": true, "capPercent": 60, "skill": 14783801 }
         }
       ]
+    },
+    "orc-hero": {
+      "name": "Orc Hero (five-player raid, Orc Village 3120101)",
+      "bosses": [43100003, 43100000],
+      "evidence": [
+        "ChatConfig 4311 (CombatCountdownTip, 15 s) 'Orc Hero will unleash its ultimate skill in ${1} seconds. Pick up the Giant Blade and interrupt Orc Hero's charging!', 4314403 'Pick up the giant blade!!!', 4314404 'Use the skill granted by the giant blade while facing Orc Hero!', 4314405 'Orc Hero dropped his shield! Hurry and pick it up!', 4314406 'Use the shield to block the giant blade launched by Orc Hero!'.",
+        "TenChallengeHandbookIDConfig 1050202 Lost Giant Blade (pick up the blade, use Giant Blade Slash to interrupt the full-screen charge) and 1050203 Giant-Blade Kunai (blades at several players, massive damage to those without the specified status; shields block them).",
+        "NPCConfig 43100002 (type 4, unit 40053 'the giant blade dropped in the five-player raid') and 43100004 (type 4, unit 40054 'the dropped shield'); skills 4311501 Raise Shield Start (15 s show), 4311701 Broken While Raising Shield, 4311801 Full-screen AOE, 4312501 Launch Blade (second hit 10 000 000), 4314401 Obtain Greatblade, 4314501 Obtain Shield.",
+        "BuffConfig 4310401 'Blade Mountain-Greatsword' (10 s, 'face the boss and use the skill'), 4310601 Shield (30 s, -50% movement speed, blocks the flying blades), 4311601 the weapon deflection callout.",
+        "Scene editor sc_pm_pve5orchero_001_dg01: mark points 18-25 in a ring of 18-20 m around the boss point 31."
+      ],
+      "guessed": [
+        "Lost Giant Blade 30 s into the fight and every 70 s: Orc Hero holds his raised shield (4311501) for 15 s while the blade lies at a random ring point. Walking onto it picks it up (the blade's derived skill 4313601 is not handed out: the client's derived-skill slot is filled by the skill wheel sync); the carrier's next hit on Orc Hero breaks the shield: he staggers 3 s (4311701). Otherwise the full-screen AOE costs everyone 50%.",
+        "Giant-Blade Kunai 55 s in and every 70 s: the shield lies at his feet, two players (fewer when fewer fight) are marked; after 12 s each marked player without a shield carrier within 3 m (themselves included) takes 60% as Launch Blade."
+      ],
+      "trials": [
+        {
+          "name": "Lost Giant Blade",
+          "why": "tips 4311 and 4314403 and the guide's Lost Giant Blade",
+          "start": { "firstMs": 30000, "everyMs": 70000 },
+          "tips": [4311, 4314403],
+          "tipParam": "countdown",
+          "windowMs": 15000,
+          "boss": { "hold": true, "show": 4311501 },
+          "objects": [ { "npc": 43100002, "at": { "points": [18, 19, 20, 21, 22, 23, 24, 25], "count": 1 }, "why": "the dropped giant blade" } ],
+          "rule": "carry",
+          "radius": 2.5,
+          "carry": { "buff": 4310401, "ms": 10000, "say": 4314404 },
+          "success": { "who": "all", "say": 4314405, "stagger": 4311701, "staggerMs": 3000, "why": "the shield breaks and drops" },
+          "fail": { "who": "all", "hpPercent": 50, "skill": 4311801, "why": "the full-screen AOE" }
+        },
+        {
+          "name": "Giant-Blade Kunai",
+          "why": "tips 4314405 and 4314406 and the guide's Giant-Blade Kunai",
+          "start": { "firstMs": 55000, "everyMs": 70000 },
+          "tips": [4314405, 4314406],
+          "windowMs": 12000,
+          "marks": { "count": 2, "buff": 4311601 },
+          "objects": [ { "npc": 43100004, "at": { "atBoss": true }, "why": "the dropped shield" } ],
+          "rule": "guard",
+          "radius": 3,
+          "carry": { "buff": 4310601, "ms": 30000 },
+          "fail": { "who": "failing", "hpPercent": 60, "skill": 4312501, "why": "a marked player the shield does not cover" }
+        }
+      ]
     }
   }
 }

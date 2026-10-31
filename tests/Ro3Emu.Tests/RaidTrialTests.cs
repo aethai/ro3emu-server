@@ -332,4 +332,46 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(max * 40 / 100, aoe.Dsts.Single().Damage); // two left: 2 x 20%
         Assert.Empty(await InRoom<MonsterUnit>(instance, m => m.Template.NpcId is 14780014 or 14780015 && !m.Dead));
     }
+
+    private async Task Strike(BotClient bot, MonsterUnit target)
+    {
+        await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(bot), new MapPoint(target.X + 1, target.Y, target.Z, target.Face)));
+        await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = target.Uid });
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+    }
+
+    private async Task UntilBuffGone(BotClient bot, int buff)
+    {
+        for (int i = 0; i < 200 && await BuffOf(bot, [buff]) != 0; i++) await Task.Delay(20);
+        Assert.Equal(0, await BuffOf(bot, [buff]));
+    }
+
+    // Orc Hero: the blade picked up and brought to him breaks his raised shield (no full-screen AOE); the dropped shield
+    // covers its carrier from the kunai.
+    [ClientDataFact]
+    public async Task OrcHerosBladeBreaksHisShieldAndTheShieldBlocksTheKunai()
+    {
+        await using var alice = await InWorld("Alice");
+        var (instance, orc) = await RaidFight(alice, 50101, 2, 3120101, 43100003);
+        await Gm(alice, "!raidtrial 1");
+        Assert.Equal("2", (await Tip(alice, 4311)).ParamList[1].Params[0]);
+        var blade = Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43100002));
+        await WalkTo(alice, blade);
+        await Tip(alice, 4314404); // "Use the skill granted by the giant blade while facing Orc Hero!"
+        Assert.Equal(4310401, await BuffOf(alice, [4310401]));
+        await Strike(alice, orc);
+        await Tip(alice, 4314405); // the shield broke and dropped
+        await UntilBuffGone(alice, 4310401);
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(orc.BusyUntilMs > MonsterService.NowMs))); // staggered
+
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4314406);
+        Assert.Equal(4311601, await BuffOf(alice, [4311601])); // alone, she is the marked one
+        var shield = Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43100004));
+        await WalkTo(alice, shield);
+        Assert.Equal(4310601, await BuffOf(alice, [4310601]));
+        await UntilBuffGone(alice, 4311601); // the trial is over
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4311801 or 4312501);
+    }
 }
