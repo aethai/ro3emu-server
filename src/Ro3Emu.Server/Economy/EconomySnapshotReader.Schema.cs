@@ -59,7 +59,8 @@ public static partial class EconomySnapshotReader
         ["mvp_state"] = "cfg_id state state_time dead_ms", ["mvp_line_cooldown"] = "cfg_id death_ms",
         ["mvp_player"] = "player_id first_num end_num join_num team_num last_time",
         ["prontera_defense_world"] = "season_open map_id defense_point",
-        ["prontera_defense_station"] = "season_open guild_id map_id"
+        ["prontera_defense_station"] = "season_open guild_id map_id",
+        ["prontera_defense_guild_prep"] = "season_open guild_id exp"
     };
 
     private sealed partial class State
