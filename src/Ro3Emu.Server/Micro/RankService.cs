@@ -27,7 +27,7 @@ namespace Ro3Emu.Server.Micro;
 /// PublicParamConfig.LeaderBoardRefreshIntervalTs seconds, the client's own refresh interval (inferred reuse).
 /// Only entries with a positive score are listed (inferred: the original fed boards on progress events).
 /// _iSortingRules [[1,1],[2,2]] is read as Values[1] descending, then the board's tie-break ascending (inferred).
-/// Reward settlement (_iRefresh, _kPrizesTimeNew, _iRankRewards, LeaderBoardsGiftConfig) is not implemented.
+/// Reward settlement (_kPrizesTimeNew, _iRankRewards, LeaderBoardsGiftConfig) is RankRewardService's.
 /// </para>
 /// </summary>
 public sealed class RankService(GameData data, AccountStore accounts, GuildService guilds, CharacterService character,
@@ -119,6 +119,11 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
     /// <summary>The first <paramref name="count"/> rows of a board (role or guild ids with their score), best first.</summary>
     public async Task<IReadOnlyList<(long Id, long Score)>> TopAsync(int boardId, int count) =>
         (await BoardsAsync()).Boards.TryGetValue(boardId, out var board) ? [.. board.Rows.Take(count).Select(r => (r.Id, r.Score))] : [];
+
+    /// <summary>The first <paramref name="count"/> rows of a role board, best first; a guild board has none.</summary>
+    public async Task<IReadOnlyList<(long Id, long Score)>> RoleTopAsync(int boardId, int count) =>
+        (await BoardsAsync()).Boards.TryGetValue(boardId, out var board) && !board.Guild
+            ? [.. board.Rows.Take(count).Select(r => (r.Id, r.Score))] : [];
 
     /// <summary>Drops the cached boards so the next request recomputes them (tests, GM tools).</summary>
     internal void Invalidate()

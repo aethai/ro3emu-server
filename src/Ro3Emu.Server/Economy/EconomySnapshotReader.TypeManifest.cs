@@ -94,7 +94,9 @@ public static partial class EconomySnapshotReader
     // Free cash shop: role.activity_runtime Purchases (NewActivityService.Purchases) counts each top-up or product a role
     // took, in total and on its game day. Counters, no balance and no asset: the goods come with the order's own
     // newactivity receipt that also saves them.
-    public const string ExpectedFormatManifestHash = "AB6A72179619EA176E91523C57052FD630E1ADD4F62ED32DE96BA34CF2DD51E9";
+    // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
+    // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
+    public const string ExpectedFormatManifestHash = "8AF2C354B9E2922176BEA88B7EC333E5C43DD645CC10D0B6FCE3FB0E53A5D007";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State
@@ -165,6 +167,7 @@ public static partial class EconomySnapshotReader
             TypeShape(typeof(Ro3Emu.Server.Game.FestivalService.Round));
             entries.Add("server_state/season_history:Ro3Emu.Server.Game.SeasonService.Season");
             TypeShape(typeof(Ro3Emu.Server.Game.SeasonService.Season));
+            entries.Add("server_state/rank_rewards:board id -> yyyyMMddHH settlement");
             entries.Add("server_state/multi_dungeon_server:romsg.DBMultiDungeonServerInfo");
             Message(Romsg.DBMultiDungeonServerInfo.Descriptor);
             return Hash(string.Join("\n", entries));
