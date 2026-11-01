@@ -527,7 +527,9 @@ public sealed partial class TimedBattleService : IGameTicker
                 PlayerId = match.Participants[player].Id,
                 Status = match.Ready.Contains(player) ? MatchReadyStatus.Ready : MatchReadyStatus.None
             });
-        notify.EndTime = (match.Open + 30) * 1000;
+        // Seconds: UI_Sys_Dungeon_PreparePanelCtrl subtracts TimerManager.GetSystemTime (seconds) from it, as for
+        // DungeonMatchService's ready check (milliseconds showed a countdown of about 1.8 trillion).
+        notify.EndTime = match.Open + 30;
         if (match.Entry == DragonEntry) notify.DragonIslandReadyProgress = new DragonIslandReadyProgress
         { ReadyCount = match.Ready.Count, ExpectedCount = match.Players.Length };
         await RoleFanout.EachAsync(match.Players, player => player.SendGameAsync(ReadyNotify, notify));

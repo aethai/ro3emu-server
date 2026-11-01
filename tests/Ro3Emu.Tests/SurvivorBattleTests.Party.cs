@@ -43,7 +43,8 @@ public sealed partial class SurvivorBattleTests
         var players = new[] { alice, bob, cara, dan };
         foreach (var player in players)
         {
-            await Next(player, TimedBattleService.ReadyNotify, MatchReadyNotify.Parser);
+            var check = await Next(player, TimedBattleService.ReadyNotify, MatchReadyNotify.Parser);
+            Assert.Equal(_clock.GetUtcNow().ToUnixTimeSeconds() + 30, check.EndTime); // seconds, as the prepare panel counts
             await player.SendGameAsync(TimedBattleService.Ready, new MatchReadyReq { MatchEntryId = 2, PlayerId = Id(player), IsReady = true });
             Assert.Equal(0, (await Next(player, TimedBattleService.Ready, MatchReadyResp.Parser)).Result);
         }
