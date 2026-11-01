@@ -21,12 +21,14 @@ public sealed class ServerOptions
         Panel.BindAddress is { Length: > 0 } bind ? System.Net.IPAddress.Parse(bind) : ListenAddress();
 
     /// <summary>
-    /// Only this machine reaches the server: the game ports and the panel listen on loopback and no proxy serves the
-    /// panel (<see cref="Ro3Emu.Panel.PanelOptions.PublicFacing"/>). Local play and the tests. An address that does not
-    /// parse counts as public, so a typo never opens GM.
+    /// Only this machine reaches the server: the client is told a loopback address, the game ports and the panel listen
+    /// on loopback and no proxy serves the panel (<see cref="Ro3Emu.Panel.PanelOptions.PublicFacing"/>). Local play and
+    /// the tests. A public <see cref="PublicHost"/> with a loopback bind is a tunnel (frp, ssh -R, nginx stream): it
+    /// delivers strangers to loopback. An address that does not parse counts as public, so a typo never opens GM.
     /// </summary>
     public bool LocalOnly()
     {
+        if (!System.Net.IPAddress.TryParse(PublicHost, out var told) || !System.Net.IPAddress.IsLoopback(told)) return false;
         if (BindAddress is { Length: > 0 } bind && !System.Net.IPAddress.TryParse(bind, out _)) return false;
         if (Panel.BindAddress is { Length: > 0 } panel && !System.Net.IPAddress.TryParse(panel, out _)) return false;
         return System.Net.IPAddress.IsLoopback(ListenAddress()) && !Panel.PublicFacing(PanelListenAddress());

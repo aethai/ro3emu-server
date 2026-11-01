@@ -276,7 +276,7 @@ public sealed partial class PanelSite
             account = null;
         }
         if (account == null) sessionId = null;
-        var role = account == null ? PanelRole.None : await StaffRoleAsync(account);
+        var role = account == null ? PanelRole.None : await StaffRoleAsync(account, context.Request);
         if (route.Access != Access.Public && account == null) return Reply.Error(StatusCodes.Status401Unauthorized, "Please log in.");
         if (Needed(route.Access) is { } needed && role < needed) return Reply.Error(StatusCodes.Status403Forbidden, Refusal(needed));
         if (route.Method == "POST")
