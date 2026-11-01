@@ -39,6 +39,14 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
         Message = "Micro {Service}.{Method} from session {Id} refused: no account is bound; later ones not logged")]
     private static partial void LogUnverifiedCall(ILogger logger, string service, string method, long id);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Micro {Service}.{Method} {Args}")]
+    private static partial void LogCall(ILogger logger, string service, string method, string args);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Micro {Service}.{Method} is not implemented ({Suppressed} more since the last such line)")]
+    private static partial void LogNotImplemented(ILogger logger, string service, string method, long suppressed);
+
+    private readonly LogThrottle _unknownLog = new();
+
     public async ValueTask<byte[]> InvokeAsync(MicroSession session, string service, string method, ReadOnlyMemory<byte> packedArgs)
     {
         if (session.Account == null && !AllowedBeforeSignIn(service, method))
@@ -47,19 +55,25 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
             if (!session.RefusalLogged)
             {
                 session.RefusalLogged = true;
-                LogUnverifiedCall(log, service, method, session.Id);
+                if (log.IsEnabled(LogLevel.Warning)) LogUnverifiedCall(log, Clip(service), Clip(method), session.Id);
             }
             return MessagePackSerializer.Serialize(Fail("not verified"));
         }
         object? args = packedArgs.IsEmpty ? null : MessagePackSerializer.Deserialize<object>(packedArgs, Untrusted);
-        log.LogInformation("Micro {Service}.{Method} {Args}", service, method, Describe(args));
+        if (log.IsEnabled(LogLevel.Debug))
+        {
+            string loggedService = Clip(service), loggedMethod = Clip(method), loggedArgs = Describe(args);
+            LogCall(log, loggedService, loggedMethod, loggedArgs);
+        }
 
         object? result = null;
         if (_services.TryGetValue(service, out var handler))
         {
             // PhonestGate touches only the micro connection, the locked GateAuthRegistry and the ban read: no Realm admission.
-            // RankService only reads committed rows through the read pool and its own cached snapshot.
-            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate" or "RankService")
+            // RankService only reads committed rows through the read pool and its own cached snapshot, and so does
+            // NameService (RoleStore.FindByNameAsync, GetAsync): under the Realm key a flood of getUidByName waited
+            // behind, and held up, every realm-wide operation of the loop.
+            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate" or "RankService" or "NameService")
                 result = await handler.InvokeAsync(session, method, args);
             else result = await loop.InvokeAsync(async () =>
             {
@@ -83,8 +97,9 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
         }
         if (result == null)
         {
-            log.LogWarning("Micro {Service}.{Method} is not implemented", service, method);
-            result = Fail($"{service}.{method} not implemented");
+            if (_unknownLog.Allow(out long suppressed) && log.IsEnabled(LogLevel.Warning))
+                LogNotImplemented(log, Clip(service), Clip(method), suppressed);
+            result = Fail($"{Clip(service)}.{Clip(method)} not implemented");
         }
         return MessagePackSerializer.Serialize(result);
     }
@@ -106,14 +121,26 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
         "LoginToken", "MixedLoginToken", "AccessToken", "RefreshToken",
     };
 
+    /// <summary>Characters of one client text in a log line, and entries of one map or array, before the rest is cut.</summary>
+    internal const int LoggedText = 128, LoggedEntries = 16;
+
+    /// <summary><paramref name="text"/> cut to <see cref="LoggedText"/> characters, saying how long it was.</summary>
+    public static string Clip(string? text) =>
+        text == null ? "" : text.Length <= LoggedText ? text : $"{text[..LoggedText]}...({text.Length} chars)";
+
+    /// <summary>The arguments for a log line: bounded in depth, entries and text, secrets redacted.</summary>
     public static string Describe(object? value, int depth = 0) => value switch
     {
         null => "nil",
         byte[] b => $"bin[{b.Length}]",
-        string s => $"\"{s}\"",
-        IDictionary<object, object?> map when depth < 4 => "{" + string.Join(", ", map.Select(kv =>
-            $"{kv.Key}={(kv.Key is string key && SecretKeys.Contains(key) ? "<redacted>" : Describe(kv.Value, depth + 1))}")) + "}",
-        object?[] array when depth < 4 => "[" + string.Join(", ", array.Select(v => Describe(v, depth + 1))) + "]",
-        _ => value.ToString() ?? "?",
+        string s => $"\"{Clip(s)}\"",
+        IDictionary<object, object?> map when depth < 4 => "{" + Entries(map.Select(kv =>
+            $"{Clip(kv.Key?.ToString())}={(kv.Key is string key && SecretKeys.Contains(key) ? "<redacted>" : Describe(kv.Value, depth + 1))}"), map.Count) + "}",
+        object?[] array when depth < 4 => "[" + Entries(array.Select(v => Describe(v, depth + 1)), array.Length) + "]",
+        IDictionary<object, object?> or object?[] => "...",
+        _ => Clip(value.ToString()) is { Length: > 0 } text ? text : "?",
     };
+
+    private static string Entries(IEnumerable<string> entries, int count) =>
+        string.Join(", ", entries.Take(LoggedEntries)) + (count > LoggedEntries ? $", ...(+{count - LoggedEntries})" : "");
 }

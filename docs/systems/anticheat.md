@@ -56,6 +56,8 @@ number is still refused) or `off`.
 |---|---|---|
 | `MessagesPerSecond`, `MessageBurst` | 120, 600 | game messages per session; 0 turns the limit off |
 | `MessageLimits` | `{"1006": "0.5/5", "1007": "0.5/5"}` | tighter budgets per message id, `perSecond/burst` (role create, role select) |
+| `MicroRequests` | `20/100` | frames per micro gate connection once signed in, `perSecond/burst` (heartbeats are free); over it a request is answered "too many requests" without running |
+| `MicroRequestsBeforeSignIn` | `2/10` | the same before `verifySdk` binds an account; over it the connection is closed |
 | `ChatLines` | `1/10` | chat lines per session |
 | `ChatMaxLength` | 500 | characters per chat line |
 | `MaxRolesPerAccount` | 6 | `LC_SelectRoleManager.m_iMaxRoleNumber` |

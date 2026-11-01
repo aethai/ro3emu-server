@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Google.Protobuf;
 using MessagePack;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Phonest.Proto;
@@ -115,6 +116,81 @@ public sealed class MicroGateTests : IDisposable
         cts.Cancel();
     }
 
+    [Theory]
+    [InlineData((ushort)999)] // an rpc index the gate does not know
+    [InlineData((ushort)33)]  // a request before the encrypted session is up
+    [InlineData((ushort)2)]   // a key exchange that is not one
+    public async Task AFloodOfLargeGarbageFramesLeavesASmallLog(ushort index)
+    {
+        int port = TestPorts.FreePort();
+        var options = Options.Create(new ServerOptions { DataDir = _dataDir, MicroGatePort = port });
+        using var accounts = new AccountStore(options);
+        var crypto = GateCrypto.LoadOrCreate(_dataDir, NullLogger.Instance);
+        var micro = new MicroSessions(NullLogger<MicroSessions>.Instance);
+        var log = new RecordingLogger<MicroGateServer>();
+        var router = new MicroServiceRouter([new LoginService(accounts, new RoleStore(accounts), micro, NullLogger<LoginService>.Instance)], NullLogger<MicroServiceRouter>.Instance);
+        using var gate = new MicroGateServer(options, crypto, router, micro, log);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await gate.StartAsync(cts.Token);
+
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        await socket.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+        var garbage = new byte[1024 * 1024 - 2];
+        Random.Shared.NextBytes(garbage);
+        var frame = new byte[6 + garbage.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(frame, garbage.Length + 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(4), index);
+        garbage.CopyTo(frame, 6);
+        int sent = 0;
+        try
+        {
+            for (; sent < 1000; sent++) await socket.SendAsync(frame, SocketFlags.None, cts.Token);
+        }
+        catch (SocketException) { } // the gate closed the connection: what this test wants
+        var buffer = new byte[16];
+        try { Assert.Equal(0, await socket.ReceiveAsync(buffer, SocketFlags.None, cts.Token)); }
+        catch (SocketException) { }
+
+        Assert.True(sent < 1000, "the gate kept reading garbage");
+        Assert.All(log.Lines, line => Assert.Null(line.Error));
+        Assert.True(log.Lines.Count <= 6, string.Join("\n", log.Lines.Select(l => l.Text)));
+        Assert.True(log.Lines.Sum(l => l.Text.Length) < 2000, string.Join("\n", log.Lines.Select(l => l.Text)));
+        cts.Cancel();
+    }
+
+    [Fact]
+    public void LoggedArgumentsAreBounded()
+    {
+        var args = new Dictionary<object, object?>
+        {
+            ["Name"] = new string('x', 100_000),
+            ["Ticket"] = "secret",
+            ["List"] = Enumerable.Range(0, 1000).Select(i => (object?)i).ToArray(),
+        };
+        string described = MicroServiceRouter.Describe(args);
+        Assert.True(described.Length < 600, described);
+        Assert.Contains("(100000 chars)", described);
+        Assert.Contains("<redacted>", described);
+        Assert.Contains("...(+984)", described);
+        Assert.DoesNotContain("secret", described);
+    }
+
+    /// <summary>Every line a component logs, with its level and exception.</summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        private readonly List<(LogLevel Level, string Text, Exception? Error)> _lines = [];
+
+        public IReadOnlyList<(LogLevel Level, string Text, Exception? Error)> Lines { get { lock (_lines) return [.. _lines]; } }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (_lines) _lines.Add((logLevel, formatter(state, exception), exception));
+        }
+    }
 
     private static byte[] Frame(ushort index, IMessage message)
     {
