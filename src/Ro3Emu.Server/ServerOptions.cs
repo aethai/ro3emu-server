@@ -16,6 +16,22 @@ public sealed class ServerOptions
         : System.Net.IPAddress.TryParse(PublicHost, out var host) && System.Net.IPAddress.IsLoopback(host) ? System.Net.IPAddress.Loopback
         : System.Net.IPAddress.Any;
 
+    /// <summary>The web panel's listen address: its own bind address, else the server's.</summary>
+    public System.Net.IPAddress PanelListenAddress() =>
+        Panel.BindAddress is { Length: > 0 } bind ? System.Net.IPAddress.Parse(bind) : ListenAddress();
+
+    /// <summary>
+    /// Only this machine reaches the server: the game ports and the panel listen on loopback and no proxy serves the
+    /// panel (<see cref="Ro3Emu.Panel.PanelOptions.PublicFacing"/>). Local play and the tests. An address that does not
+    /// parse counts as public, so a typo never opens GM.
+    /// </summary>
+    public bool LocalOnly()
+    {
+        if (BindAddress is { Length: > 0 } bind && !System.Net.IPAddress.TryParse(bind, out _)) return false;
+        if (Panel.BindAddress is { Length: > 0 } panel && !System.Net.IPAddress.TryParse(panel, out _)) return false;
+        return System.Net.IPAddress.IsLoopback(ListenAddress()) && !Panel.PublicFacing(PanelListenAddress());
+    }
+
     /// <summary>The voice relay serves whenever a port is set (the stream is sealed, so off loopback too).</summary>
     public bool VoiceServed() => Voice.Port > 0;
 
@@ -114,9 +130,10 @@ public sealed class ServerOptions
 
     /// <summary>
     /// What an empty <see cref="GmAccounts"/> means in game: true = every account has GM (research server, tests,
-    /// local play), false = nobody has GM. Left unset, ServerHost decides from the host environment: false when it was
-    /// set to Production explicitly (ASPNETCORE_ENVIRONMENT, DOTNET_ENVIRONMENT or --environment), true otherwise. The
-    /// loopback HTTP POST /ro3emu/gm (the operator's tools) keeps the old rule either way: empty = every account.
+    /// local play), false = nobody has GM. Left unset, ServerHost decides: true only on a server that only this machine
+    /// reaches (<see cref="LocalOnly"/>) and that was not set to Production explicitly (ASPNETCORE_ENVIRONMENT,
+    /// DOTNET_ENVIRONMENT or --environment); false on a public bind, behind a proxy, or in Production. The loopback
+    /// HTTP POST /ro3emu/gm (the operator's tools) keeps the old rule either way: empty = every account.
     /// </summary>
     public bool? GmOpenWhenEmpty { get; set; }
 
