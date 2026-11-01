@@ -355,6 +355,7 @@ public sealed class RoleItemPlanBuilder
             object?[] result;
             try { result = accounts.WriteSync<object?[]>(escrowSubmitted); }
             catch (EconomyOperationConflictException) { throw; }
+            catch (DbQueueFullException) { throw; } // not admitted: a definite failure, nothing to resolve
             catch (Exception original)
             {
                 object?[]? resolved;
@@ -394,6 +395,7 @@ public sealed class RoleItemPlanBuilder
         if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
         object?[] receipts;
         try { receipts = accounts.WriteSync<object?[]>(submitted); }
+        catch (DbQueueFullException) { throw; } // not admitted: a definite failure, nothing to resolve
         catch (Exception original)
         {
             object?[]? resolved;
@@ -464,7 +466,7 @@ public sealed class RoleItemPlanBuilder
             if (_expected.Count != 0) submitted.Expect(_expected.Values);
             if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
             try { receipts = await accounts.WriteOwnedAsync<object?[]>(submitted); }
-            catch (Exception original) when (original is not EconomyOperationConflictException)
+            catch (Exception original) when (original is not (EconomyOperationConflictException or DbQueueFullException))
             {
                 object?[]? resolved;
                 try

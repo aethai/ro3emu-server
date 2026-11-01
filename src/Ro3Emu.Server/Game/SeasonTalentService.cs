@@ -293,7 +293,8 @@ public sealed partial class SeasonTalentService
                         persist: tx => { tx.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray()); tx.WithEconomy(economy); },
                         committed: () => s.SeasonTalent = next, asyncCommit: true);
                 }
-                catch (Exception e) when (e is SqliteException or InvalidOperationException)
+                catch (Exception e) when (e is SqliteException or Accounts.Persistence.PersistenceException
+                    or InvalidOperationException)
                 {
                     _log.LogError(e, "Talent purchase {Node} for role {Role} rolled back", node, s.Role!.Id);
                     result = ErrorCodes.Unknown;
@@ -360,7 +361,8 @@ public sealed partial class SeasonTalentService
                     await _character.RefreshStatsAsync(s);
                     await RefreshEffectsAsync(s);
                 }
-                catch (Exception e) when (e is SqliteException or InvalidOperationException)
+                catch (Exception e) when (e is SqliteException or Accounts.Persistence.PersistenceException
+                    or InvalidOperationException)
                 {
                     _log.LogError(e, "Talent plan switch for role {Role} failed", s.Role!.Id);
                     result = ErrorCodes.Unknown;
@@ -391,7 +393,8 @@ public sealed partial class SeasonTalentService
                     await _roles.CommitAsync(transaction, "season-talent/rename", _ => s.SeasonTalent = next);
                     await CharacterService.SyncAsync(s, TalentSync, next.Clone());
                 }
-                catch (Exception e) when (e is SqliteException or InvalidOperationException)
+                catch (Exception e) when (e is SqliteException or Accounts.Persistence.PersistenceException
+                    or InvalidOperationException)
                 {
                     _log.LogError(e, "Talent plan rename for role {Role} failed", s.Role!.Id);
                     result = ErrorCodes.Unknown;

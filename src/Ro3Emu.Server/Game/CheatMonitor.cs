@@ -79,7 +79,8 @@ public sealed partial class CheatMonitor(IOptions<ServerOptions> options, Accoun
         if (refusals.Length == 0 && exp.Length == 0) return;
         long keep = clock.GetUtcNow().ToUnixTimeMilliseconds() / HourMs - Math.Max(1, options.Value.AntiCheat.KeepDays) * 24L;
         try { await accounts.WriteAsync<int>(new AntiCheatFlushPlan(refusals, exp, keep)); }
-        catch (Exception e) when (e is SqliteException or IOException or InvalidOperationException or ObjectDisposedException)
+        catch (Exception e) when (e is SqliteException or IOException or PersistenceException
+            or InvalidOperationException or ObjectDisposedException)
         {
             LogFlushFailed(log, e);
             lock (_sync)

@@ -25,27 +25,36 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
         {
             try { await CompactAsync(stoppingToken); }
             catch (OperationCanceledException) { return; }
-            catch (Exception e) when (e is SqliteException or IOException or InvalidOperationException) { LogFailed(log, e); }
+            catch (Exception e) when (e is SqliteException or IOException or PersistenceException or InvalidOperationException)
+            { LogFailed(log, e); }
             var interval = TimeSpan.FromMinutes(Math.Max(1, options.Value.ReceiptRetention.IntervalMinutes));
             try { await Task.Delay(interval, clock, stoppingToken); } catch (OperationCanceledException) { return; }
         }
     }
 
-    /// <summary>One run: batches until every due receipt is compacted. Returns how many were.</summary>
+    /// <summary>Receipts the last run walked past (compacted or not due for compaction); 0 when it found nothing new.</summary>
+    internal long LastPassed { get; private set; }
+
+    /// <summary>
+    /// One run: batches from the stored watermark until the first receipt that is not due yet. Returns how many receipts
+    /// were compacted. A run right after another walks nothing, so its cost no longer grows with the realm's age.
+    /// </summary>
     internal async Task<long> CompactAsync(CancellationToken ct = default)
     {
+        LastPassed = 0;
         var settings = options.Value.ReceiptRetention;
         if (settings.Days <= 0) return 0;
         long cutoff = clock.GetUtcNow().AddDays(-settings.Days).ToUnixTimeMilliseconds();
         int batch = Math.Clamp(settings.BatchSize, 1, 10_000);
-        long total = 0, after = 0;
+        long total = 0, passed = 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var (compacted, last) = await accounts.WriteAsync<(int, long)>(new ReceiptCompactionPlan(cutoff, after, batch));
-            total += compacted;
-            if (last <= after) break;
-            after = last;
+            var result = await accounts.WriteAsync<ReceiptCompactionPlan.Batch>(new ReceiptCompactionPlan(cutoff, batch));
+            total += result.Compacted;
+            passed += result.Passed;
+            LastPassed = passed;
+            if (!result.More) break;
             // Game writes share the single writer: leave it room between batches.
             await Task.Delay(BatchPause, clock, ct);
         }

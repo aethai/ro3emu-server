@@ -201,7 +201,8 @@ public sealed partial class GenreService(
                     }
                     else await SaveGenreAsync(s, genre);
                 }
-                catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+                catch (Exception e) when (e is Microsoft.Data.Sqlite.SqliteException or PersistenceException
+                    or InvalidOperationException)
                 {
                     log.LogError(e, "Genre build change failed for role {Role}", s.Role!.Id);
                     code = ErrorCodes.Unknown;

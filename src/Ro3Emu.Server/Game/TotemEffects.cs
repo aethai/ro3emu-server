@@ -264,7 +264,9 @@ public sealed class TotemEffects : IGameTicker
     {
         if (s.Role == null || s.Progress == null) return;
         try { await _character.RefreshStatsAsync(s); }
-        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
+        catch (Exception e) when (e is IOException or ObjectDisposedException
+            or Accounts.Persistence.PersistenceException or InvalidOperationException)
+        { }
     }
 
     private static bool Magic(JsonElement row) => GameData.Int(row, "_iDmgType") == 2;

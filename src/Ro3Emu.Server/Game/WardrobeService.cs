@@ -422,7 +422,9 @@ public sealed partial class WardrobeService
         await session.SendGameAsync(CharacterService.EntityBaseChange, change);
         foreach (var viewer in _world.Viewers(session))
             try { await viewer.SendGameAsync(CharacterService.EntityBaseChange, change); }
-            catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
+            catch (Exception e) when (e is IOException or ObjectDisposedException or PersistenceException
+                or InvalidOperationException)
+            { }
     }
 
     private JsonElement? Row(int id) => _data.Row("WardRobeConfig", id);
