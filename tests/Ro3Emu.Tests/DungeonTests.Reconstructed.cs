@@ -145,7 +145,7 @@ public sealed partial class DungeonTests
     private async Task<long> LeafRoom(BotClient alice, BotClient bob, int trigger, JsonArray revive)
     {
         var request = ConfigureTwoActorStory();
-        ChangeRow("DungeonConfig", request.SceneEntry.ToString(), row =>
+        ChangeRow("DungeonConfig", request.SceneEntry.ToString(System.Globalization.CultureInfo.InvariantCulture), row =>
         {
             row["_iLimitType"] = 0;
             row["_iReviveTrigger"] = trigger;
