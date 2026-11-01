@@ -172,7 +172,8 @@ public sealed partial class CharacterService
         foreach (var (stat, value) in req.Points)
             if (stat is >= 1 and <= 6) wanted[stat - 1] = value;
         bool ok = req.Points.Keys.All(k => k is >= 1 and <= 6)
-            && wanted.Select((v, i) => v >= previous[i] && v <= MaxStat).All(x => x) && wanted.Sum(StatCost) <= TotalPoints(p);
+            // The panel's "-" goes down to 1 (LC_DAL_PlayerInfo.CanMinusBaseAttr) and the reset is free, so any value counts.
+            && wanted.All(v => v is >= 1 and <= MaxStat) && wanted.Sum(StatCost) <= TotalPoints(p);
         if (ok)
         {
             for (int i = 0; i < 6; i++) selected.BaseProperty[i + 1] = wanted[i];

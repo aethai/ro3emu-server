@@ -29,6 +29,8 @@ public sealed partial class BuffService : IGameTicker
     private readonly ILogger<BuffService> _log;
     private long _guids = 900000;
     private readonly Dictionary<long, List<ActiveBuff>> _unitBuffs = [];
+    private const long ExpiryRetryMs = 10_000;
+    private readonly Dictionary<long, long> _expiring = [];
 
     /// <summary>Subscribers recompute effective skill parameters/slots after a buff changes.</summary>
     public List<Func<GameSession, Task>> Changed { get; } = [];
@@ -492,7 +494,7 @@ public sealed partial class BuffService : IGameTicker
         SweepDecay(now);
         foreach (var s in _sessions.All())
         {
-            foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) _loop.TrackLegacyDetached("buff expiration", () => RemoveAsync(s, b));
+            foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b));
             TickEnergy(s, now);
             TickImmuneDeath(s, now);
         }
@@ -501,11 +503,26 @@ public sealed partial class BuffService : IGameTicker
             foreach (var buff in list.Where(b => b.ExpireMs <= now).ToList())
             {
                 var unit = _world.AllUnits().FirstOrDefault(u => u.Uid == uid);
-                if (unit != null) _loop.TrackLegacyDetached("unit buff expiration", () => RemoveUnitBuffAsync(unit, buff));
+                if (unit != null) ExpireOnce(buff, "unit buff expiration", () => RemoveUnitBuffAsync(unit, buff));
                 else list.Remove(buff);
             }
             if (list.Count == 0) _unitBuffs.Remove(uid);
         }
+    }
+
+    /// <summary>One queued removal per expired buff: a removal waits for its reservation, and queuing one every tick
+    /// meanwhile built tens of thousands of waiters on a busy live realm.</summary>
+    private void ExpireOnce(ActiveBuff buff, string name, Func<Task> remove)
+    {
+        long now = MonsterService.NowMs;
+        // A loop at its work limit drops the job without running it, so one that never finished is queued again.
+        if (_expiring.TryGetValue(buff.Guid, out long queued) && now - queued < ExpiryRetryMs) return;
+        _expiring[buff.Guid] = now;
+        _loop.TrackLegacyDetached(name, async () =>
+        {
+            try { await remove(); }
+            finally { _expiring.Remove(buff.Guid); }
+        });
     }
 
     private async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, Google.Protobuf.IMessage body)
