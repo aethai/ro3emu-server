@@ -1,0 +1,110 @@
+using System.Net;
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Ro3Emu.Bot;
+using Ro3Emu.Server;
+using Ro3Emu.Server.Game;
+using Ro3Emu.Server.Game.Ownership;
+using Ro3Emu.Server.Http;
+
+namespace Ro3Emu.Tests;
+
+/// <summary>
+/// What one connection may cost the server before and after it signs in: the micro gate's request budget, NameService
+/// outside the realm-wide reservation, and the SDK login's form and new-name limits. Account names are invented.
+/// </summary>
+public sealed class MicroGateLimitTests : IAsyncLifetime
+{
+    private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-microlimit-" + Guid.NewGuid().ToString("N"));
+    private WebApplication _app = null!;
+    private string _http = "", _pem = "";
+
+    public async Task InitializeAsync()
+    {
+        var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
+        _app = ServerHost.Create([], o =>
+        {
+            o.DataDir = _dataDir;
+            o.GameDataDir = SyntheticData.Dir;
+            o.HttpPort = httpPort;
+            o.MicroGatePort = microPort;
+            o.GameGatePort = gamePort;
+            o.AntiCheat.MicroRequests = "0.5/6";
+        });
+        await _app.StartAsync();
+        _http = $"http://127.0.0.1:{httpPort}";
+        _pem = File.ReadAllText(Path.Combine(_dataDir, "gate_rsa_public.pem"));
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _app.StopAsync();
+        await _app.DisposeAsync();
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(_dataDir, true); } catch (IOException) { }
+    }
+
+    [Fact]
+    public async Task ASignedInConnectionOverItsBudgetIsAnsweredWithoutRunning()
+    {
+        await using var bot = new BotClient(_http, _pem);
+        await bot.LoginAsync("budget-player", "pw");
+        var answers = new List<string>();
+        for (int i = 0; i < 12; i++) answers.Add(Message(await bot.MicroAsync("NameService", "getUidByName", Lookup("nobody"))));
+        Assert.Contains("TID_NO_DOCUMENT", answers);
+        Assert.Contains("too many requests", answers);
+    }
+
+    [Fact]
+    public async Task NameLookupsDoNotWaitBehindTheRealmReservation()
+    {
+        await using var bot = new BotClient(_http, _pem);
+        await bot.LoginAsync("lookup-player", "pw");
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var owners = _app.Services.GetRequiredService<OwnerRegistry>();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var held = loop.InvokeAsync(async () =>
+        {
+            using var scope = await owners.EnterAsync("test/hold-realm", ReservationKey.Realm);
+            entered.SetResult();
+            await release.Task;
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            var lookup = bot.MicroAsync("NameService", "getUidByName", Lookup("nobody"));
+            Assert.Equal("TID_NO_DOCUMENT", Message(await lookup.WaitAsync(TimeSpan.FromSeconds(10))));
+        }
+        finally { release.SetResult(); }
+        await held.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task TheSdkLoginRefusesHugeFormsAndOnlyRegistersPrintableNames()
+    {
+        using var client = new HttpClient();
+        using var huge = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = new string('a', 10_000), ["credential"] = "pw" });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(_http + SdkEndpoints.LoginPath, huge)).StatusCode);
+
+        Assert.Equal(401, await CodeAsync(client, "sdk name", "pw"));
+        Assert.Equal(401, await CodeAsync(client, new string('n', 65), "pw"));
+        Assert.Equal(401, await CodeAsync(client, "sdk-long-password", new string('p', 1025)));
+        Assert.Equal(0, await CodeAsync(client, "sdk-new", "pw"));
+        Assert.Equal(0, await CodeAsync(client, "sdk-new", "pw"));
+    }
+
+    private async Task<int> CodeAsync(HttpClient client, string identity, string credential)
+    {
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = identity, ["credential"] = credential });
+        var body = await (await client.PostAsync(_http + SdkEndpoints.LoginPath, form)).Content.ReadAsStringAsync();
+        return JsonDocument.Parse(body).RootElement.GetProperty("code").GetInt32();
+    }
+
+    private static Dictionary<string, object?> Lookup(string name) => new() { ["Type"] = "Area0", ["Name"] = name };
+
+    private static string Message(Dictionary<object, object?> response) =>
+        (string)((object[])response["Ret"]!)[1]!;
+}

@@ -22,6 +22,23 @@ public static partial class SdkEndpoints
     public const int BigArea = 168;
     public const int AreaId = 1;
 
+    /// <summary>
+    /// The login form the client posts is identity, credential and channel_id (HttpNetworkManager): a few short values.
+    /// Anything far larger is refused before it is read in full. (inferred)
+    /// </summary>
+    private static readonly Microsoft.AspNetCore.Http.Features.FormOptions LoginForm = new()
+    {
+        BufferBody = false,
+        ValueCountLimit = 16,
+        KeyLengthLimit = 64,
+        ValueLengthLimit = 4096,
+        MultipartBodyLengthLimit = 16 * 1024,
+        MultipartHeadersLengthLimit = 4096,
+    };
+
+    /// <summary>Characters of a password the game's login hashes; the panel's own limit (PanelSite.PasswordMax) is far below. (inferred)</summary>
+    private const int MaxCredential = 1024;
+
     /// <summary>Public half of the gate key, so a player's ClientTools can patch against this server from its URL alone.</summary>
     public const string GateKeyPath = "/ro3emu/gate-key.pem";
 
@@ -33,14 +50,19 @@ public static partial class SdkEndpoints
             IOptions<ServerOptions> options, ILogger<AccountStore> log) =>
         {
             if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-            var form = await request.ReadFormAsync();
+            IFormCollection form;
+            try { form = await request.ReadFormAsync(LoginForm); }
+            catch (InvalidDataException) { return Results.StatusCode(StatusCodes.Status400BadRequest); }
             string identity = form["identity"].ToString().Trim();
             string credential = form["credential"].ToString();
-            if (identity.Length == 0 || credential.Length == 0)
+            if (identity.Length == 0 || credential.Length == 0 || credential.Length > MaxCredential)
             {
                 return Results.Json(new { code = 401 });
             }
-            var (result, account) = await accounts.SignInAsync(identity, credential, register: !options.Value.RefuseUnknownAccounts);
+            // A name only becomes an account when it meets the rule every new account meets (the panel's too); an
+            // existing account logs in whatever its name.
+            bool register = !options.Value.RefuseUnknownAccounts && Ro3Emu.Panel.AccountNames.Problem(identity) == null;
+            var (result, account) = await accounts.SignInAsync(identity, credential, register);
             if (result == AccountStore.LoginResult.Unknown)
                 LogUnknownRefused(log, account);
             else
