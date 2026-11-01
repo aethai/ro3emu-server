@@ -108,6 +108,25 @@ public sealed class PanelAdminTests : IAsyncLifetime
         Assert.Equal(["role", "role"], await AuditActionsAsync(admin));
     }
 
+    [Fact]
+    public async Task StaffBanOnlyBelowTheirOwnRole()
+    {
+        Assert.Equal(0, await SdkLoginAsync(_host, "padmin-plain", "pw"));
+        using var admin = await SignedInAsync(Admin);
+        await SdkLoginAsync(_host, "padmin-mod2", "pw");
+        await OkAsync(admin.PostAsync("/api/admin/roles", new { account = "padmin-mod2", role = "moderator" }));
+        using var moderator = await SignedInAsync(Moderator);
+
+        foreach (string above in new[] { Admin, "padmin-mod2" })
+        {
+            var refused = await moderator.PostAsync("/api/admin/accounts/" + above + "/ban", new { reason = "coup", hours = 1 });
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        }
+        await OkAsync(moderator.PostAsync("/api/admin/accounts/padmin-plain/ban", new { reason = "botting", hours = 1 }));
+        await OkAsync(admin.PostAsync("/api/admin/accounts/padmin-mod2/ban", new { reason = "abuse", hours = 1 }));
+        Assert.Equal(["ban", "ban", "role"], await AuditActionsAsync(admin));
+    }
+
     // ---------------------------------------------------------------- account security
 
     private static string CurrentCode(string base32) => Totp.Code(Totp.FromBase32(base32)!, Totp.TimeStep(DateTimeOffset.UtcNow));

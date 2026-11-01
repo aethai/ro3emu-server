@@ -80,7 +80,7 @@ public sealed class PatcherTests : IDisposable
 
     async Task<UpdateSummary> Update(FileRepoHandler handler, bool verifyAll = false, CancellationToken ct = default)
     {
-        using var client = new RepositoryClient(new Uri("http://repo.test/"), handler);
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), handler);
         var updater = new Updater(Layout, client);
         var check = await updater.CheckAsync("stable", ct);
         return await updater.UpdateAsync(check.Channel, verifyAll, null, ct);
@@ -92,6 +92,25 @@ public sealed class PatcherTests : IDisposable
         {
             string relative = Path.GetRelativePath(Build, file).Replace(Path.DirectorySeparatorChar, '/');
             Assert.Equal(File.ReadAllBytes(file), File.ReadAllBytes(Layout.Resolve(relative)));
+        }
+    }
+
+    [Fact]
+    public async Task PlainHttpRepository_IsRefusedUnlessItIsThisMachine()
+    {
+        WriteBuild("Game.exe", Random(5000, 90));
+        await Publish("1.0.0");
+        foreach (string address in new[] { "http://repo.test/", "http://203.0.113.5:8790/" })
+        {
+            using var remote = new RepositoryClient(new Uri(address), new FileRepoHandler(Repo));
+            var refused = await Assert.ThrowsAsync<PatcherException>(() => remote.GetChannelAsync("stable", CancellationToken.None));
+            Assert.Contains("https", refused.Message);
+            Assert.Null(await remote.TryGetBytesAsync("channels/stable.json", CancellationToken.None));
+        }
+        foreach (string address in new[] { "http://localhost:8790/", "http://127.0.0.1:8790/", "https://repo.test/" })
+        {
+            using var allowed = new RepositoryClient(new Uri(address), new FileRepoHandler(Repo));
+            Assert.Equal("1.0.0", (await allowed.GetChannelAsync("stable", CancellationToken.None)).Version);
         }
     }
 
@@ -249,7 +268,7 @@ public sealed class PatcherTests : IDisposable
         handler.FailWhen = relative => relative.StartsWith("chunks/") && Interlocked.Increment(ref served) > 10;
         await Assert.ThrowsAsync<PatcherException>(() => Update(handler));
         Assert.Equal(File.ReadAllBytes(Path.Combine(Repo, "..", "build", "Game.exe")), File.ReadAllBytes(Path.Combine(Game, "Game.exe")));
-        using (var client = new RepositoryClient(new Uri("http://repo.test/"), handler))
+        using (var client = new RepositoryClient(new Uri("https://repo.test/"), handler))
         {
             var updater = new Updater(Layout, client);
             Assert.Equal("1.0.0", updater.LoadState()!.Version);
@@ -282,7 +301,7 @@ public sealed class PatcherTests : IDisposable
         File.SetLastWriteTimeUtc(grf, File.GetLastWriteTimeUtc(grf).AddSeconds(1));
         File.Delete(Path.Combine(Game, "Game.exe"));
 
-        using (var client = new RepositoryClient(new Uri("http://repo.test/"), handler))
+        using (var client = new RepositoryClient(new Uri("https://repo.test/"), handler))
         {
             var updater = new Updater(Layout, client);
             Assert.Equal(2, updater.QuickVerify(updater.LoadState()!).Count);
@@ -315,7 +334,7 @@ public sealed class PatcherTests : IDisposable
         Assert.True(File.Exists(Path.Combine(Meta, "journal.json")));
 
         // Next start: the journal is replayed before anything else.
-        using var client = new RepositoryClient(new Uri("http://repo.test/"), handler);
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), handler);
         var updater = new Updater(Layout, client);
         var state = updater.LoadState()!;
         Assert.Equal("1.0.1", state.Version);
@@ -350,7 +369,7 @@ public sealed class PatcherTests : IDisposable
 
         WriteBuild("Game.exe", Random(10_000, 62));
         await Publish("1.0.1");
-        using var client = new RepositoryClient(new Uri("http://repo.test/"), new FileRepoHandler(Repo));
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo));
         var channel = await client.GetChannelAsync("stable", CancellationToken.None);
         Assert.Equal("1.0.1", channel.Version);
         Assert.Equal("1.0.1", channel.Launcher?.Version);
@@ -389,7 +408,7 @@ public sealed class PatcherTests : IDisposable
         await Update(handler);
         File.WriteAllText(Path.Combine(Game, "player.log"), "game-written");
 
-        using var client = new RepositoryClient(new Uri("http://repo.test/"), handler);
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), handler);
         var state = new Updater(Layout, client).LoadState()!;
 
         // Data to another folder.

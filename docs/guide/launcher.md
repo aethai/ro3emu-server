@@ -64,7 +64,7 @@ file (`dotnet publish src/Ro3Emu.Launcher -c Release -p:LauncherConfigFile=<path
 ```json
 {
   "mode": "operator",
-  // Patch repository (static HTTP) and the channel this launcher follows.
+  // Patch repository (static files over https; plain http only on localhost) and the channel this launcher follows.
   "repository": "https://patch.example.com/ro3/",
   "channel": "test",
   // The game server's HTTP base; the launcher pings it for the online indicator.
