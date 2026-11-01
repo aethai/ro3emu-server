@@ -229,7 +229,7 @@ public static partial class EconomySnapshotReader
                             long pending = SqlLong(r, 1);
                             if (pending is not (0 or 1)) throw new FormatException("Invalid guild challenge pending status.");
                             var delivered = Try(root, "Delivered", out var settled)
-                                ? Elements(settled).Select(x => x.GetInt64()).ToHashSet() : new HashSet<long>();
+                                ? Elements(settled).Select(x => x.GetInt64()).ToHashSet() : [];
                             if (Try(root, "Personal", out var personal)) foreach (var grant in Properties(personal))
                             {
                                 long role = long.Parse(grant.Name, CultureInfo.InvariantCulture);

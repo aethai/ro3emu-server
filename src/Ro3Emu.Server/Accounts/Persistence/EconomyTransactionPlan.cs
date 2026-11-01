@@ -262,7 +262,7 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
             _ => throw new InvalidOperationException("Unknown E04 command.")
         };
         var blobs = child.Parts.Skip(2).OfType<RoleBlobWritePlan>().ToArray();
-        string[] actualColumns = blobs.Select(x => x.Column).ToArray();
+        string[] actualColumns = [.. blobs.Select(x => x.Column)];
         var extra = child.Parts.Skip(2).ToArray();
         int cardSuffix = mutation.CommandKind is "gather-yield" or "dungeon-reward"
             ? extra is [.., RoleBlobWritePlan { Column: "library" }, RoleBlobWritePlan { Column: "task_followup" }] ? 2
@@ -629,7 +629,7 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
     {
         int count = reader.ReadInt32();
         if (count < 0 || count > 100_000) throw new InvalidDataException("Invalid generated ID count.");
-        return Enumerable.Range(0, count).Select(_ => reader.ReadInt64()).ToArray();
+        return [.. Enumerable.Range(0, count).Select(_ => reader.ReadInt64())];
     }
 
     private static AuctionItemWriteReceipt ReadAuctionLot(BinaryReader reader)

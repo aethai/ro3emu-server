@@ -85,7 +85,7 @@ public class MonsterUnit : WorldUnit
     /// <summary>MvpService paces this boss's specials from its own tick (its plans first, then the generic ones).</summary>
     public bool SpecialsOwnedByMvp { get; set; }
     /// <summary>Live boss skill cooldowns for 31125/31127, keyed by actual cast row.</summary>
-    public Dictionary<int, long> BossSkillCds { get; } = new();
+    public Dictionary<int, long> BossSkillCds { get; } = [];
 
     /// <summary>A destination it walks to between fights instead of roaming at home (MonsterService.March); null: none.</summary>
     public MonsterMarch? March { get; set; }
@@ -96,7 +96,7 @@ public class MonsterUnit : WorldUnit
     public MonsterBrain? Brain { get; init; }
 
     /// <summary>Unit custom data a gameplay attaches (31018 on change; carried in the AOI entity), e.g. Guild League IsFlag.</summary>
-    public List<CustomData> CustomData { get; } = new();
+    public List<CustomData> CustomData { get; } = [];
 
     /// <summary>Extra snapshot state an owner adds to the 31037 base (MVP bosses and minions: their live buffs).</summary>
     public Action<EntityBase>? EntityExtras { get; set; }

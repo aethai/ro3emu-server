@@ -84,7 +84,7 @@ public sealed class ActivityClock(GameData data, SeasonService seasons, TimeProv
                 if (start >= begin && stop <= end && stop > start) windows.Add(new(state, start, stop, index));
             }
         }
-        return windows.OrderBy(w => w.Start).ThenBy(w => w.End).ToArray();
+        return [.. windows.OrderBy(w => w.Start).ThenBy(w => w.End)];
     }
 
     /// <summary>

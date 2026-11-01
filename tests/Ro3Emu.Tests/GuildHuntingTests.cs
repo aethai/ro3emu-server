@@ -130,8 +130,7 @@ public abstract class GuildHuntingHost : IAsyncLifetime
     {
         var roles = Service<RoleStore>();
         List<MailService.Letter> Read() => roles.LoadMailbox(role) is { } bytes
-            ? System.Text.Json.JsonSerializer.Deserialize<MailService.Mailbox>(bytes)!.Letters
-                .Where(l => l.TemplateId is >= 10200 and <= 10214).ToList() : [];
+            ? [.. System.Text.Json.JsonSerializer.Deserialize<MailService.Mailbox>(bytes)!.Letters.Where(l => l.TemplateId is >= 10200 and <= 10214)] : [];
         for (int i = 0; i < 250 && Read().Count < count; i++) await Task.Delay(20);
         return Read();
     }
@@ -218,9 +217,9 @@ public sealed class GuildHuntingTests : GuildHuntingHost
         var boss = await Boss(room);
         var skills = await Next(alice, GuildHuntingService.Skills, GveHuntingSkillsNotify.Parser);
         Assert.Equal(3, skills.HuntingSkills.Count);
-        Assert.Equal(new long[] { 1, 2, 3 }, skills.HuntingSkills.Select(s => s.SlotID).Order());
+        Assert.Equal([1, 2, 3], skills.HuntingSkills.Select(s => s.SlotID).Order());
         var rank = await Next(alice, GuildHuntingService.LiveRank, GveHuntingLiveRankNotify.Parser);
-        Assert.Equal(new[] { 1, 2 }, rank.Guilds.Select(g => g.Rank).Order());
+        Assert.Equal([1, 2], rank.Guilds.Select(g => g.Rank).Order());
 
         await Service<GameLoop>().InvokeAsync(() => { boss.Hp = boss.Template.MaxHp - 1000; return Task.CompletedTask; });
         clock.Set(20, 32, 2);
@@ -246,7 +245,7 @@ public sealed class GuildHuntingTests : GuildHuntingHost
         // 20:37 GveHuntEnd: the boss leaves, both guilds get the group result and the server top (scorers only).
         clock.Set(20, 37, 0);
         var result = await Next(alice, GuildHuntingService.MatchResult, GveHuntingMatchResultNotify.Parser);
-        Assert.Equal(new[] { (hunters, 1, 1000L), (idlers, 2, 0L) },
+        Assert.Equal([(hunters, 1, 1000L), (idlers, 2, 0L)],
             result.MatchResults.OrderBy(r => r.Rank).Select(r => (r.GuildId, r.Rank, r.Score)));
         Assert.Equal(1, result.MatchResults.Single(r => r.GuildId == hunters).CommandSkillKill);
         Assert.Equal(hunters, Assert.Single(result.TopResults).GuildId);
@@ -348,7 +347,7 @@ public sealed class GuildHuntingPersistenceTests : GuildHuntingHost
         var own = Assert.Single(result.MatchResults);
         Assert.Equal((hunters, 1, 1000L), (own.GuildId, own.Rank, own.Score));
         Assert.Equal(hunters, Assert.Single(result.TopResults).GuildId);
-        Assert.Equal(new[] { 10200, 10204 }, (await Letters(role, 2)).Select(l => l.TemplateId).Order());
+        Assert.Equal([10200, 10204], (await Letters(role, 2)).Select(l => l.TemplateId).Order());
         clock.Set(20, 38, 10);
         await Task.Delay(300);
         Assert.Equal(2, (await Letters(role, 0)).Count);
@@ -370,7 +369,7 @@ public sealed class GuildHuntingPersistenceTests : GuildHuntingHost
         clock.Set(20, 37, 0);
         var result = await Next(alice, GuildHuntingService.MatchResult, GveHuntingMatchResultNotify.Parser);
         Assert.Equal(1000, Assert.Single(result.MatchResults).Score);
-        Assert.Equal(new[] { 10200, 10204 }, (await Letters(role, 2)).Select(l => l.TemplateId).Order());
+        Assert.Equal([10200, 10204], (await Letters(role, 2)).Select(l => l.TemplateId).Order());
         await Until(() => Volatile.Read(ref saves) >= 2);
         Assert.Equal((true, false), (Saved(hunters).Data.IsSettled, Saved(hunters).Mailed));
         // The settled week's failed save is retried by the tick (and fails again here).
@@ -428,6 +427,6 @@ public sealed class GuildHuntingPersistenceTests : GuildHuntingHost
         await later.SendGameAsync(GuildHuntingService.History, new GveHuntingHistoryQueryReq());
         Assert.Equal(result, await Next(later, GuildHuntingService.History, GveHuntingMatchResultNotify.Parser));
         // The mails left after the result are sent by the restarted server, once.
-        Assert.Equal(new[] { 10200, 10204 }, (await Letters((long)later.Self!.Uuid, 2)).Select(l => l.TemplateId).Order());
+        Assert.Equal([10200, 10204], (await Letters((long)later.Self!.Uuid, 2)).Select(l => l.TemplateId).Order());
     }
 }

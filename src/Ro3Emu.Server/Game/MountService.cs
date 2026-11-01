@@ -42,8 +42,8 @@ public sealed class MountService : IGameTicker
     public sealed class SavedState
     {
         public byte[] Info { get; set; } = [];
-        public HashSet<long> Claimed { get; set; } = new();
-        public Dictionary<string, int> Previews { get; set; } = new();
+        public HashSet<long> Claimed { get; set; } = [];
+        public Dictionary<string, int> Previews { get; set; } = [];
         public int QuestMount { get; set; }
     }
 
@@ -299,7 +299,7 @@ public sealed class MountService : IGameTicker
     }
 
     /// <summary>After a committed 5012 change (ownership, riding): BuffService adds or drops mount energy meters.</summary>
-    public List<Func<GameSession, Task>> Changed { get; } = new();
+    public List<Func<GameSession, Task>> Changed { get; } = [];
 
     /// <summary>5012 after a committed change, then the <see cref="Changed"/> listeners.</summary>
     private async Task PublishOwnedAsync(GameSession s)

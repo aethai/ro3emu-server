@@ -24,7 +24,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
     private readonly ActionCounters _setupCounts = new();
     private readonly MovementCorrelation _movement = new();
     private readonly FixedLatency _scheduleLag = new();
-    private readonly ConcurrentBag<BotActor> _actors = new();
+    private readonly ConcurrentBag<BotActor> _actors = [];
     private readonly ConcurrentDictionary<int, string> _failures = new();
     private readonly ConcurrentQueue<double> _queueSamples = new();
     private string _pem = "";
@@ -88,7 +88,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                 case "S2": await RunS2Async(report, ct); break;
                 case "S3": await RunS3Async(report, ct); break;
                 case "S4": await RunS4Async(report, ct); break;
-                case "S5": await RunSiegeAsync(_actors.ToArray(), options.DurationSeconds, ct); break;
+                case "S5": await RunSiegeAsync([.. _actors], options.DurationSeconds, ct); break;
             }
             if (options.Scenario == "S3") await CloseS3Async(report, ct);
             report.ServerAfter = await SnapshotAsync(ct);
@@ -133,7 +133,9 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             report.BotFailures = _failures.ToDictionary();
             report.Messages = (report.MeasurementPhase == "setup" ? _setupCounts : _counts).Messages().Where(x => x.Value.Offered > 0 || x.Value.Planned > 0)
                 .ToDictionary(x => x.Key, x => x.Value);
-            report.QueueLengthSamples = _queueSamples.ToArray();
+            // ToArray, not a spread: a sampler may still add, and a spread sizes its array from Count first.
+            var queueSamples = _queueSamples.ToArray();
+            report.QueueLengthSamples = queueSamples;
             report.SchedulingLagP99Ms = _scheduleLag.Snapshot().P99;
             var motion = _movement.Snapshot();
             report.MovementPeerP99Ms = motion.Latencies.P99;
@@ -441,7 +443,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
 
     private async Task RunS2Async(RunReport report, CancellationToken ct)
     {
-        await RunTrafficAsync(_actors.ToArray(), options.DurationSeconds, chat: true, ct);
+        await RunTrafficAsync([.. _actors], options.DurationSeconds, chat: true, ct);
     }
 
     private async Task RunS4Async(RunReport report, CancellationToken ct)
@@ -483,7 +485,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             catch (Exception e) { if (e is BotRefusedException) tally.Refuse(); else if (e is TimeoutException or OperationCanceledException) tally.Timeout(); else tally.Fail(); _failures[mapCount + i] = $"relog: {e.Message}"; }
         });
         start.SetResult();
-        var background = RunTrafficAsync(actors.Skip(mapCount + relogCount).ToArray(), options.DurationSeconds, chat: true, ct);
+        var background = RunTrafficAsync([.. actors.Skip(mapCount + relogCount)], options.DurationSeconds, chat: true, ct);
         await Task.WhenAll(mapTasks.Concat(relogTasks).Append(background)).WaitAsync(
             TimeSpan.FromSeconds(Math.Max(90, options.DurationSeconds + 30)), ct);
         var remaining = TimeSpan.FromSeconds(options.DurationSeconds) - duration.Elapsed;
@@ -865,9 +867,9 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
     }
     private static string[] HeavyProcesses(Dictionary<int, (string Name, double Cpu)> before,
         Dictionary<int, (string Name, double Cpu)> after, int? localServerPid) =>
-        after.Where(x => x.Key != Environment.ProcessId && x.Key != localServerPid &&
+        [.. after.Where(x => x.Key != Environment.ProcessId && x.Key != localServerPid &&
             x.Value.Cpu - (before.TryGetValue(x.Key, out var start) ? start.Cpu : 0) > 5)
-            .Select(x => $"{x.Value.Name}[{x.Key}] CPU +{x.Value.Cpu - (before.TryGetValue(x.Key, out var start) ? start.Cpu : 0):F1}s").ToArray();
+            .Select(x => $"{x.Value.Name}[{x.Key}] CPU +{x.Value.Cpu - (before.TryGetValue(x.Key, out var start) ? start.Cpu : 0):F1}s")];
 }
 
 internal readonly record struct SystemTimes(ulong Idle, ulong Kernel, ulong User)

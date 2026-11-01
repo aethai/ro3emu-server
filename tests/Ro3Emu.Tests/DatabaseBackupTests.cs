@@ -243,7 +243,7 @@ public sealed class DatabaseBackupTests : IDisposable
         using (var accounts = Store()) new RoleStore(accounts).Create("keep", 1, "Keep", 1, 1000, 1);
         SqliteConnection.ClearAllPools();
         string junk = Path.Combine(_dir, "junk.db");
-        File.WriteAllBytes(junk, Enumerable.Repeat((byte)0x5A, 8192).ToArray());
+        File.WriteAllBytes(junk, [.. Enumerable.Repeat((byte)0x5A, 8192)]);
         Assert.ThrowsAny<Exception>(() => DatabaseRestore.Restore(_dir, junk));
         string foreign = Path.Combine(_dir, "foreign.db");
         using (var db = new SqliteConnection($"Data Source={foreign};Pooling=False"))

@@ -130,7 +130,7 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
         }
         var order = manifests.Full.Packages.Concat(manifests.Delta?.Packages ?? []).Select(p => p.Id).Distinct().ToList();
         return new Plan(needs, targets.Count - missing.Count, keptPatched, missing.Sum(t => t.Length),
-            chosen.Values.OrderBy(p => order.IndexOf(p.Id)).ToList());
+            [.. chosen.Values.OrderBy(p => order.IndexOf(p.Id))]);
     }
 
     private enum Present { No, Yes, Patched }

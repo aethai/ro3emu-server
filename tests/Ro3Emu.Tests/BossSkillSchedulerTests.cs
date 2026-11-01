@@ -85,9 +85,9 @@ public sealed class BossSkillSchedulerTests : IAsyncLifetime
         return boss;
     });
 
-    private static List<UseInSkillInfo> Casts(BotClient bot, long uid) => bot.Inbox.Snapshot()
+    private static List<UseInSkillInfo> Casts(BotClient bot, long uid) => [.. bot.Inbox.Snapshot()
         .Where(e => e.IsGame(CombatService.UseInSkill) || e.IsGame(CombatService.UseInSkillHigh))
-        .Select(e => UseInSkillInfo.Parser.ParseFrom(e.Body)).Where(u => u.SrcID == uid).ToList();
+        .Select(e => UseInSkillInfo.Parser.ParseFrom(e.Body)).Where(u => u.SrcID == uid)];
 
     [ClientDataFact]
     public async Task ABossCastsItsSkillsOverTimeWithinTheirCooldowns()

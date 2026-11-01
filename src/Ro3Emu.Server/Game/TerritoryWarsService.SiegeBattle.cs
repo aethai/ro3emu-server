@@ -15,7 +15,7 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>After a committed siege settlement, per loaded participant: role, personal score, whether its guild
     /// won (quest target 106611). Listeners post their work.</summary>
-    public List<Action<long, long, bool>> SiegeSettled { get; } = new();
+    public List<Action<long, long, bool>> SiegeSettled { get; } = [];
     /// <summary>After a committed territory battle settlement, per loaded participant: role and round (1 Stronghold,
     /// 2 and later Regional Capital). Listeners post their work.</summary>
     public List<Action<long, int>> BattleSettled { get; } = [];
@@ -52,7 +52,7 @@ public sealed partial class TerritoryWarsService
         public long SettledAt { get; set; }
         public bool Settled { get; set; }
         public long Winner { get; set; }
-        public Dictionary<long, Participant> Players { get; set; } = new();
+        public Dictionary<long, Participant> Players { get; set; } = [];
         public byte[]? Result { get; set; }
     }
 
@@ -107,9 +107,9 @@ public sealed partial class TerritoryWarsService
             if (guild == 0)
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.TerritoryGuild }); return true; }
             int requested = req.InitData?.SiegeInitData?.CityId ?? 0;
-            int[] eligible = _data.Table("SiegeConfig").Values.Select(r => (int)GameData.Int(r, "_iID"))
+            int[] eligible = [.. _data.Table("SiegeConfig").Values.Select(r => (int)GameData.Int(r, "_iID"))
                 .Where(id => { var (attack, defense) = SiegeGuilds(id); return guild == attack || guild == defense; })
-                .Order().ToArray();
+                .Order()];
             int city = requested == 0 ? eligible.FirstOrDefault() : requested;
             if (!eligible.Contains(city))
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.TerritoryNotQualified }); return true; }
@@ -463,7 +463,7 @@ public sealed partial class TerritoryWarsService
             }
         };
         history.SiegeWinInfo[run.City] = 1;
-        if (!next.SiegeHistory.TryGetValue(run.City, out var entries)) next.SiegeHistory[run.City] = entries = new();
+        if (!next.SiegeHistory.TryGetValue(run.City, out var entries)) next.SiegeHistory[run.City] = entries = [];
         entries.Add(history.ToByteArray());
         if (entries.Count > 20) entries.RemoveRange(0, entries.Count - 20); // (inferred) bounded history.
         var rolesChanged = new Dictionary<long, RoleState>();
@@ -549,9 +549,9 @@ public sealed partial class TerritoryWarsService
         if (!row.TryGetProperty("_kAward", out var fixedItems)
             || fixedItems.ValueKind != JsonValueKind.Array)
             throw new InvalidOperationException($"Siege reward {id} is unavailable");
-        return fixedItems.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.Array && a.GetArrayLength() >= 2)
+        return [.. fixedItems.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.Array && a.GetArrayLength() >= 2)
             .Select(a => new MailService.Attachment((int)(GameData.Number(a[0]) ?? 0), (int)(GameData.Number(a[1]) ?? 0),
-                a.GetArrayLength() > 2 ? (int)(GameData.Number(a[2]) ?? 0) : 0)).ToList();
+                a.GetArrayLength() > 2 ? (int)(GameData.Number(a[2]) ?? 0) : 0))];
     }
 
     private static RoleStatisticsInfo SiegeRoleStatistics(Participant p)

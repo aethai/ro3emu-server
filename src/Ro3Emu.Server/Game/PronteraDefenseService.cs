@@ -41,13 +41,13 @@ public sealed partial class PronteraDefenseService : IGameTicker
     private readonly SessionRegistry _sessions;
     private readonly GameLoop _loop;
     private readonly ILogger<PronteraDefenseService> _log;
-    private readonly Dictionary<long, MonsterUnit> _actors = new();
+    private readonly Dictionary<long, MonsterUnit> _actors = [];
     /// <summary>City Defense a kill of each live invader restores (its difficulty's _iKillPoint).</summary>
     private readonly Dictionary<long, long> _restore = [];
     private readonly Dictionary<int, MonsterTemplate> _invaders = [];
-    private readonly HashSet<(int Round, int Point, int Wave)> _spawned = new();
-    private readonly Dictionary<long, long> _defensePoints = new();
-    private readonly Dictionary<long, long> _station = new();
+    private readonly HashSet<(int Round, int Point, int Wave)> _spawned = [];
+    private readonly Dictionary<long, long> _defensePoints = [];
+    private readonly Dictionary<long, long> _station = [];
     private int _activeRound;
     private long _lastSecond = -1;
     private long _lastDamageMinute = -1;
@@ -59,9 +59,9 @@ public sealed partial class PronteraDefenseService : IGameTicker
     {
         public long SeasonOpen { get; set; }
         public long ContributionPoint { get; set; }
-        public Dictionary<int, long> RoundContribution { get; set; } = new();
-        public Dictionary<int, long> RoundMap { get; set; } = new();
-        public HashSet<int> SettledRounds { get; set; } = new();
+        public Dictionary<int, long> RoundContribution { get; set; } = [];
+        public Dictionary<int, long> RoundMap { get; set; } = [];
+        public HashSet<int> SettledRounds { get; set; } = [];
     }
 
     public PronteraDefenseService(GameData data, ActivityClock clock, RoleStore roles, AccountStore accounts,
@@ -146,7 +146,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
         }
         if (req.PronteraDefenseDonate != null && session.Role != null && _guilds.ForRole(session.Role.Id) is { } donor)
             keys.Add(Ownership.ReservationKey.Entity("prontera_prep", $"{Opening()}:{donor.Id}"));
-        return keys.ToArray();
+        return [.. keys];
     }
 
     /// <summary>82976 activity 118; caller sends response and invokes 5013 projection after success.</summary>
@@ -387,8 +387,8 @@ public sealed partial class PronteraDefenseService : IGameTicker
     }
 
     private static Ownership.ReservationKey[] SettlementKeys(long roleId, long season) =>
-        Enumerable.Range(1, 4).Select(round =>
-            Ownership.ReservationKey.Entity("prontera_round_settlement", $"{season}/{round}/{roleId}")).ToArray();
+        [.. Enumerable.Range(1, 4).Select(round =>
+            Ownership.ReservationKey.Entity("prontera_round_settlement", $"{season}/{round}/{roleId}"))];
 
     private async Task SettleClosedOwnedAsync(GameSession session)
     {

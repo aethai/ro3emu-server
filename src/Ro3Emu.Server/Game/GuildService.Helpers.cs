@@ -8,7 +8,7 @@ public sealed partial class GuildService
 {
     public const uint CancelCreate = 32215, HelperOpe = 32220, HelperLeave = 32221, HelperChange = 32222,
         Recruit = 32257;
-    private readonly Dictionary<long, long> _guildlessRecruitMs = new();
+    private readonly Dictionary<long, long> _guildlessRecruitMs = [];
 
     /// <summary>32257 publishes to the client channel-8 IM surface; recipient-independent cooldown is inferred.</summary>
     private async Task RecruitCoreAsync(GameSession s, GuildRecruitReq req)

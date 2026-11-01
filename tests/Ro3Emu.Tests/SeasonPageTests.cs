@@ -374,7 +374,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         Assert.True(open.FunctionOpenInfos[69].All);
         var page = await Page(bot);
         Assert.Equal(0, page.Result);
-        Assert.Equal(new[] { 17, 23, 36, 60, 65, 67 }, page.RankScore.Keys.Order());
+        Assert.Equal([17, 23, 36, 60, 65, 67], page.RankScore.Keys.Order());
         Assert.All(page.RankScore.Values, score => Assert.Equal(0, score));
         await Gm(bot, "!item 11 100");
         await Gm(bot, "!item 7 99");

@@ -13,7 +13,7 @@ public sealed partial class TaskService
     /// <summary>TaskConfig type 16, the guild activity quests (1601010-1603042), and 23, the Adventure Party quests.</summary>
     private const int GuildQuestType = 16, AdventureGroupQuestType = 23;
 
-    private readonly ConditionalWeakTable<Ownership.AttachmentLease, StrongBox<long>> _friendCounts = new();
+    private readonly ConditionalWeakTable<Ownership.AttachmentLease, StrongBox<long>> _friendCounts = [];
 
     /// <summary>The size of the role's friend list (FriendService relation via SocialOwnerCache), null when unknown.</summary>
     public Func<GameSession, Task<long?>>? LoadFriendCount { get; set; }

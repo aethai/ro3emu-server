@@ -43,22 +43,22 @@ public sealed partial class GuildCampfireService : IGameTicker
     private readonly GuildHomeService _home;
     // Transient per-room event state. A home room outlives one event day, so these are reset when a room first sees
     // a day's event and when the event finishes.
-    private readonly Dictionary<long, MonsterUnit> _bosses = new();
-    private readonly Dictionary<long, (long Guild, long Room, int Stage)> _fruitActors = new();
-    private readonly Dictionary<(long Room, int Stage), int> _fruitCreated = new();
-    private readonly Dictionary<(long Room, int Stage), int> _fruitInitialKills = new();
-    private readonly Dictionary<long, SemaphoreSlim> _guildGates = new();
+    private readonly Dictionary<long, MonsterUnit> _bosses = [];
+    private readonly Dictionary<long, (long Guild, long Room, int Stage)> _fruitActors = [];
+    private readonly Dictionary<(long Room, int Stage), int> _fruitCreated = [];
+    private readonly Dictionary<(long Room, int Stage), int> _fruitInitialKills = [];
+    private readonly Dictionary<long, SemaphoreSlim> _guildGates = [];
     private long _lastSecond = -1;
     /// <summary>Room id: the event day and the last stage pushed to it.</summary>
-    private readonly Dictionary<long, (long Day, int Stage)> _sentStage = new();
+    private readonly Dictionary<long, (long Day, int Stage)> _sentStage = [];
     /// <summary>Room id: the event day whose fruit/boss state the transient maps hold (set after its reset).</summary>
-    private readonly Dictionary<long, long> _eventDay = new();
+    private readonly Dictionary<long, long> _eventDay = [];
     /// <summary>Roles already counted at an event day's bonfire (in memory: a restart may count a day again).</summary>
-    private readonly HashSet<(long Role, long Day)> _joined = new();
+    private readonly HashSet<(long Role, long Day)> _joined = [];
 
     /// <summary>A member in the guild home while the Bonfire Party runs, once per event day (quest target 106018);
     /// listeners post their work.</summary>
-    public List<Action<GameSession>> Joined { get; } = new();
+    public List<Action<GameSession>> Joined { get; } = [];
 
     private void MarkJoined(GameSession session)
     {
@@ -84,11 +84,11 @@ public sealed partial class GuildCampfireService : IGameTicker
     {
         public long Day { get; set; }
         public long Exp { get; set; }
-        public Dictionary<long, HashSet<int>> Seeds { get; set; } = new();
-        public Dictionary<long, int> FuelCount { get; set; } = new();
-        public HashSet<int> DrawnStages { get; set; } = new();
+        public Dictionary<long, HashSet<int>> Seeds { get; set; } = [];
+        public Dictionary<long, int> FuelCount { get; set; } = [];
+        public HashSet<int> DrawnStages { get; set; } = [];
         public bool BossDead { get; set; }
-        public Dictionary<int, int> FruitKills { get; set; } = new();
+        public Dictionary<int, int> FruitKills { get; set; } = [];
         /// <summary>The stages whose prize draw ran (GuildCampfireService.Bonus.cs).</summary>
         public HashSet<int> PrizeStages { get; set; } = [];
     }
@@ -371,7 +371,7 @@ public sealed partial class GuildCampfireService : IGameTicker
             if (next.Seeds.GetValueOrDefault(role)?.Count >= MaxSeeds() || next.Exp >= MaxExp()) return ErrorCodes.RewardClaimed;
             int exp = _data.Row("CampFireSeed", seedId) is { } row ? (int)GameData.Int(row, "_iExp") : 0;
             if (exp <= 0) return ErrorCodes.RewardMissing;
-            if (!next.Seeds.TryGetValue(role, out var collected)) next.Seeds[role] = collected = new HashSet<int>();
+            if (!next.Seeds.TryGetValue(role, out var collected)) next.Seeds[role] = collected = [];
             collected.Add(pointId);
             next.Exp = Math.Min(MaxExp(), checked(next.Exp + exp));
             await SaveAsync(guild, next, session);

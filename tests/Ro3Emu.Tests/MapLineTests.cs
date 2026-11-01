@@ -100,7 +100,7 @@ public sealed class MapLineTests : IAsyncLifetime
         Assert.NotNull(reservation);
         await bob.SendGameAsync(70009, new GetSceneLineInfoReq { PlayerUUID = (ulong)b.Role!.Id });
         var listing = await Next(bob, 70009, GetSceneLineInfoResp.Parser);
-        Assert.Equal(0, listing.Result); Assert.Equal(new[] { 1, 2 }, listing.LineInfo.Select(l => l.Linenum));
+        Assert.Equal(0, listing.Result); Assert.Equal([1, 2], listing.LineInfo.Select(l => l.Linenum));
         Assert.All(listing.LineInfo, l => Assert.Equal(1, l.Currolenum));
         await bob.SendGameAsync(MsgId.SwitchSceneLine, new SwitchSceneLineReq { Linenum = 1 });
         Assert.Equal(ErrorCodes.SwitchingScenes, (await Next(bob, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser)).Result);

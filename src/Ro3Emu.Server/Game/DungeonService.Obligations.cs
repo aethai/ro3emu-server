@@ -41,8 +41,8 @@ public sealed partial class DungeonService
                 || attachment.Cancelled || !ReferenceEquals(Active(killer), a))
                 throw new OperationCanceledException("Dungeon killer detached before terminal freeze admission.");
             if (a.ObligationsFrozen) { StageActivation(a, monster); return; }
-            unobserved = a.Room.Monsters.Where(m => !a.Killed.Contains(m.Uid)
-                && (ReferenceEquals(m, monster) || m.DeathDurable)).ToArray();
+            unobserved = [.. a.Room.Monsters.Where(m => !a.Killed.Contains(m.Uid)
+                && (ReferenceEquals(m, monster) || m.DeathDurable))];
             if (a.Killed.Count + unobserved.Length != a.Spawned) return;
             var counted = new List<(MonsterUnit Monster, RoleStatisticsInfo Stats)>();
             try
@@ -107,7 +107,7 @@ public sealed partial class DungeonService
         var observed = Present(a).Where(a.Loaded.Contains)
             .Select(s => (Session: s, Role: s.Role!.Id, Attachment: s.Attachment)).ToArray();
         using var ownerScope = await _owners.EnterAsync("dungeon/freeze",
-            observed.Select(p => Ownership.ReservationKey.Role(p.Role)).ToArray());
+            [.. observed.Select(p => Ownership.ReservationKey.Role(p.Role))]);
         if (a.Settled || a.Room.Closed) throw new OperationCanceledException("Dungeon room ended before reward freeze.");
         var participants = observed.Where(p => p.Session.Role?.Id == p.Role
             && ReferenceEquals(p.Session.Attachment, p.Attachment)
@@ -138,11 +138,11 @@ public sealed partial class DungeonService
                     bool unlimited = _testing.UnlimitedRewards;
                     if (first || allowance.Remaining > 0 || unlimited)
                     {
-                        goods = (Award(GameData.Int(boss, "_iPersonAward"), s)
+                        goods = [.. (Award(GameData.Int(boss, "_iPersonAward"), s)
                             ?? throw new InvalidOperationException("Missing dungeon award config"))
                             .Select(g => new DungeonRewardGood(g.Entry, g.Count, g.Bind,
                                 GameData.Int(_data.Row("ItemConfig", g.Entry)!.Value, "_iType") == 1
-                                    ? EconomyAssetKind.Currency : EconomyAssetKind.Item)).ToList();
+                                    ? EconomyAssetKind.Currency : EconomyAssetKind.Item))];
                         auctionEligible = true;
                         if (!first && !unlimited) allowance.Remaining--;
                     }
@@ -156,11 +156,11 @@ public sealed partial class DungeonService
                     string key = ValhallaPrefix + a.Plan.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                     if (next.Records.GetValueOrDefault(key)?.Passed != true)
                     {
-                        goods = (Award(GameData.Int(layer, "_iPassReward"), s)
+                        goods = [.. (Award(GameData.Int(layer, "_iPassReward"), s)
                             ?? throw new InvalidOperationException("Missing Valhalla layer award config"))
                             .Select(g => new DungeonRewardGood(g.Entry, g.Count, g.Bind,
                                 GameData.Int(_data.Row("ItemConfig", g.Entry)!.Value, "_iType") == 1
-                                    ? EconomyAssetKind.Currency : EconomyAssetKind.Item)).ToList();
+                                    ? EconomyAssetKind.Currency : EconomyAssetKind.Item))];
                         next.Records[key] = new Record { Passed = true, FastestMs = duration };
                     }
                 }
@@ -184,7 +184,7 @@ public sealed partial class DungeonService
                     GuildId = _guilds.ForRole(roleId)?.Id ?? 0,
                     AuctionSourceType = auctionEligible && a.Plan.RewardMulti is { } selected
                         ? _auctions.DungeonSrcType((int)GameData.Int(selected, "_iDifficulty")) : 0,
-                    PlayBook = a.PlayBook, AuctionTiers = auctionEligible ? tiers : new(),
+                    PlayBook = a.PlayBook, AuctionTiers = auctionEligible ? tiers : [],
                     RequiresKill = killSourceKey != null, KillSourceKey = killSourceKey ?? "",
                 });
             }
@@ -300,7 +300,7 @@ public sealed partial class DungeonService
                 foreach (var (id, state) in honors)
                     if (before.Honors.GetValueOrDefault(key)?.GetValueOrDefault(id) != state)
                     {
-                        if (!next.Honors.TryGetValue(key, out var live)) next.Honors[key] = live = new();
+                        if (!next.Honors.TryGetValue(key, out var live)) next.Honors[key] = live = [];
                         live[id] = Math.Max(live.GetValueOrDefault(id), state);
                     }
             foreach (var (key, allowance) in earned.Allowances)
@@ -333,8 +333,7 @@ public sealed partial class DungeonService
             var next = ApplyFrozenState(s.Dungeons, row);
             var oldStacks = s.Items.ToDictionary(item => item.Guid, item => item.Stack);
             var granted = await _character.ExchangeLockedAsync(s, [], [], popup: false, sync: false,
-                boundGoods: row.Goods.Where(g => g.Entry is not (100 or 101))
-                    .Select(g => (g.Entry, g.Count, g.Bind)).ToArray(),
+                boundGoods: [.. row.Goods.Where(g => g.Entry is not (100 or 101)).Select(g => (g.Entry, g.Count, g.Bind))],
                 baseExp: row.Goods.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
                 jobExp: row.Goods.Where(g => g.Entry == 101).Sum(g => (long)g.Count),
                 persist: tx =>

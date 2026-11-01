@@ -196,7 +196,7 @@ public sealed partial class DungeonTests
     private int Reachable(int npcId, long interaction)
     {
         var data = Service<GameData>();
-        static int[] Modes(JsonElement row) => row.GetProperty("_iInteractionMode").EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 0)).ToArray();
+        static int[] Modes(JsonElement row) => [.. row.GetProperty("_iInteractionMode").EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 0))];
         static IEnumerable<string[]> Actions(JsonElement row, string field) => row.TryGetProperty(field, out var a) && a.ValueKind == JsonValueKind.Array
             ? a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Array).Select(x => x.EnumerateArray().Select(v => v.ToString()).ToArray()) : [];
         var row = data.Row("NPCInteractConfig", interaction)!.Value;

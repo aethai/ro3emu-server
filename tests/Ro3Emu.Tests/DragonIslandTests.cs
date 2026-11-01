@@ -94,7 +94,7 @@ public sealed class DragonIslandTests : IAsyncLifetime
     private Task Beside(BotClient bot, float x, float y, float z) =>
         OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(bot), new MapPoint(x + 1, y, z, 0)));
 
-    private static List<long> Camps(DungeonBaseInfoNotify info) => info.Vars.Single(v => v.VarId == 304).Vi64.ToList();
+    private static List<long> Camps(DungeonBaseInfoNotify info) => [.. info.Vars.Single(v => v.VarId == 304).Vi64];
 
     [ClientDataFact]
     public async Task CrystalsSoulAndFafnirScoreTheCampsThroughTheBattle()

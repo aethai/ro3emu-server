@@ -21,10 +21,10 @@ public sealed partial class CombatService
     /// <summary>Transient state is scoped to a role/connection; never leaks to another selected role.</summary>
     public sealed class ProtocolState
     {
-        public Dictionary<int, int> TemporarySlotRows { get; } = new();
+        public Dictionary<int, int> TemporarySlotRows { get; } = [];
         public string ParameterSignature { get; set; } = "";
         public bool TrainingPaused { get; set; }
-        public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = new();
+        public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = [];
     }
 
     private Dictionary<(int Group, int Level, int Mode), int>? _configuredModeRows;

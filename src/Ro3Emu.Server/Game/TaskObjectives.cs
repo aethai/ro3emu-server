@@ -165,8 +165,8 @@ public sealed partial class TaskService
     // stand-in, [106010,5], an event counter (TaskService.GuildEvents). Other quests with it stay without a producer.
     private const int TBarroomActTime = 106010;
 
-    private readonly ConditionalWeakTable<MonsterUnit, HashSet<long>> _participants = new();
-    private readonly HashSet<GameSession> _refreshQueued = new();
+    private readonly ConditionalWeakTable<MonsterUnit, HashSet<long>> _participants = [];
+    private readonly HashSet<GameSession> _refreshQueued = [];
 
     private void QueueRefresh(GameSession session)
     {
@@ -409,12 +409,12 @@ public sealed partial class TaskService
         if (settlement.TaskParticipantIds == null)
         {
             var credited = _participants.TryGetValue(monster, out var ids) ? ids : [];
-            settlement.TaskParticipantIds = _sessions.All()
+            settlement.TaskParticipantIds = [.. _sessions.All()
                 .Where(s => s.Role != null && s.Tasks != null && s.WorldScene == monster.WorldScene &&
                     (ReferenceEquals(s, killer) || credited.Contains(s.Role.Id)))
-                .Select(s => s.Role!.Id).Distinct().Order().ToArray();
+                .Select(s => s.Role!.Id).Distinct().Order()];
         }
-        return settlement.TaskParticipantIds.Select(id => ReservationKey.Role(id)).ToArray();
+        return [.. settlement.TaskParticipantIds.Select(id => ReservationKey.Role(id))];
     }
 
     /// <summary>Freeze the exact running targets under all participant role reservations before the kill writer
@@ -480,7 +480,7 @@ public sealed partial class TaskService
                 {
                     byte[]? beforeFollowup = _roles.ReadTaskFollowup(builder, x.Role);
                     var pending = beforeFollowup is { Length: > 0 }
-                        ? JsonSerializer.Deserialize<HashSet<string>>(beforeFollowup) ?? [] : new HashSet<string>();
+                        ? JsonSerializer.Deserialize<HashSet<string>>(beforeFollowup) ?? [] : [];
                     pending.Add("kill/" + settlement.SourceKey);
                     return new KillTaskProgress(x.Role, x.BeforeTasks, x.AfterTasks, beforeFollowup,
                         JsonSerializer.SerializeToUtf8Bytes(pending));
@@ -500,7 +500,7 @@ public sealed partial class TaskService
 
     private async Task OnKillAsync(GameSession killer, MonsterUnit monster)
     {
-        var participants = _participants.TryGetValue(monster, out var credited) ? credited.ToHashSet() : new HashSet<long>();
+        var participants = _participants.TryGetValue(monster, out var credited) ? credited.ToHashSet() : [];
         if (killer.Role != null) participants.Add(killer.Role.Id);
         _participants.Remove(monster);
         if (monster.RewardSettlement?.TaskObligationsStaged == true)
@@ -605,7 +605,7 @@ public sealed partial class TaskService
 /// <summary>Extra authoritative quest source state; stored alongside DBTaskInfo. No new client dataset.</summary>
 public sealed class TaskRuntimeState
 {
-    public HashSet<long> CompletedGuides { get; set; } = new();
+    public HashSet<long> CompletedGuides { get; set; } = [];
     public bool InCutScene { get; set; }
     /// <summary>The game day (DailyActivityService epoch) of <see cref="FactionPoints"/> (TaskService.FactionQuest.cs).</summary>
     public long FactionDay { get; set; }

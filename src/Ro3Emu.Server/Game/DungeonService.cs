@@ -25,10 +25,10 @@ public sealed partial class DungeonService
     public const uint PlotSceneEvent = 84012;
 
     /// <summary>Committed clears only; consumers receive the scene entry and whether an actual personal award was paid.</summary>
-    public List<Func<GameSession, int, bool, Task>> Completed { get; } = new();
+    public List<Func<GameSession, int, bool, Task>> Completed { get; } = [];
     /// <summary>After <see cref="Completed"/> for a TenGameplay run: the boss (TenGameplayBossConfig._iBoss) and the
     /// run's settled participants (quest target 106602).</summary>
-    public List<Func<GameSession, long, IReadOnlyCollection<GameSession>, Task>> MultiBossCleared { get; } = new();
+    public List<Func<GameSession, long, IReadOnlyCollection<GameSession>, Task>> MultiBossCleared { get; } = [];
     /// <summary>A loaded member's dungeon task tracker (TaskService.OnDungeonRun): scene, instance and the scripted steps
     /// the run has passed. Listeners post their work.</summary>
     public List<Action<GameSession, long, long, int>> RunTracked { get; } = [];
@@ -67,7 +67,7 @@ public sealed partial class DungeonService
     private readonly ServerOptions _options;
     private readonly PraiseService _praise;
     private readonly TestingSwitches _testing;
-    private readonly Dictionary<GameSession, Preparation> _pending = new();
+    private readonly Dictionary<GameSession, Preparation> _pending = [];
 
     public DungeonService(GameData data, DungeonCatalog catalog, RoleStore roles, Ownership.OwnerRegistry owners,
         DungeonObligationStore obligations, CharacterService character,
@@ -118,10 +118,10 @@ public sealed partial class DungeonService
         public required int PlayBook { get; init; }
         public required int SeasonId { get; init; }
         public bool Matched { get; init; }
-        public HashSet<GameSession> Loaded { get; } = new();
+        public HashSet<GameSession> Loaded { get; } = [];
         /// <summary>30441 roster slots by role (index = 0-based position), fixed on the first roster.</summary>
-        public List<long> Slots { get; } = new();
-        public HashSet<long> Killed { get; } = new();
+        public List<long> Slots { get; } = [];
+        public HashSet<long> Killed { get; } = [];
         /// <summary>The completing events a step with "all" has seen so far.</summary>
         public HashSet<(ReconstructedDungeons.TriggerKind Kind, long Id)> StepSeen { get; } = [];
         /// <summary>A scripted step's strikes taken so far, by monster uid.</summary>
@@ -136,7 +136,7 @@ public sealed partial class DungeonService
         /// this game.</summary>
         public int SeekRound { get; set; }
         public HashSet<long> Searched { get; } = [];
-        public HashSet<long> Precounted { get; } = new();
+        public HashSet<long> Precounted { get; } = [];
         public bool ObligationsFrozen { get; set; }
         public bool ObligationsActivated { get; set; }
         public bool FrozenWin { get; set; }
@@ -146,12 +146,12 @@ public sealed partial class DungeonService
         public string? TerminalKillSource { get; set; }
         public RewardSettlement? ActivationSettlement { get; set; }
         internal SemaphoreSlim FreezeGate { get; } = new(1, 1);
-        public Dictionary<long, RoleStatisticsInfo> Stats { get; } = new();
-        public Dictionary<GameSession, Dictionary<int, long>> StartingItems { get; } = new();
-        public HashSet<GameSession> Paid { get; } = new();
-        public Dictionary<long, int> RevivesUsed { get; } = new();
-        public Dictionary<long, long> AutoReviveAt { get; } = new();
-        public HashSet<GameSession> Reviving { get; } = new();
+        public Dictionary<long, RoleStatisticsInfo> Stats { get; } = [];
+        public Dictionary<GameSession, Dictionary<int, long>> StartingItems { get; } = [];
+        public HashSet<GameSession> Paid { get; } = [];
+        public Dictionary<long, int> RevivesUsed { get; } = [];
+        public Dictionary<long, long> AutoReviveAt { get; } = [];
+        public HashSet<GameSession> Reviving { get; } = [];
         public bool Started { get; set; }
         public bool Settled { get; set; }
         public int Wave { get; set; }
@@ -170,7 +170,7 @@ public sealed partial class DungeonService
         /// <summary>The boss's Sacred Blessing level (TenGameplayBuffConfig row) active for this run, fixed at its start.</summary>
         public JsonElement? Blessing { get; set; }
         /// <summary>The scripted scene actors shown now (also tracked by the room for cleanup).</summary>
-        internal List<SceneActorUnit> SceneActors { get; } = new();
+        internal List<SceneActorUnit> SceneActors { get; } = [];
         /// <summary>Scene actors an earlier step took away: a late auto interaction on one is answered without an error.</summary>
         internal HashSet<long> RetiredActors { get; } = [];
         /// <summary>The scripted step's allied companions standing now (DungeonService.Companions; room props too).</summary>
@@ -190,14 +190,13 @@ public sealed partial class DungeonService
         public required GameSession Leader;
         public required GameSession[] Members;
         public required long TeamId;
-        public readonly HashSet<GameSession> Ready = new();
+        public readonly HashSet<GameSession> Ready = [];
         public bool Closed;
     }
 
     private static Attempt? Active(GameSession s) => s.DungeonAttempt is { Started: true, Settled: false } a
         && !a.Room.Closed && s.InstanceId == a.Room.Id && !s.SceneLoading ? a : null;
-    private static GameSession[] Present(Attempt a) => a.Room.ActiveMembers.Select(m => m.Session)
-        .Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null).ToArray();
+    private static GameSession[] Present(Attempt a) => [.. a.Room.ActiveMembers.Select(m => m.Session).Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null)];
     private static Dictionary<int, long> Inventory(GameSession s)
     {
         var counts = s.Items.GroupBy(i => i.Entry).ToDictionary(g => g.Key, g => g.Sum(i => (long)i.Stack));
@@ -237,7 +236,7 @@ public sealed partial class DungeonService
         int error = plan == null ? ErrorCodes.DungeonDataMissing : Admission(s, plan, continuation: true);
         if (error == 0 && Preparing(s)) error = ErrorCodes.DungeonPreparing;
         var membership = s.Role != null ? _teams.TeamOf(s.Role.Id) : default;
-        long[] ids = s.Role == null ? [] : alone || plan?.MaxPlayers == 1 ? [s.Role.Id] : _teams.MembersOf(s.Role.Id).ToArray();
+        long[] ids = s.Role == null ? [] : alone || plan?.MaxPlayers == 1 ? [s.Role.Id] : [.. _teams.MembersOf(s.Role.Id)];
         var online = _sessions.All().Where(p => p.Role != null).ToDictionary(p => p.Role!.Id);
         var members = ids.Where(online.ContainsKey).Select(id => online[id]).ToArray();
         if (error == 0 && ids.Length > 1 && membership.Leader != s.Role!.Id) error = ErrorCodes.NoPermission;
@@ -1001,7 +1000,7 @@ public sealed partial class DungeonService
             });
         }
         if (won && a.Plan.Multi != null && a.Plan.Boss is { } cleared)
-            RecordFirstClear(a, cleared, participants.Select(p => p.Session).Where(s => s.Role != null).ToArray());
+            RecordFirstClear(a, cleared, [.. participants.Select(p => p.Session).Where(s => s.Role != null)]);
         // Finalize only from committed personal entitlements; pending journals recover on restart.
         if (won && a.Plan.Multi != null && _obligations.PendingRoom(a.Room.Id).Count == 0)
         {

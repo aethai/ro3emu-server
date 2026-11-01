@@ -44,7 +44,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
     public sealed class Mailbox
     {
         public long NextId { get; set; }
-        public List<Letter> Letters { get; set; } = new();
+        public List<Letter> Letters { get; set; } = [];
     }
 
     public sealed class Letter
@@ -69,9 +69,9 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         public byte[]? ContentParams { get; set; }
         public bool Read { get; set; }
         public bool Claimed { get; set; }
-        public List<Attachment> Attachments { get; set; } = new();
-        public List<InvItem> Items { get; set; } = new();
-        public Dictionary<int, long> Currency { get; set; } = new();
+        public List<Attachment> Attachments { get; set; } = [];
+        public List<InvItem> Items { get; set; } = [];
+        public Dictionary<int, long> Currency { get; set; } = [];
     }
 
     /// <summary>Configured entry/count/binding grants, including virtual Base/Job EXP 100/101; market instances use Items.</summary>
@@ -93,7 +93,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
                 strings.Add(reader.GetString()!);
             }
             if (reader.TokenType != JsonTokenType.EndArray) throw new JsonException("Unterminated mail content parameters.");
-            return EncodeLanguageData(strings.ToArray());
+            return EncodeLanguageData([.. strings]);
         }
 
         public override void Write(Utf8JsonWriter writer, byte[]? value, JsonSerializerOptions options)
@@ -219,7 +219,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         var letter = new Letter
         {
             DeliveryKey = key, CreatedTime = now.ToUnixTimeSeconds(), RemoveTime = 0,
-            TemplateId = templateId, Attachments = attachments.ToList(),
+            TemplateId = templateId, Attachments = [.. attachments],
             ContentParams = EncodeLanguageData(contentParams),
         };
         transaction.Add(new FinancialMailAppendPlan(role, key, letter, now.UtcTicks));
@@ -261,7 +261,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         if (attached.Any(i => i.Entry is 100 or 101 || i.Entry <= 0 || i.Stack <= 0 || i.Grid != 0
             || data.Row("ItemConfig", i.Entry) is not { } row || GameData.Int(row, "_iType") == 1))
             throw new ArgumentException("Invalid mail item", nameof(items));
-        var amounts = currency?.ToDictionary(p => p.Key, p => p.Value) ?? new();
+        var amounts = currency?.ToDictionary(p => p.Key, p => p.Value) ?? [];
         if (amounts.Any(p => p.Key <= 0 || p.Value <= 0 || data.Row("ItemConfig", p.Key) is not { } row
             || GameData.Int(row, "_iType") != 1))
             throw new ArgumentException("Invalid mail currency", nameof(currency));
@@ -272,7 +272,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         {
             Id = id, TemplateId = templateId, Sender = "", CreatedTime = now.ToUnixTimeSeconds(),
             RemoveTime = attached.Count > 0 || amounts.Count > 0 ? 0 : now.AddDays(30).ToUnixTimeSeconds(),
-            Items = attached, Currency = amounts, ContentParams = EncodeLanguageData(contentParams.Cast<object>().ToArray()),
+            Items = attached, Currency = amounts, ContentParams = EncodeLanguageData([.. contentParams.Cast<object>()]),
         });
         transaction.RoleBlob(role, "mailbox", JsonSerializer.SerializeToUtf8Bytes(box));
         return id;
@@ -301,8 +301,8 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
                 {
                     Id = id, TemplateId = row.TemplateId, Sender = "", CreatedTime = row.CreatedTime,
                     RemoveTime = row.Items.Count > 0 || row.Currency.Count > 0 ? 0 : row.RemoveTime,
-                    Read = row.Read, Claimed = row.Claimed, Items = row.Items.Select(i => i.Clone()).ToList(),
-                    Currency = new(row.Currency), ContentParams = EncodeLanguageData(row.ContentParams.Cast<object>().ToArray()),
+                    Read = row.Read, Claimed = row.Claimed, Items = [.. row.Items.Select(i => i.Clone())],
+                    Currency = new(row.Currency), ContentParams = EncodeLanguageData([.. row.ContentParams.Cast<object>()]),
                 });
             }
             transaction.RoleBlob(group.Key, "mailbox", JsonSerializer.SerializeToUtf8Bytes(box));
@@ -319,7 +319,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         public bool Read { get; set; }
         public bool Claimed { get; set; }
         public List<InvItem> Items { get; set; } = [];
-        public Dictionary<int, long> Currency { get; set; } = new();
+        public Dictionary<int, long> Currency { get; set; } = [];
         public string[] ContentParams { get; set; } = [];
     }
 
@@ -343,7 +343,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         DeliverAsync(role, new Letter
         {
             Title = title, Content = content, Sender = sender, Category = category,
-            ImportantType = importantType, Attachments = attachments?.ToList() ?? new()
+            ImportantType = importantType, Attachments = attachments?.ToList() ?? []
         }, expiresAt,
             attachments is { Count: > 0 } ? 30 : 7);
 
@@ -393,7 +393,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         return DeliverAsync(role, new Letter
         {
             TemplateId = templateId, SenderId = "0", Category = category,
-            ImportantType = importantType, Attachments = attachments.ToList()
+            ImportantType = importantType, Attachments = [.. attachments]
         }, expiresAt, days > 0 ? days : 30);
     }
 
@@ -423,7 +423,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         return DeliverAsync(role, new Letter
         {
             TemplateId = templateId, SenderId = "0", DeliveryKey = sourceKey,
-            Attachments = attachments.ToList(), ContentParams = EncodeLanguageData(contentParams?.ToArray() ?? []),
+            Attachments = [.. attachments], ContentParams = EncodeLanguageData(contentParams?.ToArray() ?? []),
         }, null, days > 0 ? days : 30, persist, ownerContext, authorize,
             parentEconomy);
     }

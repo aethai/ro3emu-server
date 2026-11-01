@@ -67,21 +67,21 @@ public sealed partial class CombatService : IGameTicker
     private long _regenSlot = -1;
     /// <summary>Monsters whose fight bit is set: the out-of-combat check walks these instead of every unit of every
     /// map each tick. Entries leave on the clear or when the unit leaves the world.</summary>
-    private readonly HashSet<MonsterUnit> _fightingMonsters = new();
+    private readonly HashSet<MonsterUnit> _fightingMonsters = [];
 
     /// <summary>A monster died by this player: rewards (RewardService), quest kill targets (TaskService).</summary>
-    public List<Func<GameSession, MonsterUnit, Task>> Killed { get; } = new();
+    public List<Func<GameSession, MonsterUnit, Task>> Killed { get; } = [];
     /// <summary>E04: freeze and commit the lethal source/entitlement before publishing a lethal hit or corpse.</summary>
-    public List<Func<GameSession, MonsterUnit, Task>> BeforeKilled { get; } = new();
+    public List<Func<GameSession, MonsterUnit, Task>> BeforeKilled { get; } = [];
     private sealed class InstanceDeathGate
     {
         internal readonly SemaphoreSlim Semaphore = new(1, 1);
         internal int Users;
     }
-    private readonly Dictionary<long, InstanceDeathGate> _instanceDeathGates = new();
+    private readonly Dictionary<long, InstanceDeathGate> _instanceDeathGates = [];
     private sealed class LethalFinalization { internal int Started; }
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MonsterUnit, LethalFinalization>
-        _finalizedLethalPublications = new();
+        _finalizedLethalPublications = [];
 
     private async Task FinalizeLethalPublicationAsync(MonsterUnit monster)
     {
@@ -213,24 +213,24 @@ public sealed partial class CombatService : IGameTicker
     }
 
     /// <summary>Dungeon owners settle a loss after authoritative player death (inferred).</summary>
-    public List<Func<GameSession, Task>> PlayerDied { get; } = new();
+    public List<Func<GameSession, Task>> PlayerDied { get; } = [];
     /// <summary>A death some owner publishes its own 30112 for (a dungeon run's revive rule, a territory battle's
     /// countdown): the generic 30-second notice is not sent then. Two notices with different times reached the
     /// client before (seen in the traffic of a dungeon death).</summary>
-    public List<Func<GameSession, bool>> ReviveInfoOwners { get; } = new();
+    public List<Func<GameSession, bool>> ReviveInfoOwners { get; } = [];
 
     /// <summary>A tower-owned type-7 actor died; TowerService sends 32809 and replaces it from the saved party.</summary>
-    public List<Func<TowerPetUnit, Task>> TowerPetDied { get; } = new();
+    public List<Func<TowerPetUnit, Task>> TowerPetDied { get; } = [];
 
     /// <summary>A player damaged a monster (MVP statistics).</summary>
-    public List<Action<GameSession, MonsterUnit, long>> Dealt { get; } = new();
+    public List<Action<GameSession, MonsterUnit, long>> Dealt { get; } = [];
 
     /// <summary>Territory objective/cart owner observes committed monster HP before kill settlement.</summary>
-    public List<Func<GameSession, MonsterUnit, long, Task>> MonsterDamageApplied { get; } = new();
+    public List<Func<GameSession, MonsterUnit, long, Task>> MonsterDamageApplied { get; } = [];
 
     /// <summary>Territory and escort owners observe effective hostile-player damage and its lethal transition.</summary>
-    public List<Action<GameSession, GameSession, long, bool>> PvpDealt { get; } = new();
-    public List<Func<GameSession, GameSession, Task>> PlayerKilled { get; } = new();
+    public List<Action<GameSession, GameSession, long, bool>> PvpDealt { get; } = [];
+    public List<Func<GameSession, GameSession, Task>> PlayerKilled { get; } = [];
     public Func<GameSession, GameSession, bool>? PlayerHostile { get; set; }
     public Func<GameSession, MonsterUnit, bool>? MonsterTargetAllowed { get; set; }
     /// <summary>
@@ -241,17 +241,17 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, MonsterUnit?, Vec3, Vec3, bool>? SkillLineBlocked { get; set; }
 
     /// <summary>A monster damaged a player; the flag says the hit was lethal (MVP statistics).</summary>
-    public List<Action<MonsterUnit, GameSession, long, bool>> Taken { get; } = new();
+    public List<Action<MonsterUnit, GameSession, long, bool>> Taken { get; } = [];
 
     /// <summary>A boss special's area landed (each hit moment): the boss, the skill, the cast's origin, the area's centre and
     /// the facing it was marked with. A raid trial's breakers use it (DungeonService.RaidTrials: Drake's barrels).</summary>
     internal List<Func<MonsterUnit, BossSkill, Vec3, Vec3, float, Task>> BossAreaLanded { get; } = [];
 
     /// <summary>Effective self-skill healing for authoritative dungeon statistics (MG_Common.RoleStatisticsInfo).</summary>
-    public List<Action<GameSession, long>> Healed { get; } = new();
+    public List<Action<GameSession, long>> Healed { get; } = [];
 
     // Totem passives need the row and final target before the existing post-hit event loses that context.
-    public List<Func<GameSession, JsonElement, Task>> CastLanded { get; } = new();
+    public List<Func<GameSession, JsonElement, Task>> CastLanded { get; } = [];
     /// <summary>After a player's own cast applied its effects, with the monsters it processed and its published hit (each
     /// target's result, the allies it healed) (TalentProcs).</summary>
     internal List<Func<GameSession, ActiveSkillCast, IReadOnlyList<MonsterUnit>, SkillHitInfo, Task>> CastResolved { get; } = [];
@@ -260,13 +260,13 @@ public sealed partial class CombatService : IGameTicker
     internal Func<GameSession, JsonElement, int, JsonElement>? TargetCountRow { get; set; }
     /// <summary>May the caster's skill put this _kBuff1 buff on the recipient (TalentProcs: talent-gated buffs).</summary>
     internal Func<GameSession, GameSession, int, bool>? SkillBuffAllowed { get; set; }
-    public List<Func<GameSession, MonsterUnit, JsonElement, DamageHitResult, long, long>> DamageAdjusters { get; } = new();
-    public List<Func<GameSession, MonsterUnit, JsonElement, long, long>> ExtraHitDamage { get; } = new();
-    public List<Func<GameSession, MonsterUnit, JsonElement, long, Task>> DealtAsync { get; } = new();
-    public List<Func<GameSession, long, long>> ExtraHeal { get; } = new();
-    public List<Func<MonsterUnit, GameSession, DamageHitResult, long, Task<long>>> IncomingDamageAdjusters { get; } = new();
-    public List<Func<MonsterUnit, GameSession, long, Task>> TakenAsync { get; } = new();
-    public List<Func<GameSession, Task>> PlayerRevived { get; } = new();
+    public List<Func<GameSession, MonsterUnit, JsonElement, DamageHitResult, long, long>> DamageAdjusters { get; } = [];
+    public List<Func<GameSession, MonsterUnit, JsonElement, long, long>> ExtraHitDamage { get; } = [];
+    public List<Func<GameSession, MonsterUnit, JsonElement, long, Task>> DealtAsync { get; } = [];
+    public List<Func<GameSession, long, long>> ExtraHeal { get; } = [];
+    public List<Func<MonsterUnit, GameSession, DamageHitResult, long, Task<long>>> IncomingDamageAdjusters { get; } = [];
+    public List<Func<MonsterUnit, GameSession, long, Task>> TakenAsync { get; } = [];
+    public List<Func<GameSession, Task>> PlayerRevived { get; } = [];
     /// <summary>A match owner decides which skills a participant may cast (true/false), or defers (null).</summary>
     public Func<GameSession, int, bool?>? MatchSkillRule { get; set; }
     /// <summary>
@@ -420,7 +420,7 @@ public sealed partial class CombatService : IGameTicker
                     .OrderBy(m => MonsterService.Distance(pet.X, pet.Z, m.X, m.Z)).Take(limit).ToList()
                 : !target.Dead && target.Hp > 0 && target.InstanceId == pet.InstanceId
                     && MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) <= pet.AttackSkills.First(s => s.Id == skillId).Range + 2f
-                    ? new List<MonsterUnit> { target } : [];
+                    ? [target] : [];
             if (targets.Count == 0) return;
             var stats = pet.CombatStats;
             var attacker = new Fighter(stats[103], stats[104], stats[109], stats[111], pet.Level, pet.Element);
