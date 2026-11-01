@@ -88,6 +88,14 @@ public sealed class LoginLimitTests
     }
 
     [Fact]
+    public async Task ATunnelEndsTheLoopbackExemption()
+    {
+        // frp or ssh -R: strangers arrive on loopback with no header, but the client is told a public address.
+        var codes = await Logins(limitLoopback: false, attempts: 4, configure: o => { o.PublicHost = "192.0.2.10"; o.BindAddress = "127.0.0.1"; });
+        Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
+    }
+
+    [Fact]
     public async Task AConfiguredProxyEndsTheLoopbackExemption()
     {
         // A proxy that sends no forwarding header still announces itself in the panel options.

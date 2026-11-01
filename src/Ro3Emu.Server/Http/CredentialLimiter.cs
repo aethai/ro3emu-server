@@ -11,8 +11,8 @@ namespace Ro3Emu.Server.Http;
 /// register an account. A plain fixed window per address, no timers: ASP.NET's rate-limiter middleware keeps a cleanup
 /// timer alive past the host, which held every disposed test host (and its game data) in memory. The address is the
 /// client of <see cref="ClientAddresses"/> (a trusted proxy's forwarded one). Loopback is exempt only for a local tool:
-/// unless <see cref="ServerOptions.LoginLimitIncludesLoopback"/>, and never for a forwarded request or when the panel
-/// options name a proxy (<see cref="PanelOptions.PublicFacing"/>), since a proxy on the same machine is loopback too.
+/// unless <see cref="ServerOptions.LoginLimitIncludesLoopback"/>, and never for a forwarded request or on a server others
+/// reach (<see cref="ServerOptions.LocalOnly"/>), since a proxy or a tunnel on the same machine is loopback too.
 /// </summary>
 public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvider time)
 {
@@ -33,8 +33,7 @@ public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvi
 
     /// <summary>A local tool on loopback, not a proxy in front of the server: the address budgets let it through.</summary>
     internal static bool LoopbackExempt(ServerOptions o, RequestClient client) =>
-        !o.LoginLimitIncludesLoopback && client is { Address: { } a, Forwarded: false } && IPAddress.IsLoopback(a)
-        && o.Panel.TrustedProxies.Length == 0 && string.IsNullOrWhiteSpace(o.Panel.PublicUrl);
+        !o.LoginLimitIncludesLoopback && client is { Address: { } a, Forwarded: false } && IPAddress.IsLoopback(a) && o.LocalOnly();
 }
 
 /// <summary>

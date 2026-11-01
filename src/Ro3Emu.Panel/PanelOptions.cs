@@ -60,7 +60,7 @@ public sealed class PanelOptions
 
     /// <summary>
     /// GM and Admin accounts must turn on two-factor authentication before the admin area opens to them. Unset: on when
-    /// the panel is public (<see cref="PublicFacing"/>), off for local play. The server resolves it at start.
+    /// other machines reach the server (ServerOptions.LocalOnly), off for local play. The server resolves it at start.
     /// </summary>
     public bool? RequireAdmin2FA { get; set; }
 
