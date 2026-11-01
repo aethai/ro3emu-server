@@ -24,6 +24,7 @@ public sealed class VoiceRelayTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
+            o.GameDataDir = SyntheticData.Dir;
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -633,6 +634,7 @@ public sealed class VoiceRelayTests : IAsyncLifetime
         var off = ServerHost.Create([], o =>
         {
             o.DataDir = dataDir;
+            o.GameDataDir = SyntheticData.Dir;
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
