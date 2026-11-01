@@ -61,7 +61,7 @@ dotnet_naming_rule.private_fields_are_underscore_camel_case.severity = warning
 # Analyzer baseline: rules of AnalysisLevel 10.0-recommended and of the style above that older code still breaks, each
 # with its number of violations. They show as suggestions; every other rule fails the build. CI checks the numbers
 # (dotnet run --project tools/AnalyzerBaseline -c Release): more violations fail, and fewer fail until the number is
-# lowered, so new code cannot add any. Delete a rule's two lines once it reaches zero. The counts are the ones of the
+# lowered; a number higher than in the parent commit fails too, so new code cannot add any. Delete a rule's two lines once it reaches zero. The counts are the ones of the
 # SDK band global.json pins: after an SDK update, run the tool and write the numbers it prints. IDE1006 stays: the
 # fields of DbPlan types and of the values they hold keep their names, because EconomyChildIntent and
 # EventPlanFingerprint write those names into stored receipts (ReceiptFieldNamesTests pins them).
@@ -97,7 +97,7 @@ dotnet_diagnostic.CA1859.severity = suggestion
 dotnet_diagnostic.CA1861.severity = suggestion
 # 10: cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion
-# 145: avoid potentially expensive logging
+# 144: avoid potentially expensive logging
 dotnet_diagnostic.CA1873.severity = suggestion
 # 15: instantiate argument exceptions correctly
 dotnet_diagnostic.CA2208.severity = suggestion
@@ -107,6 +107,9 @@ dotnet_diagnostic.IDE1006.severity = suggestion
 # The client projects keep their block-scoped namespaces (built only against a local client).
 [src/Ro3Emu.{ClientHooks,Loc}/**.cs]
 csharp_style_namespace_declarations = block_scoped:silent
+# Members inherited from the client's obfuscated classes differ only by case (Obf_KkD, Obf_kkD). CI builds without the
+# client, so it never sees this rule fail here: only a local build against the client does.
+dotnet_diagnostic.CA1708.severity = none
 
 # Projects that build only against a local client keep their style rules as suggestions.
 [src/Ro3Emu.{ClientHooks,Loc,ClientTools}/**.cs]

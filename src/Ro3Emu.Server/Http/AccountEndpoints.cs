@@ -15,8 +15,12 @@ public static class AccountEndpoints
         app.MapPost("/ro3emu/account/delete-role", async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, RoleStore roles, SessionRegistry sessions, GameLoop loop, OwnerRegistry owners, ILogger<RoleStore> log) =>
         {
             if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-            var form = await request.ReadFormAsync();
+            if (!request.HasFormContentType) return Results.StatusCode(StatusCodes.Status400BadRequest);
+            IFormCollection form;
+            try { form = await request.ReadFormAsync(SdkEndpoints.LoginForm); }
+            catch (InvalidDataException) { return Results.StatusCode(StatusCodes.Status400BadRequest); }
             string typed = form["identity"].ToString().Trim(), credential = form["credential"].ToString(), which = form["role"].ToString().Trim();
+            if (credential.Length > SdkEndpoints.MaxCredential) return Results.Json(new { code = 401, message = "bad account or password" });
             // Roles are keyed by the account's stored name, whatever letter case the form used.
             if (await accounts.VerifiedAccountAsync(typed, credential) is not { } identity)
                 return Results.Json(new { code = 401, message = "bad account or password" });
@@ -32,7 +36,8 @@ public static class AccountEndpoints
                     return Results.Json(new { code = 409, message = "the character is in the game; log out first" });
                 bool ok = roles.Delete(identity, role.Id);
                 if (ok) owners.RoleDeleted(role.Id, roles.ReadRevisionVector(role.Id).Epoch);
-                log.LogInformation("Account {Account} deletes role {Name} ({Id}): {Result}", identity, current.Name, role.Id, ok);
+                string shown = Micro.MicroServiceRouter.Clip(identity);
+                log.LogInformation("Account {Account} deletes role {Name} ({Id}): {Result}", shown, current.Name, role.Id, ok);
                 return Results.Json(new { code = ok ? 0 : 500, message = ok ? $"{current.Name} deleted" : "not deleted" });
             });
         });

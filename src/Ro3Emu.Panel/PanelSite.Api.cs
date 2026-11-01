@@ -77,7 +77,7 @@ public sealed partial class PanelSite
         ClearCookie(call.Context, VisitorCookie);
         await _ops.RecordLoginAsync(account, "panel", call.Client);
         LogLogin(_log, account);
-        return Reply.Ok(SessionBody(account, await StaffRoleAsync(account), _sessions.Csrf("session", sessionId)));
+        return Reply.Ok(SessionBody(account, await StaffRoleAsync(account, call.Context.Request), _sessions.Csrf("session", sessionId)));
     }
 
     private async Task<Reply> LoginAsync(Call call)

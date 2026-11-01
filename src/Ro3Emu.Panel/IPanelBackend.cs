@@ -130,6 +130,6 @@ public sealed record PanelDashboard(
     string Phase, int InWorld, int Loading, int Login, int Connections, int Accounts, int Characters,
     double TicksPerSecond, double TickP50Ms, double TickP99Ms, double TickMaxMs, long Overruns, int QueueLength,
     long WorkingSetBytes, double CpuSeconds, int Gen2Collections, long Exceptions, long ErrorLogs, long DbCommits,
-    IReadOnlyList<PanelMapCount> Maps);
+    long RolesInRecovery, IReadOnlyList<PanelMapCount> Maps);
 
 public sealed record PanelMapCount(string Map, int Players);

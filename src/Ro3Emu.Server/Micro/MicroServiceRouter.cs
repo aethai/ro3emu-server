@@ -72,8 +72,11 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
             // PhonestGate touches only the micro connection, the locked GateAuthRegistry and the ban read: no Realm admission.
             // RankService only reads committed rows through the read pool and its own cached snapshot, and so does
             // NameService (RoleStore.FindByNameAsync, GetAsync): under the Realm key a flood of getUidByName waited
-            // behind, and held up, every realm-wide operation of the loop.
-            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate" or "RankService" or "NameService")
+            // behind, and held up, every realm-wide operation of the loop. ClusterRecommendService and PlatformProxyService
+            // answer from options alone. PartyService only reads: it goes to the loop itself for the team and tavern
+            // directories (their owner) and to the read pool for chat groups, and changes nothing.
+            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate"
+                or "RankService" or "NameService" or "ClusterRecommendService" or "PlatformProxyService" or "PartyService")
                 result = await handler.InvokeAsync(session, method, args);
             else result = await loop.InvokeAsync(async () =>
             {
@@ -124,9 +127,30 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
     /// <summary>Characters of one client text in a log line, and entries of one map or array, before the rest is cut.</summary>
     internal const int LoggedText = 128, LoggedEntries = 16;
 
-    /// <summary><paramref name="text"/> cut to <see cref="LoggedText"/> characters, saying how long it was.</summary>
-    public static string Clip(string? text) =>
-        text == null ? "" : text.Length <= LoggedText ? text : $"{text[..LoggedText]}...({text.Length} chars)";
+    /// <summary>
+    /// Client text for a log line: cut to <see cref="LoggedText"/> characters, saying how long it was, with control, line
+    /// break and invisible format characters escaped, so that no client can write a line of its own into the log.
+    /// </summary>
+    public static string Clip(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        string shown = Printable(text.Length <= LoggedText ? text : text[..LoggedText]);
+        return text.Length <= LoggedText ? shown : $"{shown}...({text.Length} chars)";
+    }
+
+    private static string Printable(string text)
+    {
+        if (!text.Any(Unprintable)) return text;
+        var shown = new System.Text.StringBuilder(text.Length + 16);
+        foreach (char c in text)
+            if (Unprintable(c)) shown.Append(System.Globalization.CultureInfo.InvariantCulture, $"\\u{(int)c:x4}");
+            else shown.Append(c);
+        return shown.ToString();
+    }
+
+    private static bool Unprintable(char c) => char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.Control
+        or System.Globalization.UnicodeCategory.Format or System.Globalization.UnicodeCategory.LineSeparator
+        or System.Globalization.UnicodeCategory.ParagraphSeparator;
 
     /// <summary>The arguments for a log line: bounded in depth, entries and text, secrets redacted.</summary>
     public static string Describe(object? value, int depth = 0) => value switch

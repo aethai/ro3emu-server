@@ -32,15 +32,27 @@ public sealed class StaffRoles(IOptions<ServerOptions> options, AccountStore acc
         o.GmAccounts.Length > 0 ? Game.GmCommands.Allowed(o, account, loopbackTool: false) : OpenGmAdmin(o);
 
     /// <summary>
-    /// An empty GmAccounts makes every account an Admin only when GM is open and no other machine reaches the panel:
-    /// a public or proxied panel would hand the server to whoever signs up (docs/guide/panel.md), even where an
-    /// operator opened GM in game on purpose with Ro3Emu:GmOpenWhenEmpty.
+    /// An empty GmAccounts makes every account an Admin only when GM is open and no other machine reaches the server
+    /// (<see cref="ServerOptions.LocalOnly"/>): a public, tunnelled or proxied panel would hand the server to whoever
+    /// signs up (docs/guide/panel.md), even where an operator opened GM in game on purpose with Ro3Emu:GmOpenWhenEmpty.
     /// </summary>
     internal static bool OpenGmAdmin(ServerOptions o) =>
-        o.GmAccounts.Length == 0 && o.GmOpenWhenEmpty != false && !o.Panel.PublicFacing(o.PanelListenAddress());
+        o.GmAccounts.Length == 0 && o.GmOpenWhenEmpty != false && o.LocalOnly();
 
     public PanelRole RoleOf(string account) =>
         Configured(account) ?? (Rows().TryGetValue(account, out var row) && PanelRoles.Parse(row.Role) is { } role ? role : PanelRole.None);
+
+    /// <summary>
+    /// The role from the lists alone, without <see cref="OpenGmAdmin"/>: what a forwarded request gets. A proxy that
+    /// nobody told the server about still sends its forwarding header, and the player behind it is not this machine.
+    /// </summary>
+    public PanelRole ListedRoleOf(string account)
+    {
+        var o = options.Value;
+        if (!OpenGmAdmin(o)) return RoleOf(account);
+        if (o.Panel.Roles.TryGetValue(account, out string? text) && PanelRoles.Parse(text) is { } listed && listed != PanelRole.None) return listed;
+        return Rows().TryGetValue(account, out var row) && PanelRoles.Parse(row.Role) is { } given ? given : PanelRole.None;
+    }
 
     /// <summary>Every staff account: the configured ones and the panel's, by name.</summary>
     internal IReadOnlyList<(string Account, PanelRole Role, string Source, StaffRoleRow? Row)> All()

@@ -8,6 +8,7 @@ using Ro3Emu.Server;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Http;
+using Ro3Emu.Server.Micro;
 
 namespace Ro3Emu.Tests;
 
@@ -57,6 +58,38 @@ public sealed class MicroGateLimitTests : IAsyncLifetime
         Assert.Contains("too many requests", answers);
     }
 
+    /// <summary>The budget counts frames, not their cost: one call asking for thousands of roles must not cost thousands.</summary>
+    [Fact]
+    public async Task OneProfileRequestAnswersNoMoreRolesThanTheClientAsksFor()
+    {
+        await using var bot = new BotClient(_http, _pem);
+        await bot.LoginAsync("batch-player", "pw");
+        await bot.EnterGateAsync();
+        long role = (await bot.CreateRoleAsync("Batcher")).RoleBaseInfo.Id;
+        // Different keys naming one real role, so that an answer shows the work that was done for each.
+        var asks = Enumerable.Range(0, UserDataService.MaxRolesPerBatch + 30)
+            .ToDictionary(i => new string('0', i) + role, _ => (object)new Dictionary<string, object> { ["Base"] = 0 });
+        var answer = await bot.MicroAsync("UserDataService", "getAttributeBatchByVersion", new() { ["UidFieldVersions"] = asks });
+        Assert.Equal(UserDataService.MaxRolesPerBatch, Assert.IsType<object[]>(answer["Results"]).Length);
+    }
+
+    [Fact]
+    public async Task AConnectionThatKeepsGoingFarOverItsBudgetIsClosed()
+    {
+        await using var bot = new BotClient(_http, _pem);
+        await bot.LoginAsync("flood-player", "pw");
+        var sessions = _app.Services.GetRequiredService<MicroSessions>();
+        Assert.NotNull(sessions.For("flood-player"));
+        // The last call gets no answer: the gate closes the connection instead.
+        await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            for (int i = 0; i < MicroSession.MaxRefusedFrames + 50; i++)
+                await bot.MicroAsync("NameService", "getUidByName", Lookup("nobody")).WaitAsync(TimeSpan.FromSeconds(3));
+        });
+        for (int i = 0; i < 100 && sessions.For("flood-player") != null; i++) await Task.Delay(50);
+        Assert.Null(sessions.For("flood-player"));
+    }
+
     [Fact]
     public async Task NameLookupsDoNotWaitBehindTheRealmReservation()
     {
@@ -94,6 +127,29 @@ public sealed class MicroGateLimitTests : IAsyncLifetime
         Assert.Equal(401, await CodeAsync(client, "sdk-long-password", new string('p', 1025)));
         Assert.Equal(0, await CodeAsync(client, "sdk-new", "pw"));
         Assert.Equal(0, await CodeAsync(client, "sdk-new", "pw"));
+    }
+
+    [Theory]
+    [InlineData("admin\u202Egnp")]
+    [InlineData("admin\u200B")]
+    [InlineData("line\nbreak")]
+    public async Task InvisibleCharactersCannotNameANewAccount(string name)
+    {
+        using var client = new HttpClient();
+        Assert.Equal(401, await CodeAsync(client, name, "pw"));
+    }
+
+    [Theory]
+    [InlineData("evil\nfail: FORGED LINE")]
+    [InlineData("evil\rFORGED")]
+    [InlineData("evil\u2028FORGED")]
+    [InlineData("evil\u202EFORGED")]
+    public void ClientTextCannotWriteALineOfItsOwn(string text)
+    {
+        string clipped = MicroServiceRouter.Clip(text);
+        Assert.DoesNotContain(clipped, c => c < ' ' || c is '\u2028' or '\u202E');
+        Assert.StartsWith("evil\\u", clipped, StringComparison.Ordinal);
+        Assert.Contains("FORGED", clipped, StringComparison.Ordinal);
     }
 
     private async Task<int> CodeAsync(HttpClient client, string identity, string credential)

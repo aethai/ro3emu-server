@@ -127,6 +127,41 @@ public sealed class PanelAdminTests : IAsyncLifetime
         Assert.Equal(["ban", "ban", "role"], await AuditActionsAsync(admin));
     }
 
+    /// <summary>A ban stands against lower roles than the one who placed it, and staff above the caller stay out of reach.</summary>
+    [Fact]
+    public async Task AnUnbanFollowsTheSameRanks()
+    {
+        Assert.Equal(0, await SdkLoginAsync(_host, "padmin-held", "pw"));
+        Assert.Equal(0, await SdkLoginAsync(_host, "padmin-minor", "pw"));
+        using var admin = await SignedInAsync(Admin);
+        using var moderator = await SignedInAsync(Moderator);
+        await OkAsync(admin.PostAsync("/api/admin/accounts/padmin-held/ban", new { reason = "cheating", hours = 1 }));
+        await OkAsync(moderator.PostAsync("/api/admin/accounts/padmin-minor/ban", new { reason = "spam", hours = 1 }));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await moderator.PostAsync("/api/admin/accounts/padmin-held/unban", new { reason = "pals" })).StatusCode);
+        await OkAsync(moderator.PostAsync("/api/admin/accounts/padmin-minor/unban", new { reason = "appeal" }));
+        await OkAsync(admin.PostAsync("/api/admin/accounts/padmin-held/unban", new { reason = "appeal" }));
+    }
+
+    /// <summary>
+    /// On your own PC an empty GM list makes every account an Admin, which must not make them all equal for a ban. A role
+    /// given by name still ranks.
+    /// </summary>
+    [Fact]
+    public async Task AnOpenLocalPanelCanBanAndUnban()
+    {
+        var (host, panel) = await StartAsync(o => o.Panel.Roles = new(StringComparer.Ordinal) { [Moderator] = "Admin" });
+        await using var _ = host;
+        Assert.Equal(0, await SdkLoginAsync(host, "open-a", "pw"));
+        Assert.Equal(0, await SdkLoginAsync(host, "open-b", "pw"));
+        Assert.Equal(0, await SdkLoginAsync(host, Moderator, "pw"));
+        using var browser = new PanelBrowser(panel);
+        Assert.Equal(HttpStatusCode.OK, (await browser.LoginAsync("open-a", "pw")).StatusCode);
+        await OkAsync(browser.PostAsync("/api/admin/accounts/open-b/ban", new { reason = "test", hours = 1 }));
+        await OkAsync(browser.PostAsync("/api/admin/accounts/open-b/unban", new { reason = "test" }));
+        Assert.Equal(HttpStatusCode.Forbidden, (await browser.PostAsync("/api/admin/accounts/" + Moderator + "/ban", new { reason = "coup", hours = 1 })).StatusCode);
+    }
+
     // ---------------------------------------------------------------- account security
 
     private static string CurrentCode(string base32) => Totp.Code(Totp.FromBase32(base32)!, Totp.TimeStep(DateTimeOffset.UtcNow));
