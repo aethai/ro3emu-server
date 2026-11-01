@@ -293,20 +293,36 @@ public sealed class ItemActionTests : IAsyncLifetime
     public async Task QuestFlyWingJumpsToItsPointAfterTheReply()
     {
         await using var alice = await InWorld("Alice");
-        await Gm("alice", "!item 1002005 1"); // [112,10111,2895]: this map
-        await Gm("alice", "!item 1002006 1"); // [112,10220,1030301]: Payon Forest
+        await Gm("alice", "!item 1002005 1"); // [112,10111,2895]: the starting map
+        await Gm("alice", "!item 1002007 1"); // [112,10220,1030501]: Payon Forest, used there by quest 103040
+
+        // _kUseLimit [1001] refuses the wings on the starting maps (inferred, ItemUseLimitConfig.ForbidsScene), and nothing is spent.
         Assert.Equal(10111, await Read("alice", s => s.SceneEntry));
-        var target = _app.Services.GetRequiredService<WorldData>().Map(10111)!.Points[2895];
-        Assert.Equal(0, await Use(alice, 1002005));
+        Assert.Equal(ErrorCodes.ItemUseAreaForbidden, await Use(alice, 1002005));
+        Assert.Equal(1, Count(alice, 1002005));
+
+        using (var warp = alice.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine)))
+        {
+            await Gm("alice", "!warp 10220");
+            await warp.WaitAsync(Wait);
+        }
+        using (var self = alice.Inbox.Expect(e => e.IsGame(MsgId.EntitySelf)))
+        {
+            await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 10220 });
+            await self.WaitAsync(Wait);
+        }
+
+        var target = _app.Services.GetRequiredService<WorldData>().Map(10220)!.Points[1030501];
+        Assert.Equal(0, await Use(alice, 1002007));
         await WaitUntil(() => Math.Abs(Session("alice").Position.X - target.X) < 0.5f
-            && Math.Abs(Session("alice").Position.Z - target.Z) < 0.5f, "teleported to point 2895");
-        Assert.Equal(0, Count(alice, 1002005));
+            && Math.Abs(Session("alice").Position.Z - target.Z) < 0.5f, "teleported to point 1030501");
+        Assert.Equal(0, Count(alice, 1002007));
 
         await Task.Delay(200); // _kCDGroup [3,100]: the wings share a 100 ms group cooldown
-        using var sw = alice.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine) && SwitchSceneLineResp.Parser.ParseFrom(e.Body).SceneEntry == 10220);
-        Assert.Equal(0, await Use(alice, 1002006));
+        using var sw = alice.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine) && SwitchSceneLineResp.Parser.ParseFrom(e.Body).SceneEntry == 10111);
+        Assert.Equal(0, await Use(alice, 1002005));
         await sw.WaitAsync(Wait);
-        Assert.Equal(0, Count(alice, 1002006));
+        Assert.Equal(0, Count(alice, 1002005));
     }
 
     // ------------------------------------------------------------------ 105 horn
