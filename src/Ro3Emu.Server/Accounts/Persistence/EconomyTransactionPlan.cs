@@ -217,7 +217,8 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
             "cd13e/journey-victory" => ["new_activities", "dungeons"],
             _ => throw new InvalidOperationException("Unrecognized owned economic command.")
         };
-        string[] columns = [.. sourceColumns, "daily", "library", "task_followup", "mounts", "activity_runtime"];
+        string[] columns = [.. sourceColumns, "daily", "library", "task_followup", "mounts", "activity_runtime",
+            .. mutation.CommandKind == "cd13e/grant" ? new[] { "job_exp_catchup" } : []];
         bool award = mutation.CommandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/journey-victory" or "cd13e/grant" or "cd13e/gm-grant";
         if (child.Parts.Count < 2 || child.Parts[0] is not ItemDeltaWritePlan ||

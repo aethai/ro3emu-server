@@ -486,7 +486,7 @@ public sealed class RoleStore(AccountStore accounts)
     public byte[]? LoadGmState(long id) => LoadBlob(id, "gm_state");
     public void SaveGmState(long id, byte[] state) => SaveBlob(id, "gm_state", state);
     public byte[]? LoadJobExpCatchUp(long id) => LoadBlob(id, "job_exp_catchup");
-    public void SaveJobExpCatchUp(long id, byte[] state) => SaveBlob(id, "job_exp_catchup", state);
+    public void SaveJobExpCatchUp(long id, byte[] state, RoleItemPlanBuilder? transaction = null) => SaveBlob(id, "job_exp_catchup", state, transaction);
     public byte[]? LoadGuildInfo(long id) => LoadBlob(id, "guild_info");
     public void SaveGuildInfo(long id, byte[] info, RoleItemPlanBuilder? transaction = null) => SaveBlob(id, "guild_info", info, transaction);
 
