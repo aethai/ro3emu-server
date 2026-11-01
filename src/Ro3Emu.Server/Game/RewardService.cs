@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// Kill rewards: the monster's drop chains are rolled for the killer
 /// (NPCConfig._iDrop / _iNormalDrop → MultiverseGroupConfig → NPCDropConfig[env 0 reduced / env 1 Bonus Time, inferred]
 /// / additive NpcNormalDropConfig → DropPoolConfig slots → weighted DropGroupConfig rows). Item 100 rows are Base EXP,
-/// scaled by LvExpCorrectionConfig; Job EXP equals Base EXP (inferred). Currencies go to the currency map, everything
+/// scaled by LvExpCorrectionConfig; Job EXP is CharacterService.JobExpFromBase of it. Currencies go to the currency map, everything
 /// else to the bag; then one 31322 drop notify makes
 /// the client animate the loot from the corpse.
 /// </summary>
@@ -165,8 +165,9 @@ public sealed class RewardService
             baseExp = Math.Max(1, baseExp * _teams.ExpBonus(player) / 10000);
             baseExp = ScaleFieldExp(monster.Template.NpcId, player.Progress!.Level, baseExp);
         }
-        // BaseExpAddConfig catch-up below the server level raises Base EXP only (CharacterService.LevelRules).
-        return (items, _character.WithPursueBonus(player.Progress!.Level, baseExp), baseExp);
+        // BaseExpAddConfig catch-up below the server level (CharacterService.LevelRules).
+        baseExp = _character.WithPursueBonus(player.Progress!.Level, baseExp);
+        return (items, baseExp, _character.JobExpFromBase(baseExp));
     }
 
     /// <summary>FieldExpRates (inferred): an open-field monster (NPCConfig._iWildMonsters 1) pays the rate of the killer's level.</summary>

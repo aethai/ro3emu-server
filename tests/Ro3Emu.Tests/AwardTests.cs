@@ -351,6 +351,25 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Equal(1, store.Load(session.Role.Id).Single(i => i.Guid == unsupported).Stack);
     }
 
+    /// <summary>Job Advance asks Base 30 and Job 40 together: the Base EXP up to Base 30 from quests alone reaches Job 40.</summary>
+    [ClientDataFact]
+    public async Task QuestExpUpToBaseThirtyReachesJobFortyOfTheSecondRank()
+    {
+        await using var bot = await InWorld("JobAlice");
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "JobAlice");
+        var data = _app.Services.GetRequiredService<GameData>();
+        long toBaseThirty = Enumerable.Range(1, 29).Sum(level => GameData.Int(data.Row("BaseLvConfig", level)!.Value, "_iBaseExp"));
+        Assert.True(await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            session.Progress!.Career = 1100;
+            session.Progress.Level = 1; session.Progress.Exp = 0; session.Progress.JobLevel = 1; session.Progress.JobExp = 0;
+            return _app.Services.GetRequiredService<CharacterService>()
+                .ApplyAwardAsync(session, new AwardPlan(0, 0, []), taskBaseExp: toBaseThirty);
+        }));
+        Assert.Equal(30, session.Progress!.Level);
+        Assert.Equal(40, session.Progress.JobLevel);
+    }
+
     private async Task<BotClient> InWorld(string name)
     {
         var bot = new BotClient(_http, File.ReadAllText(Path.Combine(_dataDir, "gate_rsa_public.pem")));

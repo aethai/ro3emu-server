@@ -99,6 +99,12 @@ public sealed class FieldExpGmTests : IAsyncLifetime
         rewards.SetFieldExpRules([]);
         long field = await JobExp(FieldMonster, 1), story = await JobExp(StoryMonster, 1);
         Assert.True(field > 0, "the field monster pays EXP at its own level");
+        var kill = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            rewards.SeedRollsForTest(1);
+            return Task.FromResult(rewards.ResolveKill(session, Unit(FieldMonster), bonus: false));
+        });
+        Assert.Equal(_app.Services.GetRequiredService<CharacterService>().JobExpFromBase(kill.BaseExp), kill.JobExp);
 
         rewards.SetFieldExpRules([new FieldExpRule { MinLevel = 20, MaxLevel = 40, Percent = 300 }]);
         Assert.Equal(field * 3, await JobExp(FieldMonster, 1));

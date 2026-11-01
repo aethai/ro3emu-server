@@ -164,6 +164,9 @@ public sealed partial class DungeonService
                         next.Records[key] = new Record { Passed = true, FastestMs = duration };
                     }
                 }
+                // Frozen with its Base EXP: the delivery and the ledger pay exactly the goods of this row.
+                long jobExp = _character.JobExpFromBase(goods.Where(g => g.Entry == 100).Sum(g => (long)g.Count));
+                if (jobExp > 0) goods.Add(new DungeonRewardGood(101, checked((int)jobExp), 0, EconomyAssetKind.Currency));
                 StoreHistory(next, a);
                 if (success && GameData.Int(a.Plan.Config, "_iGamePlayType") == 24
                     && CaptureJourneyVictory(s, a.Plan.SceneEntry,
