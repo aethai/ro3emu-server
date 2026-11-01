@@ -4,7 +4,7 @@ using Ro3Emu.Server.Net;
 
 namespace Ro3Emu.Tests;
 
-/// <summary>The data dir and the gate's private key are the server user's alone on Linux (0700 and 0600).</summary>
+/// <summary>The data dir and the gate's private key are the server user's alone: 0700 and 0600 on Linux, an own access list on Windows.</summary>
 public sealed class PrivateFilesTests : IDisposable
 {
     private const UnixFileMode Others = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
@@ -37,5 +37,35 @@ public sealed class PrivateFilesTests : IDisposable
         Assert.True(File.GetUnixFileMode(Path.Combine(_dir, "gate_rsa_private.pem")).HasFlag(UnixFileMode.UserRead));
         // The public key is meant to be shared and keeps its mode.
         Assert.True(File.Exists(Path.Combine(_dir, "gate_rsa_public.pem")));
+    }
+
+    /// <summary>Nothing inherited from the folder above, only this user, SYSTEM and the Administrators, also for a file made later.</summary>
+    [Fact]
+    public void OnWindowsTheDataDirHasItsOwnAccessList()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        PrivateFiles.Directory(_dir);
+        string key = Path.Combine(_dir, "secret.txt");
+        File.WriteAllText(key, "x");
+        PrivateFiles.Files(key);
+        var later = Path.Combine(_dir, "later.txt");
+        File.WriteAllText(later, "x");
+
+        using var me = System.Security.Principal.WindowsIdentity.GetCurrent();
+        System.Security.Principal.SecurityIdentifier[] allowed = [me.User!,
+            new(System.Security.Principal.WellKnownSidType.LocalSystemSid, null),
+            new(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null)];
+        var folder = new DirectoryInfo(_dir).GetAccessControl();
+        Assert.True(folder.AreAccessRulesProtected);
+        foreach (var security in new System.Security.AccessControl.FileSystemSecurity[] { folder, new FileInfo(key).GetAccessControl(), new FileInfo(later).GetAccessControl() })
+        {
+            var rules = security.GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier)).Cast<System.Security.AccessControl.FileSystemAccessRule>().ToList();
+            Assert.NotEmpty(rules);
+            foreach (var rule in rules) Assert.Contains((System.Security.Principal.SecurityIdentifier)rule.IdentityReference, allowed);
+        }
+
+        // A second start changes nothing and does not fail.
+        PrivateFiles.Directory(_dir);
+        Assert.Equal("x", File.ReadAllText(later));
     }
 }

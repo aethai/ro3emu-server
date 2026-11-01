@@ -21,4 +21,9 @@
     <ProjectReference Include="..\..\src\Ro3Emu.Patcher\Ro3Emu.Patcher.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The launcher itself is a WPF exe, which a Linux test run cannot build. -->
+    <Compile Include="..\..\src\Ro3Emu.Launcher\GitHubReleases.cs" Link="Launcher\GitHubReleases.cs" />
+  </ItemGroup>
+
 </Project>
