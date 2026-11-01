@@ -87,4 +87,6 @@ if ($Floor) {
 $lines | ForEach-Object { Write-Output $_ }
 $errors | ForEach-Object { Write-Output ($env:GITHUB_ACTIONS ? "::error title=Executed tests::$_" : "Error: $_") }
 if ($env:GITHUB_STEP_SUMMARY) { @($lines) + @($errors) | ForEach-Object { "- $_" } | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY }
-if ($errors.Count -gt 0) { exit 1 }
+# Always an explicit code: Actions runs the script with ". 'file'" and exits with $LASTEXITCODE, which a failed
+# "git show" of a parent without the floor file leaves at 128.
+exit ($errors.Count -gt 0 ? 1 : 0)
