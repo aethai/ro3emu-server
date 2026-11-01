@@ -721,14 +721,17 @@ public sealed partial class DungeonService
         && !a.AutoReviveAt.ContainsKey(p.Role!.Id)
         && a.RevivesUsed.GetValueOrDefault(p.Role.Id) >= ReviveLimit(a));
 
-    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance.</summary>
+    /// <summary>The run revives this role without using a count: OnClickRevive [0], or its timed [2,n] request pending.</summary>
+    private static bool ReviveIsFree(Attempt a, long roleId) => ImmediateRevive(a) || a.AutoReviveAt.ContainsKey(roleId);
+
+    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance, as ReviveAsync reads it.</summary>
     public int ExternalReviveError(GameSession s)
     {
         if (!s.Dead) return ErrorCodes.TargetAlive;
         if (s.DungeonAttempt == null) return 0;
         var a = Active(s);
         return a == null || s.Role == null || a.Reviving.Contains(s)
-            || a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
+            || !ReviveIsFree(a, s.Role.Id) && a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
             ? ErrorCodes.FeatureUnavailable : 0;
     }
 
@@ -738,7 +741,8 @@ public sealed partial class DungeonService
         if (s.DungeonAttempt == null) return;
         var a = Active(s);
         if (a == null || s.Role == null) return;
-        a.RevivesUsed[s.Role.Id] = a.RevivesUsed.GetValueOrDefault(s.Role.Id) + 1;
+        if (!ReviveIsFree(a, s.Role.Id)) a.RevivesUsed[s.Role.Id] = a.RevivesUsed.GetValueOrDefault(s.Role.Id) + 1;
+        a.AutoReviveAt.Remove(s.Role.Id); // or the next death keeps this one's time (PlayerDiedAsync TryAdd)
     }
 
     public Task PublishExternalReviveAsync(GameSession s) => s.Role != null && Active(s) is { } a

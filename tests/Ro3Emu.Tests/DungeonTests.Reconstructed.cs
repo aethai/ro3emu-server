@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Romsg;
+using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
@@ -97,6 +99,76 @@ public sealed partial class DungeonTests
         Assert.Equal(ErrorCodes.ItemUseAreaForbidden, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         Assert.Equal(2, Session(alice).Items.Where(i => i.Entry == leaf).Sum(i => i.Stack));
         await OnLoop(() => { Session(alice).SceneEntry = 1000501; return Task.CompletedTask; });
+    }
+
+    // 47 party dungeons have OnClickRevive [0] and 8 a timed [2,5], with the Leaf allowed and no boss count. The allowance
+    // read their count of 0 as "none left", so every Leaf in them was refused while a click revived for free.
+    [ClientDataTheory]
+    [InlineData(0, 0)]
+    [InlineData(2, 5)]
+    public async Task AYggdrasilLeafRevivesADeadAllyInsideADungeon(int option, int seconds)
+    {
+        JsonArray revive = option == 0 ? new JsonArray(0) : new JsonArray(option, seconds);
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        long room = await LeafRoom(alice, bob, trigger: 0, revive);
+        await KillAndCastLeaf(alice, bob);
+        Assert.Equal("Bob", (await Next(alice, BuffService.WorldTreeRevive, ItemWorldTreeReviveNtf.Parser)).WorldTreePlayerName);
+        await OnLoop(() =>
+        {
+            Assert.False(Session(bob).Dead);
+            Assert.True(Service<CharacterService>().Stats(Session(bob))[2000] > 0);
+            Assert.Equal(room, Session(bob).InstanceId);
+            Assert.Equal(1, Session(alice).Items.Where(i => i.Entry == LeafItem).Sum(i => i.Stack));
+            return Task.CompletedTask;
+        });
+    }
+
+    [ClientDataFact]
+    public async Task AYggdrasilLeafIsRefusedWhereTheDungeonHasNoRevive()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        await LeafRoom(alice, bob, trigger: 2, []); // NoRevive, as 3120401
+        Assert.Equal(ErrorCodes.FeatureUnavailable, await KillAndCastLeaf(alice, bob, expectAccepted: false));
+        await OnLoop(() =>
+        {
+            Assert.True(Session(bob).Dead);
+            Assert.Equal(2, Session(alice).Items.Where(i => i.Entry == LeafItem).Sum(i => i.Stack));
+            return Task.CompletedTask;
+        });
+    }
+
+    private const int LeafCast = 2200101, LeafItem = 1002004;
+
+    /// <summary>Alice and Bob in one room of a story scene, its row set to leave the Leaf alone and to the given revive rule.</summary>
+    private async Task<long> LeafRoom(BotClient alice, BotClient bob, int trigger, JsonArray revive)
+    {
+        var request = ConfigureTwoActorStory();
+        ChangeRow("DungeonConfig", request.SceneEntry.ToString(), row =>
+        {
+            row["_iLimitType"] = 0;
+            row["_iReviveTrigger"] = trigger;
+            row["_kTriggerParm"] = new JsonArray(revive);
+        });
+        foreach (var bot in new[] { alice, bob }) await Gm(bot, "!lvl 99");
+        await Gm(alice, $"!item {LeafItem} 2");
+        await Party(alice, bob);
+        Assert.Equal(0, await Enter(alice, request));
+        await bob.SendGameAsync(DungeonService.Confirm, new ConfirmTeamDungeonReq { IsAgree = true });
+        Assert.Equal(0, (await Next(bob, DungeonService.Confirm, ConfirmTeamDungeonRsp.Parser)).Result);
+        long room = await Load(alice, request.SceneEntry);
+        Assert.Equal(room, await Load(bob, request.SceneEntry));
+        return room;
+    }
+
+    private async Task<int> KillAndCastLeaf(BotClient alice, BotClient bob, bool expectAccepted = true)
+    {
+        await OnLoop(() => Service<CombatService>().KillPlayerAsync(Session(bob)));
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = LeafCast, TargetId = (long)bob.Self!.Uuid });
+        int result = (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result;
+        if (expectAccepted) Assert.Equal(0, result);
+        return result;
     }
 
     [ClientDataFact]
