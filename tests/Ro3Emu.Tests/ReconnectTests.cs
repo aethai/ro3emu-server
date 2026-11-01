@@ -33,7 +33,8 @@ public sealed class ReconnectTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _directory;
-            if (gameData) o.GameDataDir = SyntheticData.Dir;
+            // Without gameData the host has none (its empty data dir): the scene tests warp to maps no table names.
+            o.GameDataDir = gameData ? SyntheticData.Dir : _directory;
             o.HttpPort = hp;
             o.MicroGatePort = mp;
             o.GameGatePort = gp;
