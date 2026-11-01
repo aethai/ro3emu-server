@@ -31,9 +31,9 @@ jobs:
       # test host and the list of the tests that were running (--blame-hang), instead of reaching the job's timeout.
       # 15 minutes on the coverage run: coverlet writes its hits while the test host exits, 4 to 7 minutes on the server
       # tests with no test running, and at 5 minutes blame took the finished run for a hang (main run 41292599038).
-      TEST_ARGS: --blame-hang-timeout ${{ github.event_name == 'push' && matrix.os == 'ubuntu-latest' && '15m' || '5m' }} --blame-hang-dump-type mini
+      TEST_ARGS: --blame-hang-timeout ${{ matrix.os == 'ubuntu-latest' && '15m' || '5m' }} --blame-hang-dump-type mini
       # Coverage only on main's Linux run: it slows the tests, and one platform is enough for the numbers.
-      COVERAGE: ${{ github.event_name == 'push' && matrix.os == 'ubuntu-latest' && '--collect "XPlat Code Coverage"' || '' }}
+      COVERAGE: ${{ matrix.os == 'ubuntu-latest' && '--collect "XPlat Code Coverage"' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
