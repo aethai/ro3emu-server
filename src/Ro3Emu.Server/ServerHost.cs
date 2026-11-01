@@ -269,7 +269,7 @@ public static partial class ServerHost
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 return;
             }
-            app.Logger.LogDebug("HTTP {Method} {Path}{Query}", context.Request.Method, context.Request.Path, context.Request.QueryString);
+            if (app.Logger.IsEnabled(LogLevel.Debug)) app.Logger.LogDebug("HTTP {Method} {Path}{Query}", context.Request.Method, context.Request.Path, context.Request.QueryString);
             await next();
         });
         SdkEndpoints.Map(app);
@@ -289,7 +289,7 @@ public static partial class ServerHost
             Results.Json(new { online = true, players = census.Current.Roles.Count }));
         app.MapFallback((HttpContext context) =>
         {
-            app.Logger.LogDebug("HTTP unhandled {Method} {Path}", context.Request.Method, context.Request.Path);
+            if (app.Logger.IsEnabled(LogLevel.Debug)) app.Logger.LogDebug("HTTP unhandled {Method} {Path}", context.Request.Method, context.Request.Path);
             return Results.NotFound();
         });
         // Services that only hook themselves into others.

@@ -58,7 +58,8 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
         if (CallerRole(session) is not long self) return MicroServiceRouter.Fail("no selected role");
         if (Uid(args, "Uid") != self)
         {
-            log.LogWarning("Friend {Method} refused: Uid {Uid} is not the caller's role {Role}", MicroServiceRouter.Clip(method), Uid(args, "Uid"), self);
+            string shown = MicroServiceRouter.Clip(method);
+            log.LogWarning("Friend {Method} refused: Uid {Uid} is not the caller's role {Role}", shown, Uid(args, "Uid"), self);
             return MicroServiceRouter.Fail("role mismatch");
         }
 

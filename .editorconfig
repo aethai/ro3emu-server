@@ -97,7 +97,7 @@ dotnet_diagnostic.CA1859.severity = suggestion
 dotnet_diagnostic.CA1861.severity = suggestion
 # 10: cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion
-# 145: avoid potentially expensive logging
+# 144: avoid potentially expensive logging
 dotnet_diagnostic.CA1873.severity = suggestion
 # 15: instantiate argument exceptions correctly
 dotnet_diagnostic.CA2208.severity = suggestion
