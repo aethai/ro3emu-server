@@ -380,6 +380,37 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Equal(1, await RelogAs(bot, "CatchAlice", level: 30, jobLevel: 1, older: true)); // and the natural source without it
     }
 
+    /// <summary>The catch-up's receipt commits the marker with the EXP, and the ledger certifies it like any other grant.</summary>
+    [ClientDataFact]
+    public async Task TheLedgerAcceptsAJobExpCatchUpReceipt()
+    {
+        await using var bot = await InWorld("LedgerAlice");
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "LedgerAlice");
+        var roles = _app.Services.GetRequiredService<RoleStore>();
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        long role = session.Role!.Id;
+        await loop.InvokeAsync(() =>
+        {
+            var progress = session.Progress!;
+            progress.Career = 1100; progress.Level = 30; progress.Exp = 0; progress.JobLevel = 1; progress.JobExp = 0;
+            roles.SaveProgress(role, progress);
+            roles.SaveJobExpCatchUp(role, []);
+            return Task.CompletedTask;
+        });
+        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        await bot.SwitchRoleAsync();
+        var opening = S3EconomyReader.Read(_dataDir, catalog);
+        await bot.EnterWorldAsync(role); await WorldSettle.StallsAsync(_app.Services);
+        Assert.Equal(40, await loop.InvokeAsync(() => Task.FromResult(session.Progress!.JobLevel)));
+
+        var closing = S3EconomyReader.Read(_dataDir, catalog);
+        var ledger = S3EconomyReader.ReadLedger(_dataDir, catalog, opening, closing)!;
+        Assert.True(ledger.CompleteHistory, string.Join("; ", ledger.Issues.Select(x => x.Detail)));
+        Assert.Contains(ledger.Receipts, receipt => receipt.SourceKeys!.Contains($"job-exp-catchup/{role}"));
+        var check = EconomyExactnessChecker.Check(opening, closing, ledger);
+        Assert.DoesNotContain(check.Issues, issue => issue.Kind == EconomyIssueKind.Corruption);
+    }
+
     /// <summary>A role above its share loses nothing, and its one chance is used up all the same.</summary>
     [ClientDataFact]
     public async Task ARoleAboveItsShareKeepsItsJobExpAndIsDecided()
