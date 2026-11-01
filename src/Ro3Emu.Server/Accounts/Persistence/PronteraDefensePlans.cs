@@ -48,7 +48,7 @@ internal sealed class PronteraDefenseWorldReadPlan(long open) : DbReadPlan
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) stations.Add((reader.GetInt64(0), reader.GetInt64(1)));
         }
-        return new PronteraDefenseWorldRows(points.ToArray(), stations.ToArray());
+        return new PronteraDefenseWorldRows([.. points], [.. stations]);
     }
 }
 

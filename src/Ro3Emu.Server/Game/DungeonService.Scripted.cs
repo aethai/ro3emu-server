@@ -43,7 +43,7 @@ public sealed partial class DungeonService
         public required string Name { get; init; }
         public MonsterTemplate? Template { get; init; }
         public long BornMs { get; init; }
-        public List<BuffInfo> Buffs { get; } = new();
+        public List<BuffInfo> Buffs { get; } = [];
 
         public override EntityBase Entity()
         {

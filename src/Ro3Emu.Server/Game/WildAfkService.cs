@@ -41,7 +41,7 @@ public sealed class WildAfkService : IGameTicker
         public long ConsumedTodaySeconds { get; set; }
         public long RemainderMs { get; set; }
         public long LastToggleMs { get; set; }
-        public Dictionary<int, long> TotalDrops { get; set; } = new();
+        public Dictionary<int, long> TotalDrops { get; set; } = [];
         [JsonIgnore] public DBWildAFKInfo Info { get; set; } = new();
         [JsonIgnore] public long AccountedAtMs { get; set; }
         [JsonIgnore] public long LastKillAtMs { get; set; }

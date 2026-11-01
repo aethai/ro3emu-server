@@ -21,13 +21,13 @@ public sealed partial class TerritoryWarsService
         public long LastTick { get; set; }
         public bool Settled { get; set; }
         public long Winner { get; set; }
-        public List<long> Guilds { get; set; } = new();
-        public Dictionary<long, long> Scores { get; set; } = new();
-        public Dictionary<long, long> Resources { get; set; } = new();
-        public Dictionary<int, CapturePoint> Points { get; set; } = new();
+        public List<long> Guilds { get; set; } = [];
+        public Dictionary<long, long> Scores { get; set; } = [];
+        public Dictionary<long, long> Resources { get; set; } = [];
+        public Dictionary<int, CapturePoint> Points { get; set; } = [];
         /// <summary>30129 gameplay points of the stronghold scene, by spawn point id (TerritoryWarsService.ScenePoints.cs).</summary>
-        public Dictionary<int, ScenePoint> ScenePoints { get; set; } = new();
-        public Dictionary<long, Participant> Players { get; set; } = new();
+        public Dictionary<int, ScenePoint> ScenePoints { get; set; } = [];
+        public Dictionary<long, Participant> Players { get; set; } = [];
         public byte[]? Result { get; set; }
     }
     public sealed class Participant
@@ -85,10 +85,10 @@ public sealed partial class TerritoryWarsService
               ?? throw new InvalidOperationException("Retiring territory battle state is missing.")
             : owner.state.Epoch == Epoch && owner.state.Battles.TryGetValue(Key, out var current) ? current
               : throw new InvalidOperationException("Territory battle has no active or retiring epoch state.");
-        internal Dictionary<int, MonsterUnit> Actors { get; } = new();
+        internal Dictionary<int, MonsterUnit> Actors { get; } = [];
         internal CommandBoard Command { get; } = new();
-        internal HashSet<long> CapturedActors { get; } = new();
-        internal Dictionary<int, ScenePointUnit> ScenePointActors { get; } = new();
+        internal HashSet<long> CapturedActors { get; } = [];
+        internal Dictionary<int, ScenePointUnit> ScenePointActors { get; } = [];
         /// <summary>The SummonPlatforms' rings and the vehicles they raised, by platform point (TerritoryWarsService.SummonPlatforms.cs).</summary>
         internal Dictionary<int, PlatformRing> PlatformRings { get; } = [];
         internal Dictionary<int, VehicleUnit> PlatformVehicles { get; } = [];
@@ -177,7 +177,7 @@ public sealed partial class TerritoryWarsService
         var record = new BattleState
         {
             Zone = zone, Round = round, Scene = entry, StatisticsId = statisticsId,
-            Start = stage.StartTime, End = stage.EndTime, LastTick = _clock.Now, Guilds = QualifiedFor(zone, round).ToList(),
+            Start = stage.StartTime, End = stage.EndTime, LastTick = _clock.Now, Guilds = [.. QualifiedFor(zone, round)],
             ScenePoints = DefaultScenePoints(entry)
         };
         record.Points[0] = new CapturePoint
@@ -210,13 +210,13 @@ public sealed partial class TerritoryWarsService
     private async Task AdmitAsync(GameSession s, int zone, bool reply)
     {
         int key = BattleKey(_clock.Current.Round, zone);
-        if (!state.Battles.ContainsKey(key))
+        if (!state.Battles.TryGetValue(key, out var record))
         {
             long statisticsId = await AllocateStatisticsIdAsync();
             state.Battles[key] = MakeBattle(_clock.Current.Round, zone, statisticsId);
             await SaveAsync(state);
+            record = state.Battles[key];
         }
-        var record = state.Battles[key];
         var guild = Own(s)!;
         if (record.Players.TryGetValue(s.Role!.Id, out var prior) && prior.Guild != guild.Id)
         {

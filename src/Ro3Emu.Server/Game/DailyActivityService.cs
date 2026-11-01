@@ -51,7 +51,7 @@ public sealed partial class DailyActivityService : IGameTicker
     public sealed class DailyState
     {
         public byte[] Rows { get; set; } = [];
-        public HashSet<int> Claims { get; set; } = new(); // shared 5059 list, not only type 7
+        public HashSet<int> Claims { get; set; } = []; // shared 5059 list, not only type 7
         public long DailyEpoch { get; set; }
         public long WeeklyEpoch { get; set; }
         public int ActiveRingStart { get; set; }
@@ -112,7 +112,7 @@ public sealed partial class DailyActivityService : IGameTicker
         DateTime now, bool synchronous = false)
     {
         long previousDailyEpoch = state.DailyEpoch, previousWeeklyEpoch = state.WeeklyEpoch;
-        state.Claims ??= new();
+        state.Claims ??= [];
         state.Compensation ??= [];
         var rows = state.Rows.Length > 0 ? DBDailyActivityInfo.Parser.ParseFrom(state.Rows) : new DBDailyActivityInfo();
         long daily = Boundary(now), weekly = WeekBoundary(now);
@@ -458,7 +458,7 @@ public sealed partial class DailyActivityService : IGameTicker
                 if (item.ValueKind == JsonValueKind.Array && item.GetArrayLength() >= 2)
                     award.Add(((int)(GameData.Number(item[0]) ?? 0), (int)(GameData.Number(item[1]) ?? 0), item.GetArrayLength() > 2 ? (int)(GameData.Number(item[2]) ?? 0) : 0));
         award.AddRange(_rewards.RollAwardBound(target, session));
-        return award.Where(a => a.Item1 > 0 && a.Item2 > 0 && _data.Row("ItemConfig", a.Item1) != null).ToList();
+        return [.. award.Where(a => a.Item1 > 0 && a.Item2 > 0 && _data.Row("ItemConfig", a.Item1) != null)];
     }
 
     public void Tick(GameTime time)
@@ -622,8 +622,8 @@ public sealed partial class DailyActivityService : IGameTicker
                 foreach (var sub in subs.EnumerateArray())
                     if (Numbers(sub, "m_kData") is [4004, var task, ..]) ids.Add(task);
             defs[id] = new ActivityDef(id, (int)GameData.Int(row, "_iFunction"), (int)GameData.Int(row, "_iCount"),
-                (int)GameData.Int(row, "_iResetTimeType"), Numbers(row, "_kMultiverseArray").Select(n => (int)n).ToArray(),
-                ids.Where(task => _data.Row("TaskConfig", task) != null).ToArray());
+                (int)GameData.Int(row, "_iResetTimeType"), [.. Numbers(row, "_kMultiverseArray").Select(n => (int)n)],
+                [.. ids.Where(task => _data.Row("TaskConfig", task) != null)]);
         }
         _definitions = defs;
         return defs;
@@ -635,10 +635,10 @@ public sealed partial class DailyActivityService : IGameTicker
         var result = new Dictionary<long, List<int>>();
         foreach (var def in Defs().Values)
             foreach (long task in def.Tasks)
-                (result.TryGetValue(task, out var ids) ? ids : result[task] = new()).Add(def.Id);
+                (result.TryGetValue(task, out var ids) ? ids : result[task] = []).Add(def.Id);
         return _byTask = result;
     }
 
     private static long[] Numbers(JsonElement row, string field) => row.TryGetProperty(field, out var a) && a.ValueKind == JsonValueKind.Array
-        ? a.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray() : [];
+        ? [.. a.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))] : [];
 }

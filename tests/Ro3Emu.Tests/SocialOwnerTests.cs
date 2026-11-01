@@ -101,8 +101,8 @@ public sealed class SocialOwnerTests : IAsyncLifetime
         return args;
     }
     private static string[] Ids(Dictionary<object, object?> response, string field) =>
-        ((object?[])response[field]!).Select(value => value is Dictionary<object, object?> row
-            ? (string)row["uid"]! : (string)value!).ToArray();
+        [.. ((object?[])response[field]!).Select(value => value is Dictionary<object, object?> row
+            ? (string)row["uid"]! : (string)value!)];
 
     [Fact]
     public async Task OfflineOwnerAndExternalFriendWriteInvalidateWarmProjection()

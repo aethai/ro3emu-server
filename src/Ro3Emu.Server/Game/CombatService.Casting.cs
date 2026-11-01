@@ -301,7 +301,7 @@ public sealed partial class CombatService
     private static float Range(JsonElement row) => Math.Max(0, GameData.Int(row, "_iDistanceMax") / 100f);
     private static string Script(JsonElement row) => row.TryGetProperty("_kScriptLogic", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
     private static double[] Numbers(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
-        ? list.EnumerateArray().Select(v => GameData.Number(v) ?? 0).ToArray() : [];
+        ? [.. list.EnumerateArray().Select(v => GameData.Number(v) ?? 0)] : [];
     private static IEnumerable<JsonElement> Tuples(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
         ? list.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Array) : [];
 
@@ -429,10 +429,10 @@ public sealed partial class CombatService
 
     private sealed class CastCosts
     {
-        public Dictionary<int, long> Attrs { get; } = new();
-        public List<(int Entry, long Count)> Items { get; } = new();
-        public Dictionary<int, long> Buffs { get; } = new();
-        public Dictionary<int, long> Energy { get; } = new();
+        public Dictionary<int, long> Attrs { get; } = [];
+        public List<(int Entry, long Count)> Items { get; } = [];
+        public Dictionary<int, long> Buffs { get; } = [];
+        public Dictionary<int, long> Energy { get; } = [];
         public bool Invalid { get; set; }
     }
 

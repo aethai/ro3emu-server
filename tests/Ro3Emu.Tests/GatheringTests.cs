@@ -336,7 +336,7 @@ public sealed class GatheringTests : IAsyncLifetime
                 RoleId = original.RoleId, BeforeLife = original.BeforeLife,
                 BeforeRestrict = original.BeforeRestrict, BeforeRuntime = original.BeforeRuntime,
                 Life = original.Life, Restrict = original.Restrict, Runtime = original.Runtime,
-                Grants = original.Grants.Concat([new AwardGrant(100, 1), new AwardGrant(101, 1)]).ToArray(),
+                Grants = [.. original.Grants, new AwardGrant(100, 1), new AwardGrant(101, 1)],
             };
             long baseBefore = session.Progress!.Exp;
             Assert.Equal(1, session.Progress.JobLevel);

@@ -30,8 +30,8 @@ public sealed class TrainingService : IGameTicker
     private readonly MonsterService _monsters;
     private readonly AwardService _awards;
     private readonly GameLoop _loop;
-    private readonly Dictionary<long, MapPoint> _points = new();
-    private readonly Dictionary<GameSession, Attempt> _attempts = new();
+    private readonly Dictionary<long, MapPoint> _points = [];
+    private readonly Dictionary<GameSession, Attempt> _attempts = [];
     private sealed class Attempt
     {
         public required InstanceService.Room Room;
@@ -264,7 +264,7 @@ public sealed class TrainingService : IGameTicker
             byte[] claimed = next.ToByteArray();
             string source = $"training/claim/{s.Role!.Id}/{string.Join('-', req.AimAwardIds.Order())}";
             var economy = EventEconomy.ForRole(_data, s, "training-claim", source,
-                Array.Empty<(int Entry, long Count)>(), grants,
+                [], grants,
                 new
                 {
                     Claimed = req.AimAwardIds.Order().ToArray(), MaxDps = next.MaxDps,

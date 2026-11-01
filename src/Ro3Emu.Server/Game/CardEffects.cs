@@ -38,13 +38,13 @@ public sealed class CardEffects
     private readonly CharacterService _character;
     private readonly BuffService _buffs;
     private readonly SkillService _skills;
-    private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = new();
+    private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = [];
 
     private sealed class Runtime
     {
         /// <summary>Last registered buff GUID per (card GUID, config), to carry BuffEffectCds over a re-registration.</summary>
-        public readonly Dictionary<(long Source, int Config), long> Registered = new();
-        public readonly Dictionary<long, long> Cooldowns = new(); // proc family (base buff group) -> ready at
+        public readonly Dictionary<(long Source, int Config), long> Registered = [];
+        public readonly Dictionary<long, long> Cooldowns = []; // proc family (base buff group) -> ready at
     }
 
     private sealed record Passive(InvItem Card, int Id, JsonElement Row);
@@ -133,10 +133,10 @@ public sealed class CardEffects
     }
 
     private static long[] Numbers(JsonElement row, string field) => row.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array
-        ? list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray() : [];
+        ? [.. list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))] : [];
 
     private static double[] Description(JsonElement row) => row.TryGetProperty("_kDescData", out var list) && list.ValueKind == JsonValueKind.Array
-        ? list.EnumerateArray().Select(v => GameData.Number(v) ?? 0).ToArray() : [];
+        ? [.. list.EnumerateArray().Select(v => GameData.Number(v) ?? 0)] : [];
 
     /// <summary>_kBuffAttributeList ["0", group, "4", "1", value, "0"]: the passive adds value to field 4 (the trigger
     /// chance, basis points) of the passive group named.</summary>

@@ -34,7 +34,7 @@ public sealed class RewardService
     /// Other kills use environment 0, preserving ordinary rewards (localization 10960000077; mapping inferred).</summary>
     public Func<GameSession, MonsterUnit, Task<bool>>? QualifiesForBonus { get; set; }
     /// <summary>Actual committed kill drops, after EXP correction; excludes GM, quest and other item grants.</summary>
-    public List<Func<GameSession, MonsterUnit, IReadOnlyList<(int Entry, long Count)>, Task>> KillDropsGranted { get; } = new();
+    public List<Func<GameSession, MonsterUnit, IReadOnlyList<(int Entry, long Count)>, Task>> KillDropsGranted { get; } = [];
     internal Action<GameSession, MonsterUnit, RewardSettlement, IReadOnlyList<(int Entry, int Count)>, long, long>? StageAfkKill { get; set; }
     /// <summary>Monster Hunt: the area drop rolled with an ordinary field kill (MonsterHuntService).</summary>
     internal List<Func<GameSession, MonsterUnit, IEnumerable<(int Entry, int Count)>>> ExtraKillDrops { get; } = [];
@@ -64,7 +64,7 @@ public sealed class RewardService
         /// <summary>The bag items the committed kill created (auto-decomposed ones are gone).</summary>
         internal List<InvItem> Granted = [];
     }
-    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MonsterUnit, KillOutcome> _outcomes = new();
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MonsterUnit, KillOutcome> _outcomes = [];
     internal Func<GameSession, MonsterUnit, (List<(int Entry, int Count)> Items, long BaseExp, long JobExp)>? ResolveKillForTest { get; set; }
 
     /// <summary>Resolve and admit once before any lethal hit/death packet. A rejected pre-admission hit is
@@ -336,7 +336,7 @@ public sealed class RewardService
     {
         var drops = new List<(int, int)>();
         if (AwardPool(_data, multiverseId) is var pool and > 0) RollPool(pool, player, drops);
-        return drops.GroupBy(d => d.Item1).Select(g => (g.Key, g.Sum(d => d.Item2))).ToList();
+        return [.. drops.GroupBy(d => d.Item1).Select(g => (g.Key, g.Sum(d => d.Item2)))];
     }
 
     /// <summary>The DropPoolConfig id an award id rolls (MultiverseGroupConfig → AwardConfig[0]._iDropPool), else 0.
@@ -349,8 +349,8 @@ public sealed class RewardService
     public List<(int Entry, int Count, int Bind)> RollPoolBound(long poolId, RoleProgress progress)
     {
         var bound = new List<(int Entry, int Count, int Bind)>();
-        RollPool(poolId, progress, new List<(int, int)>(), bound);
-        return bound.GroupBy(x => (x.Entry, x.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind)).ToList();
+        RollPool(poolId, progress, [], bound);
+        return [.. bound.GroupBy(x => (x.Entry, x.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind))];
     }
 
     /// <summary>Stage-box pool draw with each chosen DropGroupConfig._iBind retained (draw rules inferred).</summary>
@@ -365,9 +365,9 @@ public sealed class RewardService
         {
             var row = raw.ValueKind == JsonValueKind.Array && raw.GetArrayLength() > 0 ? raw[0] : raw;
             if (row.ValueKind == JsonValueKind.Object && GameData.Int(row, "_iDropPool") is var pool and > 0)
-                RollPool(pool, progress, new List<(int, int)>(), bound);
+                RollPool(pool, progress, [], bound);
         }
-        return bound.GroupBy(x => (x.Entry, x.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind)).ToList();
+        return [.. bound.GroupBy(x => (x.Entry, x.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind))];
     }
 
     /// <summary>
@@ -398,7 +398,7 @@ public sealed class RewardService
             }
         if (GameData.Int(row, "_iDropPool") is var pool and > 0)
             RollPool(pool, progress, [], goods);
-        return goods.GroupBy(g => (g.Entry, g.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind)).ToList();
+        return [.. goods.GroupBy(g => (g.Entry, g.Bind)).Select(g => (g.Key.Entry, g.Sum(x => x.Count), g.Key.Bind))];
     }
 
     private void PickFromGroup(long group, GameSession player, List<(int, int)> drops, List<(int Entry, int Count, int Bind)>? bound = null)

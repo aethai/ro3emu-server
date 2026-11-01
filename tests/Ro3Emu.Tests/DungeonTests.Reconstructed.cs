@@ -13,8 +13,8 @@ namespace Ro3Emu.Tests;
 /// <summary>Reconstructed story dungeons (Reconstructed/dungeon-monsters.json): plans, a full clear of each, the switch.</summary>
 public sealed partial class DungeonTests
 {
-    public static TheoryData<long> ReconstructedScenes() => new(new ReconstructedDungeons(
-        Options.Create(new ServerOptions())).All.Select(d => d.Scene).Order());
+    public static TheoryData<long> ReconstructedScenes() => [.. new ReconstructedDungeons(
+        Options.Create(new ServerOptions())).All.Select(d => d.Scene).Order()];
 
     [ClientDataTheory]
     [MemberData(nameof(ReconstructedScenes))]

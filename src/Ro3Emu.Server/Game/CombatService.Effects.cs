@@ -23,7 +23,7 @@ public sealed class SkillObject : WorldUnit
     public bool Removing { get; set; }
     public int Charges { get; set; }
     public int ProtectionDistanceType { get; init; }
-    public HashSet<int> Skills { get; } = new();
+    public HashSet<int> Skills { get; } = [];
 
     public override EntityBase Entity() => new()
     {
@@ -101,8 +101,8 @@ public sealed partial class CombatService
         bool InShape(MonsterUnit m) => radiusOverride is { } radius
             ? (height <= 0 || MathF.Abs(m.Y - center.Y) <= height) && Distance(center, m.Pos) <= radius + 0.1f
             : SkillAreaContains(row, action.Origin, center, action.Request.Face, m.Pos);
-        return _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
-            .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid).Take(max).ToList();
+        return [.. _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
+            .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid).Take(max)];
     }
 
     private async Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
@@ -137,7 +137,7 @@ public sealed partial class CombatService
                 .Concat(playerTargets.Select(p => (Id: p.Role!.Id, Distance: PlayerDistance(s, p))))
                 .OrderBy(p => p.Distance).ThenBy(p => p.Id).Take(maxTargets).Select(p => p.Id).ToHashSet();
             targets.RemoveAll(m => !selected.Contains(m.Uid));
-            await HitEventPlayersAsync(s, playerTargets.Where(p => selected.Contains(p.Role!.Id)).ToArray(),
+            await HitEventPlayersAsync(s, [.. playerTargets.Where(p => selected.Contains(p.Role!.Id))],
                 row, action.Request.SkillId, HitEffect(GameData.Int(row, "_iScriptShow")), action.Id, CanApplyMoreEffects,
                 action.GuardianDamage == null ? null : (id, amount) => RecordGuardianDamage(action, id, amount), center);
             if (IsGuardianEffect(row))
@@ -228,7 +228,7 @@ public sealed partial class CombatService
                 if (CanApplyMoreEffects() && !target.Dead && target.Hp > 0) await DisplaceTargetAsync(s, action, target, center);
             }
             // Buff1 is self for hostile selectors, but actual friend recipients for ally selectors (Detoxify, Blessing).
-            foreach (var recipient in friendly ? allies : new List<GameSession> { s })
+            foreach (var recipient in friendly ? allies : [s])
             {
                 if (!CanApplyMoreEffects()) break;
                 if (field == null)
@@ -270,7 +270,7 @@ public sealed partial class CombatService
                     });
                 }
                 if (CurrentCaster() && hit.Dsts.Any(d => d.HitResult != DamageHitResult.Miss)) await _buffs.RecoverEnergyOnHitAsync(s, row);
-                var sourceViewers = CurrentCaster() ? _world.Viewers(s).Append(s) : Enumerable.Empty<GameSession>();
+                var sourceViewers = CurrentCaster() ? _world.Viewers(s).Append(s) : [];
                 var hitViewers = processed.SelectMany(t => t.Viewers).Concat(sourceViewers).Distinct().ToArray();
                 await SendHitBulletsAsync(hitViewers, row, hit, castingRole.Id);
                 foreach (var viewer in hitViewers) await viewer.SendGameAsync(SkillHit, hit);

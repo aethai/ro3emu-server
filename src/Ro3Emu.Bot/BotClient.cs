@@ -36,7 +36,7 @@ public sealed class BotClient : IAsyncDisposable
     private readonly ILogger _log;
     private readonly BotInbox _inbox = new();
     private readonly CancellationTokenSource _cts = new();
-    private readonly Dictionary<ulong, TaskCompletionSource<byte[]>> _pendingMicro = new();
+    private readonly Dictionary<ulong, TaskCompletionSource<byte[]>> _pendingMicro = [];
     private PhonestChannel? _micro;
     private PhonestChannel? _game;
     /// <summary>Connections the bot dropped or gave up (a refused reconnect, a half-open old socket): their frames
@@ -73,7 +73,7 @@ public sealed class BotClient : IAsyncDisposable
 
     public string? Account { get; private set; }
 
-    public List<RoleBaseInfo> Roles { get; } = new();
+    public List<RoleBaseInfo> Roles { get; } = [];
 
     /// <summary>All game messages and RPCs the server sent, in order.</summary>
     public BotInbox Inbox => _inbox;

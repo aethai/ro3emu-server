@@ -150,8 +150,7 @@ public sealed partial class MarketStore
                 if (code != 0) return code;
                 break;
             }
-            tx.RebindLive((requester == null ? _sessions.All() : _sessions.All().Append(requester)).Distinct()
-                .Where(s => s.Role != null && s.Progress != null).ToArray());
+            tx.RebindLive([.. (requester == null ? _sessions.All() : _sessions.All().Append(requester)).Distinct().Where(s => s.Role != null && s.Progress != null)]);
             // Submit this admitted capture once. SQL refusal is final; it is never retried.
             await tx.PersistAsync(() => committed = true);
             Version++;
@@ -210,7 +209,7 @@ public sealed class MarketParticipant
     public required long RoleId { get; init; }
     public required Role Role { get; init; }
     public GameSession? Session { get; internal set; }
-    internal List<InvItem> Before { get; init; } = new();
+    internal List<InvItem> Before { get; init; } = [];
     public required List<InvItem> Items { get; init; }
     public required Dictionary<int, long> Currency { get; init; }
 }
@@ -222,15 +221,15 @@ public sealed class MarketTransaction
     private readonly RoleItemPlanBuilder _plan;
     private readonly MailService _mail;
     private IReadOnlyList<GameSession> _live;
-    private readonly Dictionary<long, MarketParticipant> _participants = new();
-    private readonly Dictionary<(string Kind, string Key), string?> _records = new();
+    private readonly Dictionary<long, MarketParticipant> _participants = [];
+    private readonly Dictionary<(string Kind, string Key), string?> _records = [];
     private readonly HashSet<string> _completeKinds = new(StringComparer.Ordinal);
-    private readonly Dictionary<(long Role, string Column), byte[]> _blobs = new();
+    private readonly Dictionary<(long Role, string Column), byte[]> _blobs = [];
     private bool _writes;
     private readonly bool _economicCommand;
     public EscrowEconomyIntent Economy { get; }
     public IEnumerable<MarketParticipant> Participants => _participants.Values;
-    public HashSet<long> MailRecipients { get; } = new();
+    public HashSet<long> MailRecipients { get; } = [];
     public DateTimeOffset Now { get; }
 
     internal MarketTransaction(AccountStore accounts, MailService mail,
@@ -276,7 +275,7 @@ public sealed class MarketTransaction
         var p = new MarketParticipant
         {
             RoleId = id, Role = role, Session = session, Before = before,
-            Items = before.Select(i => i.Clone()).ToList(),
+            Items = [.. before.Select(i => i.Clone())],
             Currency = currency,
         };
         _participants.Add(id, p);

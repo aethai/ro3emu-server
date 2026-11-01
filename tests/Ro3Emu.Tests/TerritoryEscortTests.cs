@@ -513,7 +513,7 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         WorldUnit[] cargo = [];
         for (int i = 0; i < 50 && cargo.Length == 0; i++)
         {
-            cargo = Service<World>().AllUnits().Where(u => u.Entity().EntityTemplateID == 4910003).ToArray();
+            cargo = [.. Service<World>().AllUnits().Where(u => u.Entity().EntityTemplateID == 4910003)];
             if (cargo.Length == 0) await Task.Delay(20);
         }
         Assert.NotEmpty(cargo);

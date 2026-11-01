@@ -9,8 +9,8 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
 {
     private const int MaxServeTasks = 4096;
     private readonly object _servesGate = new();
-    private readonly Dictionary<long, (Socket Socket, Task Task)> _serves = new();
-    private readonly Dictionary<IPAddress, int> _perAddress = new();
+    private readonly Dictionary<long, (Socket Socket, Task Task)> _serves = [];
+    private readonly Dictionary<IPAddress, int> _perAddress = [];
 
     /// <summary>
     /// Open connections one remote address may hold on this gate. A player needs one per gate (two for a moment while
@@ -99,7 +99,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                         continue;
                     }
                     // No cancellation token on Task.Run: a canceled dispatch must still dispose its socket.
-                    var task = Task.Run(() => ServeAsync(socket, ct, completion), CancellationToken.None);
+                    var task = Task.Run(() => ServeAsync(socket, completion, ct), CancellationToken.None);
                     _serves.Add(id, (socket, task));
                     if (remote != null) _perAddress[remote] = _perAddress.GetValueOrDefault(remote) + 1;
                     var removed = task.ContinueWith(_ =>
@@ -128,7 +128,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         {
             // RunAsync observes the canceled receive token; each channel's existing DisposeAsync policy
             // must retain its chance to flush queued output before the socket closes.
-            outstanding = _serves.Values.Select(s => s.Task).ToArray();
+            outstanding = [.. _serves.Values.Select(s => s.Task)];
         }
         try { await Task.WhenAll(outstanding).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken); }
         catch (Exception e) when (e is TimeoutException || (e is OperationCanceledException && cancellationToken.IsCancellationRequested))
@@ -143,7 +143,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         }
     }
 
-    private async Task ServeAsync(Socket socket, CancellationToken ct, GameLoop.CompletionReservation? completion)
+    private async Task ServeAsync(Socket socket, GameLoop.CompletionReservation? completion, CancellationToken ct)
     {
         _serveCompletion.Value = completion;
         try

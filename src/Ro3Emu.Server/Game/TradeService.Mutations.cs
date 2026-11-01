@@ -267,7 +267,7 @@ public sealed partial class TradeService
     private async Task<List<Listing>> OwnRows(GameSession s)
     {
         var result = new List<Listing>();
-        await market.RunAsync(s, tx => { result = Active(tx).Where(l => l.SellerId == s.Role!.Id).ToList(); return 0; });
+        await market.RunAsync(s, tx => { result = [.. Active(tx).Where(l => l.SellerId == s.Role!.Id)]; return 0; });
         return result;
     }
 

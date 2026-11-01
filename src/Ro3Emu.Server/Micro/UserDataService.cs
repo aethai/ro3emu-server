@@ -39,8 +39,8 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
             {
                 var stamps = await cache.GuildStampsAsync(ids);
                 using var scope = await owners.EnterAsync("micro/user-data",
-                    ids.Select(id => ReservationKey.Role(id)).Concat(stamps.Values.Where(s => s.Id != 0)
-                        .Select(s => ReservationKey.Entity("guild", s.Id.ToString()))).Distinct().ToArray());
+                    [.. ids.Select(id => ReservationKey.Role(id)).Concat(stamps.Values.Where(s => s.Id != 0)
+                        .Select(s => ReservationKey.Entity("guild", s.Id.ToString()))).Distinct()]);
                 var stable = await cache.GuildStampsAsync(ids);
                 if (ids.Any(id => stamps[id] != stable[id])) continue;
                 var profiles = await cache.LoadProfilesAsync(ids, stable);

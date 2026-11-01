@@ -243,7 +243,7 @@ public sealed class DatabaseBackupTests : IDisposable
         using (var accounts = Store()) new RoleStore(accounts).Create("keep", 1, "Keep", 1, 1000, 1);
         SqliteConnection.ClearAllPools();
         string junk = Path.Combine(_dir, "junk.db");
-        File.WriteAllBytes(junk, Enumerable.Repeat((byte)0x5A, 8192).ToArray());
+        File.WriteAllBytes(junk, [.. Enumerable.Repeat((byte)0x5A, 8192)]);
         Assert.ThrowsAny<Exception>(() => DatabaseRestore.Restore(_dir, junk));
         string foreign = Path.Combine(_dir, "foreign.db");
         using (var db = new SqliteConnection($"Data Source={foreign};Pooling=False"))
@@ -323,7 +323,7 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_dir, "restore-saved")));
         Assert.Equal(["After", "Before"], RoleNames(Live));
         using var accounts = Store();
-        Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count());
+        Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count);
     }
 
     [Theory]
@@ -339,7 +339,7 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.False(File.Exists(DatabaseRestore.MarkerPath(_dir)));
         Assert.False(File.Exists(Live + DatabaseRestore.IncomingSuffix));
         Assert.Equal(["After", "Before"], RoleNames(Live));
-        using (var accounts = Store()) Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count());
+        using (var accounts = Store()) Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count);
         SqliteConnection.ClearAllPools();
         Assert.NotNull(DatabaseRestore.Restore(_dir, copy)); // nothing was left half-done: a clean retry works
         Assert.Equal(["Before"], RoleNames(Live));

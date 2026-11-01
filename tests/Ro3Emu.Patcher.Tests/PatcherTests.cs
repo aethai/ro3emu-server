@@ -120,8 +120,8 @@ public sealed class PatcherTests : IDisposable
         // Chunk shared by two files and within one file: deleted only after its last use.
         byte[] shared = Random(50_000, 11);
         WriteBuild("Game.exe", Random(30_000, 10));
-        WriteBuild("data/a.bin", shared.Concat(shared).ToArray());
-        WriteBuild("data/b.bin", shared.Concat(Random(20_000, 12)).ToArray());
+        WriteBuild("data/a.bin", [.. shared, .. shared]);
+        WriteBuild("data/b.bin", [.. shared, .. Random(20_000, 12)]);
         await Publish("1.0.0");
 
         await Update(new FileRepoHandler(Repo));
@@ -146,7 +146,7 @@ public sealed class PatcherTests : IDisposable
     public void Chunking_InsertionOnlyChangesNearbyChunks()
     {
         byte[] data = Random(2_000_000, 2);
-        byte[] edited = data[..1_000_000].Concat(Random(777, 3)).Concat(data[1_000_000..]).ToArray();
+        byte[] edited = [.. data[..1_000_000], .. Random(777, 3), .. data[1_000_000..]];
         var before = Hashes(data, Small);
         var after = Hashes(edited, Small);
         int shared = after.Count(before.Contains);
@@ -172,7 +172,7 @@ public sealed class PatcherTests : IDisposable
     [Fact]
     public void Glob_ExcludesUnityBuildJunk()
     {
-        var globs = new GlobSet(new[] { "*_BackUpThisFolder_ButDontShipItWithYourGame/", "*.log", "Temp/", "Data/**/*.pdb" });
+        var globs = new GlobSet(["*_BackUpThisFolder_ButDontShipItWithYourGame/", "*.log", "Temp/", "Data/**/*.pdb"]);
         Assert.True(globs.IsMatch("RagnarokUnity_BackUpThisFolder_ButDontShipItWithYourGame/x.cpp"));
         Assert.True(globs.IsMatch("build.log"));
         Assert.True(globs.IsMatch("sub/build.log"));
@@ -226,7 +226,7 @@ public sealed class PatcherTests : IDisposable
         File.WriteAllText(Path.Combine(Game, "settings.json"), "{}");
 
         // 1.0.1: an insertion in the big file, one file removed, one added.
-        byte[] patchedGrf = grf[..300_000].Concat(Random(5000, 13)).Concat(grf[300_000..]).ToArray();
+        byte[] patchedGrf = [.. grf[..300_000], .. Random(5000, 13), .. grf[300_000..]];
         WriteBuild("ROData/data.grf", patchedGrf);
         File.Delete(Path.Combine(Build, "Game_Data", "old.assets"));
         WriteBuild("Game_Data/new.assets", Random(3000, 14));

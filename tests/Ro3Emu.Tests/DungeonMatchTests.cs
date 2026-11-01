@@ -124,8 +124,8 @@ public sealed class DungeonMatchTests : IAsyncLifetime
     [Fact]
     public void PartyPackingCanSkipAnEarlyIncompatibleGroup()
     {
-        Assert.Equal(new[] { 1, 2 }, DungeonMatchService.PickGroupIndices([4, 3, 2], 5));
-        Assert.Equal(new[] { 0, 1 }, DungeonMatchService.PickGroupIndices([2, 3, 1], 5));
+        Assert.Equal([1, 2], DungeonMatchService.PickGroupIndices([4, 3, 2], 5));
+        Assert.Equal([0, 1], DungeonMatchService.PickGroupIndices([2, 3, 1], 5));
     }
 
     [ClientDataFact]

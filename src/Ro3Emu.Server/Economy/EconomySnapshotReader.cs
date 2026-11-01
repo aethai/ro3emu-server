@@ -127,7 +127,7 @@ public static partial class EconomySnapshotReader
         var cut = new EconomyCut(persistedRealm ?? realmId, schemaVersion, catalog.Version, CoverageVersion,
             commitSequence, DateTimeOffset.UtcNow);
         return new EconomySnapshot(cut, state.Holdings, state.Issues, UncoveredFamilies,
-            state.Metrics.Select(m => new EconomyDecodeMetric(m.Key, m.Value.Rows, m.Value.Blobs, m.Value.Bytes)).ToArray(), timer.Elapsed.TotalMilliseconds)
+            [.. state.Metrics.Select(m => new EconomyDecodeMetric(m.Key, m.Value.Rows, m.Value.Blobs, m.Value.Bytes))], timer.Elapsed.TotalMilliseconds)
         { Progress = progress, ProgressRevisions = progressRevisions };
     }
 

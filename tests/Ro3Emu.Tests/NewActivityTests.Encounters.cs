@@ -292,7 +292,7 @@ public sealed partial class NewActivityTests
             }
             Assert.True(arrived, "The authoritative player position did not reach the authored answer zone.");
             var plan = Service<AwardService>().Resolve(Session(bot), 85001, 101);
-            var item = plan.Grants.First();
+            var item = plan.Grants[0];
             // The right bet pays the KoiBetRewardConfig tier of one winner, in the same currency.
             var betItem = Service<AwardService>().Resolve(Session(bot), Service<FestivalService>().BetAward(1), 101).Grants[0];
             Assert.Equal(item.Entry, betItem.Entry);

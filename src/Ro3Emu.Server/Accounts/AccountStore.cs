@@ -424,14 +424,13 @@ public sealed partial class AccountStore : IDisposable
         FlushStagedFor(plan);
         bool cached = false;
         if (plan.RolePins.Count != 0)
-            plan.Expect(plan.RolePins.Distinct().Select(role =>
+            plan.Expect([.. plan.RolePins.Distinct().Select(role =>
             {
                 if (!fresh && OwnerVector(role) is { } vector) { cached = true; return vector; }
                 return ReadVector(role, overtaken: fresh);
-            }).ToArray());
+            })]);
         if (plan.EntityWrites.Count != 0)
-            plan.ExpectEntities(plan.EntityWrites.Distinct()
-                .Select(key => ReadSync<OwnerRevisionValue>(new OwnerRevisionReadPlan(key))).ToArray());
+            plan.ExpectEntities([.. plan.EntityWrites.Distinct().Select(key => ReadSync<OwnerRevisionValue>(new OwnerRevisionReadPlan(key)))]);
         return cached;
     }
     private DbPlan Prepare(DbPlan plan)

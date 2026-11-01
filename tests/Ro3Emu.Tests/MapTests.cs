@@ -393,7 +393,7 @@ public sealed partial class MapTests : IAsyncLifetime
             && u.SrcID == (long)angeling.Uuid && u.SkillID == 5202101, TimeSpan.FromSeconds(10));
         Assert.NotNull(summon);
         var minions = await alice.Inbox.WaitAsync(e => e.IsGame(GameAoiSink.SyncAoiView)
-            && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Count(b => b.EntityTemplateID == 5000036) >= 1, TimeSpan.FromSeconds(10));
+            && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Any(b => b.EntityTemplateID == 5000036), TimeSpan.FromSeconds(10));
         Assert.NotNull(minions);
 
         // The real summon is observed above. Retire its three minions before the slow fault

@@ -13,7 +13,7 @@ public sealed class MsgCatalog
 {
     public sealed record Entry(uint Id, string Name, MessageDescriptor? Request, MessageDescriptor? Response);
 
-    private readonly Dictionary<uint, Entry> _entries = new();
+    private readonly Dictionary<uint, Entry> _entries = [];
 
     public MsgCatalog(IOptions<ServerOptions> options, ILogger<MsgCatalog> log)
     {

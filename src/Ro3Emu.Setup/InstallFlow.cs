@@ -212,6 +212,6 @@ internal sealed class OptionsWithClient(Options options, string client)
         if (o.Ports.Panel > 0) args.AddRange(["--panel-port", o.Ports.Panel.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         else args.Add("--no-panel");
         if (o.PurchaseUrl != null) args.AddRange(["--purchase-url", o.PurchaseUrl]);
-        return args.ToArray();
+        return [.. args];
     }
 }

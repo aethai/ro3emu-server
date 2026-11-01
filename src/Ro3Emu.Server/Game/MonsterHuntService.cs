@@ -32,9 +32,9 @@ public sealed class MonsterHuntService
     private readonly RoleStore _roles;
     private readonly ILogger<MonsterHuntService> _log;
 
-    private readonly Dictionary<long, JsonElement> _mapByScene = new();
-    private readonly Dictionary<(long Map, int Npc), JsonElement> _monsterByMapNpc = new();
-    private readonly Dictionary<long, long> _areaOfMap = new();
+    private readonly Dictionary<long, JsonElement> _mapByScene = [];
+    private readonly Dictionary<(long Map, int Npc), JsonElement> _monsterByMapNpc = [];
+    private readonly Dictionary<long, long> _areaOfMap = [];
 
     public MonsterHuntService(GameData data, CharacterService character, FunctionService functions, SeasonService seasons,
         AwardService awards, RewardService rewards, TaskService tasks, RoleStore roles, ILogger<MonsterHuntService> log)
@@ -195,7 +195,7 @@ public sealed class MonsterHuntService
                     foreach (var t in stages) info.ClaimedAward[t.Stage] = true;
                     if (!next.AreaInfo.TryGetValue(areaId, out var areaInfo)) next.AreaInfo[areaId] = areaInfo = new AreaConcurAreaInfo();
                     areaInfo.CurScore = ClaimedInArea(next, areaId, area);
-                    await CommitClaimAsync(s, next, stages.Select(t => t.Award).ToArray(),
+                    await CommitClaimAsync(s, next, [.. stages.Select(t => t.Award)],
                         $"monster/{req.MonsterId}/{string.Join(",", stages.Select(t => t.Stage))}");
                 }
             }
@@ -223,7 +223,7 @@ public sealed class MonsterHuntService
                     if (!next.AreaInfo.TryGetValue(req.AreaId, out var info)) next.AreaInfo[req.AreaId] = info = new AreaConcurAreaInfo();
                     info.CurScore = progress;
                     foreach (var t in stages) info.ClaimedAward[t.Stage] = true;
-                    await CommitClaimAsync(s, next, stages.Select(t => t.Award).ToArray(),
+                    await CommitClaimAsync(s, next, [.. stages.Select(t => t.Award)],
                         $"area/{req.AreaId}/{string.Join(",", stages.Select(t => t.Stage))}");
                 }
             }
@@ -238,7 +238,7 @@ public sealed class MonsterHuntService
     {
         long role = s.Role!.Id;
         AwardPlan[] plans;
-        try { plans = groups.Select(g => _awards.Resolve(s, g, PlayBook(s))).ToArray(); }
+        try { plans = [.. groups.Select(g => _awards.Resolve(s, g, PlayBook(s)))]; }
         catch (AwardResolutionException e)
         {
             _log.LogWarning("Monster Hunt {Claim} reward unresolved for {Role}: {Reason}", claim, role, e.Message);

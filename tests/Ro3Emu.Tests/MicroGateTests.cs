@@ -252,7 +252,7 @@ public sealed class MicroGateTests : IDisposable
 
     private sealed class FrameReader(Socket socket)
     {
-        private readonly List<byte> _plain = new();
+        private readonly List<byte> _plain = [];
 
         public async Task<(ushort Index, byte[] Body)> NextAsync(ClientSide? convertor)
         {

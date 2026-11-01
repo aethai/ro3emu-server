@@ -75,14 +75,14 @@ public sealed partial class TimedBattleService : IGameTicker
     private readonly GameLoop _loop;
     private readonly PraiseService _praise;
     private readonly ILogger<TimedBattleService> _log;
-    private readonly Dictionary<int, List<GameSession>> _queue = new();
+    private readonly Dictionary<int, List<GameSession>> _queue = [];
     /// <summary>A queued party's members, the same array for each (a solo entrant has none): the party queues, leaves
     /// the queue and is placed in a match together.</summary>
     private readonly Dictionary<GameSession, GameSession[]> _queueGroup = [];
-    private readonly Dictionary<GameSession, Match> _preparing = new();
-    private readonly Dictionary<GameSession, Match> _active = new();
-    private readonly Dictionary<long, Match> _matches = new();
-    private readonly HashSet<long> _pendingDeliveryRoles = new();
+    private readonly Dictionary<GameSession, Match> _preparing = [];
+    private readonly Dictionary<GameSession, Match> _active = [];
+    private readonly Dictionary<long, Match> _matches = [];
+    private readonly HashSet<long> _pendingDeliveryRoles = [];
     private long _lastSecond = -1;
 
     public sealed class State
@@ -92,31 +92,31 @@ public sealed partial class TimedBattleService : IGameTicker
         public int OnePieceExtraUsed { get; set; }
         /// <summary>The week's extra-award items (AwardRestricConfig caps are weekly) for <see cref="OnePieceWeek"/>.</summary>
         public long OnePieceWeek { get; set; }
-        public Dictionary<int, int> OnePieceWeekItems { get; set; } = new();
+        public Dictionary<int, int> OnePieceWeekItems { get; set; } = [];
         /// <summary>Legacy per-day clear and item counters (before the 1020 / weekly limits): read, dropped on the next Rift pay.</summary>
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public Dictionary<long, int>? OnePieceGains { get; set; }
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public Dictionary<long, Dictionary<int, int>>? OnePieceItemGains { get; set; }
-        public HashSet<long> ChickenSettled { get; set; } = new();
+        public HashSet<long> ChickenSettled { get; set; } = [];
         public int ChickenRank { get; set; } = 1;
         public long ChickenScore { get; set; }
         public int ChickenMatches { get; set; }
-        public HashSet<long> DragonSettled { get; set; } = new();
-        public HashSet<int> DragonRankClaimed { get; set; } = new();
+        public HashSet<long> DragonSettled { get; set; } = [];
+        public HashSet<int> DragonRankClaimed { get; set; } = [];
         public int DragonRank { get; set; } = 1;
         public long DragonScore { get; set; }
         public long DragonRankScore { get; set; }
         public long DragonCurrencyDay { get; set; }
         public int DragonCurrencyEarned { get; set; }
-        public Dictionary<long, long> OnePieceBestMilliseconds { get; set; } = new();
+        public Dictionary<long, long> OnePieceBestMilliseconds { get; set; } = [];
         /// <summary>Mock Battle (Leisure Forty, CasualBattleService): rating (0 = not yet rated), recent results, the
         /// best and lifetime numbers (5070 DBCasualBattleInfo) and the settled matches (by room).</summary>
         public int CasualMmr { get; set; }
-        public List<CasualRecord> CasualRecords { get; set; } = new();
+        public List<CasualRecord> CasualRecords { get; set; } = [];
         public CasualStats CasualBest { get; set; } = new();
         public CasualStats CasualTotal { get; set; } = new();
-        public HashSet<long> CasualSettled { get; set; } = new();
+        public HashSet<long> CasualSettled { get; set; } = [];
     }
 
     public sealed class CasualRecord
@@ -163,13 +163,13 @@ public sealed partial class TimedBattleService : IGameTicker
         public required long Open;
         public required long Deadline;
         public InstanceService.Room? Room;
-        public HashSet<GameSession> Ready { get; } = new();
-        public HashSet<GameSession> Loaded { get; } = new();
-        public Dictionary<GameSession, int> Faction { get; } = new();
-        public Dictionary<GameSession, Participant> Participants { get; } = new();
-        public Dictionary<GameSession, int> Kills { get; } = new();
-        public HashSet<GameSession> Fallen { get; } = new();
-        public HashSet<GameSession> Absent { get; } = new();
+        public HashSet<GameSession> Ready { get; } = [];
+        public HashSet<GameSession> Loaded { get; } = [];
+        public Dictionary<GameSession, int> Faction { get; } = [];
+        public Dictionary<GameSession, Participant> Participants { get; } = [];
+        public Dictionary<GameSession, int> Kills { get; } = [];
+        public HashSet<GameSession> Fallen { get; } = [];
+        public HashSet<GameSession> Absent { get; } = [];
         public bool Settled;
         /// <summary>Survivor Battle's in-scene state (entry 2), from the room's creation.</summary>
         public ChickenRun? Chicken;
@@ -330,8 +330,7 @@ public sealed partial class TimedBattleService : IGameTicker
             keys.Add(ReservationKey.Entity("timed_match", MatchKey(match)));
             keys.AddRange(match.Participants.Values.Select(participant => ReservationKey.Role(participant.Id)));
         }
-        return keys.Distinct().OrderBy(key => key.Kind).ThenBy(key => key.Id, StringComparer.Ordinal)
-            .ThenBy(key => key.Part, StringComparer.Ordinal).ToArray();
+        return [.. keys.Distinct().OrderBy(key => key.Kind).ThenBy(key => key.Id, StringComparer.Ordinal).ThenBy(key => key.Part, StringComparer.Ordinal)];
     }
 
     private static string MatchKey(Match match) => match.Room?.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -612,9 +611,9 @@ public sealed partial class TimedBattleService : IGameTicker
             await SettleMatchAsync(match);
     }
 
-    private static HashSet<int> RemainingFactions(Match match) => match.Players
+    private static HashSet<int> RemainingFactions(Match match) => [.. match.Players
         .Where(p => !match.Absent.Contains(p) && !match.Fallen.Contains(p))
-        .Select(p => match.Faction[p]).ToHashSet();
+        .Select(p => match.Faction[p])];
 
     private Task SettleMatchAsync(Match match) => SettleMatchCoreAsync(match);
 
@@ -833,8 +832,7 @@ public sealed partial class TimedBattleService : IGameTicker
         }
         if (_treasure.TryGetValue(session, out var run))
             keys.Add(ReservationKey.Entity("timed_onepiece", run.Room.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        return keys.Distinct().OrderBy(key => key.Kind).ThenBy(key => key.Id, StringComparer.Ordinal)
-            .ThenBy(key => key.Part, StringComparer.Ordinal).ToArray();
+        return [.. keys.Distinct().OrderBy(key => key.Kind).ThenBy(key => key.Id, StringComparer.Ordinal).ThenBy(key => key.Part, StringComparer.Ordinal)];
     }
 
     private async Task<LegacyOwnerScope?> EnterLeaveAsync(GameSession session)

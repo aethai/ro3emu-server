@@ -127,7 +127,7 @@ public sealed class CardRulesTests : IAsyncLifetime
             await Service<GameLoop>().InvokeAsync(() =>
             {
                 var card = session.Items.Single(i => i.Entry == flashable);
-                card.Attrs ??= new();
+                card.Attrs ??= [];
                 card.Attrs[530] = 1;
                 Service<ItemStore>().Update(card);
                 return Task.CompletedTask;

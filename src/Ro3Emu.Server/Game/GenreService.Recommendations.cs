@@ -435,7 +435,7 @@ public sealed partial class GenreService
                 || record.Plans == null || record.RougeInfo?.SeekUserId != s.Role!.Id
                 || record.RougeInfo.ResponserUserId != req.ResponseUserId)) result = ErrorCodes.Parameter;
             var selected = s.Genre!.GenreMap.SystemMap.TryGetValue(req.PlanId, out var current)
-                ? current.GenrePlans.ToDictionary(kv => kv.Key, kv => kv.Value) : new Dictionary<int, int>();
+                ? current.GenrePlans.ToDictionary(kv => kv.Key, kv => kv.Value) : [];
             var replacing = (req.ChildType.Count == 0 ? req.SystemType.Keys : req.ChildType.Where(kv => kv.Value == 1).Select(kv => kv.Key)).ToArray();
             if (result == 0 && (replacing.Length == 0 || replacing.Any(type => type is < Skill or > Talent
                 || !req.SystemType.ContainsKey(type)) || req.ChildType.Any(kv => kv.Value is not 0 and not 1)))
@@ -443,7 +443,7 @@ public sealed partial class GenreService
             var next = new Stage(s, skills);
             // The donor WholeRole reservation includes login reconciliation and item/GM writes through Apply.
             var donorItems = result == 0 ? (Online(req.ResponseUserId)?.Items ?? items.Load(req.ResponseUserId))
-                .ToDictionary(i => i.Guid, i => i.Clone()) : new();
+                .ToDictionary(i => i.Guid, i => i.Clone()) : [];
             var used = new HashSet<long>();
             long Own(long donorGuid)
             {

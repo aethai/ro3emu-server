@@ -93,7 +93,7 @@ public sealed class CharacterTests : IAsyncLifetime
         Assert.NotNull(potion.ItemBindInfo);
         Assert.Contains(potion.ItemGuid, consumables.SortedIndex.Keys);
         var gear = bag.PackInfo[2].All.Items.Values;
-        Assert.Equal(new[] { Dagger, Shirt }, gear.Select(i => i.ItemEntry).Order());
+        Assert.Equal([Dagger, Shirt], gear.Select(i => i.ItemEntry).Order());
         Assert.All(gear, i => Assert.Equal(1, i.ItemInfos[3].LongVal)); // appraised
         Assert.Equal(1000, bag.Currency[1].All);
 
@@ -604,7 +604,7 @@ public sealed class CharacterTests : IAsyncLifetime
         Assert.Equal(5, skills.SkillAssignPlans.All.Value.Count);
         Assert.Equal(0, skills.CurrentPlanIndex);
         var plan = skills.SkillAssignPlans.All.Value[skills.CurrentPlanIndex];
-        Assert.Equal(new[] { 10000, 10002, 10003 }, plan.SkillAssigns.Keys.Order());
+        Assert.Equal([10000, 10002, 10003], plan.SkillAssigns.Keys.Order());
         Assert.Equal(0, plan.SkillAssigns[10002].SkillLevel); // Smite activates at base level 5
 
         // Keep the master's learned-Smite wheel assertion after the configured activation level.

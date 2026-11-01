@@ -27,17 +27,17 @@ public sealed class RoleProgress
     public long JobExp { get; set; }
     public int[] Stats { get; } = [1, 1, 1, 1, 1, 1];
     public int BonusPoints { get; set; }
-    public Dictionary<int, long> Currency { get; } = new();
+    public Dictionary<int, long> Currency { get; } = [];
     public bool StarterKit { get; set; }
     /// <summary>Astral Level (Paragon, PatronLevelConfig) and the EXP toward the next one; ParagonService.</summary>
     public int ParagonLevel { get; set; }
     public long ParagonExp { get; set; }
 
     /// <summary>Learned skill levels by skill group id (SkillConfig._iSkillID).</summary>
-    public Dictionary<int, int> Skills { get; } = new();
+    public Dictionary<int, int> Skills { get; } = [];
 
     /// <summary>Skill bar: slot (1..6) -> skill group id.</summary>
-    public Dictionary<int, int> SkillBar { get; } = new();
+    public Dictionary<int, int> SkillBar { get; } = [];
 
     /// <summary>Skill groups granted while their source holds, by level: the socketed cards' Skill(3) rows (CardEffects).
     /// Derived on every scene load and socket change, so never saved.</summary>
@@ -282,7 +282,7 @@ public sealed class RoleStore(AccountStore accounts)
         IReadOnlyList<InvItem> touchedItems, byte[]? previousTasks = null, byte[]? tasks = null)
     {
         // One new stack may be touched by several grants; identity, not Guid=0, distinguishes stacks.
-        InvItem[] uniqueItems = touchedItems.Distinct<InvItem>(ReferenceEqualityComparer.Instance).ToArray();
+        InvItem[] uniqueItems = [.. touchedItems.Distinct<InvItem>(ReferenceEqualityComparer.Instance)];
         var builder = new RoleItemPlanBuilder(_accounts);
         try { builder.BindProgressSource(id, progress); }
         catch (RolePlanConflictException) { return false; }
@@ -561,7 +561,7 @@ public sealed class RoleStore(AccountStore accounts)
     {
         byte[]? old = builder.ReadRoleBlob(_accounts, role, "task_followup");
         var pending = old is { Length: > 0 }
-            ? JsonSerializer.Deserialize<HashSet<string>>(old) ?? new HashSet<string>() : new HashSet<string>();
+            ? JsonSerializer.Deserialize<HashSet<string>>(old) ?? [] : [];
         pending.Add($"{role}:{epoch}:{card}:{(treasure ? 1 : 0)}");
         builder.RoleBlob(role, "library", library);
         builder.RoleBlob(role, "task_followup", JsonSerializer.SerializeToUtf8Bytes(pending));
