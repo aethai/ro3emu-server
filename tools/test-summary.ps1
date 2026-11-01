@@ -3,7 +3,8 @@ param(
     # (--collect "XPlat Code Coverage") each project needs its own subfolder, named like its .trx (TestResults/server).
     [Parameter(Mandatory)] [string]$Results,
     # The fewest tests each project has to execute (tests/test-floor.txt). The run fails below it, and when the file
-    # holds a lower number than in the parent commit: the floor only goes up.
+    # holds a lower number than in the parent commit: the floor only goes up. Each project's .trx must then be the only
+    # one of its name, in the folder of that name (TestResults/server/server.trx).
     [string]$Floor
 )
 
@@ -20,14 +21,22 @@ $executed = @{}
 
 if (Test-Path -LiteralPath $Results) {
     $ns = @{ t = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010' }
+    $resultsRoot = (Resolve-Path -LiteralPath $Results).Path
     foreach ($trx in Get-ChildItem -LiteralPath $Results -Filter '*.trx' -File -Recurse | Sort-Object Name) {
+        if ($Floor) {
+            # A file of the same name somewhere else must not stand in for the project's own results.
+            $own = [System.IO.Path]::Combine($resultsRoot, $trx.BaseName, $trx.Name)
+            if ($trx.FullName -ne $own) { $errors.Add("$($trx.Name): found at $($trx.FullName), expected only at $own") }
+        }
         [xml]$doc = Get-Content -LiteralPath $trx.FullName -Raw
         $tests = @(Select-Xml -Xml $doc -Namespace $ns -XPath '//t:UnitTestResult' | ForEach-Object Node)
         $skipped = @($tests | Where-Object outcome -eq 'NotExecuted')
         $needData = @($skipped | Where-Object { $_.Output.ErrorInfo.Message -like "*$clientData*" })
         $failed = @($tests | Where-Object outcome -eq 'Failed')
-        $executed[$trx.BaseName] = $tests.Count - $skipped.Count
-        $lines.Add("$($trx.BaseName): $($tests.Count - $skipped.Count) executed ($($failed.Count) failed), " +
+        # Only a test that ran counts for the floor: not a skipped one, and not one that stayed Pending or Inconclusive.
+        $ran = @($tests | Where-Object outcome -in 'Passed', 'Failed').Count
+        $executed[$trx.BaseName] = $ran
+        $lines.Add("$($trx.BaseName): $ran executed ($($failed.Count) failed), " +
             "$($skipped.Count) skipped ($($needData.Count) need client data)")
     }
 
@@ -67,8 +76,9 @@ if ($Floor) {
             $errors.Add("${name}: $($executed[$name]) executed, below the floor of $($current[$name]) in $Floor")
         }
     }
-    # The same file in the parent commit (the base branch of a pull request; CI checks out two commits). A shallow
-    # clone without the parent, or a parent without the file, has nothing to compare with.
+    # The same file in the parent commit (the base branch of a pull request; CI checks out two commits). Locally a clone
+    # without the parent, or a parent without the file, has nothing to compare with; in CI that means the floor or the
+    # checkout was changed so that nothing compares it, so it fails.
     $path = git ls-files --full-name -- $Floor 2>$null
     $parent = if ($path) { git show "HEAD^1:$path" 2>$null } else { $null }
     if ($LASTEXITCODE -eq 0 -and $parent) {
@@ -80,6 +90,7 @@ if ($Floor) {
             }
         }
     }
+    elseif ($env:GITHUB_ACTIONS) { $errors.Add("No floor in the parent commit to compare $Floor with") }
     else { $lines.Add("No floor in the parent commit to compare $Floor with") }
     if ($errors.Count -eq 0) { $lines.Add("Floor met: " + (($current.Keys | ForEach-Object { "$_ $($current[$_])" }) -join ', ')) }
 }
