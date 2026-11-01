@@ -266,7 +266,7 @@ public sealed partial class PanelSite
         return _clients.FromTrustedProxy(context) && ClientAddresses.IsForwarded(context.Request);
     }
 
-    private long _hostRefusalLogged = long.MinValue;
+    private long _hostRefusalLogged;
 
     /// <summary>
     /// A proxy that keeps the player's Host, with neither option set, sees only 404s from the API while the pages load.
@@ -275,7 +275,7 @@ public sealed partial class PanelSite
     private void NoteRefusedHost(HttpRequest request)
     {
         long now = Environment.TickCount64, last = Interlocked.Read(ref _hostRefusalLogged);
-        if (now - last < 600_000 || Interlocked.CompareExchange(ref _hostRefusalLogged, now, last) != last) return;
+        if (last != 0 && now - last < 600_000 || Interlocked.CompareExchange(ref _hostRefusalLogged, now, last) != last) return;
         string host = request.Host.Host;
         LogHostRefused(_log, host.Length <= 100 ? host : host[..100]);
     }
