@@ -774,7 +774,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
                             baseExp: baseExp, jobExp: jobExp, committed: () => box = next, asyncCommit: true);
                         if (granted == null) continue;
                     }
-                    catch (Exception e) when (e is SqliteException or InvalidOperationException)
+                    catch (Exception e) when (e is SqliteException or PersistenceException or InvalidOperationException)
                     {
                         log.LogWarning(e, "Mail {Mail} grant transaction failed", id);
                         refusal = ErrorCodes.Unknown;

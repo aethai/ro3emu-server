@@ -16,7 +16,7 @@ namespace Ro3Emu.Server.Game;
 /// Capture selects every role/mailbox and listing collection before one all-or-none reservation.
 /// SQL guards revalidate the detached capture; publication precedes releasing keys and sending notices.
 /// </summary>
-public sealed class MarketStore
+public sealed partial class MarketStore
 {
     private readonly AccountStore _accounts;
     private readonly SessionRegistry _sessions;
@@ -176,7 +176,13 @@ public sealed class MarketStore
                 await NotifyAsync(() => _mail.NotifyMarketAsync(id));
             return 0;
         }
-        catch (Exception e) when (!committed && e is SqliteException or InvalidOperationException)
+        catch (DbQueueFullException e) when (!committed)
+        {
+            // Overload, not a fault: the writer did not admit the plan, so nothing was written and the player may retry.
+            LogDatabaseBusy(_log, e.Message);
+            return ErrorCodes.Unknown;
+        }
+        catch (Exception e) when (!committed && e is SqliteException or PersistenceException or InvalidOperationException)
         {
             _log.LogError(e, "Market transaction did not reach publication; committed Apply failures remain quarantined");
             return ErrorCodes.Unknown;
@@ -186,6 +192,9 @@ public sealed class MarketStore
             scope?.Dispose();
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Market transaction refused because the database is busy: {Reason}")]
+    private static partial void LogDatabaseBusy(ILogger logger, string reason);
 
     private async Task NotifyAsync(Func<Task> notify)
     {

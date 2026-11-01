@@ -223,6 +223,8 @@ public sealed partial class AccountStore : IDisposable
         object?[] result;
         try { result = await Writer.ExecuteAsync<object?[]>(plan); }
         catch (EconomyOperationConflictException) { throw; }
+        // Not admitted: nothing was written, so this is a definite failure, never an unknown outcome to resolve.
+        catch (DbQueueFullException) { throw; }
         catch (Exception original)
         {
             object?[]? resolved;
@@ -267,6 +269,8 @@ public sealed partial class AccountStore : IDisposable
         object?[] result;
         try { result = await Writer.ExecuteAsync<object?[]>(plan); }
         catch (EconomyOperationConflictException) { throw; }
+        // Not admitted: nothing was written, so this is a definite failure, never an unknown outcome to resolve.
+        catch (DbQueueFullException) { throw; }
         catch (Exception original)
         {
             object?[]? resolved;

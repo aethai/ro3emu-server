@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-internal class RolePlanConflictException : InvalidOperationException { }
+internal class RolePlanConflictException : PersistenceException { }
 internal sealed class OwnerRevisionConflictException : RolePlanConflictException { }
 
 internal sealed class RoleDailyResetPlan : DbPlan
