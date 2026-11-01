@@ -610,7 +610,8 @@ public sealed partial class LifeJobService
             restrict.RestrictCount[VigorId].LimitCount = VigorLimit(s, life);
         }
         long baseExp = rewardSettlement == null ? 0 : grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count);
-        long jobExp = rewardSettlement == null ? 0 : grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count);
+        long jobExp = rewardSettlement == null ? 0
+            : grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count) + _character.JobExpFromBase(baseExp);
         IEnumerable<AwardGrant> itemGrants = rewardSettlement == null ? grants :
             grants.Where(g => g.Entry is not (100 or 101));
         var semanticCost = cost.Concat((instances ?? new Dictionary<long, int>()).Select(pair =>

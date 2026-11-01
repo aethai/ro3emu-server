@@ -273,7 +273,7 @@ public sealed class CharacterTests : IAsyncLifetime
     {
         await using var alice = await InWorld("Alice");
         await Next(alice, CharacterService.RoleBaseInfoSync, RoleBaseInfoIncrement.Parser);
-        await Gm("alice", "!exp 15 2"); // BaseLvConfig lv1 needs 5, lv2 8 -> lv3 with 2; JobLvConfig 101/102 need 1 each -> job 3
+        await Gm("alice", "!exp 15"); // BaseLvConfig lv1 needs 5, lv2 8 -> lv3 with 2; its 3 Job EXP: JobLvConfig 101/102 need 1 each -> job 3
         var info = await Next(alice, CharacterService.RoleBaseInfoSync, RoleBaseInfoIncrement.Parser, m => !m.SyncAllMark);
         Assert.Equal(3, info.Level);
         Assert.Equal(2, info.Exp);

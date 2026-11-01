@@ -905,7 +905,9 @@ public sealed partial class TimedBattleService : IGameTicker
             if (_treasure.TryGetValue(session, out var run))
             { run.Settled = true; _treasure.Remove(session); }
         }
-        if (settle != null) await SettleMatchAsync(settle);
+        // A retry of this leave no longer finds the match, so a refused settlement waits for room now. It marks the match
+        // settled only after its commit, so it can run again.
+        if (settle != null) await Accounts.Persistence.QueueFullPatience.RunAsync(() => SettleMatchAsync(settle));
     }
 
     private async Task AbortMatchAsync(Match match, GameSession? departed)

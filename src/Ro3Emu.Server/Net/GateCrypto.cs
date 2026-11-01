@@ -44,6 +44,7 @@ public sealed class GateCrypto
         var plain = _rsa.Decrypt(keyString.KeyString.ToByteArray(), RSAEncryptionPadding.OaepSHA1);
         var key = EncryptKey.Parser.ParseFrom(plain);
         if (key.Token != expectedToken) throw new CryptographicException("handshake token mismatch");
+        if (key.Key.IsEmpty) throw new CryptographicException("empty session key");
         return key.Key.ToByteArray();
     }
 

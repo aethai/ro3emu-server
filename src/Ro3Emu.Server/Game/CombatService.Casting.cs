@@ -414,18 +414,9 @@ public sealed partial class CombatService
         return 0;
     }
 
-    /// <summary>LC_ItemHelper.ItemCanUseInCurrentMap: MapConfig type/subtype blacklist (1) or whitelist (2).</summary>
-    private bool ItemAllowedInMap(GameSession s, int entry)
-    {
-        if (_data.Row("MapConfig", s.SceneEntry) is not { } map || _data.Row("ItemConfig", entry) is not { } item) return false;
-        // The Yggdrasil Leaf's _kUseLimit [1002] (inferred, ItemUseLimitConfig.ForbidsScene).
-        if (ItemUseLimitConfig.Forbids(_data, item, s.SceneEntry)) return false;
-        int mode = (int)GameData.Int(map, "_iLimitType");
-        if (mode is not (1 or 2)) return true;
-        bool listed = Tuples(map, "_kLimitItem").Any(t => t.GetArrayLength() >= 2 && GameData.Number(t[1]) ==
-            GameData.Int(item, GameData.Number(t[0]) == 1 ? "_iType" : "_iSubType"));
-        return mode == 1 ? !listed : listed;
-    }
+    /// <summary>The scene's item limit (<see cref="ItemMapLimit"/>), in a dungeon through its DungeonConfig row.</summary>
+    private bool ItemAllowedInMap(GameSession s, int entry) =>
+        _data.Row("ItemConfig", entry) is { } item && ItemMapLimit.Allows(_data, s.SceneEntry, item);
 
     private sealed class CastCosts
     {

@@ -82,16 +82,17 @@ public sealed partial class CharacterService
         int oldLevel = p.Level, oldJob = p.JobLevel;
         // BaseExpAddConfig catch-up bonus below the server level (CharacterService.LevelRules).
         baseExp = WithPursueBonus(p.Level, Math.Max(0, baseExp));
+        jobExp = checked(Math.Max(0, jobExp) + JobExpFromBase(baseExp));
         var staged = CloneProgress(p);
-        ApplyExp(staged, baseExp, Math.Max(0, jobExp));
+        ApplyExp(staged, baseExp, jobExp);
         var builder = roles.NewTransaction();
         builder.ItemDelta(session.Role!.Id, session.Items, session.Items);
         builder.Progress(session.Role!.Id, staged);
         var expSource = new RewardSettlement($"exp/{session.Role.Id}/{Guid.NewGuid():N}", "cd13e/character-exp");
         builder.WithEconomy(RewardMutation(session, expSource, p, staged, [], [],
-            Math.Max(0, baseExp), Math.Max(0, jobExp), new ItemAutoDecomposeTipsNtf()));
+            Math.Max(0, baseExp), jobExp, new ItemAutoDecomposeTipsNtf()));
         await roles.CommitAsync(builder, "character/exp", _ => CopyProgress(p, staged));
-        foreach (var credited in ExpCredited) credited(session, baseExp, Math.Max(0, jobExp));
+        foreach (var credited in ExpCredited) credited(session, baseExp, jobExp);
         if (stillOwner?.Invoke() == false || session.Attachment?.Cancelled == true) return string.Empty;
         var rewards = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
         if (baseExp > 0) rewards.Rewards.Add(ItemInfo(new InvItem { Entry = BaseExpItem, Stack = (int)Math.Min(baseExp, int.MaxValue) }));
@@ -249,6 +250,7 @@ public sealed partial class CharacterService
             if (error != 0) return;
             await PublishJobAsync(session);
         }
+        await PayJobExpCatchUpAsync(session);
         foreach (var handler in ProgressHandlers) await handler(session);
         foreach (var handler in JobChanged) await handler(session);
     }
@@ -284,6 +286,7 @@ public sealed partial class CharacterService
             await session.SendGameAsync(PlayerTransformJob, new PlayerTransformJobResp { Result = 0, JobId = career });
             await PublishJobAsync(session);
         }
+        await PayJobExpCatchUpAsync(session);
         foreach (var handler in ProgressHandlers) await handler(session);
         foreach (var handler in JobChanged) await handler(session);
         return $"Job {career} {data.TextOf(data.Row("JobConfig", career)!.Value, "_iName")}".TrimEnd();

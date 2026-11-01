@@ -45,6 +45,7 @@ public sealed partial class MicroGateServer(IOptions<ServerOptions> options, Gat
         if (index is not (ClientHeartbeat or ReplyHeartbeat) && !WithinBudget(session))
         {
             if (session.Account == null) throw Close(channel, "went over its request budget before signing in");
+            if (session.RefusedTooOften(Environment.TickCount64)) throw Close(channel, "stayed far over its request budget");
             if (!session.OverBudgetLogged)
             {
                 session.OverBudgetLogged = true;
@@ -74,7 +75,7 @@ public sealed partial class MicroGateServer(IOptions<ServerOptions> options, Gat
                 }
                 channel.EnableConvertor(sessionKey);
                 await channel.SendAsync(ConfirmEncryptKeyAck, new Phonest.Proto.Void());
-                Log.LogInformation("MicroGate: {Remote} encrypted session up", channel.Remote);
+                Log.LogDebug("MicroGate: {Remote} encrypted session up", channel.Remote);
                 break;
 
             case ClientHeartbeat:
@@ -85,7 +86,9 @@ public sealed partial class MicroGateServer(IOptions<ServerOptions> options, Gat
                 // The client sends its first request after ConfirmEncryptKeyAck; a plaintext one is not the client.
                 if (!channel.Encrypted) throw Close(channel, "sent a request before the encrypted session was up");
                 var request = Parse(body) ?? throw Close(channel, "sent a request that does not parse");
-                var result = await router.InvokeAsync(session, request.Service, request.Method, request.Params.Memory);
+                byte[] result;
+                try { result = await router.InvokeAsync(session, request.Service, request.Method, request.Params.Memory); }
+                catch (MessagePack.MessagePackSerializationException) { throw Close(channel, "sent arguments that do not parse"); }
                 if (request.Rid != 0)
                 {
                     await channel.SendAsync(MicroResponse, new MsResponse { Rid = request.Rid, Params = ByteString.CopyFrom(result) });
@@ -156,6 +159,28 @@ public sealed class MicroSession(PhonestChannel channel, long id)
     /// <summary>The frame budgets (MicroGateServer.WithinBudget), used only by this connection's frame reader.</summary>
     internal Game.RateBucket? BudgetBeforeSignIn { get; set; }
     internal Game.RateBucket? Budget { get; set; }
+
+    /// <summary>
+    /// Refused frames in <see cref="RefusalWindowMs"/> that end the connection (inferred: the client's largest login burst
+    /// is far below the budget). A refused frame is still parsed and answered, so a sender that keeps going past its
+    /// budget would otherwise cost that for as long as it stays connected.
+    /// </summary>
+    internal const int MaxRefusedFrames = 1000;
+    internal const long RefusalWindowMs = 10_000;
+
+    private long _refusalWindowStart;
+    private int _refusedInWindow;
+
+    /// <summary>Counts one refused frame; true once this connection has had too many of them in the window.</summary>
+    internal bool RefusedTooOften(long nowMs)
+    {
+        if (nowMs - _refusalWindowStart >= RefusalWindowMs)
+        {
+            _refusalWindowStart = nowMs;
+            _refusedInWindow = 0;
+        }
+        return ++_refusedInWindow > MaxRefusedFrames;
+    }
 
     /// <summary>Only the first over-budget refusal and the first unknown rpc index of a connection are logged.</summary>
     internal bool OverBudgetLogged { get; set; }

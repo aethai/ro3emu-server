@@ -121,8 +121,11 @@ if [ "$service" = 1 ]; then
     # A shutdown planned on the web panel exits 0 and stays down; its restart exits 75 and comes back.
     echo 'RestartPreventExitStatus=0'
     # The server writes only below this folder (data, logs, its own updates); the rest of the system is read-only to it.
+    # The single-file build unpacks below it too, not into ~/.net, which ProtectHome makes read-only.
+    echo "Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=$root/.net"
     echo 'NoNewPrivileges=yes'
     echo 'ProtectSystem=strict'
+    echo 'ProtectHome=read-only'
     echo 'PrivateTmp=yes'
     echo "ReadWritePaths=$root"
     echo

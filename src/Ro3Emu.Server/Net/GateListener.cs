@@ -86,7 +86,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                     }
                     if (remote != null && _perAddress.GetValueOrDefault(remote) >= MaxPerAddress)
                     {
-                        Log.LogWarning("{Name}: {Remote} refused, it already holds {Count} connections", Name, remote, MaxPerAddress);
+                        if (_crowdedLog.Allow(out _)) Log.LogWarning("{Name}: {Remote} refused, it already holds {Count} connections", Name, remote, MaxPerAddress);
                         socket.Dispose();
                         continue;
                     }
@@ -149,7 +149,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         try
         {
             await using var channel = new PhonestChannel(socket, Log) { Metrics = Metrics?.Connect() };
-            Log.LogInformation("{Name}: {Remote} connected", Name, channel.Remote);
+            Log.LogDebug("{Name}: {Remote} connected", Name, channel.Remote);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var watch = WatchHandshakeAsync(channel, deadline);
             try
@@ -162,7 +162,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
             catch (Exception e) when (e is InvalidDataException or Google.Protobuf.InvalidProtocolBufferException)
             {
                 // Bytes that are not the client's framing (port scanners, a wrong key): one line without a stack.
-                LogNotAFrame(Log, Name, channel.Remote, e.Message);
+                if (_notAFrameLog.Allow(out long suppressed)) LogNotAFrame(Log, Name, channel.Remote, e.Message, suppressed);
             }
             catch (Exception e)
             {
@@ -177,7 +177,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                     OnCleanupFailed(channel, e);
                     Log.LogError(e, "{Name}: {Remote} disconnect cleanup failed", Name, channel.Remote);
                 }
-                Log.LogInformation("{Name}: {Remote} disconnected", Name, channel.Remote);
+                Log.LogDebug("{Name}: {Remote} disconnected", Name, channel.Remote);
                 deadline.Cancel();
                 await watch;
             }
@@ -186,8 +186,11 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
     }
 
     // The reasons are the framing's and protobuf's own short messages, not client text.
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{Name}: {Remote} sent data that is not a client frame ({Reason}); closing")]
-    private static partial void LogNotAFrame(ILogger logger, string name, string remote, string reason);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Name}: {Remote} sent data that is not a client frame ({Reason}); closing ({Suppressed} more since the last such line)")]
+    private static partial void LogNotAFrame(ILogger logger, string name, string remote, string reason, long suppressed);
+
+    // Anyone on the internet can trigger these once per connection: at most one line each per 10 s for this gate.
+    private readonly Micro.LogThrottle _notAFrameLog = new(), _handshakeLog = new(), _crowdedLog = new();
 
     /// <summary>Ends a connection that has not encrypted, or not signed in, in time (it would hold a slot forever).</summary>
     private async Task WatchHandshakeAsync(PhonestChannel channel, CancellationTokenSource deadline)
@@ -197,14 +200,14 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
             await Task.Delay(EncryptDeadline, deadline.Token);
             if (!channel.Encrypted)
             {
-                Log.LogWarning("{Name}: {Remote} did not open an encrypted session in time; closing", Name, channel.Remote);
+                if (_handshakeLog.Allow(out _)) Log.LogWarning("{Name}: {Remote} did not open an encrypted session in time; closing", Name, channel.Remote);
                 deadline.Cancel();
                 return;
             }
             if (SignInDeadline > EncryptDeadline) await Task.Delay(SignInDeadline - EncryptDeadline, deadline.Token);
             if (!IsSignedIn(channel))
             {
-                Log.LogWarning("{Name}: {Remote} did not sign in in time; closing", Name, channel.Remote);
+                if (_handshakeLog.Allow(out _)) Log.LogWarning("{Name}: {Remote} did not sign in in time; closing", Name, channel.Remote);
                 deadline.Cancel();
             }
         }

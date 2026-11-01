@@ -721,14 +721,17 @@ public sealed partial class DungeonService
         && !a.AutoReviveAt.ContainsKey(p.Role!.Id)
         && a.RevivesUsed.GetValueOrDefault(p.Role.Id) >= ReviveLimit(a));
 
-    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance.</summary>
+    /// <summary>The run revives this role without using a count: OnClickRevive [0], or its timed [2,n] request pending.</summary>
+    private static bool ReviveIsFree(Attempt a, long roleId) => ImmediateRevive(a) || a.AutoReviveAt.ContainsKey(roleId);
+
+    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance, as ReviveAsync reads it.</summary>
     public int ExternalReviveError(GameSession s)
     {
         if (!s.Dead) return ErrorCodes.TargetAlive;
         if (s.DungeonAttempt == null) return 0;
         var a = Active(s);
         return a == null || s.Role == null || a.Reviving.Contains(s)
-            || a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
+            || !ReviveIsFree(a, s.Role.Id) && a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
             ? ErrorCodes.FeatureUnavailable : 0;
     }
 
@@ -738,7 +741,8 @@ public sealed partial class DungeonService
         if (s.DungeonAttempt == null) return;
         var a = Active(s);
         if (a == null || s.Role == null) return;
-        a.RevivesUsed[s.Role.Id] = a.RevivesUsed.GetValueOrDefault(s.Role.Id) + 1;
+        if (!ReviveIsFree(a, s.Role.Id)) a.RevivesUsed[s.Role.Id] = a.RevivesUsed.GetValueOrDefault(s.Role.Id) + 1;
+        a.AutoReviveAt.Remove(s.Role.Id); // or the next death keeps this one's time (PlayerDiedAsync TryAdd)
     }
 
     public Task PublishExternalReviveAsync(GameSession s) => s.Role != null && Active(s) is { } a
@@ -858,15 +862,26 @@ public sealed partial class DungeonService
         if (_pending.TryGetValue(s, out var p)) await CancelAsync(p, ErrorCodes.MemberLeft, s.Role?.Id ?? 0);
         if (s.DungeonAttempt is not { } a) return;
         s.DungeonAttempt = null; s.Attack = null;
-        if (a.Dracula is { } dracula) await dracula.Owner.LeftAsync(a, s);
-        await ClearBondsAsync(s, a);
-        await _instances.AbandonAsync(s);
+        try
+        {
+            if (a.Dracula is { } dracula) await dracula.Owner.LeftAsync(a, s);
+            await ClearBondsAsync(s, a);
+            await _instances.AbandonAsync(s);
+        }
+        // A full queue wrote nothing: the attempt stays for the handover's retry, which would otherwise find nothing to do.
+        catch (Exception e) when (Accounts.Persistence.QueueFullPatience.Refused(e))
+        {
+            s.DungeonAttempt = a;
+            throw;
+        }
         var remaining = Present(a);
         if (remaining.Length == 0) { a.Settled = true; return; }
         await RefreshBondsAsync(a);
         await SendRosterAsync(a);
         if (ReadyToStart(a)) await StartAsync(a);
-        else if (!a.Settled && Defeated(a)) await SettleAsync(a, false);
+        // A retry of this leave would not come back here, so a refused settlement for the others waits for room now; it
+        // reserves nothing before its freeze commits, so it can run again.
+        else if (!a.Settled && Defeated(a)) await Accounts.Persistence.QueueFullPatience.RunAsync(() => SettleAsync(a, false));
     }
 
     // A scripted scene logs each walk/interaction step as it completes; its last fight step ends here, at the clear.

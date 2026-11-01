@@ -143,8 +143,8 @@ public sealed class QuestEngineTests : IAsyncLifetime
             var request = new ClientNpcInteractReq { DialogID = 1010104001, Areapointid = 1010104001 };
             await bot.SendGameAsync(SceneService.ClientNpcInteract, request);
             var reward = await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser);
-            Assert.Equal(100, Assert.Single(reward.Rewards).ItemEntry);
-            Assert.Equal(7, reward.Rewards[0].Stack);
+            // 7 Base EXP brings its share of Job EXP, rounded down (CharacterService.JobExpFromBase).
+            Assert.Equal([(100, 7), (101, 1)], reward.Rewards.Select(r => (r.ItemEntry, r.Stack)));
             await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
                 m => m.CompleteTaskNum.TryGetValue(10101040, out var n) && n.All == 1);
             await bot.SendGameAsync(SceneService.ClientNpcInteract, request);

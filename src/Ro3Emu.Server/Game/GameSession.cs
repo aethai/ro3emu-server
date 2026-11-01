@@ -31,11 +31,12 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>While the web panel's GM console runs a command for this session (loop-owned), the GM replies sent to it.</summary>
     internal List<string>? GmReplies { get; set; }
 
-    /// <summary>Closes the connection for a recovery relogin; unlike a network drop it never waits for a reconnect.</summary>
+    /// <summary>Closes the connection for a recovery relogin, after the replies already queued; unlike a network drop it
+    /// never waits for a reconnect.</summary>
     internal void AbortForRecovery()
     {
         ReconnectBlocked = true;
-        Channel.Abort();
+        Channel.AbortAfterFlush();
     }
 
     public long HandshakeToken { get; set; }
