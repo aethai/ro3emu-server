@@ -96,7 +96,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task PlainHttpRepository_IsRefusedUnlessItIsThisMachine()
+    public async Task APlainHttpRepositoryIsRefusedUnlessItIsThisMachine()
     {
         WriteBuild("Game.exe", Random(5000, 90));
         await Publish("1.0.0");
