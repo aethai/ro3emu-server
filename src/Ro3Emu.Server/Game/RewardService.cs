@@ -323,7 +323,7 @@ public sealed class RewardService
             for (int r = 0; r < rolls; r++)
             {
                 if (_random.NextDouble() * 1_000_000 >= chance) continue;
-                for (int i = 0; i < picks; i++) PickFromGroup(group, progress, drops, bound, monsterLevel, questActive);
+                PickFromGroup(group, progress, drops, bound, monsterLevel, questActive, picks);
             }
         }
     }
@@ -405,12 +405,12 @@ public sealed class RewardService
         => PickFromGroup(group, player.Progress!, drops, bound);
 
     /// <summary>
-    /// One weighted pick. A row with _iQuestLimit is a quest drop (DropGroupConfig 144: Card: Poring, _iQuestLimit 10102100,
+    /// Up to <paramref name="picks"/> different rows by weight (DropPicks). A row with _iQuestLimit is a quest drop (DropGroupConfig 144: Card: Poring, _iQuestLimit 10102100,
     /// the quest the dropping Egg Thief wave plays): it is a candidate only when <paramref name="questActive"/> says the
     /// quest is accepted and not yet delivered (inferred); without one (awards, AFK stages) it never is.
     /// </summary>
     internal void PickFromGroup(long group, RoleProgress progress, List<(int, int)> drops, List<(int Entry, int Count, int Bind)>? bound = null,
-        int monsterLevel = DropAttenuation.NoMonster, Func<long, bool>? questActive = null)
+        int monsterLevel = DropAttenuation.NoMonster, Func<long, bool>? questActive = null, int picks = 1)
     {
         if (_data.Row("DropGroupConfig", group) is not { ValueKind: JsonValueKind.Array } rows) return;
         var p = progress;
@@ -423,20 +423,14 @@ public sealed class RewardService
             return !r.TryGetProperty("_iJobLimit", out var jobs) || jobs.ValueKind != JsonValueKind.Array || jobs.GetArrayLength() == 0
                    || jobs.EnumerateArray().Any(j => GameData.Number(j) == p.Career);
         }).ToList();
-        long total = candidates.Sum(r => GameData.Int(r, "_iWeights"));
-        if (total <= 0) return;
-        long roll = (long)(_random.NextDouble() * total);
-        foreach (var r in candidates)
+        foreach (var r in DropPicks.Distinct(candidates, picks, _random.NextInt64))
         {
-            roll -= GameData.Int(r, "_iWeights");
-            if (roll >= 0) continue;
             int count = _random.Next((int)GameData.Int(r, "_iMinNumber"), (int)Math.Max(GameData.Int(r, "_iMinNumber"), GameData.Int(r, "_iMaxNumber")) + 1);
             int entry = (int)GameData.Int(r, "_kDropItem");
             int amount = _attenuation.Apply(r, Math.Max(1, count), p.Level, monsterLevel, _random);
-            if (amount <= 0) return;
+            if (amount <= 0) continue;
             drops.Add((entry, amount));
             bound?.Add((entry, amount, (int)GameData.Int(r, "_iBind")));
-            return;
         }
     }
 

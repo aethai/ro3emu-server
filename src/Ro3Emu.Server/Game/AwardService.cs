@@ -123,23 +123,16 @@ public sealed class AwardService(GameData data)
             for (int r = 0; r < rolls; r++)
             {
                 if (Random.Shared.NextInt64(1_000_000) >= chance) continue;
-                for (int p = 0; p < picks; p++)
+                foreach (var candidate in DropPicks.Distinct(candidates, picks, Random.Shared.NextInt64))
                 {
-                    long choice = Random.Shared.NextInt64(weight);
-                    foreach (var candidate in candidates)
-                    {
-                        choice -= GameData.Int(candidate, "_iWeights");
-                        if (choice >= 0) continue;
-                        int min = checked((int)GameData.Int(candidate, "_iMinNumber"));
-                        int max = checked((int)GameData.Int(candidate, "_iMaxNumber"));
-                        if (min < 1 || max < min) throw Fail($"DropGroupConfig {groupId} has invalid quantity range");
-                        int count = checked((int)Random.Shared.NextInt64(min, (long)max + 1));
-                        int entry = checked((int)GameData.Int(candidate, "_kDropItem"));
-                        int bind = PoolBindType(candidate, groupId);
-                        ValidateGrant(entry, count, bind, 0);
-                        grants.Add(new AwardGrant(entry, count, bind));
-                        break;
-                    }
+                    int min = checked((int)GameData.Int(candidate, "_iMinNumber"));
+                    int max = checked((int)GameData.Int(candidate, "_iMaxNumber"));
+                    if (min < 1 || max < min) throw Fail($"DropGroupConfig {groupId} has invalid quantity range");
+                    int count = checked((int)Random.Shared.NextInt64(min, (long)max + 1));
+                    int entry = checked((int)GameData.Int(candidate, "_kDropItem"));
+                    int bind = PoolBindType(candidate, groupId);
+                    ValidateGrant(entry, count, bind, 0);
+                    grants.Add(new AwardGrant(entry, count, bind));
                 }
             }
         }
