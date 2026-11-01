@@ -272,11 +272,11 @@ public sealed partial class GuildTests
                 x => x.Resource?.Money == 9750)).Resource.Money);
             Assert.Equal(0, (await Next(buyer, GuildService.MarketBuy, BuyBlackMarketItemRsp.Parser)).Result);
             Assert.Equal(1, buyer.Inbox.Snapshot().Skip(buyerStart).Count(x => x.IsGame(GuildService.MarketBuy)));
-            Assert.Equal(new long[] { 10, 20 }, buyer.Inbox.Snapshot().Skip(buyerStart)
+            Assert.Equal([10, 20], buyer.Inbox.Snapshot().Skip(buyerStart)
                 .Where(x => x.IsGame(GuildService.BaseChange))
                 .Select(x => GuildBaseInfoChangeNtf.Parser.ParseFrom(x.Body))
                 .Where(x => x.Resource != null).Select(x => x.Resource.Materials).ToArray());
-            Assert.Equal(new long[] { 4875, 9750 }, seller.Inbox.Snapshot().Skip(sellerStart)
+            Assert.Equal([4875, 9750], seller.Inbox.Snapshot().Skip(sellerStart)
                 .Where(x => x.IsGame(GuildService.BaseChange))
                 .Select(x => GuildBaseInfoChangeNtf.Parser.ParseFrom(x.Body))
                 .Where(x => x.Resource != null).Select(x => x.Resource.Money).ToArray());

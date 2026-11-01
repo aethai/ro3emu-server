@@ -52,7 +52,7 @@ public sealed class CombatTableRulesTests
         // FunctionConfig 1001 SkillSchool opens at condition 2000103 = job rank >= 5; every _iJob is a rank-5 job.
         Assert.Equal(2000103, GameData.Int(Data.Row("FunctionConfig", 1001)!.Value, "_kOpenCondition"));
         var sub = Data.Row("LC_ConditionList", 2000103)!.Value.GetProperty("m_kSubConditionList")[0].GetProperty("m_kData");
-        Assert.Equal([1019d, 5d], sub.EnumerateArray().Select(v => v.GetDouble()).ToArray());
+        Assert.Equal([1019d, 5d], [.. sub.EnumerateArray().Select(v => v.GetDouble())]);
         foreach (var row in Data.Table("JobResonanceActiveConfig").Values)
             Assert.Equal(5, GameData.Int(Data.Row("JobConfig", GameData.Int(row, "_iJob"))!.Value, "_iJobRank"));
     }

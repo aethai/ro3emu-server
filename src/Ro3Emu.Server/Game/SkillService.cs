@@ -105,12 +105,12 @@ public sealed partial class SkillService
 
     private IReadOnlyDictionary<int, int> Replacements(int career) => _replacements.GetOrAdd(career, c => _data.Row("JobConfig", c) is { } row
         ? GameData.Pairs(row, "_kSkillReplace").ToDictionary(p => (int)p.Id, p => (int)p.Value)
-        : new Dictionary<int, int>());
+        : []);
 
     /// <summary>Learnable skill groups of a career chain (SkillTreeConfig rows _iX1.._iX7) with the career that teaches them.</summary>
     internal IReadOnlyList<(int Group, int Career)> Tree(int career) => _trees.GetOrAdd(career, BuildTree);
 
-    internal bool InTree(int career, int group) => _treeGroups.GetOrAdd(career, c => Tree(c).Select(t => t.Group).ToHashSet()).Contains(group);
+    internal bool InTree(int career, int group) => _treeGroups.GetOrAdd(career, c => [.. Tree(c).Select(t => t.Group)]).Contains(group);
 
     private List<(int Group, int Career)> BuildTree(int career)
     {
@@ -121,7 +121,7 @@ public sealed partial class SkillService
                 for (int x = 1; x <= 7; x++)
                     if (GameData.Int(row, $"_iX{x}") is var g and > 0)
                         list.Add((replacements.GetValueOrDefault((int)g, (int)g), c));
-        return list.DistinctBy(t => t.Group).ToList();
+        return [.. list.DistinctBy(t => t.Group)];
     }
 
     private int Initial(RoleProgress p, int group)
@@ -707,7 +707,7 @@ public sealed partial class SkillService
     }
 
     /// <summary>Skills were learned (quests: 104012 CheckCostJobPoint).</summary>
-    public List<Func<GameSession, Task>> Learned { get; } = new();
+    public List<Func<GameSession, Task>> Learned { get; } = [];
 
     /// <summary>
     /// GM panel 110 GmCurAllSkillLevUpMax (GMConfig 3007: 1 learns every skill of the current job and stage at its

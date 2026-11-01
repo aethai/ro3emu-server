@@ -27,16 +27,16 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     private const float InteractSlack = 8f;
 
     /// <summary>Dungeon owners clean up on every exit and start combat only after the loaded-scene handshake.</summary>
-    public List<Func<GameSession, Task>> Leaving { get; } = new();
+    public List<Func<GameSession, Task>> Leaving { get; } = [];
     /// <summary>Reconcile destination-dependent appearance before ENTITYSELF and the first AOI snapshot.</summary>
-    public List<Func<GameSession, Task>> BeforeSelf { get; } = new();
-    public List<Func<GameSession, Task>> Loaded { get; } = new();
+    public List<Func<GameSession, Task>> BeforeSelf { get; } = [];
+    public List<Func<GameSession, Task>> Loaded { get; } = [];
     /// <summary>Replays require the entity bases installed by JoinAsync.</summary>
-    public List<Func<GameSession, Task>> AfterLoaded { get; } = new();
-    private readonly HashSet<Func<GameSession, Task>> _ownedAfterLoaded = new();
+    public List<Func<GameSession, Task>> AfterLoaded { get; } = [];
+    private readonly HashSet<Func<GameSession, Task>> _ownedAfterLoaded = [];
     /// <summary>Shared keys a loaded hook writes for this session (a hook that writes beyond the role declares them
     /// here when it registers).</summary>
-    public List<Func<GameSession, Ownership.ReservationKey[]>> LoadedKeys { get; } = new();
+    public List<Func<GameSession, Ownership.ReservationKey[]>> LoadedKeys { get; } = [];
 
     /// <summary>C/D 15: the loaded hooks and unowned after-loaded hooks reserve the role's own keys plus what the hooks
     /// declare, not Realm. SceneHookScopeAuditTests guards that nothing else is needed.</summary>
@@ -65,7 +65,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         Func<GameSession, bool>? Valid = null);
     public Func<GameSession, long, MapPoint?, int, TransferStart?, Task<bool>>? QueuePublicAdmission { get; set; }
     public Func<GameSession, long, int>? PreferredLine { get; set; }
-    public List<Action<RuntimeMapKey>> PublicLineOpened { get; } = new();
+    public List<Action<RuntimeMapKey>> PublicLineOpened { get; } = [];
 
     /// <summary>
     /// Sends the player to <paramref name="scene"/> at <paramref name="at"/> (default: the map's born point). Walks are
@@ -320,7 +320,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
 
     /// <summary>Presentation-only replays after a silent reconnect (map-scoped views a service pushes in
     /// <see cref="Loaded"/>). Unlike Loaded/AfterLoaded they must not persist anything.</summary>
-    public List<Func<GameSession, Task>> Resync { get; } = new();
+    public List<Func<GameSession, Task>> Resync { get; } = [];
 
     /// <summary>
     /// The scene part of the silent-reconnect resync, after 1011: the own actor, its buffs,

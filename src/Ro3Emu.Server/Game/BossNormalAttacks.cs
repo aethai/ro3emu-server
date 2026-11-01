@@ -147,7 +147,7 @@ public sealed class BossNormalAttacks(GameData data)
             foreach (var (key, row) in data.Table("SkillConfig"))
                 if (Logic(row) is { Length: > 0 } logic && long.TryParse(key, out long id))
                 {
-                    if (!byLogic.TryGetValue(logic.ToLowerInvariant(), out var ids)) byLogic[logic.ToLowerInvariant()] = ids = new();
+                    if (!byLogic.TryGetValue(logic.ToLowerInvariant(), out var ids)) byLogic[logic.ToLowerInvariant()] = ids = [];
                     ids.Add(id);
                 }
             foreach (var ids in byLogic.Values) ids.Sort();

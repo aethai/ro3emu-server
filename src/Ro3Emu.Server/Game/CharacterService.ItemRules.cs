@@ -63,7 +63,7 @@ public sealed partial class CharacterService
 
     private static long[] Numbers(JsonElement row, string field) =>
         row.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array
-            ? list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray() : [];
+            ? [.. list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))] : [];
 
     private static (int Period, int Limit) UseTimesRule(JsonElement row) =>
         Numbers(row, "_kUseTimes") is [var period and (1 or 2 or 3), var limit, ..] ? ((int)period, (int)limit) : (0, 0);

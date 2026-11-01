@@ -151,7 +151,7 @@ public sealed class SocialExtraTests : IAsyncLifetime
         Assert.True(((object?[])partyData["MemberList"]!).Length <= 5);
         int emmaCode = (await Next(emma, TeamService.TeamEnter, EnterTeamResp.Parser)).Result;
         int finnCode = (await Next(finn, TeamService.TeamEnter, EnterTeamResp.Parser)).Result;
-        Assert.Equal(new[] { 0, ErrorCodes.PartyFull }, new[] { emmaCode, finnCode }.OrderBy(x => x).ToArray());
+        Assert.Equal([0, ErrorCodes.PartyFull], [.. new[] { emmaCode, finnCode }.OrderBy(x => x)]);
         var teams = _app.Services.GetRequiredService<TeamService>();
         var loop = _app.Services.GetRequiredService<GameLoop>();
         Assert.Equal(5, await loop.InvokeAsync(() => Task.FromResult(teams.MembersOf(leader).Count)));

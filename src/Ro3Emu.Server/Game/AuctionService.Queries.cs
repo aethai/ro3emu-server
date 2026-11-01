@@ -98,13 +98,13 @@ public sealed partial class AuctionService
             {
                 AuctionStore.Item[] rows;
                 using (var scope = await EnterSessionAuctionAsync(s, "auction/resume-auto", role =>
-                    store.OpenItems().Where(r => r.Owner == role && r.Auto && r.AutoPaused
+                    [.. store.OpenItems().Where(r => r.Owner == role && r.Auto && r.AutoPaused
                         && r.State == AuctionState.Bidding && r.End > Now)
                         .SelectMany(r => RowKeys(r)).Concat(RowKeys(null, [role],
-                            store.Prebuys().Where(p => p.Role == role && p.Paused))).Distinct().ToArray()))
+                            store.Prebuys().Where(p => p.Role == role && p.Paused))).Distinct()]))
                 {
-                    rows = store.OpenItems().Where(r => r.Owner == s.Role!.Id && r.Auto && r.AutoPaused
-                        && r.State == AuctionState.Bidding && r.End > Now).ToArray();
+                    rows = [.. store.OpenItems().Where(r => r.Owner == s.Role!.Id && r.Auto && r.AutoPaused
+                        && r.State == AuctionState.Bidding && r.End > Now)];
                     var orders = store.Prebuys().Where(p => p.Role == s.Role!.Id && p.Paused).ToArray();
                     if (rows.Length != 0 || orders.Length != 0)
                     {

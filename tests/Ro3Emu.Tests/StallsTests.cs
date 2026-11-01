@@ -104,12 +104,12 @@ public sealed partial class StallsTests : IAsyncLifetime
     private static async Task<(string Id, int Template, bool Claimed, MailItemList Items)[]> Mail(BotClient bot, long role)
     {
         var reply = await bot.MicroAsync("MailService", "getUserMailList", new() { ["Uid"] = role.ToString(), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
-        return Assert.IsType<object?[]>(reply["MailList"]).Select(raw =>
+        return [.. Assert.IsType<object?[]>(reply["MailList"]).Select(raw =>
         {
             var r = Assert.IsType<Dictionary<object, object?>>(raw); var p = Assert.IsType<Dictionary<object, object?>>(r["Params"]);
             return ((string)r["MailId"]!, Convert.ToInt32(p["cfg_id"]), (bool)p["giftReceived"]!,
                 p.TryGetValue("items", out var bytes) ? MailItemList.Parser.ParseFrom((byte[])bytes!) : new MailItemList());
-        }).ToArray();
+        })];
     }
 
     private async Task Claim(BotClient bot, params int[] templates)

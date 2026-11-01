@@ -233,7 +233,7 @@ public sealed partial class GuildLeagueTests : IAsyncLifetime
         Assert.Equal(new[] { astra, borea }.Order(), registered.RankGuildInfo.Select(g => g.GuildID).Order());
         var schedule = await GroupInfo(alice);
         Assert.Equal(4, schedule.Info.Count);
-        Assert.Equal(new[] { 0, 1, 0, 1 }, schedule.Info.Select(p => p.BlueGuild.Matcharea));
+        Assert.Equal([0, 1, 0, 1], schedule.Info.Select(p => p.BlueGuild.Matcharea));
         Assert.Equal(2, schedule.Info.Count(p => p.BlueGuild.GuildID > 0 && p.RedGuild.GuildID == 0)); // byes
 
         // Not their round: the preliminaries and semifinals are byes for both.
@@ -252,7 +252,7 @@ public sealed partial class GuildLeagueTests : IAsyncLifetime
         var open = await MgrData(alice);
         Assert.Equal((GuildLeagueStatus.FightThree, true), (open.ActivityInfo.EStatus, open.ActivityInfo.Open));
         var cup = await Read(() => League.State.Cup!);
-        var pairs = GuildLeagueBracket.Pairs(cup.Groups[0].Pairs.Select(p => new GuildLeagueBracket.Pair(p[0], p[1])).ToArray(),
+        var pairs = GuildLeagueBracket.Pairs([.. cup.Groups[0].Pairs.Select(p => new GuildLeagueBracket.Pair(p[0], p[1]))],
             new Dictionary<long, int> { [astra] = 6, [borea] = 6 }, 3);
         long blue = pairs[0].Blue;
         Assert.Equal(new[] { astra, borea }.Order(), new[] { pairs[0].Blue, pairs[0].Red }.Order());

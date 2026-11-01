@@ -20,7 +20,7 @@ public sealed class ManifestFile
     [JsonPropertyName("path")] public string Path { get; set; } = "";
     [JsonPropertyName("size")] public long Size { get; set; }
     [JsonPropertyName("sha256")] public string Sha256 { get; set; } = "";
-    [JsonPropertyName("chunks")] public List<ChunkRef> Chunks { get; set; } = new();
+    [JsonPropertyName("chunks")] public List<ChunkRef> Chunks { get; set; } = [];
 }
 
 public sealed class LaunchInfo
@@ -48,7 +48,7 @@ public sealed class Manifest
     [JsonPropertyName("created")] public DateTimeOffset Created { get; set; }
     [JsonPropertyName("launch")] public LaunchInfo Launch { get; set; } = new();
     [JsonPropertyName("chunking")] public ChunkingInfo Chunking { get; set; } = ChunkingInfo.From(ChunkingParameters.Default);
-    [JsonPropertyName("files")] public List<ManifestFile> Files { get; set; } = new();
+    [JsonPropertyName("files")] public List<ManifestFile> Files { get; set; } = [];
 
     public byte[] ToCompressedBytes()
     {

@@ -115,9 +115,9 @@ public sealed class ItemBoxTests : IAsyncLifetime
         Assert.Equal(0, used.Result);
         Assert.Equal((1300008, 1, 0), (used.ItemId, used.ItemCount, used.ItemTimes));
         var shown = await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser, m => !m.RewardType.Contains(1));
-        Assert.Equal(new[] { 2 }, shown.RewardType.ToArray());
-        Assert.Equal(new[] { (1, 500), (1200500, 100), (1430400, 1) },
-            shown.Rewards.Select(r => (r.ItemEntry, r.Stack)).Order().ToArray());
+        Assert.Equal([2], [.. shown.RewardType]);
+        Assert.Equal([(1, 500), (1200500, 100), (1430400, 1)],
+            [.. shown.Rewards.Select(r => (r.ItemEntry, r.Stack)).Order()]);
         Assert.Equal(2, Count(bot, 1300008));
         Assert.Equal(1, Count(bot, 1430400));
         Assert.Equal(100, Count(bot, 1200500));
@@ -169,7 +169,7 @@ public sealed class ItemBoxTests : IAsyncLifetime
         Assert.Equal(1, Count(bot, 2030120));
         Assert.Equal(0, Count(bot, 2020120));
         var shown = await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser, m => !m.RewardType.Contains(1));
-        Assert.Equal(new[] { 2 }, shown.RewardType.ToArray());
+        Assert.Equal([2], [.. shown.RewardType]);
         Assert.Equal(3, shown.Rewards.Count); // each weapon instance with its own roll
     }
 
@@ -184,7 +184,7 @@ public sealed class ItemBoxTests : IAsyncLifetime
         long potions = Count(bot, 1000000);
         Assert.Equal(0, (await Use(bot, 1300018, 1, new ItemUseParamInfo { IsFirstHeartBox = true })).Result);
         var shown = await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser, m => !m.RewardType.Contains(1));
-        Assert.Equal(new[] { 5 }, shown.RewardType.ToArray());
+        Assert.Equal([5], [.. shown.RewardType]);
         Assert.Equal(0, Count(bot, 1300018));
         Assert.Equal(1, Count(bot, 1300019)); // the next chest
         Assert.Equal(potions + 5, Count(bot, 1000000));

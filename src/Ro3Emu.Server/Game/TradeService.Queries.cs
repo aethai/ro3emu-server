@@ -23,8 +23,8 @@ public sealed partial class TradeService
             page.DataList.Clear();
             var rows = FilterRows(Active(tx), req.ItemId, req.ItemSpecialType, req.IsPublicity,
                 req.UserRoleId, req.ShareSkuId, req.WhereFiled).ToList();
-            if (page.SortFiled["item_price"] == "Desc") rows = rows.OrderByDescending(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs).ToList();
-            else rows = rows.OrderBy(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs).ToList();
+            if (page.SortFiled["item_price"] == "Desc") rows = [.. rows.OrderByDescending(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs)];
+            else rows = [.. rows.OrderBy(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs)];
             page.TotalCount = rows.Count;
             page.DataList.AddRange(rows.Skip((page.PageNo - 1) * page.PageSize).Take(page.PageSize).Select(Commodity));
             return 0;
@@ -201,7 +201,7 @@ public sealed partial class TradeService
             page.DataList.Clear();
             var rows = FilterRows(Active(tx), req.ItemId, ETradeItemSpecialType.None,
                 req.IsPublicity, req.UserRoleId, filters: req.WhereFiled).ToList();
-            rows = page.SortFiled["item_price"] == "Desc" ? rows.OrderByDescending(l => l.UnitPrice).ToList() : rows.OrderBy(l => l.UnitPrice).ToList();
+            rows = page.SortFiled["item_price"] == "Desc" ? [.. rows.OrderByDescending(l => l.UnitPrice)] : [.. rows.OrderBy(l => l.UnitPrice)];
             page.TotalCount = rows.Count;
             page.DataList.AddRange(rows.Skip((page.PageNo - 1) * page.PageSize).Take(page.PageSize).Select(Commodity));
             return 0;
@@ -225,7 +225,7 @@ public sealed partial class TradeService
                 };
                 page.SortFiled["item_price"] = q.SortFiled.GetValueOrDefault("item_price", "Asc");
                 var rows = FilterRows(all, q.ItemId, q.ItemSpecialType, q.IsPublicity, q.UserRoleId, q.ShareSkuId, q.WhereFiled).ToList();
-                rows = page.SortFiled["item_price"] == "Desc" ? rows.OrderByDescending(l => l.UnitPrice).ToList() : rows.OrderBy(l => l.UnitPrice).ToList();
+                rows = page.SortFiled["item_price"] == "Desc" ? [.. rows.OrderByDescending(l => l.UnitPrice)] : [.. rows.OrderBy(l => l.UnitPrice)];
                 page.TotalCount = rows.Count;
                 page.DataList.AddRange(rows.Skip((page.PageNo - 1) * page.PageSize).Take(page.PageSize).Select(Commodity));
                 result.Items.Add(page);

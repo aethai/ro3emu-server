@@ -23,10 +23,10 @@ public sealed record BotEvent(BotEventKind Kind)
 /// <summary>Everything received, in order; waiters consume the first unconsumed matching event.</summary>
 public sealed class BotInbox
 {
-    private readonly List<BotEvent> _events = new();
+    private readonly List<BotEvent> _events = [];
     private readonly HashSet<BotEvent> _consumed = new(ReferenceEqualityComparer.Instance);
     private readonly SemaphoreSlim _signal = new(0);
-    private readonly List<BotExpectation> _expectations = new();
+    private readonly List<BotExpectation> _expectations = [];
     private int _capacity = int.MaxValue;
     private Action<BotEvent>? _observer;
     private long _dropped;
@@ -37,7 +37,7 @@ public sealed class BotInbox
     /// <summary>Opt-in bounded typed awaiters for sustained load; unsolicited bodies go only to the observer.</summary>
     public void ConfigureBounded(int capacity, Action<BotEvent> observer)
     {
-        if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
+        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
         lock (_events) { _capacity = Math.Min(capacity, 32); _observer = observer; }
     }
 
@@ -109,7 +109,7 @@ public sealed class BotInbox
 
     public IReadOnlyList<BotEvent> Snapshot()
     {
-        lock (_events) return _events.ToList();
+        lock (_events) return [.. _events];
     }
 
     public async Task<BotEvent> WaitAsync(Func<BotEvent, bool> match, TimeSpan timeout)

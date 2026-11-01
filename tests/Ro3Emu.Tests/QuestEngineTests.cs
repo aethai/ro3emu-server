@@ -450,13 +450,13 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await bot.SendGameAsync(CharacterService.EquipSwitchPlan, new EquipSwitchPlanReq { TargetIndex = 1 });
         Assert.Equal(0, (await Next(bot, CharacterService.EquipSwitchPlan, EquipSwitchPlanResp.Parser)).Result);
         await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
-            m => m.Infos.GetValueOrDefault(1700101)?.Inc?.CompleteNum?.All?.Value.SequenceEqual(new long[] { 0 }) == true);
+            m => m.Infos.GetValueOrDefault(1700101)?.Inc?.CompleteNum?.All?.Value.SequenceEqual([0]) == true);
         Assert.Equal(0, (await State(1700101)).CompleteNum[0]);
 
         await bot.SendGameAsync(CharacterService.EquipSwitchPlan, new EquipSwitchPlanReq { TargetIndex = 0 });
         Assert.Equal(0, (await Next(bot, CharacterService.EquipSwitchPlan, EquipSwitchPlanResp.Parser)).Result);
         await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
-            m => m.Infos.GetValueOrDefault(1700101)?.Inc?.CompleteNum?.All?.Value.SequenceEqual(new long[] { 1 }) == true);
+            m => m.Infos.GetValueOrDefault(1700101)?.Inc?.CompleteNum?.All?.Value.SequenceEqual([1]) == true);
         Assert.Equal(1, (await State(1700101)).CompleteNum[0]);
         Assert.Equal(TaskState.Running, (await State(1700101)).Status);
     }

@@ -64,7 +64,7 @@ public sealed class ItemActionTests : IAsyncLifetime
     private async Task<BotClient> Relogin(BotClient bot, string name)
     {
         await bot.DisposeAsync();
-        await WaitUntil(() => !Sessions.All().Any(s => s.Account == name.ToLowerInvariant() && s.Role != null), name + " still online");
+        await WaitUntil(() => !Sessions.All().Any(s => string.Equals(s.Account, name, StringComparison.OrdinalIgnoreCase) && s.Role != null), name + " still online");
         return await InWorld(name, create: false);
     }
 

@@ -253,7 +253,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Called after a job change (quests: CheckJobChange / CheckJobRank targets).</summary>
-    public List<Func<GameSession, Task>> JobChanged { get; } = new();
+    public List<Func<GameSession, Task>> JobChanged { get; } = [];
 
     private int TransformJobError(GameSession session, int jobId)
     {

@@ -116,7 +116,7 @@ public sealed partial class CharacterService
             var item = old.Clone();
             if (item.Attrs == null || !item.Attrs.ContainsKey(AttrAppraise))
             {
-                item.Attrs ??= RollAttrs(item.Entry) ?? new();
+                item.Attrs ??= RollAttrs(item.Entry) ?? [];
                 item.Attrs[AttrAppraise] = 1;
             }
             if (EquipmentAffixes.NeedsLegacyEntries(item, data)) EquipmentAffixes.Appraise(item, data);
@@ -137,7 +137,7 @@ public sealed partial class CharacterService
             role: session.Role!.Id, items: [item]))).ToArray();
         var receipts = roles.Commit(builder, "character/equipment-migration");
         for (int i = 0; i < additions.Count; i++) additions[i].Guid = ((long[])receipts[inserted[i]]!)[0];
-        session.Items = session.Items.Select(i => replacements.GetValueOrDefault(i.Guid, i)).Concat(additions).ToList();
+        session.Items = [.. session.Items.Select(i => replacements.GetValueOrDefault(i.Guid, i)), .. additions];
     }
 
     /// <summary>Full syncs of the role datasets, after role select (5066 must precede 5009: currency merges into it).</summary>

@@ -19,9 +19,9 @@ public sealed class InstanceService
     private readonly MonsterService _monsters;
     private readonly CombatService _combat;
     private readonly GameLoop _loop;
-    private readonly Dictionary<long, Room> _rooms = new();
+    private readonly Dictionary<long, Room> _rooms = [];
     private readonly object _gate = new();
-    private readonly ConditionalWeakTable<GameSession, ReturnRecovery> _pendingReturns = new();
+    private readonly ConditionalWeakTable<GameSession, ReturnRecovery> _pendingReturns = [];
 
     public InstanceService(RoleStore roles, SceneService scene, World world, MonsterService monsters, CombatService combat, GameLoop loop)
     {
@@ -124,9 +124,9 @@ public sealed class InstanceService
         internal readonly object Gate = new();
         internal readonly HashSet<GameSession> Remaining;
         internal readonly List<Member> Participants;
-        internal readonly List<MonsterUnit> Actors = new();
+        internal readonly List<MonsterUnit> Actors = [];
         /// <summary>Non-combat scene units (scripted scene actors), removed with the monsters.</summary>
-        internal readonly List<WorldUnit> Props = new();
+        internal readonly List<WorldUnit> Props = [];
         internal readonly SemaphoreSlim Cleanup = new(1, 1);
         internal TaskCompletionSource PendingDone = Completed();
         internal bool FinalCleanupScheduled;
@@ -138,17 +138,17 @@ public sealed class InstanceService
         {
             Id = id;
             SceneEntry = sceneEntry;
-            Participants = members.ToList();
-            Remaining = new HashSet<GameSession>(members.Select(m => m.Session));
+            Participants = [.. members];
+            Remaining = [.. members.Select(m => m.Session)];
         }
 
         public long Id { get; }
         public long SceneEntry { get; }
         /// <summary>Participants and their latest entry's world return point; one member per session.</summary>
-        public IReadOnlyList<Member> Members { get { lock (Gate) return Participants.ToArray(); } }
+        public IReadOnlyList<Member> Members { get { lock (Gate) return [.. Participants]; } }
         public bool Closed { get { lock (Gate) return _closed; } }
-        public IReadOnlyList<MonsterUnit> Monsters { get { lock (Gate) return Actors.ToArray(); } }
-        public IReadOnlyList<Member> ActiveMembers { get { lock (Gate) return Members.Where(m => Remaining.Contains(m.Session)).ToArray(); } }
+        public IReadOnlyList<MonsterUnit> Monsters { get { lock (Gate) return [.. Actors]; } }
+        public IReadOnlyList<Member> ActiveMembers { get { lock (Gate) return [.. Members.Where(m => Remaining.Contains(m.Session))]; } }
 
         private bool _closed;
         internal bool IsClosed { get => _closed; set => _closed = value; }
@@ -235,14 +235,14 @@ public sealed class InstanceService
         }
 
         // One durable barrier covers every member before allocating or publishing a private room.
-        _roles.SaveReturnPositions(members.Where(member => member.Session.InstanceId == 0).Select(member =>
+        _roles.SaveReturnPositions([.. members.Where(member => member.Session.InstanceId == 0).Select(member =>
             new RoleReturnPosition(member.Role.Id, member.ReturnScene, member.ReturnPoint.X,
-                member.ReturnPoint.Y, member.ReturnPoint.Z, member.ReturnPoint.Face)).ToArray());
+                member.ReturnPoint.Y, member.ReturnPoint.Z, member.ReturnPoint.Face))]);
 
         Room room;
         lock (_gate)
         {
-            room = new Room(_roles.AllocateInstanceId(), sceneEntry, members.ToArray());
+            room = new Room(_roles.AllocateInstanceId(), sceneEntry, [.. members]);
             _rooms.Add(room.Id, room);
         }
         return room;
@@ -532,7 +532,7 @@ public sealed class InstanceService
                 actors = [.. room.Actors.Where(m => !keepBodies || !m.Dead)];
                 foreach (var gone in actors) room.Actors.Remove(gone);
                 if (!keepBodies) room.Actors.Clear();
-                props = room.Props.ToArray();
+                props = [.. room.Props];
                 room.Props.Clear();
             }
             foreach (var prop in props)

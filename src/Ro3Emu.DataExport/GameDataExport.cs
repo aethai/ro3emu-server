@@ -280,7 +280,7 @@ public static class GameDataExport
         var files = Folders.ToDictionary(folder => folder, folder => CountFiles(Path.Combine(staged, folder)));
         SwapIn(dataDir, staged, Path.Combine(work, "old"), options.SwapStepForTest);
         var stamp = new Stamp(FormatVersion, fingerprint, Path.GetFullPath(clientDir), DateTime.UtcNow, messages, nav.Extracted, config.Ok,
-            QuickFingerprint(clientDir), files, failedTables.ToArray());
+            QuickFingerprint(clientDir), files, [.. failedTables]);
         var stampPath = Path.Combine(dataDir, "export.json");
         File.WriteAllText(stampPath + ".tmp", JsonSerializer.Serialize(stamp, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(stampPath + ".tmp", stampPath, overwrite: true);
@@ -381,8 +381,11 @@ public static class GameDataExport
 
     /// <summary>What a swap replaces, the stamp first (renamed aside like the rest, so a recovery brings it back).</summary>
     private static List<(string Name, bool Folder)> SwapEntries() =>
-        new[] { (Name: "export.json", Folder: false) }.Concat(Folders.Select(name => (Name: name, Folder: true)))
-            .Concat(TopFiles.Select(name => (Name: name, Folder: false))).ToList();
+        [
+            (Name: "export.json", Folder: false),
+            .. Folders.Select(name => (Name: name, Folder: true)),
+            .. TopFiles.Select(name => (Name: name, Folder: false)),
+        ];
 
     private static string SwapJournal(string dataDir) => Path.Combine(dataDir, ".export", "swapping");
 
@@ -423,7 +426,7 @@ public static class GameDataExport
 
     /// <summary>The client's two Localization chunks, the only input of the English map.</summary>
     public static string[] LocSourceFiles(string clientDir) =>
-        new[] { "Localization_zh_CN", "Localization_en" }.Select(n => Path.Combine(LuaPayloadDir(clientDir), n + ".lua.bytes")).ToArray();
+        [.. new[] { "Localization_zh_CN", "Localization_en" }.Select(n => Path.Combine(LuaPayloadDir(clientDir), n + ".lua.bytes"))];
 
     /// <summary>
     /// The English map alone, without the rest of the export: what a player who joins someone else's server needs.

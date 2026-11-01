@@ -35,7 +35,7 @@ public sealed class FestivalService : IGameTicker
     private readonly SessionRegistry _sessions;
     private readonly GameLoop _loop;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Dictionary<int, Zone> _zones = new();
+    private readonly Dictionary<int, Zone> _zones = [];
     private Round? _current;
     private InstanceService.Room? _room;
     private TimeSpan _lastTick;
@@ -64,9 +64,9 @@ public sealed class FestivalService : IGameTicker
         public int Question { get; set; }
         public long Deadline { get; set; }
         public long[] Questions { get; set; } = [];
-        public List<long> Answers { get; set; } = new();
-        public Dictionary<long, Candidate> Candidates { get; set; } = new();
-        public Dictionary<long, long> Bets { get; set; } = new();
+        public List<long> Answers { get; set; } = [];
+        public Dictionary<long, Candidate> Candidates { get; set; } = [];
+        public Dictionary<long, long> Bets { get; set; } = [];
         public bool Complete { get; set; }
     }
 
@@ -146,7 +146,7 @@ public sealed class FestivalService : IGameTicker
                 foreach (int source in new[] { 0, 1 })
                     keys.Add(ReservationKey.Entity("festival_reward", $"{round.Cycle}/{id}/{source}"));
         }
-        return keys.ToArray();
+        return [.. keys];
     }
 
     private async Task<LegacyOwnerScope?> EnterRoundWithGateAsync(string origin, params long[] additionalRoles)
@@ -186,8 +186,8 @@ public sealed class FestivalService : IGameTicker
             next ??= new Round
             {
                 Cycle = cycle.Start, AnswerStart = answer.Start, End = answer.End,
-                Deadline = answer.Start, Questions = _data.Table("RainbowKoiQuestionConfig").Values
-                    .Select(r => (long)GameData.Int(r, "_iID")).Where(id => id > 0).Order().Take(15).ToArray()
+                Deadline = answer.Start, Questions = [.. _data.Table("RainbowKoiQuestionConfig").Values
+                    .Select(r => (long)GameData.Int(r, "_iID")).Where(id => id > 0).Order().Take(15)]
             };
         }
         // (inferred) Select eligible online roles during the candidate minute, stable by role id, capped by the map.
@@ -341,10 +341,10 @@ public sealed class FestivalService : IGameTicker
         result.Vars.Add(Var(1102, r.Deadline * 1000));
         result.Vars.Add(Var(1103, r.Phase));
         result.Vars.Add(Var(1104, r.Question + 1));
-        result.Vars.Add(Var(1105, r.Candidates.Where(c => c.Value.Entered && !c.Value.Eliminated && !c.Value.GiveUp).Select(c => c.Key).ToArray()));
-        result.Vars.Add(Var(1106, r.Candidates.Where(c => c.Value.Eliminated || c.Value.GiveUp).Select(c => c.Key).ToArray()));
+        result.Vars.Add(Var(1105, [.. r.Candidates.Where(c => c.Value.Entered && !c.Value.Eliminated && !c.Value.GiveUp).Select(c => c.Key)]));
+        result.Vars.Add(Var(1106, [.. r.Candidates.Where(c => c.Value.Eliminated || c.Value.GiveUp).Select(c => c.Key)]));
         result.Vars.Add(Var(1107, r.Questions));
-        result.Vars.Add(Var(1108, r.Answers.ToArray()));
+        result.Vars.Add(Var(1108, [.. r.Answers]));
         result.Vars.Add(Var(1110, r.Candidates.Count(c => c.Value.Entered && !c.Value.Eliminated && !c.Value.GiveUp)));
         result.Vars.Add(Var(1111, r.Complete ? 2 : r.Phase == 2 ? 1 : 0));
         return result;

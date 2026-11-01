@@ -114,7 +114,7 @@ public sealed partial class NewActivityService
         AwardGrant[]? direct = null;
         if (activityId == 9201)
         {
-            try { direct = groups.SelectMany(id => _awards.ResolveDirect(session, id).Grants).ToArray(); }
+            try { direct = [.. groups.SelectMany(id => _awards.ResolveDirect(session, id).Grants)]; }
             catch (AwardResolutionException) { return ErrorCodes.RewardMissing; }
         }
         int result = await CommitAsync(session, next, activityId == 9201 ? null : groups, extra: direct,
@@ -273,7 +273,7 @@ public sealed partial class NewActivityService
 
 public sealed partial class ActivityRuntimeState
 {
-    public Dictionary<long, PassProgressRuntime> PassProgress { get; set; } = new();
+    public Dictionary<long, PassProgressRuntime> PassProgress { get; set; } = [];
 }
 
 public sealed class PassProgressRuntime

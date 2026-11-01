@@ -32,7 +32,7 @@ public abstract class WorldUnit
     internal (int X, int Z) Cell { get; set; }
 
     /// <summary>Players that currently show this unit (managed by World).</summary>
-    public HashSet<GameSession> Viewers { get; } = new();
+    public HashSet<GameSession> Viewers { get; } = [];
     // An in-flight AOI enter must finish before removal publishes its leave.
     internal SemaphoreSlim PresentationGate { get; } = new(1, 1);
     internal bool Removed { get; set; }
@@ -55,11 +55,11 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
     /// <summary>Grid cell size in m: a 60 m view radius touches at most 5 x 5 cells.</summary>
     public const int CellSize = 32;
 
-    private readonly List<WorldUnit> _units = new();
+    private readonly List<WorldUnit> _units = [];
     // Membership for Contains: every walk's unit refresh asks it per candidate, and a field map holds ~1500 units
     // (as a list scan it was 13% of the loop's work at 500 players, stage G).
     private readonly HashSet<WorldUnit> _members = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<(int, int), List<WorldUnit>> _cells = new();
+    private readonly Dictionary<(int, int), List<WorldUnit>> _cells = [];
 
     public long SceneEntry => sceneEntry;
     public World World => world;
@@ -73,7 +73,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
         _units.Add(unit);
         _members.Add(unit);
         unit.Cell = CellOf(unit.X, unit.Z);
-        if (!_cells.TryGetValue(unit.Cell, out var list)) _cells[unit.Cell] = list = new();
+        if (!_cells.TryGetValue(unit.Cell, out var list)) _cells[unit.Cell] = list = [];
         list.Add(unit);
     }
 
@@ -91,7 +91,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
         if (cell == unit.Cell) return;
         if (_cells.TryGetValue(unit.Cell, out var old)) old.Remove(unit);
         unit.Cell = cell;
-        if (!_cells.TryGetValue(cell, out var list)) _cells[cell] = list = new();
+        if (!_cells.TryGetValue(cell, out var list)) _cells[cell] = list = [];
         list.Add(unit);
     }
 

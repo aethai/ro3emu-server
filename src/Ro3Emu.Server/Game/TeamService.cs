@@ -45,19 +45,19 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         public string Description = "", Name = "", Area = "";
         public bool AutoAgree;
         public long PlayBook;
-        public readonly Dictionary<int, TeamFlagInfo> Flags = new();
-        public readonly Dictionary<long, long> Applicants = new();
+        public readonly Dictionary<int, TeamFlagInfo> Flags = [];
+        public readonly Dictionary<long, long> Applicants = [];
         /// <summary>Guild League elites a quick elite team admits without the leader's approval (TeamService.Elite).</summary>
-        public readonly HashSet<long> Elites = new();
-        public readonly HashSet<long> ViceLeaders = new();
-        public readonly Dictionary<long, TeamMemberOnlineState> OnlineStates = new();
-        public readonly Dictionary<long, TeamMemberChatState> ChatStates = new();
-        public readonly HashSet<long> Muted = new(), Following = new();
-        public readonly Dictionary<long, (RallyTeamType Type, DateTimeOffset Expires)> Rallies = new();
-        public readonly List<long> Members = new(); // slot order = teamIndex
-        public readonly Dictionary<long, long> Joined = new();
-        public readonly Dictionary<long, string> LastCard = new();
-        public readonly Dictionary<long, string> LastBattle = new();
+        public readonly HashSet<long> Elites = [];
+        public readonly HashSet<long> ViceLeaders = [];
+        public readonly Dictionary<long, TeamMemberOnlineState> OnlineStates = [];
+        public readonly Dictionary<long, TeamMemberChatState> ChatStates = [];
+        public readonly HashSet<long> Muted = [], Following = [];
+        public readonly Dictionary<long, (RallyTeamType Type, DateTimeOffset Expires)> Rallies = [];
+        public readonly List<long> Members = []; // slot order = teamIndex
+        public readonly Dictionary<long, long> Joined = [];
+        public readonly Dictionary<long, string> LastCard = [];
+        public readonly Dictionary<long, string> LastBattle = [];
     }
 
     private readonly SessionRegistry _sessions = sessions;
@@ -70,9 +70,9 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     private readonly IOptions<ServerOptions> _options = options;
     private readonly ILogger<TeamService> _log = log;
     private readonly GameLoop _loop = loop;
-    private readonly Dictionary<long, Team> _teams = new();
-    private readonly Dictionary<long, Team> _byMember = new();
-    private readonly Dictionary<(long Target, long Team), DateTime> _invites = new();
+    private readonly Dictionary<long, Team> _teams = [];
+    private readonly Dictionary<long, Team> _byMember = [];
+    private readonly Dictionary<(long Target, long Team), DateTime> _invites = [];
     private long _nextId = 1L << 24;
     private TimeSpan _sinceUpdate;
 
@@ -340,7 +340,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         if (_sinceUpdate < TimeSpan.FromSeconds(2)) return;
         _sinceUpdate = TimeSpan.Zero;
         foreach (var team in _teams.Values.ToList())
-            _loop.TrackRuntimeDetached("team refresh", () => RunTeamAsync("team/refresh", team.Members.ToArray(),
+            _loop.TrackRuntimeDetached("team refresh", () => RunTeamAsync("team/refresh", [.. team.Members],
                 team.Id, () => RefreshAsync(team)));
     }
 

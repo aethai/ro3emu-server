@@ -152,8 +152,8 @@ public sealed class EconomyShopTests : IAsyncLifetime
         });
         var response = await Next(bot, ShopService.BatchBuyCommodity, BatchBuyCommodityResp.Parser);
         Assert.Equal(ErrorCodes.CurrencyShort, response.Result);
-        Assert.Equal(new[] { 0, ErrorCodes.CurrencyShort, 0 }, response.Results.Select(x => x.Result));
-        Assert.Equal(new[] { 1, 1, 3 }, response.Results.Select(x => x.BuyTimes));
+        Assert.Equal([0, ErrorCodes.CurrencyShort, 0], response.Results.Select(x => x.Result));
+        Assert.Equal([1, 1, 3], response.Results.Select(x => x.BuyTimes));
         var closing = Cut();
         var ledger = Window(opening, closing);
         Assert.Equal(2, ledger.Receipts.Count);

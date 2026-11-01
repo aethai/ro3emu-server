@@ -83,7 +83,7 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
                             if (!board.RankOf.ContainsKey(id) && board.Guild && boards.GuildOf.TryGetValue(id, out long guild)) id = guild;
                             if (board.RankOf.TryGetValue(id, out int rank)) rows.Add(Row(board.Rows[rank - 1], rank));
                         }
-                    return Reply(rows.ToArray(), board);
+                    return Reply([.. rows], board);
                 }
             case "getUserRankSurrounding":
                 {
@@ -98,7 +98,7 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
                     if (board != null && board.RankOf.TryGetValue(id, out int rank))
                     {
                         int first = Math.Max(1, rank - before), last = Math.Min(board.Rows.Count, rank + after);
-                        rows = Enumerable.Range(first, last - first + 1).Select(r => Row(board.Rows[r - 1], r)).ToArray();
+                        rows = [.. Enumerable.Range(first, last - first + 1).Select(r => Row(board.Rows[r - 1], r))];
                     }
                     return Reply(rows, board);
                 }
@@ -205,7 +205,7 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
         var boards = new Dictionary<int, List<Candidate>>();
         void Add(int board, Candidate candidate)
         {
-            if (!boards.TryGetValue(board, out var list)) boards[board] = list = new();
+            if (!boards.TryGetValue(board, out var list)) boards[board] = list = [];
             list.Add(candidate);
         }
         var dummyBoards = DummyBoards();
