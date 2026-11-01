@@ -239,7 +239,7 @@ public sealed class CharacterTests : IAsyncLifetime
         var points = await Next(alice, CharacterService.BaseAttrSync, BaseAttrInfoIncrement.Parser, m => !m.SyncAllMark);
         Assert.Equal(48 + 8 * 2 + 4, points.AllPlanBaseProperty[0].Inc.AttrPoints); // BaseLvConfig: lv2-9 +2, lv10 +4
 
-        // STR 1 -> 5 costs 4 x 2 (BasePointConfig); a value lower than now is refused.
+        // STR 1 -> 5 costs 4 x 2 (BasePointConfig); the panel can then lower it again.
         var req = new AllocateAttrPointReq { PlanIndex = 0 };
         foreach (var (stat, value) in new[] { (1, 5), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1) }) req.Points[stat] = value;
         await alice.SendGameAsync(CharacterService.AllocateAttrPoints, req);
@@ -253,7 +253,11 @@ public sealed class CharacterTests : IAsyncLifetime
 
         req.Points[1] = 2;
         await alice.SendGameAsync(CharacterService.AllocateAttrPoints, req);
-        Assert.NotEqual(0, (await Next(alice, CharacterService.AllocateAttrPoints, AllocateAttrPointRsp.Parser)).Result);
+        var lowered = await Next(alice, CharacterService.AllocateAttrPoints, AllocateAttrPointRsp.Parser);
+        Assert.Equal(0, lowered.Result);
+        Assert.Equal(2, lowered.PlanBaseProperty.BaseProperty[1]);
+        Assert.Equal(2, lowered.PlanBaseProperty.UsedAttrPoints);
+        Assert.Equal(68 - 2, lowered.PlanBaseProperty.AttrPoints);
 
         await alice.SendGameAsync(CharacterService.ResetAttrPoints, new ResetAttrPointReq { PlanIndex = 0 });
         Assert.Equal(0, (await Next(alice, CharacterService.ResetAttrPoints, ResetAttrPointResp.Parser)).Result);
