@@ -52,6 +52,7 @@ internal sealed class ServerProcess : IDisposable
     private readonly Process _process;
     private readonly RollingLog _log;
     private readonly IntPtr _job;
+    private readonly string _dataDir;
 
     /// <summary>The log file being written now.</summary>
     public string LogPath => _log.Path;
@@ -59,8 +60,9 @@ internal sealed class ServerProcess : IDisposable
     public int Id => _process.Id;
     public bool HasExited => _process.HasExited;
 
-    private ServerProcess(Process process, RollingLog log, IntPtr job, Ports ports)
+    private ServerProcess(Process process, RollingLog log, IntPtr job, Ports ports, string dataDir)
     {
+        _dataDir = dataDir;
         _process = process;
         _log = log;
         _job = job;
@@ -129,7 +131,7 @@ internal sealed class ServerProcess : IDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         var job = OperatingSystem.IsWindows() ? KillOnCloseJob(process) : IntPtr.Zero;
-        return new ServerProcess(process, log, job, ports);
+        return new ServerProcess(process, log, job, ports, dataDir);
     }
 
     /// <summary>Waits until the server answers HTTP (it preloads the game data first), or it exits, or the time runs out.</summary>
@@ -177,6 +179,9 @@ internal sealed class ServerProcess : IDisposable
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            // The server's operator token (Ro3Emu.Server Http.OperatorToken), written to its data dir at start.
+            string token = Path.Combine(_dataDir, "operator.token");
+            if (File.Exists(token)) http.DefaultRequestHeaders.Add("X-Ro3Emu-Operator", File.ReadAllText(token).Trim());
             using var response = http.PostAsync($"http://127.0.0.1:{UsedPorts.Http}/ro3emu/shutdown", null).GetAwaiter().GetResult();
             SetupLog.Write($"shutdown: {(int)response.StatusCode}");
         }

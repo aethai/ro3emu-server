@@ -224,7 +224,8 @@ public sealed partial class PanelSite
         var matches = _routes.Where(r => Matches(r.Segments, segments)).ToList();
         var route = matches.FirstOrDefault(r => string.Equals(r.Method, context.Request.Method, StringComparison.OrdinalIgnoreCase));
         Reply reply;
-        if (route == null)
+        if (!HostAllowed(context)) reply = Reply.Error(StatusCodes.Status404NotFound, "Not found.");
+        else if (route == null)
         {
             reply = matches.Count == 0 ? Reply.Error(StatusCodes.Status404NotFound, "Not found.")
                 : Reply.Error(StatusCodes.Status405MethodNotAllowed, "Method not allowed.");
@@ -243,6 +244,22 @@ public sealed partial class PanelSite
         if (reply.Status == 0) return;
         response.StatusCode = reply.Status;
         if (reply.Body != null) await response.WriteAsJsonAsync(reply.Body, reply.Body.GetType(), Json, context.RequestAborted);
+    }
+
+    /// <summary>
+    /// The API answers a loopback connection only under this machine's name or the panel's public one (PublicUrl): a page
+    /// whose own name resolves to 127.0.0.1 (DNS rebinding) is same-origin with itself, so its scripts could otherwise
+    /// read the CSRF token and call the API of a panel that listens on loopback. Behind a trusted proxy without a
+    /// PublicUrl the proxy's name is unknown here, so its forwarded requests pass; other peers are not loopback and
+    /// cannot be reached by rebinding.
+    /// </summary>
+    private bool HostAllowed(HttpContext context)
+    {
+        if (context.Connection.RemoteIpAddress is not { } peer || !System.Net.IPAddress.IsLoopback(ClientAddresses.Normalize(peer))) return true;
+        if (ClientAddresses.LoopbackHost(context.Request)) return true;
+        if (Uri.TryCreate(_options.PublicUrl, UriKind.Absolute, out var url))
+            return string.Equals(context.Request.Host.Host, url.Host, StringComparison.OrdinalIgnoreCase);
+        return _clients.FromTrustedProxy(context) && ClientAddresses.IsForwarded(context.Request);
     }
 
     private static bool Matches(string[] pattern, string[] segments) =>

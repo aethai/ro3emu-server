@@ -37,7 +37,7 @@ public sealed class FieldExpGmTests : IAsyncLifetime
     private async Task Gm(string line)
     {
         using var http = new HttpClient();
-        (await http.PostAsync($"{_http}/ro3emu/gm?account=fieldexp", new StringContent(line))).EnsureSuccessStatusCode();
+        (await http.PostAsync($"{_http}/ro3emu/gm?account=fieldexp", Operator.Command(line))).EnsureSuccessStatusCode();
     }
 
     private IReadOnlyList<FieldExpRule> Rules => _app.Services.GetRequiredService<RewardService>().FieldExpRules;

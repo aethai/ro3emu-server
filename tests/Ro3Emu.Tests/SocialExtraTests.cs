@@ -218,7 +218,7 @@ public sealed class SocialExtraTests : IAsyncLifetime
         await alice.SendGameAsync(FriendExtraService.GiveGift, new GiveFriendGiftReq { RoleId = b, ItemId = 1004000, Count = 1 });
         Assert.Equal(ErrorCodes.ItemsShort, (await Next(alice, FriendExtraService.GiveGift, GiveFriendGiftResp.Parser)).Result);
         using (var http = new HttpClient())
-            (await http.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent("!item 1004000 1"))).EnsureSuccessStatusCode();
+            (await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command("!item 1004000 1"))).EnsureSuccessStatusCode();
         await alice.SendGameAsync(FriendExtraService.GiveGift, new GiveFriendGiftReq { RoleId = b, ItemId = 1004000, Count = 1, Message = "Hi" });
         var gift = await Next(alice, FriendExtraService.GiveGift, GiveFriendGiftResp.Parser);
         Assert.Equal(0, gift.Result);
@@ -248,8 +248,8 @@ public sealed class SocialExtraTests : IAsyncLifetime
 
         using (var http = new HttpClient())
         {
-            (await http.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent("!lvl 15 1"))).EnsureSuccessStatusCode();
-            (await http.PostAsync($"{_http}/ro3emu/gm?account=bob", new StringContent("!lvl 15 1"))).EnsureSuccessStatusCode();
+            (await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command("!lvl 15 1"))).EnsureSuccessStatusCode();
+            (await http.PostAsync($"{_http}/ro3emu/gm?account=bob", Operator.Command("!lvl 15 1"))).EnsureSuccessStatusCode();
         }
         await alice.SendGameAsync(TeamService.TeamCreate, new TeamCreateReq { TeamType = TeamType.Five, TargetId = 1001 });
         long team = (await Next(alice, TeamService.TeamCreate, TeamCreateResp.Parser)).TeamId;

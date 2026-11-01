@@ -62,7 +62,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
     private async Task Gm(string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync(_http + "/ro3emu/gm?account=economyshop", new StringContent(command))).EnsureSuccessStatusCode();
+        (await client.PostAsync(_http + "/ro3emu/gm?account=economyshop", Operator.Command(command))).EnsureSuccessStatusCode();
     }
     private GameSession Session() => Service<SessionRegistry>().All().Single(s => s.Account == "economyshop" && s.Role != null);
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);

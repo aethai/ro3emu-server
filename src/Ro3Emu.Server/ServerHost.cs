@@ -205,6 +205,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<Game.Messaging.IMessageModule>(sp => sp.GetRequiredService<TavernService>());
         builder.Services.AddSingleton<GameMessageHandler>();
         builder.Services.AddSingleton(sp => GateCrypto.LoadOrCreate(options.DataDir, sp.GetRequiredService<ILogger<GateCrypto>>()));
+        builder.Services.AddSingleton(_ => OperatorToken.LoadOrCreate(options.DataDir, options.OperatorToken));
         builder.Services.AddSingleton<IMicroService, LoginService>();
         builder.Services.AddSingleton<IMicroService, ClusterRecommendService>();
         builder.Services.AddSingleton<IMicroService, PhonestGateService>();
@@ -247,6 +248,9 @@ public static partial class ServerHost
         var app = builder.Build();
         app.Lifetime.ApplicationStopping.Register(() => httpConnections.AbortAfter(HttpConnectionReaper.Grace));
         app.Services.GetRequiredService<RealmLock>();
+        // After the realm lock, so a second server on the same data dir never rewrites the running one's token; before
+        // the ports open, so a tool started with the server finds the file.
+        app.Services.GetRequiredService<OperatorToken>();
         app.Services.GetRequiredService<Game.Ownership.RoleHandover>()
             .Configure(session => app.Services.GetRequiredService<RoleSessionService>().CleanupRoleAsync(session),
                 session => app.Services.GetRequiredService<RoleSessionService>().CleanupReservation(session));
@@ -271,105 +275,18 @@ public static partial class ServerHost
         SdkEndpoints.Map(app);
         GiftCodeEndpoints.Map(app);
         Diagnostics.MetricsEndpoints.Map(app);
-        // Run a GM command as an online player (loopback only): POST /ro3emu/gm?account=tester body "!warp 10111 150 190".
-        app.MapPost("/ro3emu/gm", async (HttpContext context, SessionRegistry sessions, GmCommands gm, GameLoop loop) =>
-        {
-            if (context.Connection.RemoteIpAddress is not { } ip || !System.Net.IPAddress.IsLoopback(ip)) return Results.NotFound();
-            var account = context.Request.Query["account"].ToString();
-            using var reader = new StreamReader(context.Request.Body);
-            var line = (await reader.ReadToEndAsync()).Trim();
-            if (!line.StartsWith('!')) line = "!" + line;
-            return await loop.InvokeAsync(async () =>
-            {
-                var session = sessions.All().FirstOrDefault(s => string.Equals(s.Account, account, StringComparison.OrdinalIgnoreCase));
-                if (session?.Role == null) return Results.BadRequest("not in game");
-                await gm.RunAsync(session, line, loopbackTool: true);
-                return Results.Ok("done");
-            });
-        });
+        OpsEndpoints.Map(app);
+        AccountEndpoints.Map(app);
         // The web panel's public address for launchers that joined (Ro3Emu:Panel:PublicUrl); 404 without one.
         app.MapGet("/ro3emu/panel", (Microsoft.Extensions.Options.IOptions<ServerOptions> options) =>
             options.Value.Panel is { Enabled: true, PublicUrl: { Length: > 0 } url } && Uri.TryCreate(url, UriKind.Absolute, out var uri)
                 && uri.Scheme is "http" or "https"
                 ? Results.Json(new { url = uri.ToString().TrimEnd('/') })
                 : Results.NotFound());
-        // In-game bug reports (loopback only, docs/guide/feedback.md): GET /ro3emu/reports?since=<id or ISO time>&limit=&format=text
-        app.MapGet("/ro3emu/reports", (HttpContext context, FeedbackService feedback) =>
-        {
-            if (context.Connection.RemoteIpAddress is not { } ip || !System.Net.IPAddress.IsLoopback(ip)) return Results.NotFound();
-            var query = context.Request.Query;
-            long afterId = 0;
-            DateTimeOffset? since = null;
-            string sinceText = query["since"].ToString().Trim();
-            if (sinceText.Length > 0)
-            {
-                if (long.TryParse(sinceText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id)) afterId = id;
-                else if (DateTimeOffset.TryParse(sinceText, System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AssumeUniversal, out var time)) since = time;
-                else return Results.BadRequest("since: a report id or an ISO-8601 time");
-            }
-            int limit = int.TryParse(query["limit"], out int l) ? Math.Clamp(l, 1, 1000) : 200;
-            var reports = feedback.Store.Read(afterId, since, limit);
-            return string.Equals(query["format"], "text", StringComparison.OrdinalIgnoreCase)
-                ? Results.Text(FeedbackStore.Format(reports), "text/plain; charset=utf-8")
-                : Results.Json(reports, FeedbackStore.Json);
-        });
-        // Character deletion for the launcher / website (the client itself has none): POST form identity, credential,
-        // role (id or name). A role that is in the world cannot be deleted.
-        app.MapPost("/ro3emu/account/delete-role", async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, RoleStore roles, SessionRegistry sessions, GameLoop loop, Game.Ownership.OwnerRegistry owners, ILogger<RoleStore> log) =>
-        {
-            if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-            var form = await request.ReadFormAsync();
-            string typed = form["identity"].ToString().Trim(), credential = form["credential"].ToString(), which = form["role"].ToString().Trim();
-            // Roles are keyed by the account's stored name, whatever letter case the form used.
-            if (await accounts.VerifiedAccountAsync(typed, credential) is not { } identity)
-                return Results.Json(new { code = 401, message = "bad account or password" });
-            var role = roles.ForAccount(identity).FirstOrDefault(r => r.Id.ToString() == which || string.Equals(r.Name, which, StringComparison.OrdinalIgnoreCase));
-            if (role == null) return Results.Json(new { code = 404, message = "no such character on this account" });
-            return await loop.InvokeAsync(async () =>
-            {
-                using var lifecycle = await owners.EnterAsync("HTTP delete", Game.Ownership.ReservationKey.Lifecycle(role.Id));
-                var current = roles.Get(role.Id);
-                if (current == null || current.Account != identity)
-                    return Results.Json(new { code = 404, message = "no such character on this account" });
-                var owner = owners.Cached(role.Id);
-                bool attached = owner is { State: not Game.Ownership.RoleOwnerState.Detached } ||
-                    owner?.Attachment != null || owner?.Detaching != null ||
-                    sessions.All().Any(s => s.Role?.Id == role.Id || s.Owner?.RoleId == role.Id || s.Attachment?.RoleId == role.Id);
-                if (attached)
-                    return Results.Json(new { code = 409, message = "the character is in the game; log out first" });
-                bool ok = roles.Delete(identity, role.Id);
-                if (ok) owners.RoleDeleted(role.Id, roles.ReadRevisionVector(role.Id).Epoch);
-                log.LogInformation("Account {Account} deletes role {Name} ({Id}): {Result}", identity, current.Name, role.Id, ok);
-                return Results.Json(new { code = ok ? 0 : 500, message = ok ? $"{current.Name} deleted" : "not deleted" });
-            });
-        });
         // Public status for the launcher's online pill: only a count, never account or character names. Read from the
         // loop's census, so anyone polling it adds no work to the loop.
         app.MapGet("/ro3emu/status", (Diagnostics.SessionCensus census) =>
             Results.Json(new { online = true, players = census.Current.Roles.Count }));
-        // A clean stop for RO3Emu.exe (loopback only): the same shutdown as Ctrl+C, the loop drains and the database closes.
-        app.MapPost("/ro3emu/shutdown", (HttpContext context, IHostApplicationLifetime lifetime) =>
-        {
-            if (context.Connection.RemoteIpAddress is not { } ip || !System.Net.IPAddress.IsLoopback(ip)) return Results.NotFound();
-            lifetime.StopApplication();
-            return Results.Ok("stopping");
-        });
-        // Who is online, for the admin (loopback only): read on the loop, where the sessions change.
-        app.MapGet("/ro3emu/online", async (HttpContext context, SessionRegistry sessions, GameLoop loop) =>
-        {
-            if (context.Connection.RemoteIpAddress is not { } ip || !System.Net.IPAddress.IsLoopback(ip)) return Results.NotFound();
-            var online = await loop.InvokeAsync(() => Task.FromResult(sessions.All().Select(s => new
-            {
-                account = s.Account,
-                role = s.Role?.Name,
-                scene = s.Role == null ? (long?)null : s.SceneEntry,
-                x = s.Position.X,
-                z = s.Position.Z,
-                remote = s.Channel.Remote,
-            }).ToArray()));
-            return Results.Json(online);
-        });
         app.MapFallback((HttpContext context) =>
         {
             app.Logger.LogWarning("HTTP unhandled {Method} {Path}", context.Request.Method, context.Request.Path);

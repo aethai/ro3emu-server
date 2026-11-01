@@ -69,7 +69,7 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
     private async Task Gm(string command)
     {
         using var http = new HttpClient();
-        var reply = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent(command));
+        var reply = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command(command));
         reply.EnsureSuccessStatusCode();
     }
 

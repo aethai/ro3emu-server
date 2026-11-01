@@ -396,7 +396,7 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
     private async Task Gm(string line)
     {
         using var http = new HttpClient();
-        (await http.PostAsync($"{_http}/ro3emu/gm?account=walker", new StringContent(line))).EnsureSuccessStatusCode();
+        (await http.PostAsync($"{_http}/ro3emu/gm?account=walker", Operator.Command(line))).EnsureSuccessStatusCode();
     }
 
     private async Task<T> RequestAsync<T>(uint id, IMessage body, MessageParser<T> parser) where T : IMessage<T>

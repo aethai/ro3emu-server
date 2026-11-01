@@ -61,7 +61,7 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
     private async Task Gm(string line)
     {
         using var http = new HttpClient();
-        var resp = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent(line));
+        var resp = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command(line));
         resp.EnsureSuccessStatusCode();
     }
 

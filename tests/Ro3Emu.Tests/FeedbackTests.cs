@@ -71,7 +71,7 @@ public sealed class FeedbackTests : IAsyncLifetime
 
     private async Task<List<FeedbackReport>> Reports(string query = "")
     {
-        using var http = new HttpClient();
+        using var http = Operator.Client();
         var json = await http.GetStringAsync($"{_http}/ro3emu/reports{query}");
         return JsonSerializer.Deserialize<List<FeedbackReport>>(json, FeedbackStore.Json)!;
     }
@@ -133,7 +133,7 @@ public sealed class FeedbackTests : IAsyncLifetime
         Assert.Equal(new long[] { 2 }, (await Reports("?since=" + Uri.EscapeDataString(between.ToString("O")))).Select(r => r.Id));
         Assert.Equal(new long[] { 1 }, (await Reports("?limit=1")).Select(r => r.Id));
 
-        using var http = new HttpClient();
+        using var http = Operator.Client();
         var text = await http.GetStringAsync($"{_http}/ro3emu/reports?format=text");
         Assert.Contains("#2 ", text);
         Assert.Contains("> Quest log froze", text);

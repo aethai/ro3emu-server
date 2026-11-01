@@ -61,7 +61,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
     private async Task Gm(string line, string account = "questalice")
     {
         using var http = new HttpClient();
-        (await http.PostAsync($"{_http}/ro3emu/gm?account={account}", new StringContent(line))).EnsureSuccessStatusCode();
+        (await http.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line))).EnsureSuccessStatusCode();
     }
 
     private GameSession Alice => Service<SessionRegistry>().All().Single(s => s.Role?.Name == "QuestAlice");

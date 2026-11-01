@@ -65,7 +65,7 @@ public sealed class SeasonRefineTests : IAsyncLifetime
     private async Task Gm(string account, string line)
     {
         using var client = new HttpClient();
-        var reply = await client.PostAsync($"{_http}/ro3emu/gm?account={account}", new StringContent(line));
+        var reply = await client.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line));
         reply.EnsureSuccessStatusCode();
     }
 

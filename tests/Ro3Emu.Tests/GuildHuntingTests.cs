@@ -88,7 +88,7 @@ public abstract class GuildHuntingHost : IAsyncLifetime
     protected async Task Gm(BotClient bot, string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account={bot.Account}", new StringContent(command))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account={bot.Account}", Operator.Command(command))).EnsureSuccessStatusCode();
     }
 
     protected async Task<long> Founder(BotClient bot, string guild)
