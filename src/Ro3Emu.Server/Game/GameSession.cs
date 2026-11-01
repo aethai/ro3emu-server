@@ -153,6 +153,9 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>Status bits (property 2701, bit 15 = fighting) and when the player last dealt or took a hit.</summary>
     public long StatusBits { get; set; }
     public long LastCombatMs { get; set; }
+    /// <summary>No natural HP/SP regeneration before this server ms (CombatService.RegenAsync). Only tests set it, to keep
+    /// the five-second regeneration out of exact HP checks; fighting does not pause it.</summary>
+    internal long NoRegenUntilMs { get; set; }
 
     /// <summary>Active buffs (BuffService) and cooldown ends in server ms: skills by group id, items by id, item share groups.</summary>
     public List<ActiveBuff> Buffs { get; } = [];
