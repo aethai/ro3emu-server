@@ -69,8 +69,9 @@ CI prints the same line per test project in its job summary, and it fails when a
 what CI now prints. CI refuses a number lower than the one in the parent commit, so the floor only goes up.
 
 A failed run uploads its results as the `test-results-<os>` artifact: the `.trx` files, with every test's outcome and
-output. A test still running after 5 minutes counts as hung (`--blame-hang-timeout 5m`). The run then stops, and the
-artifact also holds the list of the tests that were running and a dump of the test host. Main's Linux run measures
+output. A test still running after 5 minutes counts as hung (`--blame-hang-timeout 5m`; 15 minutes on main's Linux run,
+because the test host takes minutes to write coverage as it exits). The run then stops, and the artifact also holds
+the list of the tests that were running and a dump of the test host. Main's Linux run measures
 coverage and prints it in the job summary, and the `coverage` artifact holds the Cobertura files.
 
 ## Snapshot tests
