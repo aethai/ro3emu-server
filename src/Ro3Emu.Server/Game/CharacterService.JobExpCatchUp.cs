@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Ro3Emu.Server.Accounts;
-using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -36,12 +36,15 @@ public sealed partial class CharacterService
             }
             catch (EconomyOperationConflictException)
             {
-                log.LogInformation("Role {Role} already had its Job EXP catch-up", role);
+                LogJobExpCaughtUp(log, role);
                 owed = 0;
             }
         }
         roles.SaveJobExpCatchUp(role, JsonSerializer.SerializeToUtf8Bytes(new JobExpCatchUpState { Granted = owed }));
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Role {Role} already had its Job EXP catch-up")]
+    private static partial void LogJobExpCaughtUp(ILogger logger, long role);
 
     /// <summary>Base EXP's share of Job EXP less the Job EXP earned, through the ranks up to the current one, held to the
     /// room left in that rank as ApplyExp would hold it.</summary>
@@ -51,9 +54,8 @@ public sealed partial class CharacterService
         for (int level = 1; level < p.Level; level++) baseExp += BaseExpNeed(level);
         long earned = p.JobExp;
         for (int rank = 1; rank < JobRank(p.Career); rank++)
-            for (int level = 1; data.Row("JobLvConfig", rank * 100L + level) is { } row
-                && level < GameData.Int(row, "_iMaxJobLv"); level++)
-                earned += GameData.Int(row, "_iJobeExp");
+            for (int level = 1; JobLvConfig.Get(data, rank * 100L + level) is { } row && level < row.MaxJobLv; level++)
+                earned += row.JobeExp;
         for (int level = 1; level < p.JobLevel; level++) earned += JobExpNeed(p.Career, level);
         long room = -p.JobExp;
         for (int level = p.JobLevel; level < MaxJobLevel(p.Career); level++) room += JobExpNeed(p.Career, level);
