@@ -85,6 +85,25 @@ _ = Task.Run(async () =>
     }
 });
 
+// Take the server's own moves of this bot (31081: a camp spawn, a revive point) as the next walk's start, like the client.
+_ = Task.Run(async () =>
+{
+    while (true)
+    {
+        try
+        {
+            var move = Romsg.MovementChangeNtf.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(31081)
+                && Romsg.MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == roleId, TimeSpan.FromDays(1))).Body);
+            x = move.MovementInfo.Pos.X; y = move.MovementInfo.Pos.Y; z = move.MovementInfo.Pos.Z;
+            Console.WriteLine($"{name} moved to {x:F1},{z:F1}");
+        }
+        catch (Exception e) when (e is TimeoutException or InvalidOperationException)
+        {
+            if (e is InvalidOperationException) return;
+        }
+    }
+});
+
 string? line;
 while ((line = Console.ReadLine()) != null)
 {
