@@ -80,6 +80,7 @@ public sealed partial class SkillCombatTests
         await using var alice = await InWorld("Alice");
         await using var bob = await InWorld("Bob");
         await Gm("alice", "!item 1002004 2");
+        await ToPlaza(alice, bob);
         var a = Session("alice"); var b = Session("bob");
         await Ready(a, b);
         await Loop.InvokeAsync(async () => { b.Dead = true; await Character.SetHpSpAsync(b, 0, 0); });
@@ -136,6 +137,7 @@ public sealed partial class SkillCombatTests
         await using var alice = await InWorld("Alice");
         await using var bob = await InWorld("Bob");
         await Gm("alice", "!item 1002004 1");
+        await ToPlaza(alice, bob);
         var a = Session("alice"); var b = Session("bob");
         await Ready(a, b);
         await Loop.InvokeAsync(async () => { b.Dead = true; await Character.SetHpSpAsync(b, 0, 0); });
