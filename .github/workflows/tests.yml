@@ -29,9 +29,9 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: true
       # Every test project: a test still running after 5 minutes counts as hung, and the run stops with a dump of the
       # test host and the list of the tests that were running (--blame-hang), instead of reaching the job's timeout.
-      # Not on the coverage run: coverlet writes its hits while the test host exits, which took over 5 minutes on the
-      # server tests, so blame took the finished run for a hang and failed it (main run 41292599038).
-      TEST_ARGS: ${{ !(github.event_name == 'push' && matrix.os == 'ubuntu-latest') && '--blame-hang-timeout 5m --blame-hang-dump-type mini' || '' }}
+      # 15 minutes on the coverage run: coverlet writes its hits while the test host exits, 4 to 7 minutes on the server
+      # tests with no test running, and at 5 minutes blame took the finished run for a hang (main run 41292599038).
+      TEST_ARGS: --blame-hang-timeout ${{ github.event_name == 'push' && matrix.os == 'ubuntu-latest' && '15m' || '5m' }} --blame-hang-dump-type mini
       # Coverage only on main's Linux run: it slows the tests, and one platform is enough for the numbers.
       COVERAGE: ${{ github.event_name == 'push' && matrix.os == 'ubuntu-latest' && '--collect "XPlat Code Coverage"' || '' }}
     steps:
@@ -50,7 +50,9 @@ jobs:
       # Tests that need the client's exported game data are skipped here; the synthetic fixture
       # (tests/Ro3Emu.Tests/Fixtures/GameData, docs/guide/testing.md) lets the rest run. Each project writes to its own
       # folder, so its coverage file can be told apart. A failing project does not stop the next one.
+      # A step that times out fails, so the steps below still run; a job that times out is cancelled and uploads nothing.
       - name: Server tests
+        timeout-minutes: 24
         run: dotnet test tests/Ro3Emu.Tests -c Release --filter "Category!=Slow" --logger "trx;LogFileName=server.trx" --results-directory TestResults/server ${{ env.TEST_ARGS }} ${{ env.COVERAGE }}
       - name: Patcher tests
         if: ${{ !cancelled() }}
