@@ -334,9 +334,11 @@ public sealed partial class CombatService
     };
 
     /// <summary>A hostile buff (_iType 2) of one of the kinds or of their copies, which keep the status's name at kind + 50
-    /// and + 79 (Silence: 9023 kind 6, 9065 kind 56, 9084 kind 85). (inferred) A cleanse removes the copies too.</summary>
+    /// and + 79 (Silence: 9023 kind 6, 9065 kind 56, 9084 kind 85). (inferred) A cleanse removes the copies too. A buff with
+    /// _iDisperse 0 stays, as for a dispel (BuffService.DispelControlsAsync): a boss's Frozen 4115501 is one.</summary>
     internal static bool Cleanses(int[] kinds, BuffConfig buff) =>
-        buff.Type == 2 && buff.BuffCategory is [var kind, ..] && kinds.Any(k => kind == k || kind == k + 50 || kind == k + 79);
+        buff.Type == 2 && buff.Disperse != 0
+        && buff.BuffCategory is [var kind, ..] && kinds.Any(k => kind == k || kind == k + 50 || kind == k + 79);
 
     /// <summary>
     /// An extra cast of a SkillConfig row on monsters the caller chose, through the ordinary effect path (damage, kills,

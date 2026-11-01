@@ -1,17 +1,21 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Ro3Emu.Server;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Tests;
 
-/// <summary>What a cleanse removes (CombatService.CleanseKinds, Cleanses). The ids here are invented.</summary>
+/// <summary>What a cleanse removes (CombatService.CleanseKinds, Cleanses). Except in the client data test, the ids are invented.</summary>
 public sealed class CleanseRulesTests
 {
     private static JsonElement Skill(string script, params int[] logic) =>
         JsonSerializer.SerializeToElement(new { _kScriptLogic = script, _kLogicData = logic });
 
     private static BuffConfig Buff(int type, params int[] categories) =>
-        new(JsonSerializer.SerializeToElement(new { _iType = type, _kBuffCategory = categories }));
+        new(JsonSerializer.SerializeToElement(new { _iType = type, _iDisperse = 1, _kBuffCategory = categories }));
 
     [Fact]
     public void AHealingSkillRemovesTheKindsItsDataNames()
@@ -44,5 +48,21 @@ public sealed class CleanseRulesTests
         Assert.False(CombatService.Cleanses([3], Buff(1, 3)));
         Assert.False(CombatService.Cleanses([3], Buff(2, 999, 3)));
         Assert.False(CombatService.Cleanses([3], Buff(2)));
+    }
+
+    [Fact]
+    public void ACleanseLeavesABuffThatCannotBeDispersed() =>
+        Assert.False(CombatService.Cleanses([3],
+            new BuffConfig(JsonSerializer.SerializeToElement(new { _iType = 2, _iDisperse = 0, _kBuffCategory = new[] { 3 } }))));
+
+    [ClientDataFact]
+    public void TheStrongCleanseLeavesABossFrozenButNotAnOrdinaryOne()
+    {
+        var data = new GameData(Options.Create(new ServerOptions { GameDataDir = Path.Combine(ClientData.RepoRoot, "data") }),
+            NullLogger<GameData>.Instance);
+        int[] kinds = CombatService.CleanseKinds(data.Row("SkillConfig", 1401411)!.Value);
+        Assert.Contains(9, kinds);
+        Assert.False(CombatService.Cleanses(kinds, BuffConfig.Get(data, 4115501)!.Value)); // boss skill 4118801, kind 9, _iDisperse 0
+        Assert.Contains(BuffConfig.All(data), buff => buff.BuffCategory is [9, ..] && CombatService.Cleanses(kinds, buff));
     }
 }
