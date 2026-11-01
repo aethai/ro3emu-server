@@ -101,6 +101,12 @@ A ban from the Accounts page (reason, and 1 day to 30 days or no end):
 
 Lifting a ban deletes the row and is audited the same way.
 
+Staff act only below their own role: a Moderator cannot ban or unban a GM or an Admin, and two Admins cannot ban each
+other (take the role away first). A ban also stands against anyone below the one who placed it, so a Moderator cannot
+lift an Admin's ban. On your own PC with an empty `GmAccounts` the role by the lists counts, so every account can ban the
+others there. Signing an account out and resetting its 2FA stay open between Admins: they need Admin already, they are
+audited, and the reset is how an Admin who lost a phone gets back in.
+
 ## Admin tools
 
 Each tool is a page of the admin area's sidebar; each change is written to the audit log, with the admin's name.
@@ -525,7 +531,9 @@ server {
 }
 ```
 
-Keep `Host` as the browser sent it: the panel refuses a POST whose `Origin` names another host. Forward only the
+Set `PublicUrl` or `TrustedProxies`: without either, the API of a panel on loopback answers 404 to a `Host` that is not
+this machine (a page that resolves its own name to 127.0.0.1 could otherwise use it), and the log warns once in ten
+minutes. Keep `Host` as the browser sent it: the panel refuses a POST whose `Origin` names another host. Forward only the
 panel's port. The server's own HTTP port (5380) has loopback-only operator endpoints that a proxy on the same machine
 would open to everyone ([security model](../systems/security.md)). If you proxy 5380 as well (the game's login and the
 launcher's calls), shut those endpoints off in the proxy:
@@ -536,7 +544,7 @@ launcher's calls), shut those endpoints off in the proxy:
     }
 ```
 
-Logins share the server's credential budget (`Ro3Emu:LoginAttemptsPerMinute` per client address, the same counter as
+Logins share the server's credential budget (`Ro3Emu:LoginAttemptsPerMinute` per client address, an IPv6 one by its /64 network, the same counter as
 the game's login, on the panel and on port 5380 alike). Behind a trusted proxy the address is the player's own, from
 `X-Forwarded-For`. A proxy that is not listed in `TrustedProxies` is not believed, so every player behind it counts
 against one budget: the proxy's. Loopback is exempt from the budget only for local tools: a request with

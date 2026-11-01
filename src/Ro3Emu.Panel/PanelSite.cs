@@ -224,7 +224,11 @@ public sealed partial class PanelSite
         var matches = _routes.Where(r => Matches(r.Segments, segments)).ToList();
         var route = matches.FirstOrDefault(r => string.Equals(r.Method, context.Request.Method, StringComparison.OrdinalIgnoreCase));
         Reply reply;
-        if (!HostAllowed(context)) reply = Reply.Error(StatusCodes.Status404NotFound, "Not found.");
+        if (!HostAllowed(context))
+        {
+            NoteRefusedHost(context.Request);
+            reply = Reply.Error(StatusCodes.Status404NotFound, "Not found.");
+        }
         else if (route == null)
         {
             reply = matches.Count == 0 ? Reply.Error(StatusCodes.Status404NotFound, "Not found.")
@@ -261,6 +265,24 @@ public sealed partial class PanelSite
             return string.Equals(context.Request.Host.Host, url.Host, StringComparison.OrdinalIgnoreCase);
         return _clients.FromTrustedProxy(context) && ClientAddresses.IsForwarded(context.Request);
     }
+
+    private long _hostRefusalLogged;
+
+    /// <summary>
+    /// A proxy that keeps the player's Host, with neither option set, sees only 404s from the API while the pages load.
+    /// One warning per ten minutes tells the operator why, without a flood of them for a rebinding page.
+    /// </summary>
+    private void NoteRefusedHost(HttpRequest request)
+    {
+        long now = Environment.TickCount64, last = Interlocked.Read(ref _hostRefusalLogged);
+        if (last != 0 && now - last < 600_000 || Interlocked.CompareExchange(ref _hostRefusalLogged, now, last) != last) return;
+        string host = request.Host.Host;
+        LogHostRefused(_log, host.Length <= 100 ? host : host[..100]);
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Panel: refused API requests for Host '{Host}'. If a proxy serves the panel " +
+        "under that name, set Ro3Emu:Panel:PublicUrl or Ro3Emu:Panel:TrustedProxies (docs/guide/panel.md)")]
+    private static partial void LogHostRefused(ILogger logger, string host);
 
     private static bool Matches(string[] pattern, string[] segments) =>
         pattern.Length == segments.Length && pattern.Zip(segments).All(p => p.First == "{}" || string.Equals(p.First, p.Second, StringComparison.Ordinal));

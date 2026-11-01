@@ -6,7 +6,8 @@ using Ro3Emu.Panel;
 namespace Ro3Emu.Server.Http;
 
 /// <summary>
-/// The budget of HTTP credential checks (SDK login, character deletion, panel logins) per client address and minute
+/// The budget of HTTP credential checks (SDK login, character deletion, panel logins) per client address (an IPv6 one by
+/// its /64 network) and minute
 /// (<see cref="ServerOptions.LoginAttemptsPerMinute"/>): each check runs a 100 000-round PBKDF2 hash and a login may
 /// register an account. A plain fixed window per address, no timers: ASP.NET's rate-limiter middleware keeps a cleanup
 /// timer alive past the host, which held every disposed test host (and its game data) in memory. The address is the
@@ -28,7 +29,7 @@ public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvi
         if (client.Address is not { } remote) return true;
         var o = options.Value;
         if (LoopbackExempt(o, client)) return true;
-        return _byAddress.TryAcquire(remote, o.LoginAttemptsPerMinute);
+        return _byAddress.TryAcquire(ClientAddresses.Network(remote), o.LoginAttemptsPerMinute);
     }
 
     /// <summary>A local tool on loopback, not a proxy in front of the server: the address budgets let it through.</summary>
@@ -56,7 +57,7 @@ public sealed class GiftCodeLimiter(IOptions<ServerOptions> options, TimeProvide
         var o = options.Value;
         int budget = o.GiftCodeAttemptsPerMinute;
         bool address = client.Address is not { } remote || CredentialLimiter.LoopbackExempt(o, client)
-            || _byAddress.TryAcquire(remote, budget);
+            || _byAddress.TryAcquire(ClientAddresses.Network(remote), budget);
         bool byAccount = string.IsNullOrEmpty(account) || _byAccount.TryAcquire(account, budget);
         return address && byAccount;
     }
