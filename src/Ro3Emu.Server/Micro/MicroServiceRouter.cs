@@ -72,8 +72,11 @@ public sealed partial class MicroServiceRouter(IEnumerable<IMicroService> servic
             // PhonestGate touches only the micro connection, the locked GateAuthRegistry and the ban read: no Realm admission.
             // RankService only reads committed rows through the read pool and its own cached snapshot, and so does
             // NameService (RoleStore.FindByNameAsync, GetAsync): under the Realm key a flood of getUidByName waited
-            // behind, and held up, every realm-wide operation of the loop.
-            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate" or "RankService" or "NameService")
+            // behind, and held up, every realm-wide operation of the loop. ClusterRecommendService and PlatformProxyService
+            // answer from options alone. PartyService only reads: it goes to the loop itself for the team and tavern
+            // directories (their owner) and to the read pool for chat groups, and changes nothing.
+            if (loop == null || owners == null || service is "FriendService" or "UserDataService" or "MailService" or "PhonestGate"
+                or "RankService" or "NameService" or "ClusterRecommendService" or "PlatformProxyService" or "PartyService")
                 result = await handler.InvokeAsync(session, method, args);
             else result = await loop.InvokeAsync(async () =>
             {

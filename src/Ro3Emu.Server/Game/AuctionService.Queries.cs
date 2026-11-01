@@ -8,6 +8,12 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class AuctionService
 {
+    /// <summary>
+    /// Auctions one batch request may name. (inferred) Each costs a store read or a cancellation; the client shows far fewer
+    /// on one screen.
+    /// </summary>
+    private const int MaxBatchPerRequest = 200;
+
     public async Task CountAsync(GameSession s, QueryAuctionCountReq req)
     {
         long requestRole = s.Role?.Id ?? 0;
@@ -273,7 +279,7 @@ public sealed partial class AuctionService
             res.Result = ErrorCodes.AuctionParameter;
         else
         {
-            foreach (var item in req.BiddingItems)
+            foreach (var item in req.BiddingItems.Take(MaxBatchPerRequest))
             {
                 if (!AuctionRequestCurrent(s, requestRole, requestLease)) throw new OperationCanceledException();
                 var row = store.Get(item.AuctionId);
@@ -302,7 +308,7 @@ public sealed partial class AuctionService
         if (req.AuctionIds.Count > Math.Max(1, Param("AUCTION_BATCH_NUM", 100))) res.Result = ErrorCodes.Parameter;
         else
         {
-            foreach (long id in req.AuctionIds.Distinct())
+            foreach (long id in req.AuctionIds.Distinct().Take(MaxBatchPerRequest))
             {
                 if (!AuctionRequestCurrent(s, requestRole, requestLease)) throw new OperationCanceledException();
                 res.BatchResults[id] = (await CancelCoreAsync(s, id, req.GuildId, quit: false)).Code;
