@@ -23,7 +23,7 @@ public sealed class PanelTests : IAsyncLifetime
 
     public Task DisposeAsync() => _host.DisposeAsync().AsTask();
 
-    internal static async Task<(SyntheticHost Host, string Panel)> StartAsync(Action<ServerOptions> configure)
+    internal static async Task<(SyntheticHost Host, string Panel)> StartAsync(Action<ServerOptions> configure, TimeProvider? clock = null)
     {
         int port = TestPorts.FreePort();
         var host = await SyntheticHost.StartAsync(o =>
@@ -31,8 +31,18 @@ public sealed class PanelTests : IAsyncLifetime
             o.Panel.Enabled = true;
             o.Panel.Port = port;
             configure(o);
-        });
+        }, clock);
         return (host, $"http://127.0.0.1:{port}");
+    }
+
+    /// <summary>
+    /// The login budget is a fixed window per wall-clock minute (CredentialLimiter): on the system clock a test that
+    /// counts attempts fails when it straddles a minute boundary (main run 41294128083, at 09:49:00).
+    /// </summary>
+    private sealed class FrozenClock : TimeProvider
+    {
+        private readonly DateTimeOffset _now = new(2026, 10, 15, 12, 0, 30, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 
     [Fact]
@@ -150,7 +160,7 @@ public sealed class PanelTests : IAsyncLifetime
             o.GmOpenWhenEmpty = true; // GM for everyone in game, so an Admin of the panel too
             o.LoginLimitIncludesLoopback = true;
             o.LoginAttemptsPerMinute = 3;
-        });
+        }, new FrozenClock());
         await using var _ = host;
         Assert.Equal(0, await SdkLoginAsync(host, "panel-anyone", "pw-game"));
         using var browser = new PanelBrowser(panel);
