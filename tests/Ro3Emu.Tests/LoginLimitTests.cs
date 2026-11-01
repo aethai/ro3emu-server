@@ -87,6 +87,23 @@ public sealed class LoginLimitTests
         Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
     }
 
+    /// <summary>One subscriber holds a whole IPv6 /64, so all of it shares one budget, also for gift codes.</summary>
+    [Fact]
+    public void AnIpv6NetworkSharesOneBudget()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new ServerOptions { LoginAttemptsPerMinute = 2, GiftCodeAttemptsPerMinute = 2 });
+        var logins = new CredentialLimiter(options, new FrozenClock());
+        var gifts = new GiftCodeLimiter(options, new FrozenClock());
+        Ro3Emu.Panel.RequestClient From(string address) => new(IPAddress.Parse(address), false);
+        foreach (Func<Ro3Emu.Panel.RequestClient, bool> budget in new Func<Ro3Emu.Panel.RequestClient, bool>[] { logins.TryAcquire, c => gifts.TryAcquire(c, null) })
+        {
+            Assert.True(budget(From("2001:db8:1:1::1")));
+            Assert.True(budget(From("2001:db8:1:1::2")));
+            Assert.False(budget(From("2001:db8:1:1:ffff::3")));
+            Assert.True(budget(From("2001:db8:1:2::1"))); // another /64
+        }
+    }
+
     [Fact]
     public async Task ATunnelEndsTheLoopbackExemption()
     {
