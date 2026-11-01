@@ -450,6 +450,7 @@ Ro3Emu.Server.Accounts.Persistence.RealmStatePlan/_kind
 Ro3Emu.Server.Accounts.Persistence.RealmStatePlan/_state
 Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<batch>P
 Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<cutoffUtcMs>P
+Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<futureUtcMs>P
 Ro3Emu.Server.Accounts.Persistence.RoleAwardStatePlan/_checkTasks
 Ro3Emu.Server.Accounts.Persistence.RoleAwardStatePlan/_daily
 Ro3Emu.Server.Accounts.Persistence.RoleAwardStatePlan/_expectedDaily

@@ -77,6 +77,28 @@ public sealed partial class DungeonTests
         Assert.DoesNotContain(Service<World>().AllUnits(), m => m.InstanceId == instance && m is MonsterUnit);
     }
 
+    // The client finds a dungeon's item limit in DungeonConfig (Lua_CFG_MapConfigBase.GetEntryPtr). The server looked only
+    // in MapConfig, which has no dungeon ids, and refused the World Tree cast in every dungeon.
+    [ClientDataFact]
+    public async Task TheYggdrasilLeafCastFollowsTheDungeonsOwnItemLimit()
+    {
+        const int leafCast = 2200101, leaf = 1002004;
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!lvl 99");
+        await Gm(alice, $"!item {leaf} 2");
+        Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = 1000501 })); // _iLimitType 0
+        await Load(alice, 1000501);
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = leafCast, TargetId = (long)alice.Self!.Uuid });
+        Assert.NotEqual(ErrorCodes.ItemUseAreaForbidden, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+
+        // 1000502 has _iLimitType 1, [1, 2]: the Leaf's type. It has no encounter to enter, so only the id is taken.
+        await OnLoop(() => { Session(alice).SceneEntry = 1000502; return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = leafCast, TargetId = (long)alice.Self!.Uuid });
+        Assert.Equal(ErrorCodes.ItemUseAreaForbidden, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.Equal(2, Session(alice).Items.Where(i => i.Entry == leaf).Sum(i => i.Stack));
+        await OnLoop(() => { Session(alice).SceneEntry = 1000501; return Task.CompletedTask; });
+    }
+
     [ClientDataFact]
     public async Task ASoloStoryPlaneReturnsThePlayerToTheFieldAfterItsClear()
     {

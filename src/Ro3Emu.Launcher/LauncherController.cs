@@ -149,8 +149,11 @@ public sealed partial class LauncherController : ILauncherController
         catch (Exception e) when (e is PatcherException or HttpRequestException or TaskCanceledException or IOException or JsonException)
         {
             _installed = new Updater(_layout, _repo).LoadState();
+            // The patcher's own words say why (a repository that is not https, a missing channel); a network error has none.
+            string? reason = e is PatcherException ? e.Message : null;
             // Offline but installed: the game can still start (the update server and the game server are separate).
-            PostState(_installed is not null ? "ready" : "offline", _installed is not null ? "Can't reach the update server; playing the installed version." : null);
+            if (_installed is not null) PostState("ready", (reason ?? "Can't reach the update server.") + " Playing the installed version.");
+            else PostState("offline", reason);
         }
         PostSettings();
     }

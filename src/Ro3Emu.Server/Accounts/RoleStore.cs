@@ -55,7 +55,12 @@ public sealed class RoleStore(AccountStore accounts)
     private readonly AccountStore _accounts = accounts;
     private string? _rewardRealm;
     internal string RewardRealmId => _rewardRealm ??= _accounts.ReadSync<string>(new RewardSourceReadPlan());
-    internal Task<bool> RewardSourceCommittedAsync(string source) => _accounts.ReadAsync<bool>(new RewardSourceReadPlan(source));
+    /// <summary>How long <see cref="RewardSourceCommittedAsync"/> waits for room in a full reader queue.</summary>
+    internal TimeSpan RewardSourcePatience { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>Whether the source committed. A full reader queue delays the answer; if it stays full the refusal is
+    /// thrown, so "not read" never reads as "not committed".</summary>
+    internal Task<bool> RewardSourceCommittedAsync(string source) =>
+        QueueFullPatience.RunAsync(() => _accounts.ReadAsync<bool>(new RewardSourceReadPlan(source)), RewardSourcePatience);
 
     public RoleItemPlanBuilder NewTransaction() => new(_accounts);
 

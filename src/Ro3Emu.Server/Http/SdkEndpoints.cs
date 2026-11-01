@@ -26,7 +26,7 @@ public static partial class SdkEndpoints
     /// The login form the client posts is identity, credential and channel_id (HttpNetworkManager): a few short values.
     /// Anything far larger is refused before it is read in full. (inferred)
     /// </summary>
-    private static readonly Microsoft.AspNetCore.Http.Features.FormOptions LoginForm = new()
+    internal static readonly Microsoft.AspNetCore.Http.Features.FormOptions LoginForm = new()
     {
         BufferBody = false,
         ValueCountLimit = 16,
@@ -37,7 +37,7 @@ public static partial class SdkEndpoints
     };
 
     /// <summary>Characters of a password the game's login hashes; the panel's own limit (PanelSite.PasswordMax) is far below. (inferred)</summary>
-    private const int MaxCredential = 1024;
+    internal const int MaxCredential = 1024;
 
     /// <summary>Public half of the gate key, so a player's ClientTools can patch against this server from its URL alone.</summary>
     public const string GateKeyPath = "/ro3emu/gate-key.pem";
@@ -50,6 +50,7 @@ public static partial class SdkEndpoints
             IOptions<ServerOptions> options, ILogger<AccountStore> log) =>
         {
             if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!request.HasFormContentType) return Results.StatusCode(StatusCodes.Status400BadRequest);
             IFormCollection form;
             try { form = await request.ReadFormAsync(LoginForm); }
             catch (InvalidDataException) { return Results.StatusCode(StatusCodes.Status400BadRequest); }
@@ -76,7 +77,7 @@ public static partial class SdkEndpoints
                 return Results.Json(new { code = 401 });
             }
             // The account's login history on the web panel (the address only where the operator keeps addresses).
-            await panel.RecordLoginAsync(account, "game", request.HttpContext.Connection.RemoteIpAddress);
+            await panel.RecordLoginAsync(account, "game", limiter.ClientAddress(request.HttpContext));
             return Results.Json(new { code = 0, data = new { token = await accounts.IssueSdkTokenAsync(account) } });
         });
 

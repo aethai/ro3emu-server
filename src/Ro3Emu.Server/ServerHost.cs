@@ -31,7 +31,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton(Options.Create(options));
         builder.Services.AddSingleton(clock ?? TimeProvider.System);
         // GM and Admin accounts need two-factor authentication on a public panel unless the operator says otherwise.
-        options.Panel.RequireAdmin2FA ??= options.Panel.PublicFacing(PanelAddress(options));
+        options.Panel.RequireAdmin2FA ??= !options.LocalOnly();
         // Loopback for local play and tests; the web panel (docs/guide/panel.md) on its own port, routed by PanelSite.Map.
         builder.WebHost.UseUrls(options.Panel.Enabled
             ? [$"http://{options.ListenAddress()}:{options.HttpPort}", PanelUrl(options)]
@@ -408,6 +408,7 @@ public static partial class ServerHost
         }
         app.Logger.LogInformation("Data dir {DataDir}", options.DataDir);
         LogGmPolicy(app.Logger, options, builder.Environment.EnvironmentName);
+        if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess) LogRunningAsRoot(app.Logger);
         LogTesting(app.Logger, options.Testing);
         if (options.RefuseUnknownAccounts && !(options.Panel.Enabled && options.Panel.Registration)) LogNoSignUp(app.Logger);
         // D1 inventory across many short-lived servers (a whole test suite): each appends its loop waits on stop.
@@ -458,6 +459,9 @@ public static partial class ServerHost
         string.Equals(configuration[HostDefaults.EnvironmentKey], Environments.Production, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Says at startup who has GM in game, loudly when it is everyone on a public address or nobody.</summary>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! The server is running as root: a hole in it would own the whole machine. Run it as an ordinary user (docs/guide/hosting.md).")]
+    private static partial void LogRunningAsRoot(ILogger logger);
+
     private static void LogGmPolicy(ILogger logger, ServerOptions options, string environment)
     {
         if (options.GmAccounts.Length > 0)
@@ -466,7 +470,7 @@ public static partial class ServerHost
             return;
         }
         bool local = options.LocalOnly();
-        string where = local ? "local only" : $"reachable from other machines on {options.ListenAddress()}";
+        string where = local ? "local only" : $"reachable from other machines: listens on {options.ListenAddress()}, public host {options.PublicHost}";
         if (options.GmOpenWhenEmpty == false)
         {
             logger.LogWarning("!!! Ro3Emu:GmAccounts is empty, so NO account has GM commands in game " +
@@ -475,7 +479,9 @@ public static partial class ServerHost
                 "still works.", environment, where);
             return;
         }
-        if (!local || string.Equals(environment, Environments.Production, StringComparison.OrdinalIgnoreCase))
+        // Open on a server others reach only by an explicit Ro3Emu:GmOpenWhenEmpty. A plain local start has no
+        // environment set, and the host then calls itself Production, so the name alone says nothing.
+        if (!local)
             logger.LogWarning("!!! Ro3Emu:GmAccounts is empty and GM is open: EVERY account can use GM commands in game " +
                 "(environment {Environment}, {Where}, Ro3Emu:GmOpenWhenEmpty set). For a public server list the GM " +
                 "accounts: Ro3Emu__GmAccounts__0=<account> (docs/guide/gm-access.md).", environment, where);
