@@ -69,7 +69,7 @@ public sealed partial class GuildService
         else
         {
             int failure = 0;
-            foreach (var id in req.GuildIds.Distinct())
+            foreach (var id in req.GuildIds.Distinct().Take(50))
             {
                 int code = Own(s) != null ? ErrorCodes.AlreadyInGuild : await RespondAsync(s, store.Get(id));
                 if (code != 0 && failure == 0) failure = code;

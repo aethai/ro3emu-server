@@ -6,13 +6,14 @@ using Ro3Emu.Panel;
 namespace Ro3Emu.Server.Http;
 
 /// <summary>
-/// The budget of HTTP credential checks (SDK login, character deletion, panel logins) per client address and minute
+/// The budget of HTTP credential checks (SDK login, character deletion, panel logins) per client address (an IPv6 one by
+/// its /64 network) and minute
 /// (<see cref="ServerOptions.LoginAttemptsPerMinute"/>): each check runs a 100 000-round PBKDF2 hash and a login may
 /// register an account. A plain fixed window per address, no timers: ASP.NET's rate-limiter middleware keeps a cleanup
 /// timer alive past the host, which held every disposed test host (and its game data) in memory. The address is the
 /// client of <see cref="ClientAddresses"/> (a trusted proxy's forwarded one). Loopback is exempt only for a local tool:
-/// unless <see cref="ServerOptions.LoginLimitIncludesLoopback"/>, and never for a forwarded request or when the panel
-/// options name a proxy (<see cref="PanelOptions.PublicFacing"/>), since a proxy on the same machine is loopback too.
+/// unless <see cref="ServerOptions.LoginLimitIncludesLoopback"/>, and never for a forwarded request or on a server others
+/// reach (<see cref="ServerOptions.LocalOnly"/>), since a proxy or a tunnel on the same machine is loopback too.
 /// </summary>
 public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvider time)
 {
@@ -22,19 +23,21 @@ public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvi
     /// <summary>False when the request's client has used this minute's budget (answer 429 without hashing).</summary>
     public bool TryAcquire(HttpContext context) => TryAcquire(_clients.Of(context));
 
+    /// <summary>The address of the request's client: a trusted proxy's forwarded one, else the peer.</summary>
+    public IPAddress? ClientAddress(HttpContext context) => _clients.Of(context).Address;
+
     /// <summary>False when <paramref name="client"/> has used this minute's budget (answer 429 without hashing).</summary>
     public bool TryAcquire(RequestClient client)
     {
         if (client.Address is not { } remote) return true;
         var o = options.Value;
         if (LoopbackExempt(o, client)) return true;
-        return _byAddress.TryAcquire(remote, o.LoginAttemptsPerMinute);
+        return _byAddress.TryAcquire(ClientAddresses.Network(remote), o.LoginAttemptsPerMinute);
     }
 
     /// <summary>A local tool on loopback, not a proxy in front of the server: the address budgets let it through.</summary>
     internal static bool LoopbackExempt(ServerOptions o, RequestClient client) =>
-        !o.LoginLimitIncludesLoopback && client is { Address: { } a, Forwarded: false } && IPAddress.IsLoopback(a)
-        && o.Panel.TrustedProxies.Length == 0 && string.IsNullOrWhiteSpace(o.Panel.PublicUrl);
+        !o.LoginLimitIncludesLoopback && client is { Address: { } a, Forwarded: false } && IPAddress.IsLoopback(a) && o.LocalOnly();
 }
 
 /// <summary>
@@ -57,7 +60,7 @@ public sealed class GiftCodeLimiter(IOptions<ServerOptions> options, TimeProvide
         var o = options.Value;
         int budget = o.GiftCodeAttemptsPerMinute;
         bool address = client.Address is not { } remote || CredentialLimiter.LoopbackExempt(o, client)
-            || _byAddress.TryAcquire(remote, budget);
+            || _byAddress.TryAcquire(ClientAddresses.Network(remote), budget);
         bool byAccount = string.IsNullOrEmpty(account) || _byAccount.TryAcquire(account, budget);
         return address && byAccount;
     }

@@ -87,6 +87,62 @@ public sealed class LoginLimitTests
         Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
     }
 
+    /// <summary>One subscriber holds a whole IPv6 /64, so all of it shares one budget, also for gift codes.</summary>
+    [Fact]
+    public void AnIpv6NetworkSharesOneBudget()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new ServerOptions { LoginAttemptsPerMinute = 2, GiftCodeAttemptsPerMinute = 2 });
+        var logins = new CredentialLimiter(options, new FrozenClock());
+        var gifts = new GiftCodeLimiter(options, new FrozenClock());
+        Ro3Emu.Panel.RequestClient From(string address) => new(IPAddress.Parse(address), false);
+        foreach (Func<Ro3Emu.Panel.RequestClient, bool> budget in new Func<Ro3Emu.Panel.RequestClient, bool>[] { logins.TryAcquire, c => gifts.TryAcquire(c, null) })
+        {
+            Assert.True(budget(From("2001:db8:1:1::1")));
+            Assert.True(budget(From("2001:db8:1:1::2")));
+            Assert.False(budget(From("2001:db8:1:1:ffff::3")));
+            Assert.True(budget(From("2001:db8:1:2::1"))); // another /64
+        }
+    }
+
+    [Fact]
+    public async Task ATunnelEndsTheLoopbackExemption()
+    {
+        // frp or ssh -R: strangers arrive on loopback with no header, but the client is told a public address.
+        var codes = await Logins(limitLoopback: false, attempts: 4, configure: o => { o.PublicHost = "192.0.2.10"; o.BindAddress = "127.0.0.1"; });
+        Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
+    }
+
+    /// <summary>A body that is not a form, or a form far past what these calls send, is a bad request, not a 500 with a stack.</summary>
+    [Theory]
+    [InlineData(SdkEndpoints.LoginPath)]
+    [InlineData("/ro3emu/account/delete-role")]
+    public async Task TheCredentialFormsRefuseOtherBodies(string path)
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        using var client = new HttpClient();
+        var plain = await client.PostAsync(host.Http + path, new StringContent("identity=a&credential=b", System.Text.Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.BadRequest, plain.StatusCode);
+        var huge = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = "a", ["credential"] = new('x', 1024 * 1024) });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(host.Http + path, huge)).StatusCode);
+    }
+
+    /// <summary>The login history names the player behind a trusted proxy, not the proxy.</summary>
+    [Fact]
+    public async Task AGameLoginBehindATrustedProxyRecordsThePlayersAddress()
+    {
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.Panel.TrustedProxies = ["127.0.0.1"];
+            o.Panel.LoginAddresses = true;
+        });
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.30");
+        var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = "behind-proxy", ["credential"] = "pw-game" });
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync(host.Http + SdkEndpoints.LoginPath, form)).StatusCode);
+        var logins = await host.Service<Ro3Emu.Panel.IPanelOperations>().LoginsAsync("behind-proxy", 5);
+        Assert.Equal("203.0.113.30", Assert.Single(logins).Address);
+    }
+
     [Fact]
     public async Task AConfiguredProxyEndsTheLoopbackExemption()
     {

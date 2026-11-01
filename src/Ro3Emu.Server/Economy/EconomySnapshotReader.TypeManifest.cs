@@ -62,8 +62,9 @@ public static partial class EconomySnapshotReader
     // no balance and no asset: the item is spent by the cd13a/character-item-action receipt that writes them.
     // GM panel: role.gm_state is GmCommands.RoleGmState (AllFunctionsOpen, openallfunc kept across logins): a flag that
     // opens client functions, no balance and no asset.
-    // Job EXP catch-up: role.job_exp_catchup is CharacterService.JobExpCatchUpState: the amount of the role's one grant,
-    // no balance and no asset; the EXP comes with its cd13e/grant receipt.
+    // Job EXP catch-up: role.job_exp_catchup is CharacterService.JobExpCatchUpState: the Job EXP paid to the role, what
+    // later job advances still owe it and the rank last paid, no balance and no asset; the EXP comes with its cd13e/grant
+    // receipts.
     // Tavern: role.barroom is TavernService.RoleState (Star Power received from Tavern gifts, its week, active days and
     // today's time in a room): counters, no balance and no asset; the gift drink is spent by the event/tavern-gift receipt.
     // Shop gifts: role.gifts is ShopService.GiftState (sent and received gift orders): records, no balance and no asset;
@@ -100,7 +101,7 @@ public static partial class EconomySnapshotReader
     // newactivity receipt that also saves them.
     // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
     // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
-    public const string ExpectedFormatManifestHash = "9BDA5059691D8C0780DF57E6035DE385AA80256909ABAE9FD90027129A49FED4";
+    public const string ExpectedFormatManifestHash = "77E95F108A58DBEB382686AF5C92D2F471FDFA040CD939D96667B0E8F626026D";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

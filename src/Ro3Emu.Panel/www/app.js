@@ -687,6 +687,7 @@ async function adminDashboard() {
       h('div', { class: 'span-7' }, card('Busiest maps', null, maps)),
       h('div', { class: 'span-5' }, card('Server', null, body(facts([
         ['Game loop', chip(d.phase === 'Accepting' ? 'online' : 'banned', d.phase)],
+        ['Characters needing a restart', d.rolesInRecovery ? chip('banned', num(d.rolesInRecovery)) : '0'],
         ['Database commits', h('span', { class: 'num' }, num(d.dbCommits))],
         ['Version', mono(status.version || '-')], ['Started', stamp(status.startedUtc)],
         ['Uptime', mono(duration(status.uptimeSeconds))]]))))));

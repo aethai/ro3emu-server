@@ -205,6 +205,47 @@ public sealed class PanelTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
     }
 
+    /// <summary>
+    /// A proxy nobody told the server about (no PublicUrl, no TrustedProxies) rewrites the Host to the panel's address, so
+    /// only its forwarding header tells its players from this machine: they never get the Admin of an open local server,
+    /// on any admin route, while the machine's own browser and a role given by name keep theirs.
+    /// </summary>
+    [Theory]
+    [InlineData("X-Forwarded-For", "203.0.113.20")]
+    [InlineData("X-Real-IP", "203.0.113.20")]
+    [InlineData("Forwarded", "for=203.0.113.20")]
+    public async Task AForwardedRequestNeverGetsTheAdminOfAnOpenLocalServer(string header, string value)
+    {
+        var (host, panel) = await StartAsync(o =>
+        {
+            o.GmOpenWhenEmpty = null; // decided by the server: open, it is local
+            o.Panel.Roles = new Dictionary<string, string> { ["panel-listed"] = "moderator" };
+        });
+        await using var _ = host;
+        Assert.True(host.Service<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value.GmOpenWhenEmpty);
+        Assert.Equal(0, await SdkLoginAsync(host, "panel-local", "pw-game"));
+        Assert.Equal(0, await SdkLoginAsync(host, "panel-listed", "pw-game"));
+
+        using var local = new PanelBrowser(panel);
+        var own = await (await local.LoginAsync("panel-local", "pw-game")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("admin", own.GetProperty("role").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await local.Http.GetAsync("/api/admin/server")).StatusCode);
+
+        using var proxied = new PanelBrowser(panel);
+        proxied.Http.DefaultRequestHeaders.Add(header, value);
+        var theirs = await (await proxied.LoginAsync("panel-local", "pw-game")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(theirs.GetProperty("admin").GetBoolean());
+        Assert.Equal("", theirs.GetProperty("role").GetString() ?? "");
+        foreach (string path in new[] { "/api/admin/dashboard", "/api/admin/server", "/api/admin/roles", "/api/admin/audit", "/api/admin/updates", "/api/admin/backups/any.db" })
+            Assert.Equal(HttpStatusCode.Forbidden, (await proxied.Http.GetAsync(path)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await proxied.PostAsync("/api/admin/backups", new { })).StatusCode);
+
+        using var listed = new PanelBrowser(panel);
+        listed.Http.DefaultRequestHeaders.Add(header, value);
+        var role = await (await listed.LoginAsync("panel-listed", "pw-game")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("moderator", role.GetProperty("role").GetString());
+    }
+
     [Fact]
     public async Task ABanKicksTheOnlinePlayerBlocksEveryLoginAndIsAudited()
     {

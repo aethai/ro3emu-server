@@ -948,8 +948,10 @@ public static class EconomyLedgerReader
             "cd13e/daily-reset" => [.. required, "wild_afk"],
             "gather-yield" => [.. required, "library", "task_followup"],
             "dungeon-reward" => [.. required, "auction_order", "library", "task_followup"],
+            // The Job EXP catch-up commits its marker with its EXP (CharacterService.JobExpCatchUp).
+            "cd13e/grant" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts", "job_exp_catchup"],
             "cd13e/tower-milestone" or "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
-            "cd13e/grant" or "cd13e/gm-grant" or "cd13e/character-exp" or
+            "cd13e/gm-grant" or "cd13e/character-exp" or
                 "cd13e/journey-victory" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts"],
             _ => required
         };
