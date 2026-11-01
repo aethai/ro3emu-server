@@ -107,6 +107,9 @@ dotnet_diagnostic.IDE1006.severity = suggestion
 # The client projects keep their block-scoped namespaces (built only against a local client).
 [src/Ro3Emu.{ClientHooks,Loc}/**.cs]
 csharp_style_namespace_declarations = block_scoped:silent
+# Members inherited from the client's obfuscated classes differ only by case (Obf_KkD, Obf_kkD). CI builds without the
+# client, so it never sees this rule fail here: only a local build against the client does.
+dotnet_diagnostic.CA1708.severity = none
 
 # Projects that build only against a local client keep their style rules as suggestions.
 [src/Ro3Emu.{ClientHooks,Loc,ClientTools}/**.cs]
