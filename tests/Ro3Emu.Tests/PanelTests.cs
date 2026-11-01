@@ -177,6 +177,24 @@ public sealed class PanelTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
     }
 
+    /// <summary>
+    /// A panel players reach through a proxy (PublicUrl) listens on loopback, yet an empty GM list closes GM there:
+    /// whoever signs up is neither GM in game nor an Admin, without any GmOpenWhenEmpty or environment setting.
+    /// </summary>
+    [Fact]
+    public async Task BehindAProxyAnEmptyGmListMakesNobodyAdmin()
+    {
+        var (host, panel) = await StartAsync(o => o.Panel.PublicUrl = "https://panel.example.com");
+        await using var _ = host;
+        var options = host.Service<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value;
+        Assert.False(options.GmOpenWhenEmpty);
+        Assert.Equal(0, await SdkLoginAsync(host, "panel-proxied", "pw-game"));
+        using var browser = new PanelBrowser(panel);
+        var login = await browser.LoginAsync("panel-proxied", "pw-game");
+        Assert.False((await login.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("admin").GetBoolean());
+        Assert.Equal(HttpStatusCode.Forbidden, (await browser.Http.GetAsync("/api/admin/dashboard")).StatusCode);
+    }
+
     [Fact]
     public async Task ABanKicksTheOnlinePlayerBlocksEveryLoginAndIsAudited()
     {

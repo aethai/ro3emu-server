@@ -81,7 +81,8 @@ authentication when the panel listens on a public address (`Ro3Emu:Panel:Require
 [web panel](../guide/panel.md#staff-roles).
 
 GM commands (`!` chat lines, the GM panel, 1031/1034) are limited to `Ro3Emu:GmAccounts`. An empty list means
-everyone outside Production. See [GM access](../guide/gm-access.md), and set the list on any public server.
+everyone only on a local server (loopback only, no proxy, not Production), and nobody, in game or as a panel Admin, on
+a server other machines reach. See [GM access](../guide/gm-access.md), and set the list on any public server.
 
 ## Data on disk
 

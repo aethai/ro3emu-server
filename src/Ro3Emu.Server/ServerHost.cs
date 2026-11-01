@@ -487,6 +487,7 @@ public static partial class ServerHost
             string panelUrl = PanelUrl(options);
             LogPanel(app.Logger, panelUrl);
             LogPanelTwoFactor(app.Logger, options.Panel.RequireAdmin2FA == true ? "required" : "not required");
+            LogPanelAdmins(app.Logger, options);
         }
         app.Logger.LogInformation("Data dir {DataDir}", options.DataDir);
         LogGmPolicy(app.Logger, options, builder.Environment.EnvironmentName);
@@ -506,9 +507,10 @@ public static partial class ServerHost
     {
         var options = configuration.GetSection("Ro3Emu").Get<ServerOptions>() ?? new ServerOptions();
         configure?.Invoke(options);
-        // An empty GM list means nobody on a host started as Production on purpose (docs/guide/gm-access.md). Only an explicit
-        // environment counts: the host's own default is also "Production", and tests and local play set none.
-        options.GmOpenWhenEmpty ??= !ExplicitProduction(configuration);
+        // An empty GM list means everyone only on a server that only this machine reaches, and not on a host started
+        // as Production on purpose (docs/guide/gm-access.md). Only an explicit environment counts: the host's own
+        // default is also "Production", and tests and local play set none.
+        options.GmOpenWhenEmpty ??= !ExplicitProduction(configuration) && options.LocalOnly();
         // A relative data dir is relative to the repository root (the folder holding Ro3Emu.slnx), else to the binary.
         if (!Path.IsPathRooted(options.DataDir)) options.DataDir = Path.GetFullPath(Path.Combine(RepositoryRoot(), options.DataDir));
         return options;
@@ -526,8 +528,7 @@ public static partial class ServerHost
         return $"http://{host}:{panel.Port}";
     }
 
-    private static System.Net.IPAddress PanelAddress(ServerOptions options) =>
-        options.Panel.BindAddress is { Length: > 0 } bind ? System.Net.IPAddress.Parse(bind) : options.ListenAddress();
+    private static System.Net.IPAddress PanelAddress(ServerOptions options) => options.PanelListenAddress();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Web panel on {Url}")]
     private static partial void LogPanel(ILogger logger, string url);
@@ -547,20 +548,46 @@ public static partial class ServerHost
             logger.LogInformation("GM accounts: {Accounts}", string.Join(", ", options.GmAccounts));
             return;
         }
+        bool local = options.LocalOnly();
+        string where = local ? "local only" : $"reachable from other machines on {options.ListenAddress()}";
         if (options.GmOpenWhenEmpty == false)
         {
-            logger.LogWarning("!!! {Environment}: Ro3Emu:GmAccounts is empty, so NO account has GM commands in game. " +
-                "Set Ro3Emu__GmAccounts__0=<account> (docs/guide/gm-access.md). The loopback /ro3emu/gm tool still works.", environment);
+            logger.LogWarning("!!! Ro3Emu:GmAccounts is empty, so NO account has GM commands in game " +
+                "(environment {Environment}, {Where}): an empty list means everyone only on a local server. " +
+                "Set Ro3Emu__GmAccounts__0=<account> (docs/guide/gm-access.md). The loopback /ro3emu/gm tool " +
+                "still works.", environment, where);
             return;
         }
-        bool publicHost = !System.Net.IPAddress.TryParse(options.PublicHost, out var host) || !System.Net.IPAddress.IsLoopback(host);
-        if (publicHost || string.Equals(environment, Environments.Production, StringComparison.OrdinalIgnoreCase) && options.GmOpenWhenEmpty == true)
+        if (!local || string.Equals(environment, Environments.Production, StringComparison.OrdinalIgnoreCase))
             logger.LogWarning("!!! Ro3Emu:GmAccounts is empty and GM is open: EVERY account can use GM commands in game " +
-                "(environment {Environment}, public host {PublicHost}). For a public server set ASPNETCORE_ENVIRONMENT=Production " +
-                "and Ro3Emu__GmAccounts__0=<account> (docs/guide/gm-access.md).", environment, options.PublicHost);
+                "(environment {Environment}, {Where}, Ro3Emu:GmOpenWhenEmpty set). For a public server list the GM " +
+                "accounts: Ro3Emu__GmAccounts__0=<account> (docs/guide/gm-access.md).", environment, where);
         else
             logger.LogInformation("GM: every account (Ro3Emu:GmAccounts is empty; local or test server)");
     }
+
+    /// <summary>Says at startup who is a configured Admin of the web panel, loudly when nobody is.</summary>
+    private static void LogPanelAdmins(ILogger logger, ServerOptions options)
+    {
+        var admins = options.GmAccounts.Concat(options.Panel.Roles
+            .Where(r => Ro3Emu.Panel.PanelRoles.Parse(r.Value) == Ro3Emu.Panel.PanelRole.Admin).Select(r => r.Key))
+            .Distinct(StringComparer.Ordinal).ToList();
+        if (admins.Count > 0) LogPanelAdminList(logger, admins);
+        else if (StaffRoles.OpenGmAdmin(options)) LogPanelAdminsOpen(logger);
+        else LogPanelNoAdmin(logger);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Web panel Admins: {Accounts}")]
+    private static partial void LogPanelAdminList(ILogger logger, IReadOnlyList<string> accounts);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Web panel Admins: every account (GmAccounts is empty and GM is open on a local panel)")]
+    private static partial void LogPanelAdminsOpen(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Web panel: no Admin in the configuration. Set " +
+        "Ro3Emu__GmAccounts__0=<account> (docs/guide/panel.md); Admins given on the panel's Staff roles page keep " +
+        "their role.")]
+    private static partial void LogPanelNoAdmin(ILogger logger);
 
     /// <summary>Ro3Emu:Testing switches are test aids, never the original game: say so loudly while one is on.</summary>
     private static void LogTesting(ILogger logger, TestingOptions testing)
