@@ -112,6 +112,37 @@ public sealed class LoginLimitTests
         Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
     }
 
+    /// <summary>A body that is not a form, or a form far past what these calls send, is a bad request, not a 500 with a stack.</summary>
+    [Theory]
+    [InlineData(SdkEndpoints.LoginPath)]
+    [InlineData("/ro3emu/account/delete-role")]
+    public async Task TheCredentialFormsRefuseOtherBodies(string path)
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        using var client = new HttpClient();
+        var plain = await client.PostAsync(host.Http + path, new StringContent("identity=a&credential=b", System.Text.Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.BadRequest, plain.StatusCode);
+        var huge = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = "a", ["credential"] = new('x', 1024 * 1024) });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(host.Http + path, huge)).StatusCode);
+    }
+
+    /// <summary>The login history names the player behind a trusted proxy, not the proxy.</summary>
+    [Fact]
+    public async Task AGameLoginBehindATrustedProxyRecordsThePlayersAddress()
+    {
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.Panel.TrustedProxies = ["127.0.0.1"];
+            o.Panel.LoginAddresses = true;
+        });
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.30");
+        var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = "behind-proxy", ["credential"] = "pw-game" });
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync(host.Http + SdkEndpoints.LoginPath, form)).StatusCode);
+        var logins = await host.Service<Ro3Emu.Panel.IPanelOperations>().LoginsAsync("behind-proxy", 5);
+        Assert.Equal("203.0.113.30", Assert.Single(logins).Address);
+    }
+
     [Fact]
     public async Task AConfiguredProxyEndsTheLoopbackExemption()
     {

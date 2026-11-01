@@ -408,6 +408,7 @@ public static partial class ServerHost
         }
         app.Logger.LogInformation("Data dir {DataDir}", options.DataDir);
         LogGmPolicy(app.Logger, options, builder.Environment.EnvironmentName);
+        if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess) LogRunningAsRoot(app.Logger);
         LogTesting(app.Logger, options.Testing);
         if (options.RefuseUnknownAccounts && !(options.Panel.Enabled && options.Panel.Registration)) LogNoSignUp(app.Logger);
         // D1 inventory across many short-lived servers (a whole test suite): each appends its loop waits on stop.
@@ -458,6 +459,9 @@ public static partial class ServerHost
         string.Equals(configuration[HostDefaults.EnvironmentKey], Environments.Production, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Says at startup who has GM in game, loudly when it is everyone on a public address or nobody.</summary>
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! The server is running as root: a hole in it would own the whole machine. Run it as an ordinary user (docs/guide/hosting.md).")]
+    private static partial void LogRunningAsRoot(ILogger logger);
+
     private static void LogGmPolicy(ILogger logger, ServerOptions options, string environment)
     {
         if (options.GmAccounts.Length > 0)

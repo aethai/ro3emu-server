@@ -534,12 +534,13 @@ server {
 Set `PublicUrl` or `TrustedProxies`: without either, the API of a panel on loopback answers 404 to a `Host` that is not
 this machine (a page that resolves its own name to 127.0.0.1 could otherwise use it), and the log warns once in ten
 minutes. Keep `Host` as the browser sent it: the panel refuses a POST whose `Origin` names another host. Forward only the
-panel's port. The server's own HTTP port (5380) has loopback-only operator endpoints that a proxy on the same machine
-would open to everyone ([security model](../systems/security.md)). If you proxy 5380 as well (the game's login and the
-launcher's calls), shut those endpoints off in the proxy:
+panel's port. The server's own HTTP port (5380) has operator endpoints that answer only a local tool
+([security model](../systems/security.md)). If you proxy 5380 as well (the game's login and the launcher's calls), shut
+just those off in the proxy, because `/ro3emu/status`, `/ro3emu/gate-key.pem`, `/ro3emu/panel` and
+`/ro3emu/account/delete-role` are public and the launcher needs them:
 
 ```nginx
-    location /ro3emu/ {
+    location ~ ^/ro3emu/(gm|shutdown|online|reports|metrics)(/|$) {
         deny all;
     }
 ```

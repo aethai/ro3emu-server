@@ -23,6 +23,9 @@ public sealed class CredentialLimiter(IOptions<ServerOptions> options, TimeProvi
     /// <summary>False when the request's client has used this minute's budget (answer 429 without hashing).</summary>
     public bool TryAcquire(HttpContext context) => TryAcquire(_clients.Of(context));
 
+    /// <summary>The address of the request's client: a trusted proxy's forwarded one, else the peer.</summary>
+    public IPAddress? ClientAddress(HttpContext context) => _clients.Of(context).Address;
+
     /// <summary>False when <paramref name="client"/> has used this minute's budget (answer 429 without hashing).</summary>
     public bool TryAcquire(RequestClient client)
     {
