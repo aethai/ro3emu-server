@@ -99,7 +99,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                         continue;
                     }
                     // No cancellation token on Task.Run: a canceled dispatch must still dispose its socket.
-                    var task = Task.Run(() => ServeAsync(socket, ct, completion), CancellationToken.None);
+                    var task = Task.Run(() => ServeAsync(socket, completion, ct), CancellationToken.None);
                     _serves.Add(id, (socket, task));
                     if (remote != null) _perAddress[remote] = _perAddress.GetValueOrDefault(remote) + 1;
                     var removed = task.ContinueWith(_ =>
@@ -143,7 +143,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         }
     }
 
-    private async Task ServeAsync(Socket socket, CancellationToken ct, GameLoop.CompletionReservation? completion)
+    private async Task ServeAsync(Socket socket, GameLoop.CompletionReservation? completion, CancellationToken ct)
     {
         _serveCompletion.Value = completion;
         try

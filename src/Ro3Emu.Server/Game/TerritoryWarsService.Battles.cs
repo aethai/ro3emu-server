@@ -210,13 +210,13 @@ public sealed partial class TerritoryWarsService
     private async Task AdmitAsync(GameSession s, int zone, bool reply)
     {
         int key = BattleKey(_clock.Current.Round, zone);
-        if (!state.Battles.ContainsKey(key))
+        if (!state.Battles.TryGetValue(key, out var record))
         {
             long statisticsId = await AllocateStatisticsIdAsync();
             state.Battles[key] = MakeBattle(_clock.Current.Round, zone, statisticsId);
             await SaveAsync(state);
+            record = state.Battles[key];
         }
-        var record = state.Battles[key];
         var guild = Own(s)!;
         if (record.Players.TryGetValue(s.Role!.Id, out var prior) && prior.Guild != guild.Id)
         {

@@ -37,7 +37,7 @@ public sealed class BotInbox
     /// <summary>Opt-in bounded typed awaiters for sustained load; unsolicited bodies go only to the observer.</summary>
     public void ConfigureBounded(int capacity, Action<BotEvent> observer)
     {
-        if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
+        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
         lock (_events) { _capacity = Math.Min(capacity, 32); _observer = observer; }
     }
 

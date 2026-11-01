@@ -115,14 +115,14 @@ public sealed class FirstHeartService : IGameTicker
     private DBFirstHeartTaskActivityData Evaluate(GameSession s, DBFirstHeartTaskActivityData state)
     {
         bool open = Open(s);
-        if (!state.GetLvTime.ContainsKey(Type))
+        if (!state.GetLvTime.TryGetValue(Type, out var started))
         {
             if (!open) return state;
-            state.GetLvTime[Type] = Now;
+            state.GetLvTime[Type] = started = Now;
         }
         if (!open) return state; // a closed activity keeps its state as it was
         if (!state.ActivityData.TryGetValue(Type, out var cfg)) state.ActivityData[Type] = cfg = new FirstHeartTaskCfgData();
-        int today = DayNumber(state.GetLvTime[Type]);
+        int today = DayNumber(started);
         foreach (var day in _days)
         {
             bool unlocked = today >= day.Number;

@@ -197,7 +197,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                                 options.Scenario == "S4" && name == "stage.scene-ready" ? null : message.Admitted,
                         };
             }
-            if (_failures.Count > 0 && report.AbortReason == null)
+            if (!_failures.IsEmpty && report.AbortReason == null)
                 report.AbortReason = $"{_failures.Count} bot failures (first: {_failures.OrderBy(x => x.Key).First().Value})";
             if (report.Actions.Values.Any(x => x.Planned > x.Offered) && report.AbortReason == null)
                 report.AbortReason = "Planned/offered discrepancy";
@@ -307,7 +307,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             finally { gate.Release(); }
         });
         await Task.WhenAll(tasks);
-        if (_failures.Count > 0) throw new InvalidOperationException($"Setup failed for {_failures.Count} of {options.Bots} bots");
+        if (!_failures.IsEmpty) throw new InvalidOperationException($"Setup failed for {_failures.Count} of {options.Bots} bots");
         if (_actors.Count != options.Bots) throw new InvalidOperationException("Setup bot count mismatch");
     }
 

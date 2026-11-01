@@ -323,7 +323,7 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(_dir, "restore-saved")));
         Assert.Equal(["After", "Before"], RoleNames(Live));
         using var accounts = Store();
-        Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count());
+        Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count);
     }
 
     [Theory]
@@ -339,7 +339,7 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.False(File.Exists(DatabaseRestore.MarkerPath(_dir)));
         Assert.False(File.Exists(Live + DatabaseRestore.IncomingSuffix));
         Assert.Equal(["After", "Before"], RoleNames(Live));
-        using (var accounts = Store()) Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count());
+        using (var accounts = Store()) Assert.Equal(2, new RoleStore(accounts).ForAccount("fault").Count);
         SqliteConnection.ClearAllPools();
         Assert.NotNull(DatabaseRestore.Restore(_dir, copy)); // nothing was left half-done: a clean retry works
         Assert.Equal(["Before"], RoleNames(Live));

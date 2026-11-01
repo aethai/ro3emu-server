@@ -292,9 +292,9 @@ public sealed partial class MvpService : IGameTicker
     public async Task RetireLineAsync(RuntimeMapKey runtime)
     {
         if (!_lineStates.Remove(runtime, out var states)) return;
-        foreach (var key in _preparedKills.Where(kv => states.Values.Contains(kv.Value.State)).Select(kv => kv.Key).ToArray())
+        foreach (var key in _preparedKills.Where(kv => states.ContainsValue(kv.Value.State)).Select(kv => kv.Key).ToArray())
             _preparedKills.Remove(key);
-        foreach (var key in _unknownKills.Where(kv => states.Values.Contains(kv.Value.State)).Select(kv => kv.Key).ToArray())
+        foreach (var key in _unknownKills.Where(kv => states.ContainsValue(kv.Value.State)).Select(kv => kv.Key).ToArray())
             _unknownKills.Remove(key);
         foreach (var key in _unpublishedLethalHits.Where(kv => states.Values.Any(s => s.Unit == kv.Key)).Select(kv => kv.Key).ToArray())
             _unpublishedLethalHits.Remove(key);

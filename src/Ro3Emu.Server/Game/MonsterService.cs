@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 /// skill, spawning the scene-editor groups when a map is first entered, the AI (roam, chase, attack, leash) on the map
 /// tick, death, corpse removal and respawn. Combat math and hits go through CombatService.
 /// </summary>
-public sealed partial class MonsterService : MonsterBrain, IGameTicker
+public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 {
     private readonly World _world;
     private readonly WorldData _worldData;
@@ -119,7 +119,7 @@ public sealed partial class MonsterService : MonsterBrain, IGameTicker
         if (data.Row("AttriMonsterConfig", attrId) is { } am)
             foreach (var (id, v) in GameData.Pairs(am, "_kAttri")) attr[id] = v;
         foreach (var (id, scale) in GameData.Pairs(npc, "_kAttriScale"))
-            if (attr.ContainsKey(id)) attr[id] = attr[id] * scale / 10000;
+            if (attr.TryGetValue(id, out var value)) attr[id] = value * scale / 10000;
         return attr;
     }
 

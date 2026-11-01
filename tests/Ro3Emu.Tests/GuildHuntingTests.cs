@@ -24,11 +24,11 @@ public abstract class GuildHuntingHost : IAsyncLifetime
     protected static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     protected const long Home = 4000101;
     protected readonly string dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-guildhunt-" + Guid.NewGuid().ToString("N"));
-    protected readonly Clock clock = new();
+    protected readonly HostClock clock = new();
     protected WebApplication app = null!;
     private string _http = "";
 
-    protected sealed class Clock : TimeProvider
+    protected sealed class HostClock : TimeProvider
     {
         // Thursday 2026-10-15, ten seconds before the 20:30 candidate phase (TimeLimitConfig 86).
         private long _seconds = new DateTimeOffset(2026, 10, 15, 20, 29, 50, TimeSpan.Zero).ToUnixTimeSeconds();

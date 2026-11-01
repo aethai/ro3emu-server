@@ -6,6 +6,8 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Ro3Emu.Server.Economy;
 
+namespace Ro3Emu.EconomyProbe;
+
 /// <summary>E01 offline evidence only. Readers pin SQLite/WAL transactions; no repair or checkpoint is issued.</summary>
 public static class EconomyProbeCli
 {

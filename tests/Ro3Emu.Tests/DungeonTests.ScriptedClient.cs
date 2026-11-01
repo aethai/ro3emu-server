@@ -69,7 +69,7 @@ public sealed partial class DungeonTests
                             Assert.Equal(point.X, view.Entity.MovementInfo.Pos.X, 0.01f);
                             Assert.Equal(point.Z, view.Entity.MovementInfo.Pos.Z, 0.01f);
                             // It registers for interaction and offers the step's interaction (directly, or from its dialogue).
-                            Assert.NotEqual(0, catalog.Interactions(actor.NpcId).FirstOrDefault());
+                            Assert.NotEqual(0, catalog.Interactions(actor.NpcId)[0]);
                             int offered = Reachable(actor.NpcId, interaction);
                             Assert.True(ConditionHolds(offered, view.BuffGroups),
                                 $"interaction {offered} of {actor.NpcId}: NPC condition fails with buff groups [{string.Join(',', view.BuffGroups)}]");

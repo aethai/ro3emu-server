@@ -280,7 +280,7 @@ public sealed partial class EmblemService
     }
 
     public static bool IsReserved(GameSession session, InvItem item) =>
-        item.Attrs?.GetValueOrDefault(Source) == 2 || session.Emblems.Plans.Values.Any(p => p.Slots.Values.Contains(item.Guid));
+        item.Attrs?.GetValueOrDefault(Source) == 2 || session.Emblems.Plans.Values.Any(p => p.Slots.ContainsValue(item.Guid));
 
     public static bool IsEmblem(GameData data, int entry) =>
         data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 8 && GameData.Int(row, "_iSubType") == 800;
@@ -359,7 +359,7 @@ public sealed partial class EmblemService
         if (code == 0) code = req.EmblemPos is < FirstSlot or > LastSlot ? ErrorCodes.EmblemSlot
             : item == null || !IsEmblem(_data, item.Entry) ? ErrorCodes.EmblemInvalid
             : !SeasonValid(item.Entry) ? ErrorCodes.EmblemOtherSeason
-            : plan.Slots.Values.Contains(req.EmblemGuid) ? ErrorCodes.EmblemAlreadyDeployed : 0;
+            : plan.Slots.ContainsValue(req.EmblemGuid) ? ErrorCodes.EmblemAlreadyDeployed : 0;
         long oldGuid = code == 0 ? plan.Slots.GetValueOrDefault(req.EmblemPos) : 0;
         if (code == 0)
         {

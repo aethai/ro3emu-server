@@ -375,7 +375,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     {
         lock (_lifecycle)
         {
-            if (_disposeRequested) throw new ObjectDisposedException(nameof(GameLoop));
+            ObjectDisposedException.ThrowIf(_disposeRequested, this);
             if (_phase != GameLoopPhase.Accepting) throw new InvalidOperationException("The game loop has stopped.");
             if (_started) throw new InvalidOperationException("The game loop has already started.");
             _clock.Start();

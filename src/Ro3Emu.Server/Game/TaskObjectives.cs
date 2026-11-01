@@ -444,8 +444,8 @@ public sealed partial class TaskService
                     var target = def.Targets[index];
                     bool matches = target[0] switch
                     {
-                        TKill => ReferenceEquals(session, killer) && target.Length >= 3 && target[1..^1].Contains(monster.Template.NpcId),
-                        TKillInvolved => target.Length >= 3 && target[1..^1].Contains(monster.Template.NpcId),
+                        TKill => ReferenceEquals(session, killer) && target.Length >= 3 && target.AsSpan(1, target.Length - 2).Contains(monster.Template.NpcId),
+                        TKillInvolved => target.Length >= 3 && target.AsSpan(1, target.Length - 2).Contains(monster.Template.NpcId),
                         TMapKill => target.Length == 3 && target[1] == monster.SceneEntry,
                         TKillOnMap => ReferenceEquals(session, killer) && target.Length == 3 && target[2] == monster.SceneEntry,
                         _ => false
@@ -513,8 +513,8 @@ public sealed partial class TaskService
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.WorldScene == monster.WorldScene && participants.Contains(s.Role.Id)),
             s => ProgressAsync(s, null, t => t[0] switch
             {
-                TKill when s == killer && t.Length >= 3 && t[1..^1].Contains(monster.Template.NpcId) => 1,
-                TKillInvolved when t.Length >= 3 && t[1..^1].Contains(monster.Template.NpcId) => 1,
+                TKill when s == killer && t.Length >= 3 && t.AsSpan(1, t.Length - 2).Contains(monster.Template.NpcId) => 1,
+                TKillInvolved when t.Length >= 3 && t.AsSpan(1, t.Length - 2).Contains(monster.Template.NpcId) => 1,
                 TMapKill when t.Length == 3 && t[1] == monster.SceneEntry => 1,
                 TKillOnMap when s == killer && t.Length == 3 && t[2] == monster.SceneEntry => 1,
                 _ => 0,

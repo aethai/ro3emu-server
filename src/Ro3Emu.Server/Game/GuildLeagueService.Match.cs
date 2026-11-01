@@ -424,15 +424,15 @@ public sealed partial class GuildLeagueService
 
     private void AddPoints(Match m, long guild, long amount)
     {
-        if (m.Ended || amount <= 0 || !m.Points.ContainsKey(guild)) return;
-        m.Points[guild] = Math.Min(MaxGuildPoint, m.Points[guild] + amount);
+        if (m.Ended || amount <= 0 || !m.Points.TryGetValue(guild, out long points)) return;
+        m.Points[guild] = Math.Min(MaxGuildPoint, points + amount);
         m.Dirty = true;
     }
 
     private void AddMorale(Match m, long guild, long amount)
     {
-        if (m.Ended || amount <= 0 || !m.Morale.ContainsKey(guild)) return;
-        m.Morale[guild] = Math.Min(MoraleSteps[^1], m.Morale[guild] + amount);
+        if (m.Ended || amount <= 0 || !m.Morale.TryGetValue(guild, out long morale)) return;
+        m.Morale[guild] = Math.Min(MoraleSteps[^1], morale + amount);
         m.Dirty = true;
     }
 

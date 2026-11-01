@@ -23,7 +23,7 @@ public sealed class BossSkillSchedulerTests : IAsyncLifetime
     private GameLoop Loop => _app.Services.GetRequiredService<GameLoop>();
     private MonsterService Monsters => _app.Services.GetRequiredService<MonsterService>();
     private BossSkillOptions Options => _app.Services.GetRequiredService<IOptions<ServerOptions>>().Value.BossSkills;
-    private GameSession Session(string name) => _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == name.ToLowerInvariant());
+    private GameSession Session(string name) => _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => string.Equals(s.Account, name, StringComparison.OrdinalIgnoreCase));
 
     public async Task InitializeAsync()
     {

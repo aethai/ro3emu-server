@@ -24,7 +24,7 @@ public sealed class MapLineTests : IAsyncLifetime
     private readonly Clock _clock = new();
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
-    private GameSession Player(string name) => Service<SessionRegistry>().All().Single(s => s.Account == name.ToLowerInvariant());
+    private GameSession Player(string name) => Service<SessionRegistry>().All().Single(s => string.Equals(s.Account, name, StringComparison.OrdinalIgnoreCase));
     private Task OnLoop(Func<Task> action) => Service<GameLoop>().InvokeAsync(action);
     private static string RepoRoot()
     {

@@ -176,7 +176,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         var expired = box.Letters.Where(m => m.RemoveTime != 0 && now >= m.RemoveTime).ToArray();
         if (transaction != null)
         {
-            if (role <= 0) throw new ArgumentOutOfRangeException(nameof(role));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(role);
             AuthorizeMailExpiry(role, transaction, expired);
         }
         if (expired.Length == 0) return false;

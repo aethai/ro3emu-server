@@ -93,7 +93,7 @@ public class MonsterUnit : WorldUnit
     /// <summary>Status bits (property 2701); bit 15 = fighting.</summary>
     public long StatusBits { get; set; }
 
-    public MonsterBrain? Brain { get; init; }
+    public IMonsterBrain? Brain { get; init; }
 
     /// <summary>Unit custom data a gameplay attaches (31018 on change; carried in the AOI entity), e.g. Guild League IsFlag.</summary>
     public List<CustomData> CustomData { get; } = [];
@@ -189,7 +189,7 @@ public sealed class MonsterMarch(float goalX, float goalZ, float arriveRadius)
 }
 
 /// <summary>Runs a monster's AI each map tick (MonsterService).</summary>
-public interface MonsterBrain
+public interface IMonsterBrain
 {
     void Tick(MonsterUnit monster, MapInstance map);
 }

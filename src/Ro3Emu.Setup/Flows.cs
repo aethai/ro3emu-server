@@ -353,7 +353,7 @@ internal static class Flows
         return 0;
     }
 
-    private static bool GameRunning() => Process.GetProcessesByName("ro3").Any();
+    private static bool GameRunning() => Process.GetProcessesByName("ro3").Length != 0;
 
     internal static Process LaunchGame(string client)
     {

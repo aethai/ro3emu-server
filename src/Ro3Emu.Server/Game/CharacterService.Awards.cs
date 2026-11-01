@@ -116,7 +116,7 @@ public sealed partial class CharacterService
         context.AssertRole(session.Role!.Id);
         context.BindPresentation(session);
         var attachment = session.Attachment;
-        if (taskBaseExp < 0) throw new ArgumentOutOfRangeException(nameof(taskBaseExp));
+        ArgumentOutOfRangeException.ThrowIfNegative(taskBaseExp);
         // PBManifestType.ManifestTypeRunRing (18) needs the slots LC_DAL_Reward uses to stop the wheel.
         if (manifestType is < 1 or > 19 or 15 || manifestType == TaskService.ManifestTypeRunRing && rewardIndexes is not { Count: > 0 })
             throw new ArgumentOutOfRangeException(nameof(manifestType));
