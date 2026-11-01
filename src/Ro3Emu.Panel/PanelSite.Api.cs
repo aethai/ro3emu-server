@@ -86,7 +86,7 @@ public sealed partial class PanelSite
         string name = form?.Account?.Trim() ?? "", password = form?.Password ?? "";
         if (name.Length == 0 || password.Length == 0)
             return Reply.Error(StatusCodes.Status400BadRequest, "Enter your account name and password.");
-        if (!_backend.TryAcquireCredentialCheck(call.Client)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
+        if (!_backend.TryAcquireCredentialCheck(call.From)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
         // Null for a wrong password, an unknown name and a banned account alike, as the game's login answers.
         if (await _backend.VerifyAsync(name, password) is not { } account)
             return Reply.Error(StatusCodes.Status401Unauthorized, WrongCredentials);
@@ -110,7 +110,7 @@ public sealed partial class PanelSite
         var form = await BodyAsync<Credentials>(call);
         string name = form?.Account?.Trim() ?? "", password = form?.Password ?? "";
         if ((NameProblem(name) ?? PasswordProblem(password)) is { } problem) return Reply.Error(StatusCodes.Status400BadRequest, problem);
-        if (!_backend.TryAcquireCredentialCheck(call.Client)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
+        if (!_backend.TryAcquireCredentialCheck(call.From)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
         if (_signUps.TryReserve(call.Client, out var slot) is var refusal and not PanelSignUps.Refusal.None)
         {
             bool perAddress = refusal == PanelSignUps.Refusal.Address;
@@ -157,7 +157,7 @@ public sealed partial class PanelSite
         string current = form?.Current ?? "", next = form?.Next ?? "";
         if (current.Length == 0) return Reply.Error(StatusCodes.Status400BadRequest, "Enter your current password.");
         if (PasswordProblem(next) is { } problem) return Reply.Error(StatusCodes.Status400BadRequest, problem);
-        if (!_backend.TryAcquireCredentialCheck(call.Client)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
+        if (!_backend.TryAcquireCredentialCheck(call.From)) return Reply.Error(StatusCodes.Status429TooManyRequests, TooManyAttempts);
         string account = call.Signed;
         if (!await _backend.ChangePasswordAsync(account, current, next))
             return Reply.Error(StatusCodes.Status400BadRequest, "Your current password is not right.");

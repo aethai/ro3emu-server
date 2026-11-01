@@ -44,7 +44,7 @@ public sealed partial class PanelSite
     private readonly PanelSessions _sessions;
     private readonly PanelSignUps _signUps;
     private readonly PanelAssets _assets = new();
-    private readonly IPAddress[] _proxies;
+    private readonly ClientAddresses _clients;
     private readonly Route[] _routes;
 
     public PanelSite(PanelOptions options, IPanelBackend backend, IPanelAdminTools tools, IPanelOperations ops, IPanelUpdates updates,
@@ -59,7 +59,7 @@ public sealed partial class PanelSite
         _log = log;
         _sessions = new PanelSessions(clock, TimeSpan.FromHours(Math.Max(1, options.SessionHours)));
         _signUps = new PanelSignUps(options, clock);
-        _proxies = [.. options.TrustedProxies.Select(IPAddress.Parse).Select(Normalize)];
+        _clients = new ClientAddresses(options.TrustedProxies);
         _routes = [.. PublicRoutes(), .. PlayerRoutes(), .. AdminRoutes(), .. ToolRoutes(), .. DatabaseRoutes(), .. CharacterRoutes(),
             .. SecurityRoutes(), .. StaffRoutes(), .. ReportRoutes(), .. CharacterActionRoutes(), .. ServerRoutes(), .. UpdateRoutes(), .. PlayerPageRoutes(), .. WikiRoutes(),
             .. SuspicionRoutes()];
@@ -192,7 +192,7 @@ public sealed partial class PanelSite
     }
 
     /// <summary>A request on its way through the API: the signed-in account, if any, its staff role and the route's arguments.</summary>
-    private sealed class Call(HttpContext context, string? account, PanelRole role, string? sessionId, string[] args, IPAddress? client)
+    private sealed class Call(HttpContext context, string? account, PanelRole role, string? sessionId, string[] args, RequestClient from)
     {
         public HttpContext Context { get; } = context;
         public string? Account { get; } = account;
@@ -201,7 +201,9 @@ public sealed partial class PanelSite
         public bool Admin => Role != PanelRole.None;
         public string? SessionId { get; } = sessionId;
         public string[] Args { get; } = args;
-        public IPAddress? Client { get; } = client;
+        /// <summary>The client and whether a proxy forwarded the request (the credential budget needs both).</summary>
+        public RequestClient From { get; } = from;
+        public IPAddress? Client => From.Address;
         /// <summary>The account of a player or admin route (DispatchAsync refused the request without one).</summary>
         public string Signed => Account ?? throw new InvalidOperationException("A signed-in route ran without an account.");
         public string Query(string key) => Context.Request.Query[key].ToString();
@@ -267,7 +269,7 @@ public sealed partial class PanelSite
             if (!_backend.Accepting) return Reply.Error(StatusCodes.Status503ServiceUnavailable, "The server is stopping.");
         }
         string[] args = [.. route.Segments.Zip(segments).Where(p => p.First == "{}").Select(p => Uri.UnescapeDataString(p.Second))];
-        return await route.Handler(new Call(context, account, role, sessionId, args, ClientAddress(context)));
+        return await route.Handler(new Call(context, account, role, sessionId, args, _clients.Of(context)));
     }
 
     /// <summary>The token a POST must carry: bound to the session cookie, or to the visitor cookie before a login.</summary>
@@ -288,23 +290,7 @@ public sealed partial class PanelSite
             && string.Equals(uri.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IPAddress Normalize(IPAddress address) => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
-
-    /// <summary>The client: the connection's peer, or behind a trusted proxy the last address it forwarded.</summary>
-    private IPAddress? ClientAddress(HttpContext context)
-    {
-        if (context.Connection.RemoteIpAddress is not { } peer) return null;
-        peer = Normalize(peer);
-        if (!_proxies.Contains(peer)) return peer;
-        string forwarded = context.Request.Headers["X-Forwarded-For"].ToString();
-        string last = forwarded.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
-        return IPAddress.TryParse(last, out var client) ? Normalize(client) : peer;
-    }
-
-    /// <summary>https to the browser: the connection itself, or a trusted proxy's X-Forwarded-Proto.</summary>
-    private bool Https(HttpContext context) =>
-        context.Request.IsHttps || context.Connection.RemoteIpAddress is { } peer && _proxies.Contains(Normalize(peer))
-            && string.Equals(context.Request.Headers["X-Forwarded-Proto"].ToString().Split(',')[^1].Trim(), "https", StringComparison.OrdinalIgnoreCase);
+    private bool Https(HttpContext context) => _clients.Https(context);
 
     private void SetCookie(HttpContext context, string name, string value) =>
         context.Response.Cookies.Append(name, value, new CookieOptions

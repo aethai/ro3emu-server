@@ -123,11 +123,16 @@ public sealed partial class GitHubReleases(HttpClient http, string cacheFile)
     private static partial Regex Bullet();
 
     /// <summary>
-    /// Downloads the release's zip and checks it (the size GitHub lists, and its SHA-256 when GitHub lists one).
-    /// Returns the zip's path in <paramref name="downloadDir"/>.
+    /// Downloads the release's zip and checks it: the size GitHub lists and its SHA-256 digest. An asset without a digest
+    /// or with a download address that is not https is refused before anything is fetched, so the launcher never
+    /// installs files it cannot check. Returns the zip's path in <paramref name="downloadDir"/>.
     /// </summary>
     public async Task<string> DownloadAsync(Asset asset, string downloadDir, IProgress<(long Done, long Total)> progress, CancellationToken ct)
     {
+        if (asset.Sha256 is not { Length: 64 } expected)
+            throw new InvalidDataException("The release lists no SHA-256 checksum for its download, so it cannot be checked.");
+        if (!Uri.TryCreate(asset.Url, UriKind.Absolute, out var url) || !Ro3Emu.Patcher.RepositoryClient.Allowed(url))
+            throw new InvalidDataException("The release's download address does not use https.");
         Directory.CreateDirectory(downloadDir);
         string path = Path.Combine(downloadDir, WindowsAsset);
         string partial = path + ".part";
@@ -150,9 +155,8 @@ public sealed partial class GitHubReleases(HttpClient http, string cacheFile)
         }
         long length = new FileInfo(partial).Length;
         if (length != asset.Size) throw new InvalidDataException($"The download has {length} bytes, the release lists {asset.Size}.");
-        if (asset.Sha256 is { } expected)
+        await using (var stream = File.OpenRead(partial))
         {
-            await using var stream = File.OpenRead(partial);
             string actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
             if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("The download does not match the release's checksum.");
         }

@@ -32,9 +32,12 @@ A reverse proxy on the same machine makes every request arrive from loopback. Do
 ## Accounts and credentials
 
 - Passwords are stored as PBKDF2-SHA256 hashes, 100 000 rounds, with a per-account salt (`AccountPlans`).
-- A credential check costs one such hash, so `CredentialLimiter` allows `LoginAttemptsPerMinute` (20) per remote
-  address and answers 429 past that without hashing. Loopback is exempt unless `LoginLimitIncludesLoopback` is
-  set. Behind a reverse proxy every player shares the proxy's address, so raise the limit there.
+- A credential check costs one such hash, so `CredentialLimiter` allows `LoginAttemptsPerMinute` (20) per client
+  address and answers 429 past that without hashing. The client address is the peer, or behind a proxy listed in
+  `Ro3Emu:Panel:TrustedProxies` the last `X-Forwarded-For` entry, on the panel and on port 5380 alike. Loopback is
+  exempt only for local tools: not for a request with `X-Forwarded-For`, `Forwarded` or `X-Real-IP`, not once
+  `TrustedProxies` or `Ro3Emu:Panel:PublicUrl` is set, and not with `LoginLimitIncludesLoopback`. Behind a proxy
+  that is not listed every player shares the proxy's address, so list it.
 - `/sdk/login` returns a token. The client presents it to `LoginService.verifySdk` on the micro gate, which binds
   the account to that connection.
 - A banned account cannot sign in. The web panel bans through the server, which closes the account's game session at
@@ -78,7 +81,8 @@ authentication when the panel listens on a public address (`Ro3Emu:Panel:Require
 [web panel](../guide/panel.md#staff-roles).
 
 GM commands (`!` chat lines, the GM panel, 1031/1034) are limited to `Ro3Emu:GmAccounts`. An empty list means
-everyone outside Production. See [GM access](../guide/gm-access.md), and set the list on any public server.
+everyone only on a local server (loopback only, no proxy, not Production), and nobody, in game or as a panel Admin, on
+a server other machines reach. See [GM access](../guide/gm-access.md), and set the list on any public server.
 
 ## Data on disk
 

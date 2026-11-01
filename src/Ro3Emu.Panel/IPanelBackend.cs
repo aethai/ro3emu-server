@@ -22,8 +22,8 @@ public partial interface IPanelBackend
     /// configured or the path leaves the data folder.</summary>
     string? BrandLogoFile { get; }
 
-    /// <summary>The server's credential budget per address (the SDK login's): false = answer 429 without hashing.</summary>
-    bool TryAcquireCredentialCheck(IPAddress? remote);
+    /// <summary>The server's credential budget per client address (the SDK login's): false = answer 429 without hashing.</summary>
+    bool TryAcquireCredentialCheck(RequestClient client);
 
     /// <summary>The account's stored name when the password matches and the account is not banned, else null.</summary>
     Task<string?> VerifyAsync(string account, string password);

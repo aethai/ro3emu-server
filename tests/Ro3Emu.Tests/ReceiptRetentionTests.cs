@@ -151,6 +151,48 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.True(ReceiptBlobs.IsCompacted(Blobs(kill).Payload));
     }
 
+    private long Watermark()
+    {
+        using var db = _accounts.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = "SELECT compacted_seq FROM economy_meta WHERE singleton=1";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    private long LastSequence()
+    {
+        using var db = _accounts.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = "SELECT MAX(commit_seq) FROM operation_receipt";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    [Fact]
+    public async Task ASecondRunWalksNothingAndTheNextOneResumesFromTheWatermark()
+    {
+        string[] old = [Commit(10), Commit(20), Commit(30)];
+        Run("UPDATE operation_receipt SET recorded_utc_ms=1");
+        var retention = Retention();
+
+        Assert.Equal(3, await retention.CompactAsync()); // two batches of BatchSize 2
+        Assert.Equal(3, retention.LastPassed);
+        Assert.Equal(LastSequence(), Watermark());
+        Assert.All(old, op => Assert.True(ReceiptBlobs.IsCompacted(Blobs(op).Payload)));
+
+        // Right after: nothing behind the watermark is read again.
+        Assert.Equal(0, await retention.CompactAsync());
+        Assert.Equal(0, retention.LastPassed);
+
+        // A receipt not yet due holds the watermark; once due, the next run walks only it.
+        string fresh = Commit(40);
+        Assert.Equal(0, await retention.CompactAsync());
+        Assert.Equal(0, retention.LastPassed);
+        Run("UPDATE operation_receipt SET recorded_utc_ms=1 WHERE operation_id=$op", ("$op", fresh));
+        Assert.Equal(1, await retention.CompactAsync());
+        Assert.Equal(1, retention.LastPassed);
+        Assert.Equal(LastSequence(), Watermark());
+    }
+
     [Fact]
     public void BlobComparisonAcceptsTheCurrentLegacyOrCompactedIntentOnly()
     {

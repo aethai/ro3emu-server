@@ -22,7 +22,7 @@ public static partial class EconomySnapshotReader
         ["role_lifecycle"] = "role_id epoch deleted",
         ["owner_revision"] = "kind id part revision",
         ["owner_operation_receipt"] = "operation_id family result",
-        ["economy_meta"] = "singleton realm_id next_sequence retained_floor",
+        ["economy_meta"] = "singleton realm_id next_sequence retained_floor compacted_seq",
         ["operation_receipt"] = "operation_id realm_id commit_seq actor_account actor_role command_kind request_fingerprint intent_hash intent_payload source_key recorded_utc_ms effective_utc_ms outcome child_receipts before_revisions after_revisions leg_count",
         ["operation_source"] = "realm_id source_key operation_id",
         ["economy_entry"] = "entry_id commit_seq operation_id leg_no recorded_utc_ms effective_utc_ms owner_kind owner_id compartment_kind compartment_key instance_key asset_kind asset_id asset_epoch delta reason_code leg_kind edge_no counterparty_owner_kind counterparty_owner_id counterparty_compartment_kind counterparty_compartment_key counterparty_instance_key before_fingerprint after_fingerprint source_key",

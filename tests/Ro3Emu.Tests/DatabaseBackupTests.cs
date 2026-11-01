@@ -180,7 +180,11 @@ public sealed class DatabaseBackupTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(stale)!);
         File.WriteAllText(stale, "half a database");
         var (http, micro, game) = TestPorts.FreePorts();
-        void Configure(ServerOptions o) { o.DataDir = _dir; o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game; }
+        void Configure(ServerOptions o)
+        {
+            o.DataDir = _dir; o.GameDataDir = SyntheticData.Dir;
+            o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
+        }
         var app = ServerHost.Create([], Configure);
         await app.StartAsync();
         string copy;
@@ -205,7 +209,11 @@ public sealed class DatabaseBackupTests : IDisposable
     public async Task LoopWaitInventoryCountsOnlySynchronousWaitsOnTheLoopByLabel()
     {
         var (http, micro, game) = TestPorts.FreePorts();
-        await using var app = ServerHost.Create([], o => { o.DataDir = _dir; o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game; });
+        await using var app = ServerHost.Create([], o =>
+        {
+            o.DataDir = _dir; o.GameDataDir = SyntheticData.Dir;
+            o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
+        });
         await app.StartAsync();
         var accounts = app.Services.GetRequiredService<AccountStore>();
         var roles = app.Services.GetRequiredService<RoleStore>();
@@ -357,7 +365,8 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.Contains("unfinished database restore", Assert.Throws<InvalidOperationException>(() => ServerHost.Create([], o =>
         {
             var (http, micro, game) = TestPorts.FreePorts();
-            o.DataDir = _dir; o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
+            o.DataDir = _dir; o.GameDataDir = SyntheticData.Dir;
+            o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         })).Message);
         Assert.False(File.Exists(Live));
 

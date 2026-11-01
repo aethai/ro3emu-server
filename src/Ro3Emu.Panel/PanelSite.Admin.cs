@@ -50,6 +50,9 @@ public sealed partial class PanelSite
             return Reply.Error(StatusCodes.Status404NotFound, "There is no such account.");
         if (string.Equals(account.Name, call.Account, StringComparison.Ordinal))
             return Reply.Error(StatusCodes.Status400BadRequest, "You cannot ban your own account.");
+        // Staff can ban only below their own role: a Moderator cannot lock a GM or an Admin out of the panel.
+        if (_ops.RoleOf(account.Name) >= call.Role)
+            return Reply.Error(StatusCodes.Status403Forbidden, "You can only ban accounts with a lower staff role than yours.");
         DateTimeOffset? until = form?.Hours is { } hours ? _clock.GetUtcNow().AddHours(hours) : null;
         string admin = call.Signed;
         var outcome = await _backend.BanAsync(admin, account.Name, reason, until);

@@ -351,4 +351,6 @@ public sealed class DbWriter : IDisposable
     }
 }
 
-public sealed class DbQueueFullException(string message) : InvalidOperationException(message);
+/// <summary>The writer or reader did not admit the plan (full or closed): nothing of it ran, so the caller's operation
+/// definitely failed and needs no recovery.</summary>
+public sealed class DbQueueFullException(string message) : PersistenceException(message);

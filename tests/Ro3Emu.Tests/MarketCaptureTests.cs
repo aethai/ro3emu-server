@@ -114,7 +114,7 @@ public sealed class MarketCaptureTests : IAsyncLifetime
         byte[]? originalMail = _roles.LoadMailbox(role);
         _accounts.WriteLegacySync<int>(new MarketRecordWritePlan("capture", phantom ? "phantom" : "existing", "3"));
 
-        Assert.ThrowsAny<InvalidOperationException>(tx.Persist);
+        Assert.ThrowsAny<PersistenceException>(tx.Persist);
 
         Assert.Equal(100, _roles.LoadProgress(role).Currency[1]);
         Assert.Empty(_items.Load(role));
@@ -146,7 +146,7 @@ public sealed class MarketCaptureTests : IAsyncLifetime
             _roles.SaveProgress(role, progress);
         }
 
-        Assert.ThrowsAny<InvalidOperationException>(tx.Persist);
+        Assert.ThrowsAny<PersistenceException>(tx.Persist);
 
         Assert.Equal(changeItem ? 100 : 90, _roles.LoadProgress(role).Currency[1]);
         Assert.Equal(changeItem ? 4 : 5, Assert.Single(_items.Load(role)).Stack);
@@ -164,7 +164,7 @@ public sealed class MarketCaptureTests : IAsyncLifetime
         builder.RoleBlob(role, "mailbox", [2]);
         _roles.SaveMailbox(role, [3]);
 
-        Assert.ThrowsAny<InvalidOperationException>(() => builder.Commit(_accounts, "test/mailbox-conflict"));
+        Assert.ThrowsAny<PersistenceException>(() => builder.Commit(_accounts, "test/mailbox-conflict"));
 
         Assert.Equal(new byte[] { 3 }, _roles.LoadMailbox(role));
         Assert.Empty(_accounts.ReadSync<List<(string Id, string Data)>>(new MarketRecordReadPlan("capture")));

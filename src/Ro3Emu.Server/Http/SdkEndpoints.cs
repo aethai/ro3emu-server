@@ -49,7 +49,7 @@ public static partial class SdkEndpoints
         app.MapPost(LoginPath, async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, Ro3Emu.Panel.IPanelOperations panel,
             IOptions<ServerOptions> options, ILogger<AccountStore> log) =>
         {
-            if (!limiter.TryAcquire(request.HttpContext.Connection.RemoteIpAddress)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             IFormCollection form;
             try { form = await request.ReadFormAsync(LoginForm); }
             catch (InvalidDataException) { return Results.StatusCode(StatusCodes.Status400BadRequest); }

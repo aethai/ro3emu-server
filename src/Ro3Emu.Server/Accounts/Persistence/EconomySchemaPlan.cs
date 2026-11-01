@@ -76,6 +76,8 @@ internal sealed class EconomySchemaPlan : DbPlan
             """);
         SchemaSql.AddColumn(db, tx, "operation_receipt", "intent_hash", "TEXT NOT NULL DEFAULT ''");
         SchemaSql.AddColumn(db, tx, "operation_receipt", "intent_payload", "BLOB NOT NULL DEFAULT X''");
+        // ReceiptRetention's watermark: every receipt up to this commit sequence has been walked by compaction.
+        SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_seq", "INTEGER NOT NULL DEFAULT 0");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_owner_kind", "INTEGER");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_owner_id", "TEXT");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_compartment_kind", "INTEGER");
