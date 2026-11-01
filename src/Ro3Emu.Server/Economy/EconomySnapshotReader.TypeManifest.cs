@@ -64,6 +64,8 @@ public static partial class EconomySnapshotReader
     // opens client functions, no balance and no asset.
     // Tavern: role.barroom is TavernService.RoleState (Star Power received from Tavern gifts, its week, active days and
     // today's time in a room): counters, no balance and no asset; the gift drink is spent by the event/tavern-gift receipt.
+    // Shop gifts: role.gifts is ShopService.GiftState (sent and received gift orders): records, no balance and no asset;
+    // the currency is spent by the sender's exchange receipt and the appearance granted by the pick's own receipt.
     // Power: role.emblems EmblemState.Power (PowerService.Record) holds the role's last published power total and its
     // best total (maxHistoryPower), as normal/season parts. Rating counters, no balance and no asset: they only gate
     // Become Stronger stage claims (whose goods come with their own daily-stage receipt) and rank the Hero Registry.
@@ -96,7 +98,7 @@ public static partial class EconomySnapshotReader
     // newactivity receipt that also saves them.
     // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
     // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
-    public const string ExpectedFormatManifestHash = "BC011E48EF2B8ABA2764D9F0CE1F65B551EDF6DDFAB1AADF724D5EA5D149E2F2";
+    public const string ExpectedFormatManifestHash = "E62C3BB1DFC9A9C3A469CA05E0247F9A0923296906A39868552A9C66C1A12B2B";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

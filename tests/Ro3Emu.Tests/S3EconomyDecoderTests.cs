@@ -89,6 +89,25 @@ public sealed class S3EconomyDecoderTests
     }
 
     [Fact]
+    public void ShopGiftsAndTavernCountersHaveStrictJsonProfiles()
+    {
+        // A role that sat in a Tavern room or sent a shop gift: without a profile its row blocked every economic write
+        // that read it (a guild member's login, through the guild's caravan or challenge state).
+        using var f = new Fixture();
+        f.Insert("INSERT INTO role(id,currency,barroom,gifts) VALUES(101,'1:7',$0,$1)",
+            B("{\"Version\":1,\"Popularity\":1,\"WeekPopularity\":1,\"WeekStartMs\":1792987200000,\"ActDays\":0,"
+                + "\"DayStartMs\":1793419200000,\"TodaySeconds\":60,\"TodayComplete\":false,\"DrinkOwed\":0}"),
+            B("{\"Received\":{},\"Sent\":{\"7\":{\"OrderId\":7,\"SenderId\":101,\"SenderName\":\"A\",\"RecipientId\":102,"
+                + "\"RecipientName\":\"B\",\"CommodityId\":1,\"AppearanceId\":2,\"AppearanceAwardId\":3,\"CurrencyId\":4,"
+                + "\"CurrencyCount\":5,\"GiftContent\":\"\",\"CreatedUtc\":6,\"State\":1}}}"));
+        var issues = EconomySnapshotReader.Read(f.PathName, Catalog, "realm-fixture").Issues;
+        Assert.DoesNotContain(issues, x => x.Key is "role/101/barroom" or "role/101/gifts");
+        f.Insert("UPDATE role SET barroom=$0 WHERE id=101", B("{\"Popularity\":\"x\"}"));
+        Assert.Contains(EconomySnapshotReader.Read(f.PathName, Catalog, "realm-fixture").Issues,
+            x => x.Kind == EconomyIssueKind.Corruption && x.Key == "role/101/barroom");
+    }
+
+    [Fact]
     public void RoleProgressionWithoutItsColumnsIsAnUnknownSchema()
     {
         using var f = new Fixture();

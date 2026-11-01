@@ -21,7 +21,8 @@ public static partial class EconomySnapshotReader
         ["life_runtime"] = "LifeJobService+RuntimeState", ["season_page_meta"] = "SeasonPageService+PageMeta",
         ["equip_levels"] = "EquipLevels", ["world_state"] = "WorldRoleState",
         ["emblems"] = "EmblemService+EmblemState", ["mounts"] = "MountService+SavedState",
-        ["achievement_runtime"] = "AchievementService+RuntimeState", ["gm_state"] = "GmCommands+RoleGmState"
+        ["achievement_runtime"] = "AchievementService+RuntimeState", ["gm_state"] = "GmCommands+RoleGmState",
+        ["gifts"] = "ShopService+GiftState", ["barroom"] = "TavernService+RoleState"
     };
     private static readonly JsonSerializerOptions StrictJson = new()
     {
