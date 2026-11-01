@@ -125,7 +125,7 @@ public sealed partial class CheatMonitor(IOptions<ServerOptions> options, Accoun
 
 /// <summary>
 /// A token bucket: <see cref="PerSecond"/> tokens a second up to <see cref="Burst"/>, full at first. Not thread safe: a
-/// session's buckets are used on the game loop only.
+/// game session's buckets are used on the game loop only, a micro connection's by its own frame reader.
 /// </summary>
 internal sealed class RateBucket(double perSecond, double burst)
 {
