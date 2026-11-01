@@ -129,6 +129,29 @@ public sealed class MicroGateLimitTests : IAsyncLifetime
         Assert.Equal(0, await CodeAsync(client, "sdk-new", "pw"));
     }
 
+    [Theory]
+    [InlineData("admin\u202Egnp")]
+    [InlineData("admin\u200B")]
+    [InlineData("line\nbreak")]
+    public async Task InvisibleCharactersCannotNameANewAccount(string name)
+    {
+        using var client = new HttpClient();
+        Assert.Equal(401, await CodeAsync(client, name, "pw"));
+    }
+
+    [Theory]
+    [InlineData("evil\nfail: FORGED LINE")]
+    [InlineData("evil\rFORGED")]
+    [InlineData("evil\u2028FORGED")]
+    [InlineData("evil\u202EFORGED")]
+    public void ClientTextCannotWriteALineOfItsOwn(string text)
+    {
+        string clipped = MicroServiceRouter.Clip(text);
+        Assert.DoesNotContain(clipped, c => c < ' ' || c is '\u2028' or '\u202E');
+        Assert.StartsWith("evil\\u", clipped, StringComparison.Ordinal);
+        Assert.Contains("FORGED", clipped, StringComparison.Ordinal);
+    }
+
     private async Task<int> CodeAsync(HttpClient client, string identity, string credential)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["identity"] = identity, ["credential"] = credential });

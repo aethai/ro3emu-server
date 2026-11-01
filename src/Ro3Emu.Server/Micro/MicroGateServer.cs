@@ -75,7 +75,7 @@ public sealed partial class MicroGateServer(IOptions<ServerOptions> options, Gat
                 }
                 channel.EnableConvertor(sessionKey);
                 await channel.SendAsync(ConfirmEncryptKeyAck, new Phonest.Proto.Void());
-                Log.LogInformation("MicroGate: {Remote} encrypted session up", channel.Remote);
+                Log.LogDebug("MicroGate: {Remote} encrypted session up", channel.Remote);
                 break;
 
             case ClientHeartbeat:
@@ -86,7 +86,9 @@ public sealed partial class MicroGateServer(IOptions<ServerOptions> options, Gat
                 // The client sends its first request after ConfirmEncryptKeyAck; a plaintext one is not the client.
                 if (!channel.Encrypted) throw Close(channel, "sent a request before the encrypted session was up");
                 var request = Parse(body) ?? throw Close(channel, "sent a request that does not parse");
-                var result = await router.InvokeAsync(session, request.Service, request.Method, request.Params.Memory);
+                byte[] result;
+                try { result = await router.InvokeAsync(session, request.Service, request.Method, request.Params.Memory); }
+                catch (MessagePack.MessagePackSerializationException) { throw Close(channel, "sent arguments that do not parse"); }
                 if (request.Rid != 0)
                 {
                     await channel.SendAsync(MicroResponse, new MsResponse { Rid = request.Rid, Params = ByteString.CopyFrom(result) });
