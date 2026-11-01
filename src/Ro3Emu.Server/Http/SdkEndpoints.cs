@@ -32,7 +32,7 @@ public static partial class SdkEndpoints
         app.MapPost(LoginPath, async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, Ro3Emu.Panel.IPanelOperations panel,
             IOptions<ServerOptions> options, ILogger<AccountStore> log) =>
         {
-            if (!limiter.TryAcquire(request.HttpContext.Connection.RemoteIpAddress)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             var form = await request.ReadFormAsync();
             string identity = form["identity"].ToString().Trim();
             string credential = form["credential"].ToString();

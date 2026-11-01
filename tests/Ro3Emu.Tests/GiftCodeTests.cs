@@ -312,10 +312,10 @@ public sealed class GiftCodeTests(GiftCodeTests.HostFixture fixture) : IClassFix
         var options = Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { GiftCodeAttemptsPerMinute = 2 });
         var limiter = new GiftCodeLimiter(options, TimeProvider.System);
 
-        Assert.True(limiter.TryAcquire(IPAddress.Loopback, "acct"));
-        Assert.True(limiter.TryAcquire(IPAddress.Loopback, "acct"));
-        Assert.False(limiter.TryAcquire(IPAddress.Loopback, "acct"));
-        Assert.True(limiter.TryAcquire(IPAddress.Loopback, "another"));
+        Assert.True(limiter.TryAcquire(new Ro3Emu.Panel.RequestClient(IPAddress.Loopback, false), "acct"));
+        Assert.True(limiter.TryAcquire(new Ro3Emu.Panel.RequestClient(IPAddress.Loopback, false), "acct"));
+        Assert.False(limiter.TryAcquire(new Ro3Emu.Panel.RequestClient(IPAddress.Loopback, false), "acct"));
+        Assert.True(limiter.TryAcquire(new Ro3Emu.Panel.RequestClient(IPAddress.Loopback, false), "another"));
     }
 
     // Verifier B1: a panel-written entry or count that is not a JSON number is refused as JSON, not an HTTP 500.

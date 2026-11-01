@@ -31,7 +31,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton(Options.Create(options));
         builder.Services.AddSingleton(clock ?? TimeProvider.System);
         // GM and Admin accounts need two-factor authentication on a public panel unless the operator says otherwise.
-        options.Panel.RequireAdmin2FA ??= !System.Net.IPAddress.IsLoopback(PanelAddress(options));
+        options.Panel.RequireAdmin2FA ??= options.Panel.PublicFacing(PanelAddress(options));
         // Loopback for local play and tests; the web panel (docs/guide/panel.md) on its own port, routed by PanelSite.Map.
         builder.WebHost.UseUrls(options.Panel.Enabled
             ? [$"http://{options.ListenAddress()}:{options.HttpPort}", PanelUrl(options)]
@@ -318,7 +318,7 @@ public static partial class ServerHost
         // role (id or name). A role that is in the world cannot be deleted.
         app.MapPost("/ro3emu/account/delete-role", async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, RoleStore roles, SessionRegistry sessions, GameLoop loop, Game.Ownership.OwnerRegistry owners, ILogger<RoleStore> log) =>
         {
-            if (!limiter.TryAcquire(request.HttpContext.Connection.RemoteIpAddress)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             var form = await request.ReadFormAsync();
             string typed = form["identity"].ToString().Trim(), credential = form["credential"].ToString(), which = form["role"].ToString().Trim();
             // Roles are keyed by the account's stored name, whatever letter case the form used.
@@ -486,6 +486,7 @@ public static partial class ServerHost
             app.Services.GetRequiredService<Ro3Emu.Panel.PanelSite>(); // built now, after every hook above
             string panelUrl = PanelUrl(options);
             LogPanel(app.Logger, panelUrl);
+            LogPanelTwoFactor(app.Logger, options.Panel.RequireAdmin2FA == true ? "required" : "not required");
         }
         app.Logger.LogInformation("Data dir {DataDir}", options.DataDir);
         LogGmPolicy(app.Logger, options, builder.Environment.EnvironmentName);
@@ -530,6 +531,9 @@ public static partial class ServerHost
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Web panel on {Url}")]
     private static partial void LogPanel(ILogger logger, string url);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Web panel: two-factor authentication for GM and Admin accounts {State} (Ro3Emu:Panel:RequireAdmin2FA)")]
+    private static partial void LogPanelTwoFactor(ILogger logger, string state);
 
     /// <summary>ASPNETCORE_ENVIRONMENT, DOTNET_ENVIRONMENT or --environment set to Production (not the host default).</summary>
     internal static bool ExplicitProduction(IConfiguration configuration) =>

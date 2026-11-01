@@ -17,7 +17,8 @@ public sealed class LoginLimitTests
         public override DateTimeOffset GetUtcNow() => _now;
     }
 
-    private static async Task<List<HttpStatusCode>> Logins(bool limitLoopback, int attempts)
+    private static async Task<List<HttpStatusCode>> Logins(bool limitLoopback, int attempts, string? forwardedFor = null,
+        Action<ServerOptions>? configure = null)
     {
         var dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-loginlimit-" + Guid.NewGuid().ToString("N"));
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
@@ -28,11 +29,13 @@ public sealed class LoginLimitTests
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.LoginAttemptsPerMinute = 3;
             o.LoginLimitIncludesLoopback = limitLoopback;
+            configure?.Invoke(o);
         }, new FrozenClock());
         await app.StartAsync();
         try
         {
             using var client = new HttpClient();
+            if (forwardedFor != null) client.DefaultRequestHeaders.Add("X-Forwarded-For", forwardedFor);
             var codes = new List<HttpStatusCode>();
             for (int i = 0; i < attempts; i++)
             {
@@ -62,5 +65,48 @@ public sealed class LoginLimitTests
     public async Task LoopbackIsExemptByDefault()
     {
         Assert.All(await Logins(limitLoopback: false, attempts: 6), c => Assert.Equal(HttpStatusCode.OK, c));
+    }
+
+    /// <summary>
+    /// A proxy on the same machine connects from loopback too. A forwarded request is a player behind it, not a local
+    /// tool, so it gets the budget: an untrusted proxy's players share the proxy's address, a trusted one's their own.
+    /// </summary>
+    [Fact]
+    public async Task AForwardedRequestFromLoopbackIsLimited()
+    {
+        var codes = await Logins(limitLoopback: false, attempts: 5, forwardedFor: "203.0.113.7");
+        Assert.All(codes.Take(3), c => Assert.Equal(HttpStatusCode.OK, c));
+        Assert.All(codes.Skip(3), c => Assert.Equal(HttpStatusCode.TooManyRequests, c));
+    }
+
+    [Fact]
+    public async Task BehindATrustedProxyTheBudgetIsTheForwardedClients()
+    {
+        var codes = await Logins(limitLoopback: false, attempts: 4, forwardedFor: "203.0.113.8",
+            configure: o => o.Panel.TrustedProxies = ["127.0.0.1"]);
+        Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
+    }
+
+    [Fact]
+    public async Task AConfiguredProxyEndsTheLoopbackExemption()
+    {
+        // A proxy that sends no forwarding header still announces itself in the panel options.
+        var codes = await Logins(limitLoopback: false, attempts: 4, configure: o => o.Panel.PublicUrl = "https://panel.example.com");
+        Assert.Equal(HttpStatusCode.TooManyRequests, codes[3]);
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", false, false, false)]
+    [InlineData("0.0.0.0", false, false, true)]
+    [InlineData("127.0.0.1", true, false, true)]
+    [InlineData("127.0.0.1", false, true, true)]
+    public void ThePanelIsPublicFacingOnAPublicBindOrBehindAProxy(string bind, bool trustedProxy, bool publicUrl, bool expected)
+    {
+        var panel = new Ro3Emu.Panel.PanelOptions
+        {
+            TrustedProxies = trustedProxy ? ["127.0.0.1"] : [],
+            PublicUrl = publicUrl ? "https://panel.example.com" : null,
+        };
+        Assert.Equal(expected, panel.PublicFacing(IPAddress.Parse(bind)));
     }
 }
