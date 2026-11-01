@@ -52,7 +52,7 @@ public static class PrivateFiles
         try
         {
             using var user = WindowsIdentity.GetCurrent();
-            SecurityIdentifier[] allowed = [user.User!, new(WellKnownSidType.LocalSystemSid, null), new(WellKnownSidType.BuiltinAdministratorsSid, null)];
+            var allowed = AllowedOnWindows(user.User!);
             if (System.IO.Directory.Exists(path))
             {
                 var folder = new DirectoryInfo(path);
@@ -80,6 +80,21 @@ public static class PrivateFiles
             Console.Error.WriteLine($"warning: could not keep {path} private to this user: {e.Message}");
         }
     }
+
+    /// <summary>
+    /// The user, SYSTEM and the Administrators, each once: a server running as SYSTEM would otherwise count one rule too
+    /// many and write the list again at every start.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    internal static SecurityIdentifier[] AllowedOnWindows(SecurityIdentifier user) =>
+    [
+        .. new[]
+        {
+            user,
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+        }.Distinct(),
+    ];
 
     /// <summary>Already protected, with only the allowed accounts: nothing to write, so a start does not touch the tree again.</summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
