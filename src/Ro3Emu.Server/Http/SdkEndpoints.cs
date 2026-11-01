@@ -63,10 +63,10 @@ public static partial class SdkEndpoints
             // existing account logs in whatever its name.
             bool register = !options.Value.RefuseUnknownAccounts && Ro3Emu.Panel.AccountNames.Problem(identity) == null;
             var (result, account) = await accounts.SignInAsync(identity, credential, register);
-            if (result == AccountStore.LoginResult.Unknown)
-                LogUnknownRefused(log, account);
-            else
-                log.LogInformation("SDK login {Identity}: {Result}", account, result);
+            string logged = Micro.MicroServiceRouter.Clip(account);
+            if (result != AccountStore.LoginResult.Unknown) log.LogInformation("SDK login {Identity}: {Result}", logged, result);
+            else if (options.Value.RefuseUnknownAccounts) LogUnknownRefused(log, logged);
+            else LogBadNameRefused(log, logged);
             // A banned account answers like a wrong password (inferred: the client has no ban code we know). So does a
             // name without an account when the game may not create it: code 401 is the only refusal the client words
             // (MetaSDKUtil maps it to 10630000002, UI_Sys_LoginWidgetBaseCtrl._loginCallBack shows UIWords 15012
@@ -117,6 +117,9 @@ public static partial class SdkEndpoints
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SDK login {Identity}: refused, no such account (Ro3Emu:RefuseUnknownAccounts: accounts come from the panel's sign-up)")]
     private static partial void LogUnknownRefused(ILogger logger, string identity);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "SDK login {Identity}: refused, no such account and the name cannot be a new account's")]
+    private static partial void LogBadNameRefused(ILogger logger, string identity);
 
     /// <summary>
     /// The gates the client should dial: the IP address it reached this server list on, so a host started with its LAN

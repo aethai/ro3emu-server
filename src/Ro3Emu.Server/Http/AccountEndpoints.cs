@@ -32,7 +32,7 @@ public static class AccountEndpoints
                     return Results.Json(new { code = 409, message = "the character is in the game; log out first" });
                 bool ok = roles.Delete(identity, role.Id);
                 if (ok) owners.RoleDeleted(role.Id, roles.ReadRevisionVector(role.Id).Epoch);
-                log.LogInformation("Account {Account} deletes role {Name} ({Id}): {Result}", identity, current.Name, role.Id, ok);
+                log.LogInformation("Account {Account} deletes role {Name} ({Id}): {Result}", Micro.MicroServiceRouter.Clip(identity), current.Name, role.Id, ok);
                 return Results.Json(new { code = ok ? 0 : 500, message = ok ? $"{current.Name} deleted" : "not deleted" });
             });
         });

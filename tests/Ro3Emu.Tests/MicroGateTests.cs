@@ -23,6 +23,7 @@ public sealed class MicroGateTests : IDisposable
 
     public void Dispose()
     {
+        foreach (var store in _stores) store.Dispose();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
@@ -114,6 +115,82 @@ public sealed class MicroGateTests : IDisposable
         Assert.Equal("tester", mixed["Username"]);
 
         cts.Cancel();
+    }
+
+    /// <summary>A crafted empty session key (RC4 divides by its length) is a failed key exchange, not a crash with a stack.</summary>
+    [Fact]
+    public async Task AnEmptySessionKeyFailsTheKeyExchangeWithoutAStack()
+    {
+        var (gate, log, crypto, port, cts) = StartLogged();
+        using (gate)
+        using (cts)
+        {
+            await gate.StartAsync(cts.Token);
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            await socket.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+            await SendKeyAsync(socket, new FrameReader(socket), crypto, []);
+            await ClosedAsync(socket, cts.Token);
+            Assert.All(log.Lines, line => Assert.Null(line.Error));
+            Assert.Contains(log.Lines, line => line.Text.Contains("failed the key exchange", StringComparison.Ordinal));
+            cts.Cancel();
+        }
+    }
+
+    /// <summary>Arguments that are not msgpack are the sender's fault: one closing line, no Error with a stack per connection.</summary>
+    [Fact]
+    public async Task RequestArgumentsThatDoNotParseCloseWithoutAStack()
+    {
+        var (gate, log, crypto, port, cts) = StartLogged();
+        using (gate)
+        using (cts)
+        {
+            await gate.StartAsync(cts.Token);
+            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            await socket.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+            var reader = new FrameReader(socket);
+            var sessionKey = RandomNumberGenerator.GetBytes(20);
+            await SendKeyAsync(socket, reader, crypto, sessionKey);
+            var client = new ClientSide(sessionKey);
+            Assert.Equal(11, (await reader.NextAsync(client)).Item1);
+            var request = new MsRequest { Rid = 7, Service = "LoginService", Method = "verifySdk", Params = ByteString.CopyFrom(0xC1, 0xC1, 0xC1) };
+            await socket.SendAsync(client.Pack(Frame(33, request)), SocketFlags.None);
+            await ClosedAsync(socket, cts.Token);
+            Assert.All(log.Lines, line => Assert.Null(line.Error));
+            Assert.Contains(log.Lines, line => line.Text.Contains("do not parse", StringComparison.Ordinal));
+            cts.Cancel();
+        }
+    }
+
+    private (MicroGateServer Gate, RecordingLogger<MicroGateServer> Log, GateCrypto Crypto, int Port, CancellationTokenSource Cts) StartLogged()
+    {
+        int port = TestPorts.FreePort();
+        var options = Options.Create(new ServerOptions { DataDir = _dataDir, MicroGatePort = port });
+        var accounts = new AccountStore(options);
+        _stores.Add(accounts);
+        var crypto = GateCrypto.LoadOrCreate(_dataDir, NullLogger.Instance);
+        var micro = new MicroSessions(NullLogger<MicroSessions>.Instance);
+        var log = new RecordingLogger<MicroGateServer>();
+        var router = new MicroServiceRouter([new LoginService(accounts, new RoleStore(accounts), micro, NullLogger<LoginService>.Instance)], NullLogger<MicroServiceRouter>.Instance);
+        return (new MicroGateServer(options, crypto, router, micro, log), log, crypto, port, new CancellationTokenSource(TimeSpan.FromSeconds(30)));
+    }
+
+    private readonly List<AccountStore> _stores = [];
+
+    private static async Task SendKeyAsync(Socket socket, FrameReader reader, GateCrypto crypto, byte[] sessionKey)
+    {
+        await socket.SendAsync(Frame(1, new Phonest.Proto.Void()), SocketFlags.None);
+        var (_, body) = await reader.NextAsync(null);
+        var encryptKey = new EncryptKey { Key = ByteString.CopyFrom(sessionKey), Token = EncryptToken.Parser.ParseFrom(body).Token };
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(crypto.PublicKeyPem);
+        await socket.SendAsync(Frame(2, new EncryptKeyString { KeyString = ByteString.CopyFrom(rsa.Encrypt(encryptKey.ToByteArray(), RSAEncryptionPadding.OaepSHA1)) }), SocketFlags.None);
+    }
+
+    private static async Task ClosedAsync(Socket socket, CancellationToken ct)
+    {
+        var buffer = new byte[4096];
+        try { while (await socket.ReceiveAsync(buffer, SocketFlags.None, ct) > 0) { } }
+        catch (SocketException) { }
     }
 
     [Theory]
