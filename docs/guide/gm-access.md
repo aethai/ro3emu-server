@@ -13,11 +13,17 @@ GM commands are the `!` lines in chat (`!help`), the client's GM panel (30300) a
 | empty | `true` | reachable from other machines | everyone (an explicit choice, logged loudly) | **nobody** |
 | empty | `false` | any | nobody | nobody |
 
-"Local only" means only this machine reaches the server: the game ports listen on loopback (`PublicHost` is
-`127.0.0.1` and `BindAddress` is empty or loopback), the [web panel](panel.md) listens on loopback too, and no proxy
-serves it (`Ro3Emu:Panel:PublicUrl` and `Ro3Emu:Panel:TrustedProxies` are unset). A bind address that is not an IP
-address counts as reachable, so a typo never opens GM. Everything else is "reachable from other machines": a LAN or
-public address, `0.0.0.0`, or a panel behind a reverse proxy.
+"Local only" means only this machine reaches the server: the client is told a loopback address (`PublicHost` is
+`127.0.0.1`), the game ports listen on loopback (`BindAddress` is empty or loopback), the [web panel](panel.md) listens
+on loopback too, and no proxy serves it (`Ro3Emu:Panel:PublicUrl` and `Ro3Emu:Panel:TrustedProxies` are unset). An address
+that is not an IP address counts as reachable, so a typo never opens GM. Everything else is "reachable from other
+machines": a LAN or public address, `0.0.0.0`, a tunnel (a public `PublicHost` with a loopback bind), or a panel behind a
+reverse proxy.
+
+**List your GM accounts before you open a tunnel or a proxy.** The server can only judge what it is told. A tunnel
+(frp, `ssh -R`, nginx `stream`) or a proxy that adds no forwarding header delivers strangers to loopback, and with
+`PublicHost=127.0.0.1` and no panel options that cannot be told from local play, so an empty list stays open. A panel
+request that carries `X-Forwarded-For`, `Forwarded` or `X-Real-IP` never gets that open Admin, whatever else is set.
 
 "Started as Production" means the environment was set explicitly: `ASPNETCORE_ENVIRONMENT=Production`,
 `DOTNET_ENVIRONMENT=Production` or `--environment Production`. ASP.NET's own default when nothing is set is also
@@ -30,7 +36,7 @@ you give it.
 At startup the server logs who has GM. With an empty list it warns loudly in both cases that matter:
 
 - Nobody has GM: `!!! Ro3Emu:GmAccounts is empty, so NO account has GM commands in game (environment ..., reachable from other machines on ...)`.
-- GM open to everyone on a server other machines reach, or in Production (only with `GmOpenWhenEmpty=true`): `!!! Ro3Emu:GmAccounts is empty and GM is open: EVERY account can use GM commands in game ...`
+- GM open to everyone on a server other machines reach (only with `GmOpenWhenEmpty=true`): `!!! Ro3Emu:GmAccounts is empty and GM is open: EVERY account can use GM commands in game ...`
 
 The [web panel](panel.md)'s admin area gives Admin to the listed accounts. With an empty list it gives Admin to every
 account only on a local panel with GM open, never on a panel that other machines reach: there anyone who signs up

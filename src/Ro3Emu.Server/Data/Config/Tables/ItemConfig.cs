@@ -43,7 +43,5 @@ public readonly partial record struct ItemConfig(JsonElement Row)
     [ConfigField("_kParam1")] public partial string Param1 { get; }
     /// <summary>The item's large picture (a card's art); "item_null_*" when it has none.</summary>
     [ConfigField("_kPic")] public partial string Pic { get; }
-    /// <summary>ItemUseLimitConfig ids: the maps the item is refused on.</summary>
-    [ConfigField("_kUseLimit")] public partial long[] UseLimit { get; }
     [ConfigField("_kUseTimes")] public partial long[] UseTimes { get; }
 }

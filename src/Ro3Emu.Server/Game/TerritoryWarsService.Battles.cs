@@ -388,25 +388,34 @@ public sealed partial class TerritoryWarsService
         var owner = s.Owner;
         var epoch = owner?.LifecycleEpoch;
         s.TerritoryBattle = null;
-        await CancelQueueAsync(s, TerritoryWarQueueExitReason.LeaveScene);
-        if (b == null) return;
-        s.TerritoryMinimapOpen = false;
-        if (role != null)
+        try
         {
-            using (var scope = _loop.Owners is { } owners
-                ? await owners.EnterAsync("territory/battle leave fatigue", Ownership.ReservationKey.Role(role.Id)) : null)
+            await CancelQueueAsync(s, TerritoryWarQueueExitReason.LeaveScene);
+            if (b == null) return;
+            s.TerritoryMinimapOpen = false;
+            if (role != null)
             {
-                if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment)
-                    || !ReferenceEquals(s.Owner, owner) || owner?.LifecycleEpoch != epoch) return;
-                if (owner != null) scope?.Context.Pin(owner);
-                var r = LoadRole(role.Id);
-                r.LastFatigue = _clock.Now;
-                await SaveRoleAsync(role.Id, r);
-                s.TerritoryWars = r;
+                using (var scope = _loop.Owners is { } owners
+                    ? await owners.EnterAsync("territory/battle leave fatigue", Ownership.ReservationKey.Role(role.Id)) : null)
+                {
+                    if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment)
+                        || !ReferenceEquals(s.Owner, owner) || owner?.LifecycleEpoch != epoch) return;
+                    if (owner != null) scope?.Context.Pin(owner);
+                    var r = LoadRole(role.Id);
+                    r.LastFatigue = _clock.Now;
+                    await SaveRoleAsync(role.Id, r);
+                    s.TerritoryWars = r;
+                }
             }
+            await RemoveBuffAsync(s, (int)Gvg("GVGFieldBuff", 10301));
+            await SendCountsAsync(b);
         }
-        await RemoveBuffAsync(s, (int)Gvg("GVGFieldBuff", 10301));
-        await SendCountsAsync(b);
+        // A full queue wrote nothing: the battle stays for a retry, which would otherwise find nothing to do.
+        catch (Exception e) when (b != null && ReferenceEquals(s.Role, role) && Accounts.Persistence.QueueFullPatience.Refused(e))
+        {
+            s.TerritoryBattle = b;
+            throw;
+        }
     }
     public async Task DisconnectAsync(GameSession s)
     {

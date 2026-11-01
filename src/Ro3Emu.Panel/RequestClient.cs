@@ -53,5 +53,18 @@ public sealed class ClientAddresses(IEnumerable<string> trustedProxies)
         request.Host.Host is { Length: > 0 } host && (host == "127.0.0.1" || host == "[::1]" || host == "::1"
             || string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// What a per-address budget counts: an IPv4 address itself, an IPv6 address's /64 network, which one subscriber
+    /// usually holds whole (one client could otherwise take a fresh budget from every address of it).
+    /// </summary>
+    public static IPAddress Network(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) return address.MapToIPv4();
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return address;
+        byte[] bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes);
+    }
+
     internal static IPAddress Normalize(IPAddress address) => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 }

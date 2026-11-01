@@ -58,6 +58,10 @@ public sealed class GmAccessTests
     [InlineData("Development", "", "stranger", true, true)]                                 // local play
     [InlineData("Production", "", "stranger", false, false)]
     [InlineData("Development", "PublicHost=192.0.2.10", "stranger", false, false)]          // binds every interface
+    [InlineData("Development", "PublicHost=192.0.2.10;BindAddress=127.0.0.1", "stranger", false, false)] // a tunnel
+    [InlineData("Development", "PublicHost=192.0.2.10;BindAddress=127.0.0.1;Panel:BindAddress=127.0.0.1", "stranger", false, false)]
+    [InlineData("Development", "PublicHost=not-an-ip;BindAddress=127.0.0.1", "stranger", false, false)]
+    [InlineData("Development", "PublicHost=192.0.2.10;BindAddress=127.0.0.1;GmOpenWhenEmpty=true", "stranger", true, false)]
     [InlineData("Development", "BindAddress=0.0.0.0", "stranger", false, false)]
     [InlineData("Development", "Panel:BindAddress=0.0.0.0", "stranger", false, false)]
     [InlineData("Development", "Panel:PublicUrl=https://panel.example.com", "stranger", false, false)]

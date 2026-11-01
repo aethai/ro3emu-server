@@ -249,6 +249,7 @@ public sealed partial class CharacterService
             if (error != 0) return;
             await PublishJobAsync(session);
         }
+        await PayJobExpCatchUpAsync(session);
         foreach (var handler in ProgressHandlers) await handler(session);
         foreach (var handler in JobChanged) await handler(session);
     }
@@ -284,6 +285,7 @@ public sealed partial class CharacterService
             await session.SendGameAsync(PlayerTransformJob, new PlayerTransformJobResp { Result = 0, JobId = career });
             await PublishJobAsync(session);
         }
+        await PayJobExpCatchUpAsync(session);
         foreach (var handler in ProgressHandlers) await handler(session);
         foreach (var handler in JobChanged) await handler(session);
         return $"Job {career} {data.TextOf(data.Row("JobConfig", career)!.Value, "_iName")}".TrimEnd();

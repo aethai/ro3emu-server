@@ -719,9 +719,10 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
                     source = new RoleBlobSnapshot(true, purged, purge.CommittedVector(role, "mailbox"));
                 }
                 int refusal = ErrorCodes.MailMissing;
+                var letters = box.Letters.ToLookup(m => m.Id);
                 foreach (string id in request.MailUid.Distinct())
                 {
-                    var mail = box.Letters.FirstOrDefault(m => m.Id == id);
+                    var mail = letters[id].FirstOrDefault();
                     if (mail == null) { if (expiredIds.Contains(id)) refusal = ErrorCodes.MailExpired; continue; }
                     if (mail.Claimed) { refusal = ErrorCodes.MailAlreadyClaimed; continue; }
                     if (mail.Attachments.Count == 0 && mail.Items.Count == 0 && mail.Currency.Count == 0)

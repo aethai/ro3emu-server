@@ -13,16 +13,20 @@ namespace Ro3Emu.Server.Accounts.Persistence;
 ///   (<see cref="ReceiptBlobs"/>).
 /// - **Not compacted:** <c>mail/</c> deliveries. <see cref="MailDeliveryReceiptReadPlan"/> re-reads a delivery's payload
 ///   whenever the same delivery key comes back, however late. The watermark still moves past them.
-/// Receipts are recorded with the writer's clock as their sequence is taken, so commit order is time order and nothing
-/// behind the first receipt that is not yet due is due either.
+/// Receipts carry the wall clock of their commit, so commit order is time order only while that clock runs forward. A
+/// receipt that is merely not due yet ends the walk, since what follows it is about as young. One dated at or after
+/// <paramref name="futureUtcMs"/> was written under a wrong clock: the watermark moves past it without compacting it,
+/// as its real age is unknown and one receipt must not stop compaction until its date arrives. Later due receipts
+/// behind a date that is not that far off wait for it, at most a day past their own due time.
 /// </summary>
-internal sealed class ReceiptCompactionPlan(long cutoffUtcMs, int batch) : DbPlan
+internal sealed class ReceiptCompactionPlan(long cutoffUtcMs, long futureUtcMs, int batch) : DbPlan
 {
     internal override int Bytes => 256;
     internal override string Label => "economy/receipt-compaction";
 
-    /// <summary>A batch's result: receipts compacted, receipts the watermark moved past, whether more may be due.</summary>
-    internal readonly record struct Batch(int Compacted, int Passed, bool More);
+    /// <summary>A batch's result: receipts compacted, receipts the watermark moved past, how many of those carried an
+    /// impossible future date, whether more may be due.</summary>
+    internal readonly record struct Batch(int Compacted, int Passed, int Future, bool More);
 
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
@@ -31,7 +35,7 @@ internal sealed class ReceiptCompactionPlan(long cutoffUtcMs, int batch) : DbPla
             after = meta.ExecuteScalar() is long stored ? stored : 0;
         var due = new List<string>(batch);
         long watermark = after;
-        int read = 0, passed = 0;
+        int read = 0, passed = 0, future = 0;
         bool reachedRecent = false;
         using (var scan = DbSql.Command(db, tx, """
             SELECT operation_id,commit_seq,recorded_utc_ms,command_kind FROM operation_receipt
@@ -44,8 +48,10 @@ internal sealed class ReceiptCompactionPlan(long cutoffUtcMs, int batch) : DbPla
             while (row.Read())
             {
                 read++;
-                if (row.GetInt64(2) >= cutoffUtcMs) { reachedRecent = true; break; }
-                if (!row.GetString(3).StartsWith("mail/", StringComparison.Ordinal)) due.Add(row.GetString(0));
+                long recorded = row.GetInt64(2);
+                if (recorded >= futureUtcMs) future++;
+                else if (recorded >= cutoffUtcMs) { reachedRecent = true; break; }
+                else if (!row.GetString(3).StartsWith("mail/", StringComparison.Ordinal)) due.Add(row.GetString(0));
                 watermark = row.GetInt64(1);
                 passed++;
             }
@@ -71,6 +77,6 @@ internal sealed class ReceiptCompactionPlan(long cutoffUtcMs, int batch) : DbPla
             advance.Parameters.AddWithValue("$seq", watermark);
             advance.ExecuteNonQuery();
         }
-        return new Batch(compacted, passed, !reachedRecent && read == batch);
+        return new Batch(compacted, passed, future, !reachedRecent && read == batch);
     }
 }

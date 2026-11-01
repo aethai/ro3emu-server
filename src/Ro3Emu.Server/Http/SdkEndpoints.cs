@@ -26,7 +26,7 @@ public static partial class SdkEndpoints
     /// The login form the client posts is identity, credential and channel_id (HttpNetworkManager): a few short values.
     /// Anything far larger is refused before it is read in full. (inferred)
     /// </summary>
-    private static readonly Microsoft.AspNetCore.Http.Features.FormOptions LoginForm = new()
+    internal static readonly Microsoft.AspNetCore.Http.Features.FormOptions LoginForm = new()
     {
         BufferBody = false,
         ValueCountLimit = 16,
@@ -37,7 +37,7 @@ public static partial class SdkEndpoints
     };
 
     /// <summary>Characters of a password the game's login hashes; the panel's own limit (PanelSite.PasswordMax) is far below. (inferred)</summary>
-    private const int MaxCredential = 1024;
+    internal const int MaxCredential = 1024;
 
     /// <summary>Public half of the gate key, so a player's ClientTools can patch against this server from its URL alone.</summary>
     public const string GateKeyPath = "/ro3emu/gate-key.pem";
@@ -50,6 +50,7 @@ public static partial class SdkEndpoints
             IOptions<ServerOptions> options, ILogger<AccountStore> log) =>
         {
             if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            if (!request.HasFormContentType) return Results.StatusCode(StatusCodes.Status400BadRequest);
             IFormCollection form;
             try { form = await request.ReadFormAsync(LoginForm); }
             catch (InvalidDataException) { return Results.StatusCode(StatusCodes.Status400BadRequest); }
@@ -63,10 +64,10 @@ public static partial class SdkEndpoints
             // existing account logs in whatever its name.
             bool register = !options.Value.RefuseUnknownAccounts && Ro3Emu.Panel.AccountNames.Problem(identity) == null;
             var (result, account) = await accounts.SignInAsync(identity, credential, register);
-            if (result == AccountStore.LoginResult.Unknown)
-                LogUnknownRefused(log, account);
-            else
-                log.LogInformation("SDK login {Identity}: {Result}", account, result);
+            string logged = Micro.MicroServiceRouter.Clip(account);
+            if (result != AccountStore.LoginResult.Unknown) log.LogInformation("SDK login {Identity}: {Result}", logged, result);
+            else if (options.Value.RefuseUnknownAccounts) LogUnknownRefused(log, logged);
+            else LogBadNameRefused(log, logged);
             // A banned account answers like a wrong password (inferred: the client has no ban code we know). So does a
             // name without an account when the game may not create it: code 401 is the only refusal the client words
             // (MetaSDKUtil maps it to 10630000002, UI_Sys_LoginWidgetBaseCtrl._loginCallBack shows UIWords 15012
@@ -76,7 +77,7 @@ public static partial class SdkEndpoints
                 return Results.Json(new { code = 401 });
             }
             // The account's login history on the web panel (the address only where the operator keeps addresses).
-            await panel.RecordLoginAsync(account, "game", request.HttpContext.Connection.RemoteIpAddress);
+            await panel.RecordLoginAsync(account, "game", limiter.ClientAddress(request.HttpContext));
             return Results.Json(new { code = 0, data = new { token = await accounts.IssueSdkTokenAsync(account) } });
         });
 
@@ -117,6 +118,9 @@ public static partial class SdkEndpoints
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SDK login {Identity}: refused, no such account (Ro3Emu:RefuseUnknownAccounts: accounts come from the panel's sign-up)")]
     private static partial void LogUnknownRefused(ILogger logger, string identity);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "SDK login {Identity}: refused, no such account and the name cannot be a new account's")]
+    private static partial void LogBadNameRefused(ILogger logger, string identity);
 
     /// <summary>
     /// The gates the client should dial: the IP address it reached this server list on, so a host started with its LAN

@@ -42,10 +42,11 @@ web panel on loopback also answers its API only under this machine's name or its
 
 - Passwords are stored as PBKDF2-SHA256 hashes, 100 000 rounds, with a per-account salt (`AccountPlans`).
 - A credential check costs one such hash, so `CredentialLimiter` allows `LoginAttemptsPerMinute` (20) per client
-  address and answers 429 past that without hashing. The client address is the peer, or behind a proxy listed in
+  address (an IPv6 one by its /64 network) and answers 429 past that without hashing. The client address is the peer, or behind a proxy listed in
   `Ro3Emu:Panel:TrustedProxies` the last `X-Forwarded-For` entry, on the panel and on port 5380 alike. Loopback is
-  exempt only for local tools: not for a request with `X-Forwarded-For`, `Forwarded` or `X-Real-IP`, not once
-  `TrustedProxies` or `Ro3Emu:Panel:PublicUrl` is set, and not with `LoginLimitIncludesLoopback`. Behind a proxy
+  exempt only for local tools: not for a request with `X-Forwarded-For`, `Forwarded` or `X-Real-IP`, not on a
+  server others reach (a public `PublicHost` or bind, `TrustedProxies` or `Ro3Emu:Panel:PublicUrl` set), and not with
+  `LoginLimitIncludesLoopback`. Behind a proxy
   that is not listed every player shares the proxy's address, so list it.
 - `/sdk/login` returns a token. The client presents it to `LoginService.verifySdk` on the micro gate, which binds
   the account to that connection.
