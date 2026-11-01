@@ -75,7 +75,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
     private async Task Gm(string account, string line)
     {
         using var client = new HttpClient();
-        var response = await client.PostAsync($"{_http}/ro3emu/gm?account={account}", new StringContent(line));
+        var response = await client.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line));
         response.EnsureSuccessStatusCode();
         if (line.StartsWith("!warp ", StringComparison.Ordinal))
         {

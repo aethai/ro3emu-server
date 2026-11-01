@@ -40,5 +40,18 @@ public sealed class ClientAddresses(IEnumerable<string> trustedProxies)
     public static bool IsForwarded(HttpRequest request) =>
         request.Headers.ContainsKey("X-Forwarded-For") || request.Headers.ContainsKey("Forwarded") || request.Headers.ContainsKey("X-Real-IP");
 
+    /// <summary>The connection comes from a proxy listed in <see cref="PanelOptions.TrustedProxies"/>.</summary>
+    public bool FromTrustedProxy(HttpContext context) =>
+        context.Connection.RemoteIpAddress is { } peer && _proxies.Contains(Normalize(peer));
+
+    /// <summary>
+    /// The request's Host names this machine (127.0.0.1, localhost or [::1], any port). A page served from another name
+    /// that resolves to 127.0.0.1 (DNS rebinding) sends its own name, so a loopback service that checks this cannot be
+    /// driven from a browser through that page.
+    /// </summary>
+    public static bool LoopbackHost(HttpRequest request) =>
+        request.Host.Host is { Length: > 0 } host && (host == "127.0.0.1" || host == "[::1]" || host == "::1"
+            || string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase));
+
     internal static IPAddress Normalize(IPAddress address) => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 }

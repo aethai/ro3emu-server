@@ -58,6 +58,9 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             report.ServerVersion = server == null ? "UNKNOWN (remote process binary unavailable)" :
                 await LocalBuildBindingAsync(ct);
             _http = new HttpClient { BaseAddress = new Uri(url), Timeout = TimeSpan.FromSeconds(10) };
+            string? token = server?.OperatorToken ?? (options.OperatorTokenPath != null
+                ? (await File.ReadAllTextAsync(options.OperatorTokenPath, ct)).Trim() : null);
+            if (token != null) _http.DefaultRequestHeaders.Add(Ro3Emu.Server.Http.OperatorToken.Header, token);
             _pem = options.PemPath != null ? await File.ReadAllTextAsync(options.PemPath, ct) :
                 await _http.GetStringAsync("/ro3emu/metrics/public-key", ct);
             _prefix = "lt" + Guid.NewGuid().ToString("N")[..9];

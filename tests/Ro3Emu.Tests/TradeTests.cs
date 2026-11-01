@@ -57,7 +57,7 @@ public sealed partial class TradeTests : IAsyncLifetime
     private async Task Gm(string name, string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account={name}", new StringContent(command))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account={name}", Operator.Command(command))).EnsureSuccessStatusCode();
     }
 
     private List<InvItem> Items(BotClient bot) => _app.Services.GetRequiredService<ItemStore>().Load((long)bot.Self!.Uuid);

@@ -65,7 +65,7 @@ public sealed class BossSkillSchedulerTests : IAsyncLifetime
     private async Task Gm(string account, string line)
     {
         using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account={account}", new StringContent(line))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line))).EnsureSuccessStatusCode();
     }
 
     /// <summary>The boss on the player's spot, not roaming or swinging (its normal attack stays out of the way), engaged on her.</summary>

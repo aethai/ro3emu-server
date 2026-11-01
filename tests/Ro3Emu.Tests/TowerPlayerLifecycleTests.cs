@@ -53,8 +53,8 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long id = (await bot.CreateRoleAsync("Alice")).RoleBaseInfo.Id;
         await bot.EnterWorldAsync(id);
         using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent("!lvl 99"))).EnsureSuccessStatusCode();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent("!quest done 10105020"))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command("!lvl 99"))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command("!quest done 10105020"))).EnsureSuccessStatusCode();
         return bot;
     }
 

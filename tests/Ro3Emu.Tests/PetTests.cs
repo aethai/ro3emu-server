@@ -68,7 +68,7 @@ public sealed class PetTests : IAsyncLifetime
     private async Task Gm(string command)
     {
         using var http = new HttpClient();
-        var response = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", new StringContent(command));
+        var response = await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command(command));
         response.EnsureSuccessStatusCode();
     }
 

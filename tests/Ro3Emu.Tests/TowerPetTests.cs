@@ -69,7 +69,7 @@ public sealed class TowerPetTests : IAsyncLifetime
     private async Task Gm(string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account=towerpet", new StringContent(command))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{_http}/ro3emu/gm?account=towerpet", Operator.Command(command))).EnsureSuccessStatusCode();
     }
 
     private async Task Eligible(int level = 99)

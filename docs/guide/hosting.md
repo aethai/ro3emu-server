@@ -30,7 +30,8 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
   `--service` asks for sudo only to install the unit. The unit runs with `NoNewPrivileges`, `ProtectSystem=strict` and
   a private `/tmp`: the server can write only inside the folder you extracted. A data dir elsewhere
   (`Ro3Emu__DataDir`) needs `ReadWritePaths=<that dir>` in a drop-in. The data dir and its private files (the gate
-  key, the database, the backups) are readable only by the server's user.
+  key, the database, the backups, the operator token) are readable only by the server's user. Your own scripts send
+  that token (`data/operator.token`) to the loopback tools ([GM access](gm-access.md#the-loopback-tool)).
 - **Bug reports from players:** the Feedback button in the game menu or `/bug <text>` in chat ([feedback](feedback.md)), optionally posted to a Discord channel.
 - **Monsters that attack on sight as in RO1** (on by default, as a trial): set `Ro3Emu__Ro1AggressiveMonsters=false` (or
   `"Ro1AggressiveMonsters": false` under `Ro3Emu` in `appsettings.json`) to turn it off. The field monsters whose Ragnarok Online 1

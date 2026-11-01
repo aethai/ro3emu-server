@@ -62,7 +62,7 @@ public sealed class SocialD13dTests : IAsyncLifetime
     {
         using var client = new HttpClient();
         (await client.PostAsync($"{_http}/ro3emu/gm?account={account}",
-            new StringContent($"!item {item} {count}"))).EnsureSuccessStatusCode();
+            Operator.Command($"!item {item} {count}"))).EnsureSuccessStatusCode();
     }
 
     private long Scalar(string sql)

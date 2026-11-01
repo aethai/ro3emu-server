@@ -109,7 +109,7 @@ public sealed class GmAccessTests
             Assert.EndsWith(":0", GeneralGMProcRsp.Parser.ParseFrom((await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.GeneralProcGm), Wait)).Body).ErrInfo);
 
             using var client = new HttpClient();
-            var response = await client.PostAsync($"{http}/ro3emu/gm?account=alice", new StringContent("!where"));
+            var response = await client.PostAsync($"{http}/ro3emu/gm?account=alice", Operator.Command("!where"));
             response.EnsureSuccessStatusCode();
             Assert.Contains("Scene", await Marquee(alice, "Scene"));
         }

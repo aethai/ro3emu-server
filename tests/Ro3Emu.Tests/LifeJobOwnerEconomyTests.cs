@@ -51,7 +51,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
     private async Task Gm(string account, string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync(_http + $"/ro3emu/gm?account={account}", new StringContent(command)))
+        (await client.PostAsync(_http + $"/ro3emu/gm?account={account}", Operator.Command(command)))
             .EnsureSuccessStatusCode();
     }
 

@@ -25,9 +25,18 @@ address (local play), and to every interface otherwise (`ServerOptions.ListenAdd
 | `GET /ro3emu/status` | public | the player count only, from the loop's census |
 | `POST /ro3emu/account/delete-role` | public, rate limited | needs the account's password; refuses a role that is in the world |
 | `POST /gift-card/use/v2` | public, rate limited | the client's gift-code redemption; needs the account's engine sign (the micro-gate login token); see [gift codes](gift-codes.md) |
-| `/ro3emu/gm`, `/ro3emu/metrics*`, `/ro3emu/online`, `/ro3emu/reports`, `/ro3emu/shutdown` | loopback only | answer 404 to any other address |
+| `/ro3emu/gm`, `/ro3emu/metrics*`, `/ro3emu/online`, `/ro3emu/reports`, `/ro3emu/shutdown` | operator only | loopback, operator token; 404 otherwise |
 
-A reverse proxy on the same machine makes every request arrive from loopback. Do not forward the loopback-only paths.
+The operator tools (`OpsEndpoints`) answer a request only when all of this holds: the peer is loopback, the Host names
+this machine (`127.0.0.1`, `localhost` or `[::1]`, so a page whose own name resolves to 127.0.0.1 is refused), no
+`X-Forwarded-For`, `Forwarded` or `X-Real-IP` header (a proxy on the same machine is loopback too), and the
+`X-Ro3Emu-Operator` header equals the data dir's `operator.token` (compared in constant time). Loopback alone was not
+enough: a web page open in a browser on the host can send a simple POST to 127.0.0.1, but it cannot set that header
+without a preflight the server never answers, and it cannot read the file. Anything else gets the 404 of an unknown
+path. RO3Emu.exe, BotCli and the load test read the token from the data dir; `Ro3Emu__OperatorToken` sets it.
+
+A reverse proxy on the same machine makes every request arrive from loopback. Do not forward the operator paths. The
+web panel on loopback also answers its API only under this machine's name or its `PublicUrl`'s host.
 
 ## Accounts and credentials
 

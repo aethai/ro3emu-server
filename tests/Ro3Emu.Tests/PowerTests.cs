@@ -75,7 +75,7 @@ public sealed class PowerTests : IAsyncLifetime
     private async Task Gm(string account, string command)
     {
         using var http = new HttpClient();
-        var response = await http.PostAsync($"{_httpUrl}/ro3emu/gm?account={account}", new StringContent(command));
+        var response = await http.PostAsync($"{_httpUrl}/ro3emu/gm?account={account}", Operator.Command(command));
         response.EnsureSuccessStatusCode();
     }
 

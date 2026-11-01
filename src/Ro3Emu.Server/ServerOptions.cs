@@ -164,6 +164,13 @@ public sealed class ServerOptions
     public bool LoginLimitIncludesLoopback { get; set; }
 
     /// <summary>
+    /// The operator token the loopback tools (/ro3emu/gm, /shutdown, /online, /reports, /metrics) must send in
+    /// X-Ro3Emu-Operator (Http.OperatorToken). Unset: a random one, kept in DataDir/operator.token. Set (at least 32
+    /// characters): this one, also written to that file, for scripts that already hold a secret.
+    /// </summary>
+    public string? OperatorToken { get; set; }
+
+    /// <summary>
     /// A game login (SDK login) with an account name that has no account is refused instead of creating the account,
     /// so accounts come only from the web panel's sign-up (a closed test). The client shows its wrong-credentials
     /// popup, as for a wrong password. Off: the first login creates the account, as before.

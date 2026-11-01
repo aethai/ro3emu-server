@@ -55,9 +55,21 @@ or through environment variables, one per account: `Ro3Emu__GmAccounts__0=your-a
 
 ## The loopback tool
 
-`POST http://127.0.0.1:5380/ro3emu/gm?account=<account>` (body `!warp 10111 150 190`) answers only on loopback and
+`POST http://127.0.0.1:5380/ro3emu/gm?account=<account>` (body `!warp 10111 150 190`) answers only a local tool and
 keeps its own rule: with an empty list it runs for any online account, with a list only for listed accounts.
 Production does not close it; it is the operator's tool on the server machine.
+
+The request needs the operator token from the data dir, in the `X-Ro3Emu-Operator` header; without it, from another
+address, under another Host than `127.0.0.1`, `localhost` or `[::1]`, or through a proxy, the answer is 404. That keeps
+a web page open in a browser on the server machine from running GM commands, since a page cannot read the file:
+
+```bash
+curl -s -H "X-Ro3Emu-Operator: $(cat data/operator.token)" -d "!warp 10111 150 190" \
+  "http://127.0.0.1:5380/ro3emu/gm?account=<account>"
+```
+
+The server writes `operator.token` (64 hex characters, readable only by its user) into its data dir at the first start
+and keeps it. Set `Ro3Emu__OperatorToken` (at least 32 characters) to choose it yourself; it is written to the same file.
 
 ## A public server
 

@@ -88,7 +88,7 @@ public abstract class AuctionTestsHost : IAsyncLifetime
     protected async Task Gm(BotClient bot, string command)
     {
         using var client = new HttpClient();
-        (await client.PostAsync($"{http}/ro3emu/gm?account={bot.Account}", new StringContent(command)))
+        (await client.PostAsync($"{http}/ro3emu/gm?account={bot.Account}", Operator.Command(command)))
             .EnsureSuccessStatusCode();
     }
 

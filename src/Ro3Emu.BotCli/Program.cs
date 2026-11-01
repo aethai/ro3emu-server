@@ -43,7 +43,8 @@ string name = args.Length > 0 ? args[0] : "Botty";
 string http = args.Length > 1 ? args[1] : "http://127.0.0.1:5380";
 string dataDir = args.Length > 2 ? args[2] : FindDataDir();
 
-await using var bot = new BotClient(http, File.ReadAllText(Path.Combine(dataDir, "gate_rsa_public.pem")));
+await using var bot = new BotClient(http, File.ReadAllText(Path.Combine(dataDir, "gate_rsa_public.pem")))
+{ OperatorToken = Ro3Emu.Server.Http.OperatorToken.Read(dataDir) };
 await bot.LoginAsync(name.ToLowerInvariant(), "bot");
 await bot.EnterGateAsync();
 long roleId = bot.Roles.FirstOrDefault(r => r.Name == name)?.Id ?? (await bot.CreateRoleAsync(name)).RoleBaseInfo.Id;
@@ -314,7 +315,8 @@ static async Task<int> VoiceEchoAsync(string[] args)
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
     static void Log(string line) => Console.WriteLine(line);
 
-    await using var bot = new BotClient(http, File.ReadAllText(Path.Combine(dataDir, "gate_rsa_public.pem")));
+    await using var bot = new BotClient(http, File.ReadAllText(Path.Combine(dataDir, "gate_rsa_public.pem")))
+    { OperatorToken = Ro3Emu.Server.Http.OperatorToken.Read(dataDir) };
     await bot.LoginAsync(account, password);
     await bot.EnterGateAsync();
     // An existing role: the one named, else the account's first; none yet: create one.
