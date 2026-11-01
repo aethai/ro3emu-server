@@ -14,8 +14,10 @@ public sealed class CleanseRulesTests
     private static JsonElement Skill(string script, params int[] logic) =>
         JsonSerializer.SerializeToElement(new { _kScriptLogic = script, _kLogicData = logic });
 
-    private static BuffConfig Buff(int type, params int[] categories) =>
-        new(JsonSerializer.SerializeToElement(new { _iType = type, _iDisperse = 1, _kBuffCategory = categories }));
+    private static BuffConfig Buff(int type, params int[] categories) => Row(type, 1, categories);
+
+    private static BuffConfig Row(int type, int disperse, params int[] categories) =>
+        new(JsonSerializer.SerializeToElement(new { _iType = type, _iDisperse = disperse, _kBuffCategory = categories }));
 
     [Fact]
     public void AHealingSkillRemovesTheKindsItsDataNames()
@@ -52,8 +54,7 @@ public sealed class CleanseRulesTests
 
     [Fact]
     public void ACleanseLeavesABuffThatCannotBeDispersed() =>
-        Assert.False(CombatService.Cleanses([3],
-            new BuffConfig(JsonSerializer.SerializeToElement(new { _iType = 2, _iDisperse = 0, _kBuffCategory = new[] { 3 } }))));
+        Assert.False(CombatService.Cleanses([3], Row(2, 0, 3)));
 
     [ClientDataFact]
     public void TheStrongCleanseLeavesABossFrozenButNotAnOrdinaryOne()
