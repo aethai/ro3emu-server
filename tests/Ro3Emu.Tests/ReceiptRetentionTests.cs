@@ -193,6 +193,39 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.Equal(LastSequence(), Watermark());
     }
 
+    /// <summary>A host that booted with a wrong clock: one receipt dated 2100 must not stop compaction for 74 years.</summary>
+    [Fact]
+    public async Task AReceiptDatedFarInTheFutureDoesNotStopCompactionAndKeepsItsData()
+    {
+        string misdated = Commit(10);
+        string[] old = [Commit(20), Commit(30)];
+        Run("UPDATE operation_receipt SET recorded_utc_ms=1");
+        Run("UPDATE operation_receipt SET recorded_utc_ms=$at WHERE operation_id=$op",
+            ("$at", new DateTimeOffset(2100, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds()), ("$op", misdated));
+        var retention = Retention();
+
+        Assert.Equal(2, await retention.CompactAsync());
+        Assert.Equal(3, retention.LastPassed);
+        Assert.Equal(LastSequence(), Watermark());
+        Assert.All(old, op => Assert.True(ReceiptBlobs.IsCompacted(Blobs(op).Payload)));
+        Assert.False(ReceiptBlobs.IsCompacted(Blobs(misdated).Payload));
+    }
+
+    /// <summary>A receipt only a little ahead of the clock is a short clock step: it waits, as a young receipt does.</summary>
+    [Fact]
+    public async Task AReceiptWithinADayAheadOfTheClockStillHoldsTheWatermark()
+    {
+        string ahead = Commit(10);
+        long before = Watermark();
+        Run("UPDATE operation_receipt SET recorded_utc_ms=$at WHERE operation_id=$op",
+            ("$at", DateTimeOffset.UtcNow.AddHours(6).ToUnixTimeMilliseconds()), ("$op", ahead));
+        var retention = Retention();
+
+        Assert.Equal(0, await retention.CompactAsync());
+        Assert.Equal(before, Watermark());
+        Assert.False(ReceiptBlobs.IsCompacted(Blobs(ahead).Payload));
+    }
+
     [Fact]
     public void BlobComparisonAcceptsTheCurrentLegacyOrCompactedIntentOnly()
     {
