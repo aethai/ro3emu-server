@@ -259,28 +259,12 @@ public sealed class ItemBoxTests : IAsyncLifetime
         await Gm(other, "!item 1300000 1"); // _iSexNeed 1
         Assert.Equal(CharacterService.ErrSexNeed, (await Use(other, 1300000)).Result);
 
-        // Fly Wing 1002001 _kUseLimit [1001]: ItemUseLimitConfig 1001 _iLimitType 1, maps [10110,10111], read as forbidden
-        // maps (inferred). A new role starts on 10111 (SpawnSceneEntry): refused there and not spent, used on 10100.
+        // Fly Wing 1002001 _kUseLimit [1001] names maps [10110,10111], which is not enforced (ItemMapLimit): it works on
+        // the starting map 10111 (SpawnSceneEntry).
         await Gm(bot, "!item 1002001 2");
         Assert.Equal(RoleStore.SpawnSceneEntry, await SceneOf(bot));
-        Assert.Equal(ErrorCodes.ItemUseAreaForbidden, (await Use(bot, 1002001)).Result);
-        Assert.Equal(2, Count(bot, 1002001));
-        await Warp(bot, 10100);
-        Assert.Equal(10100, await SceneOf(bot));
         Assert.Equal(0, (await Use(bot, 1002001)).Result);
         Assert.Equal(1, Count(bot, 1002001));
-    }
-
-    private async Task Warp(BotClient bot, int scene)
-    {
-        using (var sw = bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine)))
-        {
-            await Gm(bot, $"!warp {scene}");
-            await sw.WaitAsync(Wait);
-        }
-        using var self = bot.Inbox.Expect(e => e.IsGame(MsgId.EntitySelf));
-        await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = scene });
-        await self.WaitAsync(Wait);
     }
 
     private Task<long> SceneOf(BotClient bot) => Service<GameLoop>().InvokeAsync(() => Task.FromResult(
