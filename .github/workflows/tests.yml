@@ -29,7 +29,9 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: true
       # Every test project: a test still running after 5 minutes counts as hung, and the run stops with a dump of the
       # test host and the list of the tests that were running (--blame-hang), instead of reaching the job's timeout.
-      TEST_ARGS: --blame-hang-timeout 5m --blame-hang-dump-type mini
+      # Not on the coverage run: coverlet writes its hits while the test host exits, which took over 5 minutes on the
+      # server tests, so blame took the finished run for a hang and failed it (main run 41292599038).
+      TEST_ARGS: ${{ !(github.event_name == 'push' && matrix.os == 'ubuntu-latest') && '--blame-hang-timeout 5m --blame-hang-dump-type mini' || '' }}
       # Coverage only on main's Linux run: it slows the tests, and one platform is enough for the numbers.
       COVERAGE: ${{ github.event_name == 'push' && matrix.os == 'ubuntu-latest' && '--collect "XPlat Code Coverage"' || '' }}
     steps:
