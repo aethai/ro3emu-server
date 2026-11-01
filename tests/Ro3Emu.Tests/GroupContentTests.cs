@@ -209,6 +209,10 @@ public sealed partial class GroupContentTests : IAsyncLifetime
         });
         Assert.Equal([1L, 40, 2, 0], (await Next(bob, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
             m => m.Vars.Any(v => v.VarId == 304 && v.Vi64[1] == 40))).Vars.Single(v => v.VarId == 304).Vi64);
+        // The report button's own counters (30123) follow each kill.
+        var counters = await Next(alice, DungeonService.PlayerStatistics, DungeonPlayerStatisticsNtf.Parser,
+            n => n.StatisticsInfo.ExtraData[1001004].LongValue == 2);
+        Assert.Equal((long)alice.Self!.Uuid, counters.PlayerId);
 
         // The live report (30117): both camps' roles in sceneStatistics[0].
         await alice.SendGameAsync(DungeonService.StatisticsCurrent, new GetDungeonStatisticsInDungeonReq());
