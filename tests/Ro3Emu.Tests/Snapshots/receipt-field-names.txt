@@ -448,7 +448,6 @@ Ro3Emu.Server.Accounts.Persistence.PronteraDefenseStationPlan/<map>P
 Ro3Emu.Server.Accounts.Persistence.PronteraDefenseStationPlan/<open>P
 Ro3Emu.Server.Accounts.Persistence.RealmStatePlan/_kind
 Ro3Emu.Server.Accounts.Persistence.RealmStatePlan/_state
-Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<afterSeq>P
 Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<batch>P
 Ro3Emu.Server.Accounts.Persistence.ReceiptCompactionPlan/<cutoffUtcMs>P
 Ro3Emu.Server.Accounts.Persistence.RoleAwardStatePlan/_checkTasks
