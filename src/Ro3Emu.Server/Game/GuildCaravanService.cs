@@ -693,7 +693,8 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
         {
             committed = await _character.ExchangeLockedAsync(s, cost, goods, boundGoods: bound,
             baseExp: plan.Grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
-            jobExp: plan.Grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count),
+            jobExp: plan.Grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count)
+                + _character.JobExpFromBase(plan.Grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count)),
             popup: false, persist: tx =>
             {
                 EnlistMemberSave(tx, s.Role!.Id, guildId, next, fixedPlan == null);

@@ -351,6 +351,63 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Equal(1, store.Load(session.Role.Id).Single(i => i.Guid == unsupported).Stack);
     }
 
+    /// <summary>Job Advance asks Base 30 and Job 40 together: the Base EXP up to Base 30 from quests alone reaches Job 40.</summary>
+    [ClientDataFact]
+    public async Task QuestExpUpToBaseThirtyReachesJobFortyOfTheSecondRank()
+    {
+        await using var bot = await InWorld("JobAlice");
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "JobAlice");
+        var data = _app.Services.GetRequiredService<GameData>();
+        long toBaseThirty = Enumerable.Range(1, 29).Sum(level => GameData.Int(data.Row("BaseLvConfig", level)!.Value, "_iBaseExp"));
+        Assert.True(await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            session.Progress!.Career = 1100;
+            session.Progress.Level = 1; session.Progress.Exp = 0; session.Progress.JobLevel = 1; session.Progress.JobExp = 0;
+            return _app.Services.GetRequiredService<CharacterService>()
+                .ApplyAwardAsync(session, new AwardPlan(0, 0, []), taskBaseExp: toBaseThirty);
+        }));
+        Assert.Equal(30, session.Progress!.Level);
+        Assert.Equal(40, session.Progress.JobLevel);
+    }
+
+    /// <summary>An older role's first login pays what its Base EXP should have brought, once, even without its marker.</summary>
+    [ClientDataFact]
+    public async Task AnOlderRoleGetsItsMissingJobExpOnceAtLogin()
+    {
+        await using var bot = await InWorld("CatchAlice");
+        Assert.Equal(40, await RelogAs(bot, "CatchAlice", level: 30, jobLevel: 1, older: true)); // Base 30's share fills the rank
+        Assert.Equal(1, await RelogAs(bot, "CatchAlice", level: 30, jobLevel: 1, older: false)); // the marker holds
+        Assert.Equal(1, await RelogAs(bot, "CatchAlice", level: 30, jobLevel: 1, older: true)); // and the natural source without it
+    }
+
+    /// <summary>A role above its share loses nothing, and its one chance is used up all the same.</summary>
+    [ClientDataFact]
+    public async Task ARoleAboveItsShareKeepsItsJobExpAndIsDecided()
+    {
+        await using var bot = await InWorld("KeepAlice");
+        Assert.Equal(30, await RelogAs(bot, "KeepAlice", level: 1, jobLevel: 30, older: true));
+        Assert.Equal(1, await RelogAs(bot, "KeepAlice", level: 30, jobLevel: 1, older: false));
+    }
+
+    private async Task<int> RelogAs(BotClient bot, string name, int level, int jobLevel, bool older)
+    {
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == name);
+        var roles = _app.Services.GetRequiredService<RoleStore>();
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        long role = session.Role!.Id;
+        await loop.InvokeAsync(() =>
+        {
+            var progress = session.Progress!;
+            progress.Career = 1100; progress.Level = level; progress.Exp = 0; progress.JobLevel = jobLevel; progress.JobExp = 0;
+            roles.SaveProgress(role, progress);
+            if (older) roles.SaveJobExpCatchUp(role, []);
+            return Task.CompletedTask;
+        });
+        await bot.SwitchRoleAsync();
+        await bot.EnterWorldAsync(role); await WorldSettle.StallsAsync(_app.Services);
+        return await loop.InvokeAsync(() => Task.FromResult(session.Progress!.JobLevel));
+    }
+
     private async Task<BotClient> InWorld(string name)
     {
         var bot = new BotClient(_http, File.ReadAllText(Path.Combine(_dataDir, "gate_rsa_public.pem")));

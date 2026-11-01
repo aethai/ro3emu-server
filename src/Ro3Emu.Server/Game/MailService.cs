@@ -729,7 +729,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
                     var attachments = mail.Attachments.Select(a => (a.Entry, a.Count, a.Bind)).ToArray();
                     var boundGoods = attachments.Where(a => a.Entry is not (100 or 101)).ToArray();
                     long baseExp = attachments.Where(a => a.Entry == 100).Sum(a => (long)a.Count);
-                    long jobExp = attachments.Where(a => a.Entry == 101).Sum(a => (long)a.Count);
+                    long jobExp = attachments.Where(a => a.Entry == 101).Sum(a => (long)a.Count) + character.JobExpFromBase(baseExp);
                     int preflight = character.PlainGrantError(session, [], mail.Items, mail.Currency,
                         boundGoods: attachments);
                     if (preflight != 0) { refusal = preflight; continue; }
