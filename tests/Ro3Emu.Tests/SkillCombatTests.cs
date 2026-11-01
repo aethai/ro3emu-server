@@ -72,6 +72,24 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         using var held = await CharacterService.Lock(session);
         session.Progress!.Skills[group] = 1;
     });
+    /// <summary>
+    /// Takes the bots to one point of Prontera (10100). A new role starts on 10111, where ItemUseLimitConfig 1002 refuses
+    /// the Yggdrasil Leaf (inferred, ItemUseLimitConfig.ForbidsScene), so a test of the paid World Tree cast runs here.
+    /// </summary>
+    private async Task ToPlaza(params BotClient[] bots)
+    {
+        foreach (var bot in bots)
+        {
+            using (var switched = bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine)))
+            {
+                await Gm(bot.Account!, "!warp 10100 156 180");
+                await switched.WaitAsync(Wait);
+            }
+            using var self = bot.Inbox.Expect(e => e.IsGame(MsgId.EntitySelf));
+            await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 10100 });
+            await self.WaitAsync(Wait);
+        }
+    }
     private Task<MonsterUnit> Target(string name, bool stationary = false, int npcId = 5000001) => Loop.InvokeAsync(async () =>
     {
         var s = Session(name);
@@ -512,6 +530,12 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
         await Gm("alice", "!item 1002004 2");
         await Loop.InvokeAsync(async () => { Session("bob").Dead = true; await Character.SetHpSpAsync(Session("bob"), 0, 0); });
+        // The spawn map refuses the Yggdrasil Leaf, and the refusal spends nothing.
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2200101, TargetId = (long)bob.Self!.Uuid });
+        Assert.Equal(ErrorCodes.ItemUseAreaForbidden, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.True(Session("bob").Dead);
+        Assert.Equal(2, Session("alice").Items.Where(i => i.Entry == 1002004).Sum(i => i.Stack));
+        await ToPlaza(alice, bob);
         var combat = _app.Services.GetRequiredService<CombatService>();
         var ownerCheck = combat.ReviveCheck;
         await Loop.InvokeAsync(() => { combat.ReviveCheck = _ => ErrorCodes.FeatureUnavailable; return Task.CompletedTask; });
