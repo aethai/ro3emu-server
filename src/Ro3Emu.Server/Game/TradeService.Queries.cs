@@ -82,16 +82,23 @@ public sealed partial class TradeService
         catch (JsonException) { return []; }
     }
 
+    /// <summary>
+    /// Items one market query may look at. (inferred) Each walks every listing, and the client asks for the items of one
+    /// screen, far fewer than this.
+    /// </summary>
+    private const int MaxQueriesPerRequest = 200;
+
     private async Task Inventory(GameSession s, QueryItemInventoryInfoByItemIdRequest req)
     {
         var dataRows = new ItemInventoryInfoByItemId();
         await market.RunAsync(s, tx =>
         {
             dataRows.ItemInventoryInfos.Clear();
-            foreach (string id in req.ItemIds)
+            var all = Active(tx);
+            foreach (string id in req.ItemIds.Take(MaxQueriesPerRequest))
             {
                 int entry = Entry(id);
-                var rows = Active(tx).Where(l => l.Entry == entry && Visible(l, req.IsPublicity)
+                var rows = all.Where(l => l.Entry == entry && Visible(l, req.IsPublicity)
                     && (req.ItemSpecialType == ETradeItemSpecialType.None || l.SpecialType == (int)req.ItemSpecialType)).ToList();
                 dataRows.ItemInventoryInfos.Add(new ItemInventoryInfo
                 {
@@ -216,7 +223,7 @@ public sealed partial class TradeService
         {
             result.Items.Clear();
             var all = Active(tx);
-            foreach (var q in req.Items)
+            foreach (var q in req.Items.Take(MaxQueriesPerRequest))
             {
                 var page = new CQueryProductByParamWithPage
                 {

@@ -362,6 +362,12 @@ public sealed class PartyService(TeamService teams, TavernService tavern, Friend
         };
     }
 
+    /// <summary>
+    /// The chat groups one getPartysByIDs may read (one read each). A role belongs to at most 10 (FriendExtraService), and
+    /// the client asks for its own; (inferred) twice that leaves room for a list that is a moment out of date.
+    /// </summary>
+    private const int MaxGroupsPerCall = 20;
+
     private object GetParty(object? args)
     {
         string? id = Arg(args, 1);
@@ -380,7 +386,7 @@ public sealed class PartyService(TeamService teams, TavernService tavern, Friend
             .Select(s => s.Role!.Id).ToHashSet();
         var allowed = active.Count > 0 ? active : [.. (await roles.ForAccountAsync(account)).Select(r => r.Id)];
         var ids = args is IDictionary<object, object?> map && map.TryGetValue("PartyIDs", out var value) && value is object?[] list
-            ? list.Select(Convert.ToString).Where(id => id != null).Cast<string>() : [];
+            ? list.Take(MaxGroupsPerCall).Select(Convert.ToString).Where(id => id != null).Cast<string>() : [];
         var parties = new List<object>();
         foreach (string id in ids)
         {
