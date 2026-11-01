@@ -231,6 +231,35 @@ public sealed class PanelAdminTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await admin.Http.GetAsync("/api/admin/dashboard")).StatusCode);
     }
 
+    /// <summary>
+    /// Behind a reverse proxy the panel listens on loopback, yet players reach it: a listed proxy (or a public URL)
+    /// turns the 2FA requirement on unless the operator set it.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task BehindAProxyAdminsMustTurnOnTwoFactor(bool trustedProxy, bool publicUrl)
+    {
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.GmAccounts = [Admin];
+            o.Panel.Enabled = true;
+            o.Panel.Port = TestPorts.FreePort();
+            if (trustedProxy) o.Panel.TrustedProxies = ["127.0.0.1"];
+            if (publicUrl) o.Panel.PublicUrl = "https://panel.example.com";
+        });
+        var options = host.Service<Microsoft.Extensions.Options.IOptions<Ro3Emu.Server.ServerOptions>>().Value;
+        Assert.True(options.Panel.RequireAdmin2FA);
+        string panel = $"http://127.0.0.1:{options.Panel.Port}";
+        Assert.Equal(0, await SdkLoginAsync(host, Admin, "pw"));
+        using var admin = new PanelBrowser(panel);
+        admin.Http.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.9");
+        var session = await OkAsync(admin.LoginAsync(Admin, "pw"));
+        Assert.False(session.GetProperty("admin").GetBoolean());
+        Assert.True(session.GetProperty("twoFactorRequired").GetBoolean());
+        Assert.Equal(HttpStatusCode.Forbidden, (await admin.Http.GetAsync("/api/admin/dashboard")).StatusCode);
+    }
+
     // ---------------------------------------------------------------- report inbox
 
     [Fact]
