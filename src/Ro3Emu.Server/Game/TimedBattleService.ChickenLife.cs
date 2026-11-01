@@ -50,7 +50,7 @@ public sealed partial class TimedBattleService
             || !run.Players.ContainsKey(killer) || match.Faction[killer] == match.Faction[victim]) return Task.CompletedTask;
         match.Kills[killer] = match.Kills.GetValueOrDefault(killer) + 1;
         long now = NowMs();
-        var credited = new List<GameSession> { killer };
+        List<GameSession> credited = [killer];
         foreach (var (helper, at) in dead.LastHitBy)
             if (helper != killer && now - at <= 10_000 && run.Players.TryGetValue(helper, out var assist)
                 && match.Faction[helper] != match.Faction[victim]) { assist.Assists++; credited.Add(helper); }

@@ -78,7 +78,7 @@ public sealed partial class TimedBattleService : IGameTicker
     private readonly Dictionary<int, List<GameSession>> _queue = new();
     /// <summary>A queued party's members, the same array for each (a solo entrant has none): the party queues, leaves
     /// the queue and is placed in a match together.</summary>
-    private readonly Dictionary<GameSession, GameSession[]> _queueGroup = new();
+    private readonly Dictionary<GameSession, GameSession[]> _queueGroup = [];
     private readonly Dictionary<GameSession, Match> _preparing = new();
     private readonly Dictionary<GameSession, Match> _active = new();
     private readonly Dictionary<long, Match> _matches = new();

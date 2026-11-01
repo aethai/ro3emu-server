@@ -615,7 +615,7 @@ public sealed partial class CasualBattleService : IGameTicker
         dead.Deaths++;
         Score(m, killer, KillCamp);
         Score(m, killer, KillPersonal);
-        var credited = new List<GameSession> { killer };
+        List<GameSession> credited = [killer];
         foreach (var (helper, at) in dead.HitBy)
             if (helper != killer && Now - at <= 10 && m.Players.TryGetValue(helper, out var assist) && assist.Camp == me.Camp)
             { assist.Assists++; Score(m, helper, AssistPersonal); credited.Add(helper); }
