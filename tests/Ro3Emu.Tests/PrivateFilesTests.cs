@@ -39,6 +39,17 @@ public sealed class PrivateFilesTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_dir, "gate_rsa_public.pem")));
     }
 
+    /// <summary>A server running as SYSTEM names it once, so the list it compares with at start matches what was written.</summary>
+    [Fact]
+    public void OnWindowsSystemIsAllowedOnceWhenItIsTheUser()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var system = new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+        Assert.Equal(2, PrivateFiles.AllowedOnWindows(system).Length);
+        using var me = System.Security.Principal.WindowsIdentity.GetCurrent();
+        Assert.Equal(me.User == system ? 2 : 3, PrivateFiles.AllowedOnWindows(me.User!).Length);
+    }
+
     /// <summary>Nothing inherited from the folder above, only this user, SYSTEM and the Administrators, also for a file made later.</summary>
     [Fact]
     public void OnWindowsTheDataDirHasItsOwnAccessList()

@@ -83,10 +83,11 @@ public sealed partial class TradeService
     }
 
     /// <summary>
-    /// Items one market query may look at. (inferred) Each walks every listing, and the client asks for the items of one
-    /// screen, far fewer than this.
+    /// Items one market query may look at. (inferred) Each walks every listing. With its sell-only toggle on, the client asks
+    /// for the tab's whole item list, not a page (UI_Sys_TradeCellTotalWidgetCtrl: RequestItemListInventory(m_kItemList)), and
+    /// a card tab can hold over 200, so this leaves room above the longest tab without leaving the request unbounded.
     /// </summary>
-    private const int MaxQueriesPerRequest = 200;
+    private const int MaxQueriesPerRequest = 1024;
 
     private async Task Inventory(GameSession s, QueryItemInventoryInfoByItemIdRequest req)
     {
