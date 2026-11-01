@@ -45,7 +45,7 @@ public sealed partial class AccountStore : IDisposable
         _log = log;
         // A half-done restore may have moved the live file away; opening now would create an empty realm (C/D 19).
         DatabaseRestore.ThrowIfUnfinished(options.Value.DataDir);
-        Directory.CreateDirectory(options.Value.DataDir);
+        PrivateFiles.Directory(options.Value.DataDir);
         _databasePath = Path.Combine(options.Value.DataDir, "ro3emu.db");
         _escrowCatalog = new Lazy<EconomyCatalog>(() =>
         {
@@ -67,6 +67,8 @@ public sealed partial class AccountStore : IDisposable
             wal.CommandText = "PRAGMA journal_mode=WAL;";
             wal.ExecuteNonQuery();
         }
+        // SQLite gives the WAL and shared-memory files the database file's mode, so they follow it.
+        PrivateFiles.Files(_databasePath, _databasePath + "-wal", _databasePath + "-shm");
         using var cmd = db.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS account (

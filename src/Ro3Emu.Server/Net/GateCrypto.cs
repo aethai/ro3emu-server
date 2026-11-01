@@ -18,7 +18,7 @@ public sealed class GateCrypto
 
     public static GateCrypto LoadOrCreate(string dataDir, ILogger log)
     {
-        Directory.CreateDirectory(dataDir);
+        Accounts.PrivateFiles.Directory(dataDir);
         var privatePath = Path.Combine(dataDir, "gate_rsa_private.pem");
         var rsa = RSA.Create();
         if (File.Exists(privatePath))
@@ -31,6 +31,8 @@ public sealed class GateCrypto
             File.WriteAllText(privatePath, rsa.ExportRSAPrivateKeyPem());
             log.LogInformation("Generated a new gate RSA key in {Path}", privatePath);
         }
+        // Also an older key, written before the server restricted it.
+        Accounts.PrivateFiles.Files(privatePath);
         var crypto = new GateCrypto(rsa);
         File.WriteAllText(Path.Combine(dataDir, "gate_rsa_public.pem"), crypto.PublicKeyPem);
         return crypto;
