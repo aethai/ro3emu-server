@@ -254,6 +254,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     public PronteraDefenseService.State? Defense { get; set; }
     public TimedBattleService.State? TimedBattle { get; set; }
     public int EventFaction { get; set; }
+    /// <summary>EntityBase.teamId on this player's unit: its party (TeamService.SyncUnitTeamAsync), 0 when solo.</summary>
+    public long UnitTeamId { get; set; }
     public Romsg.DBTrainingGroundInfo? Training { get; set; }
     public long? ActivityServerDay { get; set; }
     public Romsg.DBLotteryData? Lottery { get; set; }

@@ -319,6 +319,7 @@ public sealed partial class CasualBattleService : IGameTicker
         if (_worldData.Map(Scene)?.Points.TryGetValue(CampPoints[match.Players[s].Camp - 1], out var start) == true)
             await _scene.TeleportInMapAsync(s, start);
         await SendTeamRosterAsync(match, match.Players[s].Camp);
+        await CountersAsync(match, [s]);
     }
 
     private Task LeavingAsync(GameSession s)
@@ -614,15 +615,22 @@ public sealed partial class CasualBattleService : IGameTicker
         dead.Deaths++;
         Score(m, killer, KillCamp);
         Score(m, killer, KillPersonal);
+        List<GameSession> credited = [killer];
         foreach (var (helper, at) in dead.HitBy)
             if (helper != killer && Now - at <= 10 && m.Players.TryGetValue(helper, out var assist) && assist.Camp == me.Camp)
-            { assist.Assists++; Score(m, helper, AssistPersonal); }
+            { assist.Assists++; Score(m, helper, AssistPersonal); credited.Add(helper); }
         dead.HitBy.Clear();
+        await CountersAsync(m, credited);
         dead.Streak = 0;
         await StreakAsync(m, killer);
         await BroadcastAsync(m);
         if (m.CampScore.Values.Any(score => score >= ScoreBar)) RequestSettle(m);
     }
+
+    /// <summary>30123: the battle report button's own kill and assist counters (DungeonService.PlayerCounters).</summary>
+    private static Task CountersAsync(Match m, IEnumerable<GameSession> players) =>
+        RoleFanout.EachAsync(players.Where(p => m.Loaded.Contains(p) && !m.Players[p].Left), p =>
+            p.SendGameAsync(DungeonService.PlayerStatistics, DungeonService.PlayerCounters(m.Players[p].Id, m.Players[p].Kills, m.Players[p].Assists)));
 
     private void Score(Match m, GameSession player, int row)
     {

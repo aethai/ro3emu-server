@@ -806,7 +806,7 @@ public sealed partial class CombatService : IGameTicker
             await ClearSkillsAsync(p);
             await _buffs.ClearOnDeathAsync(p);
             _log.LogInformation("{Name} died", p.Role?.Name);
-            await ToPlayerAndViewersAsync(p, EntityBaseChange, LifeState(p));
+            await PublishLifeStateAsync(p);
             if (!ReviveInfoOwners.Any(owns => owns(p)))
                 await p.SendGameAsync(ReviveInfo, new SyncClientPlayerReviveInfoNtf
                 {
@@ -862,6 +862,18 @@ public sealed partial class CombatService : IGameTicker
         finally { ReleaseDeathPublication(p); }
     }
 
+    /// <summary>
+    /// 31024 first, then 31049. LC_DAL_Team.ParseTeamMemberBattleInfo replaces a visible member's life status in every
+    /// 42051 with the unit's head info, which only 31024 sets (LC_HeadInfoManager.SetUnitLifeStatusInfo); a party card
+    /// update between the two would otherwise put the member back to Alive (or Dead after a revive) on the party frame.
+    /// </summary>
+    private async Task PublishLifeStateAsync(GameSession p)
+    {
+        await ToPlayerAndViewersAsync(p, WorldCoreService.LifeStatus, new PlayerLifeStatusNotify
+        { EntityId = p.Role!.Id, PlayerLifeStatus = p.Dead ? EPlayerLifeStatus.Dead : EPlayerLifeStatus.Alive });
+        await ToPlayerAndViewersAsync(p, EntityBaseChange, LifeState(p));
+    }
+
     private static EntityBase LifeState(GameSession p) => new()
     {
         Uuid = (ulong)p.Role!.Id,
@@ -869,6 +881,8 @@ public sealed partial class CombatService : IGameTicker
         EntityCamp = p.EventFaction > 0 ? p.EventFaction : 1,
         ElementType = 0,
         State = p.Dead ? EntityState.Dead : EntityState.Alive,
+        // A same-group unit's status goes to the party frame (LC_Scene_Sync._syncEntityBaseViewChange); unset reads as Alive.
+        PlayerLifeStatus = p.Dead ? EPlayerLifeStatus.Dead : EPlayerLifeStatus.Alive,
         NotifyType = EntityBase.Types.NotifyType.Base,
     };
 
@@ -976,7 +990,7 @@ public sealed partial class CombatService : IGameTicker
     public async Task PublishReviveAsync(GameSession p, MapPoint? point)
     {
         if (p.Role == null) return;
-        await ToPlayerAndViewersAsync(p, EntityBaseChange, LifeState(p));
+        await PublishLifeStateAsync(p);
         if (ReviveBroadcastedForTest is { } seam) await seam(p);
         if (p.Role == null) return;
         if (point is { } at) await _scene.TeleportInMapAsync(p, at);

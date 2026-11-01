@@ -135,6 +135,7 @@ public sealed partial class TimedBattleService
         DragonScore(match, killer, ScoreKill);
         if (run.SoulCarrier == victim) await GiveSoulAsync(match, killer);
         await BroadcastDragonAsync(match);
+        await CountersAsync(match, [killer]);
     }
 
     private async Task GiveSoulAsync(Match match, GameSession carrier)
