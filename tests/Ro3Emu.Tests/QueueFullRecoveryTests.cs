@@ -225,4 +225,81 @@ public sealed class QueueFullRecoveryTests
             Clean(accounts, directory);
         }
     }
+
+    /// <summary>Runs <paramref name="refused"/> against a full writer queue; what it throws must be the queue's refusal.</summary>
+    private static async Task AgainstAFullWriter(SyntheticHost host, Func<Task> refused)
+    {
+        var accounts = host.Service<AccountStore>();
+        // The login's own writes finish first.
+        await Task.Delay(1000);
+        await accounts.WriteAsync<int>(new SizedWrite(1));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var hold = accounts.WriteAsync<int>(new HoldWrite(entered, release));
+        Assert.True(entered.Wait(Wait));
+        var fill = new List<Task>();
+        try
+        {
+            FillWriter(accounts, fill);
+            var thrown = await Assert.ThrowsAnyAsync<Exception>(() => host.Service<GameLoop>().InvokeAsync(async () => { await refused(); return 0; }));
+            Assert.True(QueueFullPatience.Refused(thrown), thrown.ToString());
+        }
+        finally
+        {
+            release.Set();
+            await hold;
+            await Task.WhenAll(fill);
+        }
+    }
+
+    /// <summary>The final AFK save was refused: the state stays, so the retried step still has it to save.</summary>
+    [Fact]
+    public async Task ARefusedAfkSaveIsNotLost()
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        var bot = await host.InWorldAsync("QueueFullAfk");
+        long role = bot.Roles.Single().Id;
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == role);
+        var afk = host.Service<WildAfkService>();
+        var loop = host.Service<GameLoop>();
+        var state = await loop.InvokeAsync(() => Task.FromResult(session.WildAfk!));
+
+        // Changed just here: the service's own periodic save would write it before the queue is full.
+        await AgainstAFullWriter(host, () =>
+        {
+            state.Info.HighMultiplierTimeSeconds = 123;
+            return afk.LeaveAsync(session);
+        });
+        Assert.Same(state, await loop.InvokeAsync(() => Task.FromResult(session.WildAfk)));
+
+        await loop.InvokeAsync(async () => { await afk.LeaveAsync(session); return 0; });
+        Assert.Null(await loop.InvokeAsync(() => Task.FromResult(session.WildAfk)));
+        var saved = System.Text.Json.JsonSerializer.Deserialize<WildAfkService.State>(host.Service<RoleStore>().LoadWildAfk(role)!)!;
+        Assert.Equal(123, saved.Info.HighMultiplierTimeSeconds);
+    }
+
+    /// <summary>The tavern's stay was refused: its seconds go back, so the retried step still has them to write.</summary>
+    [Fact]
+    public async Task ARefusedTavernStayIsNotLost()
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        var bot = await host.InWorldAsync("QueueFullStay");
+        long role = bot.Roles.Single().Id;
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == role);
+        var tavern = host.Service<TavernService>();
+        var loop = host.Service<GameLoop>();
+        long before = await loop.InvokeAsync(() => Task.FromResult((long)session.Tavern!.TodaySeconds));
+        tavern.AddStayForTest(role, 7);
+
+        async Task Leave()
+        {
+            using var scope = await host.Service<OwnerRegistry>().EnterAsync("test/tavern leave", ReservationKey.Role(role));
+            scope.Context.Pin(session.Owner!);
+            await tavern.LeaveRoleAsync(session);
+        }
+        await AgainstAFullWriter(host, Leave);
+
+        await loop.InvokeAsync(async () => { await Leave(); return 0; });
+        Assert.Equal(before + 7, await loop.InvokeAsync(() => Task.FromResult((long)session.Tavern!.TodaySeconds)));
+    }
 }

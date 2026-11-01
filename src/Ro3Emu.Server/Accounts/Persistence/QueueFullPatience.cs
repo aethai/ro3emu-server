@@ -41,4 +41,9 @@ internal sealed class QueueFullPatience(TimeSpan total)
             await patience.WaitAsync();
         }
     }
+
+    /// <summary>The same for work that nothing retries later, such as a settlement for the others when a member leaves.</summary>
+    internal static Task RunAsync(Func<Task> work) => RunAsync(async () => { await work(); return true; }, Departure);
+
+    private static readonly TimeSpan Departure = TimeSpan.FromSeconds(60);
 }
