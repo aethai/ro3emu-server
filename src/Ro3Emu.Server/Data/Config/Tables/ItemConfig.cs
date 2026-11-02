@@ -30,6 +30,8 @@ public readonly partial record struct ItemConfig(JsonElement Row)
     [ConfigField("_iSort")] public partial long Sort { get; }
     [ConfigField("_iStackLimit")] public partial long StackLimit { get; }
     [ConfigField("_iSubType")] public partial long SubType { get; }
+    /// <summary>enum_ItemTimeBoundType: 0 none, 1 from acquisition, 2 absolute, 3 activity, 4 activity end.</summary>
+    [ConfigField("_iTimeBoundEnum")] public partial long TimeBoundEnum { get; }
     [ConfigField("_iTrade")] public partial long Trade { get; }
     [ConfigField("_iType")] public partial long Type { get; }
     [ConfigField("_iUseEffect")] public partial JsonElement? UseEffect { get; }
@@ -43,5 +45,7 @@ public readonly partial record struct ItemConfig(JsonElement Row)
     [ConfigField("_kParam1")] public partial string Param1 { get; }
     /// <summary>The item's large picture (a card's art); "item_null_*" when it has none.</summary>
     [ConfigField("_kPic")] public partial string Pic { get; }
+    /// <summary>For _iTimeBoundEnum 1: [minutes].</summary>
+    [ConfigField("_kTimeBoundPara")] public partial long[] TimeBoundPara { get; }
     [ConfigField("_kUseTimes")] public partial long[] UseTimes { get; }
 }
