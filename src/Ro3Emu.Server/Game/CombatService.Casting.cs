@@ -134,7 +134,7 @@ public sealed partial class CombatService
         }
         if (lease?.Cancelled == true || !ReferenceEquals(s.Attachment, lease) ||
             s.SceneGeneration != scene || s.WorldScene != worldScene || s.SceneLoading) return;
-        int turn = owned == null ? SwingTurnLeft(s.SkillCast, row!.Value) : 0;
+        int turn = owned == null ? SwingLeft(s.SkillCast, row!.Value) : 0;
         await CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Skill);
         _eventAttacks.Remove(s);
         await PayCostsAsync(s, costs);
@@ -297,11 +297,17 @@ public sealed partial class CombatService
     /// but the new swing starts when the one in flight would have ended: the milliseconds left, 0 when it is no such turn.
     /// Starting it at once let clicks alternating between two targets swing at click speed (inferred from the same pacing).
     /// </summary>
-    private int SwingTurnLeft(ActiveSkillCast? active, JsonElement row)
+    private int SwingTurnLeft(ActiveSkillCast? active, JsonElement row) => Math.Max(0, SwingLeft(active, row) - SwingJitterMs);
+
+    /// <summary>
+    /// The milliseconds until the swing in flight ends, where a new normal attack starts. The slack only lets its request in:
+    /// the key held down sends one every 200 ms, so starting it at once cut 150 ms off every swing (346 ms a swing became 200).
+    /// </summary>
+    private int SwingLeft(ActiveSkillCast? active, JsonElement row)
     {
         if (active is not { Cancelled: false } || !new SkillConfig(row).IsNormalAttack(_data) || !new SkillConfig(active.Row).IsNormalAttack(_data))
             return 0;
-        long left = active.StartMs + active.ChantMs + active.ActionMs - SwingJitterMs - Now;
+        long left = active.StartMs + active.ChantMs + active.ActionMs - Now;
         return left > 0 ? (int)Math.Min(left, int.MaxValue) : 0;
     }
 
