@@ -17,6 +17,9 @@ namespace Ro3Emu.Server.Accounts;
 /// - **Compression:** all but the newest <c>Backup:Uncompressed</c> (2) copies become <c>ro3emu-*.db.gz</c>, written as
 ///   <c>.partial</c> too and renamed only once complete, with the copy's time kept so pruning orders both kinds alike.
 ///   <see cref="DatabaseRestore"/> takes either.
+/// - **Big databases:** from <c>Backup:BigDatabaseMegabytes</c> (4096), a restart makes no copy while the newest is younger
+///   than the interval, and a scheduled copy is checked once per <c>Backup:BigDatabaseCheckHours</c> (24): on a large file
+///   the check takes far longer than the copy. A manual backup is always checked, and a restore always checks its file.
 /// - **Disk:** a copy never takes the space the live database needs to grow: when a copy and <c>Backup:ReserveMegabytes</c>
 ///   do not fit, the oldest backups go first, and a failed copy is deleted at once.
 /// </summary>
@@ -25,6 +28,7 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
     internal const string Prefix = "ro3emu-", Extension = ".db", CompressedExtension = ".db.gz", PartialExtension = ".partial", CorruptExtension = ".corrupt";
     /// <summary>Copies a backup never removes to make room for a new one (inferred; server tuning).</summary>
     private const int KeepWhenShort = 2;
+    private const string IntegrityMarker = ".backup-integrity-checked";
     private BackupOptions Settings => options.Value.Backup;
     private TimeSpan Interval => TimeSpan.FromHours(Settings.IntervalHours > 0 ? Settings.IntervalHours : 6);
     private readonly object _backupGate = new();
@@ -42,6 +46,29 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         try { return new DriveInfo(Path.GetFullPath(dir)).AvailableFreeSpace; }
         catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException) { return long.MaxValue; }
     };
+
+    /// <summary>Size of the live database file.</summary>
+    internal Func<long> DatabaseBytes { get; set; } = () => new FileInfo(accounts.DatabasePath).Length;
+
+    private bool BigDatabase => Settings.BigDatabaseMegabytes > 0 && DatabaseBytes() >= Settings.BigDatabaseMegabytes * 1024L * 1024;
+
+    /// <summary>How long a starting host waits for its first copy: none for a small database, else what is left of the interval
+    /// since the newest backup, compressed or not.</summary>
+    internal TimeSpan UntilNextBackup(DateTime utcNow)
+    {
+        if (!BigDatabase || !System.IO.Directory.Exists(Directory) || Completed(Directory).FirstOrDefault() is not { } newest) return TimeSpan.Zero;
+        var left = File.GetLastWriteTimeUtc(newest) + Interval - utcNow;
+        return left <= TimeSpan.Zero ? TimeSpan.Zero : left > Interval ? Interval : left;
+    }
+
+    /// <summary>Whether a scheduled copy runs the integrity check: always on a small database, else when the last passed check
+    /// is older than <c>Backup:BigDatabaseCheckHours</c>.</summary>
+    internal bool IntegrityCheckDue(DateTime utcNow)
+    {
+        var marker = new FileInfo(Path.Combine(options.Value.DataDir, IntegrityMarker));
+        return !BigDatabase || !marker.Exists
+            || utcNow - marker.LastWriteTimeUtc >= TimeSpan.FromHours(Math.Max(1, Settings.BigDatabaseCheckHours));
+    }
 
     /// <summary>Test-only: runs on the empty destination before the copy starts.</summary>
     internal Action<SqliteConnection>? BeforeCopyForTest { get; set; }
@@ -63,11 +90,17 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        var wait = UntilNextBackup(DateTime.UtcNow);
+        if (wait > TimeSpan.Zero)
+        {
+            LogFirstBackupWaits(log, wait.TotalMinutes);
+            try { await Task.Delay(wait, ct); } catch (OperationCanceledException) { return; }
+        }
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                Backup();
+                Backup(IntegrityCheckDue(DateTime.UtcNow));
             }
             catch (Exception e) when (e is IOException or SqliteException or InvalidDataException)
             {
@@ -77,17 +110,25 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         }
     }
 
-    public string Backup()
+    public string Backup() => Backup(verify: true);
+
+    internal string Backup(bool verify)
     {
         // Startup and manual requests serialize the copy, the check and the pruning.
         lock (_backupGate)
         {
-            try { return BackupCore(); }
+            try { return BackupCore(verify); }
             catch { Interlocked.Increment(ref _failures); throw; }
         }
     }
 
-    private string BackupCore()
+    [LoggerMessage(Level = LogLevel.Information, Message = "Big database: the newest backup is recent, the first copy of this run waits {Minutes:F0} minutes")]
+    private static partial void LogFirstBackupWaits(ILogger logger, double minutes);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Big database: the backup {Target} was not integrity checked, a check ran within the last day")]
+    private static partial void LogNotChecked(ILogger logger, string target);
+
+    private string BackupCore(bool verify)
     {
         var dir = Directory;
         PrivateFiles.Directory(dir);
@@ -95,7 +136,7 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         var target = Path.Combine(dir, NextName());
         var partial = target + PartialExtension;
         var started = Stopwatch.GetTimestamp();
-        try { Copy(partial, target); }
+        try { Copy(partial, target, verify); }
         catch
         {
             // A failed copy can be as large as the database: leaving it would hold the disk the live file needs.
@@ -104,6 +145,13 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         }
         File.Move(partial, target);
         PrivateFiles.Files(target);
+        if (!verify) LogNotChecked(log, target);
+        else
+        {
+            // Lost, the next scheduled copy just checks again.
+            try { File.WriteAllBytes(Path.Combine(options.Value.DataDir, IntegrityMarker), []); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LogMarkerFailed(log, e); }
+        }
         _lastMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         _lastBytes = new FileInfo(target).Length;
         _lastAt = DateTime.UtcNow;
@@ -115,7 +163,10 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         return target;
     }
 
-    private void Copy(string partial, string target)
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not record the backup integrity check")]
+    private static partial void LogMarkerFailed(ILogger logger, Exception exception);
+
+    private void Copy(string partial, string target, bool verify)
     {
         using var source = accounts.Open();
         using var destination = new SqliteConnection($"Data Source={partial};Pooling=False");
@@ -124,7 +175,7 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         Persistence.DbWriteGuard.AttachBackup(destination, accounts.AccessMetrics, accounts.DatabasePath);
         BeforeCopyForTest?.Invoke(destination);
         source.BackupDatabase(destination);
-        if (QuickCheck(destination) is { } problem)
+        if (verify && QuickCheck(destination) is { } problem)
         {
             destination.Close();
             var corrupt = target + CorruptExtension;
