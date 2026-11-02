@@ -577,7 +577,8 @@ public sealed partial class LifeJobService
         var info = next.LifeJobInfoMap[job]; info.JobExp = checked(info.JobExp + gain);
         var rows = _data.Table("LifeJobLevelConfig").Values.Where(r => Current(r) && GameData.Int(r, "_iJobId") == job)
             .ToDictionary(r => GameData.Int(r, "_iLevel"));
-        while (rows.TryGetValue(info.JobLevel, out var row) && rows.ContainsKey(info.JobLevel + 1)
+        // A row holds what it takes to reach its level: LC_LifeJobHelper.GetLevelNextNeedEXP and CheckJobLevelUpCondition read level + 1.
+        while (rows.TryGetValue(info.JobLevel + 1, out var row)
             && GameData.Int(row, "_iNextNeedExp") is var need and > 0 && info.JobExp >= need
             && _functions.ConditionMet(s, GameData.Int(row, "_iCondition")))
         { info.JobExp -= need; info.JobLevel++; }
