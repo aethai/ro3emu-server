@@ -10,6 +10,7 @@ public sealed class SkillShieldTests
     private static readonly long[] ShieldTag = [30];
     private static readonly long[] ShieldAndSupportTags = [30, 79];
     private static readonly long[] OtherTag = [23];
+    private static readonly int[] MagicRatio = [2500];
     private static readonly string[] AttributeFormula = ["T_AXadd0_etc"];
     private static readonly string[] NoFormula = [""];
 
@@ -24,7 +25,7 @@ public sealed class SkillShieldTests
         new(JsonSerializer.SerializeToElement(new
         {
             _iID = group * 100 + 1, _iBuffID = group, _iType = 1, _iDmgType = 2, _kBuffCategory = categories,
-            _kDamageFormulaExtra = NoFormula, _kData1 = new[] { 2500 },
+            _kDamageFormulaExtra = NoFormula, _kData1 = MagicRatio,
         }));
 
     private static readonly StatSheet Caster = new() { [101] = 4000, [104] = 1234 };
