@@ -76,7 +76,7 @@ public sealed partial class CharacterService
             : req.ItemParam.Count > 0 && WingDestination(row.Value, req) == null && !CarriesPetChoice(row.Value, req)
                 && !CarriesBoxParam(row.Value, req)
                 && !AcceptsItemActionParam(row.Value, req) ? ErrorCodes.FeatureUnavailable
-            : item.BindExpire > 0 && item.BindExpire <= DateTimeOffset.UtcNow.ToUnixTimeSeconds() ? ErrorCodes.ItemMissing
+            : item.BindExpire > 0 && item.BindExpire <= UseClock.GetUtcNow().ToUnixTimeSeconds() ? ErrorCodes.ItemMissing
             : session.Dead ? ErrorCodes.UseWhileDead
             : IsItemUseForbidden?.Invoke(session) == true ? ErrorCodes.ItemUseForbidden
             : session.ItemCds.GetValueOrDefault(item.Entry) > now || group > 0 && session.ItemGroupCds.GetValueOrDefault(group) > now ? ErrItemInCd
@@ -446,7 +446,9 @@ public sealed partial class CharacterService
         };
         // A seasonal item with no season reads "This item has expired" (LC_ItemHelper.GetIsSeasonItemValid). Nothing lapses
         // here (all content stays open), so it belongs to the current season (inferred).
-        if (Data.Config.ItemConfig.Get(data, item.Entry) is { SeasonResetType: not 0 }) info.Season = seasons.SeasonId;
+        var config = Data.Config.ItemConfig.Get(data, item.Entry);
+        if (config is { SeasonResetType: not 0 }) info.Season = seasons.SeasonId;
+        if (config is { TimeBoundEnum: AcquireTimeBound }) info.ExpireTm = item.BindExpire; // AcquireExpiry
         info.ItemInfos[AttrSetUpSource] = new ItemAttrValue { LongVal = 0 };
         if (IsEquipment(item.Entry)) info.ItemInfos[AttrAppraise] = new ItemAttrValue { LongVal = IsAppraised(item) ? 1 : 0 };
         if (item.Attrs != null)

@@ -770,7 +770,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         {
             session.Dead = false;
             var item = session.Items.Single(i => i.Guid == guid);
-            item.BindExpire = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 1;
+            item.BindExpire = _clock.GetUtcNow().ToUnixTimeSeconds() - 1;
             itemStore.Update(item);
             return Task.CompletedTask;
         });
