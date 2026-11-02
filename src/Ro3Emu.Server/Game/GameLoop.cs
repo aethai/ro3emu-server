@@ -31,6 +31,11 @@ public sealed partial class GameLoop : IHostedService, IDisposable
 {
     public static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(50);
 
+    /// <summary>Time one tick may spend starting due timers (inferred; server tuning). Swing impacts and cast ends are timers
+    /// that cost milliseconds each, so 2 ms ran one or two a tick and left them hundreds of milliseconds late on a busy realm.
+    /// Stays under the 15 ms tick target.</summary>
+    internal const double TimerBudgetMs = 10;
+
     private readonly BlockingCollection<(SendOrPostCallback Callback, object? State, long EnqueuedAt, WorkPermit Permit)> _queue = [];
     private readonly AutoResetEvent _workAvailable = new(false);
     private readonly ServerMetrics? _metrics;
@@ -448,7 +453,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     // Independent deadlines cannot monopolize the loop. A non-preemptible callback can still overrun;
                     // remaining due timers retain their original deadline so the lateness metric exposes the debt.
                     int timers = 0;
-                    while (Phase == GameLoopPhase.Accepting && timers < 64 && Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds < 2 &&
+                    while (Phase == GameLoopPhase.Accepting && timers < 64 && Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds < TimerBudgetMs &&
                            _timers.TryPeek(out var timer, out var due) && due <= now)
                     {
                         if (!TryAdmit("timer", cleanup: false, out var permit)) break;
