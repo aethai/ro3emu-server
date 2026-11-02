@@ -116,7 +116,7 @@ public sealed partial class CombatService
         var castingRole = s.Role;
         bool CurrentCaster() => ReferenceEquals(s.Role, castingRole) && !s.SceneLoading
             && s.SceneGeneration == action.SceneGeneration && (field != null ? !field.Removing : !action.Cancelled)
-            && s.WorldScene == action.WorldScene && _sessions.All().Contains(s) && (action.SourceEligible?.Invoke() ?? true);
+            && s.WorldScene == action.WorldScene && _sessions.Contains(s) && (action.SourceEligible?.Invoke() ?? true);
         bool CanApplyMoreEffects() => CurrentCaster() && ReferenceEquals(s.Attachment, action.Attachment)
             && action.Attachment?.Cancelled != true;
         // A published death still owes its callbacks after the cast/field is cancelled.
@@ -124,7 +124,7 @@ public sealed partial class CombatService
         bool CurrentKillRecipient() => ReferenceEquals(s.Role, castingRole) && !s.SceneLoading
             && s.SceneGeneration == action.SceneGeneration && s.WorldScene == action.WorldScene
             && ReferenceEquals(s.Attachment, action.Attachment)
-            && _sessions.All().Contains(s);
+            && _sessions.Contains(s);
         string script = Script(row);
         var targets = chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
             ?? SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null);
