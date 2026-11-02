@@ -437,9 +437,9 @@ public sealed partial class CombatService
         return id > 0 && Rolls.Proc(10000) < (GameData.Number(tuple[1]) ?? 0);
     }
 
-    /// <summary>Who a displacement moves: the caster, a target away from / toward the caster, or a target away from /
-    /// toward the centre of the skill's area (its target point, or a field's position).</summary>
-    internal enum DisplaceKind { CasterForward, CasterBack, TargetPush, TargetPull, CenterPush, CenterPull }
+    /// <summary>Who a displacement moves: the caster along its facing or at its target, a target away from / toward the
+    /// caster, or a target away from / toward the centre of the skill's area (its target point, or a field's position).</summary>
+    internal enum DisplaceKind { CasterForward, CasterBack, CasterToTarget, TargetPush, TargetPull, CenterPush, CenterPull }
 
     /// <summary>
     /// Skills whose description says they move the caster or knock back / pull what they hit. The distance is the
@@ -447,7 +447,10 @@ public sealed partial class CombatService
     /// centre, and a knockback whose description names no distance goes that far. Who moves and which way comes from
     /// the description and the effect's curve name (击退 knockback, 拉人 pull); the server choice of skills, the distances
     /// at -1 (1 m for a pull "in front of you" or "toward the centre", 3 m for an unnamed knockback, as the bosses' and
-    /// Arrow Repel's) and a periodic pull applying once per hit are (inferred).
+    /// Arrow Repel's) and a periodic pull applying once per hit are (inferred). A charge at the target stops <c>Metres</c>
+    /// in front of it: the 1 m is (inferred) from Charge_Attack's "a point @{2} m in front of the designated ST enemy" and
+    /// its _kDescData 1. Warg Strike's 1331203 and Warg Hunt (Ranged)'s 1333014 are in no m_kShows entry, so the move is the
+    /// server's; each row's first attack point meets its charge gfx (fx_skill_wugstrike_02 at 0, fx_skill_wugdash_01 at 0.133).
     /// Not here: ShieldsProtection's 1161341 knockback belongs to its periodic aura, which is not simulated; Axe Tornado's
     /// enhanced form (AxeTornadoProS1BD2) pulls only under Enhance; knock-ups (Sonic Burst, Energy Release) move nobody.
     /// </summary>
@@ -458,6 +461,9 @@ public sealed partial class CombatService
             ["RetreatingShadows"] = (DisplaceKind.CasterBack, 0, 0),
             ["RetreatingShadowsS1"] = (DisplaceKind.CasterBack, 0, 0),
             ["WolvesDash"] = (DisplaceKind.CasterForward, 0, 0),
+            ["WugStrike"] = (DisplaceKind.CasterToTarget, -1, 1),         // Warg Strike on the wolf: "Charge the designated ST target"
+            ["WolvesShadowFar"] = (DisplaceKind.CasterToTarget, -1, 1),   // Warg Hunt: "you also dash in front of it"
+            ["WolvesShadowFarBD"] = (DisplaceKind.CasterToTarget, -1, 1),
             ["HighspeedSlide"] = (DisplaceKind.CasterForward, 0, 0),
             ["HighspeedSlideMecha"] = (DisplaceKind.CasterForward, 0, 0),
             ["PinpointAttack"] = (DisplaceKind.CasterForward, 3, 0),
@@ -566,10 +572,14 @@ public sealed partial class CombatService
 
     private async Task MoveCasterAsync(GameSession s, ActiveSkillCast action)
     {
-        if (Displacement(action.Row) is not { Kind: DisplaceKind.CasterForward or DisplaceKind.CasterBack } move) return;
+        if (Displacement(action.Row) is not { Kind: DisplaceKind.CasterForward or DisplaceKind.CasterBack or DisplaceKind.CasterToTarget } move) return;
         float face = action.Request.Face + (move.Kind == DisplaceKind.CasterBack ? 180 : 0);
         double angle = face * Math.PI / 180;
-        var end = WalkableEnd(s.SceneEntry, s.Position, (float)Math.Sin(angle) * move.Distance, (float)Math.Cos(angle) * move.Distance);
+        var end = move.Kind == DisplaceKind.CasterToTarget ? ChargeEnd(s, action, move.Distance)
+            : WalkableEnd(s.SceneEntry, s.Position, (float)Math.Sin(angle) * move.Distance, (float)Math.Cos(angle) * move.Distance);
+        if (end == null) return;
+        // The rest of the show plays where the charge ended: a stop reported there is no walk that interrupts the cast.
+        if (move.Kind == DisplaceKind.CasterToTarget) action.Origin = end.Clone();
         var start = s.Position.Clone();
         await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
         {
@@ -581,6 +591,16 @@ public sealed partial class CombatService
         s.PreviousPosition = start;
         s.Position = end;
         await _world.MoveAsync(s, new WalkReq { Pos = end, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
+    }
+
+    /// <summary>Where a charge at the cast's target ends: that far in front of where the target stands now, clipped to
+    /// navigation; null when the caster is about there already (the bosses' <see cref="ChargeAsync"/> rule).</summary>
+    private Vec3? ChargeEnd(GameSession s, ActiveSkillCast action, float stopShort)
+    {
+        var to = FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? EventTarget(s, action.Request.TargetId)?.Position
+            ?? action.Request.TargetPos ?? s.Position;
+        float dx = to.X - s.Position.X, dz = to.Z - s.Position.Z, length = MathF.Sqrt(dx * dx + dz * dz), go = length - stopShort;
+        return go < 0.5f ? null : WalkableEnd(s.SceneEntry, s.Position, dx / length * go, dz / length * go);
     }
 
     /// <summary>Where a target displacement starts from (the caster, or the area's centre) and whether it pushes; null for

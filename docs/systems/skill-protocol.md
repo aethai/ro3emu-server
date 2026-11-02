@@ -148,7 +148,16 @@ The distance is the one the description names. Where it names none, the inferred
 
 The client moves a unit only on a 31112 that names a displacement EffectData. It looks the effect up by id alone. Where a skill's show and hit effects carry none, `MovementEffectOverrides` names a like one: knockbacks take Pile Bunker's flat 200 ms 1631405, pulls take Gravitational Impact's 200 ms 1234212 **(inferred)**. Fearless Charge and Melodic High-Energy Impact also name theirs, because their show's first movement effect moves the caster: 1162411 is the charge, and 16307509 is the slam, which has a height curve. Fearless Charge's knockback is 1162412. Checked in the client: a unit moves with a named effect and stays put with effect 0.
 
-Not done: Shield Defense's knockback belongs to its periodic aura, which is not simulated; enhanced Axe Tornado (`AxeTornadoProS1BD2`) pulls only under Enhance; Fearless Charge's own 12 m charge; knock-ups (Sonic Burst, Energy Release, Execution Time) move nobody. `SkillCombatTests.KnockbacksAndPullsMoveTheMonstersHit` covers one skill of each kind, and `SkillCombatTests.APvpHitKnocksThePlayerBack` covers Arrow Repel, Sightrasher and Tetra Vortex in PvP.
+## Charges at the target
+
+`DisplaceKind.CasterToTarget` moves the caster along the line to its target with a 31112 (MoveType 1) at the cast's first attack point, stopping 1 m in front of it **(inferred)** from Charge_Attack's "a point @{2} m in front" and its `_kDescData` 1. The effect is the show's displacement EffectData, which no `m_kShows` entry names. A caster already within 1.5 m stays put, as a boss's charge does.
+
+- Warg Strike on the wolf (mode 1 row, `WugStrike`, show 13312): effect 1331203, always.
+- Warg Hunt (`WolvesShadow`) is an entry row whose show only plays an animation. `CombatService.WargHuntRow` runs the cast as one of its `_kLogicData` rows `[near, far]`, chosen by `_kDescData[4]` ("more than ${5}m from the target"): Warg Hunt (Melee) stays put, Warg Hunt (Ranged) dashes on 1333014 (13330113 at mode 1). The wolves are `fx_skill_wughunt_01`/`_02` on the target in those rows' shows, the hits their `_kShowDmg`. The entry row pays and shows the cooldown, and its own timeline is not sent **(inferred)**: no client code reads this `_kLogicData`.
+
+`CareerSpecialTests` covers both on the client data. The wolf's normal attack (`WolfAttack`, "more than ${6} meters ... Charge directly in front of it", effect 1003205), Charge_Attack, DarkIllusion and hesehuanying name the same kind of move and do not have it yet.
+
+Not done in knockbacks and pulls: Shield Defense's knockback belongs to its periodic aura, which is not simulated; enhanced Axe Tornado (`AxeTornadoProS1BD2`) pulls only under Enhance; Fearless Charge's own 12 m charge; knock-ups (Sonic Burst, Energy Release, Execution Time) move nobody. `SkillCombatTests.KnockbacksAndPullsMoveTheMonstersHit` covers one skill of each kind, and `SkillCombatTests.APvpHitKnocksThePlayerBack` covers Arrow Repel, Sightrasher and Tetra Vortex in PvP.
 
 ## Auto-attack after walking into range
 
