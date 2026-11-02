@@ -105,6 +105,11 @@ public sealed partial class BuffService : IGameTicker
     public Task AddSupportAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0) =>
         AddCoreAsync(p, configId, durationMs, sourceId, null, shieldAmount);
 
+    /// <summary>Apply a player skill's shield buff (<see cref="SkillShieldRules"/>): each pile adds one
+    /// <paramref name="shieldPerPile"/> to the live shield, up to one per pile (inferred).</summary>
+    internal Task AddSkillShieldAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldPerPile) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, null, shieldPerPile, stackShield: true);
+
     internal Task AddGuardianAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0,
         bool shieldDebuffImmunity = false, int hpFloorBasisPoints = 0, double attributeMultiplier = 1) =>
         AddCoreAsync(p, configId, durationMs, sourceId, null, shieldAmount, guardianOwned: true,
@@ -112,7 +117,7 @@ public sealed partial class BuffService : IGameTicker
 
     private async Task AddCoreAsync(GameSession p, int configId, int durationMs, long sourceId, int? explicitPileCount,
         long shieldAmount = 0, bool guardianOwned = false, bool shieldDebuffImmunity = false, int hpFloorBasisPoints = 0,
-        double attributeMultiplier = 1)
+        double attributeMultiplier = 1, bool stackShield = false)
     {
         if (p.Role == null || _data.Row("BuffConfig", configId) is not { } row || GameData.Int(row, "_iBuffID") <= 0) return;
         if (await RejectIncomingAsync(p, row, guardianOwned, sourceId)) return;
@@ -134,8 +139,8 @@ public sealed partial class BuffService : IGameTicker
         var changes = pairs.Select(c => (c.Id, c.Value * pile * attributeMultiplier)).ToList();
         var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
             now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(group, guardianOwned),
-            ShieldRemaining: Math.Max(0, shieldAmount), IsGuardianOwned: guardianOwned,
-            ShieldDebuffImmunity: shieldDebuffImmunity, HpFloorBasisPoints: hpFloorBasisPoints);
+            ShieldRemaining: stackShield ? SkillShieldRules.Stacked(LiveShield(existing), shieldAmount, pile) : Math.Max(0, shieldAmount),
+            IsGuardianOwned: guardianOwned, ShieldDebuffImmunity: shieldDebuffImmunity, HpFloorBasisPoints: hpFloorBasisPoints);
         if (existing != null) p.Buffs.Remove(existing);
         p.Buffs.Add(buff);
         TrackPeriodic(p, null, buff);

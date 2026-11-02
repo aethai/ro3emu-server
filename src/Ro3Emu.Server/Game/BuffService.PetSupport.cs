@@ -1,4 +1,5 @@
 using Romsg;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -9,6 +10,9 @@ public sealed partial class BuffService
         .Where(b => b.ExpireMs > MonsterService.NowMs && b.ShieldRemaining > 0)
         .Aggregate(0L, (total, buff) => buff.ShieldRemaining > long.MaxValue - total
             ? long.MaxValue : total + buff.ShieldRemaining);
+
+    private static long LiveShield(ActiveBuff? buff) =>
+        buff is { } live && live.ExpireMs > MonsterService.NowMs ? live.ShieldRemaining : 0;
 
     private IEnumerable<(int Id, long Value)> SupportShieldProperties(GameSession player)
     {
@@ -85,15 +89,17 @@ public sealed partial class BuffService
         else if (shield > 0) entity.Property.Add(new AoIProperty { Idx = 2003, Data = shield });
     }
 
-    /// <summary>Consume only live support shields before HP damage; nonpositive damage consumes nothing.</summary>
-    public async Task<long> AbsorbAsync(GameSession target, long damage)
+    /// <summary>Consume only live support shields before HP damage; nonpositive damage consumes nothing. A magic hit
+    /// passes the shields that absorb Physical damage only (<see cref="SkillShieldRules.AbsorbsPhysicalOnly"/>).</summary>
+    public async Task<long> AbsorbAsync(GameSession target, long damage, bool magic = false)
     {
         if (damage <= 0) return 0;
         if (target.Role == null) return damage;
         foreach (var expired in target.Buffs.Where(b => b.ShieldRemaining > 0 && b.ExpireMs <= MonsterService.NowMs).ToArray())
             await RemoveAsync(target, expired);
         // (inferred) Older buffs absorb first. BuffConfig does not identify an order for independent shields.
-        foreach (var buff in target.Buffs.Where(b => b.ShieldRemaining > 0 && b.ExpireMs > MonsterService.NowMs)
+        foreach (var buff in target.Buffs.Where(b => b.ShieldRemaining > 0 && b.ExpireMs > MonsterService.NowMs
+                         && !(magic && PhysicalOnly(b)))
                      .OrderBy(b => b.Guid).ToArray())
         {
             long absorbed = Math.Min(damage, buff.ShieldRemaining);
@@ -108,6 +114,9 @@ public sealed partial class BuffService
         }
         return damage;
     }
+
+    private bool PhysicalOnly(ActiveBuff buff) =>
+        BuffConfig.Get(_data, buff.ConfigId) is { } row && SkillShieldRules.AbsorbsPhysicalOnly(row);
 
     /// <summary>Consume only live unit support shields; fully spent buffs are removed and published.</summary>
     public async Task<long> AbsorbAsync(WorldUnit target, long damage)
