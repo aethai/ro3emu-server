@@ -384,7 +384,7 @@ public sealed class RoleItemPlanBuilder
         // Envelopes: E05d semantic, 13c progression, E05b/13a family, E04 reward, 13e owned exchange and E01 NPC.
         DbPlan submitted = _economyEnvelope is { } envelope
             ? new EconomyEnvelopePlan(plan, envelope, accounts.EconomyCatalog,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest(), accounts.ReportStandingEconomyIssue)
+                accounts.ConsumeEconomyAcknowledgementFaultForTest())
             : _economy!.IsProgression
                 ? new ProgressionEconomyTransactionPlan(plan, _economy, accounts.ConsumeEconomyAcknowledgementFaultForTest())
             : _economy.IsFamily
@@ -465,7 +465,7 @@ public sealed class RoleItemPlanBuilder
         {
             // E05d semantic envelope on the owned path; an ambiguous outcome resolves from its receipt.
             submitted = new EconomyEnvelopePlan(Build(accounts, label, expect: false), envelope, accounts.EconomyCatalog,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest(), accounts.ReportStandingEconomyIssue);
+                accounts.ConsumeEconomyAcknowledgementFaultForTest());
             if (_expected.Count != 0) submitted.Expect(_expected.Values);
             if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
             try { receipts = await accounts.WriteOwnedAsync<object?[]>(submitted); }

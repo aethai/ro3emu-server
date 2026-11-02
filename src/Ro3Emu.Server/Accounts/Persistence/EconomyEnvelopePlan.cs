@@ -8,7 +8,7 @@ namespace Ro3Emu.Server.Accounts.Persistence;
 
 /// <summary>E05d typed owner plan, semantic value authorization, receipt and exact legs in one transaction.</summary>
 internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope envelope, EconomyCatalog catalog,
-    bool failAcknowledgementForTest = false, Action<EconomyIssue>? standingIssue = null) : DbPlan
+    bool failAcknowledgementForTest = false) : DbPlan
 {
     private int pendingAcknowledgementFault = failAcknowledgementForTest ? 1 : 0;
     private bool replay;
@@ -86,7 +86,7 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             .ToDictionary(key => key, key => ReadEntity(db, tx, key));
         var generatedEntities = new HashSet<OwnerRevisionKey>();
         var (before, standing) = Read(db, tx);
-        foreach (var issue in standing) standingIssue?.Invoke(issue);
+        foreach (var issue in standing) DbWriter.ReportStandingIssue(issue);
         var children = (object?[])child.Execute(db, tx);
         EconomyTransactionPlan.EncodeChildReceipts(children); // Reject any non-durable child result before receipt work.
         // Guild creation obtains its owner ID inside the writer. Its initial revision is inserted by
