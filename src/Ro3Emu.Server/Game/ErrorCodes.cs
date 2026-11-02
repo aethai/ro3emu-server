@@ -34,6 +34,7 @@ public static class ErrorCodes
     public const int FeatureUnavailable = 28;   // unavailable feature
     public const int ActionInBattle = 47;      // NW_ProtobufDefine.ERR_PlayerActionNotAllowedInBattle
     public const int Parameter = 82;            // "Client Parameter error"
+    public const int TooManyRequests = 1108;    // "Too many requests. Please try again later."
 
     // Activities: ErrorCodeConfig + Localization_en. Selection for each RPC is inferred from these texts.
     public const int ActivityClosed = 3902;      // "Event Not Available"
