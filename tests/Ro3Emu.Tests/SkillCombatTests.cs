@@ -643,6 +643,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         // and UnitConfig[31007]._iCollisionType is None, so the client's target radius is 0.
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!job 3100");
+        await HoldInMainHand("alice", Bow);
         var target = await Target("alice", stationary: true, npcId: 5000007);
         var aoi = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             view => view.Bases.Any(b => b.Uuid == (ulong)target.Uid));

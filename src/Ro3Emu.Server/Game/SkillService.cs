@@ -59,11 +59,25 @@ public sealed partial class SkillService
     public int MaxLevel(int group) => _data.Row("SkillConfig", RealId(group, 1)) is { } row
         ? (int)GameData.Int(row, "_iMaxLevel") : 0;
 
-    /// <summary>The career's normal attack: JobConfig._kSkillNormalID (a row id).</summary>
-    public int NormalAttack(int career) =>
-        _data.Row("JobConfig", career) is { } job && job.TryGetProperty("_kSkillNormalID", out var n) && n.ValueKind == JsonValueKind.Array && n.GetArrayLength() > 0
-            ? n[0].GetInt32()
-            : 1000001;
+    /// <summary>
+    /// The career's normal attack: JobConfig._kSkillNormalID (a row id). (inferred) The Magician careers name 1200001, which has
+    /// no SkillConfig row; those take their unarmed JobAttackConfig row, the career's or the nearest parent's.
+    /// </summary>
+    public int NormalAttack(int career)
+    {
+        int named = _data.Row("JobConfig", career) is { } job && job.TryGetProperty("_kSkillNormalID", out var n) && n.ValueKind == JsonValueKind.Array && n.GetArrayLength() > 0
+            ? n[0].GetInt32() : 1000001;
+        if (_data.Row("SkillConfig", named) != null) return named;
+        return _unnamedAttacks.GetOrAdd(career, c =>
+        {
+            foreach (int own in Enumerable.Reverse(CareerChain(c)))
+                if (JobAttackConfig.All(_data).Where(r => r.JobId == own && r.MountId == 0 && AttackWeaponKey(r) is -1 or 0)
+                    .Select(r => (int)r.SkillId).FirstOrDefault(id => _data.Row("SkillConfig", id) != null) is > 0 and var attack) return attack;
+            return 1000001;
+        });
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _unnamedAttacks = new();
 
     internal int Rank(int career) => (int)(_data.Row("JobConfig", career) is { } job ? Math.Max(1, GameData.Int(job, "_iJobRank")) : 1);
 
@@ -539,19 +553,41 @@ public sealed partial class SkillService
         _data.Row("SkillConfig", NormalAttack(p.Career)) is { } row && GameData.Int(row, "_iSkillID") == group;
 
     /// <summary>
-    /// The normal attack a ridden battle mount makes of the career's (JobAttackConfig; 0 for none), as
-    /// Lua_CFG_JobAttackConfig._getData reads it: the career's rows of the weapon key, else its rows without a weapon, and
-    /// in those the mount's row. The client asks this table for its skill window alone; its bar and auto-attack cast what
-    /// the wheel holds (LC_System_Skill: whellSkills, LC_DAL_SkillDevelop: atkSkillId).
+    /// The normal attack the player makes now (JobAttackConfig; else the career's), as Lua_CFG_JobAttackConfig._getData reads
+    /// it: the career's rows of the weapon key, else its rows without a weapon, and in those the ridden battle mount's row,
+    /// else the row without a mount. (inferred) A career with no rows (2210) uses its nearest parent's. The client asks this
+    /// table for its skill window alone; its bar and auto-attack cast what the wheel holds (LC_System_Skill: whellSkills,
+    /// LC_DAL_SkillDevelop: atkSkillId), so the server sends it there.
     /// </summary>
-    private int MountAttack(GameSession session)
+    public int CurrentAttack(GameSession session)
     {
-        if (session.Progress is not { } p || session.Mounts?.MountIds.GetValueOrDefault(BattleMountSlot) is not { IsRiding: true } ride) return 0;
-        var rows = JobAttackConfig.All(_data).Where(r => r.JobId == p.Career).ToArray();
+        if (session.Progress is not { } p) return 0;
+        long mount = session.Mounts?.MountIds.GetValueOrDefault(BattleMountSlot) is { IsRiding: true } ride ? ride.MountId : 0;
         long key = WeaponKey(session);
-        var tier = rows.Where(r => AttackWeaponKey(r) == key).ToArray();
-        if (tier.Length == 0) tier = [.. rows.Where(r => AttackWeaponKey(r) == -1)];
-        return tier.Where(r => r.MountId == ride.MountId).Select(r => (int)r.SkillId).FirstOrDefault();
+        foreach (int career in Enumerable.Reverse(CareerChain(p.Career)))
+        {
+            var rows = JobAttackConfig.All(_data).Where(r => r.JobId == career).ToArray();
+            if (rows.Length == 0) continue;
+            var tier = rows.Where(r => AttackWeaponKey(r) == key).ToArray();
+            if (tier.Length == 0) tier = [.. rows.Where(r => AttackWeaponKey(r) == -1)];
+            foreach (long wanted in new[] { mount, 0L })
+                if (tier.Where(r => r.MountId == wanted).Select(r => (int)r.SkillId).FirstOrDefault(id => _data.Row("SkillConfig", id) != null) is > 0 and var attack)
+                    return attack;
+            break;
+        }
+        return NormalAttack(p.Career);
+    }
+
+    /// <summary>
+    /// Whether this normal attack may be cast now: the current one only, so a faster attack of another weapon can't be chosen.
+    /// A bow's Arrow Attack is not _iIsNormalAtk, and the client's GetNormalSkill then falls back on Normal Attack, so with
+    /// such a current attack the _iIsNormalAtk rows stay castable too (inferred).
+    /// </summary>
+    internal bool MayCastAttack(GameSession session, SkillConfig attack)
+    {
+        int current = CurrentAttack(session);
+        if (attack.Id == current) return true;
+        return attack.IsNormalAtk == 1 && SkillConfig.Get(_data, current) is { IsNormalAtk: not 1 };
     }
 
     private static long AttackWeaponKey(JobAttackConfig row) => row.WeaponType switch
@@ -570,27 +606,48 @@ public sealed partial class SkillService
         return (main > 0 ? main : off) * 10 + (main > 0 && main == off ? 1 : 0);
     }
 
-    /// <summary>Sent, never saved: the plan and the origin wheel keep the career's own attack for the dismount.</summary>
-    private void ApplyMountAttack(GameSession session, DBSkillData state)
+    /// <summary>
+    /// Sent, never saved: the plan and the origin wheel keep the career's own attack. The current plan shows one learned
+    /// _iIsNormalAtk group, because GetNormalSkill (LC_Actor_AutoAttack) takes the first it finds; a bow's Arrow Attack is not
+    /// one, so then Normal Attack stays learned.
+    /// </summary>
+    private void ApplyCurrentAttack(GameSession session, DBSkillData state)
     {
-        int attack = session.WheelMountAttack = MountAttack(session);
-        if (attack == 0) return;
+        int attack = session.WheelAttack = CurrentAttack(session);
+        if (attack == 0 || SkillConfig.Get(_data, attack) is not { } held) return;
         state.CurrentAtkSkillId = attack;
         state.SkillWheel.AtkSkillId = attack;
-        int own = CareerNormalGroup(session.Progress!.Career);
+        var career = session.Progress!.Career;
+        int own = CareerNormalGroup(career);
         foreach (var slot in state.SkillWheel.WhellSkills.Values)
-            if (_data.Row("SkillConfig", slot.SkillConfigId) is { } row && (int)new SkillConfig(row).SkillId == own) slot.SkillConfigId = attack;
+            if (SkillConfig.Get(_data, slot.SkillConfigId) is { } row && ((int)row.SkillId == own || row.IsNormalAttack(_data) && TreeAttackGroups(career).Contains((int)row.SkillId)))
+                slot.SkillConfigId = attack;
+        if (held.IsNormalAtk != 1) return;
+        foreach (var (group, assign) in state.SkillAssignPlans[state.CurrentPlanIndex].SkillAssigns)
+            if (group != held.SkillId && SkillConfig.Get(_data, RealId(group, 1)) is { IsNormalAtk: 1 }) assign.SkillLevel = 0;
     }
 
-    /// <summary>MountService.RideChanged: a ride that changes the normal attack, on a career with such a mount, sends the wheel.</summary>
-    internal Task RideChangedAsync(GameSession session) =>
-        session.SkillPlans == null || MountAttack(session) == session.WheelMountAttack ? Task.CompletedTask : SyncAsync(session);
+    /// <summary>MountService.RideChanged and worn gear changes: a change of the normal attack sends the wheel, and an attack
+    /// loop goes on with the new attack.</summary>
+    internal Task AttackInputChangedAsync(GameSession session)
+    {
+        if (session.SkillPlans == null || CurrentAttack(session) is var attack && attack == session.WheelAttack) return Task.CompletedTask;
+        if (session.Attack is { } loop && SkillConfig.Get(_data, loop.SkillId) is { } running && running.IsNormalAttack(_data)) loop.SkillId = attack;
+        return SyncAsync(session);
+    }
+
+    /// <summary>The state the client is sent: the stored plans with the current normal attack applied.</summary>
+    internal DBSkillData Shown(GameSession session)
+    {
+        var state = Build(session);
+        ApplyCurrentAttack(session, state);
+        return state;
+    }
 
     public async Task SyncAsync(GameSession session)
     {
         if (session.SkillPlans == null) await LoadAsync(session);
-        var state = Build(session);
-        ApplyMountAttack(session, state);
+        var state = Shown(session);
         // A granted skill (a socketed card's Skill(3)) is listed with its level in the current plan, where the skill panel's
         // card skills read it (UI_Sys_SkillPanelModel.GetCardSkillList: ServerAllSkills = skillList, then the plan's
         // skillAssigns with level > 0). It is sent, never saved in a plan: a plan switch checks its groups against the tree.
