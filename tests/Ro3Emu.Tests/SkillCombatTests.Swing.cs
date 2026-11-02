@@ -95,6 +95,7 @@ public sealed partial class SkillCombatTests
     {
         await using var archer = await InWorld("Archer");
         await Gm("archer", "!job 3100");
+        await HoldInMainHand("archer", Bow);
         var target = await Target("archer", stationary: true);
         await Loop.InvokeAsync(() => { target.Hp = 1_000_000; return Task.CompletedTask; });
         var session = Session("archer");
@@ -120,7 +121,7 @@ public sealed partial class SkillCombatTests
     [ClientDataFact]
     public async Task ARunningCastGivesWayByItsOwnInterruptRule()
     {
-        const int SwordAttack = 1100001; // _iInterruptedType 1
+        const int SwordAttack = 1001001; // _iInterruptedType 1
         const int Bash = 1100101; // _iInterruptedType 2, _bCancelCast 0, its show can be interrupted 400 ms into its 1000 ms
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!lvl 14");
