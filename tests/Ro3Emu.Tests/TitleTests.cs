@@ -93,6 +93,8 @@ public sealed class TitleTests : IAsyncLifetime
         // Rank 2 needs base level 20 and power 5000.
         Assert.Equal(ErrorCodes.LevelTooLow, await Claim(alice));
         await Gm(alice, "!lvl 99");
+        // The level only queues the role's power: its publish must be behind us, or it raises the history set below.
+        await Next(alice, PowerService.ChangeNtf, PlayerChangePowerNtf.Parser, n => PowerService.Total(n.MaxHistoryPower) >= 5000);
         await SetBestPower(alice, 4999);
         Assert.Equal(ErrorCodes.Parameter, await Claim(alice));
         await SetBestPower(alice, 1_000_000);
