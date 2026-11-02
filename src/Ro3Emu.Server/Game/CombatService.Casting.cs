@@ -143,10 +143,10 @@ public sealed partial class CombatService
         if (!lineup) await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
         var target = FindMonster(s.WorldScene, req.TargetId);
         var playerTarget = EventTarget(s, req.TargetId);
-        // _iIfAutoAtk 2 (enum_AutoNormalAttackType.AutoNormalAttack) follows the cast with the career's normal attack
+        // _iIfAutoAtk 2 (enum_AutoNormalAttackType.AutoNormalAttack) follows the cast with the current normal attack
         // (LC_AutoAttackAppendState: GetNormalSkill). Repeating the cast skill itself bypassed its cooldown: Blade
         // Smash and Sonic Slash fired every swing.
-        int loopSkill = new SkillConfig(row!.Value).IsNormalAttack(_data) ? req.SkillId : _skills.NormalAttack(s.Progress!.Career);
+        int loopSkill = new SkillConfig(row!.Value).IsNormalAttack(_data) ? req.SkillId : _skills.CurrentAttack(s);
         if (GameData.Int(row!.Value, "_iIfAutoAtk") == 2 && owned == null && target != null && CanHitMonster(s, target))
         {
             s.Attack = new AttackLoop
@@ -343,8 +343,8 @@ public sealed partial class CombatService
         if (GameData.Int(row, "_iID") == PublicSkill("WorldTreeSkillId")) return true; // paid item skill, LC_ReviveHelper.
         // A Survivor Battle career owns the match skill set (TimedBattleService.Chicken), not the job tree.
         if (MatchSkillRule?.Invoke(s, (int)GameData.Int(row, "_iID")) is { } granted) return granted;
-        if (GameData.Int(row, "_iID") == _skills.NormalAttack(s.Progress!.Career)) return true;
-        return _skills.Level(s.Progress, (int)GameData.Int(row, "_iSkillID")) >= GameData.Int(row, "_iLevel");
+        if (new SkillConfig(row) is var skill && skill.IsNormalAttack(_data)) return _skills.MayCastAttack(s, skill);
+        return _skills.Level(s.Progress!, (int)GameData.Int(row, "_iSkillID")) >= GameData.Int(row, "_iLevel");
     }
 
     private MonsterUnit? FindMonster(long sceneId, long uid) => _world.Map(sceneId).Units.OfType<MonsterUnit>().FirstOrDefault(m => m.Uid == uid && !m.Dead);

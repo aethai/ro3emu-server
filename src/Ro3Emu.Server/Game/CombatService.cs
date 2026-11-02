@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 public sealed class AttackLoop
 {
     public required MonsterUnit Target { get; init; }
-    public required int SkillId { get; init; }
+    public required int SkillId { get; set; }
     public long NextSwingMs { get; set; }
     public float StartX { get; set; }
     public float StartZ { get; set; }
@@ -745,8 +745,8 @@ public sealed partial class CombatService : IGameTicker
     internal (double PlayerDps, double MonsterDps, long PlayerHp) Duel(GameSession p, MonsterTemplate m)
     {
         var stats = _character.Stats(p);
-        var playerSkill = _data.Row("SkillConfig", _skills.NormalAttack(p.Progress!.Career))!.Value;
-        var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress.Level, AttackElement(p, playerSkill));
+        var playerSkill = _data.Row("SkillConfig", _skills.CurrentAttack(p))!.Value;
+        var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress!.Level, AttackElement(p, playerSkill));
         var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee };
         double playerDps = ExpectedDamage(player, asTarget, playerSkill) * 1000.0 / Math.Max(1, SkillMs(p, playerSkill));
         var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element);

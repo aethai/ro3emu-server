@@ -53,20 +53,23 @@ public sealed partial class CombatService
     private async Task PublishMonsterAttributesAsync(WorldUnit unit)
     {
         if (unit is not MonsterUnit monster) return;
-        bool guardian = _buffs.HasGuardianUnitBuffs(monster);
-        // Ordinary unit buffs leave the template's stats and speed as they were; publish only a guardian's changes
-        // and, once the last guardian buff is gone, the return to the template.
-        if (!guardian && monster.BuffSpeedCm == null) return;
-        var stats = MonsterStats(monster);
-        await _monsters.SetBuffSpeedAsync(monster, guardian ? (int)Math.Clamp(stats[AttributeId.Speed], 0, int.MaxValue) : null);
+        // Control states come from any source's buff (BuffService.StateFor): always publish the state and forbid masks.
         var changed = new AOIAttrChange
         {
             EntityUuid = (ulong)unit.Uid,
             StateInfo = new AoiObjStateInfo { Data = new CommonBigMask { Values = { (ulong)monster.StatusBits | _buffs.UnitStatus(unit) } } },
             ForbidInfo = new AoiObjForbidInfo { Data = new CommonBigMask { Values = { _buffs.UnitForbiddenMask(unit) } } },
         };
-        foreach (int id in PublishedMonsterAttributes)
-            changed.Property.Add(new AoIProperty { Idx = id, Data = stats[id], BaseData = stats.Base.GetValueOrDefault(id) });
+        // Ordinary unit buffs leave the template's stats and speed as they were; publish only a guardian's changes
+        // and, once the last guardian buff is gone, the return to the template.
+        bool guardian = _buffs.HasGuardianUnitBuffs(monster);
+        if (guardian || monster.BuffSpeedCm != null)
+        {
+            var stats = MonsterStats(monster);
+            await _monsters.SetBuffSpeedAsync(monster, guardian ? (int)Math.Clamp(stats[AttributeId.Speed], 0, int.MaxValue) : null);
+            foreach (int id in PublishedMonsterAttributes)
+                changed.Property.Add(new AoIProperty { Idx = id, Data = stats[id], BaseData = stats.Base.GetValueOrDefault(id) });
+        }
         await _world.ToUnitViewersAsync(unit, AoiAttrChange, changed);
     }
 }
