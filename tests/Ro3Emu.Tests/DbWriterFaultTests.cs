@@ -210,12 +210,14 @@ public sealed class DbWriterFaultTests : IDisposable
         };
         Assert.Equal(1, await writer.ExecuteAsync<int>(new Plan("setup", _executed))); // the table exists
         using var hold = new ManualResetEventSlim();
+        using var entered = new ManualResetEventSlim();
         var blocker = writer.ExecuteAsync<int>(new Plan("block", _executed, () =>
         {
+            entered.Set();
             hold.Wait(TimeSpan.FromSeconds(10));
             Thread.Sleep(budget + TimeSpan.FromMilliseconds(50));
         }));
-        await Task.Delay(50); // the blocker's group is open; the rest queue behind it
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(10))); // the blocker's group is open; the rest queue behind it
         var before = Enumerable.Range(0, 10).Select(i => writer.ExecuteAsync<int>(new Plan("a" + i, _executed))).ToList();
         var partial = writer.ExecuteAsync<int>(new PartialPlan("partial", _executed));
         var doomed = writer.ExecuteAsync<int>(new Plan("doomed", _executed));
