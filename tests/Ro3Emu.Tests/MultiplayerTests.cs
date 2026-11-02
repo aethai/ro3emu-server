@@ -226,6 +226,23 @@ public sealed class MultiplayerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheRegistryKnowsASessionExactlyWhileItIsListed()
+    {
+        var registry = _app.Services.GetRequiredService<Ro3Emu.Server.Game.SessionRegistry>();
+        Assert.False(registry.Contains(new Ro3Emu.Server.Game.GameSession(null!, null!)));
+        Ro3Emu.Server.Game.GameSession session;
+        await using (var alice = await InWorld("Alice"))
+        {
+            session = registry.All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid);
+            Assert.True(registry.Contains(session));
+        }
+        var until = DateTime.UtcNow + Wait;
+        while (registry.All().Contains(session) && DateTime.UtcNow < until) await Task.Delay(20);
+        Assert.DoesNotContain(session, registry.All());
+        Assert.False(registry.Contains(session));
+    }
+
+    [Fact]
     public async Task AProfileLookupDoesNotWaitForTheOtherPlayersOwnWork()
     {
         await using var alice = await InWorld("Alice");

@@ -494,11 +494,15 @@ public sealed partial class BuffService : IGameTicker
         SweepDecay(now);
         foreach (var s in _sessions.All())
         {
-            foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b));
+            // Every session, every tick: copy the list only when something in it has expired.
+            if (AnyExpired(s.Buffs, now))
+                foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b));
             TickEnergy(s, now);
             TickImmuneDeath(s, now);
         }
-        foreach (var (uid, list) in _unitBuffs.ToList())
+        bool unitDue = false;
+        foreach (var list in _unitBuffs.Values) if (list.Count == 0 || AnyExpired(list, now)) { unitDue = true; break; }
+        if (unitDue) foreach (var (uid, list) in _unitBuffs.ToList())
         {
             foreach (var buff in list.Where(b => b.ExpireMs <= now).ToList())
             {
@@ -508,6 +512,12 @@ public sealed partial class BuffService : IGameTicker
             }
             if (list.Count == 0) _unitBuffs.Remove(uid);
         }
+    }
+
+    private static bool AnyExpired(List<ActiveBuff> buffs, long now)
+    {
+        foreach (var b in buffs) if (b.ExpireMs <= now) return true;
+        return false;
     }
 
     /// <summary>One queued removal per expired buff: a removal waits for its reservation, and queuing one every tick
