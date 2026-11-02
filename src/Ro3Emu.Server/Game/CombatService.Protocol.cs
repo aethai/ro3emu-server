@@ -53,6 +53,15 @@ public sealed partial class CombatService
         return SkillParameterRules.Effective(session, _data, requested);
     }
 
+    /// <summary>A group's configured row of a level in the mode the session's type 15 tuples select, or its mode 0 row when
+    /// that mode has none. The tuples' other fields are not applied: <see cref="CastExtraAsync"/> applies them.</summary>
+    internal JsonElement? ModeRow(GameSession session, int group, int level)
+    {
+        if (!ConfiguredModeRows.TryGetValue((group, level, 0), out int plain) || _data.Row("SkillConfig", plain) is not { } row) return null;
+        int mode = SkillParameterRules.Mode(group, SkillParameterRules.CategoriesOf(_data, row), SkillParameterRules.Active(session, _data));
+        return ConfiguredModeRows.TryGetValue((group, level, mode), out int selected) ? _data.Row("SkillConfig", selected) : row;
+    }
+
     public bool SkillModeAllowed(GameSession session, JsonElement row) =>
         EffectiveSkillRow(session, (int)GameData.Int(row, "_iID")) is { } effective
         && GameData.Int(effective, "_iID") == GameData.Int(row, "_iID");
