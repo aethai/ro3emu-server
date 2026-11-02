@@ -45,6 +45,10 @@ public sealed partial class CharacterService
     /// <summary>31323: uses one item from a stack (the client plays the item's own effect list).</summary>
     public Task UseItemAsync(GameSession session, ItemUseReq req) => UseItemCoreAsync(session, req, reply: true);
 
+    /// <summary>The server uses one unit itself: the same validated path, without a 31323 reply nobody asked for.</summary>
+    internal Task<int> AutoUseItemAsync(GameSession session, long guid) =>
+        UseItemCoreAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }, reply: false);
+
     /// <summary>BuffService supplies live item-use restrictions to every use path, including shortcuts.</summary>
     public Func<GameSession, bool>? IsItemUseForbidden { get; set; }
 

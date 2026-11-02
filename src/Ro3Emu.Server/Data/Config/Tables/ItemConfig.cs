@@ -6,6 +6,7 @@ namespace Ro3Emu.Server.Data.Config;
 [ConfigTable("ItemConfig")]
 public readonly partial record struct ItemConfig(JsonElement Row)
 {
+    [ConfigField("_QuickUse")] public partial long[] QuickUse { get; }
     [ConfigField("_iAuction")] public partial long Auction { get; }
     [ConfigField("_iAward")] public partial long Award { get; }
     [ConfigField("_iBagTab")] public partial long BagTab { get; }
