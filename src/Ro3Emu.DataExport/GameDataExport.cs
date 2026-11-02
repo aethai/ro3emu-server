@@ -26,7 +26,7 @@ namespace Ro3Emu.DataExport;
 public static class GameDataExport
 {
     /// <summary>Bumped when the export's output changes, so RO3Emu.exe exports again after an update of itself.</summary>
-    public const int FormatVersion = 2;
+    public const int FormatVersion = 3;
 
     /// <summary>Client modules under the exported folders that are code, not tables: they never export, and that is fine.</summary>
     public static readonly IReadOnlySet<string> ExpectedTableFailures = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Lua_DBManager" };
