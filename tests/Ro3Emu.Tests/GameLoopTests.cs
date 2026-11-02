@@ -119,6 +119,32 @@ public sealed class GameLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OneTickStartsSeveralDueTimersThatCostMilliseconds()
+    {
+        // Each timer spins past the old 2 ms budget, which started only one of them per tick.
+        const int count = 12;
+        int tick = 0, ran = 0;
+        var perTick = new Dictionary<int, int>();
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _loop.Add(new CallbackTicker(() => tick++));
+        await _loop.InvokeAsync(() =>
+        {
+            for (int i = 0; i < count; i++)
+                _loop.Schedule(TimeSpan.Zero, () =>
+                {
+                    perTick[tick] = perTick.GetValueOrDefault(tick) + 1;
+                    var work = System.Diagnostics.Stopwatch.StartNew();
+                    while (work.Elapsed.TotalMilliseconds < 3) Thread.SpinWait(100);
+                    if (++ran == count) finished.TrySetResult();
+                    return Task.CompletedTask;
+                });
+            return Task.CompletedTask;
+        });
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(perTick.Values.Max() >= 2, "every tick started one timer: " + string.Join(",", perTick.Values));
+    }
+
+    [Fact]
     public async Task StopWaitsForTickerStartedDetachedCompletion()
     {
         using var loop = new GameLoop(NullLogger<GameLoop>.Instance);
