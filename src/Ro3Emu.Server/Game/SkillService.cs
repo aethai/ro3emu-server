@@ -585,9 +585,9 @@ public sealed partial class SkillService
     /// </summary>
     internal bool MayCastAttack(GameSession session, SkillConfig attack)
     {
-        int current = CurrentAttack(session);
-        if (attack.Id == current) return true;
-        return attack.IsNormalAtk == 1 && SkillConfig.Get(_data, current) is { IsNormalAtk: not 1 };
+        // By group: a cast can resolve to the mode row of its skill (CombatService.EffectiveSkillRow), with its own row id.
+        if (SkillConfig.Get(_data, CurrentAttack(session)) is not { } current) return false;
+        return attack.SkillId == current.SkillId || attack.IsNormalAtk == 1 && current.IsNormalAtk != 1;
     }
 
     private static long AttackWeaponKey(JobAttackConfig row) => row.WeaponType switch

@@ -16,10 +16,12 @@ public sealed partial class SkillCombatTests
         data.SkillAssignPlans[data.CurrentPlanIndex].SkillAssigns.TryGetValue(group, out var skill) ? skill.SkillLevel : 0;
 
     /// <summary>The fixture way to hold a weapon, without the equip message.</summary>
-    private Task HoldInMainHand(string account, int entry) => Loop.InvokeAsync(() =>
+    private Task HoldInMainHand(string account, int entry) => Loop.InvokeAsync(async () =>
     {
-        Session(account).Items.Add(new InvItem { Guid = 990002, Entry = entry, Stack = 1, Grid = 1 });
-        return Task.CompletedTask;
+        // Under the character lock: a commit still running (a pendant lease) replaces the bag with its own staged copy.
+        var session = Session(account);
+        using (await CharacterService.Lock(session))
+            session.Items.Add(new InvItem { Guid = 990002, Entry = entry, Stack = 1, Grid = 1 });
     });
 
     private async Task<long> Appraised(string account, int entry)
