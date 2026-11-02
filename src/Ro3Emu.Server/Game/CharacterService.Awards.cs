@@ -356,6 +356,7 @@ public sealed partial class CharacterService
         if (decomposed.DecomposeItemInfo.Count > 0)
             await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, decomposed);
         foreach (var (entry, count) in gained) foreach (var handler in ItemGained) handler(session, entry, count);
+        foreach (var handler in ItemsAwarded) handler(session, gained);
         foreach (var handler in StateChanged) handler(session);
         return true;
     }
