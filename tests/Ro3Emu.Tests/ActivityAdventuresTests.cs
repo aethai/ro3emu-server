@@ -8,7 +8,9 @@ using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Game.Ownership;
+using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Tests;
 
@@ -694,6 +696,20 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.TreasurePointNotOnMap, await Use());
         Assert.Equal(point, session.ActivityRuntime.AdventureTreasure.PointId);
         Assert.Equal(1, session.Items.Single(i => i.Guid == guid).Stack);
+    }
+
+    [ClientDataFact]
+    public void EveryTreasurePointStandsWithinDigReachOfTheGround()
+    {
+        var scene = _app.Services.GetRequiredService<SceneService>();
+        var world = _app.Services.GetRequiredService<WorldData>();
+        foreach (long id in _app.Services.GetRequiredService<GameData>().Table("TreasureHuntMapPointConfig").Values
+            .Select(r => GameData.Int(r, "_iId")).Where(id => id > 0))
+        {
+            var (mapId, at) = scene.TreasurePoint(id)!.Value;
+            Assert.Equal(world.Map(mapId)!.Nav!.WalkHeight(at.X, at.Z, at.Y), at.Y);
+        }
+        Assert.Equal(-3f, scene.TreasurePoint(1033)!.Value.Position.Y, 0.01f);
     }
 
     [ClientDataFact]
