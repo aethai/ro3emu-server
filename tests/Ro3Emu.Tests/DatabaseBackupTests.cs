@@ -167,6 +167,48 @@ public sealed class DatabaseBackupTests : IDisposable
     }
 
     [Fact]
+    public void ASmallDatabaseKeepsItsStartupCopyAndEveryCheck()
+    {
+        using var accounts = Store();
+        var backup = Backup(accounts);
+        backup.Backup();
+        Assert.Equal(TimeSpan.Zero, backup.UntilNextBackup(DateTime.UtcNow));
+        Assert.True(backup.IntegrityCheckDue(DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void ABigDatabaseRestartWaitsForTheIntervalSinceTheNewestCopy()
+    {
+        using var accounts = Store();
+        var backup = Backup(accounts);
+        backup.DatabaseBytes = () => 5L << 30;
+        Assert.Equal(TimeSpan.Zero, backup.UntilNextBackup(DateTime.UtcNow)); // no copy yet
+        var copy = backup.Backup();
+        var now = DateTime.UtcNow;
+        Assert.InRange(backup.UntilNextBackup(now), TimeSpan.FromHours(5.9), TimeSpan.FromHours(6));
+        File.SetLastWriteTimeUtc(copy, now - TimeSpan.FromHours(7));
+        Assert.Equal(TimeSpan.Zero, backup.UntilNextBackup(now));
+    }
+
+    [Fact]
+    public void ABigDatabaseChecksAScheduledCopyOnceADay()
+    {
+        using var accounts = Store();
+        var backup = Backup(accounts);
+        backup.DatabaseBytes = () => 5L << 30;
+        var now = DateTime.UtcNow;
+        Assert.True(backup.IntegrityCheckDue(now)); // never checked
+
+        // An unchecked copy is still a good copy and doesn't count as a check.
+        DatabaseRestore.Validate(backup.Backup(verify: false));
+        Assert.True(backup.IntegrityCheckDue(now));
+
+        backup.Backup();
+        Assert.False(backup.IntegrityCheckDue(DateTime.UtcNow));
+        Assert.True(backup.IntegrityCheckDue(DateTime.UtcNow + TimeSpan.FromHours(25)));
+    }
+
+    [Fact]
     public void CompressedCopiesKeepTheirTimeAndRestoreLikePlainOnes()
     {
         string first;
