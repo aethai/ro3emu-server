@@ -74,6 +74,23 @@ because the test host takes minutes to write coverage as it exits). The run then
 the list of the tests that were running and a dump of the test host. Main's Linux run measures
 coverage and prints it in the job summary, and the `coverage` artifact holds the Cobertura files.
 
+## Quarantine
+
+A test that fails now and then gets fixed: reproduce it (many runs, with CPU load if needed), prove the cause, and wait
+on a hook, an event or the state itself. A longer delay or a weaker assertion is not a fix. Only a test that can't be
+fixed yet may go into quarantine: `Trait("Category", "Flaky")` on the test and a row below, for two weeks at most. By
+then it is fixed or deleted.
+
+The required `test` and the release run skip `Category=Flaky`. The `quarantine` job runs those tests with up to two
+retries, is not a required check and can't block a merge. The nightly run has no such filter, so it still reports them.
+
+The floor stays where it is. A quarantined test stops counting in `tests/test-floor.txt` and the floor never goes down,
+so if the required run has no spare tests to cover it, the same pull request adds a test or doesn't quarantine.
+
+| Test | Since | Why it can't be fixed yet |
+| --- | --- | --- |
+| none | | |
+
 ## Snapshot tests
 
 Some tests compare what the server does with a checked-in list in `tests/Ro3Emu.Tests/Snapshots/`:
