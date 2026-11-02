@@ -35,7 +35,7 @@ public sealed partial class SceneService
     {
         if (session.Role == null || session.SceneLoading) return;
         var hunt = session.ActivityRuntime.AdventureTreasure;
-        if (hunt.PointId == 0 || hunt.Began + 10800 <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        if (hunt.PointId == 0 || hunt.Began + 10800 <= clock.GetUtcNow().ToUnixTimeSeconds()
             || TreasurePoint(hunt.PointId) is not { } target || target.Scene != session.SceneEntry
             || data.Row("NPCConfig", TreasureNpcId) is not { } npcRow) return;
         var npc = new WorldNpc(TreasureUid(session), target.Scene, WorldNpcKind.Npc, TreasureNpcId,
