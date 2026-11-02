@@ -262,7 +262,8 @@ public sealed partial class CardService
         if (error == 0) await NotifySocketsChangedAsync(session);
     }
 
-    /// <summary>The worn item of a grid left: its cards stay in the grid's sockets (they belong to the grid, spec §2.3).</summary>
+    /// <summary>The worn item of a grid left: its cards stay in the grid's sockets (they belong to the grid, spec §2.3),
+    /// inactive until gear returns (EquipmentStunts.ActiveCards).</summary>
     private InvItem? Socketed(GameSession session, int grid, int socket) =>
         session.Items.FirstOrDefault(i => i.Grid == CharacterService.CardGrid(grid, socket));
 
