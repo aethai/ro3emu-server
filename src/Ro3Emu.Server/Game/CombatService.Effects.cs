@@ -259,9 +259,11 @@ public sealed partial class CombatService
                 foreach (var result in hit.Dsts)
                 {
                     if (!CurrentCaster()) break;
+                    // LC_DamageStatistics._processDamage credits a registered unit only, and a player's ground unit is
+                    // none, so the caster is the source even when the hit shows the unit (inferred).
                     await RecordDamageStatisticAsync(s, new DamageStatistics
                     {
-                        DamageSourceId = hit.SrcID, DamageTargetId = result.DstID, DamageValue = result.Damage,
+                        DamageSourceId = castingRole.Id, DamageTargetId = result.DstID, DamageValue = result.Damage,
                         DamageBeShield = result.SheildDamage, DamageType = result.DamageType, HitResult = result.HitResult, SkillId = hit.SkillId,
                     });
                 }
