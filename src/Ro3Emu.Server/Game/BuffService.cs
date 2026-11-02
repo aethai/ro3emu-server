@@ -61,14 +61,19 @@ public sealed partial class BuffService : IGameTicker
         SleepGroup = 9022, SilenceGroup = 9023, RootGroup = 9024, BlindGroup = 9025, SuperArmorGroup = 9031,
         ControlImmunityGroup = 9032, DebuffImmunityGroup = 9033;
 
-    // Inferred: these exact buff groups are named Stun/Sleep/Silence/Freeze/Invincible; matching
-    // SpecialStatusConfig rows specify forbidden actions. No general category interpreter was recovered.
+    // Inferred: these exact buff groups are named Stun/Sleep/Silence/Frozen/Petrify/Root/Knock-Up/Invincible; matching
+    // SpecialStatusConfig rows (_kName 眩晕/睡眠/沉默/冰冻/石化/定身/击飞/无敌) specify forbidden actions, applied as the
+    // data gives them. No general category interpreter was recovered. Group 12003 (category 24, applied by no skill)
+    // carries no state: skills freeze through Frozen 9020.
     private static int StateFor(int buffGroup, bool guardianOwned) => buffGroup switch
     {
         StunGroup => 18, // Stun
         SleepGroup => 19, // Sleep
         SilenceGroup => 20, // Silence
-        12003 => 11,
+        FreezeGroup => 11, // Frozen
+        PetrifyGroup => 12, // Petrify
+        RootGroup => 21, // Root (Immobilize)
+        KnockUpGroup => 3, // Knock-Up -> FlyHit
         9034 => 25,
         49090 => 66, // Blessing of Light (4909001): SpecialStatusConfig 66 光明庇护, _kForbidden [10] (inferred pairing)
         _ => guardianOwned ? GuardianStateFor(buffGroup) : 0,
@@ -79,10 +84,6 @@ public sealed partial class BuffService : IGameTicker
     /// until each state is established and tested for every source.</summary>
     private static int GuardianStateFor(int buffGroup) => buffGroup switch
     {
-        KnockUpGroup => 3, // Knock-Up -> FlyHit
-        FreezeGroup => 11, // Freeze
-        PetrifyGroup => 12, // Petrify
-        RootGroup => 21, // Root
         SuperArmorGroup => 22, // Super Armor
         ControlImmunityGroup => 23, // Control immunity
         DebuffImmunityGroup => 24, // Debuff immunity
@@ -228,7 +229,8 @@ public sealed partial class BuffService : IGameTicker
         AddSupportAsync(unit, configId, durationMs, sourceId);
 
     /// <summary>Apply or refresh a timed WorldUnit buff. BuffConfig._iBuffID, _iMultiSource and _kChangeAttri
-    /// are verified data fields; applying player-like stacking and replacing the shield on refresh are inferred.</summary>
+    /// are verified data fields; applying player-like stacking and replacing the shield on refresh are inferred. A control
+    /// group carries its state from any source, as on a player (<see cref="StateFor"/>).</summary>
     public async Task AddSupportAsync(WorldUnit unit, int configId, int durationMs, long sourceId, long shieldAmount = 0,
         double attributeMultiplier = 1, bool guardianOwned = false)
     {
@@ -256,7 +258,7 @@ public sealed partial class BuffService : IGameTicker
             MonsterService.NowMs + durationMs, durationMs,
             [.. GameData.Pairs(row, "_kChangeAttri").Select(c => (c.Id, c.Value * pile * attributeMultiplier))], sourceId, pile,
             ShieldRemaining: Math.Max(0, shieldAmount), IsGuardianOwned: guardianOwned,
-            StateOrdinal: guardianOwned ? StateFor(group, true) : 0);
+            StateOrdinal: StateFor(group, guardianOwned));
         if (existing != null) list.Remove(existing);
         list.Add(buff);
         TrackPeriodic(null, unit, buff);

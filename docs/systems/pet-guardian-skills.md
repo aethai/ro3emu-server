@@ -45,11 +45,11 @@ Guardians brought rules the shared combat code did not have. Each applies only w
 ordinary skills, monsters and equipment behave as they did before. A buff placed by a guardian is marked guardian-owned
 (`BuffService.AddGuardianAsync`); only such a buff:
 
-- carries the further control states (knock-up, freeze, petrify, root, super armour, control and debuff immunity,
-  stealth's special status). Hiding itself is every source's (skill-protocol.md, "Hiding and detection"). Stun, sleep, silence and the other states ordinary buffs already showed are unchanged;
+- carries super armour, control and debuff immunity and stealth's special status. Hiding itself is every source's
+  (skill-protocol.md, "Hiding and detection"). Knock-up, freeze, petrify, root, stun, sleep and silence are every
+  source's control states (skill-buffs.md);
 - limits a blinded player's or monster's sight to the blind radius;
 - changes a monster's attack, defence, hit, crit, cast speed, movement speed and damage taken or dealt;
-- breaks on a hit (freeze, petrify, sleep);
 - feeds healing done/received, SP cost and the variable chant. A player's chant is otherwise the configured fixed
   plus variable time, as before.
 
