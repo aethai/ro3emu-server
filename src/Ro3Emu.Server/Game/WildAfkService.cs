@@ -215,6 +215,7 @@ public sealed class WildAfkService : IGameTicker
             Restore(state, now);
             state.AccountedAtMs = Math.Max(state.AccountedAtMs, state.DailyEpoch * 1000);
         }
+        long minute = state.ConsumedTodaySeconds / 60;
         if (running) consumed = ConsumeUntil(state, now);
         state.AccountedAtMs = Math.Max(state.AccountedAtMs, now);
         if (info.HighMultiplierTimeSeconds <= 0)
@@ -230,7 +231,9 @@ public sealed class WildAfkService : IGameTicker
         Save(s);
         if (!publish) return; // Disconnected sockets must not interrupt durable accounting or world cleanup.
         if (consumed > 0) await _tasks.OnBonusTimeConsumedAsync(s, consumed); // Connect target 106014
-        if ((reset || consumed > 0 || PendingDailyAward(state, s.Daily, s.Tasks, s.DailyRows))
+        // (inferred) The [106901] quests (500130 [106901,3600], 386060 [106901,300]) need and show whole minutes. Settling
+        // every consumed second wrote the quest blob and sent 5027 once a second for each player with Bonus Time running.
+        if ((reset || state.ConsumedTodaySeconds / 60 != minute || PendingDailyAward(state, s.Daily, s.Tasks, s.DailyRows))
             && s.Tasks != null && s.DailyReady) await _tasks.RefreshAsync(s);
         await SyncAsync(s);
         if (info.IsSuspended && reason.Length > 0 && reason != state.LastReason)

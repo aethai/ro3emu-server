@@ -225,9 +225,6 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.False(await State(bot, s => s.WildAfk!.Info.IsSuspended));
         await Task.Delay(1200);
         Assert.InRange(await Query(bot), 3597, 3599);
-        var progress = await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
-            x => x.Infos.TryGetValue(500130, out var q) && q.Inc?.CompleteNum?.All?.Value.Any(n => n > 0) == true);
-        Assert.NotNull(progress);
 
         await OnOwnedLoop(bot, "AFK snapshot fixture", _ =>
         {
@@ -352,6 +349,45 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Query(bot);
         await OnLoop(() => Service<TaskService>().RefreshAsync(Session(bot)));
         Assert.Equal(40, await State(bot, s => s.Progress!.Currency.GetValueOrDefault(5)));
+    }
+
+    [ClientDataFact]
+    public async Task BonusSecondsRewriteTheDailyQuestOnlyWhenAWholeMinutePasses()
+    {
+        await using var bot = await InWorld();
+        await Eligible(bot);
+        await Warp(bot, 10111);
+        await Auto(bot, true);
+        await Kill(bot);
+        long role = (long)bot.Self!.Uuid;
+        long Stored() => DBTaskInfo.Parser.ParseFrom(Service<RoleStore>().LoadTasks(role)!).Infos[500130].CompleteNum[0];
+        void Running(long consumedToday, long elapsedMs)
+        {
+            var s = Session(bot).WildAfk!;
+            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            s.ConsumedTodaySeconds = consumedToday;
+            s.Info.HighMultiplierTimeSeconds = 3000; s.Info.IsSuspended = false;
+            s.LastKillAtMs = now; s.AccountedAtMs = now - elapsedMs; s.RemainderMs = 0;
+        }
+        await OnOwnedLoop(bot, "AFK minute fixture", _ =>
+        {
+            Running(120, 0);
+            return Service<TaskService>().RefreshAsync(Session(bot));
+        });
+        long written = Stored();
+        Assert.InRange(written, 120, 121);
+
+        await OnOwnedLoop(bot, "AFK seconds fixture", _ => { Running(written, 5000); return Task.CompletedTask; });
+        await Query(bot);
+        Assert.True(await State(bot, s => s.WildAfk!.ConsumedTodaySeconds) >= written + 5);
+        Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
+        Assert.Equal(written, Stored());
+
+        await OnOwnedLoop(bot, "AFK next minute fixture", _ => { Running(179, 2000); return Task.CompletedTask; });
+        await Query(bot);
+        await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
+            x => x.Infos.TryGetValue(500130, out var q) && q.Inc?.CompleteNum?.All?.Value.Any(n => n >= 180) == true);
+        Assert.True(Stored() >= 180);
     }
 
     [ClientDataFact]
