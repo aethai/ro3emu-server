@@ -376,6 +376,46 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Equal(10_000, howl.Buffs.Single(b => b.ConfigId == 1332501).Duration);
     }
 
+    // The client hides pendants by itself only on a system mount (LC_System_Pendant._onDoPendantMountState,
+    // IsRideSystemMount), so a ridden wolf must be hidden here, or it follows its own rider.
+    [ClientDataFact]
+    public async Task TheRiddenWolfDoesNotAlsoFollowItsRider()
+    {
+        const int WolfPendant = 54001;
+        await using (var a = await InWorld("Alice"))
+        await using (var b = await InWorld("Bob"))
+        {
+            await Become("alice", 3400, 99, 13310);
+            Assert.Equal(0, await LeaseAsync(a, Wolf));
+            Assert.False(Pendant().IsHide);
+
+            await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+            Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+            foreach (var bot in new[] { a, b })
+                await Next(bot, WorldEffectsService.Pendant, PendantUpdate.Parser,
+                    p => p.EntityID == (long)a.Self!.Uuid && p.PendantInfo.TryGetValue(WolfPendant, out var d) && d.IsHide);
+            Assert.True(Pendant().IsHide);
+
+            await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OffBattle });
+            Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+            foreach (var bot in new[] { a, b })
+                await Next(bot, WorldEffectsService.Pendant, PendantUpdate.Parser,
+                    p => p.EntityID == (long)a.Self!.Uuid && p.PendantInfo.TryGetValue(WolfPendant, out var d) && !d.IsHide);
+            Assert.False(Pendant().IsHide);
+
+            await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+            Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        }
+        await using var again = await InWorld("Alice", create: false);
+        Assert.True(Pendant().IsHide); // the entity a viewer and a relogged rider get
+
+        PendantData Pendant()
+        {
+            var entity = new EntityBase();
+            CareerSpecialService.PopulateEntity(Session("alice"), entity);
+            return entity.PendantInfo[WolfPendant];
+        }
+    }
     // Riding (Crusader): SpecialEffectConfig 16120051 [17, 2, 1131, 500], "increase Movement Speed by 5% while mounted".
     [ClientDataFact]
     public async Task RidingAddsItsMovementSpeedOnlyWhileAPecoIsRidden()

@@ -5,6 +5,8 @@ using Romsg;
 using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Tests;
@@ -303,6 +305,86 @@ public sealed class LifeJobTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.LifeRequirements, await OnLoop("alice", s => life.CheckGather(s, 100300))); // Mining 5
         var saved = DBLifeJobInfo.Parser.ParseFrom(_app.Services.GetRequiredService<RoleStore>().LoadLifeJob((long)b.Self!.Uuid)!);
         Assert.True(saved.LifeJobInfoMap[1].GatherInfo.ItemDetails.ContainsKey(100200));
+    }
+
+    /// <summary>
+    /// #bug-reports "Any Life Skill level 2 and above didn't get any item reward except EXP". From Lv. 2 up every
+    /// LifeDropConfig row of a resource has a level condition and no cost, so the client shows no unlock button
+    /// (UI_Sys_Life_ProductItemWidgetCtrl m_kGetIsShowButton): the server unlocks them with the level.
+    /// </summary>
+    [ClientDataTheory]
+    [InlineData(100100, 1, 1)]
+    [InlineData(100200, 1, 3)]
+    [InlineData(100300, 1, 5)]
+    [InlineData(100400, 1, 7)]
+    [InlineData(300100, 5, 1)]
+    [InlineData(300200, 5, 3)]
+    [InlineData(300300, 5, 5)]
+    [InlineData(300400, 5, 7)]
+    public async Task EveryGatheringTierYieldsItsMainDropAtItsLevel(int collection, int job, int level)
+    {
+        await using var b = await InWorld("Alice"); Assert.Equal(0, await Learn(b, "alice", job, 1));
+        var life = _app.Services.GetRequiredService<LifeJobService>();
+        var data = _app.Services.GetRequiredService<GameData>();
+        var mainItems = new LifeCollectionConfig(data.Row("LifeCollectionConfig", collection)!.Value).DropId
+            .Select(id => new LifeDropConfig(data.Row("LifeDropConfig", id)!.Value)).Where(d => d.IsMain == 1)
+            .SelectMany(d => d.ItemId).ToHashSet();
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
+            using var gate = await CharacterService.Lock(s);
+            s.LifeJob!.LifeJobInfoMap[job].JobLevel = level;
+            // The first gather of the first tier is what brings the level's unlocks in.
+            Assert.Equal(0, await life.CompleteGatherAsync(s, job == 1 ? 100100 : 300100));
+            long before = s.Items.Where(i => mainItems.Contains(i.Entry)).Sum(i => (long)i.Stack);
+            Assert.Equal(0, await life.CompleteGatherAsync(s, collection));
+            Assert.True(s.Items.Where(i => mainItems.Contains(i.Entry)).Sum(i => (long)i.Stack) > before,
+                $"Collection {collection} at level {level} paid no main drop");
+        });
+    }
+
+    /// <summary>A character that earned the resource before the fix has it in ItemDetails and none of its drops.</summary>
+    [ClientDataFact]
+    public async Task EarlierCharacterGetsItsEarnedDropsAtLogin()
+    {
+        long role;
+        await using (var b = await InWorld("Alice"))
+        {
+            role = (long)b.Self!.Uuid; Assert.Equal(0, await Learn(b, "alice", 1, 1));
+            await OnLoop("alice", s =>
+            {
+                s.LifeJob!.LifeJobInfoMap[1].JobLevel = 3;
+                s.LifeJob.LifeJobInfoMap[1].GatherInfo.ItemDetails[100200] = 1;
+                var store = _app.Services.GetRequiredService<RoleStore>();
+                store.SaveLifeJob(role, s.LifeJob.ToByteArray(), s.Restrictions!.ToByteArray(),
+                    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(s.LifeRuntime));
+                return 0;
+            });
+        }
+        await using var again = await InWorld("Alice", false);
+        var sync = await Next(again, LifeJobService.LifeSync, DBLifeJobInfoIncrement.Parser);
+        foreach (long drop in new long[] { 122, 123, 124, 121, 116 }) Assert.True(sync.LifeJobUnLockDrop.ContainsKey(drop), $"drop {drop}");
+        Assert.False(sync.LifeJobUnLockDrop.ContainsKey(132)); // Mining 5
+        var saved = DBLifeJobInfo.Parser.ParseFrom(_app.Services.GetRequiredService<RoleStore>().LoadLifeJob(role)!);
+        Assert.True(saved.LifeJobUnLockDrop.ContainsKey(122));
+    }
+
+    /// <summary>What a gathered drop and a crafted recipe pay comes from AwardConfig groups: none may resolve to nothing.</summary>
+    [ClientDataFact]
+    public async Task EveryLifeDropAndRecipeOutputResolvesToAnAward()
+    {
+        await using var b = await InWorld("Alice");
+        var data = _app.Services.GetRequiredService<GameData>();
+        var awards = _app.Services.GetRequiredService<AwardService>();
+        var seasons = _app.Services.GetRequiredService<SeasonService>();
+        var groups = data.Table("LifeDropConfig").Values.Select(r => new LifeDropConfig(r).MultiGroupIdId)
+            .Concat(data.Table("LifeFormulaConfig").Values.SelectMany(r => r.GetProperty("_iSuccessOutput").EnumerateArray()
+                .Select(o => o[2].GetInt64()))).Distinct().ToArray();
+        await OnLoop("alice", s =>
+        {
+            foreach (long group in groups) Assert.True(awards.Resolve(s, group, seasons.PlayBook).Grants.Count > 0, $"group {group}");
+            return 0;
+        });
     }
 
     [ClientDataTheory]

@@ -350,6 +350,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
 
     /// <summary>The leased items' PendantConfig ids (EntityBase.pendantInfo), derived from <see cref="CareerSpecial"/>.</summary>
     public int[] CareerPendants { get; set; } = [];
+    public int CareerMountPendant { get; set; }
     public Romsg.DBWardRobeInfo? Wardrobe { get; set; }
     public Romsg.DBTotemInfo? Totems { get; set; }
     public string TotemRefineEpoch { get; set; } = "";
