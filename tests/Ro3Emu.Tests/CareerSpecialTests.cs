@@ -455,6 +455,31 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         await AssertChargedAsync(a, target, 1333011, 13330113, 80);
     }
 
+    // The wheel a rider is sent differs from the saved one, and the client names the slot by the row it shows.
+    [ClientDataFact]
+    public async Task TheBarCanBeEditedWhileTheWheelShowsTheMountsAttack()
+    {
+        const int WargStrike = 1003201;
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310);
+        Assert.Equal(0, await LeaseAsync(a, Wolf));
+        await a.SendGameAsync(GmCommands.GeneralProcGm, new GeneralGMProcReq { GmType = (GmOpEnum)173, ParamString = "2110120" }); // a bow: key 110
+        await Next(a, GmCommands.GeneralProcGm, GeneralGMProcRsp.Parser);
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        var riding = await Next(a, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.CurrentAtkSkillId == WargStrike);
+        int slot = riding.SkillWheel.Inc.WhellSkills.First(kv => kv.Value.Inc?.SkillConfigId == WargStrike).Key;
+        var shown = Ro3Emu.Server.Data.Config.SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), WargStrike)!.Value;
+
+        await a.SendGameAsync(SkillService.SkillLoad, new SkillLoadReq
+        {
+            OpType = SkillLoadOperation.SkillLoadOpUnload, IsManual = true, SocketNum = slot - 1,
+            Info = new SkillData { SkillId = (int)shown.SkillId, SkillLevel = (int)shown.Level }
+        });
+        Assert.Equal(0, (await Next(a, SkillService.SkillLoad, SkillLoadResp.Parser)).Result);
+        Assert.False(_app.Services.GetRequiredService<SkillService>().Build(Session("alice")).SkillWheel.WhellSkills.ContainsKey(slot));
+    }
+
     // Lua_CFG_JobAttackConfig._getData: the Ranger's rows name no weapon but a bow and bare hands, and a weapon without a row has no attack to read.
     [ClientDataFact]
     public async Task AWeaponTheTableDoesNotNameKeepsTheCareersAttack()
