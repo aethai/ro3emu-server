@@ -440,6 +440,9 @@ public sealed partial class CharacterService
             ItemGuid = item.Guid, ItemEntry = item.Entry, Stack = item.Stack, IsLocked = item.IsLocked,
             ItemBindInfo = new ItemBindInfo { ItemBindType = (ItemBindType)item.BindType, ExpireTimeStamp = item.BindExpire },
         };
+        // A seasonal item with no season reads "This item has expired" (LC_ItemHelper.GetIsSeasonItemValid). Nothing lapses
+        // here (all content stays open), so it belongs to the current season (inferred).
+        if (Data.Config.ItemConfig.Get(data, item.Entry) is { SeasonResetType: not 0 }) info.Season = seasons.SeasonId;
         info.ItemInfos[AttrSetUpSource] = new ItemAttrValue { LongVal = 0 };
         if (IsEquipment(item.Entry)) info.ItemInfos[AttrAppraise] = new ItemAttrValue { LongVal = IsAppraised(item) ? 1 : 0 };
         if (item.Attrs != null)
