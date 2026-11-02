@@ -238,19 +238,32 @@ public sealed class DbWriterFaultTests : IDisposable
     {
         var metrics = new DbAccessMetrics();
         using var hold = new ManualResetEventSlim();
+        using var reached = new ManualResetEventSlim();
         using var writer = new DbWriter($"Data Source={Database}", metrics)
         {
+            // A budget the group never reaches: its size must not depend on how fast this machine runs the jobs.
+            MaxGroupExecution = TimeSpan.FromMinutes(5),
             // The last job of the group holds the group's commit: an earlier job must not complete before it.
-            BeforeCommitForTest = label => { if (label == "test/last") hold.Wait(TimeSpan.FromSeconds(10)); },
+            BeforeCommitForTest = label =>
+            {
+                if (label != "test/last") return;
+                reached.Set();
+                hold.Wait(TimeSpan.FromSeconds(10));
+            },
         };
         Assert.Equal(1, await writer.ExecuteAsync<int>(new Plan("setup", _executed)));
+        using var entered = new ManualResetEventSlim();
         using var gate = new ManualResetEventSlim();
-        var opener = writer.ExecuteAsync<int>(new Plan("opener", _executed, () => gate.Wait(TimeSpan.FromSeconds(10))));
-        await Task.Delay(50);
+        var opener = writer.ExecuteAsync<int>(new Plan("opener", _executed, () =>
+        {
+            entered.Set();
+            gate.Wait(TimeSpan.FromSeconds(10));
+        }));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
         var early = writer.ExecuteAsync<int>(new Plan("early", _executed));
         var last = writer.ExecuteAsync<int>(new Plan("last", _executed));
         gate.Set();
-        await Task.Delay(150);
+        Assert.True(reached.Wait(TimeSpan.FromSeconds(10)));
         Assert.False(early.IsCompleted); // executed, not yet durable: its group waits on "last"
         hold.Set();
         Assert.Equal(1, await early);
