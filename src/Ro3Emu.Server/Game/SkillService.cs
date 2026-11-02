@@ -555,7 +555,7 @@ public sealed partial class SkillService
     private long WeaponKey(GameSession session)
     {
         long SubType(int grid) => session.Items.FirstOrDefault(i => i.Grid == grid) is { } item && _data.Row("ItemConfig", item.Entry) is { } row
-            ? GameData.Int(row, "_iSubType") : 0;
+            ? new ItemConfig(row).SubType : 0;
         long main = SubType(MainHandGrid), off = SubType(ViceHandGrid);
         return (main > 0 ? main : off) * 10 + (main > 0 && main == off ? 1 : 0);
     }

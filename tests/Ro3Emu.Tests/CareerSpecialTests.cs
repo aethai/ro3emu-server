@@ -1,3 +1,4 @@
+using System.Globalization;
 using Google.Protobuf;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -343,7 +344,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         await a.SendGameAsync(GmCommands.GeneralProcGm, new GeneralGMProcReq { GmType = (GmOpEnum)173, ParamString = sword });
         await Next(a, GmCommands.GeneralProcGm, GeneralGMProcRsp.Parser);
         await Become("alice", 3400, 99, 13310);
-        Assert.Contains(Session("alice").Items, item => item.Entry.ToString() == sword && item.Grid == 1); // kept through the job change
+        Assert.Contains(Session("alice").Items, item => item.Entry == long.Parse(sword, CultureInfo.InvariantCulture) && item.Grid == 1); // kept through the job change
         Assert.Equal(0, await LeaseAsync(a, Wolf));
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
