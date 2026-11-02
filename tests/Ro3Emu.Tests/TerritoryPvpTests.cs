@@ -391,7 +391,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
                 return Task.CompletedTask;
             });
             target.LastCombatMs = MonsterService.NowMs;
-            target.StatusBits |= 1L << 15; // This pending-hit assertion excludes unrelated out-of-combat regeneration.
+            target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
         });
@@ -441,7 +441,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetLevelAsync(victimSession, 99, null);
             await Service<CharacterService>().SetHpSpAsync(victimSession, 180, null);
             victimSession.LastCombatMs = MonsterService.NowMs;
-            victimSession.StatusBits |= 1L << 15; // hold off the five-second out-of-combat regen during the overlap fixture
+            victimSession.StatusBits |= 1L << 15;
             victimSession.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             Assert.Equal(180, victimSession.CurrentHp);
             var position = victimSession.Position;
