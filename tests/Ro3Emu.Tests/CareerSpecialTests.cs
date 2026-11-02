@@ -7,6 +7,7 @@ using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Game;
+using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Tests;
 
@@ -277,6 +278,90 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.DoesNotContain(1331001, await BuffsAsync());
         Assert.DoesNotContain(1331201, await BuffsAsync());
         Assert.Equal(walking, await SpeedAsync());
+    }
+
+    // JobAttackConfig 3400 on 1500400: "Normal Attack becomes [Warg Strike]". The client reads its normal attack from the
+    // wheel (the bar's slot and atkSkillId), and only the skill window looks the mount up by itself.
+    [ClientDataFact]
+    public async Task RidingTheWolfMakesWargStrikeTheNormalAttackUntilDismounted()
+    {
+        const int ArrowAttack = 1300001, WargStrike = 1003201;
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310);
+        Assert.Equal(0, await LeaseAsync(a, Wolf));
+        await a.SendGameAsync(GmCommands.GeneralProcGm, new GeneralGMProcReq { GmType = (GmOpEnum)173, ParamString = "2110120" }); // a bow: key 110
+        await Next(a, GmCommands.GeneralProcGm, GeneralGMProcRsp.Parser);
+        Assert.Contains(Session("alice").Items, item => item.Entry == 2110120 && item.Grid == 1);
+
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        var riding = await Next(a, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.CurrentAtkSkillId == WargStrike);
+        Assert.Equal(WargStrike, riding.SkillWheel.Inc.AtkSkillId);
+        Assert.Contains(riding.SkillWheel.Inc.WhellSkills.Values, slot => slot.Inc?.SkillConfigId == WargStrike);
+        Assert.Null(riding.OriginSkillWheel); // unchanged: the client's base map keeps the career's own attack
+
+        // It is sent, not kept in the plans.
+        Assert.NotEqual(WargStrike, Session("alice").SkillPlans!.CurrentAtkSkillId);
+
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OffBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        var walking = await Next(a, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.CurrentAtkSkillId == ArrowAttack);
+        Assert.Equal(ArrowAttack, walking.SkillWheel.Inc.AtkSkillId);
+        Assert.Contains(walking.SkillWheel.Inc.WhellSkills.Values, slot => slot.Inc?.SkillConfigId == ArrowAttack);
+
+        // Accepted while riding, and a relogged rider starts with it.
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        await Next(a, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.CurrentAtkSkillId == WargStrike);
+        var target = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            var alice = Session("alice");
+            return _app.Services.GetRequiredService<MonsterService>().SpawnSingleAsync(alice.SceneEntry, 5000001,
+                new MapPoint(alice.Position.X, alice.Position.Y, alice.Position.Z, 0), alice.InstanceId);
+        });
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = WargStrike, TargetId = target!.Uid });
+        var cast = await Next(a, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, cast.Result);
+        var hit = await Next(a, CombatService.SkillHit, SkillHitInfo.Parser, p => p.SessionId == cast.SessionId);
+        Assert.True(Assert.Single(hit.Dsts).Damage > 0);
+        await a.DisposeAsync();
+        await using var again = await InWorld("Alice", create: false);
+        var relogged = await Next(again, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.SyncAllMark);
+        Assert.Equal(WargStrike, relogged.SkillWheel.All.AtkSkillId);
+        Assert.Contains(relogged.SkillWheel.All.WhellSkills.Values, slot => slot.SkillConfigId == WargStrike);
+        Assert.Contains(relogged.OriginSkillWheel.All.WhellSkills.Values, slot => slot.SkillConfigId == ArrowAttack);
+    }
+
+    // Lua_CFG_JobAttackConfig._getData: the Ranger's rows name no weapon but a bow and bare hands, and a weapon without a row has no attack to read.
+    [ClientDataFact]
+    public async Task AWeaponTheTableDoesNotNameKeepsTheCareersAttack()
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 1100, 99);
+        var sword = _app.Services.GetRequiredService<GameData>().Table("ItemConfig").First(p => p.Value.TryGetProperty("_iSubType", out var sub)
+            && sub.GetInt32() == 2 && p.Value.GetProperty("_iType").GetInt32() == 5).Key;
+        await a.SendGameAsync(GmCommands.GeneralProcGm, new GeneralGMProcReq { GmType = (GmOpEnum)173, ParamString = sword });
+        await Next(a, GmCommands.GeneralProcGm, GeneralGMProcRsp.Parser);
+        await Become("alice", 3400, 99, 13310);
+        Assert.Contains(Session("alice").Items, item => item.Entry.ToString() == sword && item.Grid == 1); // kept through the job change
+        Assert.Equal(0, await LeaseAsync(a, Wolf));
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        await Assert.ThrowsAsync<TimeoutException>(() => a.Inbox.WaitAsync(e => e.IsGame(SkillService.SkillDataSync)
+            && DBSkillDataIncrement.Parser.ParseFrom(e.Body).CurrentAtkSkillId == 1003201, TimeSpan.FromSeconds(1)));
+    }
+
+    // The table's other rows work the same way: a Crusader's Peco has no weapon condition (_kWeaponType empty).
+    [ClientDataFact]
+    public async Task APecoRiderAttacksWithTheMountsAttack()
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 1210, 30, 11407);
+        Assert.Equal(0, await LeaseAsync(a, GrandPeco));
+        await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OnBattle });
+        Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
+        var riding = await Next(a, SkillService.SkillDataSync, DBSkillDataIncrement.Parser, m => m.CurrentAtkSkillId == 1001201);
+        Assert.Equal(1001201, riding.SkillWheel.Inc.AtkSkillId);
     }
 
     // Wolf Taming: "When the Demonic Wolf is not mounted and follows the Ranger, it howls every 30 sec, increasing the
