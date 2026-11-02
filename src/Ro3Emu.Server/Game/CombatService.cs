@@ -639,7 +639,7 @@ public sealed partial class CombatService : IGameTicker
                 && (b.SourceId is >= TowerPetUnit.UidBase and < TowerPetUnit.UidLimit || b.IsGuardianOwned))
             .SelectMany(b => b.Changes).Select(c => (c.Attr, c.Value)), row, sourceElement);
         long beforeShield = damage;
-        damage = await _buffs.AbsorbAsync(target, damage);
+        damage = await _buffs.AbsorbAsync(target, damage, SkillShieldRules.IsMagic(row));
         long shieldDamage = beforeShield - damage;
         if (!ReferenceEquals(target.Role, targetRole) || target.SceneLoading || valid?.Invoke() == false) return null;
         long before = _character.Stats(target)[2000];

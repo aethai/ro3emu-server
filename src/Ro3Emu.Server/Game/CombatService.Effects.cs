@@ -236,7 +236,7 @@ public sealed partial class CombatService
                     foreach (var tuple in Tuples(row, "_kBuff1"))
                         if (CanApplyMoreEffects() && RollBuff(tuple, out int id, out int duration)
                             && SkillBuffAllowed?.Invoke(s, recipient, id) != false)
-                            await _buffs.AddAsync(recipient, id, duration, castingRole.Id);
+                            await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);
                 if (friendly && damage)
                 {
                     double multiplier = Numbers(row, "_kDamageParam1").FirstOrDefault(), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
@@ -738,7 +738,8 @@ public sealed partial class CombatService
         await _world.AddUnitAsync(unit);
         if (!CurrentCastMap(s, action)) { await RemoveSkillObjectAsync(unit); return true; }
         foreach (var tuple in Tuples(row, "_kBuff1"))
-            if (RollBuff(tuple, out int buffId, out int buffDuration)) await _buffs.AddAsync(s, buffId, buffDuration, s.Role.Id);
+            if (RollBuff(tuple, out int buffId, out int buffDuration))
+                await ApplySkillBuffAsync(_character.Stats(s), s, buffId, buffDuration, s.Role.Id);
         return true;
     }
 
