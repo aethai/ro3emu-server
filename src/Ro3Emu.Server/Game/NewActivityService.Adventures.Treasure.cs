@@ -39,16 +39,19 @@ public sealed partial class NewActivityService
         if (item == null || item.Entry is not (1112001 or 1112002) || item.Stack < 1 || item.IsLocked)
             return ErrorCodes.ItemMissing;
         var cursor = session.ActivityRuntime.AdventureTreasure;
-        if ((cursor.PointId != 0 && Now < cursor.Began + 10800) || cursor.PendingMonsterAward != 0)
-            return ErrorCodes.TaskExists;
+        // ItemUseResp has no parameter, so TaskExists would show its text's raw "${1}".
+        if (cursor.PendingMonsterAward != 0) return ErrorCodes.ItemCannotBeUsed;
+        if (cursor.PointId != 0 && Now < cursor.Began + 10800)
+            return _scene.TreasurePoint(cursor.PointId)?.Scene == session.SceneEntry
+                ? ErrorCodes.ItemCannotBeUsed : ErrorCodes.TreasurePointNotOnMap;
+        // LC_System_SeasonTreasure.StartHunt paths only on the current map and the client shows nothing else,
+        // so a point elsewhere would spend the map without a sign. Refusing here is (inferred).
         var points = _data.Table("TreasureHuntMapPointConfig").Values
-            .Where(r => GameData.Int(r, "_iId") > 0 && _scene.TreasurePoint(GameData.Int(r, "_iId")) != null
-                && (item.Entry == 1112002 ? GameData.Int(r, "_iId") >= 2000 : GameData.Int(r, "_iId") < 2000))
+            .Where(r => GameData.Int(r, "_iId") > 0 && GameData.Int(r, "_iMapId") == session.SceneEntry
+                && _scene.TreasurePoint(GameData.Int(r, "_iId")) != null)
             .OrderBy(r => GameData.Int(r, "_iId")).ToArray();
-        if (points.Length == 0) return ErrorCodes.FeatureUnavailable;
-        var local = points.Where(r => GameData.Int(r, "_iMapId") == session.SceneEntry).ToArray();
-        var pool = local.Length > 0 ? local : points;
-        var chosen = pool[Random.Shared.Next(pool.Length)];
+        if (points.Length == 0) return ErrorCodes.TreasurePointNotOnMap;
+        var chosen = points[Random.Shared.Next(points.Length)];
         var runtime = CloneRuntime(session);
         runtime.AdventureTreasure = new AdventureTreasureCursor
         {

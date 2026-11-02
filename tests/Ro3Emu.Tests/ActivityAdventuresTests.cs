@@ -660,6 +660,61 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task TreasureMapStartsOnlyWhereTheClientCanPathToItsPoint()
+    {
+        var window = _app.Services.GetRequiredService<ActivityClock>()
+            .Segments(1017, _clock.GetUtcNow().ToUnixTimeSeconds()).Single();
+        _clock.Set(window.Start + 60);
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99");
+        await Gm("alice", "!item 1112001 2");
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice");
+        long guid = session.Items.Single(i => i.Entry == 1112001).Guid;
+        async Task<int> Use()
+        {
+            await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
+            return (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result;
+        }
+
+        // Prontera has no TreasureHuntMapPointConfig row. LC_System_SeasonTreasure.StartHunt paths only on the current map.
+        await Gm("alice", "!warp 10100");
+        Assert.Equal(ErrorCodes.TreasurePointNotOnMap, await Use());
+        Assert.Equal(0, session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(2, session.Items.Single(i => i.Guid == guid).Stack);
+
+        await Gm("alice", "!warp 10110");
+        Assert.Equal(0, await Use());
+        long point = session.ActivityRuntime.AdventureTreasure.PointId;
+        var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(point);
+        Assert.Equal(10110, target!.Value.Scene);
+
+        // ItemUseResp has no parameter, so a parameterized text would show its raw placeholder.
+        Assert.Equal(ErrorCodes.ItemCannotBeUsed, await Use());
+        await Gm("alice", "!warp 10100");
+        Assert.Equal(ErrorCodes.TreasurePointNotOnMap, await Use());
+        Assert.Equal(point, session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(1, session.Items.Single(i => i.Guid == guid).Stack);
+    }
+
+    [ClientDataFact]
+    public async Task RareTreasureMapHuntsOnTheCurrentMapToo()
+    {
+        var window = _app.Services.GetRequiredService<ActivityClock>()
+            .Segments(1017, _clock.GetUtcNow().ToUnixTimeSeconds()).Single();
+        _clock.Set(window.Start + 60);
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99");
+        await Gm("alice", "!item 1112002 1");
+        await Gm("alice", "!warp 10110");
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice");
+        await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq
+        { ItemGuid = session.Items.Single(i => i.Entry == 1112002).Guid, ItemCount = 1 });
+        Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
+        var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(10110, target!.Value.Scene);
+    }
+
+    [ClientDataFact]
     public async Task TreasureShortcutUsesCommonValidationCooldownAndReplyContract()
     {
         var window = _app.Services.GetRequiredService<ActivityClock>()
