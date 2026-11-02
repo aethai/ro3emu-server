@@ -281,10 +281,13 @@ public sealed partial class CombatService
         await viewer.SendGameAsync(BossAllSkillCds, response);
     }
 
-    /// <summary>Clear scene-scoped target and boss presentation when the scene changes.</summary>
+    /// <summary>Clear scene-scoped target and boss presentation when the scene changes. The 31133 pause ends with it:
+    /// LC_System_DamageStatistics._onSwitchScene resumes the client's own count without a request, and
+    /// UI_Sys_GVE_ExitMenu_PauseWidgetBaseCtrl.OnOpen shows Resume again (inferred: the pause is per scene).</summary>
     public async Task ClearSceneSkillProtocolAsync(GameSession viewer)
     {
         viewer.SkillProtocol.SkillSelection.Clear();
+        viewer.SkillProtocol.TrainingPaused = false;
         if (viewer.Role != null) await viewer.SendGameAsync(BossClearSkillCds, new BossClearAllSkillShowCdNotify());
     }
 

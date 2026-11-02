@@ -262,7 +262,8 @@ public sealed partial class CardService
         if (error == 0) await NotifySocketsChangedAsync(session);
     }
 
-    /// <summary>The worn item of a grid left: its cards stay in the grid's sockets (they belong to the grid, spec §2.3).</summary>
+    /// <summary>The worn item of a grid left: its cards stay in the grid's sockets (they belong to the grid, spec §2.3),
+    /// inactive until gear returns (EquipmentStunts.ActiveCards).</summary>
     private InvItem? Socketed(GameSession session, int grid, int socket) =>
         session.Items.FirstOrDefault(i => i.Grid == CharacterService.CardGrid(grid, socket));
 
@@ -753,7 +754,9 @@ public sealed partial class CardService
         if (!changed) return;
         SaveLibrary(session);
         var attachment = session.Attachment;
-        _loop.TrackLegacyDetached("card library sync", () =>
+        // The library is already committed. Publishing its snapshot needs no realm-wide reservation, and every card sight or
+        // Codex kill would otherwise queue one realm waiter behind unrelated role work.
+        _loop.TrackRuntimeDetached("card library sync", () =>
             attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)
                 ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Library.Clone()));
     }
@@ -792,7 +795,7 @@ public sealed partial class CardService
             {
                 session.Library = next;
                 if (attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
-                    _loop.TrackLegacyDetached("card library sync", () =>
+                    _loop.TrackRuntimeDetached("card library sync", () =>
                         attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)
                             ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone()));
             });
