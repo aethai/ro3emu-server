@@ -149,7 +149,7 @@ public sealed class LifeJobTests : IAsyncLifetime
             Assert.True(reply.OutputItemMap[1].Items.Where(i => i.ItemEntry is 1001101 or 1001201).Sum(i => i.Stack) >= 2);
             Assert.All(reply.OutputItemMap[1].Items, i => { Assert.NotEqual(112001, i.ItemEntry); Assert.True(i.ItemGuid > 0); });
             var state = await OnLoop("alice", s => (s.LifeJob!.Clone(), s.Restrictions!.Clone(), s.Items.Where(i => i.Entry == 1293022).Sum(i => i.Stack)));
-            Assert.Equal(2, state.Item1.LifeJobInfoMap[2].JobLevel); Assert.Equal(149, state.Item1.LifeJobInfoMap[2].JobExp);
+            Assert.Equal(1, state.Item1.LifeJobInfoMap[2].JobLevel); Assert.Equal(150, state.Item1.LifeJobInfoMap[2].JobExp);
             Assert.Equal(480, state.Item2.RestrictCount[1004].Count); Assert.Equal(8, state.Item3);
             await b.SendGameAsync(LifeJobService.StartForge, new StartForgeReq { ItemUniqueId = 20001, ItemNum = 1 });
             Assert.NotEqual(0, (await Next(b, LifeJobService.StartForge, StartForgeResp.Parser)).Result);
@@ -160,7 +160,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         Assert.True(life.SyncAllMark); Assert.Equal(2, life.ActiveLifejob[2].All);
         var job = life.LifeJobInfoMap[2].All;
         Assert.True(job.BuildInfo.RecipeList[20001]); Assert.NotNull(job.TitleInfo); Assert.NotNull(job.GatherInfo);
-        Assert.Equal(149, job.JobExp);
+        Assert.Equal(150, job.JobExp);
         var persisted = DBRestrictInfo.Parser.ParseFrom(_app.Services.GetRequiredService<RoleStore>().LoadLifeRestrict(role)!);
         Assert.Equal(480, persisted.RestrictCount[1004].Count);
     }
@@ -341,6 +341,36 @@ public sealed class LifeJobTests : IAsyncLifetime
             Assert.True(s.Items.Where(i => mainItems.Contains(i.Entry)).Sum(i => (long)i.Stack) > before,
                 $"Collection {collection} at level {level} paid no main drop");
         });
+    }
+
+    /// <summary>
+    /// A level row holds what it takes to reach that level: the client asks row level + 1 for its bar
+    /// (LC_LifeJobHelper.GetLevelNextNeedEXP) and for the gate (CheckJobLevelUpCondition). Miner: Lv. 2 takes 5000 EXP and
+    /// base level 40, Lv. 3 takes 15000 and base level 50.
+    /// </summary>
+    [ClientDataFact]
+    public async Task LifeLevelRowsHoldWhatItTakesToReachThem()
+    {
+        await using var b = await InWorld("Alice");
+        await Gm("alice", "!lvl 39");
+        Assert.Equal(0, await Learn(b, "alice", 1, 1));
+        var life = _app.Services.GetRequiredService<LifeJobService>();
+        async Task<(long Level, long Exp)> Gather(long exp) => await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
+            using var gate = await CharacterService.Lock(s);
+            s.LifeJob!.LifeJobInfoMap[1].JobExp = exp;
+            Assert.Equal(0, await life.CompleteGatherAsync(s, 100100));
+            return (s.LifeJob.LifeJobInfoMap[1].JobLevel, s.LifeJob.LifeJobInfoMap[1].JobExp);
+        });
+
+        Assert.Equal((1L, 220L), await Gather(0));
+        Assert.Equal(1L, (await Gather(5000)).Level); // below base level 40
+        await Gm("alice", "!lvl 40");
+        Assert.Equal(2L, (await Gather(4000)).Level); // the raised base level let the kept EXP through
+        Assert.Equal(2L, (await Gather(14000)).Level);
+        await Gm("alice", "!lvl 50");
+        Assert.Equal((3L, 219L), await Gather(14999));
     }
 
     /// <summary>A character that earned the resource before the fix has it in ItemDetails and none of its drops.</summary>
