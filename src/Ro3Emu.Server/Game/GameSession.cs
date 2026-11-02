@@ -356,6 +356,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     public string TotemRefineEpoch { get; set; } = "";
     public Romsg.DBGenre? Genre { get; set; }
     public Romsg.DBSkillData? SkillPlans { get; set; }
+    /// <summary>The normal attack the last skill sync put on the wheel for the ridden battle mount (0 for the career's own).</summary>
+    internal int WheelMountAttack { get; set; }
     public DateTime TotemSwitchUtc { get; set; }
     /// <summary>5063 personal pre-buy counters and joined auction history.</summary>
     public Romsg.DBAuction? Auction { get; set; }
