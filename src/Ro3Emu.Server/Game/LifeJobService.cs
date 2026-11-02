@@ -238,7 +238,7 @@ public sealed partial class LifeJobService
             if (!next.LifeJobInfoMap.TryGetValue(job, out var known) || known.JobLevel == 0) next.LifeJobInfoMap[job] = NewJob(job);
             // (inferred) Free, condition-zero gathering entries are the initial profession curriculum.
             foreach (var c in _data.Table("LifeCollectionConfig").Values.Where(c => Current(c) && GameData.Int(c, "_iJobId") == job && GameData.Int(c, "_iCondition") == 0))
-                UnlockCollection(next, c);
+                UnlockCollection(s, next, c);
             UnlockEarnedCollections(s, next); // a profession learned again keeps the resources its level earned
             if (await CommitAsync(s, "cd13c/life-switch", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
                 result: new { Job = job, Slot = req.OpJobType }) == null)
@@ -300,7 +300,7 @@ public sealed partial class LifeJobService
             if (s.LifeJob!.LifeJobInfoMap[job].GatherInfo.ItemDetails.ContainsKey(req.CollectionID)) error = ErrorCodes.LifeCollectionLearned;
             else
             {
-                var next = s.LifeJob.Clone(); UnlockCollection(next, row.Value);
+                var next = s.LifeJob.Clone(); UnlockCollection(s, next, row.Value);
                 await CommitAsync(s, "cd13c/life-collection", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), [], [],
                     result: new { Collection = req.CollectionID });
             }
@@ -308,12 +308,10 @@ public sealed partial class LifeJobService
         await s.SendGameAsync(StudyCollection, new StudyCollectionResp { Result = error });
     }
 
-    private void UnlockCollection(DBLifeJobInfo next, JsonElement collection)
+    private void UnlockCollection(GameSession s, DBLifeJobInfo next, JsonElement collection)
     {
         next.LifeJobInfoMap[GameData.Int(collection, "_iJobId")].GatherInfo.ItemDetails[GameData.Int(collection, "_iCollectionId")] = 1;
-        foreach (long id in Numbers(collection, "_iDropId"))
-            if (_data.Row("LifeDropConfig", id) is { } drop && GameData.Int(drop, "_iCondition") == 0 && Costs(drop, "_kUnlockcost").Count == 0)
-                next.LifeJobUnLockDrop[id] = 1;
+        UnlockEarnedDrops(s, next, collection);
     }
 
     public async Task LearnDropAsync(GameSession s, StudyCollectionDropReq req)
