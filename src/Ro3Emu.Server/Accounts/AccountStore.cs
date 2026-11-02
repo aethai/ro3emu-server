@@ -26,6 +26,19 @@ public sealed partial class AccountStore : IDisposable
     private readonly Lazy<DbReadPool> _readers;
     private readonly Game.GameLoop? _loop;
     private readonly ILogger<AccountStore>? _log;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _standingEconomyIssues = new();
+
+    /// <summary>Stored rows the economy decoder could not read, each logged once: operations go on without them, so this is
+    /// what tells the operator (EconomyEnvelopePlan).</summary>
+    internal int StandingEconomyIssues => _standingEconomyIssues.Count;
+
+    internal void ReportStandingEconomyIssue(EconomyIssue issue)
+    {
+        if (_standingEconomyIssues.TryAdd(issue.Key, 0) && _log != null) LogStandingEconomyIssue(_log, issue.Key, issue.Kind, issue.Detail);
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Economy decoder cannot read the stored row {Key} ({Kind}): {Detail}. Its value is left out of economy checks until it is repaired.")]
+    private static partial void LogStandingEconomyIssue(ILogger logger, string key, EconomyIssueKind kind, string detail);
     private readonly object _runtimeGate = new();
     private bool _disposed;
     private int _failNextEconomyAcknowledgementForTest;

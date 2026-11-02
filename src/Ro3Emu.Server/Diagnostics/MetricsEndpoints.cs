@@ -24,7 +24,7 @@ public static class MetricsEndpoints
             {
                 snapshots = accounts.Snapshots.Snapshot(), skippedWrites = accounts.Snapshots.SkippedWrites,
                 positions = positions.Snapshot(), settings = settings.Snapshot(), wildAfk = wildAfk.Snapshot(), vectorCacheHits = accounts.VectorCacheHits, vectorCacheRetries = accounts.VectorCacheRetries,
-                unchangedSaves = accounts.Snapshots.PersistedSkips, backup = hosted.OfType<Accounts.DatabaseBackup>().SingleOrDefault()?.Snapshot(), loopWaits = accounts.AccessMetrics.LoopWaits(40)
+                unchangedSaves = accounts.Snapshots.PersistedSkips, standingEconomyIssues = accounts.StandingEconomyIssues, backup = hosted.OfType<Accounts.DatabaseBackup>().SingleOrDefault()?.Snapshot(), loopWaits = accounts.AccessMetrics.LoopWaits(40)
             })).RequireOperator();
         app.MapGet("/ro3emu/metrics/public-key", (GateCrypto crypto) =>
             Results.Text(crypto.PublicKeyPem, "text/plain")).RequireOperator();
