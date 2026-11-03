@@ -48,7 +48,7 @@ public sealed partial class LifeJobService
         this._data = data; this._character = character; this._functions = functions; this._seasons = seasons;
         this._awards = awards; this._roles = roles; this._loop = loop; this._clock = clock; this._log = log;
         character.LifeItemUse = UseLifeItemAsync;
-        character.StateChanged.Add(s => _ = SyncRestrictionsAsync(s));
+        character.StateChanged.Add(SyncVigorChange);
         character.ExtraAttributes.Add(FoodAttributes);
         character.ProgressHandlers.Add(OnLevelChangedAsync);
         scene.Leaving.Add(CancelAsync);
@@ -148,7 +148,7 @@ public sealed partial class LifeJobService
     {
         var view = s.Restrictions!.Clone();
         if (view.RestrictCount.TryGetValue(VigorId, out var vigor))
-            vigor.Count = checked(vigor.Count + (s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) ?? 0));
+            vigor.Count = Energy(s);
         foreach (var project in ProjectedRestrictions)
             if (project(s) is { } info) view.RestrictCount[info.Id] = info;
         return view;
@@ -157,6 +157,15 @@ public sealed partial class LifeJobService
     /// <summary>5018 with the projected restrictions; the sync sends only what changed.</summary>
     public Task SyncRestrictionsAsync(GameSession s) =>
         s.Restrictions == null ? Task.CompletedTask : CharacterService.SyncAsync(s, RestrictSync, RestrictView(s));
+
+    /// <summary>A reward or a claim that moves Vigor currency 407 changes the 5018 the client reads. A sent dataset is
+    /// compared first, because this runs on every bag change.</summary>
+    private void SyncVigorChange(GameSession s)
+    {
+        if (s.Restrictions == null || s.Synced.GetValueOrDefault(RestrictSync) is not DBRestrictInfo sent
+            || sent.RestrictCount.GetValueOrDefault(VigorId)?.Count == Energy(s)) return;
+        _ = SyncRestrictionsAsync(s);
+    }
 
     private async Task SyncAsync(GameSession s)
     {
@@ -353,9 +362,15 @@ public sealed partial class LifeJobService
     public int GatheringDuration(GameSession s, long collectionId) => _data.Row("LifeCollectionConfig", collectionId) is { } row
         ? OperationDuration(s, row, false) : 1;
 
-    private static long Energy(GameSession s) => checked(
-        (s.Restrictions?.RestrictCount.GetValueOrDefault(VigorId)?.Count ?? 0) +
-        (s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) ?? 0));
+    /// <summary>Usable vigor: restriction 1004 plus Vigor currency 407, the currency counting up to VitalityExtraLimit
+    /// (RestrictConfig 1004: "You can accumulate up to 5000 points"). (inferred) Currency above the limit is not lost: it
+    /// stays in the balance and counts again once vigor is spent.</summary>
+    private long Energy(GameSession s)
+    {
+        long held = s.Restrictions?.RestrictCount.GetValueOrDefault(VigorId)?.Count ?? 0;
+        long currency = s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) ?? 0;
+        return Math.Max(held, Math.Min(Param("VitalityExtraLimit", 5000), checked(held + currency)));
+    }
 
     /// <summary>
     /// A resolved collection outcome belongs to one pending interaction. Retrying its writer command must

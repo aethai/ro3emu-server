@@ -39,7 +39,7 @@ public sealed partial class LifeJobService
             long amount = checked(PotionAmount(s, Arg(2)) * count);
             if (amount <= 0) return ErrorCodes.LifeConfig;
             // Extra consumable energy uses VitalityExtraLimit, distinct from RestrictConfig's ordinary limitCount.
-            if (amount > Param("VitalityExtraLimit", 5000) - energy.Count) return ErrorCodes.LifeVigorOverflow;
+            if (amount > Param("VitalityExtraLimit", 5000) - Energy(s)) return ErrorCodes.LifeVigorOverflow;
             if (uses.Count < count) return ErrorCodes.AttemptsExhausted;
             energy.Count += amount; uses.Count -= count; uses.HistoryUseCount += count;
         }

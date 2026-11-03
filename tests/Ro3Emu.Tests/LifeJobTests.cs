@@ -467,6 +467,33 @@ public sealed class LifeJobTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task VigorCurrencyCountsUpToTheLimitAndTheRestWaits()
+    {
+        await using var b = await InWorld("Alice");
+        await Gm("alice", "!lvl 34");
+        Assert.Equal(0, await Learn(b, "alice", 1, 1));
+        await Gm("alice", $"!item {LifeJobService.VigorCurrencyId} 6000");
+        var life = _app.Services.GetRequiredService<LifeJobService>();
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
+            using var gate = await CharacterService.Lock(s);
+            s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0;
+            await life.SyncRestrictionsAsync(s);
+            Assert.Equal(5000, ((DBRestrictInfo)s.Synced[LifeJobService.RestrictSync]).RestrictCount[LifeJobService.VigorId].Count);
+            Assert.Equal(0, await life.CompleteGatherAsync(s, 100100, sceneEntry: 10522, pointId: 312));
+        });
+
+        var spent = await OnLoop("alice", s => (
+            Currency: s.Progress!.Currency.GetValueOrDefault(LifeJobService.VigorCurrencyId),
+            Vigor: s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count,
+            Shown: ((DBRestrictInfo)s.Synced[LifeJobService.RestrictSync]).RestrictCount[LifeJobService.VigorId].Count));
+        Assert.Equal(5980, spent.Currency);
+        Assert.Equal(0, spent.Vigor);
+        Assert.Equal(5000, spent.Shown);
+    }
+
+    [ClientDataFact]
     public async Task VigorCurrencyFromRewardsCanBeSpentGathering()
     {
         await using var b = await InWorld("Alice");
