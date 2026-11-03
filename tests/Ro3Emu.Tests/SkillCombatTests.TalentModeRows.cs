@@ -303,4 +303,34 @@ public sealed partial class SkillCombatTests
         await Task.Delay(1000);
         Assert.DoesNotContain(strikes, s => s.Target == far.Uid);
     }
+
+    // Sonic Burst: "Clears all current [Rain of Spears] charges and grants 5 charges of [Hundred Spear - Enhance]."
+    [ClientDataFact]
+    public async Task SonicBurstTradesRainChargesForEnhanceCharges()
+    {
+        var (bot, me, strikes) = await Caster("Alice", 1400, 11316, 1);
+        await using var _ = bot;
+        await Teach("alice", 11310);
+        me.GmCombat &= ~GmCombatSwitches.Unlimited; // what this measures is the cost
+        var mark = await Mark(me, 5);
+        await Loop.InvokeAsync(() => { me.Energy[140002].Value = 5; return Task.CompletedTask; });
+        Assert.Equal(0, (await Cast(bot, me, 1131601, mark)).Result);
+        await Task.Delay(1500);
+        Assert.Equal(0, me.Energy[140002].Value);
+        Assert.Equal(5, me.Energy[140003].Value);
+        for (int left = 4; left >= 0; left--)
+        {
+            Assert.Equal(0, (await Cast(bot, me, 1131001, mark)).Result);
+            Assert.Equal(left, me.Energy[140003].Value);
+            await Task.Delay(1500);
+            Assert.Equal(1131011, strikes[^1].Row);
+        }
+        // (inferred) The storm ends with its charges: Rain of Spears is back on its own row and its own charges.
+        Assert.DoesNotContain(me.Buffs, b => b.ConfigId == 1132401);
+        Assert.Equal(ErrorCodes.SkillEnergyShort, (await Cast(bot, me, 1131001, mark)).Result);
+        await Loop.InvokeAsync(() => { me.Energy[140002].Value = 1; return Task.CompletedTask; });
+        Assert.Equal(0, (await Cast(bot, me, 1131001, mark)).Result);
+        await Task.Delay(1500);
+        Assert.Equal(1131001, strikes[^1].Row);
+    }
 }
