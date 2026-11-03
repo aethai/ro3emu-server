@@ -446,6 +446,11 @@ public sealed partial class CombatService
             // beyond the skill's reach and area is not a point it could aim at (inferred), so the caster's is used.
             float aim = Math.Max(Math.Max(Range(row), askedRange), new SkillConfig(row).Range.FirstOrDefault(0) / 100f) + 1 + slack;
             if (req.TargetPos == null || Distance(origin, req.TargetPos) > aim) req.TargetPos = origin.Clone();
+            // A single-target row released this way hits the id the client names (SelectEnemies), and only a lock checks
+            // that id's distance. (inferred) One out of reach is not hit, and the cast stands: such a row can be pressed
+            // with a far target still selected. A row without a reach in its data says nothing to compare.
+            if (new SkillConfig(row).RangeType == SkillRelease.SingleTarget && aim > 1 + slack
+                && (monster?.Pos ?? enemyPlayer?.Position) is { } named && Distance(origin, named) > aim) req.TargetId = 0;
             return 0;
         }
         if (!_buffs.CanSeePosition(s, targetPosition)) return ErrorCodes.SkillTargetInvalid;
