@@ -382,7 +382,7 @@ public sealed partial class CardRulesTests
             await Service<GameLoop>().InvokeAsync(() => character.SetHpSpAsync(ally, 1, null));
 
             effects.Roll = _ => 1000;
-            Assert.Equal(ally.Role!.Id, Assert.Single((await Heal(alice, ally.Role!.Id)).Dsts).DstID);
+            Assert.Contains((await Heal(alice, ally.Role!.Id)).Dsts, d => d.DstID == ally.Role!.Id); // Heal reaches the caster too
             await NoHitOf(alice, DivineLight);
 
             await Service<GameLoop>().InvokeAsync(async () =>
