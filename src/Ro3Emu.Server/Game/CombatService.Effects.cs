@@ -840,7 +840,7 @@ public sealed partial class CombatService
         HashSet<long> alreadySlowed, long sourceRoleId, Func<bool> canApply)
     {
         foreach (var player in players.ToArray())
-            foreach (var tuple in Tuples(row, "_kBuff2"))
+            foreach (var tuple in HostileBuffs(row))
                 if (canApply() && CanPlayerHit(s, player)
                     && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(player.Role!.Id))
                     && RollHostileBuff(GuardianPetRules.PlayerBuffTuple(row, tuple), s, null, player, null, out int id, out int duration))
