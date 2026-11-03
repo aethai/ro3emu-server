@@ -105,11 +105,23 @@ public sealed partial class CombatService
         return Math.Abs(side) <= Metres(1) / 2 + .1 && forward >= -.5 && forward <= Metres(2) + .1;
     }
 
+    /// <summary>
+    /// A locked row (_iRelease 1) with _iRangeType 2 and _kRange [0] names no area: Shield Boomerang's "the selected ST enemy",
+    /// Rain of Spears' "toward the locked target" (122 playable rows of 11 groups). Read as an area it was a 0.1 m circle where
+    /// the target stood at the cast, so one that had walked was missed. (inferred) It hits the locked target where it stands;
+    /// a text's splash or area beside that target (Rain of Spears' 5m*10m, Spear Throw's "2 Other enemies") is not in the row.
+    /// </summary>
+    internal static bool LocksItsTarget(JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        return skill.RangeType == SkillRelease.Area && skill.Release == SkillRelease.Lock && skill.Range is [0];
+    }
+
     private List<MonsterUnit> SelectEnemies(GameSession s, ActiveSkillCast action, Vec3 center, float? radiusOverride = null)
     {
         var row = action.Row;
         int max = (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
-        if (GameData.Int(row, "_iRangeType") != 2 && radiusOverride == null)
+        if ((GameData.Int(row, "_iRangeType") != 2 || LocksItsTarget(row) && action.Request.TargetId != 0) && radiusOverride == null)
         {
             var target = FindMonster(s.WorldScene, action.Request.TargetId);
             return target != null && target.Hp > 0 && CanHitMonster(s, target) && Relation(row, false, race: target.Template.Race) ? [target] : [];
@@ -872,7 +884,7 @@ public sealed partial class CombatService
 
     /// <summary>The event players a cast can hit: its area's, a guardian's own area selection, or its locked target.</summary>
     private GameSession[] EffectPlayerTargets(GameSession s, ActiveSkillCast action, Vec3 center) =>
-        GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area
+        GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area && (IsGuardianEffect(action.Row) || !LocksItsTarget(action.Row))
             ? IsGuardianEffect(action.Row) ? GuardianPlayerTargets(s, action, center) : EventAreaTargets(s, action.Row)
             : EventTarget(s, action.Request.TargetId) is { } eventTarget
                 && PlayerDistance(s, eventTarget) <= Range(action.Row) + 1.5f ? [eventTarget] : [];

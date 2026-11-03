@@ -56,6 +56,13 @@ public sealed partial class SkillCombatTests
         return mark;
     }
 
+    /// <summary>Waits for what a timed cast does (a loaded machine can run late), then for anything it should not have done.</summary>
+    private static async Task Eventually(Func<bool> done)
+    {
+        for (int i = 0; i < 80 && !done(); i++) await Task.Delay(100);
+        await Task.Delay(300);
+    }
+
     private static async Task<CastSkillRsp> Cast(BotClient bot, GameSession me, int skill, MonsterUnit target)
     {
         await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = me.Face });
@@ -170,12 +177,12 @@ public sealed partial class SkillCombatTests
         await using var _ = bot;
         var mark = await Mark(me, 3, race: 5, element: 10);
         Assert.Equal(0, (await Cast(bot, me, 1400700 + level, mark)).Result);
-        await Task.Delay(1000);
+        await Eventually(() => strikes.Count > 0);
         Assert.Equal(1400710 + level, Assert.Single(strikes).Row);
         // The same caster on the plain row: the talent only swaps the row, so the two hits are equal.
         await Loop.InvokeAsync(() => { me.TalentSkillModifiers = []; return Task.CompletedTask; });
         Assert.Equal(0, (await Cast(bot, me, 1400700 + level, mark)).Result);
-        await Task.Delay(1000);
+        await Eventually(() => strikes.Count > 1);
         Assert.Equal(2, strikes.Count);
         Assert.Equal(1400700 + level, strikes[1].Row);
         Assert.Equal(strikes[1].Amount, strikes[0].Amount);
@@ -192,7 +199,7 @@ public sealed partial class SkillCombatTests
         await using var _ = bot;
         var mark = await Mark(me, 2);
         Assert.Equal(0, (await Cast(bot, me, 1100200 + level, mark)).Result);
-        await Task.Delay(1000);
+        await Eventually(() => me.Buffs.Any(b => b.ConfigId == 1100200 + level));
         var buff = Assert.Single(me.Buffs, b => b.ConfigId == 1100200 + level);
         Assert.InRange(buff.ExpireMs - MonsterService.NowMs, 110_000, 120_000);
     }
@@ -208,7 +215,7 @@ public sealed partial class SkillCombatTests
         await using var _ = bot;
         var mark = await Mark(me, 3);
         Assert.Equal(0, (await Cast(bot, me, 1110400 + level, mark)).Result);
-        await Task.Delay(1500);
+        await Eventually(() => strikes.Count > 1);
         Assert.Equal(2, strikes.Count);
         Assert.Equal<long[]>([ratio, 5000], strikes[0].Ratios);
         Assert.Equal<long[]>([flat, 400], strikes[0].Flats);
@@ -225,7 +232,7 @@ public sealed partial class SkillCombatTests
         var mark = await Mark(me, 3);
         await Mark(me, 3);
         Assert.Equal(0, (await Cast(bot, me, 1110401, mark)).Result);
-        await Task.Delay(1500);
+        await Eventually(() => strikes.Count > 1);
         Assert.Equal(2, strikes.Count);
         Assert.All(strikes, s => Assert.Equal(9000, s.Ratios[0]));
     }
@@ -243,7 +250,7 @@ public sealed partial class SkillCombatTests
         var row = Effective(me, 1111000 + level);
         Assert.Equal(1111010 + level, row.Id);
         Assert.Equal(0, (await Cast(bot, me, 1111000 + level, mark)).Result);
-        await Task.Delay(1500);
+        await Eventually(() => strikes.Count > 1);
         Assert.Equal(2, strikes.Count);
         Assert.Equal(row.DamageParam1, strikes[0].Ratios);
         Assert.Equal<long[]>([5000], strikes[1].Ratios);
@@ -261,8 +268,8 @@ public sealed partial class SkillCombatTests
         await using var _ = bot;
         var mark = await Mark(me, 3);
         Assert.Equal(0, (await Cast(bot, me, 1122100 + level, mark)).Result);
-        await Task.Delay(1000);
         var buffs = _app.Services.GetRequiredService<BuffService>();
+        await Eventually(() => buffs.UnitBuffs(mark).Count > 0);
         var live = buffs.UnitBuffs(mark);
         foreach (int row in new[] { 1122201, 1122301, 1122401, 1122501 })
             Assert.InRange(Assert.Single(live, b => b.ConfigId == row).ExpireMs - MonsterService.NowMs, 5000, 8000);
@@ -315,7 +322,7 @@ public sealed partial class SkillCombatTests
         var mark = await Mark(me, 5);
         await Loop.InvokeAsync(() => { me.Energy[140002].Value = 5; return Task.CompletedTask; });
         Assert.Equal(0, (await Cast(bot, me, 1131601, mark)).Result);
-        await Task.Delay(1500);
+        await Eventually(() => strikes.Count > 0);
         Assert.Equal(0, me.Energy[140002].Value);
         Assert.Equal(5, me.Energy[140003].Value);
         for (int left = 4; left >= 0; left--)
