@@ -22,6 +22,10 @@ public sealed class SkillObject : WorldUnit
     public bool Busy { get; set; }
     public bool Removing { get; set; }
     public int Charges { get; set; }
+    /// <summary>Strikes left where the row counts them (Meteor Storm "strikes in ${6} waves"), -1 otherwise. It stays shown to its expiry.</summary>
+    public int WavesLeft { get; set; } = -1;
+    /// <summary>Hits left before it goes (Fire Wall "disappear early after being touched by enemies ${7} times"), -1 otherwise.</summary>
+    public int TouchesLeft { get; set; } = -1;
     public int ProtectionDistanceType { get; init; }
     public HashSet<int> Skills { get; } = [];
 
@@ -129,6 +133,8 @@ public sealed partial class CombatService
         string script = Script(row);
         var targets = chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
             ?? SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null);
+        // "Undead-property and Demon Race monsters within the area take ranged Holy magic damage": its selector names no race.
+        if (script == "Sanctuary") targets.RemoveAll(m => m.Template.Race != DemonRace && m.Template.Element != UndeadElement);
         var playerTargets = EffectPlayerTargets(s, action, center);
         var alreadySlowed = GuardianPreviouslySlowed(row, targets, playerTargets);
         if (playerTargets.Length > 0)
@@ -165,7 +171,8 @@ public sealed partial class CombatService
                 var around = field != null || new SkillConfig(row).Release is SkillRelease.DragRect or SkillRelease.DragCircle
                     ? center : action.Origin;
                 allies.AddRange(_world.PlayersIn(s.WorldScene).Where(p => !p.Dead && Relation(row, true, p == s)
-                    && (p == s || radius > 0 && Distance(p.Position, around) <= radius))
+                    && (field != null && new SkillConfig(row).Range.Length > 1 ? SkillAreaContains(row, action.Origin, center, action.Request.Face, p.Position)
+                        : p == s || radius > 0 && Distance(p.Position, around) <= radius))
                     .OrderBy(p => Distance(p.Position, around)).Take((int)Math.Max(1, new SkillConfig(row).TargetMax)));
                 if (allies.Count == 0 && Relation(row, true, true)) allies.Add(s);
             }
@@ -217,6 +224,7 @@ public sealed partial class CombatService
                             try { await handler(s, target, effective); }
                             catch (Exception ex) { _log.LogError(ex, "Monster damage callback failed for {Uid}", target.Uid); }
                         }
+                    if (field is { TouchesLeft: > 0 } && result != DamageHitResult.Miss) field.TouchesLeft--;
                     hit.Dsts.Add(new DamageInfo { DstID = target.Uid, Damage = amount, HitResult = result, DstElement = target.Template.Element, IsDead = target.Hp == 0 });
                 }
                 if (CanApplyMoreEffects())
@@ -701,16 +709,31 @@ public sealed partial class CombatService
         var row = action.Row;
         string script = Script(row);
         var logic = Numbers(row, "_kLogicData");
-        int npc = 0, duration = 0, interval = 1000, protection = 0, charges = 0;
+        int npc = 0, duration = 0, interval = 1000, protection = 0, charges = 0, waves = -1, touches = -1, atOnce = 0;
+        var described = new SkillConfig(row).DescData;
+        double Desc(int index) => index < described.Length && double.TryParse(described[index], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
         bool trap = false;
         float radius = (float)(Numbers(row, "_kRange").FirstOrDefault(150) / 100);
         switch (script)
         {
             case "Fire_Wall" or "Quagmire" or "Fire_Pillar" or "Meteor_Storm" or "Lord_of_Vermilion" or "Storm_Gust" when logic.Length >= 3:
-                npc = (int)logic[0]; interval = (int)logic[1]; duration = (int)logic[2]; break;
+                npc = (int)logic[0]; interval = (int)logic[1]; duration = (int)logic[2];
+                if (script == "Meteor_Storm" && logic.Length > 5) waves = (int)logic[5]; // "strikes in ${6} waves"
+                if (script == "Fire_Wall") { touches = (int)Desc(6); atOnce = (int)Desc(7); } // "touched by enemies ${7} times", "Up to ${8} Fire Walls"
+                break;
+            // "For the next ${4} sec. ... every ${5} sec.": [npc, seconds, strikes, ...]; 8 strikes in 4 s.
+            case "Magnus_Exorcismus" or "Magnus_ExorcismusBD" when logic.Length >= 3 && logic[2] > 0:
+                npc = (int)logic[0]; duration = (int)(logic[1] * 1000); interval = (int)(duration / logic[2]); break;
+            // "For the next ${4} seconds, every ${5} seconds": its row names no entity, NPCConfig 22000003 carries its name (inferred).
+            case "Sanctuary" when logic.Length >= 1 && Desc(4) > 0:
+                npc = SanctuaryNpc; duration = (int)(logic[0] * 1000); interval = (int)(Desc(4) * 1000); break;
+            // [interval, duration, ...]: "lasts 4 seconds and strikes a total of 8 times". NPCConfig 1200013 carries its name (inferred).
+            case "ZhongLiYuanYe" when logic.Length >= 2:
+                npc = GravitationFieldNpc; interval = (int)logic[0]; duration = (int)logic[1]; break;
             case "Safety_Wall" or "Pneuma" when logic.Length >= 8:
                 npc = (int)logic[5]; duration = (int)logic[2]; radius = (float)(logic[7] / 100);
-                protection = script == "Safety_Wall" ? 1 : 2; charges = script == "Safety_Wall" ? (int)logic[1] : int.MaxValue; break;
+                // [targets, ?, duration, hits blocked, buff, npc, at once, radius]: logic[3] runs with the text's "block up to ${5} hits".
+                protection = script == "Safety_Wall" ? 1 : 2; charges = (int)logic[3]; atOnce = (int)logic[6]; break;
             case "LandMine": npc = 22000016; trap = true; break;
             case "ClaymoreTrap": npc = 22000017; trap = true; break;
             case "FreezingTrap": npc = 22000018; trap = true; break;
@@ -738,8 +761,11 @@ public sealed partial class CombatService
             NpcId = npc, EntityType = (int)GameData.Int(npcRow, "_iNPCType"), Cast = action,
             X = point.X, Y = point.Y, Z = point.Z, Face = action.Request.Face, ExpiresMs = Now + Math.Max(1, duration),
             IntervalMs = Math.Max(50, interval), NextTickMs = Now, Radius = radius, Trap = trap,
-            ProtectionDistanceType = protection, Charges = charges,
+            ProtectionDistanceType = protection, Charges = charges, WavesLeft = waves, TouchesLeft = touches,
         };
+        if (atOnce > 0)
+            foreach (var old in s.SkillObjects.Where(o => !o.Removing && Script(o.Cast.Row) == script).OrderBy(o => o.Uid).SkipLast(atOnce - 1).ToArray())
+                await RemoveSkillObjectAsync(old);
         foreach (int skill in Numbers(npcRow, "_kSkills").Select(v => (int)v)) unit.Skills.Add(skill);
         s.SkillObjects.Add(unit);
         await _world.AddUnitAsync(unit);
@@ -766,10 +792,11 @@ public sealed partial class CombatService
             }
             if (Now < unit.NextTickMs) return;
             unit.NextTickMs = Now + unit.IntervalMs;
-            if (unit.ProtectionDistanceType != 0) return;
+            if (unit.ProtectionDistanceType != 0 || unit.WavesLeft == 0) return;
             if (unit.Trap && !_world.Map(unit.WorldScene).Near(unit.X, unit.Z, 1.5f).OfType<MonsterUnit>().Any(m => !m.Dead && Distance(m.Pos, unit.Pos) <= 1.5f)) return;
+            if (unit.WavesLeft > 0) unit.WavesLeft--;
             await ApplyEffectsAsync(owner, unit.Cast, unit.Pos, unit);
-            if (unit.Trap) await RemoveSkillObjectAsync(unit);
+            if (unit.Trap || unit.TouchesLeft == 0) await RemoveSkillObjectAsync(unit);
         }
         finally { unit.Busy = false; }
     }
