@@ -11,9 +11,10 @@ namespace Ro3Emu.Server.Game;
 
 /// <summary>
 /// Socketed cards' Buff(2) special effects (CardConfig._kSkillAttribute -> SpecialEffectConfig._kSpecialEffect [2, buff],
-/// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). Every referenced BuffConfig
-/// row is a zero-time passive (iPassiveBuff 1): like totem passives they are registered per source (the card GUID) for
-/// as long as the copy is socketed in an active socket (EquipmentStunts.ActiveCards), which publishes their icons, applies their _kChangeAttri (Variable CT, 2024001..4)
+/// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). The referenced BuffConfig rows are
+/// zero-time: like totem passives they are registered per source (the card GUID) for as long as the copy is socketed in an
+/// active socket (EquipmentStunts.ActiveCards), which publishes their icons, puts their _kChangeAttri on the sheet (Variable
+/// CT 2024001..4 only, and no chant reads it yet)
 /// and arms BuffService's lethal-hit revive for groups 20520/20521 (2052001.., 2052101..). (inferred) Their
 /// _iSceneClear removes them on a scene change; the loaded scene registers them again, carrying the revive cooldown.
 ///
@@ -29,9 +30,16 @@ namespace Ro3Emu.Server.Game;
 /// - size: 20501 (2050101..) adds _kLogicData[0] bp of damage against Small/Medium/Large (NPCConfig._iSize 1..3)
 ///   monsters; 20500 (2050001..) adds _kLogicData[1] bp with a _kLogicData[0] bp chance.
 /// - Splash: 20508 (Shadow Card: Baphomet, 2050801..) and 20509 (Card: Baphomet, 2050901..), see <see cref="SplashOf"/>.
-/// Not executed (no machinery or no data link): autocast skills (Bash, Jupitel Thunder, Divine Light), race-family
-/// damage (Orcs, Kobolds, ...: no monster family field), armor element changes, magic nullify/reflect, status
-/// immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection, indestructible gear.
+/// - monster family: Orc Lady, Kobold Leader, Goblin Leader, Aster, Crab, Shellfish add _kLogicData[0] bp of damage against
+///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
+/// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder; Double Attack on a Basic Attack: 20210, see
+///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
+/// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
+/// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
+/// All of these act on monsters, a hit on a player sets off none of them, except Divine Light and the cooldown reset, which
+/// follow the own cast whoever it reached.
+/// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
+/// the uninterruptible cast and Ladybug's reduction, SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -41,6 +49,7 @@ public sealed class CardEffects
     private readonly BuffService _buffs;
     private readonly SkillService _skills;
     private readonly CombatService _combat;
+    private readonly SessionRegistry _sessions;
     private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = [];
 
     private sealed class Runtime
@@ -48,22 +57,28 @@ public sealed class CardEffects
         /// <summary>Last registered buff GUID per (card GUID, config), to carry BuffEffectCds over a re-registration.</summary>
         public readonly Dictionary<(long Source, int Config), long> Registered = [];
         public readonly Dictionary<long, long> Cooldowns = []; // proc family (base buff group) -> ready at
+        /// <summary>A hit's damage adjusters run inside a synchronous step; its hit event carries the buff changes out.</summary>
+        public ActiveBuff? NextHitSpent;
+        public (int Buff, int Ms)? NextHitArmed;
     }
 
     private sealed record Passive(InvItem Card, int Id, JsonElement Row);
 
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
-    private const int SplashChance = 20508, SplashAlways = 20509;
+    private const int SplashChance = 20508, SplashAlways = 20509, NextHitAfterCrit = 20507;
+    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
+    private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
     // A test can fix each ten-thousandth roll without changing the production probability.
     internal Func<int, int> Roll { get; set; } = bound => Random.Shared.Next(bound);
 
     public CardEffects(GameData data, CharacterService character, BuffService buffs, CardService cards, CombatService combat,
-        SceneService scenes, SkillService skills)
+        SceneService scenes, SkillService skills, SessionRegistry sessions)
     {
         this._data = data;
+        this._sessions = sessions;
         this._skills = skills;
         this._character = character;
         this._buffs = buffs;
@@ -184,8 +199,23 @@ public sealed class CardEffects
         }
     }
 
+    /// <summary>What <see cref="NextHitBonus"/> decided for the hit just dealt: spends the buff, arms it again on a crit.</summary>
+    private async Task SettleNextHitAsync(GameSession s)
+    {
+        if (!_runtime.TryGetValue(s, out var state)) return;
+        if (state.NextHitSpent is { } spent)
+        {
+            state.NextHitSpent = null;
+            await _buffs.RemoveAsync(s, spent);
+        }
+        if (state.NextHitArmed is not { } armed) return;
+        state.NextHitArmed = null;
+        if (s.Role != null && !s.Dead) await _buffs.AddAsync(s, armed.Buff, armed.Ms, s.Role.Id);
+    }
+
     internal async Task OnDealtAsync(GameSession s, MonsterUnit target, JsonElement skillRow, long damage)
     {
+        await SettleNextHitAsync(s);
         if (damage <= 0 || s.Role == null || s.Dead) return;
         var passives = Passives(s).ToList();
         if (passives.Count == 0) return;
@@ -252,13 +282,13 @@ public sealed class CardEffects
     /// leaves out what the swing itself hit; the extra cast triggers no CastResolved ("does not count as a Normal Attack
     /// effect"); each card has its own cooldown, which an empty area also starts; the gfx plays only when something is hit.
     /// </summary>
-    private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
+    private async Task SplashAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
+        SkillHitInfo hit, IReadOnlyList<Passive> passives)
     {
-        var cast = new SkillConfig(action.Row);
-        if (s.Role == null || processed.Count == 0 || cast.DistanceType != Melee || !cast.IsNormalAttack(_data)) return;
+        if (processed.Count == 0 || cast.DistanceType != Melee || !cast.IsNormalAttack(_data)) return;
         var primary = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId) ?? processed[0];
         if (hit.Dsts.FirstOrDefault(d => d.DstID == primary.Uid) is not { Damage: > 0 } struck) return;
-        foreach (var passive in Passives(s).ToList())
+        foreach (var passive in passives)
         {
             var buff = new BuffConfig(passive.Row);
             if (buff.BuffId is not (SplashChance or SplashAlways) || buff.LogicData is not [.., var id]
@@ -272,18 +302,166 @@ public sealed class CardEffects
         }
     }
 
+    /// <summary>The procs that follow a player's own cast. CastResolved fires once per cast and never for an extra cast, so
+    /// nothing here can trigger itself or another proc of this list.</summary>
+    private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
+    {
+        if (s.Role == null) return;
+        var passives = Passives(s).ToList();
+        if (passives.Count == 0) return;
+        var cast = new SkillConfig(action.Row);
+        await SplashAsync(s, action, cast, processed, hit, passives);
+        await AutocastsAsync(s, action, cast, processed, hit, passives);
+        await HealAutocastAsync(s, hit, passives);
+        await CooldownResetAsync(s, cast, passives);
+    }
+
+    /// <summary>Who Divine Light heals, in order: "Restores Life ... for you and a designated ST ally" with _iTargetMax 2. (inferred)
+    /// The designated ally is the first the triggering heal reached other than the caster, none if it healed only the caster.
+    /// Class Heal has the same words with _iTargetMax 1 and heals only its target, so the 2 is what tells the two rows apart.</summary>
+    internal static long[] DivineLightTargets(long caster, IEnumerable<DamageInfo> dsts) =>
+        dsts.FirstOrDefault(d => d.DamageType == DamageType.Heal && d.DstID != caster) is { } ally ? [ally.DstID, caster] : [caster];
+
+    /// <summary>
+    /// Pharaoh: "When applying a healing skill effect, has a ${1}% Chance to trigger [Divine Light] Lv@{1}. Internal Cooldown: ${2}
+    /// seconds." _kLogicData [chance bp, row], _kDescData [chance, cooldown]. (inferred) A healing skill effect is an own cast that
+    /// healed someone, a full ally too. Heals by a ground field, a buff's ticks, an item or an extra cast do not reach CastResolved.
+    /// </summary>
+    private async Task HealAutocastAsync(GameSession s, SkillHitInfo hit, IReadOnlyList<Passive> passives)
+    {
+        if (!hit.Dsts.Any(d => d.DamageType == DamageType.Heal)) return;
+        foreach (var passive in passives.DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != HealAutocast || buff.LogicData is not [var chance, var id] || SkillConfig.Get(_data, id) is not { } row
+                || Description(passive.Row) is not [_, var cooldown, ..] || Roll(10000) >= chance || !Ready(s, HealAutocast, (long)(cooldown * 1000))) continue;
+            List<GameSession> allies = [];
+            foreach (long target in DivineLightTargets(s.Role!.Id, hit.Dsts).Take((int)Math.Max(1, row.TargetMax)))
+                if (target == s.Role.Id) allies.Add(s);
+                else if (_sessions.All().FirstOrDefault(p => p.Role?.Id == target) is { } ally) allies.Add(ally);
+            await _combat.CastExtraOnAlliesAsync(s, row.Row, allies);
+        }
+    }
+
+    /// <summary>The time a reset skill's cooldown cannot be reset again: the skill's cooldown times a multiple in basis points.</summary>
+    internal static long ResetLockoutMs(long cooldownMs, long multiple) => cooldownMs * multiple / 10000;
+
+    /// <summary>
+    /// Mistress: "After using a skill, has a @{1}% Chance to reset that skill's Cooldown. Its Cooldown cannot be reset again for a
+    /// period of time. The internal Cooldown is @{2} times that skill's Cooldown. (Does not reset the global Cooldown.)"
+    /// _kLogicData [600, 0, 30000]: the chance, then 30000 as _kDescData's 3 times in basis points; the 0 has no recovered meaning.
+    /// Each skill has its own lockout, from the reset on. Only its group's cooldown ends: _iPubCD, the global one, runs on under
+    /// its own groups. (inferred) "That skill's Cooldown" is the time it was shown, after attribute 205. A skill with no
+    /// cooldown running (none in its row, or a chant that outlasted it) has nothing to reset, and rolls nothing. A Basic Attack is
+    /// not a skill here, and a cast that never reaches CastResolved (Resurrection, an own-skill script) does not count.
+    /// </summary>
+    private async Task CooldownResetAsync(GameSession s, SkillConfig cast, IReadOnlyList<Passive> passives)
+    {
+        if (cast.Cd <= 0 || cast.IsNormalAttack(_data)) return;
+        int group = (int)cast.SkillId;
+        long now = MonsterService.NowMs;
+        if (!s.SkillModeCds.Any(c => c.Key.Group == group && c.Value > now)) return;
+        foreach (var passive in passives.DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != CooldownReset || buff.LogicData is not [var chance, _, var multiple] || Roll(10000) >= chance) continue;
+            long cooldown = CombatService.ReducedCooldown(cast.Cd, _character.Stats(s)[AttributeId.PerCd]);
+            // Apart from the proc families' keys, which are buff groups.
+            if (Ready(s, -group, ResetLockoutMs(cooldown, multiple))) await CombatService.ResetCooldownAsync(s, group);
+        }
+    }
+
+    /// <summary>Whether a cast sets off the autocast passive of this group.</summary>
+    internal static bool TriggersAutocast(long group, long damageType, bool normalAttack) => group switch
+    {
+        BashAutocast or JupitelAutocast => damageType == PhysicalDamage,
+        DoubleAttackProc => normalAttack,
+        _ => false,
+    };
+
+    /// <summary>
+    /// Bongun and Wind Ghost: "When making a Physical attack, has a ${1}% Chance to autocast [Bash] Lv.@{1}. Internal Cooldown:
+    /// ${2} sec. Chance stacks with multiple cards." The base passive (2019001, 2020001) holds [0, the row]; the tier's passive
+    /// adds the chance to its group and has [chance, cooldown] as _kDescData. An extra cast of the row pays nothing and starts
+    /// no cooldown of its own. (inferred) A Physical attack is any own cast of an _iDmgType 1 row that reached a monster, a basic
+    /// attack or a skill, a miss too, counted once per cast; the proc takes the locked target, or else the first the cast
+    /// reached that is still alive, and with none it neither rolls nor starts its cooldown. The text gives no player target
+    /// and an extra cast takes monsters only, so a hit on a player sets off nothing.
+    /// Side Winder: "Basic Attack has a @{1}% Chance to trigger [Double Attack], dealing Extra Neutral melee Physical damage equal
+    /// to @{2}%. Internal Cooldown: @{3} sec." goes the same way (2021001 [0, 2003001], _kDescData [chance, cooldown, ratio]). Class
+    /// Double Attack (TalentProcs.DoubleAttackAsync) has to describe its hit, as its passive row has no damage; this row is that
+    /// hit, _kDamageParam1 [5000], Neutral, melee, Physical. Its _iDistanceMax 2000 lets (inferred) a ranged Basic Attack set it off too.
+    /// </summary>
+    private async Task AutocastsAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
+        SkillHitInfo hit, IReadOnlyList<Passive> passives)
+    {
+        if (hit.Dsts.Count == 0) return;
+        foreach (var (basis, group, chance, desc) in Procs(passives).ToList())
+        {
+            if (!TriggersAutocast(group, cast.DmgType, cast.IsNormalAttack(_data)) || desc.Length < 2 || new BuffConfig(basis).LogicData is not [_, var id]
+                || SkillConfig.Get(_data, id) is not { } row) continue;
+            var target = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId && m.Hp > 0) ?? processed.FirstOrDefault(m => m.Hp > 0);
+            if (target == null || Roll(10000) >= chance || !Ready(s, group, (long)(desc[1] * 1000))) continue;
+            await _combat.CastExtraAsync(s, row.Row, [target]);
+        }
+    }
+
+    /// <summary>
+    /// The NPCConfig._kNpcTag a family card's buff group counts on, 0 for any other. No table names the tags, so the link is
+    /// (inferred) from who holds them: 1000 the six plain Orcs, leaving out Orc Lord and Orc Hero as "Damage against all Orcs
+    /// (excluding Orc Lord and Orc Hero)" does; 1001 Kobolds; 1002 Goblins, with Rotar Zairo and Goblin Leader; 1003 Aster; 1004
+    /// Crab ("Kara Crabs"); 1005 Shellfish. Only the tag counts, so the untagged copies of these monsters (24000xxx, 4940xxx)
+    /// and the Kobold Leader do not.
+    /// </summary>
+    internal static long FamilyTag(long group) => group switch
+    {
+        >= 20150 and <= 20153 => 1000,
+        >= 20220 and <= 20223 => 1001,
+        20532 or 20533 => 1002,
+        >= 20290 and <= 20293 => 1003,
+        >= 20270 and <= 20273 => 1004,
+        >= 20280 and <= 20283 => 1005,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Card: Doppelganger: "When you land a critical hit, your next instance of damage is increased by @{1}%." 2050701's _kLogicData
+    /// [2091101, 2000] is the buff a crit puts on the player and its time; 2091101's own [500] is the raise, its gfx and sound the
+    /// client plays from the 31104. (inferred) An instance is one monster's hit of a cast, any cast, extra ones too, so an area cast
+    /// spends it on its second target. The first damaging hit within the 2 s spends it. A crit that spends it arms it again.
+    /// A hit on a player neither arms nor spends it: the player path has no damage adjusters.
+    /// </summary>
+    private long NextHitBonus(GameSession s, BuffConfig passive, DamageHitResult result)
+    {
+        if (passive.LogicData is not [var id, var ms]) return 0;
+        var state = _runtime.GetOrCreateValue(s);
+        if (result is DamageHitResult.Critical or DamageHitResult.DoubleCritical) state.NextHitArmed = ((int)id, (int)ms);
+        long now = MonsterService.NowMs;
+        if (s.Buffs.FirstOrDefault(b => b.ConfigId == id && b.ExpireMs > now && !ReferenceEquals(b, state.NextHitSpent)) is not { } live
+            || BuffConfig.Get(_data, id)?.LogicData is not [var raise, ..]) return 0;
+        state.NextHitSpent = live;
+        return raise;
+    }
+
     /// <summary>"Ignores monster Size. Damage against Small, Medium, and Large monsters +X%" (2050101..4 always,
-    /// 2050001..4 with a chance). Size 0 monsters are unaffected (inferred from the three named sizes).</summary>
+    /// 2050001..4 with a chance); size 0 monsters are unaffected (inferred from the three named sizes). "Damage against all
+    /// Orcs +X%" and the other families (<see cref="FamilyTag"/>). None of these rows has a _kChangeAttri, so nothing of them is
+    /// on the sheet DamageAttributes reads. (inferred) They add up with each other, as a group of damage terms does.</summary>
     internal long AdjustDamage(GameSession s, MonsterUnit target, JsonElement skillRow, DamageHitResult result, long damage)
     {
-        if (damage <= 0 || target.Template.Size is < 1 or > 3) return damage;
+        if (damage <= 0) return damage;
+        bool sized = target.Template.Size is >= 1 and <= 3;
+        long[]? tags = null;
         long bonus = 0;
         foreach (var passive in Passives(s).DistinctBy(p => (p.Card.Guid, p.Id)))
         {
             long group = GameData.Int(passive.Row, "_iBuffID");
             var logic = Numbers(passive.Row, "_kLogicData");
-            if (group == SizeAlways && logic.Length >= 1) bonus += logic[0];
-            else if (group == SizeChance && logic.Length >= 2 && Roll(10000) < logic[0]) bonus += logic[1];
+            if (group == SizeAlways && sized && logic.Length >= 1) bonus += logic[0];
+            else if (group == SizeChance && sized && logic.Length >= 2 && Roll(10000) < logic[0]) bonus += logic[1];
+            else if (FamilyTag(group) is not 0 and var family && logic.Length >= 1
+                && (tags ??= NPCConfig.Get(_data, target.Template.NpcId)?.NpcTag ?? []).Contains(family)) bonus += logic[0];
+            else if (group == NextHitAfterCrit) bonus += NextHitBonus(s, new BuffConfig(passive.Row), result);
         }
         return bonus <= 0 ? damage : damage + (long)Math.Floor(damage * bonus / 10000d);
     }
