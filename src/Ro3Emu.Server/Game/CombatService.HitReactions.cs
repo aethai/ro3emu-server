@@ -96,7 +96,7 @@ public sealed partial class CombatService
     private static double ParseDesc(string text) =>
         double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
 
-    private async Task StrikeBackAsync(GameSession p, SkillConfig row, IReadOnlyList<MonsterUnit> monsters, GameSession? enemy)
+    private async Task StrikeBackAsync(GameSession p, SkillConfig row, List<MonsterUnit> monsters, GameSession? enemy)
     {
         if (monsters.Count > 0) await CastExtraAsync(p, row.Row, monsters);
         if (enemy != null && CanPlayerHit(p, enemy)) await CastExtraOnPlayerAsync(p, row, enemy);
