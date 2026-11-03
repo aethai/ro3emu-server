@@ -23,6 +23,20 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
 
     public int MaxAttempts { get; set; } = 8;
 
+    /// <summary>
+    /// Time the start of a package on each origin before the first download and try the fastest first, so a slow mirror
+    /// that still answers (far away, or throttled) is not preferred over a quicker one. An origin that fails the probe
+    /// stays at the end of the list as a fallback. Off by default: the origins are then tried in config order.
+    /// </summary>
+    public bool ProbeOrigins { get; set; }
+
+    public int ProbeBytes { get; set; } = 2 << 20;
+
+    public TimeSpan ProbeTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Measured bytes per second of each origin (0 = no answer), probed once per installer.</summary>
+    private readonly Dictionary<string, double> _speeds = new(StringComparer.OrdinalIgnoreCase);
+
     public Func<int, TimeSpan> Backoff { get; set; } = attempt => TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(attempt, 5)));
 
     public sealed record Manifests(ReleaseManifest Full, ReleaseManifest? Delta, string Origin);
@@ -190,7 +204,7 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
             if (new FileInfo(final).Length == package.Length && string.Equals(Sha256(final), package.Sha256, StringComparison.OrdinalIgnoreCase)) return final;
             File.Delete(final);
         }
-        var urls = config.PackageUrls(package.Url);
+        var urls = await RankBySpeedAsync(config.PackageUrls(package.Url), ct);
         Exception? last = null;
         for (int attempt = 0; attempt < MaxAttempts; attempt++)
         {
@@ -221,6 +235,46 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
         }
         throw new InstallException($"A game package could not be downloaded ({last?.Message}).",
             "Check the internet connection and run the same command again: the download resumes where it stopped.");
+    }
+
+    /// <summary>The URLs fastest origin first (stable for ties and failures); each origin is probed once.</summary>
+    private async Task<List<string>> RankBySpeedAsync(List<string> urls, CancellationToken ct)
+    {
+        if (!ProbeOrigins || urls.Count < 2) return urls;
+        var known = config.Origins.Concat(config.AllowedOrigins).ToList();
+        string OriginOf(string url) => known.FirstOrDefault(o => url.StartsWith(o, StringComparison.OrdinalIgnoreCase)) ?? url;
+        foreach (var url in urls)
+        {
+            var origin = OriginOf(url);
+            if (_speeds.ContainsKey(origin)) continue;
+            var speed = await ProbeAsync(url, ct);
+            _speeds[origin] = speed;
+            Log?.Invoke($"speed of {origin}: {(speed > 0 ? $"{speed / (1 << 20):0.0} MB/s" : "no answer")}");
+        }
+        return [.. urls.OrderByDescending(u => _speeds[OriginOf(u)])];
+    }
+
+    /// <summary>Bytes per second over the first <see cref="ProbeBytes"/> of a package; 0 when the origin does not answer.</summary>
+    private async Task<double> ProbeAsync(string url, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(ProbeTimeout);
+        var watch = Stopwatch.StartNew();
+        long got = 0;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Range = new RangeHeaderValue(0, ProbeBytes - 1);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token);
+            if (!response.IsSuccessStatusCode) return 0;
+            await using var body = await response.Content.ReadAsStreamAsync(limit.Token);
+            var buffer = new byte[1 << 16];
+            int read;
+            while (got < ProbeBytes && (read = await body.ReadAsync(buffer, limit.Token)) > 0) got += read;
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException) { return 0; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { /* too slow: judge by what arrived */ }
+        return got / Math.Max(watch.Elapsed.TotalSeconds, 0.001);
     }
 
     private async Task FetchRangeAsync(string url, string part, long have, long length, Action<long, long>? progress, CancellationToken ct)

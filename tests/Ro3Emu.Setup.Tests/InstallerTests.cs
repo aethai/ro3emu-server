@@ -236,6 +236,37 @@ public sealed class InstallerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DownloadsFromTheFastestOriginWhenProbing()
+    {
+        var content = Publish(TwoPackages());
+        // Origin a comes first in the config but is slow to answer; origin b is quick.
+        foreach (var files in TwoPackages().Values)
+            _faults[$"a/pkg/{Sha(Zip(files))}.zip"] = async _ => { await Task.Delay(700); return false; };
+        var game = Path.Combine(_dir.FullName, "game");
+        var installer = Installer();
+        installer.ProbeOrigins = true;
+        await installer.ApplyAsync(installer.MakePlan(await installer.FetchAsync(), game), game);
+        AssertInstalled(game, content);
+        // A request without a Range header is a real download; the probes ask for a range.
+        Assert.DoesNotContain(_requests, r => r.StartsWith("a/pkg/") && r.EndsWith(' '));
+        Assert.Contains(_requests, r => r.StartsWith("b/pkg/") && r.EndsWith(' '));
+    }
+
+    [Fact]
+    public async Task ProbingKeepsAnOriginThatDoesNotAnswerAsAFallback()
+    {
+        var content = Publish(TwoPackages());
+        // Origin b is down for the probe; the install must still finish from origin a.
+        foreach (var files in TwoPackages().Values)
+            _faults[$"b/pkg/{Sha(Zip(files))}.zip"] = context => { context.Response.StatusCode = 503; return Task.FromResult(true); };
+        var game = Path.Combine(_dir.FullName, "game");
+        var installer = Installer();
+        installer.ProbeOrigins = true;
+        await installer.ApplyAsync(installer.MakePlan(await installer.FetchAsync(), game), game);
+        AssertInstalled(game, content);
+    }
+
+    [Fact]
     public async Task DownloadsADamagedPackageAgain()
     {
         var content = Publish(TwoPackages());
