@@ -878,7 +878,8 @@ public sealed partial class CombatService
     private (long Amount, DamageHitResult Result) MonsterHitDamage(GameSession s, Fighter attacker, MonsterUnit target,
         JsonElement row, string script)
     {
-        var (amount, result) = Damage(attacker, MonsterFighter(target), row, script == "Heal" ? 1 : Math.Max(SonicBlowBranch(s, target, row), DamageBranch(s, target, row)),
+        // Heal's enemy values are its second pair; AcolyteBD11 is its mode row under Holy Healing Light, with the same pairs and text.
+        var (amount, result) = Damage(attacker, MonsterFighter(target), row, script is "Heal" or "AcolyteBD11" ? 1 : Math.Max(SonicBlowBranch(s, target, row), DamageBranch(s, target, row)),
             GuardianPetRules.CriticalChance(row) + SkillParameterRules.CritChance(s, _data, row),
             GuardianPetRules.CriticalAtHp(row, target.Hp, target.Template.MaxHp));
         if (row.TryGetProperty("_ro3GuardianFixedHit", out var fixedValue))

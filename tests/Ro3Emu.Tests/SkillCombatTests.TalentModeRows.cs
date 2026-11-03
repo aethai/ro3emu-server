@@ -158,4 +158,26 @@ public sealed partial class SkillCombatTests
         using var row = System.Text.Json.JsonDocument.Parse("""{"_kDamageParamExtra":[[2,500,101,3],[2,600,102,3],[2,300,101,3],[2,400,102,3]]}""");
         Assert.Equal((hp, sp), WorldCoreService.ReviveRates(row.RootElement, raised));
     }
+
+    // Holy Healing Light (10104106 for the Priest line) selects AcolyteBD11, with Heal's own text: "When used on an
+    // Undead-property enemy, deals ... Magic ATK * 41% + 30" (level 10: 50% + 40), not the heal's 90% + 135.
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public async Task HealHurtsTheUndeadByItsEnemyBranchWithTheTalent(int level)
+    {
+        var (bot, me, strikes) = await Caster("Alice", 4300, 14007, level, 10104106);
+        await using var _ = bot;
+        var mark = await Mark(me, 3, race: 5, element: 10);
+        Assert.Equal(0, (await Cast(bot, me, 1400700 + level, mark)).Result);
+        await Task.Delay(1000);
+        Assert.Equal(1400710 + level, Assert.Single(strikes).Row);
+        // The same caster on the plain row: the talent only swaps the row, so the two hits are equal.
+        await Loop.InvokeAsync(() => { me.TalentSkillModifiers = []; return Task.CompletedTask; });
+        Assert.Equal(0, (await Cast(bot, me, 1400700 + level, mark)).Result);
+        await Task.Delay(1000);
+        Assert.Equal(2, strikes.Count);
+        Assert.Equal(1400700 + level, strikes[1].Row);
+        Assert.Equal(strikes[1].Amount, strikes[0].Amount);
+    }
 }
