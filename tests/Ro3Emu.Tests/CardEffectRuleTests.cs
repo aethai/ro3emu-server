@@ -44,4 +44,13 @@ public sealed class CardEffectRuleTests
     [InlineData(20501, 0)] // the size cards
     [InlineData(20190, 0)]
     public void AFamilyCardsGroupNamesItsMonsterTag(long group, long tag) => Assert.Equal(tag, CardEffects.FamilyTag(group));
+
+    [Theory]
+    [InlineData(20190, 1, true)] // Bash, a Physical attack
+    [InlineData(20200, 1, true)] // Jupitel Thunder
+    [InlineData(20190, 2, false)] // a magic cast
+    [InlineData(20200, 2, false)]
+    [InlineData(20230, 1, false)] // Dark Priest's [0, row] is no autocast
+    public void APhysicalAutocastAnswersPhysicalCasts(long group, long damageType, bool triggers) =>
+        Assert.Equal(triggers, CardEffects.TriggersAutocast(group, damageType));
 }

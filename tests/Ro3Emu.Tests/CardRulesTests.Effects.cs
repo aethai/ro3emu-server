@@ -152,6 +152,130 @@ public sealed partial class CardRulesTests
         }
     }
 
+    private Task Learn(GameSession session, int group) => Service<GameLoop>().InvokeAsync(async () =>
+    {
+        using var held = await CharacterService.Lock(session);
+        session.Progress!.Skills[group] = 1;
+    });
+
+    /// <summary>A real cast on the wire (31102), waiting out what still refuses it; its hit (31101).</summary>
+    private static async Task<SkillHitInfo> Cast(BotClient bot, int skill, MonsterUnit target)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetId = target.Uid });
+            var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+            if (accepted.Result == 0)
+                return await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.SkillId == skill);
+            Assert.True(attempt < 40, $"skill {skill} was refused {accepted.Result}");
+            await Task.Delay(100);
+        }
+    }
+
+    private const int Bongun = 1430604, WindGhost = 1430612, CardBash = 2002801, CardJupitel = 2002901;
+
+    private async Task NoHitOf(BotClient bot, int row)
+    {
+        await Task.Delay(300);
+        Assert.Empty(SplashHits(bot, row));
+    }
+
+    // Card: Bongun T2: 2019301 "When making a Physical attack, has a 4% Chance to autocast Bash Lv.1. Internal Cooldown: 2 sec."
+    // A basic attack on the wire sets it off at a roll under 4.00%; Bash 2002801 lands in its own 31101; then 2 s of nothing.
+    [ClientDataFact]
+    public async Task BongunAutocastsBashAtItsStarsChanceAndThenWaitsItsCooldown()
+    {
+        var (alice, session) = await SocketedOn(Bongun, 6, Ring);
+        await using (alice)
+        {
+            await AtStar(session, Bongun, 2);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 400;
+            await Swing(alice, session, target);
+            await NoHitOf(alice, CardBash);
+
+            effects.Roll = _ => 399;
+            await Swing(alice, session, target);
+            var bash = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardBash);
+            Assert.True(Assert.Single(bash.Dsts).Damage > 0);
+            Assert.Equal(target.Uid, bash.Dsts[0].DstID);
+            Assert.False(session.SkillCds.ContainsKey(20028)); // an extra cast starts no cooldown
+
+            await Swing(alice, session, target); // inside the 2 s
+            await Task.Delay(300);
+            Assert.Single(SplashHits(alice, CardBash));
+
+            await Task.Delay(2000);
+            await Swing(alice, session, target);
+            await Eventually(() => SplashHits(alice, CardBash).Count == 2, "the second Bash");
+        }
+    }
+
+    // Card: Wind Ghost T3: 2020201, 2% and 5 s; the row is magic (Jupitel Thunder), the attack that sets it off physical.
+    [ClientDataFact]
+    public async Task WindGhostAutocastsJupitelThunderOnAPhysicalAttack()
+    {
+        var (alice, session) = await SocketedOn(WindGhost, 6, Ring);
+        await using (alice)
+        {
+            await AtStar(session, WindGhost, 3);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 200;
+            await Swing(alice, session, target);
+            await NoHitOf(alice, CardJupitel);
+
+            effects.Roll = _ => 199;
+            await Swing(alice, session, target);
+            var thunder = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardJupitel);
+            Assert.True(Assert.Single(thunder.Dsts).Damage > 0);
+            await Swing(alice, session, target);
+            await Task.Delay(300);
+            Assert.Single(SplashHits(alice, CardJupitel)); // the 5 s
+        }
+    }
+
+    // "When making a Physical attack": Sword Smash (_iDmgType 1) is one, Lex Divina (2) is not.
+    [ClientDataFact]
+    public async Task BongunAnswersAPhysicalSkillButNotAMagicOne()
+    {
+        const int swordSmash = 1109901, lexDivina = 1412101;
+        var (alice, session) = await SocketedOn(Bongun, 6, Ring);
+        await using (alice)
+        {
+            await Gm("alice", "!job 4200");
+            await Learn(session, 14121);
+            await Learn(session, 11099);
+            var target = (await Dummies(session, 5000002))[0];
+            Service<CardEffects>().Roll = _ => 0;
+
+            Assert.True(Assert.Single((await Cast(alice, lexDivina, target)).Dsts).Damage > 0);
+            await NoHitOf(alice, CardBash);
+
+            await Gm("alice", "!job 1100");
+            await Learn(session, 11099);
+            await Cast(alice, swordSmash, target);
+            await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardBash);
+        }
+    }
+
+    // A proc's own cast sets off nothing: an extra cast of a physical row with the chance certain gives no Bash.
+    [ClientDataFact]
+    public async Task AnExtraCastStartsNoAutocast()
+    {
+        var (alice, session) = await SocketedOn(Bongun, 6, Ring);
+        await using (alice)
+        {
+            var target = (await Dummies(session, 5000002))[0];
+            Service<CardEffects>().Roll = _ => 0;
+            var row = Service<GameData>().Row("SkillConfig", 1109901)!.Value;
+            await Service<GameLoop>().InvokeAsync(() => Service<CombatService>().CastExtraAsync(session, row, [target]));
+            await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 1109901);
+            await NoHitOf(alice, CardBash);
+        }
+    }
+
     // Every family row says what it adds, and the tag it counts on sits on a monster the text names.
     [ClientDataTheory]
     [InlineData(2015001, 180, 5000099)] // "Damage against all Orcs +1.8%": Orc Lady

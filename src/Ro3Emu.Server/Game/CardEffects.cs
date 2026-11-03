@@ -31,9 +31,9 @@ namespace Ro3Emu.Server.Game;
 /// - Splash: 20508 (Shadow Card: Baphomet, 2050801..) and 20509 (Card: Baphomet, 2050901..), see <see cref="SplashOf"/>.
 /// - monster family: Orc Lady, Kobold Leader, Goblin Leader, Aster, Crab, Shellfish add _kLogicData[0] bp of damage against
 ///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
-/// Not executed (no machinery or no data link): autocast skills (Bash, Jupitel Thunder, Divine Light), armor element
-/// changes, magic nullify/reflect, status immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection,
-/// indestructible gear.
+/// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder, see <see cref="AutocastsAsync"/>.
+/// Not executed (no machinery or no data link): the Divine Light autocast, armor element changes, magic nullify/reflect,
+/// status immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -57,7 +57,9 @@ public sealed class CardEffects
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509;
+    private const int BashAutocast = 20190, JupitelAutocast = 20200;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
+    private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
     // A test can fix each ten-thousandth roll without changing the production probability.
     internal Func<int, int> Roll { get; set; } = bound => Random.Shared.Next(bound);
@@ -254,13 +256,13 @@ public sealed class CardEffects
     /// leaves out what the swing itself hit; the extra cast triggers no CastResolved ("does not count as a Normal Attack
     /// effect"); each card has its own cooldown, which an empty area also starts; the gfx plays only when something is hit.
     /// </summary>
-    private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
+    private async Task SplashAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
+        SkillHitInfo hit, IReadOnlyList<Passive> passives)
     {
-        var cast = new SkillConfig(action.Row);
-        if (s.Role == null || processed.Count == 0 || cast.DistanceType != Melee || !cast.IsNormalAttack(_data)) return;
+        if (processed.Count == 0 || cast.DistanceType != Melee || !cast.IsNormalAttack(_data)) return;
         var primary = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId) ?? processed[0];
         if (hit.Dsts.FirstOrDefault(d => d.DstID == primary.Uid) is not { Damage: > 0 } struck) return;
-        foreach (var passive in Passives(s).ToList())
+        foreach (var passive in passives)
         {
             var buff = new BuffConfig(passive.Row);
             if (buff.BuffId is not (SplashChance or SplashAlways) || buff.LogicData is not [.., var id]
@@ -271,6 +273,48 @@ public sealed class CardEffects
             await _combat.SendGfxAtAsync(s, primary, splash.Effect, row.Id);
             long damage = Math.Max(1, (long)Math.Floor(struck.Damage * splash.Ratio / 10000d));
             await _combat.CastExtraAsync(s, row.AsFixedHit(damage), extra);
+        }
+    }
+
+    /// <summary>The procs that follow a player's own cast. CastResolved fires once per cast and never for an extra cast, so
+    /// nothing here can trigger itself or another proc of this list.</summary>
+    private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
+    {
+        if (s.Role == null) return;
+        var passives = Passives(s).ToList();
+        if (passives.Count == 0) return;
+        var cast = new SkillConfig(action.Row);
+        await SplashAsync(s, action, cast, processed, hit, passives);
+        await AutocastsAsync(s, action, cast, processed, hit, passives);
+    }
+
+    /// <summary>Whether a cast sets off the autocast passive of this group.</summary>
+    internal static bool TriggersAutocast(long group, long damageType) => group switch
+    {
+        BashAutocast or JupitelAutocast => damageType == PhysicalDamage,
+        _ => false,
+    };
+
+    /// <summary>
+    /// Bongun and Wind Ghost: "When making a Physical attack, has a ${1}% Chance to autocast [Bash] Lv.@{1}. Internal Cooldown:
+    /// ${2} sec. Chance stacks with multiple cards." The base passive (2019001, 2020001) holds [0, the row]; the tier's passive
+    /// adds the chance to its group and has [chance, cooldown] as _kDescData. An extra cast of the row pays nothing and starts
+    /// no cooldown of its own. (inferred) A Physical attack is any own cast of an _iDmgType 1 row that reached a monster, a basic
+    /// attack or a skill, a miss too, counted once per cast; the proc takes the locked target, or else the first the cast
+    /// reached that is still alive, and with none it neither rolls nor starts its cooldown. The text gives no player target
+    /// and an extra cast takes monsters only, so a hit on a player sets off nothing.
+    /// </summary>
+    private async Task AutocastsAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
+        SkillHitInfo hit, IReadOnlyList<Passive> passives)
+    {
+        if (hit.Dsts.Count == 0) return;
+        foreach (var (basis, group, chance, desc) in Procs(passives).ToList())
+        {
+            if (!TriggersAutocast(group, cast.DmgType) || desc.Length < 2 || new BuffConfig(basis).LogicData is not [_, var id]
+                || SkillConfig.Get(_data, id) is not { } row) continue;
+            var target = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId && m.Hp > 0) ?? processed.FirstOrDefault(m => m.Hp > 0);
+            if (target == null || Roll(10000) >= chance || !Ready(s, group, (long)(desc[1] * 1000))) continue;
+            await _combat.CastExtraAsync(s, row.Row, [target]);
         }
     }
 
