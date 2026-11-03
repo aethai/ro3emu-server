@@ -173,6 +173,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             SurroundDistance = SurroundSpacing(_data, ai),
             BattleCallRange = aiRow is { } call && new Data.Config.AIConfig(call).BattleCallType == 1 ? new Data.Config.AIConfig(call).BattleCallDistance / 100f : 0,
             DamageRadius = DamageRadiusOf(npc),
+            IsBoss = new Data.Config.NPCConfig(npc).NPCSubType is 3 or 4 or 6,
             AnswersBattleCall = aiRow is { } answer && new Data.Config.AIConfig(answer).BattleCallResponse == 1,
         };
     }

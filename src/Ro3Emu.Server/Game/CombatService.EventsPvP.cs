@@ -177,7 +177,7 @@ public sealed partial class CombatService
         var a = new Fighter(attack[AttributeId.Atk], attack[AttributeId.Matk], attack[AttributeId.Hit], attack[AttributeId.Cri],
             source.Progress!.Level, AttackElement(source, row))
         { FixedDamage = (source.GmCombat & GmCombatSwitches.FixedDamage) != 0, Attributes = PlayerAttributes(source, attack), Race = PlayerRace, Size = PlayerSize };
-        var b = new Fighter(0, 0, 0, 0, target.Progress!.Level, 1)
+        var b = new Fighter(0, 0, 0, 0, target.Progress!.Level, ArmorElement(target))
         {
             Def = defend[AttributeId.Def], Mdef = defend[AttributeId.Mdef], Flee = defend[AttributeId.Flee], ResCri = defend[AttributeId.ResCri],
             FixedDamage = (target.GmCombat & GmCombatSwitches.FixedDamage) != 0,
