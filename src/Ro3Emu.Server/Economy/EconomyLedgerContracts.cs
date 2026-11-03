@@ -39,6 +39,7 @@ public enum EconomyReason
     GuildServiceCost = 58, ChallengePendingDelivery = 59,
     ValhallaCost = 60, // Valhalla Trials Blessing: Einherjar Coins spent on the Odin statue (cd13b/valhalla-pray)
     ParagonCost = 61, ParagonGoods = 62, // Astral Level Star Cores installed / returned (cd13b/paragon-*)
+    GuildFoundingRefund = 63, // the guild creation cost returned by mail when a founding fails
     // Persisted values 200..219 are reserved exclusively for C/D 13c / E05c.
     LifeCost = 200, LifeGoods = 201, SeasonCost = 202, SeasonGoods = 203,
     SeasonRefund = 204, SkillPlanCost = 205, SkillPlanRefund = 206,
@@ -49,7 +50,7 @@ public enum EconomyReason
 
 public static class EconomyReasonCatalog
 {
-    public const string Version = "economy-reasons-v15"; // each merge of a branch's reasons gets a new version
+    public const string Version = "economy-reasons-v16"; // each merge of a branch's reasons gets a new version
 
     public static bool Allows(EconomyReason reason, EconomyLegKind kind) => reason switch
     {
@@ -64,7 +65,7 @@ public static class EconomyReasonCatalog
         EconomyReason.OwnedGrant or EconomyReason.AchievementReward or EconomyReason.AdventureGroupReward or EconomyReason.MonsterHuntReward or EconomyReason.GuildReward or
         EconomyReason.GrowthClassReward or EconomyReason.LibraryReward or EconomyReason.FirstHeartReward or
         EconomyReason.LifeGoods or EconomyReason.SeasonGoods or EconomyReason.SeasonRefund or
-        EconomyReason.SkillPlanRefund or EconomyReason.CastAdmissionRefund or EconomyReason.ParagonGoods => kind == EconomyLegKind.Source,
+        EconomyReason.SkillPlanRefund or EconomyReason.CastAdmissionRefund or EconomyReason.ParagonGoods or EconomyReason.GuildFoundingRefund => kind == EconomyLegKind.Source,
         EconomyReason.GmRemove or EconomyReason.NpcShopPayment or EconomyReason.CraftInput or
         EconomyReason.DecomposeInput or EconomyReason.ItemUse or EconomyReason.RefineCost or
         EconomyReason.SkillCost or EconomyReason.PetCost or EconomyReason.MarketTax or
