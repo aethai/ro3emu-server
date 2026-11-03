@@ -511,6 +511,57 @@ public sealed partial class CardRulesTests
         Assert.Equal([600, 0, 30000], buff.LogicData);
     }
 
+    private const int Doppelganger = 1460103, NextHitBuff = 2091101;
+
+    private Task SetCrit(bool crit) => OnLoop(() => { Service<CombatService>().Rolls = new FixedRolls(crit); return 0; });
+
+    /// <summary>A hit right after the last one: the swing lock would otherwise spend most of the 2 s.</summary>
+    private async Task<DamageInfo> QuickSwing(BotClient bot, GameSession session, MonsterUnit target)
+    {
+        await OnLoop(() => { session.SwingLockUntilMs = 0; session.SkillCast = null; return 0; });
+        return Assert.Single((await Swing(bot, session, target)).Dsts);
+    }
+
+    // Card: Doppelganger T2 (its star raises only stat lines): 2050701 "When you land a critical hit, your next instance of damage
+    // is increased by 5%." A crit shows buff 2091101 for 2000 ms in 31104; the next hit is 5% up and takes it off (31105).
+    [ClientDataFact]
+    public async Task DoppelgangerRaisesTheHitAfterACritOnceAndWithinItsTwoSeconds()
+    {
+        var (alice, session) = await Socketed(Doppelganger);
+        await using (alice)
+        {
+            await AtStar(session, Doppelganger, 2);
+            var target = (await Dummies(session, 5000002))[0];
+            long plain = (await QuickSwing(alice, session, target)).Damage;
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == NextHitBuff);
+
+            await SetCrit(true);
+            var crit = await QuickSwing(alice, session, target);
+            Assert.Equal(DamageHitResult.Critical, crit.HitResult);
+            var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == NextHitBuff));
+            Assert.Equal(2000, shown.Buffs.Single(b => b.ConfigId == NextHitBuff).Duration);
+
+            await SetCrit(false);
+            Assert.Equal(Raised(plain, 500), (await QuickSwing(alice, session, target)).Damage);
+            await Next(alice, BuffService.BuffRemove, BuffRemoveNotify.Parser);
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == NextHitBuff);
+            Assert.Equal(plain, (await QuickSwing(alice, session, target)).Damage);
+
+            // A crit that spends it arms it again, and the raise counts on that crit too.
+            await SetCrit(true);
+            long critDamage = (await QuickSwing(alice, session, target)).Damage;
+            await Eventually(() => session.Buffs.Any(b => b.ConfigId == NextHitBuff), "armed");
+            Assert.Equal(Raised(critDamage, 500), (await QuickSwing(alice, session, target)).Damage);
+            await Eventually(() => session.Buffs.Any(b => b.ConfigId == NextHitBuff), "armed again");
+
+            // Past the 2 s it is gone unspent.
+            await SetCrit(false);
+            await Task.Delay(2200);
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == NextHitBuff);
+            Assert.Equal(plain, (await QuickSwing(alice, session, target)).Damage);
+        }
+    }
+
     // Every family row says what it adds, and the tag it counts on sits on a monster the text names.
     [ClientDataTheory]
     [InlineData(2015001, 180, 5000099)] // "Damage against all Orcs +1.8%": Orc Lady

@@ -34,6 +34,7 @@ namespace Ro3Emu.Server.Game;
 /// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder; Double Attack on a Basic Attack: 20210, see
 ///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
 /// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
+/// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
 /// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
 /// monster SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
@@ -53,13 +54,16 @@ public sealed class CardEffects
         /// <summary>Last registered buff GUID per (card GUID, config), to carry BuffEffectCds over a re-registration.</summary>
         public readonly Dictionary<(long Source, int Config), long> Registered = [];
         public readonly Dictionary<long, long> Cooldowns = []; // proc family (base buff group) -> ready at
+        /// <summary>A hit's damage adjusters run inside a synchronous step; its hit event carries the buff changes out.</summary>
+        public ActiveBuff? NextHitSpent;
+        public (int Buff, int Ms)? NextHitArmed;
     }
 
     private sealed record Passive(InvItem Card, int Id, JsonElement Row);
 
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
-    private const int SplashChance = 20508, SplashAlways = 20509;
+    private const int SplashChance = 20508, SplashAlways = 20509, NextHitAfterCrit = 20507;
     private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
@@ -192,8 +196,23 @@ public sealed class CardEffects
         }
     }
 
+    /// <summary>What <see cref="NextHitBonus"/> decided for the hit just dealt: spends the buff, arms it again on a crit.</summary>
+    private async Task SettleNextHitAsync(GameSession s)
+    {
+        if (!_runtime.TryGetValue(s, out var state)) return;
+        if (state.NextHitSpent is { } spent)
+        {
+            state.NextHitSpent = null;
+            await _buffs.RemoveAsync(s, spent);
+        }
+        if (state.NextHitArmed is not { } armed) return;
+        state.NextHitArmed = null;
+        if (s.Role != null && !s.Dead) await _buffs.AddAsync(s, armed.Buff, armed.Ms, s.Role.Id);
+    }
+
     internal async Task OnDealtAsync(GameSession s, MonsterUnit target, JsonElement skillRow, long damage)
     {
+        await SettleNextHitAsync(s);
         if (damage <= 0 || s.Role == null || s.Dead) return;
         var passives = Passives(s).ToList();
         if (passives.Count == 0) return;
@@ -402,6 +421,25 @@ public sealed class CardEffects
         _ => 0,
     };
 
+    /// <summary>
+    /// Card: Doppelganger: "When you land a critical hit, your next instance of damage is increased by @{1}%." 2050701's _kLogicData
+    /// [2091101, 2000] is the buff a crit puts on the player and its time; 2091101's own [500] is the raise, its gfx and sound the
+    /// client plays from the 31104. (inferred) An instance is one monster's hit of a cast, any cast, extra ones too, so an area cast
+    /// spends it on its second target. The first damaging hit within the 2 s spends it. A crit that spends it arms it again.
+    /// A hit on a player neither arms nor spends it: the player path has no damage adjusters.
+    /// </summary>
+    private long NextHitBonus(GameSession s, BuffConfig passive, DamageHitResult result)
+    {
+        if (passive.LogicData is not [var id, var ms]) return 0;
+        var state = _runtime.GetOrCreateValue(s);
+        if (result is DamageHitResult.Critical or DamageHitResult.DoubleCritical) state.NextHitArmed = ((int)id, (int)ms);
+        long now = MonsterService.NowMs;
+        if (s.Buffs.FirstOrDefault(b => b.ConfigId == id && b.ExpireMs > now && !ReferenceEquals(b, state.NextHitSpent)) is not { } live
+            || BuffConfig.Get(_data, id)?.LogicData is not [var raise, ..]) return 0;
+        state.NextHitSpent = live;
+        return raise;
+    }
+
     /// <summary>"Ignores monster Size. Damage against Small, Medium, and Large monsters +X%" (2050101..4 always,
     /// 2050001..4 with a chance); size 0 monsters are unaffected (inferred from the three named sizes). "Damage against all
     /// Orcs +X%" and the other families (<see cref="FamilyTag"/>). None of these rows has a _kChangeAttri, so nothing of them is
@@ -420,6 +458,7 @@ public sealed class CardEffects
             else if (group == SizeChance && sized && logic.Length >= 2 && Roll(10000) < logic[0]) bonus += logic[1];
             else if (FamilyTag(group) is not 0 and var family && logic.Length >= 1
                 && (tags ??= NPCConfig.Get(_data, target.Template.NpcId)?.NpcTag ?? []).Contains(family)) bonus += logic[0];
+            else if (group == NextHitAfterCrit) bonus += NextHitBonus(s, new BuffConfig(passive.Row), result);
         }
         return bonus <= 0 ? damage : damage + (long)Math.Floor(damage * bonus / 10000d);
     }
