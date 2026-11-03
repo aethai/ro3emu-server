@@ -21,7 +21,7 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = HealSkill, TargetId = (long)bob.Self!.Uuid });
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, r => r.Result == 0);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
-        var heal = Assert.Single(hit.Dsts);
+        var heal = Assert.Single(hit.Dsts, d => d.DstID == (long)bob.Self.Uuid);
         Assert.Equal(DamageType.Heal, heal.DamageType);
         await Task.Delay(1500);
         return (heal.Damage, heal.HitResult);
