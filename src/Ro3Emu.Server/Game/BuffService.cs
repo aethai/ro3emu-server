@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -85,6 +86,32 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>Further named groups and their SpecialStatusConfig rows. (inferred scope) Only guardian-applied buffs
     /// carry these states so far: the same groups from ordinary skills keep their previous, display-only behaviour
     /// until each state is established and tested for every source.</summary>
+    /// <summary>
+    /// The state of a buff outside those groups, from _kBuffCategory, which names the kind of control whatever the row
+    /// (BuffTagConfig: Generic Stun 1200401 and Meteor Storm's 1210701 are 13 like Stun 901601). So every skill's stun stuns.
+    /// (inferred) A beneficial row (_iType 1) carrying one of these tags is not itself that control.
+    /// </summary>
+    private int StateFor(int configId, int buffGroup, bool guardianOwned)
+    {
+        int known = StateFor(buffGroup, guardianOwned);
+        if (known != 0 || BuffConfig.Get(_data, configId) is not { } row || row.Type == 1) return known;
+        foreach (long category in row.BuffCategory)
+            if (ControlCategoryState(category) is var state and not 0) return state;
+        return 0;
+    }
+
+    private static int ControlCategoryState(long category) => category switch
+    {
+        13 => 18, // Stun
+        12 => 19, // Sleep
+        6 => 20, // Silence
+        9 => 11, // Frozen
+        10 => 12, // Petrify
+        8 => 21, // Immobilize
+        16 => 3, // Knock-Up
+        _ => 0,
+    };
+
     private static int GuardianStateFor(int buffGroup) => buffGroup switch
     {
         SuperArmorGroup => 22, // Super Armor
@@ -141,7 +168,7 @@ public sealed partial class BuffService : IGameTicker
         if (SourceAttributes != null) pairs = SourceAttributes(sourceId, row, [.. pairs]);
         var changes = pairs.Select(c => (c.Id, c.Value * pile * attributeMultiplier)).ToList();
         var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
-            now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(group, guardianOwned),
+            now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(configId, group, guardianOwned),
             ShieldRemaining: stackShield ? SkillShieldRules.Stacked(LiveShield(existing), shieldAmount, pile) : Math.Max(0, shieldAmount),
             IsGuardianOwned: guardianOwned, ShieldDebuffImmunity: shieldDebuffImmunity, HpFloorBasisPoints: hpFloorBasisPoints);
         if (existing != null) p.Buffs.Remove(existing);
@@ -266,7 +293,7 @@ public sealed partial class BuffService : IGameTicker
             MonsterService.NowMs + durationMs, durationMs,
             [.. GameData.Pairs(row, "_kChangeAttri").Select(c => (c.Id, c.Value * pile * attributeMultiplier))], sourceId, pile,
             ShieldRemaining: Math.Max(0, shieldAmount), IsGuardianOwned: guardianOwned,
-            StateOrdinal: StateFor(group, guardianOwned));
+            StateOrdinal: StateFor(configId, group, guardianOwned));
         if (existing != null) list.Remove(existing);
         list.Add(buff);
         TrackPeriodic(null, unit, buff);
