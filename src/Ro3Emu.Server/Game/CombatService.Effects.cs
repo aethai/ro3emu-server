@@ -71,6 +71,7 @@ public sealed partial class CombatService
             else if (ReviveOffer != null) await ReviveOffer(s, target, row);
             return;
         }
+        if (EndureWhileCasting(Script(row))) await _buffs.AddAsync(s, EndureBuff, Math.Max(1, action.ActionMs), s.Role!.Id);
         if (await CreateSkillObjectAsync(s, action))
         {
             // A field resolves its effects later; "After using [Meteor Storm] ..." talent procs centre on its target point.
@@ -466,6 +467,10 @@ public sealed partial class CombatService
             .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid),
     ];
 
+    /// <summary>"Gain [Endure] while casting this skill" with no row in _kBuff1 (Flowing Shadow, Shadow Guard): its text links buff 903101.</summary>
+    private const int EndureBuff = 903101;
+    private static bool EndureWhileCasting(string script) => script is "yingliu" or "yingliuS1" or "qianying";
+
     private int PilesFor(int buffId, int enemiesHit) => BuffConfig.Get(_data, buffId) is { MaxStack: > 1 } buff && SkillShieldRules.IsShield(buff)
         ? (int)Math.Clamp(enemiesHit, 1, buff.MaxStack) : 1;
 
@@ -664,7 +669,7 @@ public sealed partial class CombatService
 
     private async Task DisplaceTargetAsync(GameSession s, ActiveSkillCast action, MonsterUnit target, Vec3 center)
     {
-        if (Displacement(action.Row) is not { } move || TargetMove(move.Kind, s, center) is not var (from, push)) return;
+        if (Displacement(action.Row) is not { } move || TargetMove(move.Kind, s, center) is not var (from, push) || _buffs.ResistsDisplacement(target)) return;
         float dx = target.X - from.X, dz = target.Z - from.Z;
         float length = MathF.Sqrt(dx * dx + dz * dz);
         if (length < 0.001f) return;
@@ -697,7 +702,7 @@ public sealed partial class CombatService
     /// </summary>
     private async Task KnockPlayerAsync(GameSession p, float fromX, float fromZ, float go, int skillId, int effectId, int ms)
     {
-        if (p.Dead || p.SceneLoading || p.Role is not { } role) return;
+        if (p.Dead || p.SceneLoading || p.Role is not { } role || _buffs.ResistsDisplacement(p)) return;
         float dx = p.Position.X - fromX, dz = p.Position.Z - fromZ, length = MathF.Sqrt(dx * dx + dz * dz);
         if (length < 0.001f || go < 0 && length <= -go) return;
         float distance = go >= 0 ? go : -(length + go);

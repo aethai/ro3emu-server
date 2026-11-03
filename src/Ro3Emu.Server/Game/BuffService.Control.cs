@@ -15,9 +15,33 @@ public sealed partial class BuffService
     private const int DisplacementImmunityCategory = 19, ControlImmunityCategory = 20,
         DebuffImmunityCategory = 21, AllNegativeImmunityCategory = 22;
 
+    /// <summary>Berserk 1121401: "Gain Slow Immunity"; Slows carry category 33, and its buff holds no immunity category of its own.</summary>
+    private const int SlowCategory = 33, BerserkGroup = 11214;
+
+    /// <summary>Praefatio 1430201: "grants them Immunity to up to ${3} [Status Effect] and [Movement Restriction] effects".</summary>
+    private const int PraefatioGroup = 14302;
+    private const long PraefatioSkill = 1430200;
+    private readonly Dictionary<ulong, int> _immunityCharges = [];
+
+    /// <summary>One Praefatio charge for an effect it refused; the last ends it.</summary>
+    private async Task SpendImmunityChargeAsync(GameSession player)
+    {
+        if (player.Buffs.FirstOrDefault(b => b.ExpireMs > MonsterService.NowMs && b.ConfigId / 100 == PraefatioGroup) is not { } buff) return;
+        int left = _immunityCharges.TryGetValue((ulong)buff.Guid, out int held) ? held
+            : Data.Config.SkillConfig.Get(_data, PraefatioSkill + Math.Max(1, buff.ConfigId % 100)) is { DescData: [_, _, var count, ..] }
+                && int.TryParse(count, out int charges) ? charges : 1;
+        if (--left > 0) { _immunityCharges[(ulong)buff.Guid] = left; return; }
+        _immunityCharges.Remove((ulong)buff.Guid);
+        await RemoveAsync(player, buff);
+    }
+
     private async Task<bool> RejectIncomingAsync(GameSession player, JsonElement incoming, bool guardianOwned, long sourceId)
     {
-        if (ImmuneTo(player.Buffs, incoming, guardianOwned)) return true;
+        if (ImmuneTo(player.Buffs, incoming))
+        {
+            await SpendImmunityChargeAsync(player);
+            return true;
+        }
         if (GameData.Int(incoming, "_iType") != NegativeBuffType
             || !GuardianPetRules.Numbers(incoming, "_kBuffCategory").Contains(ControlBuffTag)) return false;
         var charge = player.Buffs.FirstOrDefault(b => b.IsGuardianOwned && b.ExpireMs > MonsterService.NowMs
@@ -32,25 +56,34 @@ public sealed partial class BuffService
         return true;
     }
 
-    /// <summary>Tag 37 identifies control effects and _iType 2 debuffs; the holder's categories decide immunity.
-    /// (inferred) Reject the incoming buff before decay, rather than merely hiding its icon. (inferred scope) Only where a
-    /// guardian is involved, as the incoming buff's source or as the immunity's holder buff: ordinary buffs meeting
-    /// ordinary immunity keep their previous behaviour until that is established and tested for every source.</summary>
-    private bool ImmuneTo(IEnumerable<ActiveBuff> active, JsonElement incoming, bool incomingGuardian)
+    /// <summary>Tag 37 identifies control effects and _iType 2 debuffs; the holder's categories decide immunity, whoever gave either.
+    /// (inferred) Reject the incoming buff before decay, rather than merely hiding its icon.</summary>
+    private bool ImmuneTo(IEnumerable<ActiveBuff> active, JsonElement incoming)
     {
         if (GameData.Int(incoming, "_iType") != NegativeBuffType) return false;
         long now = MonsterService.NowMs;
         if (active.Any(b => b.ExpireMs > now && b.ShieldDebuffImmunity && b.ShieldRemaining > 0)) return true;
-        bool control = GuardianPetRules.Numbers(incoming, "_kBuffCategory").Contains(ControlBuffTag);
+        var categories = GuardianPetRules.Numbers(incoming, "_kBuffCategory");
+        bool control = categories.Contains(ControlBuffTag);
         bool displacement = GameData.Int(incoming, "_iBuffID") is KnockBackGroup or KnockUpGroup;
         // Chimera's charge also carries control immunity (category 20), but it is spent per application instead.
-        return active.Any(b => b.ExpireMs > now && (incomingGuardian || b.IsGuardianOwned)
+        bool slow = categories.Contains(SlowCategory);
+        return active.Any(b => b.ExpireMs > now
             && _data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") != ControlChargeGroup
             && GuardianPetRules.Numbers(row, "_kBuffCategory") is var held
             && (held.Contains(DebuffImmunityCategory) || held.Contains(AllNegativeImmunityCategory)
                 || control && held.Contains(ControlImmunityCategory)
-                || displacement && held.Contains(DisplacementImmunityCategory)));
+                || displacement && held.Contains(DisplacementImmunityCategory)
+                || slow && b.ConfigId / 100 == BerserkGroup));
     }
+
+    /// <summary>SpecialStatusConfig 22 Endure "免疫击退、击飞、僵直" and 23 control immunity, whose text lists knockback and launch too: nothing moves a holder.</summary>
+    private bool HoldsDisplacementImmunity(IEnumerable<ActiveBuff> active) => active.Any(b => b.ExpireMs > MonsterService.NowMs
+        && BuffConfig.Get(_data, b.ConfigId) is { } row && row.BuffCategory.Any(c => c is DisplacementImmunityCategory or ControlImmunityCategory or AllNegativeImmunityCategory));
+
+    internal bool ResistsDisplacement(GameSession player) => HoldsDisplacementImmunity(player.Buffs);
+
+    internal bool ResistsDisplacement(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs) && HoldsDisplacementImmunity(buffs);
 
     /// <summary>A unit holding a control immunity (category 20: the MVPs' born buffs 900801/900901, 9032) resists a control
     /// (tag 37) from any source: Element Control's "When a Boss target resists your [Frozen], [Petrify], or [Stun]" says
