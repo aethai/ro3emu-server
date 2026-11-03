@@ -56,7 +56,7 @@ public sealed partial class CombatService
             await OwnSkillLanded(s, row);
             return;
         }
-        if (Script(row) == "Resurrection")
+        if (IsResurrection(row))
         {
             var target = FindPlayer(s, action.Request.TargetId, dead: true);
             if (target == null || target.SceneLoading || _buffs.HasForbidden(target, ForbiddenState.Revive)

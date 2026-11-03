@@ -100,4 +100,24 @@ public sealed partial class SkillCombatTests
         Assert.NotEmpty(strikes);
         Assert.All(strikes, s => Assert.Equal((long)Math.Round(row.DamageParam1[0] * 1.25), s.Ratios[0]));
     }
+
+    // Revive [Buff Effect] (10102118 for the Priest line) selects AcolyteBD4: "Revive the designated dead ST ally".
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public async Task ResurrectionKeepsWorkingWithItsTalent(int level)
+    {
+        var (bot, me, _) = await Caster("Alice", 4200, 14112, level, 10102118);
+        await using var alice = bot;
+        await using var bob = await InWorld("Bob");
+        var b = Session("bob");
+        await Loop.InvokeAsync(async () => { b.Dead = true; await Character.SetHpSpAsync(b, 0, 0); });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1411200 + level, TargetId = b.Role!.Id });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(bob, WorldCoreService.ReliveInvitation, EntityReliveReceiveInviteNotify.Parser);
+        await bob.SendGameAsync(WorldCoreService.ReliveAccept, new EntityReliveInviteAcceptReq { SourceEntityID = me.Role!.Id, IsAccept = true });
+        Assert.Equal(0, (await Next(bob, WorldCoreService.ReliveAccept, EntityReliveInviteAcceptResp.Parser)).Result);
+        await Next(bob, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, p => !p.BDead);
+        Assert.False(b.Dead);
+    }
 }
