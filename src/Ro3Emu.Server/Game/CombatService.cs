@@ -721,7 +721,7 @@ public sealed partial class CombatService : IGameTicker
         var ratios = Numbers(skill, "_kDamageParam1");
         var flats = Numbers(skill, "_kDamageParam2");
         double p1 = ratios.Length > branch ? ratios[branch] : 10000, p2 = flats.Length > branch ? flats[branch] : 0;
-        double dmg = (magic ? a.Matk : a.Atk) * p1 / 10000 + p2;
+        double dmg = DamageSource(skill, a.Atk, a.Matk, magic) * p1 / 10000 + p2;
         // Defense: def / (def + ParDef 20 × the defender's level), the shape of the client's damage-reduction tooltip.
         double def = magic ? b.Mdef : b.Def;
         dmg *= 1 - def / (def + 20.0 * Math.Max(1, b.Level));
@@ -729,6 +729,18 @@ public sealed partial class CombatService : IGameTicker
         int element = (int)GameData.Int(skill, "_iEleType") is var se and > 1 ? se : a.Element;
         return dmg * Math.Clamp(1 + ElementFactor(element, b.Element) / 10000.0, 0.1, 10);
     }
+
+    /// <summary>
+    /// What a hit's ratio multiplies. _iDmgType says it for nearly every row and always says which defense counts, but the text
+    /// names another source on two physical skills: Magic Crasher and Magic Cannon, "Physical damage equal to MATK * 60%+10", and
+    /// both Soul Destroyers, "Physical ATK*41%+Magic ATK*41%+42" (the row's one ratio, its text gives both the same).
+    /// </summary>
+    internal static double DamageSource(JsonElement skill, double atk, double matk, bool magic) => new Data.Config.SkillConfig(skill).SkillId switch
+    {
+        12201 => matk,
+        15210 or 15240 => atk + matk,
+        _ => magic ? matk : atk,
+    };
 
     /// <summary>The expected damage of one hit (hit rate, mean float, crit share) from the same formula.</summary>
     private double ExpectedDamage(Fighter a, Fighter b, JsonElement skill)

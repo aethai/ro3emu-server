@@ -14,16 +14,32 @@ public sealed partial class CombatService
     private static readonly HashSet<string> ChannelScripts = ["VolleyArrows", "HighAltitudeBombing"];
 
     /// <summary>
+    /// Skills whose text gives a total of one hit per attack point, every point dealing: Spinning Axe [6000] on 2 points, "2 hits
+    /// totaling PATK * 120%". Piercing Shadow [11000,11000] on 2, "a total of PATK*220%". Spear Formation - Crescent Moon [3000]
+    /// on 3, "hits of PATK * 30%". Earthshaker's spinning row [1000,25000] on 11, "a total of PATK * 350%": ten of 10%, then 250%;
+    /// its plain row has 3 points and one hit by its text. Other multi-point rows read as one hit, or name their hits in a
+    /// value the data does not hold (Arm Cannon, Soul Expansion, Gravitational Impact), so they stay as they are (inferred).
+    /// </summary>
+    private static bool HitsEveryPoint(SkillConfig skill, int points) => points > 1 && skill.SkillId switch
+    {
+        16306 or 15326 or 11628 => true,
+        11624 => points >= 11,
+        _ => false,
+    };
+
+    /// <summary>
     /// A channelled row's hits: the show's point and the row it deals. The first point only opens the channel (inferred: no
     /// total above counts it). A second ratio is the last point's: Myriad Stars' talent row [20000,15000] has 11 hits, ten
     /// of 200% for its "2000" and "When the skill ends, it deals one instance of 150%" (SkillConfig 11336301).
     /// </summary>
     internal static (double Point, JsonElement Row)[] ChannelHits(JsonElement row, JsonElement? show)
     {
-        if (!ChannelScripts.Contains(Script(row))) return [];
-        double[] points = [.. SkillShow.AttackPoints(show).Skip(1)];
-        if (points.Length == 0) return [];
         var skill = new SkillConfig(row);
+        double[] all = [.. SkillShow.AttackPoints(show)];
+        bool staged = HitsEveryPoint(skill, all.Length);
+        if (!staged && !ChannelScripts.Contains(Script(row))) return [];
+        double[] points = staged ? all : [.. all.Skip(1)];
+        if (points.Length == 0) return [];
         var hit = skill.WithoutBuff1();
         var last = skill.DamageParam1 is [_, var final, ..] ? new SkillConfig(hit).WithDamage([final], skill.DamageParam2) : hit;
         return [.. points.Select((point, index) => (point, index == points.Length - 1 ? last : hit))];
