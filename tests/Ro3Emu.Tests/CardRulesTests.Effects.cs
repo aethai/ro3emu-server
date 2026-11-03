@@ -562,6 +562,75 @@ public sealed partial class CardRulesTests
         }
     }
 
+    private const int Osiris = 1460600, OsirisReduction = 2090401;
+
+    /// <summary>The lethal-hit offer for a socketed copy, then the player's answer on the wire (31135).</summary>
+    private async Task AnswerRevive(BotClient bot, GameSession session, int expectedRow, bool take)
+    {
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().TryPreventLethalAsync(session)));
+        Assert.Equal(expectedRow, session.ImmuneDeathOffer!.BuffConfigId);
+        await bot.SendGameAsync(BuffService.ImmuneDeathConfirm, new PlayerConfirmImmuneDeadReq { IsConfirm = take });
+        Assert.Equal(0, (await Next(bot, BuffService.ImmuneDeathConfirm, PlayerConfirmImmuneDeadRsp.Parser)).Result);
+    }
+
+    // Card: Osiris T3: 2052104 "... Life/MP is immediately restored to 100%. Internal Cooldown: 2.5 minutes. After the
+    // death-prevention effect triggers, Physical/Magic damage taken is reduced by 30% for 5 seconds." Row 2090401 [216, 3000].
+    [ClientDataFact]
+    public async Task OsirisAtTheTopTierReducesDamageTakenForFiveSecondsAfterTheRevive()
+    {
+        var (alice, session) = await SocketedOn(Osiris, 6, Ring);
+        await using (alice)
+        {
+            await AtStar(session, Osiris, 3);
+            Assert.Contains(session.Buffs, b => b.IsPassive && b.ConfigId == 2052104);
+            long before = await OnLoop(() => Service<CharacterService>().Stats(session)[216]);
+            await AnswerRevive(alice, session, 2052104, take: true);
+
+            var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == OsirisReduction));
+            Assert.Equal(5000, shown.Buffs.Single(b => b.ConfigId == OsirisReduction).Duration);
+            Assert.Equal(before + 3000, await OnLoop(() => Service<CharacterService>().Stats(session)[216]));
+            Assert.Equal(150_000, await OnLoop(() => session.BuffEffectCds.Values.Max() - MonsterService.NowMs + 500) / 1000 * 1000);
+        }
+    }
+
+    // T1 2052102 has the plain text and no category 5006; a declined revive at T2 is a death, with no reduction.
+    [ClientDataFact]
+    public async Task OsirisReducesNothingBelowItsTierOrOnADeclinedRevive()
+    {
+        var (alice, session) = await SocketedOn(Osiris, 6, Ring);
+        await using (alice)
+        {
+            await AtStar(session, Osiris, 1);
+            await AnswerRevive(alice, session, 2052102, take: true);
+            await Task.Delay(200);
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == OsirisReduction);
+
+            await OnLoop(() => { session.BuffEffectCds.Clear(); return 0; });
+            await AtStar(session, Osiris, 2);
+            await AnswerRevive(alice, session, 2052103, take: false);
+            await Task.Delay(200);
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == OsirisReduction);
+        }
+    }
+
+    // T2 2052103 has the reduction too; Shadow Card: Osiris's revive has no category 5006 and no such line.
+    [ClientDataTheory]
+    [InlineData(2052101, false)]
+    [InlineData(2052102, false)]
+    [InlineData(2052103, true)]
+    [InlineData(2052104, true)]
+    [InlineData(2052001, false)]
+    public void TheCategoryMarksExactlyTheRevivesWhoseTextNamesTheReduction(int id, bool reduces)
+    {
+        var data = Service<GameData>();
+        var buff = Ro3Emu.Server.Data.Config.BuffConfig.Get(data, id)!.Value;
+        Assert.Equal(reduces, buff.BuffCategory.Contains(5006));
+        if (reduces) Assert.Equal(["30", "5"], buff.DescData[2..]);
+        var reduction = Ro3Emu.Server.Data.Config.BuffConfig.Get(data, OsirisReduction)!.Value;
+        Assert.Equal(["30"], reduction.DescData);
+        Assert.Equal([216, 3000], reduction.ChangeAttri[0]);
+    }
+
     // Every family row says what it adds, and the tag it counts on sits on a monster the text names.
     [ClientDataTheory]
     [InlineData(2015001, 180, 5000099)] // "Damage against all Orcs +1.8%": Orc Lady
