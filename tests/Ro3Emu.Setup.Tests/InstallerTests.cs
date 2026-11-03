@@ -262,7 +262,7 @@ public sealed class InstallerTests : IAsyncLifetime
         await installer.ApplyAsync(installer.MakePlan(await installer.FetchAsync(), game), game);
         AssertInstalled(game, content);
         Assert.True(peak > 1, $"parts were fetched one at a time (peak {peak})");
-        Assert.True(_requests.Count(r => r.StartsWith("a/pkg/" + Sha(big)) || r.StartsWith(path)) > 4, "the package came in several parts");
+        Assert.True(_requests.Count(r => r.StartsWith("a/pkg/" + Sha(big), StringComparison.Ordinal) || r.StartsWith(path, StringComparison.Ordinal)) > 4, "the package came in several parts");
     }
 
     [Fact]
