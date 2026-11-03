@@ -88,7 +88,7 @@ public sealed partial class GuildTests
         Assert.Null(FoundingLetter(founder, 1018));
     }
 
-    [Fact]
+    [ClientDataFact]
     public async Task AnInstantHostIgnoresTheToggle()
     {
         await using var founder = await InWorld("Founder");
