@@ -229,4 +229,24 @@ public sealed partial class SkillCombatTests
         Assert.Equal(2, strikes.Count);
         Assert.All(strikes, s => Assert.Equal(9000, s.Ratios[0]));
     }
+
+    // Rapid Throw (10102114 for the Knight line) selects BoomerangBD01, [ratio, 5000] / [flat, 220]: "you throw one Extra
+    // Spear that Deals DMG equal to PATK * 50% + 220".
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public async Task SpearThrowThrowsItsExtraSpear(int level)
+    {
+        var (bot, me, strikes) = await Caster("Alice", 1200, 11110, level, 10102114);
+        await using var _ = bot;
+        var mark = await Mark(me, 3);
+        var row = Effective(me, 1111000 + level);
+        Assert.Equal(1111010 + level, row.Id);
+        Assert.Equal(0, (await Cast(bot, me, 1111000 + level, mark)).Result);
+        await Task.Delay(1500);
+        Assert.Equal(2, strikes.Count);
+        Assert.Equal(row.DamageParam1, strikes[0].Ratios);
+        Assert.Equal<long[]>([5000], strikes[1].Ratios);
+        Assert.Equal<long[]>([220], strikes[1].Flats);
+    }
 }
