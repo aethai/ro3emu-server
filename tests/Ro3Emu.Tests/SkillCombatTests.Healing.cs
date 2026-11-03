@@ -70,4 +70,19 @@ public sealed partial class SkillCombatTests
     [InlineData(2000, 1.6)] // half of Crit Damage counts, FormulaParamHealCriC 0.5
     public void AHealsCritAmountFollowsTheClientsFormula(long critDamage, double multiplier) =>
         Assert.Equal(multiplier, CombatService.HealCritMultiplier(critDamage), 6);
+
+    /// <summary>BuffConfig 1601101: STR +5. AttributeConversionConfig 1 gives a melee job ATK and DEF per point, as a point spent does.</summary>
+    [ClientDataFact]
+    public async Task StrengthFromABuffRaisesWhatStrengthRaises()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!job 1100");
+        var a = Session("alice");
+        var before = Character.Stats(a);
+        await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(a, 1601101, 60000, a.Role!.Id));
+        var after = Character.Stats(a);
+        Assert.Equal(before[1] + 5, after[1]);
+        Assert.True(after[AttributeId.Atk] >= before[AttributeId.Atk] + 5, $"{before[AttributeId.Atk]} -> {after[AttributeId.Atk]}");
+        Assert.True(after[AttributeId.Def] > before[AttributeId.Def], $"{before[AttributeId.Def]} -> {after[AttributeId.Def]}");
+    }
 }
