@@ -92,6 +92,7 @@ public sealed partial class DungeonService
         this._scenes = scene;
         this._world = world;
         this._vehicles = vehicles;
+        scene.WalkOnRide = vehicles.IsSeatedOnSceneActor;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
         WireRaidTrials(combat, gm);
         teams.MultiDungeonInfo = TeamDungeonInfo;
@@ -111,6 +112,9 @@ public sealed partial class DungeonService
 
     public sealed class Attempt
     {
+        /// <summary>Who sits on a scene actor now (a ride, DungeonService.Ride), with the seat's token.</summary>
+        internal Dictionary<GameSession, long> Riders { get; } = [];
+
         public required InstanceService.Room Room { get; init; }
         public required DungeonCatalog.Plan Plan { get; init; }
         public required long Leader { get; init; }

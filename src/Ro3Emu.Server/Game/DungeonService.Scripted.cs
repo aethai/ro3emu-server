@@ -1,4 +1,5 @@
 using Romsg;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Maps;
 using Kind = Ro3Emu.Server.Game.ReconstructedDungeons.TriggerKind;
@@ -45,6 +46,9 @@ public sealed partial class DungeonService
         public long BornMs { get; init; }
         public List<BuffInfo> Buffs { get; } = [];
 
+        /// <summary>Attribute 113 of an actor that can carry a rider: its own walking speed in cm/s, which the client moves it at.</summary>
+        public long CarrySpeed { get; init; }
+
         public override EntityBase Entity()
         {
             var entity = new EntityBase
@@ -65,6 +69,7 @@ public sealed partial class DungeonService
                 foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level), (113, t.SpeedCm),
                              (102, t.MaxSp), (2001, t.MaxSp) })
                     entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
+            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = 113, Data = CarrySpeed, BaseData = CarrySpeed });
             if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
             return entity;
         }
@@ -130,6 +135,8 @@ public sealed partial class DungeonService
                 InstanceId = a.Room.Id, X = at.X + spec.Dx, Y = at.Y, Z = at.Z + spec.Dz, Face = at.Face, NpcId = spec.NpcId, Point = spec.Point,
                 EntityType = type, Camp = GameData.Int(row, "_iCamp"), Name = type == 2 ? _data.TextOf(row, "_kName") : "",
                 Template = type == 1 ? _monsters.Template(spec.NpcId) : null, BornMs = MonsterService.NowMs,
+                CarrySpeed = _data.Row("VehicleConfig", spec.NpcId) != null && NPCConfig.Get(_data, spec.NpcId) is { } carrier
+                    && UnitConfig.Get(_data, carrier.UnitId) is { } carrierUnit ? (long)carrierUnit.Speed : 0,
             };
             unit.Buffs.AddRange(spec.Buffs.Select(id => ActorBuff(unit, id)));
             if (await _instances.AddPropAsync(a.Room, unit)) a.SceneActors.Add(unit);
