@@ -209,9 +209,14 @@ public sealed partial class CharacterService
                 if (id is >= 1 and <= 6) baseStats[id - 1] += value;
                 else Add(id, value);
             }
-        for (int i = 0; i < 6; i++) Add(i + 1, baseStats[i]);
+        // (inferred) STR..LUK from a buff count like gear's toward the conversions below (owner's decision 2.11).
         foreach (var buff in session.Buffs)
-            foreach (var (id, v) in buff.Changes) Add(id, v);
+            foreach (var (id, v) in buff.Changes)
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                else Add(id, v);
+            }
+        for (int i = 0; i < 6; i++) Add(i + 1, baseStats[i]);
         if (BaseRow(p.Career, p.Level) is { } flat)
             foreach (var (id, v) in GameData.Pairs(flat, "_kAttri")) Add(id, v);
         foreach (var (id, v) in data.JobAttributes(p.Career)) Add(id, v);
@@ -219,7 +224,7 @@ public sealed partial class CharacterService
         for (int stat = 1; stat <= 6; stat++)
         {
             if (data.Row("AttributeConversionConfig", stat) is not { } conversion) continue;
-            foreach (var (id, perPoint) in GameData.Pairs(conversion, ranged ? "_kAttribute2" : "_kAttribute1")) Add(id, perPoint * baseStats[stat - 1]);
+            foreach (var (id, perPoint) in GameData.Pairs(conversion, ranged ? "_kAttribute2" : "_kAttribute1")) Add(id, perPoint * Math.Max(0, baseStats[stat - 1]));
         }
     }
 

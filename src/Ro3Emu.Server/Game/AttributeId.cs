@@ -39,6 +39,8 @@ internal static class AttributeId
     internal const int PerDmg1 = 1215; // per_dmg1
     internal const int PerResDmg1 = 1216; // per_res_dmg1
     internal const int PerBeRemoteDmg1 = 1230; // per_beremote_dmg1
+    internal const int PerCd = 205; // per_cd
+    internal const int PerPubCd = 206; // per_pubcd
     internal const int SpDedution = 1231; // sp_dedution
     internal const int PerSpDedution = 1232; // per_sp_dedution
     internal const int Hp = 2000; // hp
