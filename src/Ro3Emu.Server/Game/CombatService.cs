@@ -11,6 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// <summary>A player's running auto-attack: the server repeats the normal attack.</summary>
 public sealed class AttackLoop
 {
+    public long OutOfReachSinceMs { get; set; }
     public required MonsterUnit Target { get; init; }
     public required int SkillId { get; set; }
     public long NextSwingMs { get; set; }
@@ -45,6 +46,8 @@ public sealed partial class CombatService : IGameTicker
 
     private const int AttrStatus = 2701;
     private const long FightBit = 1L << 15;           // eObjectStateBattling (16)
+    private const long CutSceneProtectionMs = 120_000;
+    private const long AttackOutOfReachMs = 3000; // (inferred) a loop on a target it cannot reach ends instead of waiting for ever
     private const long OutOfCombatMs = 10000;          // PublicParamConfig.OutOfCombatTime
     private const long RegenIntervalMs = 5000;         // PublicParamConfig.AutoRecoverInterval
     public const uint SkillCdUpdate = 31113;
@@ -632,6 +635,8 @@ public sealed partial class CombatService : IGameTicker
         using var held = await CharacterService.Lock(target);
         if (target.Dead || targetRole == null || !ReferenceEquals(target.Role, targetRole) || target.SceneLoading
             || valid?.Invoke() == false) return null;
+        // Owner's decision 2.11, deliberately past 1:1 (the client has no such rule): no damage during a cutscene, at most 120 s.
+        if (damage > 0 && target.InCutScene && target.CutSceneSinceMs > 0 && Now - target.CutSceneSinceMs <= CutSceneProtectionMs) damage = 0;
         // A missed/fully absorbed hit must not spend a finite Safety Wall charge.
         // GmUnlimit's invincibility (inferred): the hit lands as 0, like a Safety Wall.
         if (damage > 0 && ((target.GmCombat & GmCombatSwitches.Unlimited) != 0 || _buffs.HasForbidden(target, ForbiddenState.Damage)
@@ -1077,7 +1082,14 @@ public sealed partial class CombatService : IGameTicker
                 foreach (var unit in s.SkillObjects.ToArray()) _loop.TrackRuntimeDetached("skill object tick", () => TickSkillObjectAsync(unit));
             if (s.Attack is { } a && !s.Dead && now >= a.NextSwingMs)
             {
-                if (s.SceneLoading || !CanHitMonster(s, a.Target) || MonsterService.Distance(a.Target, s) > 30)
+                bool gaveUp = false;
+                if (EffectiveSkillRow(s, a.SkillId) is { } reach && MonsterService.Distance(a.Target, s) > Range(reach) + a.Target.Template.DamageRadius + 1.5f)
+                {
+                    if (a.OutOfReachSinceMs == 0) a.OutOfReachSinceMs = now;
+                    gaveUp = now - a.OutOfReachSinceMs > AttackOutOfReachMs;
+                }
+                else a.OutOfReachSinceMs = 0;
+                if (gaveUp || s.SceneLoading || !CanHitMonster(s, a.Target) || MonsterService.Distance(a.Target, s) > 30)
                 {
                     s.Attack = null;
                     if (s.SkillCast?.Request.SkillId == a.SkillId)

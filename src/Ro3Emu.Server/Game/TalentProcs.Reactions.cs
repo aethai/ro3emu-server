@@ -118,8 +118,7 @@ public sealed partial class TalentProcs
             yield return (AttrMatk, reaper.Matk);
     }
 
-    /// <summary>Gravitation Field resolves at once here (it leaves no field NPC), so it "ends" its _kLogicData[1] (3900 ms)
-    /// after the cast; the Immobilize then lands on the monsters within its _kRange of the target point (inferred).</summary>
+    /// <summary>Gravitation Field ends its _kLogicData[1] (3900 ms) after the cast; the Immobilize then lands on the monsters within its _kRange of the target point (inferred).</summary>
     private void GravityTrap(GameSession s, ActiveSkillCast action, SkillConfig cast)
     {
         if (cast.SkillId != GravitationField || Talent(s, GravityTrapTalent) is not { } description

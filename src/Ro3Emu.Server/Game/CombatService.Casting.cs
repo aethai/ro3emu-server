@@ -159,7 +159,8 @@ public sealed partial class CombatService
                 ArrivalSpeed = s.Speed / 100f, WalkFromUtc = s.LastWalkUtc
             };
         }
-        else s.Attack = null;
+        // _iIfAutoAtk 1 (NotInterrupt, LC_Skill_RunTimeContext): the running attack goes on after this cast.
+        else if (new SkillConfig(row.Value).IfAutoAtk != 1) s.Attack = null;
         if (GameData.Int(row.Value, "_iIfAutoAtk") == 2 && owned == null && playerTarget != null)
             _eventAttacks[s] = new EventAttack(playerTarget, loopSkill,
                 Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value) + 1,
@@ -775,7 +776,9 @@ public sealed partial class CombatService
     {
         if (_eventAttacks.TryGetValue(s, out var eventAttack)
             && MonsterService.Distance(eventAttack.StartX, eventAttack.StartZ, s.Position.X, s.Position.Z) > 1.5f) _eventAttacks.Remove(s);
-        if (s.Attack is { } a && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 0.1f)
+        // A position correction of a few cm is no step away (inferred): a real walk, or past 1.5 m as event attacks use, ends the loop.
+        if (s.Attack is { } a && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 0.1f
+            && (s.Walking || a.StartedWalking || MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 1.5f))
         {
             // Clicking an enemy from afar: the client attacks on reaching range and stops a few ms later (in-game
             // 11.10), so that first stop is where the auto-attack starts, not a step away that ends it. The 300 ms grace is inferred.
