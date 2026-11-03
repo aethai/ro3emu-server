@@ -185,7 +185,7 @@ public sealed partial class CardRulesTests
 
     private const int Bongun = 1430604, WindGhost = 1430612, CardBash = 2002801, CardJupitel = 2002901;
 
-    private async Task NoHitOf(BotClient bot, int row)
+    private static async Task NoHitOf(BotClient bot, int row)
     {
         await Task.Delay(300);
         Assert.Empty(SplashHits(bot, row));
@@ -513,7 +513,7 @@ public sealed partial class CardRulesTests
 
     private const int Doppelganger = 1460103, NextHitBuff = 2091101;
 
-    private Task SetCrit(bool crit) => OnLoop(() => { Service<CombatService>().Rolls = new FixedRolls(crit); return 0; });
+    private async Task SetCrit(bool crit) => await OnLoop(() => { Service<CombatService>().Rolls = new FixedRolls(crit); return 0; });
 
     /// <summary>A hit right after the last one: the swing lock would otherwise spend most of the 2 s.</summary>
     private async Task<DamageInfo> QuickSwing(BotClient bot, GameSession session, MonsterUnit target)
