@@ -452,13 +452,15 @@ public sealed partial class CombatService
             // that id's distance. (inferred) One out of reach is not hit, and the cast stands: such a row can be pressed
             // with a far target still selected. A row without a reach in its data says nothing to compare.
             if (new SkillConfig(row).RangeType == SkillRelease.SingleTarget && aim > 1 + slack
-                && (monster?.Pos ?? enemyPlayer?.Position) is { } named && Distance(origin, named) > aim) req.TargetId = 0;
+                && (monster?.Pos ?? enemyPlayer?.Position) is { } named && Distance(origin, named) > aim + (monster?.Template.DamageRadius ?? 0)) req.TargetId = 0;
             return 0;
         }
         if (!_buffs.CanSeePosition(s, targetPosition)) return ErrorCodes.SkillTargetInvalid;
         float d = Distance(origin, targetPosition);
         float reach = slack > 0 ? Distance(WalkPoint(s, origin, targetPosition, slack), targetPosition) - LegJitter : d;
-        if (d < new SkillConfig(row).DistanceMin / 100f - slack || reach > Math.Max(Range(row), askedRange) + 0.5f)
+        // The client adds the target's m_fModelDamageRadius to the casting range: a melee hit on Eddga reaches 5.4 m from its centre, not 3.
+        float body = monster?.Template.DamageRadius ?? 0;
+        if (d < new SkillConfig(row).DistanceMin / 100f - slack || reach > Math.Max(Range(row), askedRange) + body + 0.5f)
             return ErrorCodes.SkillDistance;
         float height = GameData.Int(row, "_iHeightRange") / 100f;
         if (height > 0 && MathF.Abs(origin.Y - targetPosition.Y) > height) return ErrorCodes.SkillHeight;

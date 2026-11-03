@@ -24,6 +24,8 @@ public sealed record MonsterTemplate(
     public float BattleCallRange { get; init; }
     /// <summary>AIConfig _iBattleCallResponse 1: it answers such a call.</summary>
     public bool AnswersBattleCall { get; init; }
+    /// <summary>Metres a skill reaches past its centre (<see cref="Data.Config.UnitConfig.DamageRadius"/>).</summary>
+    public float DamageRadius { get; init; }
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war

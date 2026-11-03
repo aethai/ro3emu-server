@@ -172,8 +172,16 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             CastSpeed = A(AttributeId.CastSpeed),
             SurroundDistance = SurroundSpacing(_data, ai),
             BattleCallRange = aiRow is { } call && new Data.Config.AIConfig(call).BattleCallType == 1 ? new Data.Config.AIConfig(call).BattleCallDistance / 100f : 0,
+            DamageRadius = DamageRadiusOf(npc),
             AnswersBattleCall = aiRow is { } answer && new Data.Config.AIConfig(answer).BattleCallResponse == 1,
         };
+    }
+
+    private float DamageRadiusOf(JsonElement npc)
+    {
+        var config = new Data.Config.NPCConfig(npc);
+        long min = _data.Table("PublicParamConfig").TryGetValue("MinCollisionCircleRadius", out var v) ? (long)(GameData.Number(v) ?? 110) : 110;
+        return Data.Config.UnitConfig.Get(_data, config.UnitId)?.DamageRadius(config, min) ?? 0;
     }
 
     private BossNormalAttacks? _bossAttacks;
