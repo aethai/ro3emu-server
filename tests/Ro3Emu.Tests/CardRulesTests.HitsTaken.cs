@@ -221,4 +221,29 @@ public sealed partial class CardRulesTests
             Assert.Equal(0, (await CastAt(alice, a, FireBolt, b)).Damage);
         }
     }
+
+    private const int Ladybug = 1430702, Silence = 902301;
+
+    // Card: Ladybug T2: 2026001 "Damage taken while Silenced -3%." [300]; its star raises only HP, and the damage only has to be
+    // read against a hit at the same star. A real swing and a Fire Bolt, silenced and not.
+    [ClientDataFact]
+    public async Task LadybugTakesThreePercentOffWhileSilencedOnly()
+    {
+        var (alice, session) = await Holder("Alice", Ladybug, 8);
+        await using (alice)
+        {
+            await AtStar(session, Ladybug, 2);
+            var striker = (await Strikers(session, 1))[0];
+            long swing = (await SwungAt(alice, session, striker)).Damage;
+            long skill = (await SkillAt(alice, session, striker, FireBolt)).Damage;
+            Assert.True(swing >= 34, "too little damage to see 3% in: " + swing);
+
+            await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().AddAsync(session, Silence, 60_000, striker.Uid));
+            Assert.Equal(swing - (long)Math.Floor(swing * 0.03), (await SwungAt(alice, session, striker)).Damage);
+            Assert.Equal(skill - (long)Math.Floor(skill * 0.03), (await SkillAt(alice, session, striker, FireBolt)).Damage);
+
+            await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().RemoveAsync(session, session.Buffs.Single(b => b.ConfigId == Silence)));
+            Assert.Equal(swing, (await SwungAt(alice, session, striker)).Damage);
+        }
+    }
 }
