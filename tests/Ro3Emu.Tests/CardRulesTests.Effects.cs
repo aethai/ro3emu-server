@@ -27,6 +27,17 @@ public sealed partial class CardRulesTests
         return (alice, session);
     }
 
+    /// <summary>Card part 7 goes in the head costume grid 8, open from base level 20 and active with no gear.</summary>
+    private async Task<(BotClient Bot, GameSession Session)> OnHeadCostume(int card)
+    {
+        var alice = await InWorld("Alice");
+        var session = Session("Alice");
+        await Gm("alice", "!lvl 80");
+        await Gm("alice", $"!item {card} 1");
+        Assert.Equal(0, await Insert(alice, 8, 1, session.Items.Single(i => i.Entry == card).Guid));
+        return (alice, session);
+    }
+
     /// <summary>A socketed copy at a star (CardConfig._iTier), as a star-up leaves it.</summary>
     private Task AtStar(GameSession session, int card, int star) => Service<GameLoop>().InvokeAsync(async () =>
     {
@@ -324,6 +335,100 @@ public sealed partial class CardRulesTests
             Service<CardEffects>().Roll = _ => 0;
             await Cast(alice, 1109901, target);
             await NoHitOf(alice, doubleAttack);
+        }
+    }
+
+    private const int Pharaoh = 1460702, ClassHeal = 1400701, DivineLight = 2003901;
+
+    private static async Task<SkillHitInfo> Heal(BotClient bot, long target)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = ClassHeal, TargetId = target });
+            var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+            if (accepted.Result == 0)
+                return await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.SkillId == ClassHeal);
+            Assert.True(attempt < 60, "the heal was refused " + accepted.Result);
+            await Task.Delay(50);
+        }
+    }
+
+    // Card: Pharaoh, T2 here (its star only raises the stat lines): 2053101 "When applying a healing skill effect, has a 10% Chance
+    // to trigger Divine Light Lv1. Internal Cooldown: 2 seconds." Divine Light 2003901 "for you and a designated ST ally".
+    [ClientDataFact]
+    public async Task PharaohTriggersDivineLightOnTheHealedAllyAndTheCasterAndThenWaitsItsCooldown()
+    {
+        var (alice, session) = await OnHeadCostume(Pharaoh);
+        await using (alice)
+        {
+            await using var bob = await InWorld("Bob");
+            var ally = Session("Bob");
+            await Gm("bob", "!lvl 80");
+            await Gm("alice", "!job 4100");
+            await Learn(session, 14007);
+            await AtStar(session, Pharaoh, 2);
+            Assert.Contains(session.Buffs, b => b.IsPassive && b.ConfigId == 2053101);
+            var character = Service<CharacterService>();
+            var effects = Service<CardEffects>();
+            await Service<GameLoop>().InvokeAsync(() => character.SetHpSpAsync(ally, 1, null));
+
+            effects.Roll = _ => 1000;
+            Assert.Equal(ally.Role!.Id, Assert.Single((await Heal(alice, ally.Role!.Id)).Dsts).DstID);
+            await NoHitOf(alice, DivineLight);
+
+            await Service<GameLoop>().InvokeAsync(async () =>
+            {
+                await character.SetHpSpAsync(ally, 1, null);
+                await character.SetHpSpAsync(session, 1, null);
+            });
+            effects.Roll = _ => 999;
+            await Heal(alice, ally.Role!.Id);
+            var light = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == DivineLight);
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            Assert.Equal(new[] { ally.Role!.Id, session.Role!.Id }.Order(), light.Dsts.Select(d => d.DstID).Order());
+            Assert.All(light.Dsts, d => { Assert.Equal(DamageType.Heal, d.DamageType); Assert.True(d.Damage > 0); });
+            Assert.True(await OnLoop(() => character.Stats(session)[2000]) > 1);
+
+            await Heal(alice, ally.Role!.Id); // a heal's chant is about the cooldown's length: only a heal inside it says anything
+            if (started.ElapsedMilliseconds < 1800)
+            {
+                await Task.Delay(100);
+                Assert.Single(SplashHits(alice, DivineLight));
+            }
+            await Task.Delay(2100);
+            await Heal(alice, ally.Role!.Id);
+            await Eventually(() => SplashHits(alice, DivineLight).Count >= 2, "the second Divine Light");
+        }
+    }
+
+    // Healing yourself: the row's second target is you, so the one target is you.
+    [ClientDataFact]
+    public async Task PharaohsDivineLightOnASelfHealHealsOnlyTheCaster()
+    {
+        var (alice, session) = await OnHeadCostume(Pharaoh);
+        await using (alice)
+        {
+            await Gm("alice", "!job 4100");
+            await Learn(session, 14007);
+            Service<CardEffects>().Roll = _ => 0;
+            await Service<GameLoop>().InvokeAsync(() => Service<CharacterService>().SetHpSpAsync(session, 1, null));
+            await Heal(alice, session.Role!.Id);
+            var light = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == DivineLight);
+            Assert.Equal(session.Role!.Id, Assert.Single(light.Dsts).DstID);
+        }
+    }
+
+    // A swing heals no one.
+    [ClientDataFact]
+    public async Task PharaohLeavesAHitAlone()
+    {
+        var (alice, session) = await OnHeadCostume(Pharaoh);
+        await using (alice)
+        {
+            var target = (await Dummies(session, 5000002))[0];
+            Service<CardEffects>().Roll = _ => 0;
+            await Swing(alice, session, target);
+            await NoHitOf(alice, DivineLight);
         }
     }
 

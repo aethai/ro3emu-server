@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 
@@ -55,4 +56,14 @@ public sealed class CardEffectRuleTests
     [InlineData(20210, 1, false, false)] // a Physical skill
     public void AnAutocastAnswersItsOwnKindOfCast(long group, long damageType, bool normalAttack, bool triggers) =>
         Assert.Equal(triggers, CardEffects.TriggersAutocast(group, damageType, normalAttack));
+
+    [Fact]
+    public void DivineLightHealsTheCasterAndTheFirstOtherOneHealed()
+    {
+        static DamageInfo Healed(long id) => new() { DstID = id, DamageType = DamageType.Heal };
+        Assert.Equal([9], CardEffects.DivineLightTargets(9, [Healed(9)]));
+        Assert.Equal([5, 9], CardEffects.DivineLightTargets(9, [Healed(5)]));
+        Assert.Equal([5, 9], CardEffects.DivineLightTargets(9, [Healed(9), Healed(5), Healed(6)]));
+        Assert.Equal([9], CardEffects.DivineLightTargets(9, [new DamageInfo { DstID = 5 }, Healed(9)])); // a monster it hit
+    }
 }

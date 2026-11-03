@@ -32,9 +32,9 @@ namespace Ro3Emu.Server.Game;
 /// - monster family: Orc Lady, Kobold Leader, Goblin Leader, Aster, Crab, Shellfish add _kLogicData[0] bp of damage against
 ///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
 /// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder; Double Attack on a Basic Attack: 20210, see
-///   <see cref="AutocastsAsync"/>.
-/// Not executed (no machinery or no data link): the Divine Light autocast, armor element changes, magic nullify/reflect,
-/// status immunities, Endure, cooldown reset, monster SP drain, detection, indestructible gear.
+///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
+/// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
+/// cooldown reset, monster SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -44,6 +44,7 @@ public sealed class CardEffects
     private readonly BuffService _buffs;
     private readonly SkillService _skills;
     private readonly CombatService _combat;
+    private readonly SessionRegistry _sessions;
     private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = [];
 
     private sealed class Runtime
@@ -58,7 +59,7 @@ public sealed class CardEffects
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509;
-    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210;
+    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -66,9 +67,10 @@ public sealed class CardEffects
     internal Func<int, int> Roll { get; set; } = bound => Random.Shared.Next(bound);
 
     public CardEffects(GameData data, CharacterService character, BuffService buffs, CardService cards, CombatService combat,
-        SceneService scenes, SkillService skills)
+        SceneService scenes, SkillService skills, SessionRegistry sessions)
     {
         this._data = data;
+        this._sessions = sessions;
         this._skills = skills;
         this._character = character;
         this._buffs = buffs;
@@ -287,6 +289,34 @@ public sealed class CardEffects
         var cast = new SkillConfig(action.Row);
         await SplashAsync(s, action, cast, processed, hit, passives);
         await AutocastsAsync(s, action, cast, processed, hit, passives);
+        await HealAutocastAsync(s, hit, passives);
+    }
+
+    /// <summary>Who Divine Light heals, in order: "Restores Life ... for you and a designated ST ally" with _iTargetMax 2. (inferred)
+    /// The designated ally is the first the triggering heal reached other than the caster, none if it healed only the caster.
+    /// Class Heal has the same words with _iTargetMax 1 and heals only its target, so the 2 is what tells the two rows apart.</summary>
+    internal static long[] DivineLightTargets(long caster, IEnumerable<DamageInfo> dsts) =>
+        dsts.FirstOrDefault(d => d.DamageType == DamageType.Heal && d.DstID != caster) is { } ally ? [ally.DstID, caster] : [caster];
+
+    /// <summary>
+    /// Pharaoh: "When applying a healing skill effect, has a ${1}% Chance to trigger [Divine Light] Lv@{1}. Internal Cooldown: ${2}
+    /// seconds." _kLogicData [chance bp, row], _kDescData [chance, cooldown]. (inferred) A healing skill effect is an own cast that
+    /// healed someone, a full ally too. Heals by a ground field, a buff's ticks, an item or an extra cast do not reach CastResolved.
+    /// </summary>
+    private async Task HealAutocastAsync(GameSession s, SkillHitInfo hit, IReadOnlyList<Passive> passives)
+    {
+        if (!hit.Dsts.Any(d => d.DamageType == DamageType.Heal)) return;
+        foreach (var passive in passives.DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != HealAutocast || buff.LogicData is not [var chance, var id] || SkillConfig.Get(_data, id) is not { } row
+                || Description(passive.Row) is not [_, var cooldown, ..] || Roll(10000) >= chance || !Ready(s, HealAutocast, (long)(cooldown * 1000))) continue;
+            List<GameSession> allies = [];
+            foreach (long target in DivineLightTargets(s.Role!.Id, hit.Dsts).Take((int)Math.Max(1, row.TargetMax)))
+                if (target == s.Role.Id) allies.Add(s);
+                else if (_sessions.All().FirstOrDefault(p => p.Role?.Id == target) is { } ally) allies.Add(ally);
+            await _combat.CastExtraOnAlliesAsync(s, row.Row, allies);
+        }
     }
 
     /// <summary>Whether a cast sets off the autocast passive of this group.</summary>
