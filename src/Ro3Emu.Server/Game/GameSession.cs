@@ -229,7 +229,17 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>Quest state (AUTO_SYNC 5027), loaded at login by TaskService.</summary>
     public Romsg.DBTaskInfo? Tasks { get; set; }
     public TaskRuntimeState TaskRuntime { get; set; } = new();
-    public bool InCutScene { get => TaskRuntime.InCutScene; set => TaskRuntime.InCutScene = value; }
+    public bool InCutScene
+    {
+        get => TaskRuntime.InCutScene;
+        set
+        {
+            if (value && !TaskRuntime.InCutScene) CutSceneSinceMs = MonsterService.NowMs;
+            TaskRuntime.InCutScene = value;
+        }
+    }
+    /// <summary>When this login's cutscene began; 0 when one was only restored from the saved state.</summary>
+    public long CutSceneSinceMs { get; private set; }
 
     /// <summary>Serializes quest transitions and source replay independently of the inventory transaction lock.</summary>
     public SemaphoreSlim TaskLock { get; } = new(1, 1);
