@@ -512,4 +512,10 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     /// <summary>Set by TerritoryWarsService: whether a walk crosses something the nav grid does not hold that carries it
     /// over blocked cells (a siege ladder against the city wall); such a walk is not held to the grid.</summary>
     public Func<GameSession, Vec3, Vec3, bool>? WalkBridged { get; set; }
+
+    /// <summary>
+    /// The player sits on a scripted ride: the client reports the carrier's walk as its own, up the walls of a surface scene and at
+    /// the carrier's speed, neither of which is the player's (LC_Movement_Controller_NavMesh._getAreaMask). The route is the server's.
+    /// </summary>
+    public Func<GameSession, bool>? WalkOnRide { get; set; }
 }

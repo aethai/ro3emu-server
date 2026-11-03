@@ -61,6 +61,7 @@ public sealed partial class SceneService
         float dx = to.X - from.X, dz = to.Z - from.Z, dist = MathF.Sqrt(dx * dx + dz * dz);
         if (dist <= StandStill) return null;
         spend = dist;
+        if (WalkOnRide?.Invoke(s) == true) return null;
         double speed = WalkSpeed(s), available = s.WalkAllowance.Available(now, speed);
         bool bridged = WalkBridged?.Invoke(s, from, to) == true;
         if (!bridged && worldData.Map(s.SceneEntry)?.Nav is { } nav && NavProblem(nav, from, to, available, ref spend) is { } blocked)

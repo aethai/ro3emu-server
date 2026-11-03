@@ -149,6 +149,7 @@ public sealed class WorldInteractionService
         };
         await s.SendGameAsync(Change, message);
         foreach (var viewer in _world.Viewers(s)) await viewer.SendGameAsync(Change, message);
+        if (state.Scripted) await SceneActorCarryAsync(s, state, seated: false);
     }
 
     private Task LeaveAsync(GameSession s) => ExitAsync(s, true);
@@ -258,9 +259,33 @@ public sealed class WorldInteractionService
         if (seat < 0 || seat >= seats.Length || _data.Row("VehicleSeatConfig", seats[seat]) == null || !SeatFree(s, actorUid, seat)) return 0;
         _active[s] = state;
         _seats[(s.WorldScene, actorUid, seat)] = s;
+        // The carry first, so LC_GamePlayStatusMgr.EnterVehicle finds the passenger component (as VehicleSeats.BoardAsync).
+        await SceneActorCarryAsync(s, state, seated: true);
         await NotifyAsync(s, state, false);
         await Send3CAsync(s, state);
         return state.Token;
+    }
+
+    private async Task SceneActorCarryAsync(GameSession s, Active state, bool seated)
+    {
+        long type = VehicleSeatConfig.Get(_data, VehicleSeats(state)[state.SeatIndex])?.Type ?? 0;
+        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+        var rider = new AoICarry { Id = (ulong)s.Role!.Id, CarrySlot = state.SeatIndex, CarryOffset = new Vec3(), CarryType = (int)type };
+        total.AoiData.Add(new AoIInfoSingle
+        {
+            EntityUuid = (ulong)s.Role.Id,
+            CarryInfo = new AoICarryInfo
+            {
+                BeCarried = new AoICarry { Id = seated ? (ulong)state.Npc.Uid : 0, CarrySlot = state.SeatIndex, CarryOffset = new Vec3(), CarryType = (int)type },
+            },
+        });
+        total.AoiData.Add(new AoIInfoSingle
+        {
+            EntityUuid = (ulong)state.Npc.Uid,
+            CarryInfo = seated ? new AoICarryInfo { AddCarries = { rider } } : new AoICarryInfo { RemoveCarries = { rider } },
+        });
+        await s.SendGameAsync(WorldCoreService.AoiInfo, total);
+        foreach (var viewer in _world.Viewers(s)) await viewer.SendGameAsync(WorldCoreService.AoiInfo, total);
     }
 
     /// <summary>
