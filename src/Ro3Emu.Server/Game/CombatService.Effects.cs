@@ -90,6 +90,20 @@ public sealed partial class CombatService
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
     }
 
+    /// <summary>Chain Lightning: "the designated ST enemy ... and up to ${3} Other enemies within ${2} meters of the target". Its _kRange is [0].</summary>
+    private static float? ChainRadius(JsonElement row) => Script(row) == "ChainLightning"
+        && new SkillConfig(row).DescData is [_, var metres, ..]
+        && float.TryParse(metres, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float radius) ? radius : null;
+
+    /// <summary>Flowing Shadow: "a ${2}-meter-wide, ${3}-meter-long rectangular" strip from where the dash began. Its _kRange is [100,0,0,0].</summary>
+    private static bool InDashStrip(JsonElement row, ActiveSkillCast action, Vec3 point)
+    {
+        var (forward, side) = FacingOffset(point.X - action.Origin.X, point.Z - action.Origin.Z, action.Request.Face);
+        var desc = new SkillConfig(row).DescData;
+        double Metres(int i) => i < desc.Length && double.TryParse(desc[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
+        return Math.Abs(side) <= Metres(1) / 2 + .1 && forward >= -.5 && forward <= Metres(2) + .1;
+    }
+
     private List<MonsterUnit> SelectEnemies(GameSession s, ActiveSkillCast action, Vec3 center, float? radiusOverride = null)
     {
         var row = action.Row;
@@ -105,6 +119,7 @@ public sealed partial class CombatService
         // A radius override is a plain circle around the given center; otherwise the row's own area.
         bool InShape(MonsterUnit m) => radiusOverride is { } radius
             ? (height <= 0 || MathF.Abs(m.Y - center.Y) <= height) && Distance(center, m.Pos) <= radius + 0.1f
+            : Script(row) is "yingliu" or "yingliuS1" ? InDashStrip(row, action, m.Pos)
             : SkillAreaContains(row, action.Origin, center, action.Request.Face, m.Pos);
         return [.. _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
             .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid).Take(max)];
@@ -132,7 +147,9 @@ public sealed partial class CombatService
             && _sessions.Contains(s);
         string script = Script(row);
         var targets = chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
-            ?? SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null);
+            ?? (ChainRadius(row) is { } chain
+                ? SelectEnemies(s, action, FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? center, chain)
+                : SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null));
         // "Undead-property and Demon Race monsters within the area take ranged Holy magic damage": its selector names no race.
         if (script == "Sanctuary") targets.RemoveAll(m => m.Template.Race != DemonRace && m.Template.Element != UndeadElement);
         var playerTargets = EffectPlayerTargets(s, action, center);
@@ -476,6 +493,11 @@ public sealed partial class CombatService
         new Dictionary<string, (DisplaceKind, int, float)>
         {
             ["BackSlide"] = (DisplaceKind.CasterBack, 0, 0),
+            ["yingliu"] = (DisplaceKind.CasterForward, 0, 0),             // Flowing Shadow: "dash ${1} meters as a phantom"
+            ["yingliuS1"] = (DisplaceKind.CasterForward, 0, 0),
+            ["hesehuanying"] = (DisplaceKind.CasterToTarget, 4, 0),       // Shadow Step: "a point ${5} meters in front of the target"
+            ["hesehuanyingS1"] = (DisplaceKind.CasterToTarget, 4, 0),
+            ["DarkIllusion"] = (DisplaceKind.CasterForward, 1, 0),        // "quickly dash ${2} meters toward the target"
             ["RetreatingShadows"] = (DisplaceKind.CasterBack, 0, 0),
             ["RetreatingShadowsS1"] = (DisplaceKind.CasterBack, 0, 0),
             ["WolvesDash"] = (DisplaceKind.CasterForward, 0, 0),
@@ -525,6 +547,8 @@ public sealed partial class CombatService
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, int> MovementEffectOverrides = new Dictionary<string, int>
     {
+        ["yingliuS1"] = 1542101, // its mode row's show has no movement of its own; Flowing Shadow's 15421 (inferred)
+        ["hesehuanyingS1"] = 1540104, // likewise, Shadow Step's 15401 (inferred)
         ["Spear_Stab"] = 1631405,
         ["Sightrasher"] = 1631405,
         ["PinpointAttack2"] = 1162412,
