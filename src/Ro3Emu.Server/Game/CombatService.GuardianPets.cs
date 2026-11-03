@@ -20,6 +20,7 @@ public sealed partial class CombatService
         TakenAsync.Add((_, target, amount) => GuardianTakenAsync(target, amount));
         DamageAdjusters.Add((s, _, row, _, damage) => GuardianOutgoingDamage(s, row, damage));
         CastResolved.Add(AutoCounterOnCastAsync);
+        CastResolved.Add(SupportSkillOnCastAsync);
         DamageAdjusters.Add((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
         _buffs.UnitChanged.Add(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;

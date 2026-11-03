@@ -89,7 +89,7 @@ public sealed partial class SkillCombatTests
         await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
         await Gm("bob", "!lvl 60 40"); await Gm("alice", "!lvl 60 40");
         await Task.Delay(300);
-        var a = Session("alice"); var b = Session("bob");
+        var a = Session("alice"); var b = Session("bob"); a.NoRegenUntilMs = b.NoRegenUntilMs = long.MaxValue; // a recovery tick would change the sums
         var combat = _app.Services.GetRequiredService<CombatService>();
         long aliceHp = Character.Stats(a)[AttributeId.Hp], bobHp = Character.Stats(b)[AttributeId.Hp];
         await Loop.InvokeAsync(async () =>
