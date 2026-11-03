@@ -71,7 +71,31 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var session = Session(name);
         using var held = await CharacterService.Lock(session);
         session.Progress!.Skills[group] = 1;
+        // The weapon the row's _iSkillCondition asks: without it the server refuses the cast, as the client does.
+        if (AskedWeapon(group) is { } weapon && !session.Items.Any(i => i.Grid is 1 or 2 && i.Entry == weapon))
+            session.Items.Add(new Ro3Emu.Server.Accounts.InvItem { Guid = 990100 + group, Entry = weapon, Stack = 1, Grid = 1 });
     });
+
+    /// <summary>An item of the first weapon subtype (LC_ConditionList [2001, subtype]) the group's first row asks, if any.</summary>
+    private int? AskedWeapon(int group)
+    {
+        var data = _app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>();
+        if (Ro3Emu.Server.Data.Config.SkillConfig.Get(data, group * 100 + 1) is not { SkillCondition: not 0 } row
+            || Ro3Emu.Server.Data.Config.LCConditionList.Get(data, row.SkillCondition) is not { } node) return null;
+        long? subType = FirstEquipLeaf(node);
+        return subType == null ? null : (int)data.Table("ItemConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.ItemConfig(r))
+            .First(item => item.SubType == subType && item.EquipPart > 0).Id;
+    }
+
+    private static long? FirstEquipLeaf(Ro3Emu.Server.Data.Config.LCConditionList node)
+    {
+        if (node.Type == 3) return node.Data is [2001, var subType, ..] ? subType : null;
+        if (node.SubConditionList is not { ValueKind: System.Text.Json.JsonValueKind.Array } subs) return null;
+        foreach (var sub in subs.EnumerateArray())
+            if (FirstEquipLeaf(new Ro3Emu.Server.Data.Config.LCConditionList(sub)) is { } found) return found;
+        return null;
+    }
+
     private Task<MonsterUnit> Target(string name, bool stationary = false, int npcId = 5000001) => Loop.InvokeAsync(async () =>
     {
         var s = Session(name);

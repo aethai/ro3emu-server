@@ -93,6 +93,7 @@ public sealed partial class CombatService
                 : !Learned(s, row!.Value) && s.GmCastSkill != request.SkillId && !GrantedSkill.Exists(granted => granted(s, req.SkillId))))
                 error = ErrorCodes.SkillNotLearned;
             else if (!SkillModeAllowed(s, row!.Value)) error = ErrorCodes.SkillRequirements;
+            else if (own == null && owned == null && s.GmCastSkill != request.SkillId && !SkillConditionMet(s, row.Value)) error = ErrorCodes.SkillRequirements;
             else if (GameData.Int(row!.Value, "_iBasicType") != 1) error = ErrorCodes.SkillPassive;
             else if (_buffs.HasForbidden(s, new SkillConfig(row.Value).IsNormalAttack(_data)
                 ? ForbiddenState.NormalAttack : ForbiddenState.CastSkill)) error = ErrorCodes.SkillBadState;
