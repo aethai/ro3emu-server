@@ -58,6 +58,46 @@ public sealed partial class CombatService
             await RemoveSkillObjectAsync(unit);
     }
 
+    /// <summary>Elements a live buff gives: Magnum Break 1100201 [11000,4,11400] "Basic Attack becomes Fire", Aspersio "becomes Holy",
+    /// Enchant Poison "becomes Poison-property". Keyed by group, as only Magnum Break's row holds a number that matches its text.</summary>
+    private static int ElementFromBuff(GameSession s)
+    {
+        foreach (var buff in s.Buffs)
+        {
+            if (buff.ExpireMs <= Now) continue;
+            switch (buff.ConfigId / 100)
+            {
+                case 11002: return 4;
+                case 14113: return 7;
+                case 15120: return 6;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>A player's armor: Neutral, or Holy under Piety 1162201 "Armor element Holy". The buff row holds no number.</summary>
+    internal static int ArmorElement(GameSession p) => p.Buffs.Any(b => b.ExpireMs > Now && b.ConfigId / 100 == 11622) ? 7 : 1;
+
+    private static DamageAttributes.Kind KindOf(MonsterTemplate t) => t.IsBoss ? DamageAttributes.Kind.Boss : DamageAttributes.Kind.Normal;
+
+    /// <summary>Removals only a skill's text names: Dragon Howling "all status ailments"; King's Grace and Energy Release "all Control effects" (tag 37);
+    /// Cart Boost "Removes Slow" (33); Hymn of the Lamb's _kLogicData [37,33]. A row _iDisperse 0 stays, as for a dispel.</summary>
+    private async Task CleanseByTextAsync(GameSession recipient, JsonElement row, string script)
+    {
+        long[]? categories = script switch
+        {
+            "DragonHowling" => [],
+            "KingsGrace" or "BombSuicide1" => [37],
+            "CartBoost" => [33],
+            "Praefatio" => [37, 33],
+            _ => null,
+        };
+        if (categories == null) return;
+        foreach (var buff in recipient.Buffs.Where(b => !b.IsPassive && BuffConfig.Get(_data, b.ConfigId) is { Type: 2, Disperse: not 0 } config
+                     && (categories.Length == 0 || config.BuffCategory.Any(categories.Contains))).ToArray())
+            await _buffs.RemoveAsync(recipient, buff);
+    }
+
     /// <summary>Holy Light 1401101, _kLogicData [14117]: it "removes the target's Kyrie Eleison effect".</summary>
     private async Task HolyLightBreaksKyrieAsync(GameSession target, JsonElement row)
     {
