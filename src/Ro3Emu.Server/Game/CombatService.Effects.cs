@@ -173,7 +173,7 @@ public sealed partial class CombatService
         var stats = _character.Stats(s);
         int attackElement = AttackElement(s, row);
         var attacker = new Fighter(stats[103], stats[104], stats[109], stats[111], s.Progress!.Level, attackElement)
-        { FixedDamage = (s.GmCombat & GmCombatSwitches.FixedDamage) != 0 };
+        { FixedDamage = (s.GmCombat & GmCombatSwitches.FixedDamage) != 0, Attributes = PlayerAttributes(s, stats), Race = PlayerRace, Size = PlayerSize };
         var hit = new SkillHitInfo
         {
             SrcID = field?.Uid ?? action.SourceId, SkillId = action.Request.SkillId, SessionId = action.Id,

@@ -582,7 +582,10 @@ public sealed partial class CombatService : IGameTicker
             var stats = _character.Stats(p);
             var attacker = MonsterFighter(m);
             var defender = new Fighter(0, 0, 0, 0, p.Progress!.Level, 1)
-            { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0 };
+            {
+                Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
+                Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize,
+            };
             var row = _data.Row("SkillConfig", m.Template.NormalSkill);
             var (damage, result) = row is { } r ? Damage(attacker, defender, r) : (Math.Max(1, m.Template.Atk), DamageHitResult.Normal);
             damage = ScaleMonsterDamage(damage, m.DamageRatio);
@@ -671,19 +674,34 @@ public sealed partial class CombatService : IGameTicker
         public long ResCri { get; init; }
         /// <summary>A GM with GmDamageFix on: hits it deals or takes skip the DamageFloat roll.</summary>
         public bool FixedDamage { get; init; }
+        /// <summary>A player's attribute sheet for <see cref="DamageAttributes"/>; a monster's buffs go through its own stats.</summary>
+        public Func<int, long>? Attributes { get; init; }
+        public int Race { get; init; }
+        public int Size { get; init; }
+    }
+
+    /// <summary>Every JobConfig row has _iRace 2 (Demi-Human) and _iSize 2 (Medium).</summary>
+    private const int PlayerRace = 2, PlayerSize = 2;
+
+    /// <summary>What a hit reads on a player: the sheet without the buffs that have their own path and would count twice.</summary>
+    private Func<int, long> PlayerAttributes(GameSession p, StatSheet stats)
+    {
+        if (!p.Buffs.Any(BuffService.HasOwnDamagePath)) return id => stats[id];
+        var own = _buffs.OwnDamagePathAttributes(p);
+        return id => stats[id] - own[id];
     }
 
     private (long Damage, DamageHitResult Result) Damage(Fighter a, Fighter b, JsonElement skill, int branch = 0,
         double bonusCrit = 0, bool forceCrit = false)
     {
         if (!NeverMisses(skill) && Rolls.Hit() >= HitRate(a, b, skill)) return (0, DamageHitResult.Miss);
-        double dmg = BaseDamage(a, b, skill, branch, out bool magic);
+        double dmg = BaseDamage(a, b, skill, branch, out _);
         if (!a.FixedDamage && !b.FixedDamage) dmg *= 0.97 + Rolls.DamageFloat() * 0.06; // DamageFloat [9700, 10300]
         var result = DamageHitResult.Normal;
-        // (inferred) Miguel's guardian crit bonus (bonusCrit/forceCrit) also lets a magic hit crit; nothing else changes.
-        if (forceCrit || (!magic || bonusCrit > 0) && Rolls.Crit() < CritRate(a, b, skill) + bonusCrit)
+        // A magic hit crits as well (owner's decision 2.11): its row's _iSkillCri decides, 1166 of them carry 10000.
+        if (forceCrit || Rolls.Crit() < CritRate(a, b, skill) + bonusCrit)
         {
-            dmg *= 1.5; // FormulaParamCriDmg 15000
+            dmg *= CritMultiplier(a, b);
             result = DamageHitResult.Critical;
         }
         return (Math.Max(1, (long)Math.Round(dmg)), result);
@@ -702,7 +720,11 @@ public sealed partial class CombatService : IGameTicker
     internal static bool NeverMisses(JsonElement skill) => new Data.Config.SkillConfig(skill).SkillHit >= 10000;
 
     private static double CritRate(Fighter a, Fighter b, JsonElement skill) =>
-        Math.Max(0, a.Cri - b.ResCri) / 10000.0 * GameData.Int(skill, "_iSkillCri") / 10000.0;
+        Math.Max(0, Math.Max(0, a.Cri - b.ResCri) + (a.Attributes?.Invoke(DamageAttributes.CritChance) ?? 0) - (b.Attributes?.Invoke(DamageAttributes.CritChanceTaken) ?? 0))
+            / 10000.0 * GameData.Int(skill, "_iSkillCri") / 10000.0;
+
+    private static double CritMultiplier(Fighter a, Fighter b) => DamageAttributes.CritMultiplier(
+        a.Attributes?.Invoke(DamageAttributes.CritDamage) ?? 0, b.Attributes?.Invoke(DamageAttributes.CritDamageTaken) ?? 0);
 
     /// <summary>SkillConfig._iAffectByArrow selects the equipped arrow ItemConfig._kParam1 element.</summary>
     internal int AttackElement(GameSession source, JsonElement row)
@@ -722,10 +744,18 @@ public sealed partial class CombatService : IGameTicker
         var flats = Numbers(skill, "_kDamageParam2");
         double p1 = ratios.Length > branch ? ratios[branch] : 10000, p2 = flats.Length > branch ? flats[branch] : 0;
         double dmg = DamageSource(skill, a.Atk, a.Matk, magic) * p1 / 10000 + p2;
-        dmg *= DefenseFactor(a.Level, magic ? b.Mdef : b.Def);
+        long Penetration(int id) => a.Attributes?.Invoke(id) ?? 0;
+        dmg *= DefenseFactor(a.Level, magic
+            ? DamageAttributes.DefenseAfterPenetration(b.Mdef, Penetration(DamageAttributes.IgnoreMdef), Penetration(DamageAttributes.IgnoreMdefPercent))
+            : DamageAttributes.DefenseAfterPenetration(b.Def, Penetration(DamageAttributes.IgnoreDef), Penetration(DamageAttributes.IgnoreDefPercent)));
         // Element: EleConfig row = defender element, column = attacker element (/10000), clamped [0.1, 10].
         int element = (int)GameData.Int(skill, "_iEleType") is var se and > 1 ? se : a.Element;
-        return dmg * Math.Clamp(1 + ElementFactor(element, b.Element) / 10000.0, 0.1, 10);
+        dmg *= Math.Clamp(1 + ElementFactor(element, b.Element) / 10000.0, 0.1, 10);
+        if (a.Attributes == null && b.Attributes == null) return dmg;
+        var row = new Data.Config.SkillConfig(skill);
+        // A player's Element here is the hit's, and the element monster attributes (321-340) only name monsters.
+        return dmg * DamageAttributes.Factor(a.Attributes, b.Attributes, new DamageAttributes.Hit(magic, row.DistanceType == 2, !row.IsNormalAttack(_data), element,
+            a.Race, a.Size, a.Attributes == null ? a.Element : 0, b.Race, b.Size, b.Attributes == null ? b.Element : 0));
     }
 
     /// <summary>
@@ -755,8 +785,8 @@ public sealed partial class CombatService : IGameTicker
     /// <summary>The expected damage of one hit (hit rate, mean float, crit share) from the same formula.</summary>
     private double ExpectedDamage(Fighter a, Fighter b, JsonElement skill)
     {
-        double dmg = Math.Max(1, BaseDamage(a, b, skill, 0, out bool magic));
-        return HitRate(a, b, skill) * dmg * (magic ? 1 : 1 + 0.5 * CritRate(a, b, skill));
+        double dmg = Math.Max(1, BaseDamage(a, b, skill, 0, out _));
+        return HitRate(a, b, skill) * dmg * (1 + (CritMultiplier(a, b) - 1) * Math.Min(1, CritRate(a, b, skill)));
     }
 
     /// <summary>
@@ -768,11 +798,14 @@ public sealed partial class CombatService : IGameTicker
     {
         var stats = _character.Stats(p);
         var playerSkill = _data.Row("SkillConfig", _skills.CurrentAttack(p))!.Value;
-        var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress!.Level, AttackElement(p, playerSkill));
-        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee };
+        var attributes = PlayerAttributes(p, stats);
+        var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress!.Level, AttackElement(p, playerSkill))
+        { Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
+        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size };
         double playerDps = ExpectedDamage(player, asTarget, playerSkill) * 1000.0 / Math.Max(1, SkillMs(p, playerSkill));
-        var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element);
-        var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, 1) { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112] };
+        var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element) { Race = m.Race, Size = m.Size };
+        var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, 1)
+        { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
         double monsterHit = _data.Row("SkillConfig", m.NormalSkill) is { } row ? ExpectedDamage(monster, defender, row) : Math.Max(1, m.Atk);
         return (playerDps, monsterHit * 1000.0 / Math.Max(1, m.SwingIntervalMs), stats[101]);
     }
