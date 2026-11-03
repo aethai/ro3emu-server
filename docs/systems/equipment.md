@@ -18,3 +18,9 @@ grids 8-10, and for the weapon grids by the career's weapon form and the weapon'
 sockets 1-2, two open 1-4, a single-hand weapon on other careers opens 1-3, the off-hand grid of an Assassin none). Any other
 socket shows `enum_CardStatus.NotEffect` ("Inactive", UIWords 30121/30122). Leaving it out of the stats, passives and card
 skills is (inferred) from that display. Power and the "socket N cards" objectives still count every socketed card.
+
+Card: Baphomet and Shadow Card: Baphomet (BuffConfig groups 20509, 20508) splash a melee normal attack that hit: up to
+`_iTargetMax` other monsters around the locked target take a share of that hit, as an extra cast of the buff's "Splash -
+Card" row (`CardEffects.SplashOf`, 31101 and the row's gfx in 31119), which triggers nothing further. Radius and gfx are
+the row's `_kLogicData`, the share is `_kDamageParamExtra`, and chance and cooldown are the buff's. That the share is of the
+hit's final damage, with no defense of its own, is (inferred) from the text and from the row having no damage ratio.

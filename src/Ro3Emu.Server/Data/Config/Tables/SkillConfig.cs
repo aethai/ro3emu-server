@@ -107,6 +107,17 @@ public readonly partial record struct SkillConfig(JsonElement Row)
         return JsonSerializer.SerializeToElement(node);
     }
 
+    /// <summary>This row dealing exactly this damage to each target (CombatService.MonsterHitDamage's fixed hit: no ratio,
+    /// defense, element, crit or damage attribute), everything else kept.</summary>
+    public JsonElement AsFixedHit(long damage)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(Row.GetRawText())!.AsObject();
+        node["_kDamageParam1"] = new System.Text.Json.Nodes.JsonArray(0);
+        node["_kDamageParam2"] = new System.Text.Json.Nodes.JsonArray(1); // makes the row a damaging one
+        node["_ro3GuardianFixedHit"] = damage;
+        return JsonSerializer.SerializeToElement(node);
+    }
+
     /// <summary>This row without its caster buffs, everything else kept: a later hit of a cast whose start applied them.</summary>
     public JsonElement WithoutBuff1()
     {
