@@ -154,7 +154,7 @@ public sealed partial class CombatService
             s.Attack = new AttackLoop
             {
                 Target = target, SkillId = loopSkill,
-                NextSwingMs = Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value) + 1,
+                NextSwingMs = Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value),
                 StartX = s.Position.X, StartZ = s.Position.Z, StartedWalking = s.Walking, StartMs = Now,
                 ArrivalSpeed = s.Speed / 100f, WalkFromUtc = s.LastWalkUtc
             };
@@ -592,13 +592,27 @@ public sealed partial class CombatService
     }
 
     /// <summary>Legacy auto-attack entry point, using the same cancellation-safe cast owner as manual skills.</summary>
+    /// <summary>
+    /// May the automatic attack start its next swing? The client plays a swing for the skillMs it is told, and a cast ends just
+    /// after its time, so waiting for that added a whole tick to every swing (500 ms became 550). A normal attack within a tick
+    /// of its end has played out; anything else holds to its end.
+    /// </summary>
+    private bool SwingPlayedOut(ActiveSkillCast? cast, long now) => cast is not { Cancelled: false }
+        || new SkillConfig(cast.Row).IsNormalAttack(_data)
+            && now + GameLoop.TickInterval.Milliseconds > cast.StartMs + cast.ChantMs + cast.ActionMs;
+
+    /// <summary>From the planned time, not the tick that served it, so ticks do not add up: 333 ms swings land 350, 300 and 350
+    /// apart and average 333. A swing held up for longer (a skill in between) does not catch up afterwards.</summary>
+    internal static long NextSwing(long planned, long now, int skillMs) =>
+        Math.Max(planned + skillMs, now + skillMs - GameLoop.TickInterval.Milliseconds);
+
     private async Task SwingAsync(GameSession s, MonsterUnit? target, int skillId, long id)
     {
         if (s.Role == null || s.Progress == null) return;
         using var held = await CharacterService.Lock(s);
         if (target != null && !CanHitMonster(s, target)) return;
         if (EffectiveSkillRow(s, skillId) is not { } row || !Learned(s, row) || !SkillModeAllowed(s, row)
-            || _buffs.HasForbidden(s, ForbiddenState.NormalAttack) || s.SkillCast is { Cancelled: false }) return;
+            || _buffs.HasForbidden(s, ForbiddenState.NormalAttack) || !SwingPlayedOut(s.SkillCast, Now)) return;
         var request = new CastSkillReq
         {
             SkillId = (int)GameData.Int(row, "_iID"), TargetId = target?.Uid ?? 0,

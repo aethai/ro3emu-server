@@ -90,6 +90,8 @@ public sealed partial class NewActivityTests
             Assert.Equal(role, entry.DamageSourceId);
             Assert.Equal(hit.Dsts.Single(d => d.DstID == dummy.Uid).Damage, entry.DamageValue);
             Assert.False(dummy.Dead);
+            // A lethal hit is restored just after its report goes out.
+            for (var until = DateTime.UtcNow.AddSeconds(5); dummy.Hp != dummy.Template.MaxHp && DateTime.UtcNow < until;) await Task.Delay(10);
             Assert.Equal(dummy.Template.MaxHp, dummy.Hp);
             await bot.SendGameAsync(CombatService.SkillInterrupt, new NullArg());
             await Task.Delay(600); // a swing cancelled by a move holds the next one (CombatService.CancelCastAsync)
