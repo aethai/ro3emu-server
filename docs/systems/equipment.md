@@ -24,3 +24,12 @@ Card: Baphomet and Shadow Card: Baphomet (BuffConfig groups 20509, 20508) splash
 Card" row (`CardEffects.SplashOf`, 31101 and the row's gfx in 31119), which triggers nothing further. Radius and gfx are
 the row's `_kLogicData`, the share is `_kDamageParamExtra`, and chance and cooldown are the buff's. That the share is of the
 hit's final damage, with no defense of its own, is (inferred) from the text and from the row having no damage ratio.
+
+The other card procs follow the same path (`CardEffects`). An own cast that reached a monster sets off the autocasts, Bongun's
+Bash and Wind Ghost's Jupitel Thunder on any `_iDmgType` 1 row and Side Winder's Double Attack on a normal attack, each with the
+tier's summed chance and internal cooldown; a heal sets off Pharaoh's Divine Light; a skill with a running cooldown can have
+it reset by Mistress. These hang on `CastResolved` and cast extra, so a proc starts nothing further. Family cards (Orc Lady,
+Kobold Leader, Goblin Leader, Aster, Crab, Shellfish) raise damage on monsters holding `NPCConfig._kNpcTag` 1000-1005, and
+only those: the link from card to tag is (inferred) from who holds the tags. Card: Doppelganger raises the first hit within 2 s
+of a crit, and Card: Osiris at T2 and T3 puts on row 2090401 when the revive is taken. Attributes 30 and 31 count through
+`AttributeConversionConfig` on 312-320 and the crowd-control resists, from any source.

@@ -11,9 +11,10 @@ namespace Ro3Emu.Server.Game;
 
 /// <summary>
 /// Socketed cards' Buff(2) special effects (CardConfig._kSkillAttribute -> SpecialEffectConfig._kSpecialEffect [2, buff],
-/// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). Every referenced BuffConfig
-/// row is a zero-time passive (iPassiveBuff 1): like totem passives they are registered per source (the card GUID) for
-/// as long as the copy is socketed in an active socket (EquipmentStunts.ActiveCards), which publishes their icons, applies their _kChangeAttri (Variable CT, 2024001..4)
+/// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). The referenced BuffConfig rows are
+/// zero-time: like totem passives they are registered per source (the card GUID) for as long as the copy is socketed in an
+/// active socket (EquipmentStunts.ActiveCards), which publishes their icons, puts their _kChangeAttri on the sheet (Variable
+/// CT 2024001..4 only, and no chant reads it yet)
 /// and arms BuffService's lethal-hit revive for groups 20520/20521 (2052001.., 2052101..). (inferred) Their
 /// _iSceneClear removes them on a scene change; the loaded scene registers them again, carrying the revive cooldown.
 ///
@@ -35,8 +36,10 @@ namespace Ro3Emu.Server.Game;
 ///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
 /// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
+/// All of these act on monsters, a hit on a player sets off none of them, except Divine Light and the cooldown reset, which
+/// follow the own cast whoever it reached.
 /// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
-/// monster SP drain, detection, indestructible gear.
+/// the uninterruptible cast and Ladybug's reduction, SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
