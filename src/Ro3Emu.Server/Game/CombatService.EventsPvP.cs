@@ -181,7 +181,7 @@ public sealed partial class CombatService
             FixedDamage = (target.GmCombat & GmCombatSwitches.FixedDamage) != 0,
             Attributes = PlayerAttributes(target, defend), Race = PlayerRace, Size = PlayerSize,
         };
-        var (damage, result) = Damage(a, b, row, bonusCrit: GuardianPetRules.CriticalChance(row),
+        var (damage, result) = Damage(a, b, row, DamageBranch(source, null, row), bonusCrit: GuardianPetRules.CriticalChance(row),
             forceCrit: GuardianPetRules.CriticalAtHp(row, defend[AttributeId.Hp], defend[AttributeId.MaxHp]));
         damage = GuardianPetRules.DirectDamage(row, damage);
         damage = GuardianOutgoingDamage(source, row, damage);
