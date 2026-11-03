@@ -241,7 +241,8 @@ public sealed partial class CombatService
                 {
                     double multiplier = Numbers(row, "_kDamageParam1").FirstOrDefault(), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
                     // Heal's friendly branch is P1[0]/P2[0]; its enemy branch is [1] (description + select race mask).
-                    long amount = (long)Math.Max(0, Math.Round(stats[104] * multiplier / 10000 + flat));
+                    double formula = DamageFormula.HealFactor(new SkillConfig(row), id => stats[id], s.Progress!.Level);
+                    long amount = (long)Math.Max(0, Math.Round(stats[104] * multiplier * formula / 10000 + flat));
                     foreach (var modifier in ExtraHeal) amount = modifier(s, amount);
                     var healResult = DamageHitResult.Normal;
                     if (Rolls.Crit() < HealCritRate(stats[AttributeId.Cri], stats[DamageAttributes.CritChance], new SkillConfig(row).SkillCri))
