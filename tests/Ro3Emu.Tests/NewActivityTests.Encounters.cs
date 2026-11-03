@@ -82,7 +82,7 @@ public sealed partial class NewActivityTests
                 .OfType<MonsterUnit>().Single(m => m.InstanceId == instance)));
             await OnLoop(() => { Session(bot).SkillCds.Clear(); return Task.CompletedTask; });
             await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = dummy.Pos, BStop = true, SpeedRate = 1 });
-            await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1100001, TargetId = dummy.Uid });
+            await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = dummy.Uid });
             Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
             var report = await Next(bot, CombatService.DamageStatistics, DamageStatisticsNotify.Parser, n => n.Damages.Any(d => d.DamageTargetId == dummy.Uid));
@@ -92,6 +92,7 @@ public sealed partial class NewActivityTests
             Assert.False(dummy.Dead);
             Assert.Equal(dummy.Template.MaxHp, dummy.Hp);
             await bot.SendGameAsync(CombatService.SkillInterrupt, new NullArg());
+            await Task.Delay(600); // a swing cancelled by a move holds the next one (CombatService.CancelCastAsync)
         }
         await bot.SendGameAsync(DungeonService.Enter, new EnterDungeonReq { SceneEntry = 2100009 });
         Assert.Equal(0, (await Next(bot, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
@@ -144,7 +145,7 @@ public sealed partial class NewActivityTests
         await bot.SendGameAsync(84064, new TrainingUpdateWoodNpcAttrReq { Race = 3, Element = 4, BodyType = 1 });
         Assert.NotEqual(0, (await Next(bot, 84064, TrainingUpdateWoodNpcAttrResp.Parser)).Result);
         await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = actor.Pos, BStop = true, SpeedRate = 1 });
-        await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1100001, TargetId = actor.Uid });
+        await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = actor.Uid });
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == actor.Uid && d.Damage > 0));
         await bot.SendGameAsync(CombatService.SkillInterrupt, new NullArg());
