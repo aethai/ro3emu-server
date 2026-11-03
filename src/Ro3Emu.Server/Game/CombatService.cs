@@ -207,7 +207,7 @@ public sealed partial class CombatService : IGameTicker
         bool CanPublish() => current() && player.Owner?.State != Ownership.RoleOwnerState.RecoveryRequired;
         if (!monster.DeathDurable || monster.KillObserversStarted || !CanPublish()) return;
         monster.KillObserversStarted = true; // reserve the one callback pass across awaited observers
-        foreach (var handler in Killed)
+        foreach (var handler in Killed.ToArray()) // a service built lazily during a handler adds its own
         {
             if (!CanPublish()) break;
             try { await handler(player, monster); }
@@ -606,6 +606,7 @@ public sealed partial class CombatService : IGameTicker
             try
             {
                 foreach (var handler in Taken) handler(m, p, damage, hp == 0);
+                await ReactToHitAsync(p, m, null, row, damage);
                 var hit = new SkillHitInfo
                 {
                     SrcID = m.Uid, SkillId = m.Template.NormalSkill, ShowPoint = 1000002, SessionId = session, SrcElement = m.Template.Element,
@@ -637,6 +638,7 @@ public sealed partial class CombatService : IGameTicker
             || valid?.Invoke() == false) return null;
         // Owner's decision 2.11, deliberately past 1:1 (the client has no such rule): no damage during a cutscene, at most 120 s.
         if (damage > 0 && target.InCutScene && target.CutSceneSinceMs > 0 && Now - target.CutSceneSinceMs <= CutSceneProtectionMs) damage = 0;
+        damage = ShareDevotedDamage(target, damage);
         // A missed/fully absorbed hit must not spend a finite Safety Wall charge.
         // GmUnlimit's invincibility (inferred): the hit lands as 0, like a Safety Wall.
         if (damage > 0 && ((target.GmCombat & GmCombatSwitches.Unlimited) != 0 || _buffs.HasForbidden(target, ForbiddenState.Damage)
