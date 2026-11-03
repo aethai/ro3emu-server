@@ -227,8 +227,8 @@ public sealed partial class BuffService : IGameTicker
         if (buff.Changes.Count > 0) await _character.RefreshStatsAsync(p);
     }
 
-    /// <summary>A guardian's buff on a unit: unlike ordinary unit buffs, it carries its control state and counts
-    /// toward the unit's combat attributes (<see cref="GuardianUnitAttributes"/>).</summary>
+    /// <summary>A guardian's buff on a unit: unlike an ordinary unit buff that is no debuff, it counts
+    /// toward the unit's combat attributes (<see cref="UnitCombatAttributes"/>).</summary>
     internal Task AddGuardianAsync(WorldUnit unit, int configId, int durationMs, long sourceId, double attributeMultiplier = 1) =>
         AddSupportAsync(unit, configId, durationMs, sourceId, attributeMultiplier: attributeMultiplier, guardianOwned: true);
 

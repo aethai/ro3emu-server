@@ -161,7 +161,7 @@ public sealed class MonsterControlTests
             Assert.False(f.Buffs.UnitHasGroup(monster, BuffService.FreezeGroup));
             Assert.False(f.Buffs.UnitForbidden(monster, ForbiddenState.Walk));
             Assert.True(f.Buffs.UnitHasGroup(monster, FrozenAfter / 100));
-            Assert.False(f.Buffs.HasGuardianUnitBuffs(monster)); // an ordinary follow-up, as its cause
+            Assert.False(f.Buffs.HasUnitCombatBuffs(monster)); // an ordinary follow-up, as its cause
         });
     }
 
