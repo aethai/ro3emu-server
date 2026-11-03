@@ -386,6 +386,7 @@ public sealed partial class TalentProcs
         if (s.Role == null) return;
         var cast = new SkillConfig(action.Row);
         await PassiveProcsAsync(s, action, cast, processed, hit);
+        await LoneEnemyHitAsync(s, cast, processed);
         if (s.TalentProcBuffs.Count == 0) return;
         await ChargesAsync(s, action, cast, processed);
         await HealProcsAsync(s, action, cast, hit);

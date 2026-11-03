@@ -196,4 +196,37 @@ public sealed partial class SkillCombatTests
         var buff = Assert.Single(me.Buffs, b => b.ConfigId == 1100200 + level);
         Assert.InRange(buff.ExpireMs - MonsterService.NowMs, 110_000, 120_000);
     }
+
+    // Critical Attack (10102106 for the Knight line) selects BowlingBashBD01, [ratio, 5000] / [flat, 400]: "When [Bowling
+    // Bash] hits only 1 enemy, it Deals DMG to that enemy equal to an Extra PATK * 50% + 400".
+    [ClientDataTheory]
+    [InlineData(1, 9000, 210)]
+    [InlineData(10, 18000, 300)]
+    public async Task BowlingBashDealsItsExtraOnALoneEnemy(int level, int ratio, int flat)
+    {
+        var (bot, me, strikes) = await Caster("Alice", 1200, 11104, level, 10102106);
+        await using var _ = bot;
+        var mark = await Mark(me, 3);
+        Assert.Equal(0, (await Cast(bot, me, 1110400 + level, mark)).Result);
+        await Task.Delay(1500);
+        Assert.Equal(2, strikes.Count);
+        Assert.Equal<long[]>([ratio, 5000], strikes[0].Ratios);
+        Assert.Equal<long[]>([flat, 400], strikes[0].Flats);
+        Assert.Equal<long[]>([5000], strikes[1].Ratios);
+        Assert.Equal<long[]>([400], strikes[1].Flats);
+        Assert.Equal(mark.Uid, strikes[1].Target);
+    }
+
+    [ClientDataFact] // "hits only 1 enemy": two in the circle take no extra
+    public async Task BowlingBashDealsNoExtraOnTwoEnemies()
+    {
+        var (bot, me, strikes) = await Caster("Alice", 1200, 11104, 1, 10102106);
+        await using var _ = bot;
+        var mark = await Mark(me, 3);
+        await Mark(me, 3);
+        Assert.Equal(0, (await Cast(bot, me, 1110401, mark)).Result);
+        await Task.Delay(1500);
+        Assert.Equal(2, strikes.Count);
+        Assert.All(strikes, s => Assert.Equal(9000, s.Ratios[0]));
+    }
 }

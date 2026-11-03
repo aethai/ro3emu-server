@@ -57,6 +57,15 @@ public sealed partial class TalentProcs
 
     private readonly ConditionalWeakTable<GameSession, Reaper> _reapers = [];
 
+    /// <summary>Critical Attack's mode row BowlingBashBD01 ([ratio, 5000] / [flat, 400]): "When [Bowling Bash] hits only 1 enemy,
+    /// it Deals DMG to that enemy equal to an Extra PATK * ${1}% + ${2}", as a hit of its own (inferred).</summary>
+    private async Task LoneEnemyHitAsync(GameSession s, SkillConfig cast, IReadOnlyList<MonsterUnit> processed)
+    {
+        if (cast.ScriptLogic == "BowlingBashBD01" && processed is [{ Hp: > 0 } target]
+            && cast.DamageParam1 is [_, var ratio, ..] && cast.DamageParam2 is [_, var flat, ..])
+            await _combat.CastExtraAsync(s, DescribedHit(cast, BowlingBash, ratio, flat, 0), [target]);
+    }
+
     private static JsonElement TargetCountRow(GameSession s, JsonElement row, int count)
     {
         var skill = new SkillConfig(row);
