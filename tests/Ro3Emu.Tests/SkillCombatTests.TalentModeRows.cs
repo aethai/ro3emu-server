@@ -249,4 +249,26 @@ public sealed partial class SkillCombatTests
         Assert.Equal<long[]>([5000], strikes[1].Ratios);
         Assert.Equal<long[]>([220], strikes[1].Flats);
     }
+
+    // Joint Destruction (10104102 for the Knight line) selects QiaodaBD02: "simultaneously inflicts [Break Ankle], [Break
+    // Wrist], [Break Waist], and [Break Neck] on the target", 8 s by the row's _kLogicData [1122101,10000,8000].
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public async Task JointBeatBreaksEverythingAtOnceWithItsTalent(int level)
+    {
+        var (bot, me, _) = await Caster("Alice", 1300, 11221, level, 10104102);
+        await using var _ = bot;
+        var mark = await Mark(me, 3);
+        Assert.Equal(0, (await Cast(bot, me, 1122100 + level, mark)).Result);
+        await Task.Delay(1000);
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        var live = buffs.UnitBuffs(mark);
+        foreach (int row in new[] { 1122201, 1122301, 1122401, 1122501 })
+            Assert.InRange(Assert.Single(live, b => b.ConfigId == row).ExpireMs - MonsterService.NowMs, 5000, 8000);
+        Assert.Equal(4, Assert.Single(live, b => b.ConfigId == 1122101).PileCount);
+        var attributes = buffs.UnitCombatAttributes(mark).ToList();
+        Assert.Contains((1052L, -500d), attributes); // "reduces PDEF by 5%"
+        Assert.Contains((1216L, -500d), attributes); // "reduces DMG Reduction by 5%"
+    }
 }
