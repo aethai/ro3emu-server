@@ -55,6 +55,8 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     [ConfigField("_iPubCDGroup")] public partial long[] PubCDGroup { get; }
     [ConfigField("_iQueue")] public partial long Queue { get; }
     [ConfigField("_iRangeType")] public partial long RangeType { get; }
+    /// <summary>The tags its panel shows (SkillTagConfig: 100 Normal Attack, 101 AoE, 102 ST ...).</summary>
+    [ConfigField("_kSkilltag")] public partial long[] Skilltag { get; }
     [ConfigField("_iSkillCondition", Optional = true)] public partial long SkillCondition { get; }
     [ConfigField("_iRelease")] public partial long Release { get; }
     [ConfigField("_iScriptShow")] public partial long ScriptShow { get; }

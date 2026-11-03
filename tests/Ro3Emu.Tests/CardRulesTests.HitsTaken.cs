@@ -246,4 +246,132 @@ public sealed partial class CardRulesTests
             Assert.Equal(swing, (await SwungAt(alice, session, striker)).Damage);
         }
     }
+
+    private const int OrcLord = 1460301, ShadowOrcLord = 1450301, Maya = 1460201, ShadowMaya = 1450201, SwordSmash = 1109901, MagnumBreak = 1100201;
+
+    /// <summary>Alice the attacker of a career, with the skill learned, and Bob holding the card, in one duel.</summary>
+    private async Task<(BotClient Alice, GameSession A, BotClient Bob, GameSession B)> ReflectDuel(int card, int grid, int star, int job, params int[] groups)
+    {
+        var (bob, b) = await Holder("Bob", card, grid);
+        await AtStar(b, card, star);
+        var alice = await InWorld("Alice");
+        var a = Session("Alice");
+        await Gm("alice", "!lvl 80");
+        await Gm("alice", $"!job {job}");
+        foreach (int group in groups) await Learn(a, group);
+        await Duel(alice, a, bob, b);
+        return (alice, a, bob, b);
+    }
+
+    private async Task<long> Attribute(GameSession session, int id) => await OnLoop(() => Service<CharacterService>().Stats(session)[id]);
+
+    // Card: Orc Lord T2: 2051703 "When hit by a player's ST Physical skill, reflects 48% of the damage taken, up to 35% of the attacker's
+    // Max Life. For every 1 VIT, reflects an Extra 0.1% of the damage taken, up to 60%. Internal Cooldown: 3 seconds." A second 31101 goes
+    // to the attacker, as row 2051703, from Bob. Sword Smash is ST and Physical.
+    [ClientDataFact]
+    public async Task OrcLordReflectsAPlayersSingleTargetPhysicalSkillAtItsStarAndThenWaitsItsCooldown()
+    {
+        var (alice, a, bob, b) = await ReflectDuel(OrcLord, 3, 2, 1100, 11099);
+        await using (alice)
+        await using (bob)
+        {
+            const int row = 2051703;
+            long vit = await Attribute(b, 3), maxHp = await Attribute(a, 101);
+            var taken = await CastAt(alice, a, SwordSmash, b);
+            var since = System.Diagnostics.Stopwatch.StartNew();
+            Assert.True(taken.Damage >= 100, "too little damage to read a share of: " + taken.Damage);
+            var reflected = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == row && h.SrcID == b.Role!.Id);
+            long share = Math.Min(4800 + 10 * vit, 6000);
+            Assert.Equal(Math.Min((long)Math.Floor(taken.Damage * share / 10000d), maxHp * 3500 / 10000), Assert.Single(reflected.Dsts).Damage);
+            Assert.Equal(a.Role!.Id, reflected.Dsts[0].DstID);
+            await Task.Delay(100);
+            Assert.Equal(maxHp - reflected.Dsts[0].Damage, await Attribute(a, 2000));
+
+            await CastAt(alice, a, SwordSmash, b);
+            await Task.Delay(200);
+            if (since.ElapsedMilliseconds < 2800) Assert.Single(SplashHits(alice, row));
+
+            await Task.Delay(Math.Max(0, 3100 - (int)since.ElapsedMilliseconds));
+            await CastAt(alice, a, SwordSmash, b);
+            await Eventually(() => SplashHits(alice, row).Count == 2, "the second reflect");
+        }
+    }
+
+    // Shadow Card: Maya T3: 2051204 "When hit by a player's ST magic skill, reflects 50% ... up to 25% of the attacker's Max Life."
+    // Fire Bolt is ST and magic. The Shadow card has no VIT line.
+    [ClientDataFact]
+    public async Task ShadowMayaReflectsAPlayersSingleTargetMagicSkillWithNoVitLine()
+    {
+        var (alice, a, bob, b) = await ReflectDuel(ShadowMaya, 2, 3, 2100, 12004);
+        await using (alice)
+        await using (bob)
+        {
+            long maxHp = await Attribute(a, 101);
+            var taken = await CastAt(alice, a, FireBolt, b);
+            var reflected = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 2051204 && h.SrcID == b.Role!.Id);
+            Assert.Equal(Math.Min(taken.Damage / 2, maxHp * 2500 / 10000), Assert.Single(reflected.Dsts).Damage);
+        }
+    }
+
+    // Each kind answers its own: Orc Lord leaves a magic hit alone, Maya a Physical one.
+    [ClientDataTheory]
+    [InlineData(1460301, 3, 2100, 12004, 1200401)] // Orc Lord, Fire Bolt
+    [InlineData(1450301, 3, 2100, 12004, 1200401)] // Shadow Orc Lord, Fire Bolt
+    [InlineData(1460201, 2, 1100, 11099, 1109901)] // Maya, Sword Smash
+    [InlineData(1450201, 2, 1100, 11099, 1109901)] // Shadow Maya, Sword Smash
+    [InlineData(1460301, 3, 1100, 11002, 1100201)] // Orc Lord, Magnum Break: an AoE of the same kind
+    public async Task AReflectAnswersOnlyASingleTargetSkillOfItsKind(int card, int grid, int job, int group, int skill)
+    {
+        var (alice, a, bob, b) = await ReflectDuel(card, grid, 0, job, group);
+        await using (alice)
+        await using (bob)
+        {
+            Assert.True((await CastAt(alice, a, skill, b)).Damage > 0);
+            await Task.Delay(300);
+            Assert.DoesNotContain(alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)), h => h.SrcID == b.Role!.Id);
+        }
+    }
+
+    // "a player's ST Physical skill": a Basic Attack is no skill (inferred), and a monster's hit is no player's.
+    [ClientDataFact]
+    public async Task OrcLordLeavesABasicAttackAndAMonstersHitAlone()
+    {
+        var (alice, a, bob, b) = await ReflectDuel(OrcLord, 3, 0, 1100);
+        await using (alice)
+        await using (bob)
+        {
+            int attack = await OnLoop(() => Service<SkillService>().CurrentAttack(a));
+            Assert.True((await CastAt(alice, a, attack, b)).Damage > 0);
+            await OnLoop(() => { Service<CombatService>().SetEventPvPHandlers((_, _) => false, (_, _) => Task.CompletedTask); return 0; });
+            await Task.Delay(300);
+            Assert.DoesNotContain(alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)), h => h.SrcID == b.Role!.Id);
+
+            var striker = (await Strikers(b, 1))[0];
+            await SwungAt(bob, b, striker);
+            await SkillAt(bob, b, striker, SwordSmash);
+            await Task.Delay(300);
+            Assert.DoesNotContain(bob.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)), h => h.SkillId == 2051701);
+        }
+    }
+
+    // Two holders: Alice's Sword Smash on Bob comes back as a reflect, and Alice's own Orc Lord does not answer that, even off cooldown.
+    [ClientDataFact]
+    public async Task AReflectIsNotReflected()
+    {
+        var (bob, b) = await Holder("Bob", OrcLord, 3);
+        await using (bob)
+        {
+            var (alice, a) = await Holder("Alice", ShadowOrcLord, 3);
+            await using (alice)
+            {
+                await Gm("alice", "!job 1100");
+                await Learn(a, 11099);
+                await Duel(alice, a, bob, b);
+                await CastAt(alice, a, SwordSmash, b);
+                await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 2051701);
+                await Task.Delay(300);
+                Assert.Empty(SplashHits(bob, 2051601));
+            }
+        }
+    }
 }

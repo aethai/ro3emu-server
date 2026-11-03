@@ -64,6 +64,19 @@ public sealed class CardEffectRuleTests
     public void AResetLocksTheSkillForAMultipleOfItsCooldown(long cooldownMs, long multiple, long lockout) =>
         Assert.Equal(lockout, CardEffects.ResetLockoutMs(cooldownMs, multiple));
 
+    [Theory]
+    [InlineData(1000, 50, 100000, 3000, 2500, 0, 0, 300)] // 30% of the damage
+    [InlineData(1000, 50, 800, 3000, 2500, 0, 0, 200)] // up to 25% of the attacker's Max Life
+    [InlineData(1000, 0, 100000, 3200, 3500, 10, 60, 320)] // no VIT
+    [InlineData(1000, 100, 100000, 3200, 3500, 10, 60, 420)] // 100 VIT at 0.1% each
+    [InlineData(1000, 1000, 100000, 3200, 3500, 10, 60, 600)] // the whole share stops at 60%
+    [InlineData(1000, 500, 100000, 5600, 3500, 10, 60, 600)] // and a top star has little room left
+    public void AReflectGivesBackItsShareUpToItsCaps(long damage, long vit, long maxHp, long share, long cap, long perVit, double maxShare, long reflected) =>
+        Assert.Equal(reflected, CardEffects.ReflectedDamage(damage, vit, maxHp, [1, 3, perVit, 3, 99999, 159, share, 101, cap], maxShare));
+
+    [Fact]
+    public void AReflectRowOfAnotherShapeGivesNothing() => Assert.Equal(0, CardEffects.ReflectedDamage(1000, 0, 1000, [0, 3, 0, 1, 2000, 99, 1000], 60));
+
     [Fact]
     public void DivineLightHealsTheCasterAndTheFirstOtherOneHealed()
     {

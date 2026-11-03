@@ -36,6 +36,16 @@ public sealed partial class CombatService
 
     private static float FaceTo(Vec3 from, Vec3 to) => (float)(Math.Atan2(to.X - from.X, to.Z - from.Z) * 180 / Math.PI);
 
+    /// <summary>A card's answer to a hit on its holder: the holder, the player who struck (null for a monster), the row, what it took (CardEffects).</summary>
+    internal List<Func<GameSession, GameSession?, JsonElement?, long, Task>> CardHitReactions { get; } = [];
+
+    /// <summary>A fixed hit from the holder on the player who struck, after the hit in hand has gone out. Like every hit on a player it may
+    /// kill, and it answers only while the holder can still fight that player.</summary>
+    internal void StrikeBackLater(GameSession holder, SkillConfig row, long damage, GameSession enemy) => _loop.PostRuntime(() =>
+        !CanPlayerHit(holder, enemy) ? Task.CompletedTask
+            : HitEventPlayersAsync(holder, [enemy], row.AsFixedHit(damage), (int)row.Id, HitEffect(row.ScriptShow), ++_sessionIds,
+                () => holder.Role != null && !holder.Dead), "card reflect");
+
     /// <summary>After a hit landed on a player. <paramref name="row"/> is the attacker's row, null when it has none.</summary>
     internal async Task ReactToHitAsync(GameSession p, MonsterUnit? monster, GameSession? enemy, JsonElement? row, long damage)
     {
@@ -91,6 +101,7 @@ public sealed partial class CombatService
                     }
             }
         }
+        foreach (var react in CardHitReactions) await react(p, enemy, row, damage);
     }
 
     private static double ParseDesc(string text) =>

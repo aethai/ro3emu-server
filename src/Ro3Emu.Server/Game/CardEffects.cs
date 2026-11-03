@@ -39,7 +39,8 @@ namespace Ro3Emu.Server.Game;
 /// All of these act on monsters, a hit on a player sets off none of them, except Divine Light and the cooldown reset, which
 /// follow the own cast whoever it reached.
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
-/// Not executed (no machinery or no data link): armor element changes, reflect, status immunities, Endure,
+/// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
+/// Not executed (no machinery or no data link): armor element changes, status immunities, Endure,
 /// the uninterruptible cast, SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
@@ -70,7 +71,11 @@ public sealed class CardEffects
     private const int SplashChance = 20508, SplashAlways = 20509, NextHitAfterCrit = 20507;
     private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
     private const int ShadowNullify = 20510, CardNullify = 20511, Ladybug = 20260;
+    private const int ShadowMagicReflect = 20512, CardMagicReflect = 20513, ShadowPhysicalReflect = 20516, CardPhysicalReflect = 20517;
+    private const long SingleTargetTag = 102; // SkillTagConfig "ST"
+    private const long MagicDamage = 2; // SkillConfig._iDmgType
     private const int SilencedState = 20; // SpecialStatusConfig 20, BuffService.StateFor
+    private const int Vit = 3; // AttributeConfig 3
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -93,6 +98,7 @@ public sealed class CardEffects
         combat.DealtAsync.Add(OnDealtAsync);
         combat.CastResolved.Add(OnCastResolvedAsync);
         combat.PlayerDamageAdjusters.Add(AdjustDamageTaken);
+        combat.CardHitReactions.Add(ReflectAsync);
     }
 
     private IEnumerable<Passive> Passives(GameSession s)
@@ -278,6 +284,45 @@ public sealed class CardEffects
                 return 0;
         }
         return damage - (long)Math.Floor(damage * reduction / 10000d);
+    }
+
+    /// <summary>The share of the damage taken a reflect row gives back: _kDamageParamExtra [_, _, bp per VIT, _, limit, _, share bp, 101,
+    /// cap bp] on row 2051201.. "Magic Reflect - Card" and 2051601.. "Physical Reflect - Card" (T_0addAXY_XisExtra_YisAttri_MaxAttri_YisAttri_MaxAttri,
+    /// script Rebound_Card, read against the texts, whose numbers they match at every star). (inferred) "up to @{5}%", which only the text
+    /// has, stops the whole share and not only the VIT's part: Card: Maya T3 starts at 56%. The cap on the attacker's Max Life and the row's limit
+    /// stop the amount. 0 for any other shape.</summary>
+    internal static long ReflectedDamage(long damage, long vit, long attackerMaxHp, long[] tuple, double maxSharePercent)
+    {
+        if (tuple is not [_, _, var perVit, _, var limit, _, var share, _, var cap]) return 0;
+        long total = perVit > 0 ? Math.Min(share + perVit * vit, (long)(maxSharePercent * 100)) : share;
+        return Math.Min(limit, Math.Min((long)Math.Floor(damage * total / 10000d), (long)Math.Floor(attackerMaxHp * cap / 10000d)));
+    }
+
+    /// <summary>
+    /// Maya (magic) and Orc Lord (Physical): "When hit by a player's ST magic skill, reflects @{1}% of the damage taken, up to @{2}% of the
+    /// attacker's Max Life. For every @{3} VIT, reflects an Extra @{4}% of the damage taken, up to @{5}%. Internal Cooldown: @{6} seconds."
+    /// (The Shadow cards have no VIT line.) So a monster's hit reflects nothing. The buff's _kLogicData names its row, and the hit goes out as
+    /// that row's, a fixed amount. A row is ST when its panel says so (_kSkilltag 102). (inferred) A Basic Attack is no skill, as for
+    /// Mistress; a fixed hit, which another reflect is, answers nothing, so two holders do not trade. A holder the hit killed reflects
+    /// nothing, as <see cref="CombatService.ReactToHitAsync"/> reports only the living, and a reflect may kill.
+    /// </summary>
+    private Task ReflectAsync(GameSession s, GameSession? enemy, JsonElement? struck, long damage)
+    {
+        if (enemy?.Role == null || struck is not { } hit) return Task.CompletedTask;
+        var skill = new SkillConfig(hit);
+        if (skill.IsFixedHit || skill.IsNormalAttack(_data) || !skill.Skilltag.Contains(SingleTargetTag)) return Task.CompletedTask;
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            bool answers = skill.DmgType == MagicDamage ? buff.BuffId is ShadowMagicReflect or CardMagicReflect
+                : skill.DmgType == PhysicalDamage && buff.BuffId is ShadowPhysicalReflect or CardPhysicalReflect;
+            double[] desc = Description(passive.Row);
+            if (!answers || desc.Length == 0 || buff.LogicData is not [var id, ..] || SkillConfig.Get(_data, id) is not { DamageParamExtra: [var tuple, ..] } row) continue;
+            long amount = ReflectedDamage(damage, _character.Stats(s)[Vit], _character.Stats(enemy)[AttributeId.MaxHp], tuple, desc.Length >= 5 ? desc[4] : 0);
+            if (amount <= 0 || !Ready(s, buff.BuffId, (long)(desc[^1] * 1000))) continue;
+            _combat.StrikeBackLater(s, row, amount, enemy);
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>One Splash passive's numbers. <paramref name="Chance"/> is in basis points, <paramref name="Ratio"/> too, of
