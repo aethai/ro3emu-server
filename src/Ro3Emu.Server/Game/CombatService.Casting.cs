@@ -572,10 +572,12 @@ public sealed partial class CombatService
         void Set(int g, int m, long duration, bool shared, int shownMode)
         {
             if (duration <= 0) return;
-            long end = now + duration;
-            s.SkillModeCds[(g, m)] = Math.Max(end, s.SkillModeCds.GetValueOrDefault((g, m)));
+            // The client overwrites by key (LC_Scene_Sync): a shorter public cooldown must not replace the skill's own, so the longest is told.
+            long end = Math.Max(now + duration, s.SkillModeCds.GetValueOrDefault((g, m)));
+            s.SkillModeCds[(g, m)] = end;
             if (shared) s.SkillCds[g] = Math.Max(end, s.SkillCds.GetValueOrDefault(g));
-            notice.Infos.Add(new SkillCdInfo { SkillId = g, SkillMode = shownMode, CdStartTimestampMs = now, CdEndTimestampMs = end });
+            if (notice.Infos.FirstOrDefault(i => i.SkillId == g && i.SkillMode == shownMode) is { } told) told.CdEndTimestampMs = Math.Max(told.CdEndTimestampMs, end);
+            else notice.Infos.Add(new SkillCdInfo { SkillId = g, SkillMode = shownMode, CdStartTimestampMs = now, CdEndTimestampMs = end });
         }
         // The client files a 31113 under group * 10000 + its mode (LC_Skill_Function.GetSkillCDInfoKey) and its bar reads
         // the key of the row it keeps, the row it asks to cast. A mode a talent or a mount selects (type 15: Joint Beat,

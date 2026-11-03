@@ -179,6 +179,7 @@ public sealed partial class CombatService
             {
                 var ally = action.Request.TargetId == s.Role.Id ? s : FindPlayer(s, action.Request.TargetId);
                 if (ally != null && Relation(row, true, ally == s)) allies.Add(ally);
+                if (ally != null && ally != s && ReachesCasterToo(script)) allies.Add(s);
             }
             else
             {
@@ -261,10 +262,12 @@ public sealed partial class CombatService
                     foreach (var tuple in Tuples(row, "_kBuff1"))
                         if (CanApplyMoreEffects() && RollBuff(tuple, out int id, out int duration)
                             && SkillBuffAllowed?.Invoke(s, recipient, id) != false)
-                            await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);
+                            // "For each enemy hit, You gain a Shield": a stacking shield (Rift Impact, _iMaxStack 3) lands once per enemy, up to its stack.
+                            for (int pile = PilesFor(id, targets.Count); pile > 0 && CanApplyMoreEffects(); pile--)
+                                await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);
                 if (friendly && damage)
                 {
-                    double multiplier = Numbers(row, "_kDamageParam1").FirstOrDefault(), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
+                    double multiplier = HealRatio(s, recipient, row, script), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
                     // Heal's friendly branch is P1[0]/P2[0]; its enemy branch is [1] (description + select race mask).
                     double formula = DamageFormula.HealFactor(new SkillConfig(row), id => stats[id], s.Progress!.Level);
                     long amount = (long)Math.Max(0, Math.Round(stats[104] * multiplier * formula / 10000 + flat));
@@ -462,6 +465,9 @@ public sealed partial class CombatService
             .Where(m => m.Hp > 0 && CanHitMonster(s, m) && Distance(center, m.Pos) <= radius + 0.1f)
             .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid),
     ];
+
+    private int PilesFor(int buffId, int enemiesHit) => BuffConfig.Get(_data, buffId) is { MaxStack: > 1 } buff && SkillShieldRules.IsShield(buff)
+        ? (int)Math.Clamp(enemiesHit, 1, buff.MaxStack) : 1;
 
     private bool RollBuff(JsonElement tuple, out int id, out int duration)
     {
