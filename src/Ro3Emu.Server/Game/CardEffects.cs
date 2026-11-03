@@ -31,9 +31,10 @@ namespace Ro3Emu.Server.Game;
 /// - Splash: 20508 (Shadow Card: Baphomet, 2050801..) and 20509 (Card: Baphomet, 2050901..), see <see cref="SplashOf"/>.
 /// - monster family: Orc Lady, Kobold Leader, Goblin Leader, Aster, Crab, Shellfish add _kLogicData[0] bp of damage against
 ///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
-/// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder, see <see cref="AutocastsAsync"/>.
+/// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder; Double Attack on a Basic Attack: 20210, see
+///   <see cref="AutocastsAsync"/>.
 /// Not executed (no machinery or no data link): the Divine Light autocast, armor element changes, magic nullify/reflect,
-/// status immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection, indestructible gear.
+/// status immunities, Endure, cooldown reset, monster SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -57,7 +58,7 @@ public sealed class CardEffects
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509;
-    private const int BashAutocast = 20190, JupitelAutocast = 20200;
+    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -289,9 +290,10 @@ public sealed class CardEffects
     }
 
     /// <summary>Whether a cast sets off the autocast passive of this group.</summary>
-    internal static bool TriggersAutocast(long group, long damageType) => group switch
+    internal static bool TriggersAutocast(long group, long damageType, bool normalAttack) => group switch
     {
         BashAutocast or JupitelAutocast => damageType == PhysicalDamage,
+        DoubleAttackProc => normalAttack,
         _ => false,
     };
 
@@ -303,6 +305,10 @@ public sealed class CardEffects
     /// attack or a skill, a miss too, counted once per cast; the proc takes the locked target, or else the first the cast
     /// reached that is still alive, and with none it neither rolls nor starts its cooldown. The text gives no player target
     /// and an extra cast takes monsters only, so a hit on a player sets off nothing.
+    /// Side Winder: "Basic Attack has a @{1}% Chance to trigger [Double Attack], dealing Extra Neutral melee Physical damage equal
+    /// to @{2}%. Internal Cooldown: @{3} sec." goes the same way (2021001 [0, 2003001], _kDescData [chance, cooldown, ratio]). Class
+    /// Double Attack (TalentProcs.DoubleAttackAsync) has to describe its hit, as its passive row has no damage; this row is that
+    /// hit, _kDamageParam1 [5000], Neutral, melee, Physical. Its _iDistanceMax 2000 lets (inferred) a ranged Basic Attack set it off too.
     /// </summary>
     private async Task AutocastsAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
         SkillHitInfo hit, IReadOnlyList<Passive> passives)
@@ -310,7 +316,7 @@ public sealed class CardEffects
         if (hit.Dsts.Count == 0) return;
         foreach (var (basis, group, chance, desc) in Procs(passives).ToList())
         {
-            if (!TriggersAutocast(group, cast.DmgType) || desc.Length < 2 || new BuffConfig(basis).LogicData is not [_, var id]
+            if (!TriggersAutocast(group, cast.DmgType, cast.IsNormalAttack(_data)) || desc.Length < 2 || new BuffConfig(basis).LogicData is not [_, var id]
                 || SkillConfig.Get(_data, id) is not { } row) continue;
             var target = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId && m.Hp > 0) ?? processed.FirstOrDefault(m => m.Hp > 0);
             if (target == null || Roll(10000) >= chance || !Ready(s, group, (long)(desc[1] * 1000))) continue;

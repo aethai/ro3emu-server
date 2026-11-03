@@ -276,6 +276,57 @@ public sealed partial class CardRulesTests
         }
     }
 
+    // Card: Side Winder T1: 2021201 "Basic Attack has a 8% Chance to trigger Double Attack, dealing Extra Neutral melee Physical
+    // damage equal to 50%. Internal Cooldown: 1 sec." Row 2003001 has the 50% of ATK the Novice's Basic Attack has, less its flat 10.
+    [ClientDataFact]
+    public async Task SideWinderDoubleAttacksOnABasicAttackAtItsStarsChanceAndThenWaitsItsCooldown()
+    {
+        const int card = 1440107, doubleAttack = 2003001;
+        var (alice, session) = await Socketed(card);
+        await using (alice)
+        {
+            await AtStar(session, card, 1);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 800;
+            await Swing(alice, session, target);
+            await NoHitOf(alice, doubleAttack);
+
+            effects.Roll = _ => 799;
+            long swing = await SwingDamage(alice, session, target);
+            var extra = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == doubleAttack);
+            Assert.Equal(target.Uid, Assert.Single(extra.Dsts).DstID);
+            Assert.InRange(extra.Dsts[0].Damage, swing - 11, swing - 1);
+
+            // Inside the 1 s, which is about a swing's own length at this ASPD: the swing lock let go early.
+            await OnLoop(() => { session.SwingLockUntilMs = 0; session.SkillCast = null; return 0; });
+            await Swing(alice, session, target);
+            await Task.Delay(100);
+            Assert.Single(SplashHits(alice, doubleAttack));
+
+            await Task.Delay(1000);
+            await Swing(alice, session, target);
+            await Eventually(() => SplashHits(alice, doubleAttack).Count == 2, "the second Double Attack");
+        }
+    }
+
+    // "Basic Attack": Sword Smash is a Physical skill, and sets Side Winder off as little as a proc's own hit would.
+    [ClientDataFact]
+    public async Task SideWinderLeavesAPhysicalSkillAlone()
+    {
+        const int card = 1440107, doubleAttack = 2003001;
+        var (alice, session) = await Socketed(card);
+        await using (alice)
+        {
+            await Gm("alice", "!job 1100");
+            await Learn(session, 11099);
+            var target = (await Dummies(session, 5000002))[0];
+            Service<CardEffects>().Roll = _ => 0;
+            await Cast(alice, 1109901, target);
+            await NoHitOf(alice, doubleAttack);
+        }
+    }
+
     // Every family row says what it adds, and the tag it counts on sits on a monster the text names.
     [ClientDataTheory]
     [InlineData(2015001, 180, 5000099)] // "Damage against all Orcs +1.8%": Orc Lady

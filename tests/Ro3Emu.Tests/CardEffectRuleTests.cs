@@ -46,11 +46,13 @@ public sealed class CardEffectRuleTests
     public void AFamilyCardsGroupNamesItsMonsterTag(long group, long tag) => Assert.Equal(tag, CardEffects.FamilyTag(group));
 
     [Theory]
-    [InlineData(20190, 1, true)] // Bash, a Physical attack
-    [InlineData(20200, 1, true)] // Jupitel Thunder
-    [InlineData(20190, 2, false)] // a magic cast
-    [InlineData(20200, 2, false)]
-    [InlineData(20230, 1, false)] // Dark Priest's [0, row] is no autocast
-    public void APhysicalAutocastAnswersPhysicalCasts(long group, long damageType, bool triggers) =>
-        Assert.Equal(triggers, CardEffects.TriggersAutocast(group, damageType));
+    [InlineData(20190, 1, false, true)] // Bash, a Physical attack
+    [InlineData(20200, 1, true, true)] // Jupitel Thunder, a Basic Attack is one
+    [InlineData(20190, 2, false, false)] // a magic cast
+    [InlineData(20200, 2, false, false)]
+    [InlineData(20230, 1, false, false)] // Dark Priest's [0, row] is no autocast
+    [InlineData(20210, 1, true, true)] // Double Attack, a Basic Attack
+    [InlineData(20210, 1, false, false)] // a Physical skill
+    public void AnAutocastAnswersItsOwnKindOfCast(long group, long damageType, bool normalAttack, bool triggers) =>
+        Assert.Equal(triggers, CardEffects.TriggersAutocast(group, damageType, normalAttack));
 }
