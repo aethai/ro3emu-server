@@ -795,9 +795,10 @@ public sealed partial class SkillService
                     code = !tree.Contains(group) ? ErrorCodes.SkillNotInTree
                         : target.SkillId != 0 && target.SkillId != group ? ErrorCodes.Parameter
                         : target.SkillLevel > MaxLevel(group) ? ErrorCodes.SkillMaxLevel
-                        : target.SkillLevel < Initial(p, group) || target.SkillLevel < 0 ? ErrorCodes.Parameter : 0;
+                        : target.SkillLevel < 0 || target.SkillLevel < Initial(p, group) && !RefundsWithPrerequisite(p, group, target.SkillLevel)
+                            ? ErrorCodes.Parameter : 0;
                     if (code != 0) break;
-                    selected.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = target.SkillLevel };
+                    selected.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Math.Max(target.SkillLevel, Initial(p, group)) };
                 }
                 if (code == 0)
                     foreach (var (group, target) in req.LevelUpList)
@@ -887,14 +888,29 @@ public sealed partial class SkillService
         .Where(t => Rank(t.Career) == rank).Select(t => t.Group).Distinct()
         .Sum(g => Math.Max(0, p.Skills.GetValueOrDefault(g) - Initial(p, g)));
 
-    /// <summary>Evaluate desired-level row prerequisites, including the negative required-level sentinel.</summary>
+    /// <summary>
+    /// A 31151 target of 0 under a free level. Only a skill with a prerequisite gets one: taking that prerequisite away, the
+    /// client sets every skill that depends on it to 0 (LC_SkillGrowthHelper.LocalMinusSkillLevel, LocalResetSkillList,
+    /// ResetSkillByJobId; Sight Sprout on Sight), while the minus button alone stops at the free level (CanSkillMinusPoint).
+    /// (inferred) The free level stays, as <see cref="PrerequisitesMet"/> has it: the next 5025 shows it to the client again.
+    /// </summary>
+    private bool RefundsWithPrerequisite(RoleProgress p, int group, int target) => target == 0
+        && SkillConfig.Get(_data, RealId(group, Initial(p, group))) is { } row && row.PreSkillRequired.Any(pre => pre is [_, > 0]);
+
+    /// <summary>
+    /// Evaluate desired-level row prerequisites, including the negative required-level sentinel. They hold for the levels
+    /// the role paid for. A free level has none to meet: the client's reset before a recommended build gives Sight Sprout (Wizard,
+    /// _iInitialLevel 1, needs Sight 1, the only such row) its free level with Sight at 0 (LC_SkillGrowthHelper.ResetAllChanged),
+    /// and counts that as a build nothing was spent in (LC_DAL_SkillDevelop.IsSchemeEmpty); no recommended build
+    /// (JobProfessSkillConfig) lists Sprout or pays a point for it. (inferred) The original's handling of it is not known.
+    /// </summary>
     private bool PrerequisitesMet(RoleProgress p)
     {
         var tree = Tree(p.Career).Select(t => t.Group).ToHashSet();
         foreach (int group in tree)
         {
             int level = Level(p, group);
-            if (level <= 0) continue;
+            if (level <= Initial(p, group)) continue;
             if (_data.Row("SkillConfig", RealId(group, level)) is not { } row) return false;
             if (!row.TryGetProperty("_kPreSkillRequired", out var pre) || pre.ValueKind != JsonValueKind.Array) continue;
             foreach (var req in pre.EnumerateArray())
