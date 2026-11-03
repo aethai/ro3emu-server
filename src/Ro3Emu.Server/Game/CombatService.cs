@@ -1086,7 +1086,7 @@ public sealed partial class CombatService : IGameTicker
                         InterruptedInfo = new SkillInterruptedInfo { Type = SkillInterruptedInfo.Types.SkillInterruptType.LockerInvalid },
                     }));
                 }
-                else if (SwingPlayedOut(s.SkillCast, now) && EffectiveSkillRow(s, a.SkillId) is { } row && MonsterService.Distance(a.Target, s) <= Range(row) + 1.5f)
+                else if (SwingPlayedOut(s.SkillCast, now) && EffectiveSkillRow(s, a.SkillId) is { } row && MonsterService.Distance(a.Target, s) <= Range(row) + a.Target.Template.DamageRadius + 1.5f)
                 {
                     a.NextSwingMs = NextSwing(a.NextSwingMs, now, SkillMs(s, row));
                     _loop.TrackRuntimeDetached("combat swing", () => SwingAsync(s, a.Target, a.SkillId, ++_sessionIds));
