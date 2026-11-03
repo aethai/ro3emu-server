@@ -57,6 +57,13 @@ public sealed class CardEffectRuleTests
     public void AnAutocastAnswersItsOwnKindOfCast(long group, long damageType, bool normalAttack, bool triggers) =>
         Assert.Equal(triggers, CardEffects.TriggersAutocast(group, damageType, normalAttack));
 
+    [Theory]
+    [InlineData(7000, 30000, 21000)]
+    [InlineData(1000, 30000, 3000)]
+    [InlineData(1000, 15000, 1500)]
+    public void AResetLocksTheSkillForAMultipleOfItsCooldown(long cooldownMs, long multiple, long lockout) =>
+        Assert.Equal(lockout, CardEffects.ResetLockoutMs(cooldownMs, multiple));
+
     [Fact]
     public void DivineLightHealsTheCasterAndTheFirstOtherOneHealed()
     {

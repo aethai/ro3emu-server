@@ -33,8 +33,9 @@ namespace Ro3Emu.Server.Game;
 ///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
 /// - autocast on a Physical attack: 20190 Bash, 20200 Jupitel Thunder; Double Attack on a Basic Attack: 20210, see
 ///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
+/// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
 /// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
-/// cooldown reset, monster SP drain, detection, indestructible gear.
+/// monster SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -59,7 +60,7 @@ public sealed class CardEffects
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509;
-    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531;
+    private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -290,6 +291,7 @@ public sealed class CardEffects
         await SplashAsync(s, action, cast, processed, hit, passives);
         await AutocastsAsync(s, action, cast, processed, hit, passives);
         await HealAutocastAsync(s, hit, passives);
+        await CooldownResetAsync(s, cast, passives);
     }
 
     /// <summary>Who Divine Light heals, in order: "Restores Life ... for you and a designated ST ally" with _iTargetMax 2. (inferred)
@@ -316,6 +318,34 @@ public sealed class CardEffects
                 if (target == s.Role.Id) allies.Add(s);
                 else if (_sessions.All().FirstOrDefault(p => p.Role?.Id == target) is { } ally) allies.Add(ally);
             await _combat.CastExtraOnAlliesAsync(s, row.Row, allies);
+        }
+    }
+
+    /// <summary>The time a reset skill's cooldown cannot be reset again: the skill's cooldown times a multiple in basis points.</summary>
+    internal static long ResetLockoutMs(long cooldownMs, long multiple) => cooldownMs * multiple / 10000;
+
+    /// <summary>
+    /// Mistress: "After using a skill, has a @{1}% Chance to reset that skill's Cooldown. Its Cooldown cannot be reset again for a
+    /// period of time. The internal Cooldown is @{2} times that skill's Cooldown. (Does not reset the global Cooldown.)"
+    /// _kLogicData [600, 0, 30000]: the chance, then 30000 as _kDescData's 3 times in basis points; the 0 has no recovered meaning.
+    /// Each skill has its own lockout, from the reset on. Only its group's cooldown ends: _iPubCD, the global one, runs on under
+    /// its own groups. (inferred) "That skill's Cooldown" is the time it was shown, after attribute 205. A skill with no
+    /// cooldown running (none in its row, or a chant that outlasted it) has nothing to reset, and rolls nothing. A Basic Attack is
+    /// not a skill here, and a cast that never reaches CastResolved (Resurrection, an own-skill script) does not count.
+    /// </summary>
+    private async Task CooldownResetAsync(GameSession s, SkillConfig cast, IReadOnlyList<Passive> passives)
+    {
+        if (cast.Cd <= 0 || cast.IsNormalAttack(_data)) return;
+        int group = (int)cast.SkillId;
+        long now = MonsterService.NowMs;
+        if (!s.SkillModeCds.Any(c => c.Key.Group == group && c.Value > now)) return;
+        foreach (var passive in passives.DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != CooldownReset || buff.LogicData is not [var chance, _, var multiple] || Roll(10000) >= chance) continue;
+            long cooldown = CombatService.ReducedCooldown(cast.Cd, _character.Stats(s)[AttributeId.PerCd]);
+            // Apart from the proc families' keys, which are buff groups.
+            if (Ready(s, -group, ResetLockoutMs(cooldown, multiple))) await CombatService.ResetCooldownAsync(s, group);
         }
     }
 

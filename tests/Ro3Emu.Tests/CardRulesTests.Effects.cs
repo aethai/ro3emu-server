@@ -432,6 +432,85 @@ public sealed partial class CardRulesTests
         }
     }
 
+    private const int Mistress = 1460701;
+
+    /// <summary>The 31113 notices that ended a skill group's cooldown: a start equal to the end.</summary>
+    private static int Resets(BotClient bot, int group) => bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillCdUpdate))
+        .SelectMany(e => SkillCdNotify.Parser.ParseFrom(e.Body).Infos).Count(i => i.SkillId == group && i.CdStartTimestampMs == i.CdEndTimestampMs);
+
+    // Card: Mistress, T2 here (its star only raises the stat lines): 2052901 "After using a skill, has a 6% Chance to reset that
+    // skill's Cooldown ... The internal Cooldown is 3 times that skill's Cooldown." Shield Reflect Auto Counter: _iCD 1000, no chant.
+    [ClientDataFact]
+    public async Task MistressResetsASkillsCooldownAtItsChanceAndThenLocksThatSkillForThreeTimesIt()
+    {
+        const int skill = 1141901, group = 11419;
+        var (alice, session) = await OnHeadCostume(Mistress);
+        await using (alice)
+        {
+            await Gm("alice", "!job 1210");
+            await Learn(session, group);
+            await AtStar(session, Mistress, 2);
+            Assert.Contains(session.Buffs, b => b.IsPassive && b.ConfigId == 2052901);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 600;
+            await Cast(alice, skill, target);
+            await Task.Delay(100);
+            Assert.Equal(0, Resets(alice, group));
+            Assert.True(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > MonsterService.NowMs)));
+            await Task.Delay(1000);
+
+            effects.Roll = _ => 599;
+            await Cast(alice, skill, target);
+            await Eventually(() => Resets(alice, group) == 1, "the reset");
+            var reset = System.Diagnostics.Stopwatch.StartNew();
+            Assert.False(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > MonsterService.NowMs)));
+
+            await Cast(alice, skill, target); // refused by nothing: the cooldown is gone. But it is locked now.
+            await Task.Delay(100);
+            Assert.True(reset.ElapsedMilliseconds < 3000, "too slow to see the lockout: " + reset.ElapsedMilliseconds);
+            Assert.Equal(1, Resets(alice, group));
+
+            await Task.Delay(Math.Max(0, 3100 - (int)reset.ElapsedMilliseconds));
+            await Cast(alice, skill, target);
+            await Eventually(() => Resets(alice, group) == 2, "the reset after 3 times its cooldown");
+        }
+    }
+
+    // Sword Smash: _iCD 7000, _iPubCD [500] on 4100101. Only its own group ends. A Basic Attack rolls nothing: it has no cooldown.
+    [ClientDataFact]
+    public async Task MistressLeavesTheGlobalCooldownAndABasicAttackAlone()
+    {
+        const int swordSmash = 1109901, group = 11099;
+        var (alice, session) = await OnHeadCostume(Mistress);
+        await using (alice)
+        {
+            await Gm("alice", "!job 1100");
+            await Learn(session, group);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            List<int> rolled = [];
+            effects.Roll = bound => { rolled.Add(bound); return 0; };
+            await Swing(alice, session, target);
+            await Task.Delay(100);
+            Assert.Empty(rolled);
+
+            await Cast(alice, swordSmash, target);
+            await Eventually(() => Resets(alice, group) == 1, "the reset");
+            var ended = alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillCdUpdate))
+                .SelectMany(e => SkillCdNotify.Parser.ParseFrom(e.Body).Infos).Where(i => i.CdStartTimestampMs == i.CdEndTimestampMs).ToList();
+            Assert.Equal(group, Assert.Single(ended).SkillId);
+        }
+    }
+
+    [ClientDataFact]
+    public void MistressRowsMultipleIsTheTextsThreeTimes()
+    {
+        var buff = Ro3Emu.Server.Data.Config.BuffConfig.Get(Service<GameData>(), 2052901)!.Value;
+        Assert.Equal(["6", "3"], buff.DescData);
+        Assert.Equal([600, 0, 30000], buff.LogicData);
+    }
+
     // Every family row says what it adds, and the tag it counts on sits on a monster the text names.
     [ClientDataTheory]
     [InlineData(2015001, 180, 5000099)] // "Damage against all Orcs +1.8%": Orc Lady
