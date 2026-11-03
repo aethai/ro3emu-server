@@ -85,4 +85,51 @@ public sealed partial class SkillCombatTests
         Assert.True(after[AttributeId.Atk] >= before[AttributeId.Atk] + 5, $"{before[AttributeId.Atk]} -> {after[AttributeId.Atk]}");
         Assert.True(after[AttributeId.Def] > before[AttributeId.Def], $"{before[AttributeId.Def]} -> {after[AttributeId.Def]}");
     }
+
+    /// <summary>BuffConfig 15998100: 205 +3000. Skill 1109901 has a 7 s cooldown.</summary>
+    [ClientDataFact]
+    public async Task ACooldownAttributeShortensTheCooldownTheClientIsTold()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!job 1100"); await Teach("alice", 11099);
+        var target = await Target("alice", stationary: true);
+        var a = Session("alice");
+        await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(a, 15998100, 60000, a.Role!.Id));
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1109901, TargetId = target.Uid, TargetPos = target.Pos.Clone() });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var cooldown = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser, n => n.Infos.Any(i => i.SkillId == 11099));
+        var info = cooldown.Infos.First(i => i.SkillId == 11099);
+        Assert.Equal(4900, info.CdEndTimestampMs - info.CdStartTimestampMs);
+    }
+
+    [Theory]
+    [InlineData(7000, 3000, 4900)]
+    [InlineData(7000, -9900, 13930)] // a debuff lengthens it
+    [InlineData(7000, 20000, 0)] // never below zero
+    public void ACooldownShareFollowsTheAttribute(long ms, long percent, long reduced) =>
+        Assert.Equal(reduced, CombatService.ReducedCooldown(ms, percent));
+
+    /// <summary>BuffConfig 1420410: 1232 -1000, a talent's SP cost cut, from an ordinary buff.</summary>
+    [ClientDataFact]
+    public async Task AnOrdinaryBuffChangesASkillsSpCost()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!job 4100"); await Teach("alice", 14001);
+        var a = Session("alice");
+        a.NoRegenUntilMs = long.MaxValue;
+        a.GmCombat |= GmCombatSwitches.NoCooldown;
+        async Task<long> SpSpent()
+        {
+            long before = Character.Stats(a)[AttributeId.Sp];
+            await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1400101 });
+            Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+            await Task.Delay(2500);
+            return before - Character.Stats(a)[AttributeId.Sp];
+        }
+        long plain = await SpSpent();
+        await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(a, 1420410, 60000, a.Role!.Id));
+        long cut = await SpSpent();
+        Assert.True(plain > 0);
+        Assert.Equal((long)Math.Ceiling(plain * 0.9), cut);
+    }
 }
