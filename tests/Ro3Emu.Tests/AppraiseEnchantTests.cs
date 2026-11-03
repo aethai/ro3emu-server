@@ -98,6 +98,32 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
         return await Next(bot, CharacterService.EquipItemOpr, EquipItemOprResp.Parser);
     }
 
+    // RefiningEffectTable level 1 is [7 grids, +3]. Wearing or removing anything keeps the panel's level.
+    [ClientDataFact]
+    public async Task WearingGearKeepsTheResonanceLevelsInTheReply()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!quest done 10103020");
+        var gear = await Give(Orange);
+        await alice.SendGameAsync(AppraisalService.Appraise, new EquipAppraiseReq { ItemGuids = { gear.Guid } });
+        Assert.Equal(0, (await Next(alice, AppraisalService.Appraise, EquipAppraiseResp.Parser)).Result);
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
+        var equipment = _app.Services.GetRequiredService<EquipmentService>();
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            Assert.NotNull(await equipment.GmSetLevelAsync(session, [1, 2, 3, 4, 5, 6, 7], 3, refine: true));
+            Assert.NotNull(await equipment.GmSetLevelAsync(session, [1, 2, 3, 4, 5, 6, 7], 30, refine: false));
+        });
+
+        var worn = await Wear(alice, gear.Guid);
+        Assert.Equal(0, worn.Result);
+        Assert.Equal(1, worn.RefineEffectLv);
+        Assert.True(worn.StrengthenEffectLv > 0);
+        var removed = await Wear(alice, gear.Guid, remove: true);
+        Assert.Equal(0, removed.Result);
+        Assert.Equal(1, removed.RefineEffectLv);
+    }
+
     [ClientDataFact]
     public async Task AppraisalPreservesGuidAndRollsAndSurvivesRelog()
     {
