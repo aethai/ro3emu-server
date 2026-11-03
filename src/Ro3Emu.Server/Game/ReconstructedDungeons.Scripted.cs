@@ -96,7 +96,7 @@ public sealed partial class ReconstructedDungeons
     /// that shows them cannot be reached in the reconstruction (each has its reason in the json, "unplayed").
     /// </summary>
     public sealed record ScriptedScene(long Scene, string Name, string Confidence, IReadOnlyList<ScriptedStep> Steps,
-        IReadOnlyList<int> Unplayed);
+        IReadOnlyList<int> Unplayed, long ContinuesTo = 0, bool LeavesAfterClear = false);
 
     private readonly Dictionary<long, ScriptedScene> _scripted = [];
 
@@ -118,7 +118,9 @@ public sealed partial class ReconstructedDungeons
             var unplayed = entry.Value.TryGetProperty("unplayed", out var u)
                 ? u.EnumerateArray().Select(q => q.GetProperty("quest").GetInt32()).ToArray() : [];
             _scripted[scene] = new ScriptedScene(scene, entry.Value.GetProperty("name").GetString() ?? "",
-                entry.Value.GetProperty("confidence").GetString() ?? "", steps, unplayed);
+                entry.Value.GetProperty("confidence").GetString() ?? "", steps, unplayed,
+                entry.Value.TryGetProperty("continuesTo", out var next) ? next.GetInt64() : 0,
+                entry.Value.TryGetProperty("leavesAfterClear", out var leaves) && leaves.GetBoolean());
         }
     }
 

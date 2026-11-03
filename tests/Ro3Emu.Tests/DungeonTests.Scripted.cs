@@ -332,6 +332,35 @@ public sealed partial class DungeonTests
         var end = Service<WorldData>().Map(scene)!.Points[31]; // the ride ends in the end region
         Assert.True(MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, end.X, end.Z) < 1);
         await StoryMovesOn(alice, 10104300, 10104310);
+
+        // The next quest stays hidden in this scene (no _iDungeonID), so the server moves the player on into 1000401.
+        Assert.Equal(0, (await Next(alice, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
+        await Load(alice, 1000401);
+    }
+
+    // After Maya's nest the story goes on on the field (10104320 tracks map 10540), and its quest stays hidden in the scene.
+    [ClientDataFact]
+    public async Task MayasNestReturnsThePlayerToTheFieldAfterItsClear()
+    {
+        const long scene = 1000401;
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!lvl 99");
+        Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
+        long instance = await Load(alice, scene);
+        using var left = alice.Inbox.Expect(e => e.IsGame(DungeonService.Leave));
+        var plan = Session(alice).DungeonAttempt!.Plan;
+        for (int wave = 0; wave < plan.Waves.Count; wave++)
+        {
+            var step = plan.Waves[wave].Step!;
+            await Stage(alice, wave + 1, quest: step.Quest);
+            await ActorsIn(alice, step.Actors.Count);
+            if (plan.Waves[wave].Spawns.Count > 0)
+                foreach (var monster in await WaveIn(instance, plan.Waves[wave].Spawns.Count)) await Kill(alice, monster);
+            if (step.Complete.Count > 0) await Gm(alice, "!actors use");
+        }
+        Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
+        var leave = await left.WaitAsync(TimeSpan.FromSeconds(DungeonService.PlaneExitSeconds + 10));
+        Assert.Equal(0, LeaveDungeonRsp.Parser.ParseFrom(leave.Body).Result);
     }
 
     [ClientDataFact]
