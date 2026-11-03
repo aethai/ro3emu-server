@@ -736,8 +736,10 @@ public sealed partial class CombatService
         action.Cancelled = true;
         s.SkillCast = null;
         // The client lets a move end a swing only from the show's m_fInterruptTime_move, well after its hit. Without this a
-        // step or a 31124 right after the hit, and a new swing, hits faster than the attack speed allows.
+        // step or a 31124 right after the hit, and a new swing, hits faster than the attack speed allows. A swing that killed
+        // its target gains nothing from this, and walking on to the next monster must not be refused.
         if (cause == SkillInterruptedInfo.Types.SkillInterruptType.Move && new SkillConfig(action.Row).IsNormalAttack(_data)
+            && (FindMonster(s.WorldScene, action.Request.TargetId) is { Hp: > 0 } || EventTarget(s, action.Request.TargetId) is { Dead: false })
             && SkillShow.MoveInterruptOffset(_data.SkillTemplate(new SkillConfig(action.Row).ScriptShow), action.ChantMs, action.ActionMs) is { } moveMs)
             s.SwingLockUntilMs = action.StartMs + moveMs;
         s.WalkAllowance.Release(DateTime.UtcNow);

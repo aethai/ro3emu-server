@@ -531,6 +531,7 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Empty(Session(alice).Tower!.RewardRecord);
         Assert.Empty(Service<RoleStore>().LoadTowerFirstPasses(1, 1));
         FailTowerWrites(false);
+        await Task.Delay(600); // the walk in Kill cancels the swing above, which then holds the next one (CombatService.CancelCastAsync)
         await Kill(alice, a.Monsters[1].Uuid);
         var success = await Next(alice, TowerService.End, ClimTowerEndNotify.Parser);
         Assert.Equal(0, success.Result);

@@ -33,4 +33,25 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, swing);
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
+
+    /// <summary>A swing that killed its target holds nothing: walking on to the next monster must not be refused.</summary>
+    [ClientDataFact]
+    public async Task WalkingOnAfterAKillIsNotHeld()
+    {
+        await using var alice = await InWorld("Alice");
+        var first = await Target("alice", stationary: true);
+        var next = await Target("alice", stationary: true);
+        var a = Session("alice");
+        await Loop.InvokeAsync(() => { first.Hp = 1; return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = first.Uid, ComboIndex = 1 });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, hit => hit.Dsts.Any(d => d.DstID == first.Uid && d.IsDead));
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        await Loop.InvokeAsync(async () =>
+        {
+            await combat.InterruptAsync(a);
+            await combat.CastAsync(a, new CastSkillReq { SkillId = 1000001, TargetId = next.Uid, ComboIndex = 1 });
+        });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+    }
 }
