@@ -13,6 +13,8 @@ public sealed class ActiveSkillCast
     public required long Id { get; init; }
     public required long OwnerId { get; init; }
     public required long WorldScene { get; init; }
+    /// <summary>Targets a staged cast has given a status so far, shared by its hits: Tetra Vortex's guarantee.</summary>
+    public HashSet<long>? StatusLanded { get; set; }
     public long SceneGeneration { get; init; }
     public Ro3Emu.Server.Game.Ownership.AttachmentLease? Attachment { get; init; }
     public required CastSkillReq Request { get; init; }

@@ -250,8 +250,14 @@ public sealed partial class CombatService
                     foreach (var tuple in Tuples(row, "_kBuff2"))
                         if (CanApplyMoreEffects() && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(target.Uid))
                             && RollHostileBuff(tuple, s, null, null, target, out int id, out int duration))
+                        {
                             await _buffs.AddSupportAsync(target, id, duration, castingRole.Id,
                                 attributeMultiplier: GuardianPetRules.BuffMultiplier(row), guardianOwned: IsGuardianEffect(row));
+                            action.StatusLanded?.Add(target.Uid);
+                        }
+                if (CanApplyMoreEffects() && row.TryGetProperty(SkillConfig.GuaranteedStatusField, out var guarantee) && action.StatusLanded?.Contains(target.Uid) == false
+                    && RollHostileBuff(guarantee, s, null, null, target, out int sureId, out int sureDuration))
+                    await _buffs.AddSupportAsync(target, sureId, sureDuration, castingRole.Id);
                 if (CanApplyMoreEffects() && script is ("Provoke" or "Taunt")) _monsters.Engage(target, s);
                 if (CanApplyMoreEffects() && !target.Dead && target.Hp > 0) await DisplaceTargetAsync(s, action, target, center);
             }
@@ -486,7 +492,7 @@ public sealed partial class CombatService
 
     /// <summary>Who a displacement moves: the caster along its facing or at its target, a target away from / toward the
     /// caster, or a target away from / toward the centre of the skill's area (its target point, or a field's position).</summary>
-    internal enum DisplaceKind { CasterForward, CasterBack, CasterToTarget, TargetPush, TargetPull, CenterPush, CenterPull }
+    internal enum DisplaceKind { CasterForward, CasterBack, CasterToTarget, CasterToPoint, TargetPush, TargetPull, CenterPush, CenterPull }
 
     /// <summary>
     /// Skills whose description says they move the caster or knock back / pull what they hit. The distance is the
@@ -498,7 +504,7 @@ public sealed partial class CombatService
     /// in front of it: the 1 m is (inferred) from Charge_Attack's "a point @{2} m in front of the designated ST enemy" and
     /// its _kDescData 1. Warg Strike's 1331203 and Warg Hunt (Ranged)'s 1333014 are in no m_kShows entry, so the move is the
     /// server's; each row's first attack point meets its charge gfx (fx_skill_wugstrike_02 at 0, fx_skill_wugdash_01 at 0.133).
-    /// Not here: ShieldsProtection's 1161341 knockback belongs to its periodic aura, which is not simulated; Axe Tornado's
+    /// Not here: Axe Tornado's
     /// enhanced form (AxeTornadoProS1BD2) pulls only under Enhance; knock-ups (Sonic Burst, Energy Release) move nobody.
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, (DisplaceKind Kind, int DescIndex, float Metres)> Displacements =
@@ -513,6 +519,16 @@ public sealed partial class CombatService
             ["RetreatingShadows"] = (DisplaceKind.CasterBack, 0, 0),
             ["RetreatingShadowsS1"] = (DisplaceKind.CasterBack, 0, 0),
             ["WolvesDash"] = (DisplaceKind.CasterForward, 0, 0),
+            ["Charge_Attack"] = (DisplaceKind.CasterToTarget, 3, 0),      // "Charge at a designated ST enemy", _kDescData 1 m in front of it
+            ["PowerSwing"] = (DisplaceKind.CasterToTarget, -1, 1),        // Heavy Axe Smash: "Move rapidly in front of the target"
+            ["PowerSwing2"] = (DisplaceKind.CasterToTarget, -1, 1),
+            ["PowerSwing3"] = (DisplaceKind.CasterToTarget, -1, 1),
+            ["WolfAttack"] = (DisplaceKind.CasterToTarget, -1, 1),        // Warg Strike: see FarChargeOnly
+            ["WolfAttackPlus"] = (DisplaceKind.CasterToTarget, -1, 1),
+            ["IgnitionBreak"] = (DisplaceKind.CasterToPoint, 0, 0),       // Rift Impact: "Dives toward a designated location within ${1} meters"
+            ["HesperusLit"] = (DisplaceKind.CasterToPoint, 1, 0),         // Twilight: "Leap to a selected area within ${2} meters"
+            ["HesperusLits1"] = (DisplaceKind.CasterToPoint, 1, 0),
+            ["ShieldsProtection"] = (DisplaceKind.TargetPush, 4, 0),      // Shield Defense: "Every ${7} seconds, inflict a ${5}-meter Knockback"
             ["WugStrike"] = (DisplaceKind.CasterToTarget, -1, 1),         // Warg Strike on the wolf: "Charge the designated ST target"
             ["WolvesShadowFar"] = (DisplaceKind.CasterToTarget, -1, 1),   // Warg Hunt: "you also dash in front of it"
             ["WolvesShadowFarBD"] = (DisplaceKind.CasterToTarget, -1, 1),
@@ -561,6 +577,7 @@ public sealed partial class CombatService
     {
         ["yingliuS1"] = 1542101, // its mode row's show has no movement of its own; Flowing Shadow's 15421 (inferred)
         ["hesehuanyingS1"] = 1540104, // likewise, Shadow Step's 15401 (inferred)
+        ["HesperusLits1"] = 1160707, // likewise, Twilight's 11607 (inferred)
         ["Spear_Stab"] = 1631405,
         ["Sightrasher"] = 1631405,
         ["PinpointAttack2"] = 1162412,
@@ -613,8 +630,30 @@ public sealed partial class CombatService
         return (0, 0, "");
     }
 
+    /// <summary>Fearless Charge: "Move ${12} meters in that direction" after a knockback of its own, so the row has two rules. Its ${12} is empty;
+    /// _kDescData[0] and _iDistanceMax both say 12 (inferred). 1162411 is its show's first movement, in the rows on show 111624 too.</summary>
+    private (DisplaceKind Kind, float Distance, int EffectId, int Ms)? AlsoMovesCaster(JsonElement row)
+    {
+        if (Script(row) != "PinpointAttack2") return null;
+        var (effect, ms) = MovementEffectById(_data, 1162411);
+        float distance = (float)Numbers(row, "_kDescData").ElementAtOrDefault(0);
+        return effect != 0 && distance > 0 ? (DisplaceKind.CasterForward, distance, effect, ms) : null;
+    }
+
+    /// <summary>Warg Strike: "If you are more than ${6} meters from the target, you also Charge directly in front of it". The wolf's own
+    /// WolfAttack rows have no such number and stay where they are.</summary>
+    private bool FarChargeHolds(GameSession s, ActiveSkillCast action)
+    {
+        if (Script(action.Row) is not ("WolfAttack" or "WolfAttackPlus")) return true;
+        var desc = new SkillConfig(action.Row).DescData;
+        if (desc.Length < 6 || !float.TryParse(desc[5], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float beyond)) return false;
+        var to = FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? EventTarget(s, action.Request.TargetId)?.Position;
+        return to != null && Distance(s.Position, to) > beyond;
+    }
+
     private (DisplaceKind Kind, float Distance, int EffectId, int Ms)? Displacement(JsonElement row)
     {
+        if (row.TryGetProperty(SkillConfig.StillHitField, out _)) return null;
         string script = Script(row);
         if (!Displacements.TryGetValue(script, out var rule)) return null;
         var (effect, ms) = MovementEffectOverrides.TryGetValue(script, out int named) ? MovementEffectById(_data, named)
@@ -626,14 +665,20 @@ public sealed partial class CombatService
 
     private async Task MoveCasterAsync(GameSession s, ActiveSkillCast action)
     {
-        if (Displacement(action.Row) is not { Kind: DisplaceKind.CasterForward or DisplaceKind.CasterBack or DisplaceKind.CasterToTarget } move) return;
+        if (Displacement(action.Row) is { Kind: DisplaceKind.CasterForward or DisplaceKind.CasterBack or DisplaceKind.CasterToTarget or DisplaceKind.CasterToPoint } move
+            && FarChargeHolds(s, action)) await MoveCasterAsync(s, action, move);
+    }
+
+    private async Task MoveCasterAsync(GameSession s, ActiveSkillCast action, (DisplaceKind Kind, float Distance, int EffectId, int Ms) move)
+    {
         float face = action.Request.Face + (move.Kind == DisplaceKind.CasterBack ? 180 : 0);
         double angle = face * Math.PI / 180;
         var end = move.Kind == DisplaceKind.CasterToTarget ? ChargeEnd(s, action, move.Distance)
+            : move.Kind == DisplaceKind.CasterToPoint ? PointEnd(s, action, move.Distance)
             : WalkableEnd(s.SceneEntry, s.Position, (float)Math.Sin(angle) * move.Distance, (float)Math.Cos(angle) * move.Distance);
         if (end == null) return;
         // The rest of the show plays where the charge ended: a stop reported there is no walk that interrupts the cast.
-        if (move.Kind == DisplaceKind.CasterToTarget) action.Origin = end.Clone();
+        if (move.Kind is DisplaceKind.CasterToTarget or DisplaceKind.CasterToPoint) action.Origin = end.Clone();
         var start = s.Position.Clone();
         await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
         {
@@ -654,6 +699,14 @@ public sealed partial class CombatService
         var to = FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? EventTarget(s, action.Request.TargetId)?.Position
             ?? action.Request.TargetPos ?? s.Position;
         float dx = to.X - s.Position.X, dz = to.Z - s.Position.Z, length = MathF.Sqrt(dx * dx + dz * dz), go = length - stopShort;
+        return go < 0.5f ? null : WalkableEnd(s.SceneEntry, s.Position, dx / length * go, dz / length * go);
+    }
+
+    /// <summary>Where a dive at the cast's point ends: on it, within the row's reach and navigation; null when the caster is about there already.</summary>
+    private Vec3? PointEnd(GameSession s, ActiveSkillCast action, float reach)
+    {
+        var to = action.Request.TargetPos ?? s.Position;
+        float dx = to.X - s.Position.X, dz = to.Z - s.Position.Z, length = MathF.Sqrt(dx * dx + dz * dz), go = MathF.Min(length, reach);
         return go < 0.5f ? null : WalkableEnd(s.SceneEntry, s.Position, dx / length * go, dz / length * go);
     }
 
