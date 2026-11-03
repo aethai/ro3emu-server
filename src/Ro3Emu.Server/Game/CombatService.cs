@@ -722,9 +722,7 @@ public sealed partial class CombatService : IGameTicker
         var flats = Numbers(skill, "_kDamageParam2");
         double p1 = ratios.Length > branch ? ratios[branch] : 10000, p2 = flats.Length > branch ? flats[branch] : 0;
         double dmg = DamageSource(skill, a.Atk, a.Matk, magic) * p1 / 10000 + p2;
-        // Defense: def / (def + ParDef 20 × the defender's level), the shape of the client's damage-reduction tooltip.
-        double def = magic ? b.Mdef : b.Def;
-        dmg *= 1 - def / (def + 20.0 * Math.Max(1, b.Level));
+        dmg *= DefenseFactor(a.Level, magic ? b.Mdef : b.Def);
         // Element: EleConfig row = defender element, column = attacker element (/10000), clamped [0.1, 10].
         int element = (int)GameData.Int(skill, "_iEleType") is var se and > 1 ? se : a.Element;
         return dmg * Math.Clamp(1 + ElementFactor(element, b.Element) / 10000.0, 0.1, 10);
@@ -741,6 +739,18 @@ public sealed partial class CombatService : IGameTicker
         15210 or 15240 => atk + matk,
         _ => magic ? matk : atk,
     };
+
+    /// <summary>
+    /// ATK * k / (k + DEF), k = ParDef * the attacker's level. PBDubugDamageFormulaEnum names it Formula_AParDef beside
+    /// Formula_BPhysicsDef, A attacking and B hit, and LC_PlayerInfoHelper._doFormulaPhysicalDamageDec has that shape, though the
+    /// panel can only use the player's own level. BaseLvConfig holds ParDef and ParMDef at 20 for all 100 levels. (owner's decision
+    /// 2.11, inferred where the client does not compute it.)
+    /// </summary>
+    internal static double DefenseFactor(long attackerLevel, double defense)
+    {
+        double k = 20.0 * Math.Max(1, attackerLevel);
+        return k / (k + Math.Max(0, defense));
+    }
 
     /// <summary>The expected damage of one hit (hit rate, mean float, crit share) from the same formula.</summary>
     private double ExpectedDamage(Fighter a, Fighter b, JsonElement skill)
