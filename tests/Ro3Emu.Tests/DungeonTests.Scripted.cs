@@ -359,11 +359,18 @@ public sealed partial class DungeonTests
         for (int wave = 0; wave < plan.Waves.Count; wave++)
         {
             var step = plan.Waves[wave].Step!;
-            await Stage(alice, wave + 1, quest: step.Quest);
+            var begun = await Stage(alice, wave + 1, quest: step.Quest);
+            Assert.Equal([0L, 1L], begun.Vars.Single(v => v.VarId == 10003).Vi64); // a new step starts at (0/1)
             await ActorsIn(alice, step.Actors.Count);
             if (plan.Waves[wave].Spawns.Count > 0)
                 foreach (var monster in await WaveIn(instance, plan.Waves[wave].Spawns.Count)) await Kill(alice, monster);
-            if (step.Complete.Count > 0) await Gm(alice, "!actors use");
+            if (step.Complete.Count > 0)
+            {
+                await Gm(alice, "!actors use");
+                // "Open the treasured chest" reads (1/1) once it is open, and so does each step before it.
+                await Next(alice, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
+                    n => n.Vars.SingleOrDefault(v => v.VarId == 10003)?.Vi64 is [var done, var total] && done == total);
+            }
         }
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
         var leave = await left.WaitAsync(TimeSpan.FromSeconds(DungeonService.PlaneExitSeconds + 10));
