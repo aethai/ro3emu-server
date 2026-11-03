@@ -819,7 +819,7 @@ public sealed partial class CombatService
             foreach (var modifier in DamageAdjusters) amount = Math.Max(0, modifier(s, target, row, result, amount));
             foreach (var extra in ExtraHitDamage) amount += Math.Max(0, extra(s, target, row, amount));
         }
-        return (ApplyPetSupportResistance(amount, _buffs.GuardianUnitAttributes(target), row, attacker.Element), result);
+        return (ApplyPetSupportResistance(amount, _buffs.UnitCombatAttributes(target), row, attacker.Element), result);
     }
 
     /// <summary>Targets already slowed before this cast. Only Kuang Feng Xi Juan's second slow depends on that, so no
@@ -828,7 +828,7 @@ public sealed partial class CombatService
     {
         if (GuardianPetRules.Script(row) != KuangFengXiJuan) return [];
         var slowed = monsters.Where(m => m.SlowMovementExpireMs > Now
-            || _buffs.GuardianUnitAttributes(m).Any(c => c.Id == AttributeId.PerSpeed && c.Value < 0))
+            || _buffs.UnitCombatAttributes(m).Any(c => c.Id == AttributeId.PerSpeed && c.Value < 0))
             .Select(m => m.Uid).ToHashSet();
         foreach (var player in players.Where(p => p.Buffs.Any(b => b.ExpireMs > Now
             && b.Changes.Any(c => c.Attr == AttributeId.PerSpeed && c.Value < 0)))) slowed.Add(player.Role!.Id);

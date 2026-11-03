@@ -28,9 +28,15 @@ public sealed partial class BuffService
     /// <summary>Active raw attribute contributions; the combat owner passes these through StatCalculator.</summary>
     /// <summary>The attribute changes of a guardian's live buffs on the unit. (inferred scope) Only these alter a monster's
     /// combat stats, damage and speed: ordinary unit buffs keep their previous, display-only behaviour.</summary>
-    internal IEnumerable<(long Id, double Value)> GuardianUnitAttributes(WorldUnit unit) =>
+    /// <summary>The buffs that count toward a unit's combat attributes: a guardian's, and a debuff (BuffConfig _iType 2) from
+    /// any source, so Petrify's PDEF% and a frost's MSPD apply to a monster. (inferred) A monster's own standing buffs
+    /// (NPCConfig _kBornEventBuff, 102 monsters carry 235 and 236) stay out, so its template stats stay as tuned.</summary>
+    private bool CountsInUnitStats(ActiveBuff buff) => buff.ExpireMs > MonsterService.NowMs
+        && (buff.IsGuardianOwned || buff.Changes.Count > 0 && BuffConfig.Get(_data, buff.ConfigId)?.Type == NegativeBuffType);
+
+    internal IEnumerable<(long Id, double Value)> UnitCombatAttributes(WorldUnit unit) =>
         _unitBuffs.TryGetValue(unit.Uid, out var buffs)
-            ? buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > MonsterService.NowMs)
+            ? buffs.Where(CountsInUnitStats)
                 .SelectMany(b => b.Changes.Select(change => (change.Attr, change.Value))).ToArray()
             : [];
 
@@ -45,8 +51,7 @@ public sealed partial class BuffService
         return StatCalculator.Compute(raw, _data);
     }
 
-    internal bool HasGuardianUnitBuffs(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs)
-        && buffs.Any(b => b.IsGuardianOwned && b.ExpireMs > MonsterService.NowMs);
+    internal bool HasUnitCombatBuffs(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs) && buffs.Any(CountsInUnitStats);
 
     public IEnumerable<(long Id, double Value)> UnitAttributes(WorldUnit unit) =>
         _unitBuffs.TryGetValue(unit.Uid, out var buffs)
