@@ -20,6 +20,12 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// A wave; <paramref name="Quest"/> is the DungeonQuestConfig quest it plays (0: none known). A scripted step
     /// (<paramref name="Step"/>, ReconstructedDungeons.Scripted) has no monsters: it completes on its client events.
     /// </summary>
+    /// <summary>The scene a scripted scene continues into after its clear, 0 when none.</summary>
+    public long ScriptedContinuation(long scene) => reconstructed?.Scripted(scene)?.ContinuesTo ?? 0;
+
+    /// <summary>Whether a scripted scene returns the player to the field after its clear.</summary>
+    public bool ScriptedLeavesAfterClear(long scene) => reconstructed?.Scripted(scene)?.LeavesAfterClear ?? false;
+
     public sealed record Wave(int Number, IReadOnlyList<Spawn> Spawns, int Quest = 0, ReconstructedDungeons.ScriptedStep? Step = null);
     /// <summary><paramref name="Layer"/>: a Valhalla Trials run (HeroicSpiritLayerConfig row), see ValhallaService.</summary>
     public sealed record Plan(JsonElement Config, JsonElement? Multi, JsonElement? Boss, int Mark,

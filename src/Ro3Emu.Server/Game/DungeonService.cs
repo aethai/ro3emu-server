@@ -996,7 +996,7 @@ public sealed partial class DungeonService
                     if (committed && goods.Count > 0) await _character.ItemsChangedAsync(s, stats: false);
                     await s.SendGameAsync(Result, result);
                     if (success) await HideGuideWaysAsync(s, a);
-                    if (success && LeavesAfterClear(a)) ScheduleLeaveAfterClear(s, a);
+                    if (success && (LeavesAfterClear(a) || _catalog.ScriptedLeavesAfterClear(a.Plan.SceneEntry))) ScheduleLeaveAfterClear(s, a);
                     else if (success && ContinuationOf(a.Plan.SceneEntry) is long nextScene and not 0) ScheduleContinuation(s, a, nextScene);
                     if (success && a.Plan.Multi != null)
                     {
