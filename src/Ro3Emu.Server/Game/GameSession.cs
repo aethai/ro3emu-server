@@ -202,6 +202,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
 
     /// <summary>The distance the walk check still lets this client report (SceneService.AcceptWalkAsync).</summary>
     internal WalkAllowance WalkAllowance { get; } = new();
+    /// <summary>A swing a move cancelled holds the next normal attack until this time (CombatService.CancelCastAsync).</summary>
+    internal long SwingLockUntilMs { get; set; }
 
     /// <summary>The game message budgets of this connection (GameMessageHandler.WithinRate).</summary>
     internal SessionRates? MessageRates { get; set; }
