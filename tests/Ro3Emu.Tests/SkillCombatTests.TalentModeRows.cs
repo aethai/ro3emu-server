@@ -180,4 +180,20 @@ public sealed partial class SkillCombatTests
         Assert.Equal(1400700 + level, strikes[1].Row);
         Assert.Equal(strikes[1].Amount, strikes[0].Amount);
     }
+
+    // Flame Attack Enhance (10102129 for the Knight line, bought on the way to 10102130): "extends the duration of Magnum
+    // Break's buff to 120 sec." Its tuple names the duration column: [21,0,0,11002,33,2,120000,0,2].
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public async Task FlameAttackEnhanceExtendsMagnumBreaksBuff(int level)
+    {
+        var (bot, me, _) = await Caster("Alice", 1200, 11002, level, 10102130);
+        await using var _ = bot;
+        var mark = await Mark(me, 2);
+        Assert.Equal(0, (await Cast(bot, me, 1100200 + level, mark)).Result);
+        await Task.Delay(1000);
+        var buff = Assert.Single(me.Buffs, b => b.ConfigId == 1100200 + level);
+        Assert.InRange(buff.ExpireMs - MonsterService.NowMs, 110_000, 120_000);
+    }
 }
