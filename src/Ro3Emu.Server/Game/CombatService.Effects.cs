@@ -303,6 +303,7 @@ public sealed partial class CombatService
                     foreach (var handler in Healed) handler(s, actual);
                     foreach (var handler in HealedAsync) await handler(s, actual);
                 }
+                await CleanseByTextAsync(recipient, row, script);
                 if (CleanseKinds(row) is { Length: > 0 } kinds)
                     foreach (var buff in recipient.Buffs.Where(b => BuffConfig.Get(_data, b.ConfigId) is { } config && Cleanses(kinds, config)).ToArray())
                         await _buffs.RemoveAsync(recipient, buff);
