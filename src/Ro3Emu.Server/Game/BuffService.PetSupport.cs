@@ -51,6 +51,20 @@ public sealed partial class BuffService
         return StatCalculator.Compute(raw, _data);
     }
 
+    /// <summary>A buff whose damage attributes already have their own multiplier, so a hit must not read them off the sheet too:
+    /// a guardian's (GuardianOutgoingDamage), a Pet Tower pet's (ApplyPetSupportResistance) and a totem's (TotemEffects).</summary>
+    internal static bool HasOwnDamagePath(ActiveBuff buff) => buff.IsGuardianOwned || buff.IsTotemOwned
+        || buff.SourceId is >= TowerPetUnit.UidBase and < TowerPetUnit.UidLimit;
+
+    /// <summary>What the player's sheet holds from those buffs, to take off it.</summary>
+    internal StatSheet OwnDamagePathAttributes(GameSession p)
+    {
+        var raw = new Dictionary<int, double>();
+        foreach (var buff in p.Buffs.Where(HasOwnDamagePath))
+            foreach (var (attr, value) in buff.Changes) raw[(int)attr] = raw.GetValueOrDefault((int)attr) + value;
+        return StatCalculator.Compute(raw, _data);
+    }
+
     internal bool HasUnitCombatBuffs(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs) && buffs.Any(CountsInUnitStats);
 
     public IEnumerable<(long Id, double Value)> UnitAttributes(WorldUnit unit) =>
