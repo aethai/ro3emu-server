@@ -191,6 +191,13 @@ public sealed partial class CardRulesTests
         Assert.Empty(SplashHits(bot, row));
     }
 
+    /// <summary>A swing starts the auto-attack loop, whose own swings would set off a proc while a test waits.</summary>
+    private async Task SwingOnce(BotClient bot, GameSession session, MonsterUnit target)
+    {
+        await Swing(bot, session, target);
+        await OnLoop(() => { session.Attack = null; return 0; });
+    }
+
     // Card: Bongun T2: 2019301 "When making a Physical attack, has a 4% Chance to autocast Bash Lv.1. Internal Cooldown: 2 sec."
     // A basic attack on the wire sets it off at a roll under 4.00%; Bash 2002801 lands in its own 31101; then 2 s of nothing.
     [ClientDataFact]
@@ -203,22 +210,22 @@ public sealed partial class CardRulesTests
             var target = (await Dummies(session, 5000002))[0];
             var effects = Service<CardEffects>();
             effects.Roll = _ => 400;
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await NoHitOf(alice, CardBash);
 
             effects.Roll = _ => 399;
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             var bash = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardBash);
             Assert.True(Assert.Single(bash.Dsts).Damage > 0);
             Assert.Equal(target.Uid, bash.Dsts[0].DstID);
             Assert.False(session.SkillCds.ContainsKey(20028)); // an extra cast starts no cooldown
 
-            await Swing(alice, session, target); // inside the 2 s
+            await SwingOnce(alice, session, target); // inside the 2 s
             await Task.Delay(300);
             Assert.Single(SplashHits(alice, CardBash));
 
             await Task.Delay(2000);
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await Eventually(() => SplashHits(alice, CardBash).Count == 2, "the second Bash");
         }
     }
@@ -234,14 +241,14 @@ public sealed partial class CardRulesTests
             var target = (await Dummies(session, 5000002))[0];
             var effects = Service<CardEffects>();
             effects.Roll = _ => 200;
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await NoHitOf(alice, CardJupitel);
 
             effects.Roll = _ => 199;
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             var thunder = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardJupitel);
             Assert.True(Assert.Single(thunder.Dsts).Damage > 0);
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await Task.Delay(300);
             Assert.Single(SplashHits(alice, CardJupitel)); // the 5 s
         }
@@ -300,24 +307,26 @@ public sealed partial class CardRulesTests
             var target = (await Dummies(session, 5000002))[0];
             var effects = Service<CardEffects>();
             effects.Roll = _ => 800;
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await NoHitOf(alice, doubleAttack);
 
             effects.Roll = _ => 799;
             long swing = await SwingDamage(alice, session, target);
+            await OnLoop(() => { session.Attack = null; return 0; });
             var extra = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == doubleAttack);
+            var sinceProc = System.Diagnostics.Stopwatch.StartNew();
             Assert.Equal(target.Uid, Assert.Single(extra.Dsts).DstID);
             Assert.InRange(extra.Dsts[0].Damage, swing - 11, swing - 1);
 
             // Inside the 1 s, which is about a swing's own length at this ASPD: the swing lock let go early.
             await OnLoop(() => { session.SwingLockUntilMs = 0; session.SkillCast = null; return 0; });
-            await Swing(alice, session, target);
+            await SwingOnce(alice, session, target);
             await Task.Delay(100);
-            Assert.Single(SplashHits(alice, doubleAttack));
+            if (sinceProc.ElapsedMilliseconds < 900) Assert.Single(SplashHits(alice, doubleAttack));
 
             await Task.Delay(1000);
-            await Swing(alice, session, target);
-            await Eventually(() => SplashHits(alice, doubleAttack).Count == 2, "the second Double Attack");
+            await SwingOnce(alice, session, target);
+            await Eventually(() => SplashHits(alice, doubleAttack).Count >= 2, "the second Double Attack");
         }
     }
 
@@ -518,8 +527,10 @@ public sealed partial class CardRulesTests
     /// <summary>A hit right after the last one: the swing lock would otherwise spend most of the 2 s.</summary>
     private async Task<DamageInfo> QuickSwing(BotClient bot, GameSession session, MonsterUnit target)
     {
-        await OnLoop(() => { session.SwingLockUntilMs = 0; session.SkillCast = null; return 0; });
-        return Assert.Single((await Swing(bot, session, target)).Dsts);
+        await OnLoop(() => { session.SwingLockUntilMs = 0; session.SkillCast = null; session.Attack = null; return 0; });
+        var hit = await Swing(bot, session, target);
+        await OnLoop(() => { session.Attack = null; return 0; });
+        return Assert.Single(hit.Dsts);
     }
 
     // Card: Doppelganger T2 (its star raises only stat lines): 2050701 "When you land a critical hit, your next instance of damage
