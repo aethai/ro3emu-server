@@ -639,7 +639,8 @@ public sealed partial class CombatService
         s.SkillCast = action;
         // A caster that may not walk while casting (_bMovement 0) saves up no walking distance until the cast ends: a client
         // that walks on without reporting it cannot claim the distance afterwards (SceneService.AcceptWalkAsync).
-        if (actor == null && new SkillConfig(row).Movement == 0)
+        // One pressed in mid-walk is the exception: the client walks on (PlayerMoved).
+        if (actor == null && !s.Walking && new SkillConfig(row).Movement == 0)
             SceneService.HoldWalk(s, DateTime.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
         s.WorldState.ResurrectionCastId = Script(row) == "Resurrection" ? id : 0;
         s.Face = face;
@@ -767,13 +768,13 @@ public sealed partial class CombatService
         // A walk that sets off (not a stop) after the arrival grace ends a cast that holds the caster in place, even before it
         // has moved: the client interrupts such a cast to walk, and the walk budget is held until the cast ends.
         if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.Walking && Now - cast.StartMs > 300)) return;
-        // The client casts on reaching range and stops 1 ms later (in-game 11.10): that first stop is the cast's real
-        // origin, within the distance the walk can have covered, not a move that interrupts it.
-        if (cast.StartedWalking && !s.Walking && Now - cast.StartMs <= 300
-            && Distance(cast.Origin, s.Position) <= s.Speed / 100.0 * WalkedSeconds(cast.WalkFromUtc) + 0.5)
+        // A cast that began in mid-walk: the client plays it and walks on with the key held, reporting steps and sending no
+        // 31124 (in-game 3.11), and it casts on reaching range and stops 1 ms later (in-game 11.10). Neither ends the cast;
+        // the walk budget stays open for it, so the steps are still paced (inferred). A walk begun after a stop does end it.
+        if (cast.StartedWalking)
         {
             cast.Origin = s.Position.Clone();
-            cast.StartedWalking = false;
+            if (!s.Walking) cast.StartedWalking = false;
             return;
         }
         _loop.TrackRuntimeDetached("cast movement cancellation", () => CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Move));
