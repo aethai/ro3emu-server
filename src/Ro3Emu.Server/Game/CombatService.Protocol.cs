@@ -189,6 +189,18 @@ public sealed partial class CombatService
             && _data.Row("SkillConfig", effect.SkillId) != null
             ? ToPlayerAndViewersAsync(source, highLevel ? SkillEffectHigh : SkillEffect, effect) : Task.CompletedTask;
 
+    /// <summary>A Lua_Config_EffectData gfx at a monster, for a proc whose row names its effect. LC_PerformEffect_Mgr.NormalGfx
+    /// plays it on the unit sourceId names, and at targetPos when that unit is gone (the swing may have just killed it);
+    /// masterId is the owner LC_QualityCtrl.FilterSkillGfxPass filters by.</summary>
+    internal Task SendGfxAtAsync(GameSession owner, MonsterUnit at, long effect, long skill) => owner.Role == null ? Task.CompletedTask
+        : ToPlayerAndViewersAsync(owner, SkillEffect, new SkillEffectDisplayNotify
+        {
+            SourceId = at.Uid, MasterId = owner.Role.Id, TargetId = at.Uid, EffectId = (int)effect, EffectType = DisplayGfx,
+            TargetPos = at.Pos.Clone(), SkillId = skill,
+        });
+
+    private const int DisplayGfx = 2; // enum_DisplayEffectType.Gfx
+
     /// <summary>Server-timed bullet only when a skill script owns projectile travel.</summary>
     public Task SendSkillBulletAsync(GameSession source, SkillFixTimeBulletNotify bullet, bool highLevel = false) =>
         source.Role != null && bullet.SourceId == source.Role.Id && bullet.EffectId > 0 && bullet.FixedTime > 0
