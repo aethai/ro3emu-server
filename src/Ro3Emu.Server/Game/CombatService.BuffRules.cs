@@ -16,6 +16,7 @@ public sealed partial class CombatService
     {
         _buffs.ResolvePeriodicSource = ResolvePeriodicSource;
         _buffs.PeriodicTick = PeriodicTickAsync;
+        _buffs.ControlChanged = BreakForbiddenCastAsync;
         _buffs.HaloHostilePlayer = (carrier, other) => PlayerHostile?.Invoke(carrier, other) == true;
         _buffs.HaloEnemyMonster = CanHitMonster;
     }

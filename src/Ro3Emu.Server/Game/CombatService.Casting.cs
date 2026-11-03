@@ -717,6 +717,16 @@ public sealed partial class CombatService
         if (interrupted && req?.NxtSkill is { } next) await CastAsync(s, next);
     }
 
+    /// <summary>
+    /// LC_State_Unit_Skill ends a skill in its action phase when StatusForbidden holds SkillCast. (inferred) SkillChant does the
+    /// same for the chant, which is what the name says, though the client's own use of it was not found. So Sleep and Silence
+    /// break a cast, and Stun or Freeze, whose _kForbidden has neither, do not.
+    /// </summary>
+    private Task BreakForbiddenCastAsync(GameSession s) =>
+        s.SkillCast is { Cancelled: false } cast
+        && _buffs.HasForbidden(s, Now - cast.StartMs < cast.ChantMs ? ForbiddenState.SkillChant : ForbiddenState.SkillCast)
+            ? CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.State) : Task.CompletedTask;
+
     private async Task CancelCastAsync(GameSession s, SkillInterruptedInfo.Types.SkillInterruptType cause)
     {
         s.WorldState.ResurrectionCastId = 0;

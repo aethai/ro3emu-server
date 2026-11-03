@@ -35,6 +35,9 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>Subscribers recompute effective skill parameters/slots after a buff changes.</summary>
     public List<Func<GameSession, Task>> Changed { get; } = [];
 
+    /// <summary>A player's control state or forbidden actions changed (CombatService ends a cast they forbid).</summary>
+    internal Func<GameSession, Task>? ControlChanged { get; set; }
+
     /// <summary>The applier's changes to a buff's _kChangeAttri pairs before piles (TalentProcs: talent buff attributes).</summary>
     internal Func<long, JsonElement, IReadOnlyList<(long Id, double Value)>, IReadOnlyList<(long Id, double Value)>>? SourceAttributes { get; set; }
 
@@ -419,6 +422,7 @@ public sealed partial class BuffService : IGameTicker
             ForbidInfo = new AoiObjForbidInfo { Data = Mask(p.ForbiddenBits) },
             StaggerInfo = new AoiObjStaggerInfo { StaggerMask = p.StaggerBits },
         });
+        if (ControlChanged is { } changed) await changed(p);
     }
 
     private void RecomputeControl(GameSession p)
