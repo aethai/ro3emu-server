@@ -1,0 +1,73 @@
+using Microsoft.Extensions.DependencyInjection;
+using Romsg;
+using Ro3Emu.Server.Game;
+
+namespace Ro3Emu.Tests;
+
+public sealed partial class SkillCombatTests
+{
+    private const int HealSkill = 1400701, HalfHealingTaken = 1333503; // BuffConfig 1333503: 1208 -5000
+
+    private sealed class CritRolls(double crit) : CombatRolls
+    {
+        public override double Hit() => 0;
+        public override double Crit() => crit;
+    }
+
+    private async Task<(long Amount, DamageHitResult Result)> HealBob(Ro3Emu.Bot.BotClient alice, Ro3Emu.Bot.BotClient bob)
+    {
+        await Loop.InvokeAsync(() => Character.SetHpSpAsync(Session("bob"), 1, null));
+        Session("alice").SkillCds.Clear();
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = HealSkill, TargetId = (long)bob.Self!.Uuid });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, r => r.Result == 0);
+        var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
+        var heal = Assert.Single(hit.Dsts);
+        Assert.Equal(DamageType.Heal, heal.DamageType);
+        await Task.Delay(1500);
+        return (heal.Damage, heal.HitResult);
+    }
+
+    [ClientDataFact]
+    public async Task AnOrdinaryBuffChangesHowMuchAHealGives()
+    {
+        await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
+        await Gm("alice", "!job 4100"); await Teach("alice", 14007);
+        await Gm("bob", "!lvl 60 40");
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        combat.Rolls = new CritRolls(1);
+        var before = await HealBob(alice, bob);
+        await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(Session("bob"), HalfHealingTaken, 60000, Session("alice").Role!.Id));
+        var after = await HealBob(alice, bob);
+        Assert.Equal(DamageHitResult.Normal, before.Result);
+        Assert.InRange(after.Amount, before.Amount / 2 - 1, before.Amount / 2 + 1);
+    }
+
+    [ClientDataFact]
+    public async Task AHealCritsByTheCharactersCritAndItsRow()
+    {
+        await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
+        await Gm("alice", "!job 4100"); await Teach("alice", 14007);
+        await Gm("bob", "!lvl 60 40");
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        combat.Rolls = new CritRolls(1);
+        var plain = await HealBob(alice, bob);
+        combat.Rolls = new CritRolls(-1);
+        var crit = await HealBob(alice, bob);
+        Assert.Equal(DamageHitResult.Critical, crit.Result);
+        Assert.InRange(crit.Amount, (long)(plain.Amount * 1.5) - 1, (long)(plain.Amount * 1.5) + 1);
+    }
+
+    [Theory]
+    [InlineData(1000, 0, 10000, 0.05)] // CRI * 0.5 / 10000
+    [InlineData(1000, 500, 10000, 0.10)] // crit chance % adds
+    [InlineData(1000, 0, 0, 0.0)] // a row that cannot crit
+    [InlineData(0, -500, 10000, 0.0)] // not below zero
+    public void AHealsCritChanceFollowsTheClientsFormula(long cri, long chance, long skillCri, double rate) =>
+        Assert.Equal(rate, CombatService.HealCritRate(cri, chance, skillCri), 6);
+
+    [Theory]
+    [InlineData(0, 1.5)]
+    [InlineData(2000, 1.6)] // half of Crit Damage counts, FormulaParamHealCriC 0.5
+    public void AHealsCritAmountFollowsTheClientsFormula(long critDamage, double multiplier) =>
+        Assert.Equal(multiplier, CombatService.HealCritMultiplier(critDamage), 6);
+}

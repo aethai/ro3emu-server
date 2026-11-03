@@ -288,7 +288,7 @@ public sealed partial class CombatService
         if (!current() || source.Role == null || recipient.Role == null) return;
         foreach (var modifier in ExtraHeal) amount = modifier(source, amount);
         var stats = _character.Stats(recipient);
-        amount = ModifiedHealing(_buffs.GuardianAttributes(source), _buffs.GuardianAttributes(recipient), amount);
+        amount = ModifiedHealing(HealerAttributes(source), stats, amount);
         long actual = Math.Min(Math.Max(0, amount), Math.Max(0, stats[AttributeId.MaxHp] - stats[AttributeId.Hp]));
         long owner = source.Role!.Id, target = recipient.Role!.Id;
         await _character.SetHpSpAsync(recipient, stats[AttributeId.Hp] + actual, null);

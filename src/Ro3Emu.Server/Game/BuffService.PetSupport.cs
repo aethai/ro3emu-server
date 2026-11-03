@@ -40,8 +40,8 @@ public sealed partial class BuffService
                 .SelectMany(b => b.Changes.Select(change => (change.Attr, change.Value))).ToArray()
             : [];
 
-    /// <summary>A player's live guardian buffs alone, through the same attribute calculator. (inferred scope) Healing,
-    /// SP cost and chant modifiers read these, so equipment and ordinary buffs keep their previous effect.</summary>
+    /// <summary>A player's live guardian buffs alone, through the same attribute calculator. (inferred scope) SP cost and
+    /// chant modifiers read these, so equipment and ordinary buffs keep their previous effect.</summary>
     internal StatSheet GuardianAttributes(GameSession p)
     {
         var raw = new Dictionary<int, double>();
