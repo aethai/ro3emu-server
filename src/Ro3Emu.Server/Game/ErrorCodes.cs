@@ -31,6 +31,7 @@ public static class ErrorCodes
     public const int TerritoryGuildMembers = 6129;
     public const int TerritoryMaxBidLow = 6130;
     public const int Unknown = 24;              // "Unknown error"
+    public const int NoRecommendedFriends = 31; // _iShow 1: LC_PbHelper.PopErrorCodeTip shows no tip for it
     public const int FeatureUnavailable = 28;   // unavailable feature
     public const int ActionInBattle = 47;      // NW_ProtobufDefine.ERR_PlayerActionNotAllowedInBattle
     public const int Parameter = 82;            // "Client Parameter error"
