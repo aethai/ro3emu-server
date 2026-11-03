@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Romsg;
@@ -27,9 +28,10 @@ namespace Ro3Emu.Server.Game;
 /// - SP absorb 2050401: _kLogicData [chance bp, ...], desc[1]% of the damage as SP.
 /// - size: 20501 (2050101..) adds _kLogicData[0] bp of damage against Small/Medium/Large (NPCConfig._iSize 1..3)
 ///   monsters; 20500 (2050001..) adds _kLogicData[1] bp with a _kLogicData[0] bp chance.
+/// - Splash: 20508 (Shadow Card: Baphomet, 2050801..) and 20509 (Card: Baphomet, 2050901..), see <see cref="SplashOf"/>.
 /// Not executed (no machinery or no data link): autocast skills (Bash, Jupitel Thunder, Divine Light), race-family
 /// damage (Orcs, Kobolds, ...: no monster family field), armor element changes, magic nullify/reflect, status
-/// immunities, Endure, cooldown reset, monster SP drain, Splash, Double Attack, detection, indestructible gear.
+/// immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -38,6 +40,7 @@ public sealed class CardEffects
     private readonly CharacterService _character;
     private readonly BuffService _buffs;
     private readonly SkillService _skills;
+    private readonly CombatService _combat;
     private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = [];
 
     private sealed class Runtime
@@ -51,6 +54,8 @@ public sealed class CardEffects
 
     private const long SkillOp = 3;
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
+    private const int SplashChance = 20508, SplashAlways = 20509;
+    private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
 
     // A test can fix each ten-thousandth roll without changing the production probability.
     internal Func<int, int> Roll { get; set; } = bound => Random.Shared.Next(bound);
@@ -62,11 +67,13 @@ public sealed class CardEffects
         this._skills = skills;
         this._character = character;
         this._buffs = buffs;
+        this._combat = combat;
         cards.SocketsChanged.Add(RefreshAsync);
         character.WornGearChanged.Add(RefreshAsync);
         scenes.Loaded.Add(RefreshAsync);
         combat.DamageAdjusters.Add(AdjustDamage);
         combat.DealtAsync.Add(OnDealtAsync);
+        combat.CastResolved.Add(OnCastResolvedAsync);
     }
 
     private IEnumerable<Passive> Passives(GameSession s)
@@ -213,6 +220,55 @@ public sealed class CardEffects
             if (sp <= 0) continue;
             var stats = _character.Stats(s);
             await _character.SetHpSpAsync(s, null, stats[2001] + sp);
+        }
+    }
+
+    /// <summary>One Splash passive's numbers. <paramref name="Chance"/> is in basis points, <paramref name="Ratio"/> too, of
+    /// the triggering hit's damage.</summary>
+    internal readonly record struct Splash(long Chance, long CooldownMs, float Radius, int Extra, long Ratio, long Effect);
+
+    /// <summary>
+    /// "Melee Basic Attacks [have a @{1}% Chance to] trigger a Splash effect within a @{2}-meter radius. (This Splash does
+    /// not count as a Normal Attack effect.) Affects up to @{3} Extra targets, with damage reduced to @{4}% of the original.
+    /// Internal Cooldown: @{5} seconds." The buff's _kLogicData is [chance bp, proc row] (20508) or [proc row] (20509), and
+    /// its _kDescData ends with the cooldown. The proc row (_kScriptLogic "Jianshe", "Splash - Card") has _kLogicData
+    /// [effect, radius cm], _iTargetMax the extra targets and _kDamageParamExtra[0]'s last value the ratio
+    /// (T_0addAXY_XisExtra_YisAttri). Effects 2050802 and 2051102 are one prefab at scale 1 and 1.67, as 3 m and 5 m.
+    /// </summary>
+    internal static Splash? SplashOf(BuffConfig buff, SkillConfig row)
+    {
+        if (buff.BuffId is not (SplashChance or SplashAlways) || row.LogicData is not [var effect, var radius]
+            || row.DamageParamExtra is not [[.., var ratio], ..] || buff.DescData is not [.., var cooldown]
+            || !double.TryParse(cooldown, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)) return null;
+        return new Splash(buff.LogicData.Length >= 2 ? buff.LogicData[0] : 10000, (long)(seconds * 1000), radius / 100f,
+            (int)row.TargetMax, ratio, effect);
+    }
+
+    /// <summary>
+    /// A melee normal attack that hit (31101 is the server's: the client asks only for the locked target, 31102, and shows the
+    /// dsts it is told, LC_Scene_Sync._skillHit). The rest is (inferred) from the text and the row: the damage is the hit's
+    /// on the locked target, "the original" (the formula's Extra; the row has no ratio of its own), so each extra target
+    /// takes that share with no defense or element of its own; the area centres on the locked target, dead or alive; "Extra"
+    /// leaves out what the swing itself hit; the extra cast triggers no CastResolved ("does not count as a Normal Attack
+    /// effect"); each card has its own cooldown, which an empty area also starts; the gfx plays only when something is hit.
+    /// </summary>
+    private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
+    {
+        var cast = new SkillConfig(action.Row);
+        if (s.Role == null || processed.Count == 0 || cast.DistanceType != Melee || !cast.IsNormalAttack(_data)) return;
+        var primary = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId) ?? processed[0];
+        if (hit.Dsts.FirstOrDefault(d => d.DstID == primary.Uid) is not { Damage: > 0 } struck) return;
+        foreach (var passive in Passives(s).ToList())
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId is not (SplashChance or SplashAlways) || buff.LogicData is not [.., var id]
+                || SkillConfig.Get(_data, id) is not { } row || SplashOf(buff, row) is not { } splash
+                || Roll(10000) >= splash.Chance || !Ready(s, buff.BuffId, splash.CooldownMs)) continue;
+            var extra = _combat.MonstersNear(s, primary.Pos, splash.Radius).Where(m => !processed.Contains(m)).Take(splash.Extra).ToList();
+            if (extra.Count == 0) continue;
+            await _combat.SendGfxAtAsync(s, primary, splash.Effect, row.Id);
+            long damage = Math.Max(1, (long)Math.Floor(struck.Damage * splash.Ratio / 10000d));
+            await _combat.CastExtraAsync(s, row.AsFixedHit(damage), extra);
         }
     }
 
