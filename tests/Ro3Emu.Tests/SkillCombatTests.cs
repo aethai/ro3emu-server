@@ -330,7 +330,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
         Assert.Equal(0, accepted.Result);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
-        Assert.Equal((long)bob.Self.Uuid, Assert.Single(hit.Dsts).DstID); Assert.Equal(DamageType.Heal, hit.Dsts[0].DamageType);
+        Assert.Equal(DamageType.Heal, Assert.Single(hit.Dsts, d => d.DstID == (long)bob.Self.Uuid).DamageType); // "for you and the designated ST ally"
         await Task.Delay(600);
         Session("alice").NoRegenUntilMs = long.MaxValue; // a recovery tick would pay for the refused cast
         await Loop.InvokeAsync(() => Character.SetHpSpAsync(Session("alice"), null, 0));
