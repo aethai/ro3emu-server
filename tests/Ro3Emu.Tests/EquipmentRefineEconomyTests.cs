@@ -110,7 +110,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
     }
 
     /// <summary>Issue #362: the unset refineLv of a failed roll can be stored as +0 by the client, and its 5007 would change
-    /// nothing, so the panel stayed at +0 asking +0 materials. The real level comes in 5007, before the paid bag redraws it.</summary>
+    /// nothing, so the panel stayed at +0 asking +0 materials. A full 5007, the only one the client takes levels from, carries the real level before the paid bag redraws it.</summary>
     [ClientDataFact]
     public async Task AFailedRollSendsTheRealLevelBeforeTheBag()
     {
@@ -125,7 +125,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             if (after.Any(e => e.IsGame(CharacterService.ItemsSync))) break;
         }
         int level = Array.FindIndex(after, e => e.IsGame(CharacterService.EquipSync)
-            && DBEquipInfoIncrement.Parser.ParseFrom(e.Body).ItemsRefine.TryGetValue(Grid, out var sent) && sent.All == 5);
+            && DBEquipInfoIncrement.Parser.ParseFrom(e.Body) is { SyncAllMark: true } full && full.ItemsRefine[Grid].All == 5);
         int bag = Array.FindIndex(after, e => e.IsGame(CharacterService.ItemsSync));
         Assert.True(level >= 0, "no 5007 with the real level");
         Assert.True(level < bag, "the bag came first");
