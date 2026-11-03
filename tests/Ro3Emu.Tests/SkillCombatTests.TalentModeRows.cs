@@ -271,4 +271,36 @@ public sealed partial class SkillCombatTests
         Assert.Contains((1052L, -500d), attributes); // "reduces PDEF by 5%"
         Assert.Contains((1216L, -500d), attributes); // "reduces DMG Reduction by 5%"
     }
+
+    // Holy Cross Judgment (10102115 for the Priest line): "When [Magnus Exorcismus] is cast, it also unleashes ... MATK*5%+470
+    // ... to up to 4 enemies within the area." Its row 1420901 holds [500] / [470].
+    [ClientDataTheory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public async Task MagnusExorcismusBurstsOnceOnFourEnemies(int level)
+    {
+        var (bot, me, strikes) = await Caster("Alice", 4200, 14109, level, 10102115);
+        await using var _ = bot;
+        var marks = new List<MonsterUnit>();
+        for (int i = 0; i < 5; i++) marks.Add(await Mark(me, 5));
+        Assert.Equal(0, (await Cast(bot, me, 1410900 + level, marks[0])).Result);
+        await Task.Delay(5500);
+        var bursts = strikes.Where(s => s.Row == 1420901).ToList();
+        Assert.Equal(4, bursts.Count);
+        Assert.Equal(4, bursts.Select(s => s.Target).Distinct().Count());
+        Assert.All(bursts, s => { Assert.Equal<long[]>([500], s.Ratios); Assert.Equal<long[]>([470], s.Flats); });
+        Assert.Contains(strikes, s => s.Row != 1420901); // the field itself still strikes
+    }
+
+    [ClientDataFact] // nobody in the area, nobody to burst on, and no target left over from elsewhere
+    public async Task MagnusExorcismusDoesNotBurstOutsideItsArea()
+    {
+        var (bot, me, strikes) = await Caster("Alice", 4200, 14109, 1, 10102115);
+        await using var _ = bot;
+        var far = await Mark(me, 8);
+        await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1410901, TargetPos = me.Position.Clone(), Face = me.Face });
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Task.Delay(1000);
+        Assert.DoesNotContain(strikes, s => s.Target == far.Uid);
+    }
 }
