@@ -45,7 +45,7 @@ public sealed partial class CombatService
     {
         if (source.Role == null || source.Progress == null) return;
         using var held = await CharacterService.Lock(source);
-        if (!CanPlayerHit(source, target) || !CanSee(source, target) || source.SkillCast is { Cancelled: false }
+        if (!CanPlayerHit(source, target) || !CanSee(source, target) || !SwingPlayedOut(source.SkillCast, Now)
             || EffectiveSkillRow(source, skillId) is not { } row || !Learned(source, row)
             || !SkillModeAllowed(source, row) || _buffs.HasForbidden(source, ForbiddenState.NormalAttack)) return;
         var request = new CastSkillReq
@@ -147,9 +147,9 @@ public sealed partial class CombatService
             if (!CanPlayerHit(source, attack.Target) || !CanSee(source, attack.Target) || PlayerDistance(source, attack.Target) > 30
                 || MonsterService.Distance(attack.StartX, attack.StartZ, source.Position.X, source.Position.Z) > 1.5f)
             { _eventAttacks.Remove(source); continue; }
-            if (now < attack.NextSwing || source.SkillCast is { Cancelled: false } || _data.Row("SkillConfig", attack.SkillId) is not { } row
+            if (now < attack.NextSwing || !SwingPlayedOut(source.SkillCast, now) || _data.Row("SkillConfig", attack.SkillId) is not { } row
                 || PlayerDistance(source, attack.Target) > Range(row) + 1.5f) continue;
-            _eventAttacks[source] = attack with { NextSwing = now + SkillMs(source, row) };
+            _eventAttacks[source] = attack with { NextSwing = NextSwing(attack.NextSwing, now, SkillMs(source, row)) };
             _loop.PostRuntime(() => SwingEventAsync(source, attack.Target, attack.SkillId, ++_sessionIds));
         }
     }
