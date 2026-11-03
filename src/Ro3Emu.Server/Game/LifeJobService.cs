@@ -657,7 +657,8 @@ public sealed partial class LifeJobService
         var semanticCost = payment.Concat((instances ?? new Dictionary<long, int>()).Select(pair =>
             (s.Items.Single(item => item.Guid == pair.Key).Entry, (long)pair.Value))).ToArray();
         var goods = itemGrants.Select(g => (g.Entry, g.Count)).ToArray();
-        var received = await _character.ExchangeLockedAsync(s, payment, [], instances, popup: false, sync: false,
+        // Only gathering passes a settlement. The client shows a gained item only from 31322, its bag sync shows none (LC_DAL_Reward).
+        var received = await _character.ExchangeLockedAsync(s, payment, [], instances, popup: rewardSettlement != null, sync: false,
             persist: tx =>
             {
                 tx.RoleBlob(s.Role!.Id, "lifejob", life.ToByteArray());
