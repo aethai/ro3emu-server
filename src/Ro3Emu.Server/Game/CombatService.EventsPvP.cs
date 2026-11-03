@@ -86,6 +86,7 @@ public sealed partial class CombatService
                 {
                     foreach (var handler in PvpDealt) handler(source, target, effective, hp == 0);
                     foreach (var handler in PvpDealtAsync) await handler(source, target, effective, hp == 0);
+                    await ReactToHitAsync(target, null, source, row, effective);
                 }
                 var hit = new SkillHitInfo
                 {
