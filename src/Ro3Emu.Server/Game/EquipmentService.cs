@@ -166,13 +166,14 @@ public sealed partial class EquipmentService
             _log.LogInformation("{Name} refines grid {Grid} +{Level}: {Result}", session.Role!.Name, grid, level, error?.Why ?? (success ? "success" : $"failed, now +{levels.Refine.GetValueOrDefault(grid)}"));
             // LC_DAL_Equipment._processRefineEquipments plays the success settlement (its animation and sound) for a
             // refineLv above the stored level and the failure one only when refineLv is absent; a failed roll therefore
-            // leaves refineLv unset (0), and the client keeps its level until the 5007 grid sync that follows.
+            // leaves refineLv unset, which the client can store as +0 (issue #362), so RestoreRefineLevelAsync sends the real level.
             await session.SendGameAsync(Refine, new RefineEquipmentRsp
             {
                 Result = error?.Code ?? 0, EquipPos = req.EquipPos,
                 RefineLv = error == null && !success ? 0 : levels.Refine.GetValueOrDefault(grid),
                 RefineEffectLv = _character.Resonance(session, "RefiningEffectTable"), RefineLuckyAdd = levels.Luck.GetValueOrDefault(grid),
             });
+            if (error == null && !success) await RestoreRefineLevelAsync(session, grid);
             await AfterUpgradeAsync(session, error == null);
             paid = error == null;
         }
@@ -187,6 +188,14 @@ public sealed partial class EquipmentService
     /// raised it), and the refine panel redraws on the currency change (UI_Sys_StrengthenRefineInfoWidgetCtrl binds
     /// m_kCurrency to _refreshView), which must therefore come after the reply stored the new level.
     /// </summary>
+    private async Task RestoreRefineLevelAsync(GameSession session, int grid)
+    {
+        // 5007 sends only what changed since the last send, and a failed roll usually changes nothing, so the grid is marked as
+        // what the client now holds. Before the bag: the paid currency makes the panel redraw its materials from this level.
+        if (session.Synced.GetValueOrDefault(CharacterService.EquipSync) is DBEquipInfo sent) sent.ItemsRefine[grid] = 0;
+        await _character.EquipLevelsChangedAsync(session, persist: false);
+    }
+
     private async Task AfterUpgradeAsync(GameSession session, bool paid)
     {
         if (!paid) return;
