@@ -43,8 +43,7 @@ public sealed partial class CombatService
     /// kill, and it answers only while the holder can still fight that player.</summary>
     internal void StrikeBackLater(GameSession holder, SkillConfig row, long damage, GameSession enemy) => _loop.PostRuntime(() =>
         !CanPlayerHit(holder, enemy) ? Task.CompletedTask
-            : HitEventPlayersAsync(holder, [enemy], row.AsFixedHit(damage), (int)row.Id, HitEffect(row.ScriptShow), ++_sessionIds,
-                () => holder.Role != null && !holder.Dead), "card reflect");
+            : CastExtraOnPlayerAsync(holder, new SkillConfig(row.AsFixedHit(damage)), enemy), "card reflect");
 
     /// <summary>After a hit landed on a player. <paramref name="row"/> is the attacker's row, null when it has none.</summary>
     internal async Task ReactToHitAsync(GameSession p, MonsterUnit? monster, GameSession? enemy, JsonElement? row, long damage)

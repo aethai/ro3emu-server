@@ -114,13 +114,13 @@ public sealed partial class CardRulesTests
     }
 
     /// <summary>A real cast at a player on the wire, its cooldowns cleared; the hit it lands on them.</summary>
-    private async Task<DamageInfo> CastAt(BotClient bot, GameSession caster, int skill, GameSession target)
+    private async Task<DamageInfo> CastAt(BotClient bot, GameSession caster, int skill, GameSession target, bool refillCaster = true)
     {
         await Service<GameLoop>().InvokeAsync(async () =>
         {
             caster.SkillCds.Clear(); caster.SkillModeCds.Clear(); caster.SwingLockUntilMs = 0; caster.SkillCast = null;
             await Service<CharacterService>().SetHpSpAsync(target, long.MaxValue, null);
-            await Service<CharacterService>().SetHpSpAsync(caster, long.MaxValue, long.MaxValue);
+            if (refillCaster) await Service<CharacterService>().SetHpSpAsync(caster, long.MaxValue, long.MaxValue);
         });
         for (int attempt = 0; ; attempt++)
         {
@@ -372,6 +372,215 @@ public sealed partial class CardRulesTests
                 await Task.Delay(300);
                 Assert.Empty(SplashHits(bob, 2051601));
             }
+        }
+    }
+
+    /// <summary>Alice with the card, a Swordman, Sword Smash learned, against a plain Bob.</summary>
+    private async Task<(BotClient Alice, GameSession A, BotClient Bob, GameSession B)> AttackerDuel(int card, int grid, int star)
+    {
+        var (alice, a) = await Holder("Alice", card, grid);
+        await AtStar(a, card, star);
+        await Gm("alice", "!job 1100");
+        await Learn(a, 11099);
+        var bob = await InWorld("Bob");
+        var b = Session("Bob");
+        await Gm("bob", "!lvl 80");
+        await Duel(alice, a, bob, b);
+        return (alice, a, bob, b);
+    }
+
+    private const int Stun = 901601;
+
+    private static List<BuffInfo> StatusShown(BotClient bot, int buff) =>
+    [
+        .. bot.Inbox.Snapshot().Where(e => e.IsGame(BuffService.BuffUpdate)).SelectMany(e => BuffUpdateNotify.Parser.ParseFrom(e.Body).Buffs).Where(b => b.ConfigId == buff),
+    ];
+
+    // Card: Savage Babe T3: 2000201 "When dealing damage, has a 3% Chance to inflict Stun on the enemy for 0.5 sec. Internal Cooldown: 15
+    // sec." A player's Sword Smash on a player: Stun shows on Bob, 500 ms, once in the 15 s.
+    [ClientDataFact]
+    public async Task SavageBabeStunsAPlayerAtItsStarsChanceAndThenWaitsItsCooldown()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(1420101, 1, 3);
+        await using (alice)
+        await using (bob)
+        {
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 300;
+            await CastAt(alice, a, SwordSmash, b);
+            await Task.Delay(200);
+            Assert.Empty(StatusShown(bob, Stun));
+
+            effects.Roll = _ => 299;
+            await CastAt(alice, a, SwordSmash, b);
+            var shown = await Next(bob, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(x => x.ConfigId == Stun));
+            Assert.Equal(500, shown.Buffs.Single(x => x.ConfigId == Stun).Duration);
+
+            effects.Roll = _ => 0;
+            await CastAt(alice, a, SwordSmash, b);
+            await Task.Delay(200);
+            Assert.Single(StatusShown(bob, Stun));
+        }
+    }
+
+    // A hit that kills leaves no one to hold the status, and no proc of the attacker runs on a fixed hit, which a reflect is: Bob's Orc
+    // Lord answers Alice, and Bob's Savage Babe does not take that for his own damage.
+    [ClientDataFact]
+    public async Task AReflectSetsOffNoneOfTheReflectersOnHitProcs()
+    {
+        var (bob, b) = await Holder("Bob", OrcLord, 3);
+        await using (bob)
+        {
+            await Gm("bob", "!item 1420101 1");
+            await Eventually(() => b.Items.Any(i => i.Entry == 1420101), "the card");
+            await bob.SendGameAsync(CharacterService.EquipItemOpr, new EquipItemOprReq { Opr = 0, Pos = (EquipGridType)1, ItemGUID = b.Items.First(i => i.Entry == Dagger).Guid });
+            Assert.Equal(0, (await Next(bob, CharacterService.EquipItemOpr, EquipItemOprResp.Parser)).Result);
+            Assert.Equal(0, await Insert(bob, 1, 1, b.Items.Single(i => i.Entry == 1420101).Guid));
+            await using var alice = await InWorld("Alice");
+            var a = Session("Alice");
+            await Gm("alice", "!lvl 80");
+            await Gm("alice", "!job 1100");
+            await Learn(a, 11099);
+            await Duel(alice, a, bob, b);
+            Service<CardEffects>().Roll = _ => 0;
+            await CastAt(alice, a, SwordSmash, b);
+            await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 2051701);
+            await Task.Delay(200);
+            Assert.Empty(StatusShown(alice, Stun));
+        }
+    }
+
+    // Card: Hunter Fly T3: 2017201 "has a 4% Chance to restore Life equal to 10% of the damage dealt to the enemy, up to 2000. Internal
+    // Cooldown: 2 sec."
+    [ClientDataFact]
+    public async Task HunterFlyStealsLifeFromAPlayerAtItsStarsChance()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(1430118, 1, 3);
+        await using (alice)
+        await using (bob)
+        {
+            await Service<GameLoop>().InvokeAsync(() => Service<CharacterService>().SetHpSpAsync(a, 100, long.MaxValue));
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 400;
+            await CastAt(alice, a, SwordSmash, b, refillCaster: false);
+            await Task.Delay(100);
+            Assert.Equal(100, await Attribute(a, 2000));
+
+            effects.Roll = _ => 399;
+            long dealt = (await CastAt(alice, a, SwordSmash, b, refillCaster: false)).Damage;
+            await Eventually(() => Service<CharacterService>().Stats(a)[2000] != 100, "the Life restored");
+            Assert.Equal(100 + dealt / 10, await Attribute(a, 2000));
+        }
+    }
+
+    // Card: Dracula T2: 2050401 "has a 10% Chance to absorb 5% of the damage dealt to the enemy as SP."
+    [ClientDataFact]
+    public async Task DraculaAbsorbsSpFromAPlayerAtItsChance()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(1460102, 1, 2);
+        await using (alice)
+        await using (bob)
+        {
+            async Task<(long Sp, long Dealt)> After(int roll)
+            {
+                Service<CardEffects>().Roll = _ => roll;
+                await Service<GameLoop>().InvokeAsync(() => Service<CharacterService>().SetHpSpAsync(a, long.MaxValue, 500));
+                long dealt = (await CastAt(alice, a, SwordSmash, b, refillCaster: false)).Damage;
+                await Task.Delay(100);
+                return (await Attribute(a, 2001), dealt);
+            }
+            var (spent, _) = await After(1000);
+            var (absorbed, dealt) = await After(999);
+            Assert.True(dealt >= 20, "too little damage to read 5% of: " + dealt);
+            Assert.Equal(spent + dealt / 20, absorbed);
+        }
+    }
+
+    // Card: Familiar T3: 2001201, 3%, Blind 902501 for 1 s. "Reduces field of view": a Blinded monster no longer sees a player 6 m off,
+    // and still does at 4 m (BuffService.BlindRadiusCm), as with a guardian's Blind.
+    [ClientDataFact]
+    public async Task FamiliarsBlindLimitsAMonstersSight()
+    {
+        const int card = 1420104, blind = 902501;
+        var (alice, session) = await Socketed(card);
+        await using (alice)
+        {
+            await AtStar(session, card, 3);
+            var target = (await Dummies(session, 5000002))[0];
+            var effects = Service<CardEffects>();
+            var monsters = Service<MonsterService>();
+            bool SeesAt(float metres)
+            {
+                target.X = session.Position.X + metres;
+                return monsters.TargetVisible!(target, session);
+            }
+            effects.Roll = _ => 300;
+            await SwingOnce(alice, session, target);
+            await Task.Delay(100);
+            Assert.True(await OnLoop(() => SeesAt(6)));
+            await OnLoop(() => SeesAt(1));
+
+            effects.Roll = _ => 299;
+            await SwingOnce(alice, session, target);
+            await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(x => x.ConfigId == blind));
+            Assert.False(await OnLoop(() => SeesAt(6)));
+            Assert.True(await OnLoop(() => SeesAt(4)));
+        }
+    }
+
+    // Card: Bongun T2: 2019301, 4%, 2 s: "When making a Physical attack" holds for a hit on a player, and Bash lands on him.
+    [ClientDataFact]
+    public async Task BongunAutocastsBashOnAPlayer()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(Bongun, 6, 2);
+        await using (alice)
+        await using (bob)
+        {
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 400;
+            await CastAt(alice, a, SwordSmash, b);
+            await NoHitOf(alice, CardBash);
+            effects.Roll = _ => 399;
+            await CastAt(alice, a, SwordSmash, b);
+            var bash = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardBash);
+            Assert.Equal(b.Role!.Id, Assert.Single(bash.Dsts).DstID);
+            Assert.True(bash.Dsts[0].Damage > 0);
+        }
+    }
+
+    // Card: Side Winder T1: 2021201, 8%: a Basic Attack on a player.
+    [ClientDataFact]
+    public async Task SideWinderDoubleAttacksAPlayer()
+    {
+        const int doubleAttack = 2003001;
+        var (alice, a, bob, b) = await AttackerDuel(1440107, 1, 1);
+        await using (alice)
+        await using (bob)
+        {
+            int attack = await OnLoop(() => Service<SkillService>().CurrentAttack(a));
+            Service<CardEffects>().Roll = _ => 799;
+            await CastAt(alice, a, attack, b);
+            var extra = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == doubleAttack);
+            Assert.Equal(b.Role!.Id, Assert.Single(extra.Dsts).DstID);
+        }
+    }
+
+    // Card: Doppelganger T2: 2050701 "your next instance of damage is increased by 5%", on a player too.
+    [ClientDataFact]
+    public async Task DoppelgangerRaisesTheNextHitOnAPlayer()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(Doppelganger, 1, 2);
+        await using (alice)
+        await using (bob)
+        {
+            long plain = (await CastAt(alice, a, SwordSmash, b)).Damage;
+            await SetCrit(true);
+            var crit = await CastAt(alice, a, SwordSmash, b);
+            Assert.Equal(DamageHitResult.Critical, crit.HitResult);
+            await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(x => x.ConfigId == NextHitBuff));
+            await SetCrit(false);
+            Assert.Equal(Raised(plain, 500), (await CastAt(alice, a, SwordSmash, b)).Damage);
+            Assert.Equal(plain, (await CastAt(alice, a, SwordSmash, b)).Damage);
         }
     }
 }

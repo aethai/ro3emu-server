@@ -73,6 +73,7 @@ public sealed partial class CombatService
             var targetRole = target.Role!;
             long sceneId = source.WorldScene;
             var (damage, result) = PlayerHitDamage(source, target, row);
+            if (damage > 0) foreach (var adjust in PvpDamageAdjusters) damage = Math.Max(0, adjust(source, row, result, damage));
             var committed = await CommitPlayerDamageAsync(target, damage, row,
                 () => currentSource() && CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)
                     && CanPlayerHit(source, target), directHit: !new Data.Config.SkillConfig(row).IsFixedHit);
@@ -86,6 +87,7 @@ public sealed partial class CombatService
                 {
                     foreach (var handler in PvpDealt) handler(source, target, effective, hp == 0);
                     foreach (var handler in PvpDealtAsync) await handler(source, target, effective, hp == 0);
+                    foreach (var handler in PvpHitLanded) await handler(source, target, row, effective, hp == 0);
                     await ReactToHitAsync(target, null, source, row, effective);
                     await HolyLightBreaksKyrieAsync(target, row);
                 }
@@ -138,6 +140,14 @@ public sealed partial class CombatService
         foreach (var tuple in HostileBuffs(row))
             if (current() && CanPlayerHit(source, target) && RollHostileBuff(tuple, source, null, target, null, out int id, out int duration))
                 await _buffs.AddAsync(target, id, duration, source.Role!.Id);
+    }
+
+    /// <summary>A card's status on the player it hit: the card rolled its own chance, and (inferred) the status then meets the target's
+    /// BuffTagConfig resistance as a skill's _kBuff2 would (<see cref="RollHostileBuff"/>).</summary>
+    internal async Task LandCardStatusAsync(GameSession source, GameSession target, int id, int ms)
+    {
+        if (RollHostileBuff(JsonSerializer.SerializeToElement(new[] { id, 10000, ms }), source, null, target, null, out int buff, out int duration))
+            await _buffs.AddAsync(target, buff, duration, source.Role!.Id);
     }
 
     private static IEnumerable<JsonElement> HostileBuffs(JsonElement row) => Tuples(row, "_kBuff2");

@@ -33,6 +33,8 @@ public sealed class ActiveSkillCast
     internal Dictionary<long, long>? GuardianDamage { get; init; }
     internal SemaphoreSlim? GuardianGate { get; init; }
     internal HashSet<int>? GuardianOnce { get; init; }
+    /// <summary>The players this cast struck, for what follows it (CardEffects).</summary>
+    internal GameSession[] PlayersStruck { get; set; } = [];
     public long SourceId => Operator?.Uid ?? OwnerId;
 }
 
