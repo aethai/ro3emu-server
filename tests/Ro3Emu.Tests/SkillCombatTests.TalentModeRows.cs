@@ -120,4 +120,42 @@ public sealed partial class SkillCombatTests
         await Next(bob, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, p => !p.BDead);
         Assert.False(b.Dead);
     }
+
+    // "When [Resurrection] Revives a target below Base 90, its HP and SP recovery are increased by 10%": the mode row's
+    // _kDamageParamExtra lists the raised pair first (level 1: 4000 then 3000; level 4: 7000 then 6000). Without the talent
+    // the row has one pair, whatever the target's level.
+    [ClientDataTheory]
+    [InlineData(1, 50, true, 4000)]
+    [InlineData(1, 99, true, 3000)]
+    [InlineData(4, 50, true, 7000)]
+    [InlineData(4, 99, true, 6000)]
+    [InlineData(1, 50, false, 3000)]
+    [InlineData(4, 50, false, 6000)]
+    public async Task ResurrectionRestoresWhatItsTextSays(int level, int allyLevel, bool talent, int rate)
+    {
+        var (bot, me, _) = await Caster("Alice", 4200, 14112, level, talent ? 10102118 : 0);
+        await using var alice = bot;
+        await using var bob = await InWorld("Bob");
+        await Gm("bob", $"!lvl {allyLevel}");
+        var b = Session("bob");
+        await Loop.InvokeAsync(async () => { b.Dead = true; await Character.SetHpSpAsync(b, 0, 0); });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1411200 + level, TargetId = b.Role!.Id });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(bob, WorldCoreService.ReliveInvitation, EntityReliveReceiveInviteNotify.Parser);
+        Assert.Equal(rate, b.WorldState.ReviveHpRate);
+        Assert.Equal(rate, b.WorldState.ReviveSpRate);
+        await bob.SendGameAsync(WorldCoreService.ReliveAccept, new EntityReliveInviteAcceptReq { SourceEntityID = me.Role!.Id, IsAccept = true });
+        Assert.Equal(0, (await Next(bob, WorldCoreService.ReliveAccept, EntityReliveInviteAcceptResp.Parser)).Result);
+        await Next(bob, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, p => !p.BDead);
+        Assert.Equal(rate / 100.0, Character.Stats(b)[2000] * 100.0 / Character.Stats(b)[101], 0);
+    }
+
+    [Theory] // The pure rule on invented numbers: the first pair for a raised target, the last otherwise.
+    [InlineData(true, 500, 600)]
+    [InlineData(false, 300, 400)]
+    public void ReviveRatesTakeTheRaisedPairFirst(bool raised, long hp, long sp)
+    {
+        using var row = System.Text.Json.JsonDocument.Parse("""{"_kDamageParamExtra":[[2,500,101,3],[2,600,102,3],[2,300,101,3],[2,400,102,3]]}""");
+        Assert.Equal((hp, sp), WorldCoreService.ReviveRates(row.RootElement, raised));
+    }
 }
