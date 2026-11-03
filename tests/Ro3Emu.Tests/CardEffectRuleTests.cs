@@ -31,4 +31,17 @@ public sealed class CardEffectRuleTests
         Assert.Equal(5, raw[801]);
         Assert.Single(raw);
     }
+
+    [Theory]
+    [InlineData(20150, 1000)]
+    [InlineData(20153, 1000)]
+    [InlineData(20223, 1001)]
+    [InlineData(20533, 1002)]
+    [InlineData(20291, 1003)]
+    [InlineData(20272, 1004)]
+    [InlineData(20280, 1005)]
+    [InlineData(20154, 0)] // past the Orc Lady's four tiers
+    [InlineData(20501, 0)] // the size cards
+    [InlineData(20190, 0)]
+    public void AFamilyCardsGroupNamesItsMonsterTag(long group, long tag) => Assert.Equal(tag, CardEffects.FamilyTag(group));
 }

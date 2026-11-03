@@ -29,9 +29,11 @@ namespace Ro3Emu.Server.Game;
 /// - size: 20501 (2050101..) adds _kLogicData[0] bp of damage against Small/Medium/Large (NPCConfig._iSize 1..3)
 ///   monsters; 20500 (2050001..) adds _kLogicData[1] bp with a _kLogicData[0] bp chance.
 /// - Splash: 20508 (Shadow Card: Baphomet, 2050801..) and 20509 (Card: Baphomet, 2050901..), see <see cref="SplashOf"/>.
-/// Not executed (no machinery or no data link): autocast skills (Bash, Jupitel Thunder, Divine Light), race-family
-/// damage (Orcs, Kobolds, ...: no monster family field), armor element changes, magic nullify/reflect, status
-/// immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection, indestructible gear.
+/// - monster family: Orc Lady, Kobold Leader, Goblin Leader, Aster, Crab, Shellfish add _kLogicData[0] bp of damage against
+///   monsters with their NPCConfig._kNpcTag, see <see cref="FamilyTag"/>.
+/// Not executed (no machinery or no data link): autocast skills (Bash, Jupitel Thunder, Divine Light), armor element
+/// changes, magic nullify/reflect, status immunities, Endure, cooldown reset, monster SP drain, Double Attack, detection,
+/// indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -272,18 +274,42 @@ public sealed class CardEffects
         }
     }
 
+    /// <summary>
+    /// The NPCConfig._kNpcTag a family card's buff group counts on, 0 for any other. No table names the tags, so the link is
+    /// (inferred) from who holds them: 1000 the six plain Orcs, leaving out Orc Lord and Orc Hero as "Damage against all Orcs
+    /// (excluding Orc Lord and Orc Hero)" does; 1001 Kobolds; 1002 Goblins, with Rotar Zairo and Goblin Leader; 1003 Aster; 1004
+    /// Crab ("Kara Crabs"); 1005 Shellfish. Only the tag counts, so the untagged copies of these monsters (24000xxx, 4940xxx)
+    /// and the Kobold Leader do not.
+    /// </summary>
+    internal static long FamilyTag(long group) => group switch
+    {
+        >= 20150 and <= 20153 => 1000,
+        >= 20220 and <= 20223 => 1001,
+        20532 or 20533 => 1002,
+        >= 20290 and <= 20293 => 1003,
+        >= 20270 and <= 20273 => 1004,
+        >= 20280 and <= 20283 => 1005,
+        _ => 0,
+    };
+
     /// <summary>"Ignores monster Size. Damage against Small, Medium, and Large monsters +X%" (2050101..4 always,
-    /// 2050001..4 with a chance). Size 0 monsters are unaffected (inferred from the three named sizes).</summary>
+    /// 2050001..4 with a chance); size 0 monsters are unaffected (inferred from the three named sizes). "Damage against all
+    /// Orcs +X%" and the other families (<see cref="FamilyTag"/>). None of these rows has a _kChangeAttri, so nothing of them is
+    /// on the sheet DamageAttributes reads. (inferred) They add up with each other, as a group of damage terms does.</summary>
     internal long AdjustDamage(GameSession s, MonsterUnit target, JsonElement skillRow, DamageHitResult result, long damage)
     {
-        if (damage <= 0 || target.Template.Size is < 1 or > 3) return damage;
+        if (damage <= 0) return damage;
+        bool sized = target.Template.Size is >= 1 and <= 3;
+        long[]? tags = null;
         long bonus = 0;
         foreach (var passive in Passives(s).DistinctBy(p => (p.Card.Guid, p.Id)))
         {
             long group = GameData.Int(passive.Row, "_iBuffID");
             var logic = Numbers(passive.Row, "_kLogicData");
-            if (group == SizeAlways && logic.Length >= 1) bonus += logic[0];
-            else if (group == SizeChance && logic.Length >= 2 && Roll(10000) < logic[0]) bonus += logic[1];
+            if (group == SizeAlways && sized && logic.Length >= 1) bonus += logic[0];
+            else if (group == SizeChance && sized && logic.Length >= 2 && Roll(10000) < logic[0]) bonus += logic[1];
+            else if (FamilyTag(group) is not 0 and var family && logic.Length >= 1
+                && (tags ??= NPCConfig.Get(_data, target.Template.NpcId)?.NpcTag ?? []).Contains(family)) bonus += logic[0];
         }
         return bonus <= 0 ? damage : damage + (long)Math.Floor(damage * bonus / 10000d);
     }
