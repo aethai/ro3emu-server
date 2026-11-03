@@ -75,7 +75,7 @@ public sealed partial class CombatService
             var (damage, result) = PlayerHitDamage(source, target, row);
             var committed = await CommitPlayerDamageAsync(target, damage, row,
                 () => currentSource() && CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)
-                    && CanPlayerHit(source, target));
+                    && CanPlayerHit(source, target), directHit: !new Data.Config.SkillConfig(row).IsFixedHit);
             if (committed == null) continue;
             (damage, long hp, long effective, long shieldDamage) = committed.Value;
             onHit?.Invoke(targetRole.Id, damage);

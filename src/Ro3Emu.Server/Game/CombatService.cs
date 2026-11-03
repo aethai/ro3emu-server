@@ -269,6 +269,9 @@ public sealed partial class CombatService : IGameTicker
     public List<Func<GameSession, long, long>> ExtraHeal { get; } = [];
     public List<Func<MonsterUnit, GameSession, DamageHitResult, long, Task<long>>> IncomingDamageAdjusters { get; } = [];
     public List<Func<MonsterUnit, GameSession, long, Task>> TakenAsync { get; } = [];
+    /// <summary>The amount about to fall on a player, before any share, shield or lethal rule: the player, the row (a tick's buff row,
+    /// null without one), whether it is a skill's or a swing's hit rather than a tick, an environment or a fixed amount, the damage.</summary>
+    internal List<Func<GameSession, JsonElement?, bool, long, long>> PlayerDamageAdjusters { get; } = [];
     public List<Func<GameSession, Task>> PlayerRevived { get; } = [];
     /// <summary>A match owner decides which skills a participant may cast (true/false), or defers (null).</summary>
     public Func<GameSession, int, bool?>? MatchSkillRule { get; set; }
@@ -600,7 +603,7 @@ public sealed partial class CombatService : IGameTicker
                     && p.WorldScene == targetScene && m.WorldScene == targetScene
                     && p.SceneGeneration == targetGeneration && ReferenceEquals(p.Attachment, targetLease)
                     && targetLease?.Cancelled != true,
-                sourceElement: m.Template.Element);
+                sourceElement: m.Template.Element, directHit: true);
             if (committed == null) return;
             (damage, long hp, _, long shieldDamage) = committed.Value;
             try
@@ -630,7 +633,7 @@ public sealed partial class CombatService : IGameTicker
 
     /// <summary>One protected HP transition for monster and event hits; reserve lethal state before publication.</summary>
     private async Task<(long Damage, long Hp, long Effective, long ShieldDamage)?> CommitPlayerDamageAsync(GameSession target, long damage, JsonElement? row,
-        Func<bool>? valid = null, int sourceElement = 1)
+        Func<bool>? valid = null, int sourceElement = 1, bool directHit = false)
     {
         var targetRole = target.Role;
         using var held = await CharacterService.Lock(target);
@@ -638,6 +641,7 @@ public sealed partial class CombatService : IGameTicker
             || valid?.Invoke() == false) return null;
         // Owner's decision 2.11, deliberately past 1:1 (the client has no such rule): no damage during a cutscene, at most 120 s.
         if (damage > 0 && target.InCutScene && target.CutSceneSinceMs > 0 && Now - target.CutSceneSinceMs <= CutSceneProtectionMs) damage = 0;
+        if (damage > 0) foreach (var adjust in PlayerDamageAdjusters) damage = adjust(target, row, directHit, damage);
         damage = ShareDevotedDamage(target, damage);
         // A missed/fully absorbed hit must not spend a finite Safety Wall charge.
         // GmUnlimit's invincibility (inferred): the hit lands as 0, like a Safety Wall.

@@ -109,6 +109,8 @@ public readonly partial record struct SkillConfig(JsonElement Row)
 
     /// <summary>This row dealing exactly this damage to each target (CombatService.MonsterHitDamage's fixed hit: no ratio,
     /// defense, element, crit or damage attribute), everything else kept.</summary>
+    public bool IsFixedHit => Row.TryGetProperty("_ro3GuardianFixedHit", out _);
+
     public JsonElement AsFixedHit(long damage)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(Row.GetRawText())!.AsObject();

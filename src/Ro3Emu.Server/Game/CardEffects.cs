@@ -38,7 +38,8 @@ namespace Ro3Emu.Server.Game;
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
 /// All of these act on monsters, a hit on a player sets off none of them, except Divine Light and the cooldown reset, which
 /// follow the own cast whoever it reached.
-/// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
+/// - what a hit on the holder becomes: Golden Thief Bug's nullify, see <see cref="AdjustDamageTaken"/>.
+/// Not executed (no machinery or no data link): armor element changes, reflect, status immunities, Endure,
 /// the uninterruptible cast and Ladybug's reduction, SP drain, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
@@ -68,6 +69,7 @@ public sealed class CardEffects
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509, NextHitAfterCrit = 20507;
     private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
+    private const int ShadowNullify = 20510, CardNullify = 20511;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -89,6 +91,7 @@ public sealed class CardEffects
         combat.DamageAdjusters.Add(AdjustDamage);
         combat.DealtAsync.Add(OnDealtAsync);
         combat.CastResolved.Add(OnCastResolvedAsync);
+        combat.PlayerDamageAdjusters.Add(AdjustDamageTaken);
     }
 
     private IEnumerable<Passive> Passives(GameSession s)
@@ -251,6 +254,25 @@ public sealed class CardEffects
             var stats = _character.Stats(s);
             await _character.SetHpSpAsync(s, null, stats[2001] + sp);
         }
+    }
+
+    /// <summary>
+    /// Golden Thief Bug: "When hit by a magic attack, has a @{1}% Chance to nullify its damage. Internal Cooldown: @{2} seconds. (Boss
+    /// instant-kill skills can bypass this card's effect.)" _kLogicData [chance bp], the cooldown in _kDescData; the two cards are two
+    /// groups, each with its own. A magic attack is a hit of an _iDmgType 2 row from a monster or a player. (inferred) No row is named an
+    /// instant kill, so what bypasses it is a raid mechanic's share of maximum HP (MonsterSkillHitAsync), and a tick or a fixed amount
+    /// is no attack. (inferred) The hit shows as 0, as under Safety Wall: DamageHitResult has no immune value.
+    /// </summary>
+    internal long AdjustDamageTaken(GameSession s, JsonElement? row, bool directHit, long damage)
+    {
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId is ShadowNullify or CardNullify && directHit && SkillShieldRules.IsMagic(row) && buff.LogicData is [var chance, ..]
+                && Description(passive.Row) is [_, var cooldown, ..] && Roll(10000) < chance && Ready(s, buff.BuffId, (long)(cooldown * 1000)))
+                return 0;
+        }
+        return damage;
     }
 
     /// <summary>One Splash passive's numbers. <paramref name="Chance"/> is in basis points, <paramref name="Ratio"/> too, of
