@@ -6,7 +6,8 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class BuffService
 {
     /// <summary>A Freeze/Petrify/Sleep from any source breaks on a hit, as its BuffConfig description says.</summary>
-    private static bool BreaksOnDamage(ActiveBuff buff) => buff.ConfigId / 100 is FreezeGroup or PetrifyGroup or SleepGroup;
+    private static bool BreaksOnDamage(ActiveBuff buff) => buff.ConfigId / 100 is FreezeGroup or PetrifyGroup or SleepGroup
+        || !buff.IsGuardianOwned && buff.StateOrdinal is 11 or 12 or 19; // the same states from another row (Petrify 4340301)
 
     /// <summary>BuffConfig Freeze/Petrify/Sleep descriptions remove control on a hit. Freeze/Petrify explicitly
     /// link their follow-up slow and duration in _kLogicData; the follow-up keeps the broken control's owner, a guardian's
