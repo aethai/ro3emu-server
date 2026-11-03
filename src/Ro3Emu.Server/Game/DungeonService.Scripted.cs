@@ -345,6 +345,8 @@ public sealed partial class DungeonService
             }
         }
         a.StepDone = true;
+        a.GoalFullWave = a.Wave;
+        if (GoalParams(a) != null) await BroadcastAsync(a, BaseInfo, Snapshot(a));
         _log.LogInformation("Scripted scene {Scene} step {Step} '{Stage}' completed by {Role} ({Events})",
             a.Plan.SceneEntry, a.Wave + 1, step.Stage, s.Role?.Id, string.Join(", ", events));
         int hold = await RespondAsync(a, step.React, step.React?.Complete, used);
