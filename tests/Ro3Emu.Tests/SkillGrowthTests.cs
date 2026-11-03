@@ -314,6 +314,55 @@ public sealed class SkillGrowthTests : IAsyncLifetime
         Assert.Single(bar.Values, slot => slot.SkillConfigId == skills.RealId(Attack, 1));
     }
 
+    // A Warlock's Sight refund came back Parameter and a switch to a build without Sight 333 (prerequisite). Sight Sprout
+    // (a Wizard's, _iInitialLevel 1, _kPreSkillRequired Sight 1) is free; it is SkillConfig's only such row.
+    [ClientDataFact]
+    public async Task AWarlockRefundsSightAndSwitchesToABuildWithoutIt()
+    {
+        const int Sight = 12002, Sprout = 12110, FireBolt = 12004, FireBall = 12012, FireWall = 12010,
+            Sightrasher = 12101, MeteorStorm = 12106, DestructiveFlame = 12311;
+        var skills = _app.Services.GetRequiredService<SkillService>();
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99");
+        await Gm("alice", "!job 2400");
+        var session = Session(alice);
+        async Task<int> Update(int plan, params (int Group, int Level)[] levels)
+        {
+            var request = new SkillGrowthSkillPlanUpdateReq { Plan = plan };
+            foreach (var (group, level) in levels) request.LevelUpList[group] = new SkillData { SkillId = group, SkillLevel = level };
+            await alice.SendGameAsync(SkillService.PlanUpdate, request);
+            return (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result;
+        }
+
+        // A role that never took Sight can spend: its free Sprout holds nothing up.
+        Assert.Equal(0, await Update(0, (FireBolt, 5), (FireBall, 5)));
+        Assert.Equal(0, await Update(0, (Sight, 1), (FireWall, 1), (Sightrasher, 5), (MeteorStorm, 1), (DestructiveFlame, 1)));
+
+        // LC_SkillGrowthHelper.LocalMinusSkillLevel: Sight and all that depends on it, Sprout included, at 0.
+        Assert.Equal(0, await Update(0, (Sight, 0), (Sprout, 0), (FireWall, 0), (Sightrasher, 0), (MeteorStorm, 0), (DestructiveFlame, 0)));
+        var plan0 = skills.Build(session).SkillAssignPlans[0].SkillAssigns;
+        Assert.Equal(0, plan0[Sight].SkillLevel);
+        Assert.Equal(0, plan0[DestructiveFlame].SkillLevel);
+        Assert.Equal(1, plan0[Sprout].SkillLevel);
+        Assert.Equal(5, plan0[FireBall].SkillLevel);
+        Assert.Equal(1, skills.Level(session.Progress!, Sprout));
+
+        // A paid level still needs its prerequisite.
+        Assert.Equal(ErrorCodes.SkillPrerequisite, await Update(0, (FireWall, 1)));
+
+        Assert.Equal(0, await Update(0, (Sight, 1), (FireWall, 1)));
+        await alice.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 1 });
+        Assert.Equal(0, (await Next(alice, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
+        Assert.Equal(1, session.SkillPlans!.CurrentPlanIndex);
+        Assert.Equal(1, skills.Level(session.Progress!, Sprout));
+        Assert.Equal(0, skills.Level(session.Progress!, Sight));
+        Assert.Equal(0, await Update(1, (FireBolt, 1)));
+
+        // The reset request leaves Sprout free and Sight at 0 as well.
+        await alice.SendGameAsync(SkillService.SkillReset, new SkillResetReq { Plan = 0 });
+        Assert.Equal(0, (await Next(alice, SkillService.SkillReset, SkillResetResp.Parser)).Result);
+    }
+
     [ClientDataFact]
     public async Task AllocationAndDependentRefundAreAtomic()
     {
