@@ -60,6 +60,8 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     [ConfigField("_iScriptShow")] public partial long ScriptShow { get; }
     [ConfigField("_iSkillAdvanced")] public partial long SkillAdvanced { get; }
     [ConfigField("_iSkillCri")] public partial long SkillCri { get; }
+    [ConfigField("_kDamageFormulaExtra")] public partial string[] DamageFormulaExtra { get; }
+    [ConfigField("_kDamageParamExtra")] public partial long[][] DamageParamExtra { get; }
     [ConfigField("_iSkillEffectLevel")] public partial long SkillEffectLevel { get; }
     [ConfigField("_iSkillHit")] public partial long SkillHit { get; }
     [ConfigField("_iSkillID")] public partial long SkillId { get; }
