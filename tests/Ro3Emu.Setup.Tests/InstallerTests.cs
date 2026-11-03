@@ -266,6 +266,25 @@ public sealed class InstallerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AServerWithoutRangesStillServesThePackage()
+    {
+        var content = Publish(TwoPackages());
+        var big = Zip(TwoPackages()["p2"]);
+        foreach (var origin in new[] { "a", "b" })
+            _faults[$"{origin}/pkg/{Sha(big)}.zip"] = context =>
+            {
+                context.Request.Headers.Remove("Range");
+                return Task.FromResult(false);
+            };
+        var game = Path.Combine(_dir.FullName, "game");
+        var installer = Installer();
+        installer.Connections = 4;
+        installer.ChunkBytes = 16;
+        await installer.ApplyAsync(installer.MakePlan(await installer.FetchAsync(), game), game);
+        AssertInstalled(game, content);
+    }
+
+    [Fact]
     public async Task DownloadsADamagedPackageAgain()
     {
         var content = Publish(TwoPackages());

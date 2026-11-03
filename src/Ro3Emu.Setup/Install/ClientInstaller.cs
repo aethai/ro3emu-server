@@ -209,7 +209,14 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
                 long have = File.Exists(part) ? new FileInfo(part).Length : 0;
                 if (have > package.Length) { File.Delete(part); have = 0; }
                 if (have < package.Length && Connections > 1 && package.Length - have > 2L * ChunkBytes)
-                    await FetchPartsAsync(url, part, have, package.Length, progress, ct);
+                {
+                    try { await FetchPartsAsync(url, part, have, package.Length, progress, ct); }
+                    catch (RangesNotServedException)
+                    {
+                        Log?.Invoke($"package {package.Id[..12]} from {url}: no ranges, using one connection");
+                        await FetchRangeAsync(url, part, new FileInfo(part).Length, package.Length, progress, ct);
+                    }
+                }
                 else if (have < package.Length)
                     await FetchRangeAsync(url, part, have, package.Length, progress, ct);
                 progress?.Invoke(package.Length, package.Length);
@@ -234,6 +241,9 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
         throw new InstallException($"A game package could not be downloaded ({last?.Message}).",
             "Check the internet connection and run the same command again: the download resumes where it stopped.");
     }
+
+    /// <summary>The server answered a range with the whole file: it can still serve the package over one connection.</summary>
+    private sealed class RangesNotServedException() : Exception("the server does not serve ranges");
 
     /// <summary>Fetches the rest of a package in <see cref="ChunkBytes"/> parts, <see cref="Connections"/> at a time, appended in order.</summary>
     private async Task FetchPartsAsync(string url, string part, long have, long length, Action<long, long>? progress, CancellationToken ct)
@@ -270,8 +280,8 @@ public sealed class ClientInstaller(PublisherConfig config, HttpClient http, str
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Range = new RangeHeaderValue(from, to);
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (response.StatusCode != HttpStatusCode.PartialContent)
-            throw new InvalidDataException($"the server does not serve ranges ({(int)response.StatusCode})");
+        response.EnsureSuccessStatusCode();
+        if (response.StatusCode != HttpStatusCode.PartialContent) throw new RangesNotServedException();
         var data = new byte[to - from + 1];
         await using var body = await response.Content.ReadAsStreamAsync(ct);
         await body.ReadExactlyAsync(data, ct);
