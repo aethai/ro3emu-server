@@ -11,7 +11,7 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Tests;
 
 /// <summary>Card collection star/Flash state, socket insert rules, card special effects and craft quality pity.</summary>
-public sealed class CardRulesTests : IAsyncLifetime
+public sealed partial class CardRulesTests : IAsyncLifetime
 {
     private const int Lunatic = 1420100, Dagger = 2010121, TwoHander = 2030120, OffHand = 2500120, Armor = 2550120, Ring = 2700120;
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(5);
