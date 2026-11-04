@@ -364,13 +364,9 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   and shatters the Bell under it (buff 5402201, SXGD_WRONG); Katie's ring answers 5310003 'Congratulations ...' in round
   1 and 5310009 'Darn ... I give up.' in round 2 and lights her Bell (5402101, SXGD_RIGHT), and the next round (or the
   settlement) waits until that line's `_iTime` has run out. Guessed: the two rounds (from Louis's lines 'Let's go again'
-  and 'I give up'), the Bell row 400138, and when each line and effect goes out; the effects have not been checked in
-  the live client. The bubbles 5310019-5310033 are not sent.
-- Which Bell hides Katie in Louie's games (the Culvert's round and both Pharaoh rounds) is drawn when the round begins
-  (inferred): the step's `shuffle` names the three rings, and `ScriptedStep.Placed` permutes their listed points
-  (29-31) among them with a Fisher-Yates draw from `DungeonService.ShuffleRoll` (`Random.Shared`; tests pin it). The
-  Bells stay; a ring always stands on a Bell, so the right/wrong effect still lands on the Bell under the ring used. The
-  listed layout (Katie east, then west in the Pharaoh's round 2) is only where the draw starts; no shuffle is animated.
+  and 'I give up'), where Katie hides in each round (the east Bell, then the west one), the Bell row 400138, and when
+  each line and effect goes out; the effects have not been checked in the live client. The bubbles 5310019-5310033 are
+  not sent.
 - Five story dungeons that were monster waves (or bare point respawns) now play their scripted stages around the
   fights, each with its evidence and guessed parts in the file:
   - Maya's nest (1000401): Maya, then 'Find the Professor' (within 10 m of the egg point), 'Free the Ant Egg' (5300056,
@@ -463,7 +459,7 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   (`InstanceService.AddPropAsync`), removed at settlement and before the room's final cleanup.
 - Guessed (see each scene's "guessed" list): the corridor region that ends 1000201's first stage, Bobo's place there,
   the jump as a teleport, the ride to the depths as a walk of guide route 36 (see below), no exploding ant eggs, no seamless 1000201 to 1000301 transfer, which bell hides
-  Katie (drawn each round), a wrong guess changing nothing, the instrument retrieved within 4 m of mark point 37.
+  Katie (from both stories), a wrong guess changing nothing, the instrument retrieved within 4 m of mark point 37.
 - `DungeonTests.Scripted` resolves each scene against the client data, plays each one through its client events (wrong
   and premature events included) to a clear, and checks that the story step is delivered and the next one offered.
   The story walk plays the three scenes with the same events and has no known-open blocker left.

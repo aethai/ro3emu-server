@@ -51,31 +51,6 @@ public sealed partial class ReconstructedDungeons
         /// <summary>Milliseconds the step stays on after it is completed, before the next step or the settlement (0: none;
         /// inferred): a bubble of the actors it showed is still being read, or a defeated enemy is still falling.</summary>
         public int HoldAfterMs { get; init; }
-
-        /// <summary>NPCConfig ids of actors whose places are drawn again each time the step begins (inferred, Louie's bell
-        /// games: which Bell hides Katie's ring): they swap the points (and offsets) they are listed at among themselves,
-        /// every order equally likely; the other actors stay where they are listed. Empty: no draw.</summary>
-        public IReadOnlyList<int> Shuffle { get; init; } = [];
-
-        /// <summary>
-        /// The actors as the step shows them this time: <see cref="Shuffle"/>'s actors permuted over their listed places by
-        /// a Fisher-Yates draw, <paramref name="roll"/> giving a uniform integer below its bound.
-        /// </summary>
-        public IReadOnlyList<SceneActor> Placed(Func<int, int> roll)
-        {
-            if (Shuffle.Count == 0) return Actors;
-            int[] drawn = [.. Actors.Select((actor, index) => (actor, index)).Where(x => Shuffle.Contains(x.actor.NpcId)).Select(x => x.index)];
-            var places = drawn.Select(i => Actors[i]).ToArray();
-            for (int i = places.Length - 1; i > 0; i--)
-            {
-                int j = roll(i + 1);
-                (places[i], places[j]) = (places[j], places[i]);
-            }
-            var placed = Actors.ToArray();
-            for (int k = 0; k < drawn.Length; k++)
-                placed[drawn[k]] = Actors[drawn[k]] with { Point = places[k].Point, Dx = places[k].Dx, Dz = places[k].Dz };
-            return placed;
-        }
     }
 
     /// <summary>A step's cannons: the actor's <paramref name="Interaction"/> seats its user, who fires the skill <paramref name="Fire"/>.</summary>
@@ -165,9 +140,6 @@ public sealed partial class ReconstructedDungeons
             : [];
         if (complete.Count == 0 && fight.Length == 0)
             throw new InvalidOperationException($"Scripted step '{s.GetProperty("stage").GetString()}' cannot complete.");
-        int[] shuffle = s.TryGetProperty("shuffle", out var sh) ? [.. sh.GetProperty("npcs").EnumerateArray().Select(v => v.GetInt32())] : [];
-        if (shuffle.Distinct().Count() != shuffle.Length || shuffle.Any(npc => actors.Count(x => x.NpcId == npc) != 1))
-            throw new InvalidOperationException($"Scripted step '{s.GetProperty("stage").GetString()}' shuffles an actor it does not show once.");
         return new ScriptedStep(s.GetProperty("stage").GetString() ?? "", s.GetProperty("quest").GetInt32(), goal, actors,
             s.TryGetProperty("story", out var story) ? story.GetInt64() : 0, complete, Triggers(s, "ignore"),
             s.TryGetProperty("after", out var after) && after.TryGetProperty("teleport", out var to) ? to.GetInt64() : 0,
@@ -191,7 +163,6 @@ public sealed partial class ReconstructedDungeons
             Companions = [.. listed.Where(IsCompanion).Select(Actor)],
             RideAfter = s.TryGetProperty("after", out var rideAfter) && rideAfter.TryGetProperty("ride", out var ride) ? ride.GetInt64() : 0,
             HoldAfterMs = s.TryGetProperty("after", out var holdAfter) && holdAfter.TryGetProperty("hold", out var hold) ? hold.GetInt32() : 0,
-            Shuffle = shuffle,
         };
     }
 
