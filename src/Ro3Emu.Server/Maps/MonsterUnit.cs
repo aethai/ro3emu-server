@@ -74,6 +74,10 @@ public class MonsterUnit : WorldUnit
     public TowerPetUnit? PetTarget { get; set; }
     public long NextSwingMs { get; set; }
     public long NextChaseMs { get; set; }
+    /// <summary>When this monster may search a way around an obstacle again: a straight walk failed, and the search is not free.</summary>
+    public long NextPathMs { get; set; }
+    /// <summary>The players who have engaged it since it last left combat: losing its target, it turns to the nearest of them.</summary>
+    public List<Game.GameSession> Hated { get; } = [];
     public bool Returning { get; set; }
     /// <summary>Back home it keeps its damage instead of healing to full (the siege castle, TerritoryWarsService.SiegeObjects).</summary>
     public bool KeepsDamage { get; set; }
