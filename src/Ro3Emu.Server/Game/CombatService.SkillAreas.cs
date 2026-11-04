@@ -93,7 +93,14 @@ public sealed partial class CombatService
             var around = _world.Map(s.WorldScene).Units.OfType<MonsterUnit>()
                 .Where(m => m.Hp > 0 && CanHitMonster(s, m) && Distance(target.Pos, m.Pos) <= explosion.Range.FirstOrDefault(300) / 100 + .1)
                 .OrderBy(m => m == target ? 0 : 1).ThenBy(m => Distance(target.Pos, m.Pos)).Take((int)Math.Max(1, explosion.TargetMax)).ToList();
-            return CastExtraAsync(s, row, around);
+            return BlastAsync();
+            async Task BlastAsync()
+            {
+                await CastExtraAsync(s, row, around);
+                // "Inflicts Poisoned damage on the targets", its row's _kLogicData.
+                if (explosion.LogicData is [var poison, ..] && SkillConfig.Get(_data, poison) is { } poisoned)
+                    await CastExtraAsync(s, poisoned.Row, [.. around.Where(m => m.Hp > 0)]);
+            }
         });
     }
 }

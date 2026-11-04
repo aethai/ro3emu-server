@@ -271,7 +271,9 @@ public sealed partial class CombatService
                 if (CanApplyMoreEffects())
                     foreach (var tuple in Tuples(row, "_kBuff2"))
                         // Signum Crucis on Holy Light: "reduces the Physical DEF of Undead-property targets and Demon Race targets"
-                        if (CanApplyMoreEffects() && (script != "HolyLight2" || target.Template.Race == DemonRace || target.Template.Element == UndeadElement) && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(target.Uid))
+                        if (CanApplyMoreEffects() && (script != "HolyLight2" || target.Template.Race == DemonRace || target.Template.Element == UndeadElement)
+                            && (script != "LexDivina" || !target.Template.IsBoss) // "inflicts Silence on normal monsters or players"
+                            && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(target.Uid))
                             && RollHostileBuff(tuple, s, null, null, target, out int id, out int duration))
                         {
                             await _buffs.AddSupportAsync(target, id, duration, castingRole.Id,

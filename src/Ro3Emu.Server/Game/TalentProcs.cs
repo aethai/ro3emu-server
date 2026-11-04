@@ -311,6 +311,7 @@ public sealed partial class TalentProcs
         buffs.SourceAttributes = BuffAttributes;
         combat.SkillBuffAllowed = SkillBuffAllowed;
         combat.CastResolved.Add(OnCastResolvedAsync);
+        combat.DealtAsync.Add(RowProcsOnDealtAsync);
         buffs.Changed.Add(OnBuffsChangedAsync);
         combat.TargetCountRow = TargetCountRow;
         combat.TakenAsync.Add(OnTakenAsync);
@@ -388,6 +389,7 @@ public sealed partial class TalentProcs
         if (s.Role == null) return;
         var cast = new SkillConfig(action.Row);
         await PassiveProcsAsync(s, action, cast, processed, hit);
+        await RowProcsAsync(s, action, cast, processed);
         await LoneEnemyHitAsync(s, cast, processed);
         await JointDestructionAsync(s, cast, processed);
         if (s.TalentProcBuffs.Count == 0) return;
