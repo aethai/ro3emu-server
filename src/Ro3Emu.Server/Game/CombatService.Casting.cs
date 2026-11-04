@@ -568,6 +568,26 @@ public sealed partial class CombatService
         if (notice.Infos.Count > 0) await s.SendGameAsync(SkillCdUpdate, notice);
     }
 
+    /// <summary>Takes this long off a skill group's running cooldowns (Crescent Wheel on Axe Tornado), each under the mode it was shown; past its end it ends.</summary>
+    internal static async Task CutCooldownAsync(GameSession s, int group, long ms)
+    {
+        long now = Now;
+        var notice = new SkillCdNotify { Uuid = s.Role!.Id };
+        foreach (var (key, end) in s.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
+        {
+            long left = Math.Max(now, end - ms);
+            if (left > now) s.SkillModeCds[key] = left; else s.SkillModeCds.Remove(key);
+            notice.Infos.Add(new SkillCdInfo { SkillId = group, SkillMode = key.Mode, CdStartTimestampMs = now, CdEndTimestampMs = left });
+        }
+        if (s.SkillCds.TryGetValue(group, out long plain) && plain > now)
+        {
+            long left = Math.Max(now, plain - ms);
+            if (left > now) s.SkillCds[group] = left; else s.SkillCds.Remove(group);
+            if (notice.Infos.Count == 0) notice.Infos.Add(new SkillCdInfo { SkillId = group, CdStartTimestampMs = now, CdEndTimestampMs = left });
+        }
+        if (notice.Infos.Count > 0) await s.SendGameAsync(SkillCdUpdate, notice);
+    }
+
     private async Task StartCooldownAsync(GameSession s, JsonElement row, int? askedMode = null)
     {
         if ((s.GmCombat & GmCombatSwitches.NoCooldown) != 0) return; // GmNoCD / GmUnlimit 1: no skill cooldown starts
