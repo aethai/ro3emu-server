@@ -69,7 +69,7 @@ public sealed partial class SkillCombatTests
         return await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
     }
 
-    /// <summary>The first damage value of the row the caster's talents make of a row id.</summary>
+    /// <summary>The row the caster's talents make of a row id: its mode, with the tree's other talents applied.</summary>
     private SkillConfig Effective(GameSession me, int skill) =>
         new(_app.Services.GetRequiredService<CombatService>().EffectiveSkillRow(me, skill)!.Value);
 
@@ -89,7 +89,7 @@ public sealed partial class SkillCombatTests
         await Task.Delay(3500);
         Assert.InRange(strikes.Count, 6, 7); // a late tick can lose the last under load
         Assert.All(strikes, s => Assert.Equal(row.Id, s.Row));
-        // One enemy: +5%, once. Elsewhere the text's other talents raise the row (Effective).
+        // One enemy: +5%, and only once.
         Assert.All(strikes, s => Assert.Equal((long)Math.Round(row.DamageParam1[0] * 1.05), s.Ratios[0]));
         Assert.All(strikes, s => Assert.Equal((long)Math.Round(row.DamageParam2[0] * 1.05), s.Flats[0]));
     }
