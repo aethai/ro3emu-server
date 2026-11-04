@@ -37,8 +37,6 @@ namespace Ro3Emu.Server.Game;
 ///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
 /// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
-/// Status, life steal, SP absorb, autocast, Double Attack and the next hit after a crit answer a hit on a monster or a player. Size and
-/// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
 /// - armor element: the cards' passives 9044xx and 20515 are read by CombatService.ArmorElement on every hit a player takes;
 ///   Shadow Card: Angeling's 20514 puts 904407 on for seconds, see <see cref="OnHitTakenAsync"/>.
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
@@ -46,6 +44,8 @@ namespace Ro3Emu.Server.Game;
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
 /// - status immunity: Moonlight Flower's Slow, Orc Hero's Stun, by group in BuffService.ImmuneTo, the rows having only their text.
 /// - Endure: Eddga, by group in BuffService, no knockback or knock-up. Its hitstun is the client's.
+/// Status, life steal, SP absorb, autocast, Double Attack and the next hit after a crit answer a hit on a monster or a player. Size and
+/// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
 /// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
 /// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's
@@ -587,7 +587,7 @@ public sealed class CardEffects
         if (new SkillConfig(row).IsFixedHit) return damage;
         long bonus = 0;
         foreach (var passive in Passives(s).DistinctBy(p => (p.Card.Guid, p.Id)))
-            if (GameData.Int(passive.Row, "_iBuffID") == NextHitAfterCrit) bonus += NextHitBonus(s, new BuffConfig(passive.Row), result);
+            if (new BuffConfig(passive.Row) is { BuffId: NextHitAfterCrit } buff) bonus += NextHitBonus(s, buff, result);
         return bonus <= 0 ? damage : damage + (long)Math.Floor(damage * bonus / 10000d);
     }
 
