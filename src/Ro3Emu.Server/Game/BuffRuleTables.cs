@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -32,6 +33,31 @@ internal sealed partial class BuffRuleTables
     /// (the aura buff's _kLogicData entries that are BuffConfig rows), radius in m, tick, target cap and side.</summary>
     public sealed record HaloRule(int Id, float Radius, int TickMs, int TargetMax, int TargetType, bool Hostile,
         bool IncludeSelf, int[] Applied);
+
+    /// <summary>Battle Chant's halves with no HaloConfig row of their own, and the row each reads as. 11506 is "you and up to ${5} allies"
+    /// (its _kLogicData the DEF buff) at Battle Chant's radius and count; Battle Chant Enhance's 11546 and 11547 are the same two (inferred).</summary>
+    private static readonly (long Group, int Like, bool Allies)[] AurasWithoutARow = [(11506, 1150501, true), (11546, 1150501, false), (11547, 1150501, true)];
+
+    /// <summary>HaloConfig holds an aura's first levels only (Battle Chant 1150501 and 1150502, Shield Defense 1161602); a carrier's other levels
+    /// name their own target buff in _kLogicData (1150510 -> 1150210, -50 ATK) and take the numbers of their group's first row (inferred).</summary>
+    private static void AddAurasOfOtherLevels(GameData data, Dictionary<int, HaloRule> halos)
+    {
+        var firstOfGroup = new Dictionary<long, HaloRule>();
+        foreach (var rule in halos.Values.OrderBy(r => r.Id))
+            if (BuffConfig.Get(data, rule.Id) is { } carrier) firstOfGroup.TryAdd(carrier.BuffId, rule);
+        foreach (var (group, like, allies) in AurasWithoutARow)
+            if (halos.TryGetValue(like, out var rule))
+                firstOfGroup[group] = allies ? rule with { TargetType = 1, Hostile = false, IncludeSelf = true } : rule;
+        foreach (var row in data.Table("BuffConfig").Values)
+        {
+            var buff = new BuffConfig(row);
+            int id = (int)buff.Id;
+            if (halos.ContainsKey(id) || !firstOfGroup.TryGetValue(buff.BuffId, out var rule)) continue;
+            int[] applied = [.. buff.LogicData.Select(value => (int)value).Where(b => b != id && !halos.ContainsKey(b)
+                && BuffConfig.Get(data, b) is { BuffId: > 0 }).Distinct()];
+            if (applied.Length > 0) halos[id] = rule with { Id = id, Applied = applied };
+        }
+    }
 
     public enum PeriodicKind { Damage, Heal }
 
@@ -123,6 +149,7 @@ internal sealed partial class BuffRuleTables
                 // 2 has no recovered meaning and is not used.
                 !hostile && Ints(row, "_iExtraTarget").Contains(1), applied);
         }
+        AddAurasOfOtherLevels(data, halos);
         Halos = halos;
     }
 

@@ -587,7 +587,7 @@ public sealed partial class CardRulesTests
     }
 
     // Card: Dark Priest T3: 2023201 "When dealing DMG, there is a 12% Chance to reduce the target's current SP by 20%, up to 400.
-    // Internal Cooldown: 15 sec." Row 2003101 [20, 400]. Bob's SP on the wire (his 31008 and the attribute).
+    // Internal Cooldown: 15 sec." Row 2003101 [20, 400]. Bob's SP as his sheet holds it.
     [ClientDataFact]
     public async Task DarkPriestBurnsAPlayersSpAtItsStarsChanceAndThenWaitsItsCooldown()
     {
@@ -773,7 +773,7 @@ public sealed partial class CardRulesTests
     }
 
     // "Control effects cannot interrupt casting": Silence and Sleep land in the middle of a chant and the hit still comes. Without the card
-    // the same Silence ends the chant in a 31106 Interrupted.
+    // the same Silence ends the chant in a 31103 Interrupted.
     [ClientDataTheory]
     [InlineData(Silence)]
     [InlineData(Sleep)]
