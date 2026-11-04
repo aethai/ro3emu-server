@@ -103,6 +103,16 @@ public sealed class CardEffectRuleTests
         Assert.Equal(1 - 70 / 10070d, HuntingFactor(0, 70, monster, player), 10);
     }
 
+    [Theory]
+    [InlineData(false, 10, 0)] // the attacker's Bonus ATK
+    [InlineData(true, 0, 40)] // and magic reads the magic pair
+    public void BonusAttackAndDefenseReadTheirKind(bool magic, long fromAttacker, long fromMagic) =>
+        Assert.Equal(fromAttacker + fromMagic - (magic ? 3 : 7), DamageAttributes.FlatBonus(
+            id => id switch { 221 => 10, 222 => 40, _ => 0 }, id => id switch { 223 => 7, 224 => 3, _ => 0 }, magic));
+
+    [Fact]
+    public void AMonsterSideHasNoBonus() => Assert.Equal(-7, DamageAttributes.FlatBonus(null, id => id == 223 ? 7 : 0, false));
+
     [Fact]
     public void AReflectRowOfAnotherShapeGivesNothing() => Assert.Equal(0, CardEffects.ReflectedDamage(1000, 0, 1000, [0, 3, 0, 1, 2000, 99, 1000], 60));
 

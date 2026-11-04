@@ -99,9 +99,9 @@ public sealed partial class CombatService
 
     /// <summary>One tick: the applier's ATK or MATK x _kData1 through the defender's DEF/MDEF and the buff's element
     /// (the same BaseDamage a skill hit uses), times the buff's piles (Poisoned stacks to 6). (inferred) No hit, float
-    /// or critical roll: the descriptions give a fixed share of the applier's damage.</summary>
+    /// or critical roll: the descriptions give a fixed share of the applier's damage. A tick is no attack, so Bonus ATK and DEF stay out.</summary>
     private long PeriodicAmount(Fighter attacker, Fighter defender, BuffRuleTables.PeriodicRule rule, int piles) =>
-        Math.Max(1, (long)Math.Round(Math.Max(0, BaseDamage(attacker, defender, rule.Row, 0, out _)) * Math.Max(1, piles)));
+        Math.Max(1, (long)Math.Round(Math.Max(0, BaseDamage(attacker, defender, rule.Row, 0, out _, attack: false)) * Math.Max(1, piles)));
 
     /// <summary>A tick on a player: the protected HP transition (shields, lethal prevention) every hit takes, one
     /// 31101 from the applier without a skill (skillId 0, showPoint 0: the number shows, no hit effect) and the HP.</summary>

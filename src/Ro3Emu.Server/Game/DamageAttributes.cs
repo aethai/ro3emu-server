@@ -67,6 +67,15 @@ internal static class DamageAttributes
     internal static double DefenseAfterPenetration(double defense, long flat, long percent) =>
         Math.Max(0, defense - flat) * Math.Max(0, 1 - percent / BasisPoints);
 
+    private const int BonusAtk = 221, BonusMatk = 222, BonusDef = 223, BonusMdef = 224;
+
+    /// <summary>Bonus ATK "Adds an Extra attack that ignores DEF when calculating damage", Bonus DEF "Reduces damage from the target's Extra attacks
+    /// and attacks", and their magic pair: Formula_AtkAppend and Formula_AtkReduce stand after DamageFix and before the race and element terms in
+    /// PBDubugDamageFormulaEnum. (inferred) So an amount added after defense and before the factors. Nothing else reads these four, and nothing
+    /// converts them into ATK or DEF, so they count once.</summary>
+    internal static long FlatBonus(Func<int, long>? attacker, Func<int, long>? target, bool magic) =>
+        (attacker?.Invoke(magic ? BonusMatk : BonusAtk) ?? 0) - (target?.Invoke(magic ? BonusMdef : BonusDef) ?? 0);
+
     /// <summary>FormulaParamCriDmg 15000 plus Crit Damage, as LC_DAL_PlayerInfo.GetRealPropertyValue shows it; Formula_BeCriticalDamage takes off the same (inferred).</summary>
     internal static double CritMultiplier(long dealt, long taken) => Math.Max(1, 1.5 + (dealt - taken) / BasisPoints);
 }

@@ -859,4 +859,69 @@ public sealed partial class CardRulesTests
             Assert.InRange(lowered, (long)(plain * (1 - 56 / 10056d)) - 1, (long)(plain * (1 - 56 / 10056d)) + 1);
         }
     }
+
+    /// <summary>The socketed copy made a Flash one or not, as the star-up leaves it.</summary>
+    private Task SetFlash(GameSession session, int card, bool flash) => Service<GameLoop>().InvokeAsync(async () =>
+    {
+        (session.Items.Single(i => i.Entry == card).Attrs ??= [])[530] = flash ? 1 : 0;
+        await Service<CardEffects>().RefreshAsync(session);
+        await Service<CharacterService>().RefreshStatsAsync(session);
+    });
+
+    // A Flash Card: Soldier Skeleton: 11001101 [[1,215,60],[1,221,10]], Bonus ATK +10 "Adds an Extra attack that ignores DEF": 10 after defense,
+    // then the +0.6% of 215 on it all. ATK and MATK stay what they were: it counts once.
+    [ClientDataFact]
+    public async Task AFlashCardsBonusAtkAddsToTheHitAfterDefenseAndNotToAtk()
+    {
+        const int card = 1440100;
+        var (alice, session) = await Holder("Alice", card, 1);
+        await using (alice)
+        {
+            var target = (await Dummies(session, 5000002))[0];
+            long plain = (await QuickSwing(alice, session, target)).Damage;
+            long atk = await Attribute(session, 103), matk = await Attribute(session, 104);
+
+            await SetFlash(session, card, true);
+            Assert.Equal(10, await Attribute(session, 221));
+            Assert.Equal(atk, await Attribute(session, 103));
+            Assert.Equal(matk, await Attribute(session, 104));
+            long raised = (await QuickSwing(alice, session, target)).Damage;
+            Assert.InRange(raised, (long)((plain + 10) * 1.006) - 1, (long)((plain + 10) * 1.006) + 2);
+        }
+    }
+
+    // A Flash Card: Marc: 11001002 [[1,216,60],[1,223,20]], Bonus DEF +20 "Reduces damage from the target's Extra attacks and attacks". DEF
+    // stays what it was. A tick is no attack: a poison's number does not move by the 20.
+    [ClientDataFact]
+    public async Task AFlashCardsBonusDefTakesOffAHitAndNotATick()
+    {
+        const int card = 1440301, poison = 903001;
+        var (alice, session) = await Holder("Alice", card, 3);
+        await using (alice)
+        {
+            _strikerAtk = 4000;
+            var striker = (await Strikers(session, 1))[0];
+            long plain = (await SwungAt(alice, session, striker)).Damage;
+            long def = await Attribute(session, 105);
+            async Task<long> Tick()
+            {
+                await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().AddAsync(session, poison, 800, striker.Uid));
+                var tick = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == striker.Uid && h.SkillId == 0);
+                await Eventually(() => !session.Buffs.Any(b => b.ConfigId == poison && b.ExpireMs > MonsterService.NowMs), "the poison over");
+                await Task.Delay(100);
+                return Assert.Single(tick.Dsts).Damage;
+            }
+            long tickPlain = await Tick();
+
+            await SetFlash(session, card, true);
+            Assert.Equal(20, await Attribute(session, 223));
+            Assert.Equal(def, await Attribute(session, 105));
+            long lowered = (await SwungAt(alice, session, striker)).Damage;
+            Assert.True(plain > 100, "too little damage to read 20 in: " + plain);
+            Assert.InRange(lowered, (long)((plain - 20) * 0.994) - 1, (long)((plain - 20) * 0.994) + 2);
+            long tickFlash = await Tick();
+            Assert.True(tickPlain > 21, "too little tick to read 20 in: " + tickPlain);
+            Assert.InRange(tickFlash, (long)(tickPlain * 0.994) - 1, tickPlain);
+        }
+    }
 }
