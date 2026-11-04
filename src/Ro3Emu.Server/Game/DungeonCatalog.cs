@@ -15,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterService monsters,
     SeasonService seasons, IOptions<ServerOptions> options, ReconstructedDungeons? reconstructed = null)
 {
-    public sealed record Spawn(int NpcId, MapPoint Point);
+    public sealed record Spawn(int NpcId, MapPoint Point, IReadOnlyList<(float X, float Y, float Z)>? Route = null);
     /// <summary>
     /// A wave; <paramref name="Quest"/> is the DungeonQuestConfig quest it plays (0: none known). A scripted step
     /// (<paramref name="Step"/>, ReconstructedDungeons.Scripted) has no monsters: it completes on its client events.
@@ -374,13 +374,20 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
                     || data.Row("ChatConfig", shelter.Tip) == null || data.Row("SkillConfig", shelter.Skill) == null
                     || shelter.EveryMs <= shelter.WarnMs || shelter.WarnMs < 0 || shelter.Width <= 0 || shelter.Depth <= 0)) return [];
             if (step.React is { } react && !ReactionResolves(step, react)) return [];
-            foreach (var (interaction, skill, shots) in step.Strikes ?? [])
-                if (step.Fight.Count == 0 || shots < 0 || data.Row("SkillConfig", skill) == null
-                    || !step.Actors.Any(a => Interactions(a.NpcId).Contains(interaction))) return [];
+            if (step.Cannon is { } cannon && (step.Fight.Count == 0 || data.Row("SkillConfig", cannon.Fire) == null
+                    || !step.Actors.Any(a => Interactions(a.NpcId).Contains(cannon.Interaction)))) return [];
             var fight = new List<Spawn>();
             foreach (var spawn in step.Fight)
             {
-                if (!map.Points.TryGetValue(spawn.Point, out var at) || monsters.Template(spawn.NpcId) == null) return [];
+                if (monsters.Template(spawn.NpcId) == null) return [];
+                if (spawn.Route != 0)
+                {
+                    // A flying unit starts where its patrol starts (DungeonService.FlyAsync).
+                    if (!map.PatrolPaths.TryGetValue(spawn.Route, out var route)) return [];
+                    fight.Add(new Spawn(spawn.NpcId, new MapPoint(route[0].X, route[0].Y, route[0].Z, 0), route));
+                    continue;
+                }
+                if (!map.Points.TryGetValue(spawn.Point, out var at)) return [];
                 fight.Add(new Spawn(spawn.NpcId, at));
             }
             waves.Add(new Wave(waves.Count + 1, fight, step.Quest, step));

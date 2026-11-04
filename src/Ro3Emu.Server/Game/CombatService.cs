@@ -296,6 +296,8 @@ public sealed partial class CombatService : IGameTicker
     /// VehicleSeatConfig _kMainSkills / _kSkills); their cooldowns are the ordinary SkillConfig ones.
     /// </summary>
     public List<Func<GameSession, int, bool>> GrantedSkill { get; } = [];
+    /// <summary>The player fires this skill from a seat with a crosshair (DungeonService.Cannon): the client names what it aims at.</summary>
+    public Func<GameSession, int, bool>? AimsFromSeat { get; set; }
     /// <summary>World-core owns the dead player's explicit accept/decline invitation.</summary>
     public Func<GameSession, GameSession, JsonElement, Task>? ReviveOffer { get; set; }
     public Func<GameSession, int>? ReviveCheck { get; set; }
@@ -772,7 +774,7 @@ public sealed partial class CombatService : IGameTicker
         double p1 = ratios.Length > branch ? ratios[branch] : 10000, p2 = flats.Length > branch ? flats[branch] : 0;
         // A player's _kDamageFormulaExtra raises the percentage, not the flat part.
         double percent = a.Attributes is { } sheet ? p1 * DamageFormula.Factor(new Data.Config.SkillConfig(skill), branch, sheet) : p1;
-        double dmg = DamageSource(skill, a.Atk, a.Matk, magic) * percent / 10000 + p2;
+        double dmg = DamageSource(skill, a.Atk, a.Matk, magic) * percent / 10000 + p2 + DamageFormula.Flat(new Data.Config.SkillConfig(skill), branch);
         long Penetration(int id) => a.Attributes?.Invoke(id) ?? 0;
         dmg *= DefenseFactor(a.Level, magic
             ? DamageAttributes.DefenseAfterPenetration(b.Mdef, Penetration(DamageAttributes.IgnoreMdef), Penetration(DamageAttributes.IgnoreMdefPercent))
