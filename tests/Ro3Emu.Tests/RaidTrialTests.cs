@@ -225,8 +225,12 @@ public sealed class RaidTrialTests : IAsyncLifetime
         h => h.SkillId == skill && h.Dsts.Any(d => d.DstID == (long)bot.Self!.Uuid));
 
     // Names the punishment that landed when a solved trial still hit.
-    private static void NoHitOf(BotClient bot, params long[] skills) => Assert.Empty(bot.Inbox.Snapshot()
-        .Where(e => e.IsGame(CombatService.SkillHit)).Select(e => (long)SkillHitInfo.Parser.ParseFrom(e.Body).SkillId).Where(skills.Contains));
+    private static void NoHitOf(BotClient bot, params long[] skills)
+    {
+        long[] landed = [.. bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit))
+            .Select(e => (long)SkillHitInfo.Parser.ParseFrom(e.Body).SkillId).Where(skills.Contains)];
+        Assert.True(landed.Length == 0, $"punished by {string.Join(",", landed)}");
+    }
 
     private long MaxHp(BotClient bot) => Service<CharacterService>().Stats(Session(bot))[101];
 
@@ -343,12 +347,9 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
 
-    // A trial lands its hit first and its buff right after, so a buff is waited for, not read once.
-    private async Task UntilBuff(BotClient bot, int buff)
-    {
-        for (int i = 0; i < 200 && await BuffOf(bot, [buff]) != buff; i++) await Task.Delay(20);
-        Assert.Equal(buff, await BuffOf(bot, [buff]));
-    }
+    // At the tests' 10% pace a trial's buff can come and go between two looks, so its notice is what is waited for.
+    private static Task UntilBuff(BotClient bot, int buff) =>
+        Next(bot, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == buff));
 
     private async Task UntilBuffGone(BotClient bot, int buff)
     {
