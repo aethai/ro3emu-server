@@ -134,6 +134,15 @@ public sealed partial class BuffService
             foreach (var storm in p.Buffs.Where(b => b.ConfigId == FuriousStorm).ToArray()) await RemoveAsync(p, storm);
     }
 
+    /// <summary>Takes this much from a meter, if it holds that much: a cost no row's _kCost names (Reading Spellbook's Book Pages).</summary>
+    internal async Task<bool> TrySpendEnergyAsync(GameSession p, int energy, long amount)
+    {
+        if (!p.Energy.TryGetValue(energy, out var meter) || meter.Value < amount) return false;
+        meter.Value -= amount;
+        await SendEnergyAsync(p, energy, (EPlayerEnergyChangeReason)5);
+        return true;
+    }
+
     // BuffConfig "Furious Storm"; the EnergyConfig meters Rain of Spears' mode 0 and mode 1 rows pay.
     internal const int FuriousStorm = 1132401;
     private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003;

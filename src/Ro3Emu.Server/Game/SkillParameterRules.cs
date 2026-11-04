@@ -33,6 +33,12 @@ internal static class SkillParameterRules
 
     private const int Buff1Type = 33, Buff2Type = 34;
 
+    /// <summary>Tuples the client does not need told (they change what only the server reads), so they stay out of <see cref="Field"/>.
+    /// 35 SkillCost, [.., value, row, column] of _kCost: Survival Instinct's "no longer consumes HP" is -100% of column 3. 31 SkillLogicData, by index: Arrow Flash sets
+    /// Sharp Shooting's [3,150] to 4 and 250, "targets +1, width +1 m"; Magnus and Sanctuary target count +1; Decapitation Sonic Blow's threshold. 20 reads as a flat
+    /// part at its index, Decapitation's "Sonic Blow fixed +10" on a row whose other branches take 30 (inferred).</summary>
+    private const int CostType = 35, LogicType = 31, FlatAtIndexType = 20, FlatType = 30;
+
     private static readonly ConditionalWeakTable<GameData, Dictionary<int, Modifier[]>> Parsed = [];
     private static readonly ConditionalWeakTable<GameData, Dictionary<int, int[]>> Categories = [];
     private static readonly ConditionalWeakTable<GameSession, SessionCache> Sessions = [];
@@ -70,6 +76,8 @@ internal static class SkillParameterRules
             || GameData.Number(item[3]) is not { } op || GameData.Number(item[4]) is not { } value) return null;
         int index = item.GetArrayLength() > 5 && GameData.Number(item[5]) is { } n ? (int)n : 0;
         int column = item.GetArrayLength() > 6 && GameData.Number(item[6]) is { } c ? (int)c : 0;
+        if (scope == 0 && GameData.Number(item[1]) == -1) // "all skills": Prayer's [0,-1,35,5,-100,0,3] on every cost
+            return new Modifier(0, (int)type, (int)op, (long)value, index, 1, Column: column);
         if (scope == 0)
             return GameData.Number(item[1]) is { } group && group > 0
                 ? new Modifier((int)group, (int)type, (int)op, (long)value, index, Column: column) : null;
@@ -233,7 +241,7 @@ internal static class SkillParameterRules
     internal static JsonElement Effective(JsonElement row, IReadOnlyList<Modifier> modifiers, int[] tags)
     {
         int group = (int)GameData.Int(row, "_iSkillID");
-        var relevant = modifiers.Where(m => Matches(m, group, tags) && (Field(m.Type) != null || m.Type is Buff1Type or Buff2Type)
+        var relevant = modifiers.Where(m => Matches(m, group, tags) && (Field(m.Type) != null || m.Type is Buff1Type or Buff2Type or CostType or LogicType or FlatAtIndexType)
             && m.Operation is 1 or 2 or 5).ToList();
         if (relevant.Count == 0) return row;
         var json = JsonNode.Parse(row.GetRawText())!.AsObject();
@@ -244,9 +252,16 @@ internal static class SkillParameterRules
                 ApplyToBuffTuples(json[mod.Type == Buff1Type ? "_kBuff1" : "_kBuff2"], mod);
                 continue;
             }
-            string field = Field(mod.Type)!;
-            if (mod.Type is 29 or 30)
+            if (mod.Type == CostType)
             {
+                ApplyToBuffTuples(json[SkillConfig.CostField], mod);
+                continue;
+            }
+            string field = mod.Type switch { LogicType => SkillConfig.LogicDataField, FlatAtIndexType => SkillConfig.FlatDamageField, _ => Field(mod.Type)! };
+            if (mod.Type is 29 or FlatType or LogicType or FlatAtIndexType)
+            {
+                // A flat part on a row with none: Normal Attack Boost's "Basic Attack fixed damage +15" on an empty _kDamageParam2 (Lua writes it as {}).
+                if (mod.Type is FlatType or FlatAtIndexType && json[field] is not JsonArray { Count: > 0 }) json[field] = new JsonArray(JsonValue.Create(0L));
                 if (json[field] is not JsonArray arr) continue;
                 // Index -1 in exported damage modifiers targets the full vector (inferred).
                 int first = mod.Index < 0 ? 0 : mod.Index;
