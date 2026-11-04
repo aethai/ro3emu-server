@@ -135,6 +135,17 @@ public sealed partial class BuffService
         : buffs.Where(b => b.ExpireMs > MonsterService.NowMs && b.StateOrdinal is > 0 and < 33)
             .Aggregate(0UL, (mask, b) => mask | 1UL << (b.StateOrdinal - 1));
 
+    /// <summary>The same _iStaggerType bits a player's control sends (LC_UnitSpecialStatus): the client plays a monster's stun or freeze pose from them.</summary>
+    internal ulong UnitStaggerMask(WorldUnit unit)
+    {
+        if (!_unitBuffs.TryGetValue(unit.Uid, out var buffs)) return 0;
+        ulong mask = 0;
+        foreach (var buff in buffs)
+            if (buff.ExpireMs > MonsterService.NowMs && buff.StateOrdinal is > 0 and < 33 && SpecialStatusConfig.Get(_data, buff.StateOrdinal) is { StaggerType: > 0 and < 64 } state)
+                mask |= 1UL << (int)state.StaggerType;
+        return mask;
+    }
+
     internal ulong UnitForbiddenMask(WorldUnit unit)
     {
         ulong mask = 0;

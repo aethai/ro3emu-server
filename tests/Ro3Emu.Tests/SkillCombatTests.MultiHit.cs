@@ -77,6 +77,7 @@ public sealed partial class SkillCombatTests
     [InlineData(1220111, 500)] // Magic Cannon: MATK
     [InlineData(1521001, 800)] // Soul Destroyer: both
     [InlineData(1524001, 800)] // Advanced Soul Destroyer: both
+    [InlineData(1431601, 500)] // Double Holy Light's physical hit: MATK
     [InlineData(1000001, 300)] // a physical row: ATK
     public async Task AHitsRatioMultipliesTheSourceItsTextNames(int skill, double source)
     {

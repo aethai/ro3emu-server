@@ -454,7 +454,7 @@ public sealed partial class TalentProcs
             }
             if (rule.Recast)
             {
-                await _combat.CastExtraAsync(s, action.Row, Targets(s, rule with { RowArea = true }, description, cast, target, processed));
+                await _combat.CastExtraAsync(s, action.Row, Targets(s, rule with { RowArea = true }, description, cast, target, processed), parametersApplied: true);
                 continue;
             }
             if (BuffConfig.Get(_data, buff)?.LogicData is not { } logic || rule.Logic >= logic.Length) continue;

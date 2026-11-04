@@ -85,6 +85,7 @@ public sealed partial class BuffService
             if (entity.ObjForbid.Data.Values.Count == 0) entity.ObjForbid.Data.Values.Add(0);
             entity.ObjForbid.Data.Values[0] |= forbidden;
         }
+        if (UnitStaggerMask(unit) is not 0 and var stagger) entity.ObjStagger = new AoiObjStaggerInfo { StaggerMask = stagger };
         var live = buffs.Where(b => b.ExpireMs > MonsterService.NowMs && (!b.IsPassive || b.ShowIcon)).ToArray();
         if (live.Length > 0)
         {

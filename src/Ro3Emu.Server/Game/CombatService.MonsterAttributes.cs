@@ -59,6 +59,7 @@ public sealed partial class CombatService
             EntityUuid = (ulong)unit.Uid,
             StateInfo = new AoiObjStateInfo { Data = new CommonBigMask { Values = { (ulong)monster.StatusBits | _buffs.UnitStatus(unit) } } },
             ForbidInfo = new AoiObjForbidInfo { Data = new CommonBigMask { Values = { _buffs.UnitForbiddenMask(unit) } } },
+            StaggerInfo = new AoiObjStaggerInfo { StaggerMask = _buffs.UnitStaggerMask(unit) },
         };
         // Buffs that do not count (BuffService.CountsInUnitStats) leave the template's stats and speed as they were; publish
         // only changes that do and, once the last of them is gone, the return to the template.

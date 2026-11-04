@@ -108,7 +108,7 @@ public sealed partial class CharacterService
 
     /// <summary>AttributeConfig 30 "Other Elemental Damage Reduction%" and 31 "Crowd Control Resistance". Rows 20-24 of the
     /// conversion table are not here: no data gives those ids.</summary>
-    private static readonly int[] GroupedAttributes = [30, 31];
+    private static readonly int[] GroupedAttributes = [23, 24, 30, 31]; // 23 "PATK/MATK" and 24 "PDEF/MDEF" the same way
 
     /// <summary>
     /// A grouped attribute is read through its members only (_kTips "Converted to other elemental damage", "Converted to
