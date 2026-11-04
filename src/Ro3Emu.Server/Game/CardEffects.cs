@@ -43,7 +43,9 @@ namespace Ro3Emu.Server.Game;
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
 /// Not executed (no machinery or no data link): armor element changes, status immunities, Endure,
-/// the uninterruptible cast, detection, indestructible gear.
+/// the uninterruptible cast.
+/// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
+/// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's
 /// buff makes Basic Attacks Fire (CombatService.ElementFromBuff), Envenom follows with its Poisoned row (CombatService.EnvenomPoisonAsync).
 /// Card: Kraken's "has a Chance to inflict Bleeding" has no tuple and no number, so only its always-Stun runs.

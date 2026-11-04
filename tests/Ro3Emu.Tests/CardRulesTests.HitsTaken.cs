@@ -713,4 +713,23 @@ public sealed partial class CardRulesTests
             Assert.Equal(b.Role!.Id, Assert.Single(poisoned.Dsts).DstID);
         }
     }
+
+    // Maya Purple's text reveals hidden monsters, and no monster hides: no NPC or AI row holds a hiding buff or a skill that gives one.
+    [ClientDataFact]
+    public void NoMonsterHoldsAHidingBuffOrSkill()
+    {
+        var data = Service<GameData>();
+        var hiding = data.Table("BuffConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.BuffConfig(r))
+            .Where(CombatService.StealthBuff).Select(b => b.Id).ToHashSet();
+        Assert.Contains(5000901L, hiding);
+        var hides = data.Table("SkillConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.SkillConfig(r))
+            .Where(s => s.Buff1.Concat(s.Buff2).Any(tuple => tuple.Length > 0 && hiding.Contains(tuple[0]))).Select(s => s.Id).ToHashSet();
+        foreach (var npc in data.Table("NPCConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.NPCConfig(r)))
+        {
+            Assert.DoesNotContain(npc.Skills, hides.Contains);
+            Assert.DoesNotContain(npc.BornEventBuff, b => b.Length > 0 && hiding.Contains(b[0]));
+        }
+        foreach (var ai in data.Table("AIConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.AIConfig(r)))
+            Assert.DoesNotContain(ai.Skills, hides.Contains);
+    }
 }
