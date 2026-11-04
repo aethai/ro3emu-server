@@ -56,7 +56,7 @@ public sealed partial class CombatService
             await OwnSkillLanded(s, row);
             return;
         }
-        if (Script(row) == "Resurrection")
+        if (IsResurrection(row))
         {
             var target = FindPlayer(s, action.Request.TargetId, dead: true);
             if (target == null || target.SceneLoading || _buffs.HasForbidden(target, ForbiddenState.Revive)
@@ -106,6 +106,18 @@ public sealed partial class CombatService
         return Math.Abs(side) <= Metres(1) / 2 + .1 && forward >= -.5 && forward <= Metres(2) + .1;
     }
 
+    /// <summary>
+    /// A locked row (_iRelease 1) with _iRangeType 2 and _kRange [0] names no area: Shield Boomerang's "the selected ST enemy",
+    /// Rain of Spears' "toward the locked target" (122 playable rows of 11 groups). Read as an area it was a 0.1 m circle where
+    /// the target stood at the cast, so one that had walked was missed. (inferred) It hits the locked target where it stands;
+    /// a text's splash or area beside that target (Rain of Spears' 5m*10m, Spear Throw's "2 Other enemies") is not in the row.
+    /// </summary>
+    internal static bool LocksItsTarget(JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        return skill.RangeType == SkillRelease.Area && skill.Release == SkillRelease.Lock && skill.Range is [0];
+    }
+
     private List<MonsterUnit> SelectEnemies(GameSession s, ActiveSkillCast action, Vec3 center, float? radiusOverride = null)
     {
         var row = action.Row;
@@ -114,7 +126,7 @@ public sealed partial class CombatService
         int max = Script(row) is "LandMine" or "ClaymoreTrap" or "FreezingTrap" or "BlastMine" ? TrapTargets(row)
             : Script(row) == "BombSuicide1" ? int.Parse(skill.DescData[2], System.Globalization.CultureInfo.InvariantCulture) // Energy Release: "up to ${3} enemies"; its row holds 1
             : (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
-        if (GameData.Int(row, "_iRangeType") != 2 && radiusOverride == null && !AreaDespiteRangeType(skill))
+        if ((GameData.Int(row, "_iRangeType") != 2 && !AreaDespiteRangeType(skill) || LocksItsTarget(row) && action.Request.TargetId != 0) && radiusOverride == null)
         {
             var target = FindMonster(s.WorldScene, action.Request.TargetId);
             return target != null && target.Hp > 0 && CanHitMonster(s, target) && Relation(row, false, race: target.Template.Race) ? [target] : [];
@@ -130,6 +142,10 @@ public sealed partial class CombatService
         return [.. _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
             .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid).Take(max)];
     }
+
+    /// <summary>The monsters a cast's own row covers now, nearest its point first.</summary>
+    internal List<MonsterUnit> MonstersInCastArea(GameSession s, ActiveSkillCast action) =>
+        SelectEnemies(s, action, action.Request.TargetPos ?? action.Origin);
 
     private async Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
         IReadOnlyList<MonsterUnit>? chosenTargets = null, IReadOnlyList<GameSession>? chosenAllies = null)
@@ -812,7 +828,8 @@ public sealed partial class CombatService
         float radius = (float)(Numbers(row, "_kRange").FirstOrDefault(150) / 100);
         switch (script)
         {
-            case "Fire_Wall" or "Quagmire" or "Fire_Pillar" or "Meteor_Storm" or "Lord_of_Vermilion" or "Storm_Gust" when logic.Length >= 3:
+            // Lord_of_Vermilion_BD is Thunder Shockwave's mode row, with the same _kLogicData and text.
+            case "Fire_Wall" or "Quagmire" or "Fire_Pillar" or "Meteor_Storm" or "Lord_of_Vermilion" or "Lord_of_Vermilion_BD" or "Storm_Gust" when logic.Length >= 3:
                 npc = (int)logic[0]; interval = (int)logic[1]; duration = (int)logic[2];
                 if (script == "Meteor_Storm" && logic.Length > 5) waves = (int)logic[5]; // "strikes in ${6} waves"
                 if (script == "Fire_Wall") { touches = (int)Desc(6); atOnce = (int)Desc(7); } // "touched by enemies ${7} times", "Up to ${8} Fire Walls"
@@ -933,7 +950,7 @@ public sealed partial class CombatService
 
     /// <summary>The event players a cast can hit: its area's, a guardian's own area selection, or its locked target.</summary>
     private GameSession[] EffectPlayerTargets(GameSession s, ActiveSkillCast action, Vec3 center) =>
-        GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area
+        GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area && (IsGuardianEffect(action.Row) || !LocksItsTarget(action.Row))
             ? IsGuardianEffect(action.Row) ? GuardianPlayerTargets(s, action, center) : EventAreaTargets(s, action.Row)
             : EventTarget(s, action.Request.TargetId) is { } eventTarget
                 && PlayerDistance(s, eventTarget) <= Range(action.Row) + 1.5f ? [eventTarget] : [];
@@ -943,7 +960,8 @@ public sealed partial class CombatService
     private (long Amount, DamageHitResult Result) MonsterHitDamage(GameSession s, Fighter attacker, MonsterUnit target,
         JsonElement row, string script)
     {
-        var (amount, result) = Damage(attacker, MonsterFighter(target), row, script == "Heal" ? 1 : Math.Max(SonicBlowBranch(s, target, row), DamageBranch(s, target, row)),
+        // Heal's enemy values are its second pair; AcolyteBD11 is its mode row under Holy Healing Light, with the same pairs and text.
+        var (amount, result) = Damage(attacker, MonsterFighter(target), row, script is "Heal" or "AcolyteBD11" ? 1 : Math.Max(SonicBlowBranch(s, target, row), DamageBranch(s, target, row)),
             GuardianPetRules.CriticalChance(row) + SkillParameterRules.CritChance(s, _data, row),
             GuardianPetRules.CriticalAtHp(row, target.Hp, target.Template.MaxHp));
         if (row.TryGetProperty("_ro3GuardianFixedHit", out var fixedValue))

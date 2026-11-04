@@ -10,12 +10,12 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class CombatService
 {
     /// <summary>Put a skill's _kBuff1 buff on <paramref name="recipient"/>, with its shield when it carries one.</summary>
-    internal Task ApplySkillBuffAsync(StatSheet casterStats, GameSession recipient, int buffId, int durationMs, long sourceId)
+    internal async Task ApplySkillBuffAsync(StatSheet casterStats, GameSession recipient, int buffId, int durationMs, long sourceId)
     {
+        if (buffId == BuffService.FuriousStorm) await _buffs.StartFuriousStormAsync(recipient);
         long shield = BuffConfig.Get(_data, buffId) is { } buff
             ? SkillShieldRules.Amount(buff, casterStats, _character.Stats(recipient)) : 0;
-        return shield > 0
-            ? _buffs.AddSkillShieldAsync(recipient, buffId, durationMs, sourceId, shield)
-            : _buffs.AddAsync(recipient, buffId, durationMs, sourceId);
+        if (shield > 0) await _buffs.AddSkillShieldAsync(recipient, buffId, durationMs, sourceId, shield);
+        else await _buffs.AddAsync(recipient, buffId, durationMs, sourceId);
     }
 }

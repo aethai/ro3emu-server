@@ -23,6 +23,8 @@ public sealed partial class CombatService
     {
         16306 or 15326 or 11628 => true,
         11624 => points >= 11,
+        // Rapid Throw's mode row, whose show 111101 adds a second point to Spear Throw's: "you throw one Extra Spear".
+        11110 => skill.ScriptLogic == "BoomerangBD01",
         _ => false,
     };
 
@@ -90,7 +92,8 @@ public sealed partial class CombatService
     /// <summary>
     /// A channelled row's hits: the show's point and the row it deals. The first point only opens the channel (inferred: no
     /// total above counts it). A second ratio is the last point's: Myriad Stars' talent row [20000,15000] has 11 hits, ten
-    /// of 200% for its "2000" and "When the skill ends, it deals one instance of 150%" (SkillConfig 11336301).
+    /// of 200% for its "2000" and "When the skill ends, it deals one instance of 150%" (SkillConfig 11336301). A second flat
+    /// goes with it: Rapid Throw's [ratio, 5000] / [flat, 220], "PATK * 50% + 220".
     /// </summary>
     internal static (double Point, JsonElement Row)[] ChannelHits(JsonElement row, JsonElement? show)
     {
@@ -102,7 +105,8 @@ public sealed partial class CombatService
         double[] points = staged ? all : [.. all.Skip(1)];
         if (points.Length == 0) return [];
         var plain = skill.WithoutBuff1();
-        var last = skill.DamageParam1 is [_, var final, ..] ? new SkillConfig(plain).WithDamage([final], skill.DamageParam2) : plain;
+        var last = skill.DamageParam1 is [_, var final, ..]
+            ? new SkillConfig(plain).WithDamage([final], skill.DamageParam2 is [_, var flat, ..] ? [flat] : skill.DamageParam2) : plain;
         // Earthshaker: "The final HIT inflicts Knockback", and only it.
         var hit = skill.ScriptLogic == "PinpointAttack3" ? new SkillConfig(plain).AsStage(still: true) : plain;
         return [.. points.Select((point, index) => (point, index == points.Length - 1 ? last : hit))];
