@@ -125,7 +125,7 @@ public sealed partial class DungeonTests
             Assert.All(ships, ship => Assert.Equal(ship.Template.MaxHp, ship.Hp));
 
             // Every ship by its own name, as the crosshair sends it: the shot's ordinary damage, then the shot that sinks it (it
-            // takes about 80 at the row's 305 a shot and 500 ms, too long to wait for here). The tracker counts the ships.
+            // takes about a dozen at the row's flat 3000 + 500 a shot and 500 ms, too long to wait for here). The tracker counts the ships.
             async Task Fire(MonsterUnit ship)
             {
                 await OnLoop(() => { Session(alice).SkillCds.Clear(); Session(alice).SkillModeCds.Clear(); Session(alice).SkillCast = null; return Task.CompletedTask; });

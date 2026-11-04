@@ -36,6 +36,16 @@ internal static class DamageFormula
         };
     }
 
+    /// <summary>T_AXaddBadd3_etc [source, coefficient, attribute, flat] on a skill row, as it reads on the buff rows that heal by it (Breath
+    /// Medicine [0,0,1,30], BuffRuleTables): the airship cannons' 5353001 and 5353501, [0,0,1,3000], the only two skill rows that have it.</summary>
+    internal static long Flat(SkillConfig skill, int branch)
+    {
+        var names = skill.DamageFormulaExtra;
+        int i = names.Length > 1 && branch < names.Length ? branch : 0;
+        return names.Length > i && names[i] == "T_AXaddBadd3_etc" && skill.DamageParamExtra.Length > i
+            && skill.DamageParamExtra[i] is [_, 0, _, var flat] ? flat : 0;
+    }
+
     /// <summary>Heal's T_AXadd0_Xisskilllv [1, 10, 0, 1] is "Each Base Level increases Healing Volume by 0.1%": its heal, not its Undead hit.</summary>
     internal static double HealFactor(SkillConfig skill, Func<int, long> stat, long level) =>
         skill.DamageFormulaExtra is ["T_AXadd0_Xisskilllv", ..] && skill.DamageParamExtra is [[Caster, var c, 0, FactorMode], ..]
