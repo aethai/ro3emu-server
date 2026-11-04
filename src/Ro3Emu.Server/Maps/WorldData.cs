@@ -339,6 +339,11 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
                 // ends at it. Ground Kafras on the nav mesh. Portals keep their editor y: the client keys teleport triggers
                 // by floor(y*10) (LC_InteractManager.lua:612-644).
                 if (kind == WorldNpcKind.Kafra && map.Nav?.WalkHeight(x, z, y) is { } ground) y = ground;
+                // #bug-reports "Payon - NPC in the ground": an ordinary NPC the editor marks isOnGround can sit below the
+                // only walkable layer (Payon's Monster Ecology Research Scholar 100181: y 14.70 on ground 21.69), drawn
+                // inside the hill and out of its 3D talk range. Raise a sunk one onto that floor; NPCs above it stay.
+                else if (kind == WorldNpcKind.Npc && OnGround(all, (int)GameData.Int(e, "Id")) && map.Nav?.WalkHeight(x, z, y) is { } floor
+                    && floor - y > SunkTolerance) y = floor;
                 npcs.Add(new WorldNpc(NpcUidBase | sceneEntry << 16 | (long)npcs.Count, sceneEntry, kind, npcId,
                     data.TextOf(npcRow, "_kName"), (int)GameData.Int(npcRow, "_iCamp"), x, y, z, face, e));
             }
@@ -364,6 +369,14 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
             AirWalls = SceneEditorAirWalls.Read(se)
         };
     }
+
+    /// <summary>An NPC more than this far below the walkable floor is drawn inside the ground.</summary>
+    private const float SunkTolerance = 0.3f;
+
+    /// <summary>m_kAllPoints[id].isOnGround (absent counts as on the ground).</summary>
+    private static bool OnGround(JsonElement all, int pointId) =>
+        all.ValueKind != JsonValueKind.Object || !all.TryGetProperty(pointId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var point)
+        || !point.TryGetProperty("isOnGround", out var flag) || flag.ValueKind != JsonValueKind.False;
 
     private static Dictionary<long, MapRegion> LoadRegions(JsonElement se)
     {

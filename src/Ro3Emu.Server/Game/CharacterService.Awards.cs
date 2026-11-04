@@ -164,6 +164,7 @@ public sealed partial class CharacterService
         long baseExp = taskBaseExp, jobExp = 0;
         var notification = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
         var gained = new List<(int Entry, int Count)>();
+        var gearRows = new List<(int Row, InvItem Item)>();
         var received = new HashSet<InvItem>();
         foreach (var grant in plan.Grants)
         {
@@ -218,7 +219,12 @@ public sealed partial class CharacterService
                 if (IsEquipment(grant.Entry))
                 {
                     // Each gear instance may roll distinct attributes; a single aggregate popup would misstate them.
-                    foreach (var item in created) notification.Rewards.Add(ItemInfo(item));
+                    // GUIDs are assigned at commit; the row is rebuilt then (quick-equip prompt needs itemGuid).
+                    foreach (var item in created)
+                    {
+                        gearRows.Add((notification.Rewards.Count, item));
+                        notification.Rewards.Add(ItemInfo(item));
+                    }
                     continue;
                 }
             }
@@ -349,6 +355,8 @@ public sealed partial class CharacterService
         // A wheel (rewardIndexes) waits for its notice to stop and unlock, even when nothing showable was granted.
         if (!suppressRewardNotice && (notification.Rewards.Count > 0 || rewardIndexes is { Count: > 0 }))
         {
+            foreach (var (row, item) in gearRows)
+                if (item.Guid > 0 && session.Items.Contains(item)) notification.Rewards[row] = ItemInfo(item);
             notification.RewardType.Add(manifestType);
             if (rewardIndexes != null) notification.RewardIndexes.Add(rewardIndexes);
             await session.SendGameAsync(GetRewardNotify, notification);
