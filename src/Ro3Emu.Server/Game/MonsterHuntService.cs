@@ -164,6 +164,8 @@ public sealed class MonsterHuntService
                 .Select(t => ((long)(GameData.Number(t[0]) ?? 0), (long)(GameData.Number(t[1]) ?? 0), (long)(GameData.Number(t[2]) ?? 0)))
             : [];
 
+    private const string MonsterAwardField = "_kMonsterAward", AreaLimitField = "_iAreaLimit";
+
     /// <summary>The area's claimed monster stages, the progress its own stages need (capped at _iAreaLimit; inferred).</summary>
     private long ClaimedInArea(DBAreaConcurInfo state, long areaId, JsonElement area)
     {
@@ -171,7 +173,24 @@ public sealed class MonsterHuntService
         foreach (var (id, info) in state.MonsterInfo)
             if (_data.Row("AreaConcurMonsterConfig", id) is { } row && _areaOfMap.GetValueOrDefault(GameData.Int(row, "_iMap")) == areaId)
                 count += info.ClaimedAward.Count(c => c.Value);
-        return Math.Min(count, GameData.Int(area, "_iAreaLimit"));
+        return Math.Min(count, GameData.Int(area, AreaLimitField));
+    }
+
+    /// <summary>
+    /// The area's monster stages the kills have reached, claimed or not, capped at _iAreaLimit: the number the Area Prize panel shows
+    /// (LC_MonsterCrusadeHelper.GetAreaAchievedAwardCount) and its Claim button compares with each stage's threshold
+    /// (UI_Sys_MonsterCrusade_AwardPrevieListLWidgetCtrl). Asking for claimed stages left a player with 12 reached and 6 claimed an enabled button that paid nothing.
+    /// </summary>
+    private long AchievedInArea(DBAreaConcurInfo state, long areaId, JsonElement area)
+    {
+        long count = 0;
+        foreach (var row in Rows("AreaConcurMonsterConfig"))
+        {
+            if (_areaOfMap.GetValueOrDefault(new Data.Config.AreaConcurMonsterConfig(row).Map) != areaId) continue;
+            long kills = state.MonsterInfo.GetValueOrDefault(new Data.Config.AreaConcurMonsterConfig(row).Id)?.CurScore ?? 0;
+            count += Stages(row, MonsterAwardField).Count(t => kills >= t.Need);
+        }
+        return Math.Min(count, GameData.Int(area, AreaLimitField));
     }
 
     /// <summary>83623: every requested stage the monster's kills reach and that is not claimed yet (the client sends them all).</summary>
@@ -186,7 +205,7 @@ public sealed class MonsterHuntService
             {
                 long kills = state.MonsterInfo.GetValueOrDefault(req.MonsterId)?.CurScore ?? 0;
                 var claimed = state.MonsterInfo.GetValueOrDefault(req.MonsterId)?.ClaimedAward;
-                var stages = Stages(monster, "_kMonsterAward")
+                var stages = Stages(monster, MonsterAwardField)
                     .Where(t => req.StageIds.GetValueOrDefault(t.Stage) && kills >= t.Need && claimed?.GetValueOrDefault(t.Stage) != true).ToArray();
                 if (stages.Length > 0)
                 {
@@ -205,7 +224,7 @@ public sealed class MonsterHuntService
         await _tasks.RefreshAsync(s); // 318004: the area's collection progress
     }
 
-    /// <summary>83622: an area stage once the area's claimed monster stages reach its threshold (one stage per request).</summary>
+    /// <summary>83622: an area stage once the area's reached monster stages reach its threshold (one stage per request).</summary>
     public async Task ClaimAreaAsync(GameSession s, AreaConcurGainAreaAwardReq req)
     {
         using (await CharacterService.Lock(s))
@@ -213,7 +232,7 @@ public sealed class MonsterHuntService
             var state = s.AreaConcur;
             if (state != null && Area(req.AreaId) is { } area && AreaOpen(s, area))
             {
-                long progress = ClaimedInArea(state, req.AreaId, area);
+                long progress = AchievedInArea(state, req.AreaId, area);
                 var claimed = state.AreaInfo.GetValueOrDefault(req.AreaId)?.ClaimedAward;
                 var stages = Stages(area, "_kAreaStageAward")
                     .Where(t => req.StageIds.GetValueOrDefault(t.Stage) && progress >= t.Need && claimed?.GetValueOrDefault(t.Stage) != true).ToArray();
@@ -221,7 +240,7 @@ public sealed class MonsterHuntService
                 {
                     var next = state.Clone();
                     if (!next.AreaInfo.TryGetValue(req.AreaId, out var info)) next.AreaInfo[req.AreaId] = info = new AreaConcurAreaInfo();
-                    info.CurScore = progress;
+                    info.CurScore = ClaimedInArea(next, req.AreaId, area);
                     foreach (var t in stages) info.ClaimedAward[t.Stage] = true;
                     await CommitClaimAsync(s, next, [.. stages.Select(t => t.Award)],
                         $"area/{req.AreaId}/{string.Join(",", stages.Select(t => t.Stage))}");
