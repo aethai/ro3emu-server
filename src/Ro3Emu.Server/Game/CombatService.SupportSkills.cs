@@ -26,8 +26,20 @@ public sealed partial class CombatService
     {
         "Offertorium" => HymnOfDevotionAsync(s, action),
         "GaBanTaYin" => GanbanteinAsync(s, action),
+        "Envenom" => EnvenomPoisonAsync(s, action, processed),
         _ => Task.CompletedTask,
     };
+
+    /// <summary>Envenom, class 1500501.. and Card: Poison Spore's 2004201: "Deals Physical ATK * ... Poison melee Physical DMG to a designated ST enemy
+    /// and applies [Poisoned] damage." _kLogicData names the row 15116xx "Poisoned", "Deals Poison-element melee Physical damage equal to Physical
+    /// ATK*20% to the specified ST enemy". (inferred) One hit of that row right after, on the one the cast reached, if still alive; an extra
+    /// cast pays nothing and sets off nothing of its own.</summary>
+    private async Task EnvenomPoisonAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed)
+    {
+        if (new SkillConfig(action.Row).LogicData is not [var id, ..] || SkillConfig.Get(_data, id) is not { } poison) return;
+        if (processed.FirstOrDefault(m => m.Hp > 0) is { } monster) await CastExtraAsync(s, poison.Row, [monster]);
+        else if (action.PlayersStruck.FirstOrDefault(p => !p.Dead) is { } player && CanPlayerHit(s, player)) await CastExtraOnPlayerAsync(s, poison, player);
+    }
 
     /// <summary>Hymn of Devotion 1431501, ["30","20","20","10"]: "HP equal to your MATK*${2}%+${3} every second to You and Party Members within
     /// ${1} m for ${4} s". Its buff holds the same numbers and no periodic formula, so each second reselects the party. (inferred) The first heal comes a second in.</summary>
@@ -59,7 +71,8 @@ public sealed partial class CombatService
     }
 
     /// <summary>Elements a live buff gives: Magnum Break 1100201 [11000,4,11400] "Basic Attack becomes Fire", Aspersio "becomes Holy",
-    /// Enchant Poison "becomes Poison-property". Keyed by group, as only Magnum Break's row holds a number that matches its text.</summary>
+    /// Enchant Poison "becomes Poison-property". Keyed by group, as only Magnum Break's row holds a number that matches its text. Card:
+    /// Marine Sphere's Magnum Break puts on its own 2092101, with the same text and no number.</summary>
     private static int ElementFromBuff(GameSession s)
     {
         foreach (var buff in s.Buffs)
@@ -67,7 +80,7 @@ public sealed partial class CombatService
             if (buff.ExpireMs <= Now) continue;
             switch (buff.ConfigId / 100)
             {
-                case 11002: return 4;
+                case 11002 or 20921: return 4;
                 case 14113: return 7;
                 case 15120: return 6;
             }

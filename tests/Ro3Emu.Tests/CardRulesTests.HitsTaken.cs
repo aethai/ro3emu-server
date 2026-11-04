@@ -629,4 +629,88 @@ public sealed partial class CardRulesTests
             Assert.Empty(rolled);
         }
     }
+
+    private const int MarineSphere = 1430602, CardMagnumBreak = 2004101, CardMagnumBuff = 2092101, PoisonSpore = 1420605, CardEnvenom = 2004201;
+
+    // Card: Marine Sphere T2 (its star raises ATK and MATK): grants Magnum Break 2004101, "increases your Fire DMG by 5%, and changes
+    // Normal Attacks to Fire for 8 sec." 2092101 [[304,500]] for 8000 ms. A Basic Attack's 31101 says Fire while it holds.
+    [ClientDataFact]
+    public async Task MarineSpheresMagnumBreakMakesBasicAttacksFireForItsSeconds()
+    {
+        var (alice, session) = await Holder("Alice", MarineSphere, 6);
+        await using (alice)
+        {
+            await AtStar(session, MarineSphere, 2);
+            var target = (await Dummies(session, 5000002))[0];
+            var plain = await Swing(alice, session, target);
+            await OnLoop(() => { session.Attack = null; return 0; });
+            Assert.Equal(1, plain.SrcElement);
+
+            await Cast(alice, CardMagnumBreak, target);
+            await OnLoop(() => { session.Attack = null; return 0; });
+            var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(x => x.ConfigId == CardMagnumBuff));
+            Assert.Equal(8000, shown.Buffs.Single(x => x.ConfigId == CardMagnumBuff).Duration);
+
+            var fire = await QuickSwing(alice, session, target);
+            Assert.InRange(fire.Damage, Raised(plain.Dsts[0].Damage, 500) - 1, Raised(plain.Dsts[0].Damage, 500) + 1); // Neutral target, EleConfig row 1 _iFire 0
+            var fireHit = SplashHits(alice, await OnLoop(() => Service<SkillService>().CurrentAttack(session)))[^1];
+            Assert.Equal(4, fireHit.SrcElement);
+
+            await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().RemoveAsync(session, session.Buffs.Single(b => b.ConfigId == CardMagnumBuff)));
+            Assert.Equal(plain.Dsts[0].Damage, (await QuickSwing(alice, session, target)).Damage);
+        }
+    }
+
+    // Card: Poison Spore grants Envenom 2004201, _kLogicData [1511601]: 31101 for the Envenom, then 31101 for "Poisoned", Poison, on the same monster.
+    [ClientDataFact]
+    public async Task PoisonSporesEnvenomFollowsWithItsPoisonedHit()
+    {
+        var (alice, session) = await Holder("Alice", PoisonSpore, 6);
+        await using (alice)
+        {
+            await AtStar(session, PoisonSpore, 1);
+            var target = (await Dummies(session, 5000002))[0];
+            var envenom = await Cast(alice, CardEnvenom, target);
+            var poisoned = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 1511601);
+            Assert.Equal(target.Uid, Assert.Single(poisoned.Dsts).DstID);
+            Assert.True(poisoned.Dsts[0].Damage > 0);
+            Assert.True(poisoned.Dsts[0].Damage < envenom.Dsts[0].Damage); // 20% of ATK against 72% + 32
+            Assert.Equal(6, poisoned.SrcElement);
+            await Task.Delay(200);
+            Assert.Single(SplashHits(alice, 1511601));
+        }
+    }
+
+    // Class Envenom at level 3: 1500503 [1511603].
+    [ClientDataFact]
+    public async Task ClassEnvenomFollowsWithThePoisonedRowOfItsLevel()
+    {
+        await using var alice = await InWorld("Alice");
+        var session = Session("Alice");
+        await Gm("alice", "!lvl 80");
+        await Gm("alice", "!job 5100");
+        await Service<GameLoop>().InvokeAsync(async () =>
+        {
+            using var held = await CharacterService.Lock(session);
+            session.Progress!.Skills[15005] = 3;
+        });
+        var target = (await Dummies(session, 5000002))[0];
+        await Cast(alice, 1500503, target);
+        var poisoned = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 1511603);
+        Assert.Equal(target.Uid, Assert.Single(poisoned.Dsts).DstID);
+    }
+
+    // On a player too.
+    [ClientDataFact]
+    public async Task EnvenomsPoisonedHitLandsOnAPlayer()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(PoisonSpore, 6, 0);
+        await using (alice)
+        await using (bob)
+        {
+            await CastAt(alice, a, CardEnvenom, b);
+            var poisoned = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 1511601);
+            Assert.Equal(b.Role!.Id, Assert.Single(poisoned.Dsts).DstID);
+        }
+    }
 }

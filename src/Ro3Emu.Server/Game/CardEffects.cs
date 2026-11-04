@@ -44,7 +44,9 @@ namespace Ro3Emu.Server.Game;
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
 /// Not executed (no machinery or no data link): armor element changes, status immunities, Endure,
 /// the uninterruptible cast, detection, indestructible gear.
-/// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
+/// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's
+/// buff makes Basic Attacks Fire (CombatService.ElementFromBuff), Envenom follows with its Poisoned row (CombatService.EnvenomPoisonAsync).
+/// Card: Kraken's "has a Chance to inflict Bleeding" has no tuple and no number, so only its always-Stun runs.
 /// </summary>
 public sealed class CardEffects
 {
