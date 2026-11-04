@@ -458,7 +458,7 @@
       ],
       "guessed": [
         "The bells stand at group 28 (points 29-31), where story 1014 reveals the gang; the shuffle animation is not reproduced.",
-        "Which bell hides Katie's ring (400134, message 11) is drawn when the round begins: the three rings swap places at random (step 'shuffle'), so the guess is a real one. Both stories show Katie at x 60 (point 31), the place the step lists her ring at; which of 400135/400136 is Louie's or Martha's bell does not matter (both send 12).",
+        "Katie's ring (400134, message 11) is under the bell at x 60 (point 31), where Katie stands in both stories; which of 400135/400136 is Louie's or Martha's bell does not matter (both send 12).",
         "A wrong guess (message 12) changes nothing and the player may choose again; the original consequence ('join us as our lowest-ranking lackey') is not recovered.",
         "Retrieving the instrument: NPC 400046 Strange Device (unit 100210 '教授的奇怪机器', interaction 40004601 'Pick up') at mark point 37, where guide point 38 leads; walking within 4 m also completes it."
       ],
@@ -482,7 +482,6 @@
             { "npc": 400135, "point": 30, "why": "ring: 'Choose this one!' sends message 12" },
             { "npc": 400134, "point": 31, "why": "Katie's ring: 'Choose this one!' sends message 11" }
           ],
-          "shuffle": { "npcs": [400134, 400135, 400136], "why": "the rings' places (29-31) are drawn when the round begins, so any bell may hide Katie (inferred); the bells stay" },
           "complete": [
             { "message": 11, "why": "the one choice that sends a different message: interaction 5300040 of ring 400134" }
           ],
@@ -547,7 +546,7 @@
         "When Louis's lines go out, from what they say: round 1 opens with 'Let's start the game!' and then 'Guess which Bell my cat is hiding in!', each when the previous one's _iTime has run out; round 2 opens with the second only; a wrong guess answers 'Sorry, wrong guess!'; a right one 'Congratulations ...' in round 1 and 'Darn ...' in round 2, and the next round (or the settlement) waits until that line's _iTime has run out. They go out as 1022 with Louie's uid, as Moonlight Flower's do.",
         "The right/wrong effects (buffs 5402101 SXGD_RIGHT, 5402201 SXGD_WRONG: their sound and effects play when the buff starts) are put on the Bell under the ring the player chose; the Bells of the next round drop them. Not checked in the live client.",
         "The bubbles 5310019-5310033 are not sent: which unit says which, and when, is not in the client.",
-        "Which Bell Katie hides under is drawn at the start of each round: the three rings swap places at random (step 'shuffle'). The steps list her under the Bell straight ahead of where she stands (point 31, east) in round 1 and under the west Bell (point 29) in round 2, which is only the layout the draw starts from; the shuffle is not animated. Louie and Martha watch from group 24; Katie, hidden, is not shown.",
+        "Katie hides under the Bell straight ahead of where she stands (point 31, east) in round 1 and moves to the west Bell (point 29) in round 2; the shuffle is not animated. Louie and Martha watch from group 24; Katie, hidden, is not shown.",
         "The Bells are 400138, the second Bell row (the Culvert uses 400137), at group 28 like the Culvert's; the rings stand on them.",
         "Marks 33-35 and 37 are not used: the Culvert's mark 37 was the instrument, and this scene has no second quest."
       ],
@@ -565,7 +564,6 @@
             { "npc": 400135, "point": 30, "why": "ring: 'Choose this one!' sends message 12" },
             { "npc": 400134, "point": 31, "why": "Katie's ring: 'Choose this one!' sends message 11" }
           ],
-          "shuffle": { "npcs": [400134, 400135, 400136], "why": "the rings' places (29-31) are drawn when the round begins (inferred); the Bells, Louie and Martha stay" },
           "complete": [
             { "message": 11, "why": "the one choice that sends a different message: interaction 5300040 of ring 400134" }
           ],
@@ -593,7 +591,6 @@
             { "npc": 400136, "point": 30, "why": "ring: message 12" },
             { "npc": 400135, "point": 31, "why": "ring: message 12" }
           ],
-          "shuffle": { "npcs": [400134, 400135, 400136], "why": "the cat moves: the rings' places are drawn again for round 2 (inferred)" },
           "complete": [
             { "message": 11, "why": "ring 400134 again: 'Darn, you got it right again! I give up.'" }
           ],
