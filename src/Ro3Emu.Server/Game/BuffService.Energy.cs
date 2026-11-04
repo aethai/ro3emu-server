@@ -142,6 +142,23 @@ public sealed partial class BuffService
         await SendEnergyAsync(p, energy, (EPlayerEnergyChangeReason)2);
     }
 
+    /// <summary>[Shield Stance]: "At ${6} stacks, your next ${7} Powerful Shield Bash" turn Ultra: the full meter becomes the mode buff's piles.</summary>
+    private async Task UltraBashAtFullAsync(GameSession p, int id, PlayerEnergyState meter, long limit)
+    {
+        if (id != ShieldStance || meter.Value < limit) return;
+        meter.Value = 0;
+        await AddCoreAsync(p, UltraBashBuff, UltraBashMs, p.Role!.Id, UltraBashCharges);
+    }
+
+    /// <summary>Reflect Damage: "there is a ... 50% Chance, respectively, to grant you 1 stack of [Shield Stance]".</summary>
+    internal async Task AddShieldStanceAsync(GameSession p)
+    {
+        if (!p.Energy.TryGetValue(ShieldStance, out var meter) || Data.Config.EnergyConfig.Get(_data, ShieldStance) is not { } config) return;
+        meter.Value = Math.Clamp(meter.Value + 1, 0, config.LimitValue);
+        await UltraBashAtFullAsync(p, ShieldStance, meter, config.LimitValue);
+        await SendEnergyAsync(p, ShieldStance, (EPlayerEnergyChangeReason)2);
+    }
+
     /// <summary>Takes this much from a meter, if it holds that much: a cost no row's _kCost names (Reading Spellbook's Book Pages).</summary>
     internal async Task<bool> TrySpendEnergyAsync(GameSession p, int energy, long amount)
     {
@@ -153,7 +170,8 @@ public sealed partial class BuffService
 
     // BuffConfig "Furious Storm"; the EnergyConfig meters Rain of Spears' mode 0 and mode 1 rows pay.
     internal const int FuriousStorm = 1132401;
-    private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003, PrecisionCounter = 140001;
+    private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003, PrecisionCounter = 140001, ShieldStance = 141002;
+    private const int UltraBashBuff = 1163101, UltraBashCharges = 3, UltraBashMs = 3_600_000;
 
     /// <summary>Sonic Burst's _kBuff1: "[Furious Storm]: Clears all current [Rain of Spears] charges and grants 5 charges of
     /// [Hundred Spear - Enhance]". The buff switches Rain of Spears to its Enhance row, which pays the second meter, and no
@@ -185,6 +203,7 @@ public sealed partial class BuffService
             meter.Value = 0;
             await AddEnergyAsync(p, RainSpearCharges, 1);
         }
+        await UltraBashAtFullAsync(p, id, meter, limit);
         await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)2);
     }
 

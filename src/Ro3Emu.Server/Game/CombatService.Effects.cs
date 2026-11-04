@@ -86,11 +86,14 @@ public sealed partial class CombatService
         if (!CurrentCastMap(s, action)) return;
         // SkillConfig._bMovement is enum_SkillLockMoveType (may the caster walk while casting), not a displacement.
         await EndReadingAsync(s, action);
+        if (ReturnsToShadow(s, row)) { await ReturnToShadowAsync(s, action); return; }
+        if (Script(row) is "RetreatingShadows" or "RetreatingShadowsS1") LeaveShadow(s, action);
         await MoveCasterAsync(s, action);
         if (!CurrentCastMap(s, action)) return;
         if (await StartChannelAsync(s, action)) return;
         if (Script(row) == "VenomSplasher") { await PlantDynamiteAsync(s, action); return; }
         if (Script(row) == "BombSuicide1") { await EnergyReleaseAsync(s, action); return; }
+        if (Script(row) == "AxeLeapAttack") { await HighEnergyTakeOffAsync(s, action); return; }
         if (Script(row) == "huixuanshizizhan") { await ApplyEffectsAsync(s, WithRow(action, await CrossRipperRowAsync(s, row)), action.Request.TargetPos ?? action.Origin); return; }
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
     }
