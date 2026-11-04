@@ -18,6 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed class PassiveSkills : IGameTicker
 {
+    private const int HolySpiritSurgeGroup = 14312;
     private const int DoubleHolyLight = 14311, Judex = 14309, EnchantBlade = 11313, EnergyCoat = 12003,
         EmergencyTreatment = 16303, SoulDrain = 12209, PreyOnTheWeak = 15316, PrayerOfGratitude = 14306,
         WoodSpiritsBlessing = 14307, Union = 11614, SoulExpansion = 12302, PsychokineticAstralBody = 12343, ElementControl = 12306;
@@ -110,7 +111,8 @@ public sealed class PassiveSkills : IGameTicker
         // calculated independently.)" _kLogicData [chance, row, chance, row] in basis points.
         if (cast.SkillId == Judex && Learned(s, DoubleHolyLight) is { Own: { LogicData: [var magicChance, var magic, var physicalChance, var physical, ..] } })
             foreach (var (chance, id) in new[] { (magicChance, magic), (physicalChance, physical) })
-                if (target.Hp > 0 && Roll(10000) < chance && SkillConfig.Get(_data, id) is { } row)
+                // Holy Spirit Surge: "During this time, the Chance to trigger [Duple Light] becomes ${3}%".
+                if (target.Hp > 0 && (s.Buffs.Any(b => b.ConfigId / 100 == HolySpiritSurgeGroup && b.ExpireMs > MonsterService.NowMs) || Roll(10000) < chance) && SkillConfig.Get(_data, id) is { } row)
                     await _combat.CastExtraAsync(s, row.Row, [target]);
         // Enchant Blade: "After dealing damage, increases your DEF by ${2}% for @{1} seconds." _kLogicData [the DEF buff,
         // whose _iTime is those seconds].

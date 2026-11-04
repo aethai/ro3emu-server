@@ -162,8 +162,10 @@ public sealed partial class BuffService : IGameTicker
         int stackType = (int)GameData.Int(row, "_iStackType");
         int maxStack = (int)Math.Max(1, GameData.Int(row, "_iMaxStack"));
         // Inferred server policy from enum_BuffStackType: named layer types add a pile; others refresh.
-        int pile = explicitPileCount ?? (existing != null && stackType is 1 or 2 or 3 or 7
+        int pile = explicitPileCount ?? (existing != null && existing.ExpireMs > now && stackType is 1 or 2 or 3 or 7
             ? Math.Min(maxStack, existing.PileCount + 1) : 1);
+        // LC_Buff_System.UpdateBuffData copies a known GUID's times, stack and source, never its config: a new level under the old GUID would keep the old row on the client.
+        if (existing != null && existing.ConfigId != configId) { await RemoveAsync(p, existing); existing = null; }
         IEnumerable<(long Id, double Value)> pairs = GameData.Pairs(row, "_kChangeAttri");
         if (SourceAttributes != null) pairs = SourceAttributes(sourceId, row, [.. pairs]);
         var changes = pairs.Select(c => (c.Id, c.Value * pile * attributeMultiplier)).ToList();
@@ -289,8 +291,9 @@ public sealed partial class BuffService : IGameTicker
         int stackType = (int)GameData.Int(row, "_iStackType");
         int maxStack = (int)Math.Max(1, GameData.Int(row, "_iMaxStack"));
         // (inferred) Match the player path: named layer types increase piles; other types refresh.
-        int pile = existing != null && stackType is 1 or 2 or 3 or 7
+        int pile = existing != null && existing.ExpireMs > MonsterService.NowMs && stackType is 1 or 2 or 3 or 7
             ? Math.Min(maxStack, existing.PileCount + 1) : 1;
+        if (existing != null && existing.ConfigId != configId) { await RemoveUnitBuffAsync(unit, existing); existing = null; }
         var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
             MonsterService.NowMs + durationMs, durationMs,
             [.. GameData.Pairs(row, "_kChangeAttri").Select(c => (c.Id, c.Value * pile * attributeMultiplier))], sourceId, pile,

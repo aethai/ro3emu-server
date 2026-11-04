@@ -360,6 +360,18 @@ public sealed partial class CombatService : IGameTicker
     /// Bolt 1200411, Lightning Bolt 1200503, Double Strafe 1300304) showed no hit; the bullet goes in 31120 instead
     /// (<see cref="BulletEffect"/>).
     /// </summary>
+    /// <summary>A heal's hit effect. HitEffect's fallback 1000002 plays ReceivingDamage, so a healed ally flinched: EffectData 14007800 and its family (show * 1000 + 800) hold only
+    /// the heal's own effect. Then any of the show's effects with no hit reaction, then none (inferred).</summary>
+    private int HealEffect(long scriptShow)
+    {
+        var effects = _data.SkillTemplateTable("Lua_Config_EffectData");
+        long own = scriptShow * 1000 + 800;
+        if (SkillEffectData.Find(effects, own) is { HasDamage: true }) return (int)own;
+        for (long id = scriptShow * 100; id < scriptShow * 100 + 100; id++)
+            if (SkillEffectData.Find(effects, id) is { HasDamage: true, HasHitReaction: false }) return (int)id;
+        return 0;
+    }
+
     private int HitEffect(long scriptShow)
     {
         var effects = _data.SkillTemplateTable("Lua_Config_EffectData");
@@ -783,7 +795,7 @@ public sealed partial class CombatService : IGameTicker
     /// </summary>
     internal static double DamageSource(JsonElement skill, double atk, double matk, bool magic) => new Data.Config.SkillConfig(skill).SkillId switch
     {
-        12201 => matk,
+        12201 or 14316 => matk, // 14316: Double Holy Light's "Neutral ranged Physical damage equal to your Magic ATK"
         15210 or 15240 => atk + matk,
         _ => magic ? matk : atk,
     };

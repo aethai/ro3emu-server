@@ -54,7 +54,8 @@ public sealed partial class BuffService
         var effect = new PeriodicEffect
         {
             Rule = rule, Player = player, Unit = unit, TargetId = player?.Role?.Id ?? unit!.Uid, Guid = buff.Guid, Source = source,
-            NextMs = MonsterService.NowMs + Math.Min(rule.IntervalMs, Math.Max(0, buff.DurationMs)),
+            // From the buff's own start, the time its end was counted from: a later clock read could put the last tick past its end.
+            NextMs = buff.ExpireMs - buff.DurationMs + Math.Min(rule.IntervalMs, Math.Max(0, buff.DurationMs)),
         };
         _periodic.Add(effect);
         _periodicByGuid[buff.Guid] = effect;

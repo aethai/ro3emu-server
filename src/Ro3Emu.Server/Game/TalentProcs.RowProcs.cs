@@ -74,7 +74,7 @@ public sealed partial class TalentProcs
                 break;
             // Arrow Barrage on Arrow Shower: "40% chance to cast 2 times, cooldown ${5} seconds", [group, chance]; its row's _iCD is the same 5 s.
             case "ArrowShowerBD" when logic is [_, var chance, ..] && _combat.Rolls.Proc(10000) < chance && Ready(s, ArrowBarrageKey, cast.Cd):
-                await _combat.CastExtraAsync(s, cast.Row, [.. processed.Where(m => m.Hp > 0)]);
+                await _combat.CastExtraAsync(s, cast.Row, [.. processed.Where(m => m.Hp > 0)], parametersApplied: true);
                 break;
         }
         if (target.Hp <= 0) return;
