@@ -101,7 +101,10 @@ public static partial class EconomySnapshotReader
     // newactivity receipt that also saves them.
     // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
     // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
-    public const string ExpectedFormatManifestHash = "77E95F108A58DBEB382686AF5C92D2F471FDFA040CD939D96667B0E8F626026D";
+    // First-clear rewards: role.dungeons DungeonService.State.FirstPassPaid names the bosses whose _iPartAward was paid;
+    // once-only markers, no balance and no asset (the goods are paid by the dungeon/first-pass-award receipt that writes
+    // the marker).
+    public const string ExpectedFormatManifestHash = "28C4A131F91BD077AFFDDD4A3F3DBDC343B4BFDA03022E05219E99EA38E64ACE";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State
