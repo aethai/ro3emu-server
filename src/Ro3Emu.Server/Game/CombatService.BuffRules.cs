@@ -23,8 +23,8 @@ public sealed partial class CombatService
 
     /// <summary>
     /// <see cref="RollBuff"/> for a buff a skill puts on someone else ([buff, chance, ms] of _kBuff2). Each
-    /// BuffTagConfig tag in the buff's _kBuffCategory scales it by 1 + (the applier's _iAtkAttrID - the target's
-    /// _iDefAttrID) / 10000 (BuffRuleTables.TagFactor, inferred arithmetic): formula 1 the chance (Curse, Blind,
+    /// BuffTagConfig tag in the buff's _kBuffCategory scales it by the applier's _iAtkAttrID against the target's
+    /// _iDefAttrID (BuffRuleTables.TagFactor): formula 1 the chance (Curse, Blind,
     /// Silence, Fear, Immobilize, Freeze, Petrify), formula 2 the duration (Poisoned, Bleeding, Burn, Paralyze, Sleep,
     /// Stun, Slow), the split the attributes' own tips state. A duration scaled to nothing does not land.
     /// </summary>
@@ -37,13 +37,14 @@ public sealed partial class CombatService
         duration = (int)(GameData.Number(tuple[2]) ?? 0);
         double chance = GameData.Number(tuple[1]) ?? 0;
         if (id <= 0) return false;
-        if (BuffRuleTables.For(_data).TagsByBuff.TryGetValue(id, out var tags))
+        var rules = BuffRuleTables.For(_data);
+        if (rules.TagsByBuff.TryGetValue(id, out var tags))
         {
             double lasting = 1;
             foreach (var tag in tags)
             {
-                double factor = BuffRuleTables.TagFactor(TagAttribute(sourcePlayer, sourceUnit, tag.AttackAttr),
-                    TagAttribute(targetPlayer, targetUnit, tag.DefenseAttr));
+                double factor = rules.TagFactor(TagAttribute(sourcePlayer, sourceUnit, tag.AttackAttr),
+                    TagAttribute(targetPlayer, targetUnit, tag.DefenseAttr), tag.Formula);
                 if (tag.Formula == 1) chance *= factor;
                 else lasting *= factor;
             }
