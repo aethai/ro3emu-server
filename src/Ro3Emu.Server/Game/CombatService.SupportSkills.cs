@@ -13,7 +13,18 @@ public sealed partial class CombatService
 
     /// <summary>Rows whose text names the caster as well as the ally they lock: Heal "for you and the designated ST ally", Highness Heal
     /// "to You and one designated ally", Kyrie Eleison "yourself and a designated ST ally". The data has no flag.</summary>
-    private static bool ReachesCasterToo(string script) => script is "Heal" or "HighHeal" or "S1_Poem" or "Kyrie_Eleison";
+    private static bool ReachesCasterToo(string script) => script is "Heal" or "HighHeal" or "S1_Poem" or "Kyrie_Eleison" or "Aspersio";
+
+    /// <summary>"you and up to ${2} allies within a ${1}m radius", on a row whose TargetMax 10 and radius say so while its selector [2,2,-1] says self only.
+    /// The text and the row's two numbers against the selector: they reach allies (inferred).</summary>
+    private static bool ReachesAlliesDespiteSelector(string script) => script is "Magnificat" or "ImpositioManus" or "Assumptio";
+
+    /// <summary>"You and Party Members within ...": Hymn of the Lamb, Sacred Lily, Prayer of the Holy Spirit, Hymn of Devotion.</summary>
+    private static bool PartyOnly(string script) => script is "Praefatio" or "Cantocandidus" or "Epiclesis" or "Offertorium";
+
+    /// <summary>Radiant Holy Light: "up to ${2} allies ... prioritizing Party Members".</summary>
+    private bool OutsideThePartyAsLast(GameSession s, GameSession p, string script) =>
+        script == "ColuseoHeal" && p != s && SameParty?.Invoke(s, p) != true;
 
     /// <summary>Harmony Heal [3000,6000]: "restores Life equal to Magic ATK*30%. If the unit is a party Member, ... 60%".</summary>
     private double HealRatio(GameSession healer, GameSession recipient, JsonElement row, string script)

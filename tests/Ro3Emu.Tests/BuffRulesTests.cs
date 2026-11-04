@@ -236,6 +236,22 @@ public sealed class BuffRulesTests : IAsyncLifetime
     // ---- 4. HaloConfig ----
 
     [ClientDataFact]
+    public void AurasOfHigherLevelsTakeTheirGroupsNumbers()
+    {
+        Assert.Equal([1150210], Rules.Halos[1150510].Applied); // Battle Chant Lv. 10: -50 ATK
+        Assert.True(Rules.Halos[1150510].Hostile);
+        Assert.Equal(10f, Rules.Halos[1150510].Radius);
+        Assert.Equal([1150310], Rules.Halos[1150610].Applied); // its other half: +50 DEF for you and allies
+        Assert.False(Rules.Halos[1150610].Hostile);
+        Assert.True(Rules.Halos[1150610].IncludeSelf);
+        Assert.Equal([1154310], Rules.Halos[1154610].Applied); // Battle Chant Enhance
+        Assert.True(Rules.Halos[1154610].Hostile);
+        Assert.Equal([1154410], Rules.Halos[1154710].Applied);
+        Assert.False(Rules.Halos[1154710].Hostile);
+        Assert.Equal([1161710], Rules.Halos[1161610].Applied); // Shield Defense Lv. 5
+    }
+
+    [ClientDataFact]
     public void HalosJoinTheirBuffRowsTargetsAndSides()
     {
         var focus = Rules.Halos[15302101];

@@ -94,11 +94,15 @@ internal static class SkillParameterRules
         session.Items.Any(i => i.Grid is 1 or 2 && ItemConfig.Get(data, i.Entry) is { } item && item.SubType == subType);
 
     /// <summary>Does the session carry a live buff of this BuffConfig._iBuffID group.</summary>
+    /// <summary>Battle Chant Enhance's form carries 11546 in place of 11505; "While [Battle Chant] is active" holds on it too.</summary>
+    private const long BattleChantGroup = 11505, EnhancedBattleChantGroup = 11546;
+
     internal static bool HasBuffGroup(GameSession session, GameData data, long group)
     {
         long now = MonsterService.NowMs;
         foreach (var buff in session.Buffs)
-            if (buff.ExpireMs > now && BuffConfig.Get(data, buff.ConfigId) is { } row && row.BuffId == group) return true;
+            if (buff.ExpireMs > now && BuffConfig.Get(data, buff.ConfigId) is { } row
+                && (row.BuffId == group || group == BattleChantGroup && row.BuffId == EnhancedBattleChantGroup)) return true;
         return false;
     }
 
