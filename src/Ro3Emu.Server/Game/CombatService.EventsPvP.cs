@@ -134,7 +134,7 @@ public sealed partial class CombatService
     /// (GuardianPlayerDebuffsAsync). After the hit, so the hit does not break a Sleep it brought itself.</summary>
     private async Task PvpHitDebuffsAsync(GameSession source, GameSession target, JsonElement row, Func<bool> current)
     {
-        if (IsGuardianEffect(row)) return;
+        if (IsGuardianEffect(row) || Script(row) == "HolyLight2") return; // Signum Crucis reaches Undead and Demons, and players are Demi-Human
         foreach (var tuple in HostileBuffs(row))
             if (current() && CanPlayerHit(source, target) && RollHostileBuff(tuple, source, null, target, null, out int id, out int duration))
                 await _buffs.AddAsync(target, id, duration, source.Role!.Id);

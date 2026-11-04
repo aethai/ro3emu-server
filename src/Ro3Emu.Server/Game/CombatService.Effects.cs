@@ -88,6 +88,7 @@ public sealed partial class CombatService
         await MoveCasterAsync(s, action);
         if (!CurrentCastMap(s, action)) return;
         if (await StartChannelAsync(s, action)) return;
+        if (Script(row) == "VenomSplasher") { await PlantDynamiteAsync(s, action); return; }
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
     }
 
@@ -120,8 +121,12 @@ public sealed partial class CombatService
     private List<MonsterUnit> SelectEnemies(GameSession s, ActiveSkillCast action, Vec3 center, float? radiusOverride = null)
     {
         var row = action.Row;
-        int max = (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
-        if ((GameData.Int(row, "_iRangeType") != 2 || LocksItsTarget(row) && action.Request.TargetId != 0) && radiusOverride == null)
+        if (radiusOverride == null && EnemiesByText(s, action, center) is { } byText) return byText;
+        var skill = new SkillConfig(row);
+        int max = Script(row) is "LandMine" or "ClaymoreTrap" or "FreezingTrap" or "BlastMine" ? TrapTargets(row)
+            : Script(row) == "BombSuicide1" ? int.Parse(skill.DescData[2], System.Globalization.CultureInfo.InvariantCulture) // Energy Release: "up to ${3} enemies"; its row holds 1
+            : (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
+        if ((GameData.Int(row, "_iRangeType") != 2 && !AreaDespiteRangeType(skill) || LocksItsTarget(row) && action.Request.TargetId != 0) && radiusOverride == null)
         {
             var target = FindMonster(s.WorldScene, action.Request.TargetId);
             return target != null && target.Hp > 0 && CanHitMonster(s, target) && Relation(row, false, race: target.Template.Race) ? [target] : [];
@@ -264,7 +269,8 @@ public sealed partial class CombatService
                 }
                 if (CanApplyMoreEffects())
                     foreach (var tuple in Tuples(row, "_kBuff2"))
-                        if (CanApplyMoreEffects() && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(target.Uid))
+                        // Signum Crucis on Holy Light: "reduces the Physical DEF of Undead-property targets and Demon Race targets"
+                        if (CanApplyMoreEffects() && (script != "HolyLight2" || target.Template.Race == DemonRace || target.Template.Element == UndeadElement) && GuardianAllowsHostileBuff(row, tuple, alreadySlowed.Contains(target.Uid))
                             && RollHostileBuff(tuple, s, null, null, target, out int id, out int duration))
                         {
                             await _buffs.AddSupportAsync(target, id, duration, castingRole.Id,
@@ -284,7 +290,7 @@ public sealed partial class CombatService
                 if (field == null)
                     foreach (var tuple in Tuples(row, "_kBuff1"))
                         if (CanApplyMoreEffects() && RollBuff(tuple, out int id, out int duration)
-                            && SkillBuffAllowed?.Invoke(s, recipient, id) != false)
+                            && SkillBuffAllowed?.Invoke(s, recipient, id) != false && JobAllowsBuff(script, id, recipient))
                             // "For each enemy hit, You gain a Shield": a stacking shield (Rift Impact, _iMaxStack 3) lands once per enemy, up to its stack.
                             for (int pile = PilesFor(id, targets.Count); pile > 0 && CanApplyMoreEffects(); pile--)
                                 await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);
