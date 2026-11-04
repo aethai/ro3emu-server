@@ -224,6 +224,10 @@ public sealed class RaidTrialTests : IAsyncLifetime
     private static Task<SkillHitInfo> MechanicHit(BotClient bot, long skill) => Next(bot, CombatService.SkillHit, SkillHitInfo.Parser,
         h => h.SkillId == skill && h.Dsts.Any(d => d.DstID == (long)bot.Self!.Uuid));
 
+    // Names the punishment that landed when a solved trial still hit.
+    private static void NoHitOf(BotClient bot, params long[] skills) => Assert.Empty(bot.Inbox.Snapshot()
+        .Where(e => e.IsGame(CombatService.SkillHit)).Select(e => (long)SkillHitInfo.Parser.ParseFrom(e.Body).SkillId).Where(skills.Contains));
+
     private long MaxHp(BotClient bot) => Service<CharacterService>().Stats(Session(bot))[101];
 
     // Isti's Ocean Concerto: a note for the player, bubbles of the notes in play; taking one of your note gives Bubble
@@ -245,7 +249,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.All(shown, b => Assert.Equal(mine, b.NpcId)); // alone, every bubble is of the note she holds
         var first = shown[0];
         await Gm(alice, FormattableString.Invariant($"!actors walk {first.X} {first.Z}"));
-        Assert.Equal(14720301, await BuffOf(alice, [14720301])); // Bubble Movement
+        await UntilBuff(alice, 14720301); // Bubble Movement
         Assert.Equal(3, (await InRoom<DungeonService.SceneActorUnit>(instance, u => bubbles.Contains(u.NpcId))).Length);
         long max = MaxHp(alice);
         var hit = await MechanicHit(alice, 14721101); // three bubbles reach the orb: 30%
@@ -269,7 +273,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(4, circle.EntityType); // a trigger, as NPCConfig types it
         await WalkTo(alice, circle);
         await Tip(alice, 4616); // "someone who can keep up with my steps"
-        Assert.Equal(14742501, await BuffOf(alice, [14742501])); // Perfect State
+        await UntilBuff(alice, 14742501); // Perfect State
         Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 14740002));
     }
 
@@ -304,8 +308,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         for (int i = 0; i < 100 && await BuffOf(alice, [14761401]) == 0; i++) await Task.Delay(20);
         Assert.Equal(14761401, await BuffOf(alice, [14761401])); // Green Energy Barrier
         Assert.Empty(await InRoom<DungeonService.SceneActorUnit>(instance, u => circles.Contains(u.NpcId) || pickups.Contains(u.NpcId)));
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 14769000);
+        NoHitOf(alice, 14769000);
     }
 
     // Mirko: a lone tester gets one safe zone (the two-zone line); leaving it empty lets the beat explode. Then the
@@ -340,6 +343,13 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
 
+    // A trial lands its hit first and its buff right after, so a buff is waited for, not read once.
+    private async Task UntilBuff(BotClient bot, int buff)
+    {
+        for (int i = 0; i < 200 && await BuffOf(bot, [buff]) != buff; i++) await Task.Delay(20);
+        Assert.Equal(buff, await BuffOf(bot, [buff]));
+    }
+
     private async Task UntilBuffGone(BotClient bot, int buff)
     {
         for (int i = 0; i < 200 && await BuffOf(bot, [buff]) != 0; i++) await Task.Delay(20);
@@ -358,7 +368,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         var blade = Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43100002));
         await WalkTo(alice, blade);
         await Tip(alice, 4314404); // "Use the skill granted by the giant blade while facing Orc Hero!"
-        Assert.Equal(4310401, await BuffOf(alice, [4310401]));
+        await UntilBuff(alice, 4310401);
         await Strike(alice, orc);
         await Tip(alice, 4314405); // the shield broke and dropped
         await UntilBuffGone(alice, 4310401);
@@ -366,18 +376,17 @@ public sealed class RaidTrialTests : IAsyncLifetime
 
         await Gm(alice, "!raidtrial 2");
         await Tip(alice, 4314406);
-        Assert.Equal(4311601, await BuffOf(alice, [4311601])); // alone, she is the marked one
+        await UntilBuff(alice, 4311601); // alone, she is the marked one
         var shield = Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43100004));
         await WalkTo(alice, shield);
-        Assert.Equal(4310601, await BuffOf(alice, [4310601]));
+        await UntilBuff(alice, 4310601);
         await UntilBuffGone(alice, 4311601); // the trial is over
 
         await Gm(alice, "!raidtrial 3"); // Blade Deflection: alone, nobody for the kunai to ricochet to
         for (int i = 0; i < 100 && await BuffOf(alice, [4311601]) == 0; i++) await Task.Delay(20);
         Assert.Equal(4311601, await BuffOf(alice, [4311601]));
         await UntilBuffGone(alice, 4311601);
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4311801 or 4312501 or 4310901);
+        NoHitOf(alice, 4311801, 4312501, 4310901);
     }
 
     // Drake: a barrel landing on a ghost ship sinks it; the ship left charges its lane and hits whoever stands in it.
@@ -430,7 +439,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         long max = MaxHp(alice);
         await Gm(alice, "!raidtrial 1");
         await Tip(alice, 5005);
-        Assert.Equal(4382301, await BuffOf(alice, [4382301]));
+        await UntilBuff(alice, 4382301);
         var cage = Assert.Single(await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4380002 && !m.Dead));
         await Break(alice, cage);
         await UntilBuffGone(alice, 4382301); // set free
@@ -449,9 +458,8 @@ public sealed class RaidTrialTests : IAsyncLifetime
         await Tip(alice, 5006);
         Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4380006)); // under her
         Assert.Equal(max * 35 / 100, (await MechanicHit(alice, 4380701)).Dsts.Single().Damage);
-        Assert.Equal(4381901, await BuffOf(alice, [4381901])); // Blind
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4380501 or 4380601);
+        await UntilBuff(alice, 4381901); // Blind
+        NoHitOf(alice, 4380501, 4380601);
     }
 
     // Golden Thief Bug: a wormhole takes the player to the next one; a storm lane left too late costs HP. Lured onto a
@@ -498,8 +506,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         });
         await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == bug.Uid && u.SkillID == 4305901); // he burrows
         await UntilGone(instance, 4300002);
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4305301);
+        NoHitOf(alice, 4305301);
     }
 
     /// <summary>The scripted pace (percent of the real timing) for what follows.</summary>
@@ -558,13 +565,12 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.Equal(2, pillars.Length); // at least two
         await WalkBehind(alice, pillars[0], maya, 3);
         await UntilGone(instance, 4340006);
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4342601);
+        NoHitOf(alice, 4342601);
 
         await Gm(alice, "!raidtrial 2");
         Assert.Single(await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4340015)); // under her
         Assert.Equal(max * 30 / 100, (await MechanicHit(alice, 4342301)).Dsts.Single().Damage);
-        Assert.Equal(4340301, await BuffOf(alice, [4340301])); // Petrify
+        await UntilBuff(alice, 4340301); // Petrify
 
         await Gm(alice, "!hp 999999999");
         await OnLoop(() => { maya.Hp = maya.Template.MaxHp * 39 / 100; return Task.CompletedTask; });
@@ -602,8 +608,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         }
         for (int i = 0; i < 100 && await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonAttempt!.Raid!.Active != null)); i++)
             await Task.Delay(20);
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4361401);
+        NoHitOf(alice, 4361401);
 
         Pace(10);
         await Gm(alice, "!raidtrial 2");
@@ -622,7 +627,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         long max = MaxHp(alice);
         await Gm(alice, "!raidtrial 1");
         Assert.Equal("Alice", (await Tip(alice, 4370001)).ParamList[1].Params[0]); // "Your teammate Alice is trapped"
-        Assert.Equal(4370501, await BuffOf(alice, [4370501])); // the Shroud
+        await UntilBuff(alice, 4370501); // the Shroud
         var coffin = Assert.Single(await UntilInRoom<MonsterUnit>(instance, m => m.Template.NpcId == 4370002 && !m.Dead));
         await Break(alice, coffin);
         await UntilBuffGone(alice, 4370501);
@@ -636,15 +641,14 @@ public sealed class RaidTrialTests : IAsyncLifetime
 
         await Gm(alice, "!raidtrial 3");
         await Tip(alice, 4370005);
-        Assert.Equal(4374901, await BuffOf(alice, [4374901]));
+        await UntilBuff(alice, 4374901);
         await UntilBuffGone(alice, 4374901); // alone: nobody beside her
 
         await Gm(alice, "!raidtrial 4");
         var eyes = await UntilInRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 4370004, 2);
         await WalkAhead(alice, eyes[0], 15);
         Assert.Equal(max * 50 / 100, (await MechanicHit(alice, 4375101)).Dsts.Single().Damage);
-        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
-            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId is 4372101 or 4371101 or 4370401);
+        NoHitOf(alice, 4372101, 4371101, 4370401);
     }
 
     // Baphomet: a stone pillar's shadow keeps his full-screen attack off, then the pillar blasts those beside it; the
