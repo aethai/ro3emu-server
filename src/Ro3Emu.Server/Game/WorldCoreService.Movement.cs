@@ -24,8 +24,8 @@ public sealed partial class WorldCoreService
     {
         if (_worldData.Map(scene) is not { } map) return false;
         if (scene != s.SceneEntry) return await this._scene.EnterSceneAsync(s, scene, map.KafraArrival);
-        var spots = map.RandomSpots;
-        if (spots.Count == 0) return false;
+        var spots = await _worldData.RandomSpotsAsync(map, scene);
+        if (spots.Count == 0 || s.SceneEntry != scene) return false;
         await this._scene.TeleportInMapAsync(s, spots[Random.Shared.Next(spots.Count)]);
         return true;
     }

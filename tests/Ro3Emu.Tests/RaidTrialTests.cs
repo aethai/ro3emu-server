@@ -348,7 +348,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
     }
 
     // At the tests' 10% pace a trial's buff can come and go between two looks, so its notice is what is waited for.
-    private static Task UntilBuff(BotClient bot, int buff) =>
+    private static Task<BuffUpdateNotify> UntilBuff(BotClient bot, int buff) =>
         Next(bot, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == buff));
 
     private async Task UntilBuffGone(BotClient bot, int buff)
