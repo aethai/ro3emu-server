@@ -636,7 +636,7 @@ public sealed partial class CombatService
     {
         if (Script(row) != "PinpointAttack2") return null;
         var (effect, ms) = MovementEffectById(_data, 1162411);
-        float distance = (float)Numbers(row, "_kDescData").ElementAtOrDefault(0);
+        float distance = new SkillConfig(row).DescData is [var metres, ..] && float.TryParse(metres, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float read) ? read : 0;
         return effect != 0 && distance > 0 ? (DisplaceKind.CasterForward, distance, effect, ms) : null;
     }
 
