@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
@@ -43,20 +44,36 @@ public sealed partial class WorldCoreService
         await ToSelfAndViewersAsync(s, LifeStatus, new PlayerLifeStatusNotify { EntityId = s.Role.Id, PlayerLifeStatus = (EPlayerLifeStatus)2 });
     }
 
+    // Revive [Buff Effect]: "When [Resurrection] Revives a target below Base ${1}, its HP and SP recovery are increased by ${2}%."
+    private const long ReviveBuffEffect = 1422001;
+
+    private static bool BelowRevivedBase(GameSession source, GameSession target) =>
+        source.TalentProcBuffs.FirstOrDefault(t => t.Buff == ReviveBuffEffect).Description is [var level, ..]
+        && double.TryParse(level, NumberStyles.Float, CultureInfo.InvariantCulture, out double below) && target.Progress?.Level < below;
+
+    /// <summary>A revive row's _kDamageParamExtra [2, share, 101 Life or 102 MP, ...]. The talent's mode row lists two pairs:
+    /// 1411211 has 4000 then 3000 where the plain row has 3000, so the first is the raised one, the last the plain one.</summary>
+    internal static (long Hp, long Sp) ReviveRates(JsonElement skill, bool raised)
+    {
+        long? hp = null, sp = null;
+        if (skill.TryGetProperty("_kDamageParamExtra", out var extra) && extra.ValueKind == JsonValueKind.Array)
+            foreach (var row in extra.EnumerateArray())
+                if (row.ValueKind == JsonValueKind.Array && row.GetArrayLength() >= 3 && GameData.Number(row[0]) == 2)
+                {
+                    long share = (long)(GameData.Number(row[1]) ?? 0);
+                    if (GameData.Number(row[2]) == 101 && (!raised || hp == null)) hp = share;
+                    if (GameData.Number(row[2]) == 102 && (!raised || sp == null)) sp = share;
+                }
+        return (hp ?? 10000, sp ?? 10000);
+    }
+
     private async Task OfferReviveAsync(GameSession source, GameSession target, JsonElement skill)
     {
         if (!target.Dead || !Ready(source) || !Ready(target) || source.WorldScene != target.WorldScene || _dungeons.ExternalReviveError(target) != 0) return;
         var state = target.WorldState;
         state.ReviveSource = source.Role!.Id;
         state.ReviveExpiresMs = Now + 30000; // Inferred invitation timeout; wire uses absolute milliseconds.
-        state.ReviveHpRate = 10000; state.ReviveSpRate = 10000;
-        if (skill.TryGetProperty("_kDamageParamExtra", out var extra) && extra.ValueKind == JsonValueKind.Array)
-            foreach (var row in extra.EnumerateArray())
-                if (row.ValueKind == JsonValueKind.Array && row.GetArrayLength() >= 3 && GameData.Number(row[0]) == 2)
-                {
-                    if (GameData.Number(row[2]) == 101) state.ReviveHpRate = (long)(GameData.Number(row[1]) ?? 0);
-                    if (GameData.Number(row[2]) == 102) state.ReviveSpRate = (long)(GameData.Number(row[1]) ?? 0);
-                }
+        (state.ReviveHpRate, state.ReviveSpRate) = ReviveRates(skill, BelowRevivedBase(source, target));
         await target.SendGameAsync(ReliveInvitation, new EntityReliveReceiveInviteNotify
         {
             SourceEntityID = source.Role.Id, TargetEntityID = target.Role!.Id,
