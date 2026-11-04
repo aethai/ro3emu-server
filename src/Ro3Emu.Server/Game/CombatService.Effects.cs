@@ -194,10 +194,11 @@ public sealed partial class CombatService
                 // the client sent, which nothing checks for those releases.
                 var around = field != null || new SkillConfig(row).Release is SkillRelease.DragRect or SkillRelease.DragCircle
                     ? center : action.Origin;
-                allies.AddRange(_world.PlayersIn(s.WorldScene).Where(p => !p.Dead && Relation(row, true, p == s)
+                allies.AddRange(_world.PlayersIn(s.WorldScene).Where(p => !p.Dead && (Relation(row, true, p == s) || ReachesAlliesDespiteSelector(script))
+                    && (!PartyOnly(script) || p == s || SameParty?.Invoke(s, p) == true)
                     && (field != null && new SkillConfig(row).Range.Length > 1 ? SkillAreaContains(row, action.Origin, center, action.Request.Face, p.Position)
                         : p == s || radius > 0 && Distance(p.Position, around) <= radius))
-                    .OrderBy(p => Distance(p.Position, around)).Take((int)Math.Max(1, new SkillConfig(row).TargetMax)));
+                    .OrderBy(p => OutsideThePartyAsLast(s, p, script)).ThenBy(p => Distance(p.Position, around)).Take((int)Math.Max(1, new SkillConfig(row).TargetMax)));
                 if (allies.Count == 0 && Relation(row, true, true)) allies.Add(s);
             }
         }
@@ -915,11 +916,16 @@ public sealed partial class CombatService
         foreach (var unit in s.SkillObjects.ToArray()) await RemoveSkillObjectAsync(unit);
     }
 
-    private async Task<bool> GroundProtectsAsync(GameSession target, JsonElement? skill)
+    /// <summary>Safety Wall: "protecting up to ${3} allies within the area from incoming melee Physical" hits, logic[0] allies; Pneuma likewise, ranged
+    /// Physical, "a single ally". Which of those inside is (inferred): the nearest to its centre.</summary>
+    internal async Task<bool> GroundProtectsAsync(GameSession target, JsonElement? skill)
     {
         int distanceType = skill is { } row ? (int)GameData.Int(row, "_iDistanceType") : 1;
+        if (skill is { } incoming && new SkillConfig(incoming).DmgType == 2) return false;
         var field = _world.Map(target.WorldScene).Units.OfType<SkillObject>().FirstOrDefault(u => !u.Removing && u.ExpiresMs > Now
-            && u.ProtectionDistanceType == distanceType && u.Charges > 0 && Distance(u.Pos, target.Position) <= u.Radius);
+            && u.ProtectionDistanceType == distanceType && u.Charges > 0 && Distance(u.Pos, target.Position) <= u.Radius
+            && _world.PlayersIn(target.WorldScene).Where(p => !p.Dead && Distance(u.Pos, p.Position) <= u.Radius).OrderBy(p => Distance(u.Pos, p.Position))
+                .Take((int)Math.Max(1, new SkillConfig(u.Cast.Row).LogicData.FirstOrDefault(1))).Contains(target));
         if (field == null) return false;
         if (--field.Charges == 0) await RemoveSkillObjectAsync(field);
         return true;
