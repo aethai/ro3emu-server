@@ -16,7 +16,7 @@ public sealed partial class CombatService
     private const int EmpoweredWargStrikeBuff = 1333101, BladeMeter = 540002, DarkIllusionMarkGroup = 15301, CrossRipperGroup = 15302;
     private const int FirepowerPilesGroup = 16313, FirepowerGroup = 16317, FirepowerBuff = 1631701, CannonEnhanceBuff = 1632001;
     private const int FirepowerAttacks = 3, EnergyReleaseShield = 1635101, EnergyReleaseRow = 1635201, ControlImmunity = 903201;
-    private const int JointBeatGroup = 11221, ShatteredPartGroups = 11222;
+    private const int JointBeatGroup = 11221, ShatteredPartGroups = 11222, JetAccelerationBuff = 1634901, UltraBashGroup = 11631;
     /// <summary>(inferred) These buffs carry no time of their own, -1 in their rows; they end when they are spent.</summary>
     private const int UntilSpentMs = 3_600_000;
 
@@ -26,7 +26,8 @@ public sealed partial class CombatService
     private static bool IsArmCannon(string script) => script.StartsWith("ArmCannon", StringComparison.Ordinal);
 
     /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.</summary>
-    private static bool ComesFromALoop(string script, int buff) => buff / 100 == FirepowerGroup && script is "VulcanArm" or "FlameLauncher";
+    private static bool ComesFromALoop(string script, int buff) => buff / 100 == FirepowerGroup && script is "VulcanArm" or "FlameLauncher"
+        || script == "AxeLeapAttack2" && buff == 1634601; // the shield came with the flight
 
     private async Task ClassLoopsOnCastAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
     {
@@ -43,6 +44,18 @@ public sealed partial class CombatService
             case "WolfAttackPlus":
                 foreach (var empowered in s.Buffs.Where(b => b.ConfigId == EmpoweredWargStrikeBuff).ToArray()) await _buffs.RemoveAsync(s, empowered);
                 break;
+            case "AxeLeapAttack2":
+                await HighEnergyLandingAsync(s, skill, processed);
+                break;
+            // Aerial Bombardment: "You have [Immunity] while using the skill ... Increases MSPD by ${5}% for the skill's duration": its buff 1634901 is in no row.
+            case "HighAltitudeBombing":
+                await _buffs.AddAsync(s, JetAccelerationBuff, Math.Max(1, action.ActionMs), s.Role!.Id);
+                await _buffs.AddAsync(s, ControlImmunity, Math.Max(1, action.ActionMs), s.Role!.Id);
+                break;
+            // Ultra Shield Bash: "your next ${7} Powerful Shield Bash": each spends a pile of the mode buff.
+            case "Smite2":
+                await _buffs.ConsumeBuffPilesAsync(s, UltraBashGroup, 1);
+                break;
             // Rolling Cutter: "adds ${6} blades to Cross Ripper Slasher, up to ${7}".
             case "huixuandaoren" or "huixuandaorenS1" when processed.Count > 0:
                 await _buffs.AddEnergyAsync(s, BladeMeter, (long)Desc(5));
@@ -58,6 +71,7 @@ public sealed partial class CombatService
                 await _buffs.AddAsync(s, CannonEnhanceBuff, UntilSpentMs, s.Role!.Id);
                 break;
         }
+        if (script.StartsWith("AxeTornado", StringComparison.Ordinal)) await HighEnergyPulsesAsync(s, skill);
         // [Firepower Loaded]: "for ${9} attacks"; each spends a pile, and the last ends the mode it holds.
         if (IsArmCannon(script) && skill.Mode == 1 && await _buffs.ConsumeBuffPilesAsync(s, FirepowerGroup, 1) && !_buffs.HasBuffPiles(s, FirepowerGroup, 1))
             foreach (var enhance in s.Buffs.Where(b => b.ConfigId == CannonEnhanceBuff).ToArray()) await _buffs.RemoveAsync(s, enhance);

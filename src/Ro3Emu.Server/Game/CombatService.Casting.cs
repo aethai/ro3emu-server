@@ -590,6 +590,7 @@ public sealed partial class CombatService
 
     private async Task StartCooldownAsync(GameSession s, JsonElement row, int? askedMode = null)
     {
+        if (ShadowEchoWaits(s, row)) return;
         if ((s.GmCombat & GmCombatSwitches.NoCooldown) != 0) return; // GmNoCD / GmUnlimit 1: no skill cooldown starts
         int group = (int)GameData.Int(row, "_iSkillID"), mode = (int)GameData.Int(row, "_iMode");
         var stats = _character.Stats(s);
