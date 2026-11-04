@@ -12,7 +12,8 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class TalentProcs
 {
     private const int EnchantPoisonGroup = 15120, FearBreezeGroup = 13301, MeltDownGroup = 16203, ChargeUpGroup = 11604, WargAutoGroup = 13317;
-    private const long MeteoriteRow = 1235001, FearBreezeRows = 13304, WargStrike = 13312;
+    private const long MeteoriteRow = 1235001, FearBreezeRows = 13304, WargStrike = 13312, WargBite = 13325;
+    private const int WargKingGroup = 13326, WargFollowers = 4;
     private const long FireElement = 4, UndeadElement = 10, BowWeapon = 11, WeaponCondition = 2001, CrescentWheel = 16308, AxeTornado = 16304;
     private const long WargAutoKey = -13317, ArrowBarrageKey = -13004;
     private const int WargAutoEveryMs = 2500;
@@ -52,6 +53,14 @@ public sealed partial class TalentProcs
         // Crescent Wheel: "For every @{1} enemies hit, reduce Axe Tornado's Cooldown by ${4} seconds".
         if (cast.SkillId == CrescentWheel && processed.Count > 0) await CombatService.CutCooldownAsync(s, (int)AxeTornado, (long)(Value(cast.DescData, 3) * 1000) * processed.Count);
         if ((processed.FirstOrDefault(m => m.Uid == action.Request.TargetId) ?? (processed.Count > 0 ? processed[0] : null)) is not { Hp: > 0 } target) return;
+        // King of the Wargs: "casting [Warg Charge] causes ${2} wolf followers to charge alongside you, dealing ${2} Extra hits", "Casting [Warg Bite] causes ${4} wolf followers to bite":
+        // its buff holds the two rows, the second already three words.
+        if (Holding(s, WargKingGroup) is { } king && BuffConfig.Get(_data, king.ConfigId)?.LogicData is [var chargeRow, var biteRow, ..])
+        {
+            if (cast.SkillId == WargStrike)
+                for (int follower = 0; follower < WargFollowers && target.Hp > 0; follower++) await CastNamedRowAsync(s, chargeRow, [target]);
+            else if (cast.SkillId == WargBite && target.Hp > 0) await CastNamedRowAsync(s, biteRow, [target]);
+        }
         var logic = cast.LogicData;
         switch (cast.ScriptLogic)
         {

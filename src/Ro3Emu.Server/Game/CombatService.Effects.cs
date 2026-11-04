@@ -90,6 +90,8 @@ public sealed partial class CombatService
         if (!CurrentCastMap(s, action)) return;
         if (await StartChannelAsync(s, action)) return;
         if (Script(row) == "VenomSplasher") { await PlantDynamiteAsync(s, action); return; }
+        if (Script(row) == "BombSuicide1") { await EnergyReleaseAsync(s, action); return; }
+        if (Script(row) == "huixuanshizizhan") { await ApplyEffectsAsync(s, WithRow(action, await CrossRipperRowAsync(s, row)), action.Request.TargetPos ?? action.Origin); return; }
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
     }
 
@@ -295,7 +297,7 @@ public sealed partial class CombatService
                 if (field == null)
                     foreach (var tuple in Tuples(row, "_kBuff1"))
                         if (CanApplyMoreEffects() && RollBuff(tuple, out int id, out int duration)
-                            && SkillBuffAllowed?.Invoke(s, recipient, id) != false && JobAllowsBuff(script, id, recipient))
+                            && SkillBuffAllowed?.Invoke(s, recipient, id) != false && JobAllowsBuff(script, id, recipient) && !ComesFromALoop(script, id))
                             // "For each enemy hit, You gain a Shield": a stacking shield (Rift Impact, _iMaxStack 3) lands once per enemy, up to its stack.
                             for (int pile = PilesFor(id, targets.Count); pile > 0 && CanApplyMoreEffects(); pile--)
                                 await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);

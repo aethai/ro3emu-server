@@ -352,6 +352,14 @@ public sealed partial class BuffService : IGameTicker
     }
 
     /// <summary>SkillConfig._kCost type 3 consumes piles of a BuffConfig group. The tuple's id is a group (inferred).</summary>
+    /// <summary>A buff at this many piles, whatever its stack type: Firepower Loaded's stack type 6 only refreshes, and it starts at its 3 attacks.</summary>
+    internal Task AddPilesAsync(GameSession p, int configId, int durationMs, long sourceId, int piles) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, piles);
+
+    /// <summary>How many piles of a buff group a monster holds.</summary>
+    internal int UnitPiles(WorldUnit unit, int buffGroup) => _unitBuffs.TryGetValue(unit.Uid, out var list)
+        ? list.Where(b => b.ExpireMs > MonsterService.NowMs && b.ConfigId / 100 == buffGroup).Sum(b => b.PileCount) : 0;
+
     public bool HasBuffPiles(GameSession p, int buffGroup, int count) => count > 0
         && p.Buffs.Where(b => b.ExpireMs > MonsterService.NowMs && _data.Row("BuffConfig", b.ConfigId) is { } row
             && GameData.Int(row, "_iBuffID") == buffGroup).Sum(b => b.PileCount) >= count;
