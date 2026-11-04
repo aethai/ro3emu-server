@@ -260,7 +260,8 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         var point = at ?? group.Points.Where(p => !used.Contains(p.Id)).OrderBy(_ => _random.Next()).FirstOrDefault();
         if (point == null || Template(npcId) is not { } template) return false;
         used.Add(point.Id);
-        var pos = map.Grounded(new MapPoint(point.X, point.Y, point.Z, point.Face));
+        // Some of a map's spawn points sit in a blocked cell, where the monster could neither walk nor be walked to.
+        var pos = map.Standable(map.Grounded(new MapPoint(point.X, point.Y, point.Z, point.Face)));
         var monster = new MonsterUnit
         {
             Uid = UidBase | ++_serial,
@@ -563,6 +564,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             || Spares?.Invoke(m, target) == true || m.Template.SpeedCm == 0 && m.Template.AttackRange <= 0) return;
         bool entering = m.Target == null;
         if (entering) m.NextSwingMs = NowMs + 300;
+        if (!m.Hated.Contains(target)) m.Hated.Add(target);
         SetTarget(m, target);
         m.Returning = false;
         if (entering && !called && m.Template.BattleCallRange > 0) CallIntoBattle(m, target);
@@ -654,7 +656,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             m.NextChaseMs = now + 400;
             float dx = target.X - m.X, dz = target.Z - m.Z;
             float go = Math.Min(MaxSegment, dist - m.Template.AttackRange * 0.8f);
-            if (go > 0.2f) WalkTo(m, map, m.X + dx / dist * go, m.Z + dz / dist * go, 1f);
+            if (go > 0.2f && !WalkTo(m, map, m.X + dx / dist * go, m.Z + dz / dist * go, 1f)) WalkAround(m, map, target.X, target.Z, now);
         }
     }
 
@@ -665,7 +667,9 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
                     || Distance(LeashX(m), LeashZ(m), target.Position.X, target.Position.Z) > m.Template.LeashDistance;
         if (lost)
         {
-            Disengage(m, map);
+            // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: nearest first).
+            if (NextHated(m, target) is { } next) SetTarget(m, next);
+            else Disengage(m, map);
             return;
         }
         if (m.BusyUntilMs > now)
@@ -717,8 +721,31 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         }
     }
 
+    private GameSession? NextHated(MonsterUnit m, GameSession lost)
+    {
+        m.Hated.Remove(lost);
+        m.Hated.RemoveAll(p => p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
+            || Distance(LeashX(m), LeashZ(m), p.Position.X, p.Position.Z) > m.Template.LeashDistance);
+        return m.Hated.Count == 0 ? null : m.Hated.MinBy(p => Distance(m.X, m.Z, p.Position.X, p.Position.Z));
+    }
+
+    /// <summary>A straight walk failed: the first leg of a route around the obstacle, at most once in <see cref="PathBackoffMs"/>, as the search runs inside the monster tick.</summary>
+    private bool WalkAround(MonsterUnit m, MapInstance map, float x, float z, long now)
+    {
+        if (now < m.NextPathMs || _worldData.Map(m.SceneEntry)?.Nav is not { } nav) return false;
+        m.NextPathMs = now + PathBackoffMs;
+        var route = nav.FindPath(m.X, m.Y, m.Z, x, z, MaxSegment);
+        if (route == null) return false;
+        foreach (var (toX, _, toZ) in route)
+            if (Distance(m.X, m.Z, toX, toZ) > 0.2f) return WalkTo(m, map, toX, toZ, 1f);
+        return false;
+    }
+
+    private const int PathBackoffMs = 1000;
+
     private void Disengage(MonsterUnit m, MapInstance map)
     {
+        m.Hated.Clear();
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;
@@ -744,7 +771,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     /// <summary>One straight Walk segment when the nav grid allows it; false when none started.</summary>
     private bool WalkTo(MonsterUnit m, MapInstance map, float x, float z, float speedFactor)
     {
-        if (Forbidden?.Invoke(m, ForbiddenState.Walk) == true) return false;
+        if (m.Dead || Forbidden?.Invoke(m, ForbiddenState.Walk) == true) return false;
         var nav = _worldData.Map(m.SceneEntry)?.Nav;
         float? y = nav?.WalkHeight(x, z, m.Y) ?? m.Y;
         if (y == null || nav != null && !nav.CanWalk(m.X, m.Y, m.Z, x, z)) return false;
@@ -798,8 +825,17 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     public async Task KillAsync(MonsterUnit m)
     {
         if (m.Dead) return;
+        // A corpse must not slide on: stop it where it is, and tell the viewers before they see it die.
+        if (m.Moving)
+        {
+            long stoppedAt = NowMs;
+            m.Advance(stoppedAt);
+            m.Moving = false;
+            await _world.MoveUnitAsync(m, new MovementChangeNtf { Uid = m.Uid, MovementInfo = m.CurrentMovement(stoppedAt) });
+        }
         m.Dead = true;
         m.Moving = false;
+        m.Hated.Clear();
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;
