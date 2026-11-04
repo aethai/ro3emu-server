@@ -85,7 +85,7 @@ public sealed partial class NewActivityTests
             await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = dummy.Uid });
             Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
-            var report = await Next(bot, CombatService.DamageStatistics, DamageStatisticsNotify.Parser, n => n.Damages.Any(d => d.DamageTargetId == dummy.Uid));
+            var report = await Next(bot, CombatService.DamageStatistics, DamageStatisticsNotify.Parser, n => n.Damages.Any(d => d.DamageTargetId == dummy.Uid && d.DamageValue > 0)); // a missed swing reports its 0 first
             var entry = Assert.Single(report.Damages);
             Assert.Equal(role, entry.DamageSourceId);
             Assert.Equal(hit.Dsts.Single(d => d.DstID == dummy.Uid).Damage, entry.DamageValue);
