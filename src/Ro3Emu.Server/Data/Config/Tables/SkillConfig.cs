@@ -22,6 +22,7 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     [ConfigField("_iDistanceMin")] public partial long DistanceMin { get; }
     [ConfigField("_iDistanceType")] public partial long DistanceType { get; }
     [ConfigField("_iDmgType")] public partial long DmgType { get; }
+    [ConfigField("_iAreaHeightRange")] public partial long AreaHeightRange { get; }
     [ConfigField("_iEleType")] public partial long EleType { get; }
     [ConfigField("_iExtraType")] public partial long ExtraType { get; }
     [ConfigField("_iHeightRange")] public partial long HeightRange { get; }
