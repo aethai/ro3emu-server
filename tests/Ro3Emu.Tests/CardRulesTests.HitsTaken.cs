@@ -62,7 +62,7 @@ public sealed partial class CardRulesTests
         return units;
     }
 
-    private async Task<DamageInfo> HitOn(BotClient bot, GameSession session, long source)
+    private static async Task<DamageInfo> HitOn(BotClient bot, GameSession session, long source)
     {
         var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == source && h.Dsts.Any(d => d.DstID == session.Role!.Id));
         return hit.Dsts.Single(d => d.DstID == session.Role!.Id);
