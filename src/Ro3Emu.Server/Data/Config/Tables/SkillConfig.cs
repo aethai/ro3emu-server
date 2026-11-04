@@ -133,6 +133,9 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     /// Not a client field: the rule is the cast's, and a hit's row is all both the monster and the player path read.</summary>
     public const string StillHitField = "stillHit";
 
+    /// <summary>The list fields SkillParameterRules changes by a tuple's index.</summary>
+    public const string LogicDataField = "_kLogicData", CostField = "_kCost", FlatDamageField = "_kDamageParam2";
+
     /// <summary>A status this hit lands on a target the cast has not yet given one: Tetra Vortex's "guaranteed to inflict at least 1". Not a client field.</summary>
     public const string GuaranteedStatusField = "guaranteedStatus";
 

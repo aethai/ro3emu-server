@@ -30,11 +30,24 @@ public sealed partial class CombatService
         if (script == "BlitzBeat") return new(TextShape.AroundTarget, Desc(1), 0, 1 + (int)Desc(2)); // "and up to ${3} Other enemies within ${2} meters of the target"
         if (script.StartsWith("CartRevolution", StringComparison.Ordinal)) return new(TextShape.AroundTarget, Desc(0), 0, 1 + (int)Desc(1)); // "up to ${2} other enemies within ${1} meters of them"
         if (script.StartsWith("ArmCannon", StringComparison.Ordinal)) return new(TextShape.AroundTarget, Desc(3), 0, rowMax); // "within ${4} meters of them"
-        if (script == "PoisonBlade") return new(TextShape.AroundTarget, Desc(3), 0, 1 + (int)Desc(6), Shuffled: true); // "at a random enemy within ${4} meters of the target ... up to ${7} times"
+        // "at a random enemy within ${4} meters of the target ... up to ${7} times": logic [4] is the target and those three, and Secondary Damage's "+1 bounce" edits it.
+        if (script == "PoisonBlade" && logic is [var blades, ..]) return new(TextShape.AroundTarget, Desc(3), 0, (int)blades, Shuffled: true);
         if (script == "RuiLiSheJi" && logic is [var count, var width, ..]) return new(TextShape.LineToTarget, Desc(0), width / 100, 1 + (int)count); // "up to ${2} enemies in a line"
         if (script.StartsWith("AimedBolt", StringComparison.Ordinal)) return new(TextShape.LineToTarget, Desc(0), ArrowLineWidth, 1 + (int)Desc(1));
         if (script == "FlameLauncher") return new(TextShape.FrontRectangle, Desc(3), Desc(2), rowMax); // "up to ${5} targets in a ${3} * ${4}-meter rectangular area in front of you"
         return null;
+    }
+
+    /// <summary>Magnus [npc, targets, ..] and Sanctuary [targets]: "to up to ${6}", and a talent's "target count +1" edits this number. 0 for any other row.</summary>
+    private static int FieldTargets(JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        return skill.ScriptLogic switch
+        {
+            "Magnus_Exorcismus" or "Magnus_ExorcismusBD" when skill.LogicData is [_, var targets, ..] => (int)targets,
+            "Sanctuary" when skill.LogicData is [var targets, ..] => (int)targets,
+            _ => 0,
+        };
     }
 
     /// <summary>"up to ${4} enemies within a ${3}m radius": a trap's row holds _iTargetMax 1.</summary>

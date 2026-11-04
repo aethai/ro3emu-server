@@ -126,7 +126,7 @@ public sealed partial class CombatService
         var skill = new SkillConfig(row);
         int max = Script(row) is "LandMine" or "ClaymoreTrap" or "FreezingTrap" or "BlastMine" ? TrapTargets(row)
             : Script(row) == "BombSuicide1" ? int.Parse(skill.DescData[2], System.Globalization.CultureInfo.InvariantCulture) // Energy Release: "up to ${3} enemies"; its row holds 1
-            : (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
+            : FieldTargets(row) is > 0 and var fieldTargets ? fieldTargets : (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
         if ((GameData.Int(row, "_iRangeType") != 2 && !AreaDespiteRangeType(skill) || LocksItsTarget(row) && action.Request.TargetId != 0) && radiusOverride == null)
         {
             var target = FindMonster(s.WorldScene, action.Request.TargetId);
@@ -215,7 +215,8 @@ public sealed partial class CombatService
                     && (!PartyOnly(script) || p == s || SameParty?.Invoke(s, p) == true)
                     && (field != null && new SkillConfig(row).Range.Length > 1 ? SkillAreaContains(row, action.Origin, center, action.Request.Face, p.Position)
                         : p == s || radius > 0 && Distance(p.Position, around) <= radius))
-                    .OrderBy(p => OutsideThePartyAsLast(s, p, script)).ThenBy(p => Distance(p.Position, around)).Take((int)Math.Max(1, new SkillConfig(row).TargetMax)));
+                    .OrderBy(p => OutsideThePartyAsLast(s, p, script)).ThenBy(p => Distance(p.Position, around))
+                    .Take(FieldTargets(row) is > 0 and var fieldTargets ? fieldTargets : (int)Math.Max(1, new SkillConfig(row).TargetMax)));
                 if (allies.Count == 0 && Relation(row, true, true)) allies.Add(s);
             }
         }
@@ -837,12 +838,12 @@ public sealed partial class CombatService
                 if (script == "Meteor_Storm" && logic.Length > 5) waves = (int)logic[5]; // "strikes in ${6} waves"
                 if (script == "Fire_Wall") { touches = (int)Desc(6); atOnce = (int)Desc(7); } // "touched by enemies ${7} times", "Up to ${8} Fire Walls"
                 break;
-            // "For the next ${4} sec. ... every ${5} sec.": [npc, seconds, strikes, ...]; 8 strikes in 4 s.
-            case "Magnus_Exorcismus" or "Magnus_ExorcismusBD" when logic.Length >= 3 && logic[2] > 0:
-                npc = (int)logic[0]; duration = (int)(logic[1] * 1000); interval = (int)(duration / logic[2]); break;
+            // "For the next ${4} sec. ... every ${5} sec.": [npc, targets, strikes, ...]; 8 strikes in 4 s. Its talent's "target count +1" edits logic[1].
+            case "Magnus_Exorcismus" or "Magnus_ExorcismusBD" when logic.Length >= 3 && logic[2] > 0 && Desc(3) > 0:
+                npc = (int)logic[0]; duration = (int)(Desc(3) * 1000); interval = (int)(duration / logic[2]); break;
             // "For the next ${4} seconds, every ${5} seconds": its row names no entity, NPCConfig 22000003 carries its name (inferred).
-            case "Sanctuary" when logic.Length >= 1 && Desc(4) > 0:
-                npc = SanctuaryNpc; duration = (int)(logic[0] * 1000); interval = (int)(Desc(4) * 1000); break;
+            case "Sanctuary" when Desc(3) > 0 && Desc(4) > 0:
+                npc = SanctuaryNpc; duration = (int)(Desc(3) * 1000); interval = (int)(Desc(4) * 1000); break;
             // [interval, duration, ...]: "lasts 4 seconds and strikes a total of 8 times". NPCConfig 1200013 carries its name (inferred).
             case "ZhongLiYuanYe" when logic.Length >= 2:
                 npc = GravitationFieldNpc; interval = (int)logic[0]; duration = (int)logic[1]; break;
