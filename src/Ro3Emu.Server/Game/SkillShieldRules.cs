@@ -32,6 +32,7 @@ internal static class SkillShieldRules
     /// </summary>
     internal const long KyrieEleisonGroup = 14117;
 
+    private const int ShieldBonus = 1205;
     private const long MagicDamage = 2; // _iDmgType 2, as CombatService.BaseDamage reads it
     private const double BasisPoints = 10000.0;
 
@@ -43,7 +44,9 @@ internal static class SkillShieldRules
     {
         if (!IsShield(buff)) return 0;
         long share = PetCombatRules.AttributeAmount(buff.Row, caster, recipient);
-        return share > 0 ? share : MagicRatio(buff, caster);
+        long amount = share > 0 ? share : MagicRatio(buff, caster);
+        // 1205 per_shieldbonus: Prayer of Gratitude "Shield Efficiency +${1}%" (inferred: the caster's).
+        return (long)Math.Floor(amount * Math.Max(0, 1 + caster[ShieldBonus] / BasisPoints));
     }
 
     private static long MagicRatio(BuffConfig buff, StatSheet caster) =>

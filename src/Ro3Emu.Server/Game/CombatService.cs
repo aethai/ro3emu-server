@@ -587,7 +587,7 @@ public sealed partial class CombatService : IGameTicker
             if (MonsterService.Distance(m, p) > m.Template.AttackRange + 2f || !_buffs.CanSeePosition(m, p.Position)) return; // stepped away
             var stats = _character.Stats(p);
             var attacker = MonsterFighter(m);
-            var defender = new Fighter(0, 0, 0, 0, p.Progress!.Level, 1)
+            var defender = new Fighter(0, 0, 0, 0, p.Progress!.Level, ArmorElement(p))
             {
                 Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
                 Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize,
@@ -689,6 +689,7 @@ public sealed partial class CombatService : IGameTicker
         public Func<int, long>? Attributes { get; init; }
         public int Race { get; init; }
         public int Size { get; init; }
+        public DamageAttributes.Kind Kind { get; init; }
     }
 
     /// <summary>Every JobConfig row has _iRace 2 (Demi-Human) and _iSize 2 (Medium).</summary>
@@ -744,6 +745,7 @@ public sealed partial class CombatService : IGameTicker
         if (skill.AffectByArrow != 0 && source.BagState.Info.CurrentArrowID is var arrowId and > 0
             && Data.Config.ItemConfig.Get(_data, arrowId) is { } arrow && int.TryParse(arrow.Param1, out int element)
             && element is >= 1 and <= 10) return element;
+        if (skill.IsNormalAttack(_data) && ElementFromBuff(source) is var buffed and > 0) return buffed;
         return (int)Math.Max(1, skill.EleType);
     }
 
@@ -768,7 +770,7 @@ public sealed partial class CombatService : IGameTicker
         var row = new Data.Config.SkillConfig(skill);
         // A player's Element here is the hit's, and the element monster attributes (321-340) only name monsters.
         return dmg * DamageAttributes.Factor(a.Attributes, b.Attributes, new DamageAttributes.Hit(magic, row.DistanceType == 2, !row.IsNormalAttack(_data), element,
-            a.Race, a.Size, a.Attributes == null ? a.Element : 0, b.Race, b.Size, b.Attributes == null ? b.Element : 0));
+            a.Race, a.Size, a.Attributes == null ? a.Element : 0, b.Race, b.Size, b.Attributes == null ? b.Element : 0, a.Kind, b.Kind));
     }
 
     /// <summary>
@@ -814,9 +816,9 @@ public sealed partial class CombatService : IGameTicker
         var attributes = PlayerAttributes(p, stats);
         var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress!.Level, AttackElement(p, playerSkill))
         { Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
-        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size };
+        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size, Kind = KindOf(m) };
         double playerDps = ExpectedDamage(player, asTarget, playerSkill) * 1000.0 / Math.Max(1, SkillMs(p, playerSkill));
-        var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element) { Race = m.Race, Size = m.Size };
+        var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element) { Race = m.Race, Size = m.Size, Kind = KindOf(m) };
         var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, 1)
         { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
         double monsterHit = _data.Row("SkillConfig", m.NormalSkill) is { } row ? ExpectedDamage(monster, defender, row) : Math.Max(1, m.Atk);
@@ -1159,7 +1161,8 @@ public sealed partial class CombatService : IGameTicker
         var st = _character.Stats(s);
         if (st[2000] >= st[101] && st[2001] >= st[102]) return;
         long rehp = st[107] + st[101] * st.Data.GetValueOrDefault(1071) / 10000;
-        long resp = st[108] + st[102] * st.Data.GetValueOrDefault(1081) / 10000;
+        // 243 temporary_per_magicrecover: Meditatio "MP Recovery Speed", as 1081 per_resp beside it.
+        long resp = st[108] + st[102] * (st.Data.GetValueOrDefault(1081) + st.Data.GetValueOrDefault(243)) / 10000;
         await _character.SetHpSpAsync(s, st[2000] + Math.Max(1, rehp), st[2001] + Math.Max(1, resp));
     }
 

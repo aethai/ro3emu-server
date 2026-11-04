@@ -16,6 +16,7 @@ internal static class DamageAttributes
     private const int Skill = 225, SkillTaken = 226;
     private const int VsRace = 400, FromRace = 410, ElementDealt = 300, ElementTaken = 310, VsElement = 320, FromElement = 330;
     private const int SizeBase = 499; // 501/502 small, 503/504 medium, 505/506 large
+    private const int VsBoss = 601, FromBoss = 602, VsNormal = 603, FromNormal = 604; // boss_type, be_boss_type, normal_type, be_normal_type
     internal const int CritDamage = 209, CritDamageTaken = 210, CritChance = 237, CritChanceTaken = 238;
     internal const int IgnoreDef = 217, IgnoreDefPercent = 218, IgnoreMdef = 219, IgnoreMdefPercent = 220;
 
@@ -23,8 +24,12 @@ internal static class DamageAttributes
     private const double MinFactor = 0.1, MaxFactor = 10;
     private const double BasisPoints = 10000.0;
 
+    /// <summary>What a monster side counts as for 601-604; a player is neither.</summary>
+    internal enum Kind { Player, Normal, Boss }
+
     internal readonly record struct Hit(bool MagicHit, bool Ranged, bool SkillHit, int DealtElement,
-        int AttackerRace, int AttackerSize, int AttackerElement, int TargetRace, int TargetSize, int TargetElement);
+        int AttackerRace, int AttackerSize, int AttackerElement, int TargetRace, int TargetSize, int TargetElement,
+        Kind Attacker = Kind.Player, Kind Target = Kind.Player);
 
     internal static double Factor(Func<int, long>? attacker, Func<int, long>? target, Hit hit)
     {
@@ -44,6 +49,9 @@ internal static class DamageAttributes
             - (hit.AttackerElement is >= 1 and <= 10 ? B(FromElement + hit.AttackerElement) : 0)) / BasisPoints;
         factor *= 1 + ((hit.TargetSize is >= 1 and <= 3 ? A(SizeBase + 2 * hit.TargetSize) : 0)
             - (hit.AttackerSize is >= 1 and <= 3 ? B(SizeBase + 2 * hit.AttackerSize + 1) : 0)) / BasisPoints;
+        // Monster Resistance: "-30% damage from monsters" is 602 and 604 together; its own group (inferred).
+        factor *= 1 + ((hit.Target switch { Kind.Boss => A(VsBoss), Kind.Normal => A(VsNormal), _ => 0 })
+            - (hit.Attacker switch { Kind.Boss => B(FromBoss), Kind.Normal => B(FromNormal), _ => 0 })) / BasisPoints;
         return Math.Clamp(factor, MinFactor, MaxFactor);
     }
 
