@@ -41,15 +41,13 @@ public sealed partial class CombatService
         _ => Task.CompletedTask,
     };
 
-    /// <summary>Envenom, class 1500501.. and Card: Poison Spore's 2004201: "Deals Physical ATK * ... Poison melee Physical DMG to a designated ST enemy
-    /// and applies [Poisoned] damage." _kLogicData names the row 15116xx "Poisoned", "Deals Poison-element melee Physical damage equal to Physical
-    /// ATK*20% to the specified ST enemy". (inferred) One hit of that row right after, on the one the cast reached, if still alive; an extra
-    /// cast pays nothing and sets off nothing of its own.</summary>
+    /// <summary>Envenom on a player, class 1500501.. and Card: Poison Spore's 2004201: "Deals Physical ATK * ... Poison melee Physical DMG to a designated ST enemy
+    /// and applies [Poisoned] damage." _kLogicData names the row 15116xx "Poisoned". A monster gets it from TalentProcs.RowProcs. (inferred) One hit of that row
+    /// right after, on the player the cast reached, if still alive; an extra cast pays nothing and sets off nothing of its own.</summary>
     private async Task EnvenomPoisonAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed)
     {
-        if (new SkillConfig(action.Row).LogicData is not [var id, ..] || SkillConfig.Get(_data, id) is not { } poison) return;
-        if (processed.FirstOrDefault(m => m.Hp > 0) is { } monster) await CastExtraAsync(s, poison.Row, [monster]);
-        else if (action.PlayersStruck.FirstOrDefault(p => !p.Dead) is { } player && CanPlayerHit(s, player)) await CastExtraOnPlayerAsync(s, poison, player);
+        if (processed.Count > 0 || new SkillConfig(action.Row).LogicData is not [var id, ..] || SkillConfig.Get(_data, id) is not { } poison) return;
+        if (action.PlayersStruck.FirstOrDefault(p => !p.Dead) is { } player && CanPlayerHit(s, player)) await CastExtraOnPlayerAsync(s, poison, player);
     }
 
     /// <summary>Hymn of Devotion 1431501, ["30","20","20","10"]: "HP equal to your MATK*${2}%+${3} every second to You and Party Members within
