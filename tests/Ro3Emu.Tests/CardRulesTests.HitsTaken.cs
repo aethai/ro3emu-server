@@ -1012,4 +1012,62 @@ public sealed partial class CardRulesTests
             Assert.Equal(3, Assert.Single(tick.Dsts).DstElement);
         }
     }
+
+    private const int ShadowAngeling = 1450300, HolyArmorBuff = 904407;
+
+    // Shadow Card: Angeling T1 (as T0): 2051401 "When taking damage, has a 60% Chance to change your armor's element to Holy for 3
+    // seconds. Internal Cooldown: 5 seconds." [6000, 904407, 3000]. 31104 shows the buff; the hit after that is on Holy.
+    [ClientDataFact]
+    public async Task ShadowAngelingTurnsTheArmorHolyAtItsChanceForItsSecondsAndThenWaitsItsCooldown()
+    {
+        var (alice, session) = await Holder("Alice", ShadowAngeling, 3);
+        await using (alice)
+        {
+            await AtStar(session, ShadowAngeling, 1);
+            var striker = (await Strikers(session, 1))[0];
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 6000;
+            Assert.Equal(1, (await SwungAt(alice, session, striker)).DstElement);
+            await Task.Delay(100);
+            Assert.DoesNotContain(session.Buffs, b => b.ConfigId == HolyArmorBuff);
+
+            effects.Roll = _ => 5999;
+            Assert.Equal(1, (await SwungAt(alice, session, striker)).DstElement); // the hit that sets it off
+            var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == HolyArmorBuff));
+            var since = System.Diagnostics.Stopwatch.StartNew();
+            Assert.Equal(3000, shown.Buffs.Single(b => b.ConfigId == HolyArmorBuff).Duration);
+            Assert.Equal(7, (await SwungAt(alice, session, striker)).DstElement);
+
+            // Inside the cooldown, past the buff: no new one.
+            await Task.Delay(3200);
+            var inCooldown = await SwungAt(alice, session, striker);
+            if (since.ElapsedMilliseconds < 4800) Assert.Equal(1, inCooldown.DstElement);
+
+            await Task.Delay(Math.Max(0, 5100 - (int)since.ElapsedMilliseconds));
+            await SwungAt(alice, session, striker);
+            await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == HolyArmorBuff));
+        }
+    }
+
+    // T3: 2051404 has no chance in its text, 10000 in the row, and 4 seconds. A player's hit sets it off too.
+    [ClientDataFact]
+    public async Task ShadowAngelingAtItsTopStarAlwaysTurnsTheArmorHolyForFourSecondsOnAPlayersHit()
+    {
+        var (bob, b) = await Holder("Bob", ShadowAngeling, 3);
+        await using (bob)
+        {
+            await AtStar(b, ShadowAngeling, 3);
+            await using var alice = await InWorld("Alice");
+            var a = Session("Alice");
+            await Gm("alice", "!lvl 80");
+            await Gm("alice", "!job 2100");
+            await Learn(a, 12004);
+            await Duel(alice, a, bob, b);
+            Service<CardEffects>().Roll = _ => 9999;
+            await CastAt(alice, a, FireBolt, b);
+            var shown = await Next(bob, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(x => x.ConfigId == HolyArmorBuff));
+            Assert.Equal(4000, shown.Buffs.Single(x => x.ConfigId == HolyArmorBuff).Duration);
+            Assert.Equal(7, (await CastAt(alice, a, FireBolt, b)).DstElement);
+        }
+    }
 }

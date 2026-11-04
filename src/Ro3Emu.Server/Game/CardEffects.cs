@@ -39,7 +39,8 @@ namespace Ro3Emu.Server.Game;
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
 /// Status, life steal, SP absorb, autocast, Double Attack and the next hit after a crit answer a hit on a monster or a player. Size and
 /// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
-/// - armor element: the cards' passives 9044xx and 20515 are read by CombatService.ArmorElement on every hit a player takes.
+/// - armor element: the cards' passives 9044xx and 20515 are read by CombatService.ArmorElement on every hit a player takes;
+///   Shadow Card: Angeling's 20514 puts 904407 on for seconds, see <see cref="OnHitTakenAsync"/>.
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
@@ -82,7 +83,7 @@ public sealed class CardEffects
     private const long MagicDamage = 2; // SkillConfig._iDmgType
     private const int SilencedState = 20; // SpecialStatusConfig 20, BuffService.StateFor
     private const int Vit = 3, Sp = 2001; // AttributeConfig
-    private const int SpBurn = 20230;
+    private const int SpBurn = 20230, ArmorOnHit = 20514;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -108,6 +109,8 @@ public sealed class CardEffects
         combat.CardHitReactions.Add(ReflectAsync);
         combat.PvpDamageAdjusters.Add(AdjustPvpDamage);
         combat.PvpHitLanded.Add(OnPvpHitAsync);
+        combat.TakenAsync.Add((_, s, damage) => OnHitTakenAsync(s, damage));
+        combat.PvpDealtAsync.Add((_, target, damage, _) => OnHitTakenAsync(target, damage));
     }
 
     private IEnumerable<Passive> Passives(GameSession s)
@@ -366,6 +369,24 @@ public sealed class CardEffects
             _combat.StrikeBackLater(s, row, amount, enemy);
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Shadow Card: Angeling: "When taking damage, has a @{1}% Chance to change your armor's element to Holy for @{2} seconds. Internal
+    /// Cooldown: @{3} seconds." (T2, T3 have no chance in the text and 10000 in the row.) _kLogicData [chance bp, 904407, ms], the
+    /// cooldown last in _kDescData. (inferred) A hit of a monster or a player that took something, not a tick of a poison: those
+    /// two are what the hooks report. The hit that sets it off is already counted on the old element.
+    /// </summary>
+    private async Task OnHitTakenAsync(GameSession s, long damage)
+    {
+        if (damage <= 0 || s.Role == null || s.Dead) return;
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != ArmorOnHit || buff.LogicData is not [var chance, var armor, var ms] || Description(passive.Row) is not [.., var cooldown]
+                || Roll(10000) >= chance || !Ready(s, ArmorOnHit, (long)(cooldown * 1000))) continue;
+            await _buffs.AddAsync(s, (int)armor, (int)ms, s.Role.Id);
+        }
     }
 
     /// <summary>One Splash passive's numbers. <paramref name="Chance"/> is in basis points, <paramref name="Ratio"/> too, of
