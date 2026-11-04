@@ -30,9 +30,6 @@ public sealed partial class DungeonService
     private long _sceneActorSerial;
     private long _sceneActorBuffGuid = 1L << 56;
 
-    /// <summary>The draw of a step's shuffled actors (ScriptedStep.Shuffle): a uniform integer below its bound; tests pin it.</summary>
-    internal Func<int, int> ShuffleRoll { get; set; } = bound => Random.Shared.Next(bound);
-
     /// <summary>
     /// A scene actor: NPCConfig _iNPCType 1 is created by the client as a monster unit (entity type 1, with its HP
     /// and level so the head bar renders), 2 as an NPC (entity type 2, which TriggerNpcInteract looks up by config id).
@@ -88,7 +85,7 @@ public sealed partial class DungeonService
         a.StepHeld = a.StepHoldOver = false;
         // A fight-only step has no client event to wait for: its kills complete it.
         a.StepDone = step.Complete.Count == 0;
-        await SyncSceneActorsAsync(a, step.Placed(ShuffleRoll));
+        await SyncSceneActorsAsync(a, step.Actors);
         await SyncCompanionsAsync(a, step.Companions);
         a.StepGeneration++;
         if (step.Seek is { } seek) StartSeek(a, seek);
