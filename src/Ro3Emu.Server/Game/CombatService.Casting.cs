@@ -422,7 +422,7 @@ public sealed partial class CombatService
     private int ValidateTarget(GameSession s, JsonElement row, CastSkillReq req, Vec3 origin, float slack = 0, float askedRange = 0)
     {
         int release = (int)GameData.Int(row, "_iRelease");
-        if (AimsFromSeat?.Invoke(s, (int)GameData.Int(row, "_iID")) == true)
+        if (AimsFromSeat?.Invoke(s, (int)new SkillConfig(row).Id) == true)
         {
             // The crosshair's ray (LC_TPSComponent._raycast) names its unit in targetsId; a shot past everything hits nothing.
             // The row's 3 m height range is not asked: the deck stands up to 20 m above the patrols it fires at.
