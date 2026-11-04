@@ -93,6 +93,8 @@ public sealed partial class DungeonService
         this._world = world;
         this._vehicles = vehicles;
         scene.WalkOnRide = vehicles.IsSeatedOnSceneActor;
+        combat.GrantedSkill.Add(FiresCannon);
+        combat.AimsFromSeat = FiresCannon;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
         WireRaidTrials(combat, gm);
         teams.MultiDungeonInfo = TeamDungeonInfo;
@@ -129,7 +131,6 @@ public sealed partial class DungeonService
         /// <summary>The completing events a step with "all" has seen so far.</summary>
         public HashSet<(ReconstructedDungeons.TriggerKind Kind, long Id)> StepSeen { get; } = [];
         /// <summary>A scripted step's strikes taken so far, by monster uid.</summary>
-        public Dictionary<long, int> Struck { get; } = [];
         /// <summary>A step's own timers' generation: each step (and each new hide-and-seek game) starts a new one, so a
         /// stale timer does nothing.</summary>
         public int StepGeneration { get; set; }
@@ -627,7 +628,7 @@ public sealed partial class DungeonService
         foreach (var spawn in a.Plan.Waves[a.Wave].Spawns)
         {
             if (a.Settled || a.Room.Closed) { a.Spawning = false; return; }
-            var monster = await _instances.SpawnAsync(a.Room, spawn.NpcId, spawn.Point);
+            var monster = await _instances.SpawnAsync(a.Room, spawn.NpcId, spawn.Point, grounded: spawn.Route == null);
             if (a.Settled || a.Room.Closed)
             {
                 a.Spawning = false;
@@ -636,6 +637,11 @@ public sealed partial class DungeonService
             }
             if (monster == null) { a.Spawning = false; await SettleAsync(a, false); return; }
             a.Spawned++;
+            if (spawn.Route is { } route)
+            {
+                await FlyAsync(a, monster, route);
+                continue;
+            }
             // Multi-bosses retain their AI instead of being ordered to attack on scene load. In Culvert the
             // born point 15 is 15m from monster point 19; NPC 4300000/1 uses non-roaming AI 25000001 and
             // RaidFive_Boss00[easy], whose server script is absent. Waiting for a player hit/taunt is an
