@@ -14,16 +14,17 @@ namespace Ro3Emu.Server.Game;
 /// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). The referenced BuffConfig rows are
 /// zero-time: like totem passives they are registered per source (the card GUID) for as long as the copy is socketed in an
 /// active socket (EquipmentStunts.ActiveCards), which publishes their icons, puts their _kChangeAttri on the sheet (Variable
-/// CT 2024001..4 only, and no chant reads it yet)
+/// CT 2024001..4, CombatService.ChantMilliseconds, whose holder a control no longer interrupts)
 /// and arms BuffService's lethal-hit revive for groups 20520/20521 (2052001.., 2052101..). (inferred) Their
 /// _iSceneClear removes them on a scene change; the loaded scene registers them again, carrying the revive cooldown.
 ///
 /// Executed behaviours (data-settled families; the trigger timing "when dealing damage" is read from the
-/// descriptions and applied to every damaging hit on a monster, inferred):
+/// descriptions and applied to every damaging hit on a monster or a player, inferred):
 /// - status on hit: a base passive with _kLogicData [0, status buff, ms] (2000001 Stun 901601 500 ms, Blind, Curse,
 ///   Immobilize, Sleep, Freeze, Silence) gains chance from every passive whose _kBuffAttributeList row
 ///   ["0", base group, "4", "1", chance, "0"] names its group ("Chance stacks with multiple cards"); the description's
-///   third value is the internal cooldown in seconds. The status lands as a monster unit buff, as skill _kBuff2 does.
+///   third value is the internal cooldown in seconds. The status lands as a monster unit buff, as skill _kBuff2 does, or on a player
+///   through the target's tag resistance. Blind limits a monster's sight (BuffService.Blind); on a player it stays an icon.
 /// - life steal 20170 (2017101..): chance from the same modifier rows, heal = desc[1]% of the damage up to desc[2],
 ///   internal cooldown desc[3] seconds.
 /// - SP absorb 2050401: _kLogicData [chance bp, ...], desc[1]% of the damage as SP.
@@ -36,11 +37,20 @@ namespace Ro3Emu.Server.Game;
 ///   <see cref="AutocastsAsync"/>. Divine Light on a heal: 20531, see <see cref="HealAutocastAsync"/>.
 /// - cooldown reset after a skill: 20529, see <see cref="CooldownResetAsync"/>.
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
-/// All of these act on monsters, a hit on a player sets off none of them, except Divine Light and the cooldown reset, which
-/// follow the own cast whoever it reached.
-/// Not executed (no machinery or no data link): armor element changes, magic nullify/reflect, status immunities, Endure,
-/// the uninterruptible cast and Ladybug's reduction, SP drain, detection, indestructible gear.
-/// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
+/// - armor element: the cards' passives 9044xx and 20515 are read by CombatService.ArmorElement on every hit a player takes;
+///   Shadow Card: Angeling's 20514 puts 904407 on for seconds, see <see cref="OnHitTakenAsync"/>.
+/// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
+/// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
+/// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
+/// - status immunity: Moonlight Flower's Slow, Orc Hero's Stun, by group in BuffService.ImmuneTo, the rows having only their text.
+/// - Endure: Eddga, by group in BuffService, no knockback or knock-up. Its hitstun is the client's.
+/// Status, life steal, SP absorb, autocast, Double Attack and the next hit after a crit answer a hit on a monster or a player. Size and
+/// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
+/// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
+/// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
+/// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's
+/// buff makes Basic Attacks Fire (CombatService.ElementFromBuff), Envenom follows with its Poisoned row (CombatService.EnvenomPoisonAsync).
+/// Card: Kraken's "has a Chance to inflict Bleeding" has no tuple and no number, so only its always-Stun runs.
 /// </summary>
 public sealed class CardEffects
 {
@@ -68,6 +78,13 @@ public sealed class CardEffects
     private const int LifeStealGroup = 20170, SpAbsorb = 2050401, SizeAlways = 20501, SizeChance = 20500;
     private const int SplashChance = 20508, SplashAlways = 20509, NextHitAfterCrit = 20507;
     private const int BashAutocast = 20190, JupitelAutocast = 20200, DoubleAttackProc = 20210, HealAutocast = 20531, CooldownReset = 20529;
+    private const int ShadowNullify = 20510, CardNullify = 20511, Ladybug = 20260;
+    private const int ShadowMagicReflect = 20512, CardMagicReflect = 20513, ShadowPhysicalReflect = 20516, CardPhysicalReflect = 20517;
+    private const long SingleTargetTag = 102; // SkillTagConfig "ST"
+    private const long MagicDamage = 2; // SkillConfig._iDmgType
+    private const int SilencedState = 20; // SpecialStatusConfig 20, BuffService.StateFor
+    private const int Vit = 3, Sp = 2001; // AttributeConfig
+    private const int SpBurn = 20230, ArmorOnHit = 20514;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -89,6 +106,12 @@ public sealed class CardEffects
         combat.DamageAdjusters.Add(AdjustDamage);
         combat.DealtAsync.Add(OnDealtAsync);
         combat.CastResolved.Add(OnCastResolvedAsync);
+        combat.PlayerDamageAdjusters.Add(AdjustDamageTaken);
+        combat.CardHitReactions.Add(ReflectAsync);
+        combat.PvpDamageAdjusters.Add(AdjustPvpDamage);
+        combat.PvpHitLanded.Add(OnPvpHitAsync);
+        combat.TakenAsync.Add((_, s, damage) => OnHitTakenAsync(s, damage));
+        combat.PvpDealtAsync.Add((_, target, damage, _) => OnHitTakenAsync(target, damage));
     }
 
     private IEnumerable<Passive> Passives(GameSession s)
@@ -216,6 +239,40 @@ public sealed class CardEffects
     internal async Task OnDealtAsync(GameSession s, MonsterUnit target, JsonElement skillRow, long damage)
     {
         await SettleNextHitAsync(s);
+        await DealtProcsAsync(s, damage, () => !target.Dead && target.Hp > 0, (id, ms) => _buffs.ShowOnUnitAsync(target, id, ms, s.Role!.Id));
+    }
+
+    /// <summary>The same procs on a player's hit, "When dealing damage" having no word on whom. A fixed hit (a reflect, a guardian's)
+    /// sets off nothing. The status lands through <see cref="CombatService.LandCardStatusAsync"/>; a lethal hit leaves no one to hold it.</summary>
+    private async Task OnPvpHitAsync(GameSession s, GameSession target, JsonElement row, long damage, bool lethal)
+    {
+        if (new SkillConfig(row).IsFixedHit) return;
+        await SettleNextHitAsync(s);
+        await DealtProcsAsync(s, damage, () => !lethal && !target.Dead, (id, ms) => _combat.LandCardStatusAsync(s, target, id, ms));
+        if (damage > 0 && !lethal && !target.Dead) await BurnSpAsync(s, target);
+    }
+
+    internal static long SpBurned(long sp, long percent, long most) => Math.Min(most, sp * percent / 100);
+
+    /// <summary>
+    /// Dark Priest: "When dealing DMG, there is a @{1}% Chance to reduce the target's current SP by @{2}%, up to @{3}. Internal Cooldown: @{4}
+    /// sec. The trigger Chance stacks with multiple Cards." The chance as for a status on hit; base 2023001's [0, 2003101] names the row
+    /// "SP Reduction", whose _kLogicData [20, 400] is the share and the most. A monster has no current SP, so only a player's hit rolls.
+    /// (inferred) The row's show 20230 is not played: nothing on the wire carries an SP loss, so the target's SP bar is what shows it.
+    /// </summary>
+    private async Task BurnSpAsync(GameSession s, GameSession target)
+    {
+        foreach (var (basis, group, chance, desc) in Procs([.. Passives(s)]))
+        {
+            if (group != SpBurn || new BuffConfig(basis).LogicData is not [_, var id] || SkillConfig.Get(_data, id) is not { LogicData: [var percent, var most] }
+                || desc.Length == 0 || Roll(10000) >= chance || !Ready(s, SpBurn, (long)(desc[^1] * 1000))) continue;
+            long sp = _character.Stats(target)[Sp];
+            await _character.SetHpSpAsync(target, null, sp - SpBurned(sp, percent, most));
+        }
+    }
+
+    private async Task DealtProcsAsync(GameSession s, long damage, Func<bool> targetLives, Func<int, int, Task> landStatus)
+    {
         if (damage <= 0 || s.Role == null || s.Dead) return;
         var passives = Passives(s).ToList();
         if (passives.Count == 0) return;
@@ -234,10 +291,10 @@ public sealed class CardEffects
             else if (logic.Length == 3 && logic[0] == 0 && logic[2] > 0 && _data.Row("BuffConfig", logic[1]) is not null)
             {
                 // "has a @{1}% Chance to inflict a status for @{2} sec. Internal Cooldown: @{3} sec."
-                if (target.Dead || target.Hp <= 0) continue;
+                if (!targetLives()) continue;
                 long cooldown = desc.Length >= 3 ? (long)(desc[2] * 1000) : 0;
                 if (Roll(10000) >= chance || !Ready(s, group, cooldown)) continue;
-                await _buffs.ShowOnUnitAsync(target, (int)logic[1], (int)logic[2], s.Role.Id);
+                await landStatus((int)logic[1], (int)logic[2]);
             }
         }
         foreach (var passive in passives.Where(p => p.Id == SpAbsorb).DistinctBy(p => p.Id))
@@ -250,6 +307,86 @@ public sealed class CardEffects
             if (sp <= 0) continue;
             var stats = _character.Stats(s);
             await _character.SetHpSpAsync(s, null, stats[2001] + sp);
+        }
+    }
+
+    /// <summary>
+    /// Golden Thief Bug: "When hit by a magic attack, has a @{1}% Chance to nullify its damage. Internal Cooldown: @{2} seconds. (Boss
+    /// instant-kill skills can bypass this card's effect.)" _kLogicData [chance bp], the cooldown in _kDescData; the two cards are two
+    /// groups, each with its own. A magic attack is a hit of an _iDmgType 2 row from a monster or a player. (inferred) No row is named an
+    /// instant kill, so what bypasses it is a raid mechanic's share of maximum HP (MonsterSkillHitAsync), and a tick or a fixed amount
+    /// is no attack. (inferred) The hit shows as 0, as under Safety Wall: DamageHitResult has no immune value.
+    /// Ladybug: "Damage taken while Silenced -@{1}%", _kLogicData [bp], any damage while the Silenced state holds.
+    /// </summary>
+    internal long AdjustDamageTaken(GameSession s, JsonElement? row, bool directHit, long damage)
+    {
+        long reduction = 0;
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId == Ladybug && buff.LogicData is [var bp, ..] && s.Buffs.Any(b => b.StateOrdinal == SilencedState && b.ExpireMs > MonsterService.NowMs))
+                reduction += bp;
+            else if (buff.BuffId is ShadowNullify or CardNullify && directHit && SkillShieldRules.IsMagic(row) && buff.LogicData is [var chance, ..]
+                && Description(passive.Row) is [_, var cooldown, ..] && Roll(10000) < chance && Ready(s, buff.BuffId, (long)(cooldown * 1000)))
+                return 0;
+        }
+        return damage - (long)Math.Floor(damage * reduction / 10000d);
+    }
+
+    /// <summary>The share of the damage taken a reflect row gives back: _kDamageParamExtra [_, _, bp per VIT, _, limit, _, share bp, 101,
+    /// cap bp] on row 2051201.. "Magic Reflect - Card" and 2051601.. "Physical Reflect - Card" (T_0addAXY_XisExtra_YisAttri_MaxAttri_YisAttri_MaxAttri,
+    /// script Rebound_Card, read against the texts, whose numbers they match at every star). (inferred) "up to @{5}%", which only the text
+    /// has, stops the whole share and not only the VIT's part: Card: Maya T3 starts at 56%. The cap on the attacker's Max Life and the row's limit
+    /// stop the amount. 0 for any other shape.</summary>
+    internal static long ReflectedDamage(long damage, long vit, long attackerMaxHp, long[] tuple, double maxSharePercent)
+    {
+        if (tuple is not [_, _, var perVit, _, var limit, _, var share, _, var cap]) return 0;
+        long total = perVit > 0 ? Math.Min(share + perVit * vit, (long)(maxSharePercent * 100)) : share;
+        return Math.Min(limit, Math.Min((long)Math.Floor(damage * total / 10000d), (long)Math.Floor(attackerMaxHp * cap / 10000d)));
+    }
+
+    /// <summary>
+    /// Maya (magic) and Orc Lord (Physical): "When hit by a player's ST magic skill, reflects @{1}% of the damage taken, up to @{2}% of the
+    /// attacker's Max Life. For every @{3} VIT, reflects an Extra @{4}% of the damage taken, up to @{5}%. Internal Cooldown: @{6} seconds."
+    /// (The Shadow cards have no VIT line.) So a monster's hit reflects nothing. The buff's _kLogicData names its row, and the hit goes out as
+    /// that row's, a fixed amount. A row is ST when its panel says so (_kSkilltag 102). (inferred) A Basic Attack is no skill, as for
+    /// Mistress; a fixed hit, which another reflect is, answers nothing, so two holders do not trade. A holder the hit killed reflects
+    /// nothing, as <see cref="CombatService.ReactToHitAsync"/> reports only the living, and a reflect may kill.
+    /// </summary>
+    private Task ReflectAsync(GameSession s, GameSession? enemy, JsonElement? struck, long damage)
+    {
+        if (enemy?.Role == null || struck is not { } hit) return Task.CompletedTask;
+        var skill = new SkillConfig(hit);
+        if (skill.IsFixedHit || skill.IsNormalAttack(_data) || !skill.Skilltag.Contains(SingleTargetTag)) return Task.CompletedTask;
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            bool answers = skill.DmgType == MagicDamage ? buff.BuffId is ShadowMagicReflect or CardMagicReflect
+                : skill.DmgType == PhysicalDamage && buff.BuffId is ShadowPhysicalReflect or CardPhysicalReflect;
+            double[] desc = Description(passive.Row);
+            if (!answers || desc.Length == 0 || buff.LogicData is not [var id, ..] || SkillConfig.Get(_data, id) is not { DamageParamExtra: [var tuple, ..] } row) continue;
+            long amount = ReflectedDamage(damage, _character.Stats(s)[Vit], _character.Stats(enemy)[AttributeId.MaxHp], tuple, desc.Length >= 5 ? desc[4] : 0);
+            if (amount <= 0 || !Ready(s, buff.BuffId, (long)(desc[^1] * 1000))) continue;
+            _combat.StrikeBackLater(s, row, amount, enemy);
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Shadow Card: Angeling: "When taking damage, has a @{1}% Chance to change your armor's element to Holy for @{2} seconds. Internal
+    /// Cooldown: @{3} seconds." (T2, T3 have no chance in the text and 10000 in the row.) _kLogicData [chance bp, 904407, ms], the
+    /// cooldown last in _kDescData. (inferred) A hit of a monster or a player that took something, not a tick of a poison: those
+    /// two are what the hooks report. The hit that sets it off is already counted on the old element.
+    /// </summary>
+    private async Task OnHitTakenAsync(GameSession s, long damage)
+    {
+        if (damage <= 0 || s.Role == null || s.Dead) return;
+        foreach (var passive in Passives(s).DistinctBy(p => p.Id))
+        {
+            var buff = new BuffConfig(passive.Row);
+            if (buff.BuffId != ArmorOnHit || buff.LogicData is not [var chance, var armor, var ms] || Description(passive.Row) is not [.., var cooldown]
+                || Roll(10000) >= chance || !Ready(s, ArmorOnHit, (long)(cooldown * 1000))) continue;
+            await _buffs.AddAsync(s, (int)armor, (int)ms, s.Role.Id);
         }
     }
 
@@ -383,10 +520,9 @@ public sealed class CardEffects
     /// Bongun and Wind Ghost: "When making a Physical attack, has a ${1}% Chance to autocast [Bash] Lv.@{1}. Internal Cooldown:
     /// ${2} sec. Chance stacks with multiple cards." The base passive (2019001, 2020001) holds [0, the row]; the tier's passive
     /// adds the chance to its group and has [chance, cooldown] as _kDescData. An extra cast of the row pays nothing and starts
-    /// no cooldown of its own. (inferred) A Physical attack is any own cast of an _iDmgType 1 row that reached a monster, a basic
-    /// attack or a skill, a miss too, counted once per cast; the proc takes the locked target, or else the first the cast
-    /// reached that is still alive, and with none it neither rolls nor starts its cooldown. The text gives no player target
-    /// and an extra cast takes monsters only, so a hit on a player sets off nothing.
+    /// no cooldown of its own. (inferred) A Physical attack is any own cast of an _iDmgType 1 row that reached a monster or a player, a
+    /// basic attack or a skill, a miss too, counted once per cast; the proc takes the locked target, or else the first the cast
+    /// reached that is still alive, and with none it neither rolls nor starts its cooldown.
     /// Side Winder: "Basic Attack has a @{1}% Chance to trigger [Double Attack], dealing Extra Neutral melee Physical damage equal
     /// to @{2}%. Internal Cooldown: @{3} sec." goes the same way (2021001 [0, 2003001], _kDescData [chance, cooldown, ratio]). Class
     /// Double Attack (TalentProcs.DoubleAttackAsync) has to describe its hit, as its passive row has no damage; this row is that
@@ -395,14 +531,16 @@ public sealed class CardEffects
     private async Task AutocastsAsync(GameSession s, ActiveSkillCast action, SkillConfig cast, IReadOnlyList<MonsterUnit> processed,
         SkillHitInfo hit, IReadOnlyList<Passive> passives)
     {
-        if (hit.Dsts.Count == 0) return;
+        if (hit.Dsts.Count == 0 && action.PlayersStruck.Length == 0) return;
         foreach (var (basis, group, chance, desc) in Procs(passives).ToList())
         {
             if (!TriggersAutocast(group, cast.DmgType, cast.IsNormalAttack(_data)) || desc.Length < 2 || new BuffConfig(basis).LogicData is not [_, var id]
                 || SkillConfig.Get(_data, id) is not { } row) continue;
             var target = processed.FirstOrDefault(m => m.Uid == action.Request.TargetId && m.Hp > 0) ?? processed.FirstOrDefault(m => m.Hp > 0);
-            if (target == null || Roll(10000) >= chance || !Ready(s, group, (long)(desc[1] * 1000))) continue;
-            await _combat.CastExtraAsync(s, row.Row, [target]);
+            var player = action.PlayersStruck.FirstOrDefault(p => p.Role?.Id == action.Request.TargetId && !p.Dead) ?? action.PlayersStruck.FirstOrDefault(p => !p.Dead);
+            if (target == null && player == null || Roll(10000) >= chance || !Ready(s, group, (long)(desc[1] * 1000))) continue;
+            if (target != null) await _combat.CastExtraAsync(s, row.Row, [target]);
+            else await _combat.CastExtraOnPlayerAsync(s, row, player!);
         }
     }
 
@@ -429,7 +567,7 @@ public sealed class CardEffects
     /// [2091101, 2000] is the buff a crit puts on the player and its time; 2091101's own [500] is the raise, its gfx and sound the
     /// client plays from the 31104. (inferred) An instance is one monster's hit of a cast, any cast, extra ones too, so an area cast
     /// spends it on its second target. The first damaging hit within the 2 s spends it. A crit that spends it arms it again.
-    /// A hit on a player neither arms nor spends it: the player path has no damage adjusters.
+    /// A hit on a player arms and spends it alike, through <see cref="AdjustPvpDamage"/>.
     /// </summary>
     private long NextHitBonus(GameSession s, BuffConfig passive, DamageHitResult result)
     {
@@ -441,6 +579,16 @@ public sealed class CardEffects
             || BuffConfig.Get(_data, id)?.LogicData is not [var raise, ..]) return 0;
         state.NextHitSpent = live;
         return raise;
+    }
+
+    /// <summary>What of a monster hit's raises a hit on a player has: only the next hit after a crit, the rest naming monsters.</summary>
+    private long AdjustPvpDamage(GameSession s, JsonElement row, DamageHitResult result, long damage)
+    {
+        if (new SkillConfig(row).IsFixedHit) return damage;
+        long bonus = 0;
+        foreach (var passive in Passives(s).DistinctBy(p => (p.Card.Guid, p.Id)))
+            if (new BuffConfig(passive.Row) is { BuffId: NextHitAfterCrit } buff) bonus += NextHitBonus(s, buff, result);
+        return bonus <= 0 ? damage : damage + (long)Math.Floor(damage * bonus / 10000d);
     }
 
     /// <summary>"Ignores monster Size. Damage against Small, Medium, and Large monsters +X%" (2050101..4 always,

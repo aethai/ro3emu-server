@@ -64,6 +64,58 @@ public sealed class CardEffectRuleTests
     public void AResetLocksTheSkillForAMultipleOfItsCooldown(long cooldownMs, long multiple, long lockout) =>
         Assert.Equal(lockout, CardEffects.ResetLockoutMs(cooldownMs, multiple));
 
+    [Theory]
+    [InlineData(1000, 50, 100000, 3000, 2500, 0, 0, 300)] // 30% of the damage
+    [InlineData(1000, 50, 800, 3000, 2500, 0, 0, 200)] // up to 25% of the attacker's Max Life
+    [InlineData(1000, 0, 100000, 3200, 3500, 10, 60, 320)] // no VIT
+    [InlineData(1000, 100, 100000, 3200, 3500, 10, 60, 420)] // 100 VIT at 0.1% each
+    [InlineData(1000, 1000, 100000, 3200, 3500, 10, 60, 600)] // the whole share stops at 60%
+    [InlineData(1000, 500, 100000, 5600, 3500, 10, 60, 600)] // and a top star has little room left
+    public void AReflectGivesBackItsShareUpToItsCaps(long damage, long vit, long maxHp, long share, long cap, long perVit, double maxShare, long reflected) =>
+        Assert.Equal(reflected, CardEffects.ReflectedDamage(damage, vit, maxHp, [1, 3, perVit, 3, 99999, 159, share, 101, cap], maxShare));
+
+    [Theory]
+    [InlineData(1000, 20, 400, 200)]
+    [InlineData(5000, 20, 400, 400)] // up to its most
+    [InlineData(0, 20, 400, 0)]
+    public void ASpBurnTakesItsShareUpToItsMost(long sp, long percent, long most, long burned) =>
+        Assert.Equal(burned, CardEffects.SpBurned(sp, percent, most));
+
+    private static double HuntingFactor(long mastery, long protection, DamageAttributes.Kind attacker, DamageAttributes.Kind target) => DamageAttributes.Factor(
+        attacker == DamageAttributes.Kind.Player ? id => id == 231 ? mastery : 0 : null,
+        target == DamageAttributes.Kind.Player ? id => id == 232 ? protection : 0 : null,
+        new DamageAttributes.Hit(false, false, false, 1, 0, 0, 0, 0, 0, 0, attacker, target));
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(70, 70 / 10070d)]
+    [InlineData(10000, 0.5)]
+    [InlineData(-5, 0)]
+    public void AHuntingAttributeIsAShareOfItself(long value, double share) => Assert.Equal(share, DamageAttributes.PveShare(value), 10);
+
+    [Fact]
+    public void HuntingMasteryAndProtectionCountOnlyAgainstMonsters()
+    {
+        const DamageAttributes.Kind player = DamageAttributes.Kind.Player, monster = DamageAttributes.Kind.Normal, boss = DamageAttributes.Kind.Boss;
+        Assert.Equal(1 + 70 / 10070d, HuntingFactor(70, 0, player, monster), 10);
+        Assert.Equal(1 + 70 / 10070d, HuntingFactor(70, 0, player, boss), 10);
+        Assert.Equal(1, HuntingFactor(70, 70, player, player), 10); // a duel
+        Assert.Equal(1 - 70 / 10070d, HuntingFactor(0, 70, monster, player), 10);
+    }
+
+    [Theory]
+    [InlineData(false, 10, 0)] // the attacker's Bonus ATK
+    [InlineData(true, 0, 40)] // and magic reads the magic pair
+    public void BonusAttackAndDefenseReadTheirKind(bool magic, long fromAttacker, long fromMagic) =>
+        Assert.Equal(fromAttacker + fromMagic - (magic ? 3 : 7), DamageAttributes.FlatBonus(
+            id => id switch { 221 => 10, 222 => 40, _ => 0 }, id => id switch { 223 => 7, 224 => 3, _ => 0 }, magic));
+
+    [Fact]
+    public void AMonsterSideHasNoBonus() => Assert.Equal(-7, DamageAttributes.FlatBonus(null, id => id == 223 ? 7 : 0, false));
+
+    [Fact]
+    public void AReflectRowOfAnotherShapeGivesNothing() => Assert.Equal(0, CardEffects.ReflectedDamage(1000, 0, 1000, [0, 3, 0, 1, 2000, 99, 1000], 60));
+
     [Fact]
     public void DivineLightHealsTheCasterAndTheFirstOtherOneHealed()
     {
