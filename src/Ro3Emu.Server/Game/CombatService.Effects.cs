@@ -183,7 +183,8 @@ public sealed partial class CombatService
                 .Concat(playerTargets.Select(p => (Id: p.Role!.Id, Distance: PlayerDistance(s, p))))
                 .OrderBy(p => p.Distance).ThenBy(p => p.Id).Take(maxTargets).Select(p => p.Id).ToHashSet();
             targets.RemoveAll(m => !selected.Contains(m.Uid));
-            await HitEventPlayersAsync(s, [.. playerTargets.Where(p => selected.Contains(p.Role!.Id))],
+            action.PlayersStruck = [.. playerTargets.Where(p => selected.Contains(p.Role!.Id))];
+            await HitEventPlayersAsync(s, action.PlayersStruck,
                 row, action.Request.SkillId, HitEffect(GameData.Int(row, "_iScriptShow")), action.Id, CanApplyMoreEffects,
                 action.GuardianDamage == null ? null : (id, amount) => RecordGuardianDamage(action, id, amount), center);
             if (IsGuardianEffect(row))

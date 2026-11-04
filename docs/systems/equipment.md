@@ -33,3 +33,28 @@ Kobold Leader, Goblin Leader, Aster, Crab, Shellfish) raise damage on monsters h
 only those: the link from card to tag is (inferred) from who holds the tags. Card: Doppelganger raises the first hit within 2 s
 of a crit, and Card: Osiris at T2 and T3 puts on row 2090401 when the revive is taken. Attributes 30 and 31 count through
 `AttributeConversionConfig` on 312-320 and the crowd-control resists, from any source.
+
+On-hit cards answer a hit on a monster or a player: status on hit, Hunter Fly, Dracula, Bongun, Wind Ghost, Side Winder and
+Doppelganger. A status on a player meets the target's tag resistance. Dark Priest's SP burn acts only on a player, as a monster
+has no current SP. A fixed hit (a reflect, a guardian's) sets off none of them. Blind on a monster limits its sight to
+`BuffService.BlindRadiusCm` from any source; on a player only a guardian's does.
+
+Cards on the player taking a hit. Armor element cards (group 9044, Angeling's 20515, Shadow Angeling's timed 904407) set the
+element `CombatService.ArmorElement` gives EleConfig and 31101 `DstElement`. Dokebi counts as Wind, as its text and 904403
+say, though the row named after the card says 3. Golden Thief Bug shows a magic hit as 0 at its chance
+(`PlayerDamageAdjusters`, before any share, shield or lethal rule); a tick, a fixed amount and a raid mechanic's share of maximum
+HP bypass it, the last being (inferred) what "Boss instant-kill skills" means. Ladybug takes its share off any damage while Silenced.
+Maya and Orc Lord reflect a player's skill tagged ST (`_kSkilltag` 102) of their kind through `ReactToHitAsync`, as a fixed hit
+of the `Rebound_Card` row the buff names; (inferred) a Basic Attack is no skill, 60% caps the whole share, and a reflect can
+kill. Orc Hero refuses category 13, Moonlight Flower category 33, and Eddga knockback and knock-up, each by its group in
+`BuffService.Control`, since those rows carry only text.
+
+Phen keeps a cast through a control on the server and adds 1335 to the variable chant (the group formula would give it nothing).
+The forbid bits still go out, so whether the client keeps playing the skill is open. The granted Magnum Break's buff makes Basic
+Attacks Fire. Envenom, the class skill and Poison Spore's, follows its hit with the row its `_kLogicData` names. Maya Purple and the
+indestructible gear cards have no effect possible: no NPC or AI row holds a hiding buff or skill, and nothing breaks gear. Card:
+Kraken's Bleeding has no data.
+
+Hunting Mastery 231 and Protection 232 are factors of x / (x + 10000) against monsters. Bonus ATK and DEF 221-224, the Flash
+copies' dead line until now, add after defense and before the factors, and not on a tick; nothing converts them into ATK or DEF.
+Both placements are (inferred) from `PBDubugDamageFormulaEnum`.

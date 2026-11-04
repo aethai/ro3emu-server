@@ -23,9 +23,9 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var a = Session("alice");
-        Assert.Equal(1, CombatService.ArmorElement(a));
+        Assert.Equal(1, _app.Services.GetRequiredService<CombatService>().ArmorElement(a));
         await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(a, 1162201, 60000, a.Role!.Id));
-        Assert.Equal(7, CombatService.ArmorElement(a));
+        Assert.Equal(7, _app.Services.GetRequiredService<CombatService>().ArmorElement(a));
     }
 
     [Theory]

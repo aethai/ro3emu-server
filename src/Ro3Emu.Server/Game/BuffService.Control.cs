@@ -18,6 +18,14 @@ public sealed partial class BuffService
     /// <summary>Berserk 1121401: "Gain Slow Immunity"; Slows carry category 33, and its buff holds no immunity category of its own.</summary>
     private const int SlowCategory = 33, BerserkGroup = 11214;
 
+    /// <summary>Card: Eddga 2052301: "Grants permanent [Endure] (immune to knockback, knock-up, and hitstun effects)." Its row holds nothing, and carries
+    /// none of the category 19 the Endure rows do. (inferred) It counts as one. The hitstun is the client's own flinch: nothing on the server to refuse.</summary>
+    private const int EddgaGroup = 20523;
+
+    /// <summary>Card: Moonlight Flower 2052501 "Immune to Slow", Card: Orc Hero 2052701 "Immune to Stun". The rows carry only that text; Stuns carry
+    /// category 13. (inferred) A row with the category is refused whole, as for Berserk, even one that does more than slow.</summary>
+    private const int StunCategory = 13, MoonlightFlowerGroup = 20525, OrcHeroGroup = 20527;
+
     /// <summary>Praefatio 1430201: "grants them Immunity to up to ${3} [Status Effect] and [Movement Restriction] effects".</summary>
     private const int PraefatioGroup = 14302;
     private const long PraefatioSkill = 1430200;
@@ -67,19 +75,20 @@ public sealed partial class BuffService
         bool control = categories.Contains(ControlBuffTag);
         bool displacement = GameData.Int(incoming, "_iBuffID") is KnockBackGroup or KnockUpGroup;
         // Chimera's charge also carries control immunity (category 20), but it is spent per application instead.
-        bool slow = categories.Contains(SlowCategory);
+        bool slow = categories.Contains(SlowCategory), stun = categories.Contains(StunCategory);
         return active.Any(b => b.ExpireMs > now
             && _data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") != ControlChargeGroup
             && GuardianPetRules.Numbers(row, "_kBuffCategory") is var held
             && (held.Contains(DebuffImmunityCategory) || held.Contains(AllNegativeImmunityCategory)
                 || control && held.Contains(ControlImmunityCategory)
-                || displacement && held.Contains(DisplacementImmunityCategory)
-                || slow && b.ConfigId / 100 == BerserkGroup));
+                || displacement && (held.Contains(DisplacementImmunityCategory) || b.ConfigId / 100 == EddgaGroup)
+                || slow && b.ConfigId / 100 is BerserkGroup or MoonlightFlowerGroup
+                || stun && b.ConfigId / 100 == OrcHeroGroup));
     }
 
     /// <summary>SpecialStatusConfig 22 Endure "免疫击退、击飞、僵直" and 23 control immunity, whose text lists knockback and launch too: nothing moves a holder.</summary>
     private bool HoldsDisplacementImmunity(IEnumerable<ActiveBuff> active) => active.Any(b => b.ExpireMs > MonsterService.NowMs
-        && BuffConfig.Get(_data, b.ConfigId) is { } row && row.BuffCategory.Any(c => c is DisplacementImmunityCategory or ControlImmunityCategory or AllNegativeImmunityCategory));
+        && (b.ConfigId / 100 == EddgaGroup || BuffConfig.Get(_data, b.ConfigId) is { } row && row.BuffCategory.Any(c => c is DisplacementImmunityCategory or ControlImmunityCategory or AllNegativeImmunityCategory)));
 
     internal bool ResistsDisplacement(GameSession player) => HoldsDisplacementImmunity(player.Buffs);
 

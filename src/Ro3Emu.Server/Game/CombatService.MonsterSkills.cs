@@ -52,7 +52,7 @@ public sealed partial class CombatService
                 foreach (var adjust in MonsterDamageAdjusters) damage = adjust(caster, damage, true);
             }
             if (damage > 0) foreach (var modifier in IncomingDamageAdjusters) damage = Math.Max(0, await modifier(caster, p, result, damage));
-            var committed = await CommitPlayerDamageAsync(p, damage, row, Current, sourceElement: element);
+            var committed = await CommitPlayerDamageAsync(p, damage, row, Current, sourceElement: element, directHit: maxHpBasisPoints <= 0);
             if (committed == null) continue;
             (damage, long hp, _, long shieldDamage) = committed.Value;
             hits++;
@@ -63,7 +63,7 @@ public sealed partial class CombatService
                 {
                     SrcID = sourceId, SkillId = skillId, ShowPoint = show, SessionId = session, SrcElement = element,
                     Dsts = { new DamageInfo { DstID = targetRole.Id, Damage = damage, SheildDamage = shieldDamage, HitResult = result,
-                        DstElement = 1, IsDead = hp == 0 } },
+                        DstElement = ArmorElement(p), IsDead = hp == 0 } },
                 };
                 var hitViewers = _world.Viewers(p).Append(p).Distinct().ToArray();
                 await SendHitBulletsAsync(hitViewers, row, hit, caster.Uid);

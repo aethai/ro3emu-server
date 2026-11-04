@@ -17,6 +17,7 @@ internal static class AttributeId
     internal const int CastSpeed = 116; // cspd
     internal const int VarChant = 201; // varchant
     internal const int PerVarChant = 202; // per_varchant
+    internal const int BuffPerVarChant = 1335; // buff_per_varchant
     internal const int FixChant = 203; // fixchant
     internal const int PerFixChant = 204; // per_fixchant
     internal const int PerTreat = 207; // per_treat

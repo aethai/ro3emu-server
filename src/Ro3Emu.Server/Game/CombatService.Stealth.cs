@@ -74,6 +74,6 @@ public sealed partial class CombatService
 
     /// <summary>An extra hit of a SkillConfig row on one hostile player, through the ordinary player hit path.</summary>
     internal Task CastExtraOnPlayerAsync(GameSession source, SkillConfig row, GameSession target) =>
-        HitEventPlayersAsync(source, [target], row.Row, (int)row.Id, (int)row.ScriptShow,
+        HitEventPlayersAsync(source, [target], row.Row, (int)row.Id, HitEffect(row.ScriptShow),
             ++_sessionIds, () => source.Role != null && !source.Dead);
 }
