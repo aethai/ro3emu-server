@@ -1116,4 +1116,29 @@ public sealed partial class CardRulesTests
             Assert.True(await Lands(alice, session, Stun, striker.Uid));
         }
     }
+
+    // Card: Eddga T3: 2052301 "Grants permanent Endure (immune to knockback, knock-up, and hitstun effects)." A player's Knockback buff
+    // does not land, and nothing moves him; a Stun still does. Out of the socket, he can be moved again.
+    [ClientDataFact]
+    public async Task EddgaHoldsItsHolderInPlaceAndLeavesOtherControlsAlone()
+    {
+        const int card = 1460500, knockBack = 901701, knockUp = 901801;
+        var (alice, session) = await Holder("Alice", card, 5);
+        await using (alice)
+        {
+            await AtStar(session, card, 3);
+            var striker = (await Strikers(session, 1))[0];
+            var buffs = Service<BuffService>();
+            Assert.True(await OnLoop(() => buffs.ResistsDisplacement(session)));
+            Assert.False(await Lands(alice, session, knockBack, striker.Uid));
+            Assert.False(await Lands(alice, session, knockUp, striker.Uid));
+            Assert.True(await Lands(alice, session, Stun, striker.Uid));
+
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)5, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => !session.Buffs.Any(b => b.IsPassive && !b.IsTotemOwned), "the passive gone");
+            Assert.False(await OnLoop(() => buffs.ResistsDisplacement(session)));
+            Assert.True(await Lands(alice, session, knockBack, striker.Uid));
+        }
+    }
 }

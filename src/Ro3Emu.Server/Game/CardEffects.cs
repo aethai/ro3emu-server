@@ -45,7 +45,7 @@ namespace Ro3Emu.Server.Game;
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
 /// - status immunity: Moonlight Flower's Slow, Orc Hero's Stun, by group in BuffService.ImmuneTo, the rows having only their text.
-/// Not executed (no machinery or no data link): Endure.
+/// - Endure: Eddga, by group in BuffService, no knockback or knock-up. Its hitstun is the client's.
 /// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
 /// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's
