@@ -164,6 +164,8 @@ public sealed class MonsterHuntService
                 .Select(t => ((long)(GameData.Number(t[0]) ?? 0), (long)(GameData.Number(t[1]) ?? 0), (long)(GameData.Number(t[2]) ?? 0)))
             : [];
 
+    private const string MonsterAwardField = "_kMonsterAward", AreaLimitField = "_iAreaLimit";
+
     /// <summary>The area's claimed monster stages, the progress its own stages need (capped at _iAreaLimit; inferred).</summary>
     private long ClaimedInArea(DBAreaConcurInfo state, long areaId, JsonElement area)
     {
@@ -171,7 +173,7 @@ public sealed class MonsterHuntService
         foreach (var (id, info) in state.MonsterInfo)
             if (_data.Row("AreaConcurMonsterConfig", id) is { } row && _areaOfMap.GetValueOrDefault(GameData.Int(row, "_iMap")) == areaId)
                 count += info.ClaimedAward.Count(c => c.Value);
-        return Math.Min(count, GameData.Int(area, "_iAreaLimit"));
+        return Math.Min(count, GameData.Int(area, AreaLimitField));
     }
 
     /// <summary>
@@ -186,9 +188,9 @@ public sealed class MonsterHuntService
         {
             if (_areaOfMap.GetValueOrDefault(new Data.Config.AreaConcurMonsterConfig(row).Map) != areaId) continue;
             long kills = state.MonsterInfo.GetValueOrDefault(new Data.Config.AreaConcurMonsterConfig(row).Id)?.CurScore ?? 0;
-            count += Stages(row, "_kMonsterAward").Count(t => kills >= t.Need);
+            count += Stages(row, MonsterAwardField).Count(t => kills >= t.Need);
         }
-        return Math.Min(count, GameData.Int(area, "_iAreaLimit"));
+        return Math.Min(count, GameData.Int(area, AreaLimitField));
     }
 
     /// <summary>83623: every requested stage the monster's kills reach and that is not claimed yet (the client sends them all).</summary>
@@ -203,7 +205,7 @@ public sealed class MonsterHuntService
             {
                 long kills = state.MonsterInfo.GetValueOrDefault(req.MonsterId)?.CurScore ?? 0;
                 var claimed = state.MonsterInfo.GetValueOrDefault(req.MonsterId)?.ClaimedAward;
-                var stages = Stages(monster, "_kMonsterAward")
+                var stages = Stages(monster, MonsterAwardField)
                     .Where(t => req.StageIds.GetValueOrDefault(t.Stage) && kills >= t.Need && claimed?.GetValueOrDefault(t.Stage) != true).ToArray();
                 if (stages.Length > 0)
                 {
