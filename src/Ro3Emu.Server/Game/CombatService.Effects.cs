@@ -85,6 +85,7 @@ public sealed partial class CombatService
         }
         if (!CurrentCastMap(s, action)) return;
         // SkillConfig._bMovement is enum_SkillLockMoveType (may the caster walk while casting), not a displacement.
+        await EndReadingAsync(s, action);
         await MoveCasterAsync(s, action);
         if (!CurrentCastMap(s, action)) return;
         if (await StartChannelAsync(s, action)) return;
