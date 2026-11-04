@@ -123,7 +123,7 @@ public sealed partial class CombatService
             await ToPlayerAndViewersAsync(p, SkillHit, new SkillHitInfo
             {
                 SrcID = effect.Source!.Uid, SessionId = ++_sessionIds, SrcElement = rule.Element,
-                Dsts = { new DamageInfo { DstID = role.Id, Damage = damage, SheildDamage = shieldDamage, DstElement = 1, IsDead = hp == 0 } },
+                Dsts = { new DamageInfo { DstID = role.Id, Damage = damage, SheildDamage = shieldDamage, DstElement = ArmorElement(p), IsDead = hp == 0 } },
             });
             await _character.SetHpSpAsync(p, null, null);
             if (effect.Source.Player is { } applier && applier.Role?.Id == effect.Source.Uid)

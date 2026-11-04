@@ -63,7 +63,7 @@ public sealed partial class CombatService
                 {
                     SrcID = sourceId, SkillId = skillId, ShowPoint = show, SessionId = session, SrcElement = element,
                     Dsts = { new DamageInfo { DstID = targetRole.Id, Damage = damage, SheildDamage = shieldDamage, HitResult = result,
-                        DstElement = 1, IsDead = hp == 0 } },
+                        DstElement = ArmorElement(p), IsDead = hp == 0 } },
                 };
                 var hitViewers = _world.Viewers(p).Append(p).Distinct().ToArray();
                 await SendHitBulletsAsync(hitViewers, row, hit, caster.Uid);

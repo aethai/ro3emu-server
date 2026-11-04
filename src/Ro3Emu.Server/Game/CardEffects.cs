@@ -39,10 +39,11 @@ namespace Ro3Emu.Server.Game;
 /// - next hit after a crit: 20507, see <see cref="NextHitBonus"/>.
 /// Status, life steal, SP absorb, autocast, Double Attack and the next hit after a crit answer a hit on a monster or a player. Size and
 /// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
+/// - armor element: the cards' passives 9044xx and 20515 are read by CombatService.ArmorElement on every hit a player takes.
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
-/// Not executed (no machinery or no data link): armor element changes, status immunities, Endure.
+/// Not executed (no machinery or no data link): status immunities, Endure.
 /// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
 /// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's

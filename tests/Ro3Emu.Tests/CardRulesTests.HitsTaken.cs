@@ -924,4 +924,92 @@ public sealed partial class CardRulesTests
             Assert.InRange(tickFlash, (long)(tickPlain * 0.994) - 1, tickPlain);
         }
     }
+
+    // "Changes armor property to Earth", and so on. Dokebi's text says Wind and 904403 holds 2; only its row named after the card says 3.
+    [ClientDataTheory]
+    [InlineData(1440300, 3)] // Sandman, Earth
+    [InlineData(1440302, 5)] // Swordfish, Water
+    [InlineData(1440303, 2)] // Dokebi, Wind
+    [InlineData(1440304, 6)] // Argiope, Poison
+    [InlineData(1440305, 4)] // Pasana, Fire
+    [InlineData(1440306, 9)] // Ghostring, Ghost
+    [InlineData(1460300, 7)] // Angeling, Holy
+    public async Task AnArmorElementCardGivesTheElementItsTextNamesInTheHitsItTakes(int card, int element)
+    {
+        var (alice, session) = await Holder("Alice", card, 3);
+        await using (alice)
+        {
+            var striker = (await Strikers(session, 1))[0];
+            Assert.Equal(element, (await SwungAt(alice, session, striker)).DstElement);
+            Assert.Equal(element, (await SkillAt(alice, session, striker, FireBolt)).DstElement);
+        }
+    }
+
+    // A Fire monster on Earth armor: EleConfig row 3 _iFire +5000; on Water armor: row 5 _iFire -2500. A Neutral monster on Ghost
+    // armor: row 9 _iNone -2500. Sandman, Swordfish and Ghostring carry the same stat lines at each star, T1 here, so only the element differs.
+    [ClientDataFact]
+    public async Task ArmorElementScalesTheDamageByEleConfig()
+    {
+        var (alice, session) = await Holder("Alice", 1440300, 3);
+        await using (alice)
+        {
+            await Gm("alice", "!item 1440302 1");
+            await Gm("alice", "!item 1440306 1");
+            await Eventually(() => session.Items.Any(i => i.Entry == 1440302) && session.Items.Any(i => i.Entry == 1440306), "the cards");
+            await AtStar(session, 1440300, 1);
+            var strikers = await Strikers(session, 4, 1);
+            var (fire, neutral) = (strikers[0], strikers[1]);
+
+            long earth = (await SwungAt(alice, session, fire)).Damage;
+            long plain = (await SwungAt(alice, session, neutral)).Damage;
+
+            async Task Swap(int card, int element)
+            {
+                await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)3, SlotIndex = 1 });
+                Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+                Assert.Equal(0, await Insert(alice, 3, 1, session.Items.Single(i => i.Entry == card).Guid));
+                await AtStar(session, card, 1);
+                await Eventually(() => Service<CombatService>().ArmorElement(session) == element, "the new card's element");
+            }
+
+            await Swap(1440302, 5);
+            long water = (await SwungAt(alice, session, fire)).Damage;
+            await Swap(1440306, 9);
+            long ghost = (await SwungAt(alice, session, neutral)).Damage;
+
+            Assert.True(plain > 100, "too little damage to see the element in: " + plain);
+            Assert.InRange(earth, plain * 3 / 2 - 2, plain * 3 / 2 + 2);
+            Assert.InRange(water, plain * 3 / 4 - 2, plain * 3 / 4 + 2);
+            Assert.InRange(ghost, plain * 3 / 4 - 2, plain * 3 / 4 + 2);
+        }
+    }
+
+    [ClientDataFact]
+    public async Task WithNoArmorCardAHitTakenIsOnNeutral()
+    {
+        await using var alice = await InWorld("Alice");
+        var session = Session("Alice");
+        var striker = (await Strikers(session, 4))[0];
+        Assert.Equal(1, (await SwungAt(alice, session, striker)).DstElement);
+    }
+
+    // A player's Fire Bolt on Earth armor: the same row of EleConfig, +50%, and the 31101 says Earth. The tick's 31101 too.
+    [ClientDataFact]
+    public async Task ArmorElementCountsAgainstAPlayersHitAndATick()
+    {
+        var (bob, b) = await Holder("Bob", 1440300, 3);
+        await using (bob)
+        {
+            await using var alice = await InWorld("Alice");
+            var a = Session("Alice");
+            await Gm("alice", "!lvl 80");
+            await Gm("alice", "!job 2100");
+            await Learn(a, 12004);
+            await Duel(alice, a, bob, b);
+            Assert.Equal(3, (await CastAt(alice, a, FireBolt, b)).DstElement);
+            await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().AddAsync(b, 903001, 800, a.Role!.Id));
+            var tick = await Next(bob, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == a.Role!.Id && h.SkillId == 0);
+            Assert.Equal(3, Assert.Single(tick.Dsts).DstElement);
+        }
+    }
 }

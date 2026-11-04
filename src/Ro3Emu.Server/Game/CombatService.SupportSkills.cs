@@ -88,8 +88,30 @@ public sealed partial class CombatService
         return 0;
     }
 
-    /// <summary>A player's armor: Neutral, or Holy under Piety 1162201 "Armor element Holy". The buff row holds no number.</summary>
-    internal static int ArmorElement(GameSession p) => p.Buffs.Any(b => b.ExpireMs > Now && b.ConfigId / 100 == 11622) ? 7 : 1;
+    private const int PietyGroup = 11622, ArmorElementGroup = 9044, AngelingArmorGroup = 20515, HolyArmor = 7, NeutralArmor = 1;
+
+    /// <summary>
+    /// A player's armor: Neutral, or Holy under Piety 1162201 "Armor element Holy", whose row holds no number, or what a card gives. Group 9044
+    /// "Change Armor to Ghost Property" holds the element in _kLogicData[0]: 904401 Earth 3, 904402 Water 5, 904403 Wind 2, 904404 Poison 6,
+    /// 904405 Fire 4, 904406 Ghost 9, 904407 Holy 7. Sandman, Swordfish, Dokebi, Argiope, Pasana and Ghostring socket it as a passive beside a row
+    /// named after the card, which is not read: Dokebi's 2011001 says 3 (Earth), while its text and 904403 say Wind. Card: Angeling has no
+    /// 9044 row, its own 2051501 "Changes your armor's element to Holy" has [7]. Shadow Card: Angeling puts 904407 on for seconds (CardEffects).
+    /// (inferred) A timed element beats a socketed one. LC_CardViewHelper lets in one card that changes armor elements (_iIsEleCard).
+    /// </summary>
+    internal int ArmorElement(GameSession p)
+    {
+        int element = NeutralArmor;
+        foreach (var buff in p.Buffs)
+        {
+            if (buff.ExpireMs <= Now) continue;
+            int group = buff.ConfigId / 100;
+            if (group == PietyGroup) return HolyArmor;
+            if (group is not (ArmorElementGroup or AngelingArmorGroup) || BuffConfig.Get(_data, buff.ConfigId)?.LogicData is not [var held, ..]) continue;
+            if (!buff.IsPassive) return (int)held;
+            element = (int)held;
+        }
+        return element;
+    }
 
     private static DamageAttributes.Kind KindOf(MonsterTemplate t) => t.IsBoss ? DamageAttributes.Kind.Boss : DamageAttributes.Kind.Normal;
 
