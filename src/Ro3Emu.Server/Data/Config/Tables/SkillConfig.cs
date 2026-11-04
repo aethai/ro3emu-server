@@ -127,6 +127,26 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     }
 
     /// <summary>This row with other damage ratios (basis points) and flat damage, everything else kept.</summary>
+    /// <summary>Set on one hit of a staged cast that moves nobody (Fearless Charge's knock-up, Earthshaker's hits before its last).
+    /// Not a client field: the rule is the cast's, and a hit's row is all both the monster and the player path read.</summary>
+    public const string StillHitField = "stillHit";
+
+    /// <summary>A status this hit lands on a target the cast has not yet given one: Tetra Vortex's "guaranteed to inflict at least 1". Not a client field.</summary>
+    public const string GuaranteedStatusField = "guaranteedStatus";
+
+    /// <summary>This row as one stage of a cast: its damage words, optionally an element, a list of statuses, and whether it moves its targets.</summary>
+    public JsonElement AsStage(long words = 0, long element = 0, long[][]? statuses = null, long[]? guaranteed = null, bool still = false)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(Row.GetRawText())!.AsObject();
+        static System.Text.Json.Nodes.JsonArray Array(IEnumerable<long> values) => new([.. values.Select(v => (System.Text.Json.Nodes.JsonNode)v)]);
+        if (words > 0) node["_kShowDmg"] = Array([words]);
+        if (element > 0) node["_iEleType"] = element;
+        if (statuses != null) node["_kBuff2"] = new System.Text.Json.Nodes.JsonArray([.. statuses.Select(tuple => (System.Text.Json.Nodes.JsonNode)Array(tuple))]);
+        if (guaranteed != null) node[GuaranteedStatusField] = Array(guaranteed);
+        if (still) node[StillHitField] = 1;
+        return JsonSerializer.SerializeToElement(node);
+    }
+
     public JsonElement WithDamage(long[] ratios, long[] flats)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(Row.GetRawText())!.AsObject();
