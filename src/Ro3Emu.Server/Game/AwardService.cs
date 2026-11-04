@@ -16,7 +16,7 @@ public sealed class AwardPlan(long groupId, long awardId, IEnumerable<AwardGrant
     public IReadOnlyList<AwardGrant> Grants { get; } = new ReadOnlyCollection<AwardGrant>([.. grants]);
 }
 
-public sealed class AwardResolutionException(string message) : InvalidOperationException(message);
+public class AwardResolutionException(string message) : InvalidOperationException(message);
 
 /// <summary>
 /// Resolves MultiverseGroupConfig type 0 to AwardConfig, including fixed tuples and actual DropPool terminals.
@@ -77,13 +77,13 @@ public sealed class AwardService(GameData data)
         if (rows.GetArrayLength() != 1 && serverOpenDay == null)
             throw Fail($"AwardConfig {awardId} has multiple open-day rows; authoritative selector unresolved");
         var row = rows.GetArrayLength() == 1 ? rows[0] : OpenDayRow(rows, serverOpenDay!.Value, awardId);
-        if (serverOpenDay != null && HasValues(row, "_kCondition")) CheckLevelCondition(row, progress, awardId);
-        if (HasValues(row, "_kEXP") || serverOpenDay == null && HasValues(row, "_kCondition"))
-            throw Fail($"AwardConfig {awardId} has unresolved EXP or condition policy");
+        long baseExp = BaseExp(row, awardId);
+        if (HasValues(row, "_kCondition")) CheckLevelCondition(row, progress, awardId);
         if (data.Table("AwardRestricConfig").Values.Any(r => GameData.Int(r, "_iRewardID") == awardId))
             throw Fail($"AwardConfig {awardId} has unresolved restriction/replacement policy");
 
         var grants = new List<AwardGrant>();
+        if (baseExp > 0) grants.Add(new AwardGrant(BaseExpItem, checked((int)baseExp)));
         if (row.TryGetProperty("_kAward", out var fixedItems))
         {
             if (fixedItems.ValueKind == JsonValueKind.Object && !fixedItems.EnumerateObject().Any()) { /* empty export */ }
@@ -196,6 +196,21 @@ public sealed class AwardService(GameData data)
             throw Fail($"currency {entry} has unsupported binding, expiry, or trade policy");
     }
 
+    private const int BaseExpItem = 100;
+
+    /// <summary>
+    /// _kEXP [1, n]: n base EXP, read the way TaskConfig's _kEXP is (TaskService). Any other EXP kind stays unresolved.
+    /// </summary>
+    private static long BaseExp(JsonElement row, long awardId)
+    {
+        if (!HasValues(row, "_kEXP")) return 0;
+        var exp = row.GetProperty("_kEXP");
+        if (exp.ValueKind == JsonValueKind.Array && exp.GetArrayLength() == 2 && GameData.Number(exp[0]) == 1
+            && ExactLong(exp[1], "EXP") is var amount and > 0 and <= int.MaxValue)
+            return amount;
+        throw Fail($"AwardConfig {awardId} has unresolved EXP policy");
+    }
+
     private static bool HasValues(JsonElement row, string key) => row.TryGetProperty(key, out var value) && (value.ValueKind switch
     {
         JsonValueKind.Array => value.GetArrayLength() > 0,
@@ -238,4 +253,4 @@ public sealed class AwardService(GameData data)
 }
 
 /// <summary>The recipient does not meet an AwardConfig _kCondition the source may refuse on.</summary>
-public sealed class AwardConditionException(string message) : InvalidOperationException(message);
+public sealed class AwardConditionException(string message) : AwardResolutionException(message);

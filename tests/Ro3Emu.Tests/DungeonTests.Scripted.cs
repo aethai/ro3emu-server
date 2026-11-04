@@ -381,6 +381,8 @@ public sealed partial class DungeonTests
     public async Task LouiesGamePlaysItsStoriesAndOnlyKatiesBellWins()
     {
         const long scene = 3120402;
+        // A roll of 0 hides Katie's ring under the west Bell (point 29) instead of where the data lists it (31).
+        Service<DungeonService>().ShuffleRoll = _ => 0;
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!quest accept 10106270"); // The Mysterious Thief Gang: [101018, 3120402, 1]
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
@@ -395,6 +397,8 @@ public sealed partial class DungeonTests
         var actors = await ActorsIn(alice, 6);
         Assert.Equal(3, actors.Count(a => a.NpcId == 400137)); // the bells
         var katie = actors.Single(a => a.NpcId == 400134);
+        Assert.Equal(29L, katie.Point);
+        Assert.Equal([29L, 30L, 31L], actors.Where(a => a.NpcId == 400137).Select(a => a.Point).Order()); // the bells stay
         var wrong = actors.Single(a => a.NpcId == 400135);
         Assert.Equal(2, katie.EntityType); // TriggerNpcInteract looks the ring up as an NPC by its config id
         // Walking up opens the ring's dialogue (auto interaction 20003001, answered so the client runs action 53).
@@ -466,6 +470,9 @@ public sealed partial class DungeonTests
     public async Task LouiesShellGameTakesTwoRightGuessesWhileWrongOnesChangeNothing()
     {
         const long scene = 3120703;
+        // A roll of 0 hides Katie under the west Bell (29) in round 1 and the centre one (30) in round 2, not where the
+        // data lists her (31, then 29).
+        Service<DungeonService>().ShuffleRoll = _ => 0;
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!quest accept 205170"); // A New Round: [101018, 3120703, 1]
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
@@ -485,14 +492,14 @@ public sealed partial class DungeonTests
         await Task.Delay(200);
         Assert.Equal(1, Session(alice).DungeonAttempt!.Wave + 1);
         var katie = round1.Single(a => a.NpcId == 400134);
-        Assert.Equal(31L, katie.Point); // straight ahead of Katie's place
+        Assert.Equal(29L, katie.Point); // the drawn Bell
         await Beside(alice, katie.X, katie.Y, katie.Z);
         Assert.Equal(0, await Interact(alice, katie, 20003001));
         Assert.Equal(0, await Interact(alice, katie, 5300040)); // message 11: right
 
-        // Round 2: the cat has moved; the Bells, Louie and Martha stay, the rings change places.
+        // Round 2: the cat has moved; the Bells, Louie and Martha stay, the rings are drawn again.
         await Stage(alice, 2, quest: 1);
-        var round2 = await ActorsWhen(alice, shown => shown.Count == 8 && shown.Any(a => a.NpcId == 400134 && a.Point == 29));
+        var round2 = await ActorsWhen(alice, shown => shown.Count == 8 && shown.Any(a => a.NpcId == 400134 && a.Point == 30));
         Assert.All(round1.Where(a => a.NpcId is 400131 or 400132 or 400138), kept => Assert.Contains(kept, round2));
         Assert.False(Session(alice).DungeonAttempt!.Settled);
         var stale = round2.Single(a => a.NpcId == 400135);
@@ -516,6 +523,7 @@ public sealed partial class DungeonTests
     {
         const long scene = 3120703;
         Service<IOptions<ServerOptions>>().Value.ScriptedScenePacePercent = 10;
+        Service<DungeonService>().ShuffleRoll = bound => bound - 1; // the listed layout: Katie at 31, then at 29
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!quest accept 205170");
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
@@ -642,6 +650,56 @@ public sealed partial class DungeonTests
             Assert.Fail("the walk off the nav was snapped back");
         }
         finally { options.WalkCheck = "log"; }
+    }
+
+    // Louie's bell games (inferred): each round hides Katie's ring (400134) under a random Bell. The rings' places are
+    // drawn among the points the step lists for them; the Bells, Louie and Martha keep theirs.
+    public static TheoryData<long, int> LouiesBellRounds() => new() { { 3120402, 1 }, { 3120703, 0 }, { 3120703, 1 } };
+
+    private static ReconstructedDungeons.ScriptedStep BellRound(long scene, int step) =>
+        new ReconstructedDungeons(Options.Create(new ServerOptions())).Scripted(scene)!.Steps[step];
+
+    [Theory]
+    [MemberData(nameof(LouiesBellRounds))]
+    public void LouiesBellRoundsShuffleOnlyTheRings(long scene, int index)
+    {
+        var step = BellRound(scene, index);
+        Assert.Equal([400134, 400135, 400136], step.Shuffle.Order());
+        // A roll that keeps every place (Fisher-Yates swapping each slot with itself) shows the listed layout.
+        Assert.Equal(step.Actors, step.Placed(bound => bound - 1));
+        foreach (var placed in new[] { step.Placed(_ => 0), step.Placed(new Random(7).Next) })
+        {
+            // Every actor outside the shuffle, the Bells first of all, stays as listed.
+            Assert.Equal(step.Actors.Where(a => !step.Shuffle.Contains(a.NpcId)), placed.Where(a => !step.Shuffle.Contains(a.NpcId)));
+            // The rings take exactly the listed ring places, and each one stands on a Bell: the reaction's effect goes on the
+            // Bell at the point of the ring the player used (DungeonService.RespondAsync).
+            var rings = placed.Where(a => step.Shuffle.Contains(a.NpcId)).ToArray();
+            Assert.Equal(step.Actors.Where(a => step.Shuffle.Contains(a.NpcId)).Select(a => a.Point).Order(), rings.Select(a => a.Point).Order());
+            Assert.All(rings, ring => Assert.Contains(placed, a => a.NpcId is 400137 or 400138 && a.Point == ring.Point));
+        }
+        // A roll of 0 moves Katie off the Bell the data lists her under.
+        long listed = step.Actors.Single(a => a.NpcId == 400134).Point;
+        Assert.NotEqual(listed, step.Placed(_ => 0).Single(a => a.NpcId == 400134).Point);
+        // The right guess is still ring 400134's message 11 wherever it stands; the others' 12 is still ignored.
+        Assert.Equal([11L], step.Complete.Where(t => t.Kind == ReconstructedDungeons.TriggerKind.Message).Select(t => t.Id));
+        Assert.Equal([12L], step.Ignore.Select(t => t.Id));
+    }
+
+    [Theory]
+    [MemberData(nameof(LouiesBellRounds))]
+    public void KatieHidesUnderEveryBellAcrossRounds(long scene, int index)
+    {
+        var step = BellRound(scene, index);
+        var hiding = Enumerable.Range(0, 200).Select(seed => step.Placed(new Random(seed).Next).Single(a => a.NpcId == 400134).Point);
+        Assert.Equal([29L, 30L, 31L], hiding.Distinct().Order());
+    }
+
+    [Fact]
+    public void AStepWithoutAShuffleKeepsItsActorsWhereTheyAreListed()
+    {
+        var step = BellRound(3120402, 3); // the Professor's instrument
+        Assert.Empty(step.Shuffle);
+        Assert.Same(step.Actors, step.Placed(_ => 0));
     }
 
     [ClientDataFact]

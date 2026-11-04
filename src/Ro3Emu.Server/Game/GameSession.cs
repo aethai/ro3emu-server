@@ -43,6 +43,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
 
     /// <summary>The signed-in account; set only by <see cref="SessionRegistry.SignInAsync"/> (tests may set it).</summary>
     public string? Account { get; internal set; }
+    /// <summary>Account as the client spelled it at SDK login (AccountStore.ClientAccount), for what the client compares with it.</summary>
+    public string? ClientAccount { get; set; }
 
     /// <summary>A message was refused before its stage (GameMessageHandler); only the first one is logged.</summary>
     internal bool EarlyMessageRefused { get; set; }

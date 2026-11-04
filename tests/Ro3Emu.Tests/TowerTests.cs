@@ -699,6 +699,30 @@ public sealed class TowerTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task TryAgainAfterDeathRevivesAtFullHpOnAFreshFloor()
+    {
+        await using var alice = await InWorld("Alice");
+        await Eligible(alice, level: 33);
+        var lost = await EnterFloor(alice, 1);
+        await OnLoop(() => Service<CharacterService>().SetHpSpAsync(Session(alice), 1, null));
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = lost.Monsters[0].MovementInfo.Pos, BStop = true, SpeedRate = 1 });
+        await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser,
+            hit => hit.Dsts.Any(d => d.DstID == (long)alice.Self!.Uuid && d.IsDead));
+        Assert.False((await Next(alice, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
+        Assert.True(Session(alice).Dead);
+
+        // The Failed panel's Try Again sends 32801 from inside the tower while the challenger is still dead.
+        var retry = await EnterFloor(alice, 1, inside: true);
+        Assert.NotEqual(lost.Scene.SceneID, retry.Scene.SceneID);
+        Assert.Equal(2, retry.Monsters.Length);
+        await Next(alice, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => !info.BDead);
+        var s = Session(alice);
+        Assert.False(s.Dead);
+        Assert.Equal(Service<CharacterService>().Stats(s)[101], Service<CharacterService>().Stats(s)[2000]);
+        Assert.Equal(retry.Scene.SceneID, s.TowerAttempt!.InstanceId);
+    }
+
+    [ClientDataFact]
     public async Task EveryWaveOccurrenceSurvivesExpansionAndExitCancelsTheRest()
     {
         var data = Service<GameData>();
