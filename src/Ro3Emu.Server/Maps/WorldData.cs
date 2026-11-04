@@ -136,6 +136,46 @@ public sealed class MapWorld
         return p;
     }
 
+    private IReadOnlyList<MapPoint>? _walkableSpots;
+    private volatile IReadOnlyList<MapPoint>? _randomSpots;
+    private Task<IReadOnlyList<MapPoint>>? _warming;
+    private readonly object _warmSync = new();
+
+    /// <summary>
+    /// The spots a Fly Wing picks from (inferred): the map's authored points and monster spawn points on walkable ground
+    /// that can be walked to from where players arrive (born, revive, Kafra and portal arrivals). Field maps carry
+    /// points on walkable strips cut off from the play area, such as Payon Forest's (10220) northern edge at z 398-399;
+    /// landing there strands the player. Without a nav grid, or with no arrival on walkable ground, every spot counts.
+    /// The reachability flood fill takes up to about 400 ms on a field map, so it runs off the game loop
+    /// (<see cref="WarmRandomSpots"/>, started when the map loads); until it finishes every walkable spot counts.
+    /// </summary>
+    public IReadOnlyList<MapPoint> RandomSpots => _randomSpots ?? WalkableSpots;
+
+    /// <summary>The map's authored and spawn points grounded on walkable ground, before the reachability filter.</summary>
+    private IReadOnlyList<MapPoint> WalkableSpots => _walkableSpots ??=
+        [.. Points.Values.Concat(SpawnGroups.SelectMany(g => g.Points).Select(p => new MapPoint(p.X, p.Y, p.Z, p.Face)))
+            .Select(Grounded).Where(p => IsWalkable(p.X, p.Y, p.Z))];
+
+    /// <summary>
+    /// Starts the reachability filter of <see cref="RandomSpots"/> on the thread pool, once. The finished list replaces
+    /// the walkable fallback with one reference assignment, so a reader never sees a half-built list.
+    /// </summary>
+    public Task<IReadOnlyList<MapPoint>> WarmRandomSpots()
+    {
+        lock (_warmSync)
+            return _warming ??= Task.Run(() => (IReadOnlyList<MapPoint>)(_randomSpots = FindRandomSpots()));
+    }
+
+    private IReadOnlyList<MapPoint> FindRandomSpots()
+    {
+        var spots = WalkableSpots;
+        if (Nav is not { } nav) return spots;
+        var arrivals = new[] { Born, Revive }.OfType<MapPoint>()
+            .Concat(Npcs.Where(n => n.Kind is WorldNpcKind.Kafra or WorldNpcKind.Portal).Select(n => n.Arrival))
+            .Select(Grounded);
+        var reach = nav.Reachable(arrivals.Select(p => (p.X, p.Y, p.Z)));
+        return reach.IsEmpty ? spots : [.. spots.Where(p => reach.Contains(p.X, p.Y, p.Z))];
+    }
 }
 
 /// <summary>
@@ -164,7 +204,10 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
     {
         lock (_sync)
         {
-            if (!_maps.TryGetValue(sceneEntry, out var map)) _maps[sceneEntry] = map = Load(sceneEntry);
+            if (_maps.TryGetValue(sceneEntry, out var map)) return map;
+            _maps[sceneEntry] = map = Load(sceneEntry);
+            map?.WarmRandomSpots().ContinueWith(t => FlyWingSpotsFailed(log, sceneEntry, t.Exception),
+                CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             return map;
         }
     }
@@ -283,6 +326,9 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
             into.Add(name.GetString()!);
     }
 
+    [LoggerMessage(Level = LogLevel.Error, Message = "Fly Wing spots of map {Scene} failed; every walkable spot stays in use")]
+    private static partial void FlyWingSpotsFailed(ILogger logger, long scene, Exception? error);
+
     private MapWorld? Load(long sceneEntry)
     {
         if ((data.Row("MapConfig", sceneEntry) ?? data.Row("DungeonConfig", sceneEntry)) is not { } row) return null;
@@ -342,6 +388,11 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
                 // ends at it. Ground Kafras on the nav mesh. Portals keep their editor y: the client keys teleport triggers
                 // by floor(y*10) (LC_InteractManager.lua:612-644).
                 if (kind == WorldNpcKind.Kafra && map.Nav?.WalkHeight(x, z, y) is { } ground) y = ground;
+                // #bug-reports "Payon - NPC in the ground": an ordinary NPC the editor marks isOnGround can sit below the
+                // only walkable layer (Payon's Monster Ecology Research Scholar 100181: y 14.70 on ground 21.69), drawn
+                // inside the hill and out of its 3D talk range. Raise a sunk one onto that floor; NPCs above it stay.
+                else if (kind == WorldNpcKind.Npc && OnGround(all, (int)GameData.Int(e, "Id")) && map.Nav?.WalkHeight(x, z, y) is { } floor
+                    && floor - y > SunkTolerance) y = floor;
                 npcs.Add(new WorldNpc(NpcUidBase | sceneEntry << 16 | (long)npcs.Count, sceneEntry, kind, npcId,
                     data.TextOf(npcRow, "_kName"), (int)GameData.Int(npcRow, "_iCamp"), x, y, z, face, e));
             }
@@ -367,6 +418,14 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
             AirWalls = SceneEditorAirWalls.Read(se)
         };
     }
+
+    /// <summary>An NPC more than this far below the walkable floor is drawn inside the ground.</summary>
+    private const float SunkTolerance = 0.3f;
+
+    /// <summary>m_kAllPoints[id].isOnGround (absent counts as on the ground).</summary>
+    private static bool OnGround(JsonElement all, int pointId) =>
+        all.ValueKind != JsonValueKind.Object || !all.TryGetProperty(pointId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var point)
+        || !point.TryGetProperty("isOnGround", out var flag) || flag.ValueKind != JsonValueKind.False;
 
     private static Dictionary<long, MapRegion> LoadRegions(JsonElement se)
     {

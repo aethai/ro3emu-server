@@ -364,6 +364,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.Position = walk.Pos;
         session.Face = walk.Face;
         session.WalkDir = float.IsFinite(walk.Dir) ? walk.Dir : walk.Face;
+        session.LastWalkUtc = DateTime.UtcNow; // also when the walk check is off
         session.Walking = !walk.BStop && walk.SpeedRate > 0;
         positions.MarkDirty(session, urgent: walk.BStop); // C/D 18: written lazily, never on the loop
         await systems.MovedAsync(session, walk);
