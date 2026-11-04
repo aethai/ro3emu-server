@@ -25,6 +25,7 @@ public sealed partial class DungeonTests
     public async Task EveryInteractionAStepWaitsOnIsOfferedByTheClientsOwnRules(long scene)
     {
         Service<Microsoft.Extensions.Options.IOptions<Ro3Emu.Server.ServerOptions>>().Value.ScriptedScenePacePercent = 10; // a ride (the Deniro's) lasts as long as its route
+        Service<DungeonService>().ShuffleRoll = bound => bound - 1; // Louie's rings stay at their listed points, which this test compares
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99"); // a scene with a fight
         if (scene == 1022001) await Gm(alice, "!quest accept 10102200"); // Payon Forest's condition [1101, 10102200]
