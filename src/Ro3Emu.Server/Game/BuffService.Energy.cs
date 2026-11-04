@@ -134,6 +134,14 @@ public sealed partial class BuffService
             foreach (var storm in p.Buffs.Where(b => b.ConfigId == FuriousStorm).ToArray()) await RemoveAsync(p, storm);
     }
 
+    /// <summary>Adds to a meter up to its limit: blades, charges and other fills no row's _kHitRecoverEnergy holds.</summary>
+    internal async Task AddEnergyAsync(GameSession p, int energy, long amount)
+    {
+        if (amount <= 0 || !p.Energy.TryGetValue(energy, out var meter) || Data.Config.EnergyConfig.Get(_data, energy) is not { } config) return;
+        meter.Value = Math.Clamp(meter.Value + amount, 0, config.LimitValue);
+        await SendEnergyAsync(p, energy, (EPlayerEnergyChangeReason)2);
+    }
+
     /// <summary>Takes this much from a meter, if it holds that much: a cost no row's _kCost names (Reading Spellbook's Book Pages).</summary>
     internal async Task<bool> TrySpendEnergyAsync(GameSession p, int energy, long amount)
     {
@@ -145,7 +153,7 @@ public sealed partial class BuffService
 
     // BuffConfig "Furious Storm"; the EnergyConfig meters Rain of Spears' mode 0 and mode 1 rows pay.
     internal const int FuriousStorm = 1132401;
-    private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003;
+    private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003, PrecisionCounter = 140001;
 
     /// <summary>Sonic Burst's _kBuff1: "[Furious Storm]: Clears all current [Rain of Spears] charges and grants 5 charges of
     /// [Hundred Spear - Enhance]". The buff switches Rain of Spears to its Enhance row, which pays the second meter, and no
@@ -169,7 +177,14 @@ public sealed partial class BuffService
         int id = (int)(GameData.Number(hit[0]) ?? 0);
         long amount = (long)(GameData.Number(hit[1]) ?? 0);
         if (amount <= 0 || !p.Energy.TryGetValue(id, out var meter) || _data.Row("EnergyConfig", id) is not { } config) return;
-        meter.Value = Math.Clamp(meter.Value + amount, 0, GameData.Int(config, "_iLimitValue"));
+        long limit = GameData.Int(config, "_iLimitValue");
+        meter.Value = Math.Clamp(meter.Value + amount, 0, limit);
+        // Precision Thrust: "Gain @{2} stack(s) of [Hundred Spear Pierce] charge for every @{1} HIT(s)": a full 140001 turns into one 140002.
+        if (id == PrecisionCounter && meter.Value >= limit)
+        {
+            meter.Value = 0;
+            await AddEnergyAsync(p, RainSpearCharges, 1);
+        }
         await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)2);
     }
 

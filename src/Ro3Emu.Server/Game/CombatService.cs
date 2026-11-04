@@ -335,6 +335,7 @@ public sealed partial class CombatService : IGameTicker
         skills.QueueEligibility = CanQueueSkill;
         character.ProgressHandlers.Add(buffs.ReconcileEnergyAsync);
         CastResolved.Add(ReadingExtraCastAsync);
+        CastResolved.Add(ClassLoopsOnCastAsync);
         monsters.AttackPet = MonsterAttackPetAsync;
         buffs.UnitChanged.Add(PublishTowerPetStatsAsync);
         WireBuffRules();
