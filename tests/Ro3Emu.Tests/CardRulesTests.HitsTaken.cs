@@ -1070,4 +1070,50 @@ public sealed partial class CardRulesTests
             Assert.Equal(7, (await CastAt(alice, a, FireBolt, b)).DstElement);
         }
     }
+
+    /// <summary>Whether a status reaches the holder: its own 31104 on the wire, or nothing at all.</summary>
+    private async Task<bool> Lands(BotClient bot, GameSession session, int buff, long source)
+    {
+        await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().AddAsync(session, buff, 300, source));
+        await Task.Delay(100);
+        return StatusShown(bot, buff).Count > 0;
+    }
+
+    // Card: Orc Hero T1: 2052701 "Immune to Stun." Every row of category 13 is refused, from a monster or a player; Silence still lands. The
+    // same Stun lands once the card is out.
+    [ClientDataTheory]
+    [InlineData(901601)] // Stun
+    [InlineData(1200401)] // the generic Stun of skills
+    [InlineData(1210701)] // Meteor Storm's
+    public async Task OrcHeroRefusesEveryStun(int stun)
+    {
+        const int card = 1460700;
+        var (alice, session) = await Holder("Alice", card, 8);
+        await using (alice)
+        {
+            await AtStar(session, card, 1);
+            var striker = (await Strikers(session, 1))[0];
+            Assert.False(await Lands(alice, session, stun, striker.Uid));
+            Assert.True(await Lands(alice, session, Silence, striker.Uid));
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)8, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => !session.Buffs.Any(b => b.IsPassive && !b.IsTotemOwned), "the passive gone");
+            Assert.True(await Lands(alice, session, stun, striker.Uid));
+        }
+    }
+
+    // Card: Moonlight Flower T2: 2052501 "Immune to Slow." 902801 Sluggish carries category 33; Stun is not its business.
+    [ClientDataFact]
+    public async Task MoonlightFlowerRefusesASlowAndNotAStun()
+    {
+        const int card = 1460501, slow = 902801;
+        var (alice, session) = await Holder("Alice", card, 5);
+        await using (alice)
+        {
+            await AtStar(session, card, 2);
+            var striker = (await Strikers(session, 1))[0];
+            Assert.False(await Lands(alice, session, slow, striker.Uid));
+            Assert.True(await Lands(alice, session, Stun, striker.Uid));
+        }
+    }
 }
