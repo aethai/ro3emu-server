@@ -123,8 +123,14 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 920160)); // absent group
         Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 21)); // type 1, NPC drop route
         Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 40007)); // multirow day selector
-        Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 1005)); // AwardConfig _kEXP
-        Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 1002)); // AwardConfig _kCondition
+        Assert.Equal(new[] { new AwardGrant(100, 10000), new AwardGrant(1200000, 1) },
+            awards.Resolve(null!, 1005).Grants.ToArray()); // AwardConfig _kEXP [1, 10000] is base EXP
+        Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 1007)); // _kEXP [2, 100]: unresolved kind
+        // _kCondition [[2, 11, 99]]: base level 11-99, so it needs a recipient
+        Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 1002));
+        Assert.Throws<AwardConditionException>(() => awards.ResolveForProgress(new RoleProgress { Level = 10 }, 1002));
+        Assert.Equal(new[] { new AwardGrant(1200000, 1), new AwardGrant(1420100, 1) },
+            awards.ResolveForProgress(new RoleProgress { Level = 11 }, 1002).Grants.ToArray());
         Assert.Throws<AwardResolutionException>(() => awards.Resolve(null!, 25001)); // restriction replacement
     }
 

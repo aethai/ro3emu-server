@@ -635,6 +635,14 @@ public sealed partial class CardService
                 if (nextLibrary != null) session.Library = nextLibrary;
             },
             asyncCommit: true) == null) error = ErrorCodes.ItemsShort;
+        var response = new CardStarUpResp
+        {
+            Result = error, SourceType = req.SourceType, Guid = req.Guid,
+            SlotIndex = req.SlotIndex, GridType = req.GridType, NewStarNum = error == 0 ? tier + 1 : tier
+        };
+        // A socketed card's star-up animation plays on the 5009 change, so it needs the success reply first; a bag card reads its new data at the reply, so it syncs first.
+        bool replyBeforeSync = error == 0 && req.SourceType == CardLevelSourceType.Equip && card?.Grid < 0;
+        if (replyBeforeSync) await session.SendGameAsync(StarUp, response);
         if (error == 0 && card != null)
         {
             tier++;
@@ -643,7 +651,7 @@ public sealed partial class CardService
             if (nextLibrary != null) await CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone());
             if (card.Grid < 0) await NotifySocketsChangedAsync(session);
         }
-        await session.SendGameAsync(StarUp, new CardStarUpResp { Result = error, SourceType = req.SourceType, Guid = req.Guid, SlotIndex = req.SlotIndex, GridType = req.GridType, NewStarNum = tier });
+        if (!replyBeforeSync) await session.SendGameAsync(StarUp, response);
     }
 
     private static List<PaidCost> ReadLedger(InvItem card)

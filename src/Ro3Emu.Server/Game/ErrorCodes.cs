@@ -10,6 +10,7 @@ public static class ErrorCodes
 {
     // ErrorCodeConfig -> Localization_en, territory wars and the 84031 auction contract.
     public const int TerritoryGuild = 6001; // Guild doesn't exist.
+    public const int PlayerLevelLow = 156;     // "Player level too low"
     public const int DataNotFound = 23; // ErrorCodeConfig: Data not found in database.
     public const int TerritoryCampGuild = 6008;
     public const int TerritoryCampCooldown = 6009;
