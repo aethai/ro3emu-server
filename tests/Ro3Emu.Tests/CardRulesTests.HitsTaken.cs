@@ -583,4 +583,50 @@ public sealed partial class CardRulesTests
             Assert.Equal(plain, (await CastAt(alice, a, SwordSmash, b)).Damage);
         }
     }
+
+    // Card: Dark Priest T3: 2023201 "When dealing DMG, there is a 12% Chance to reduce the target's current SP by 20%, up to 400.
+    // Internal Cooldown: 15 sec." Row 2003101 [20, 400]. Bob's SP on the wire (his 31008 and the attribute).
+    [ClientDataFact]
+    public async Task DarkPriestBurnsAPlayersSpAtItsStarsChanceAndThenWaitsItsCooldown()
+    {
+        var (alice, a, bob, b) = await AttackerDuel(1440112, 1, 3);
+        await using (alice)
+        await using (bob)
+        {
+            long full = await Attribute(b, 2001);
+            var effects = Service<CardEffects>();
+            effects.Roll = _ => 1200;
+            await CastAt(alice, a, SwordSmash, b);
+            await Task.Delay(100);
+            Assert.Equal(full, await Attribute(b, 2001));
+
+            effects.Roll = _ => 1199;
+            await CastAt(alice, a, SwordSmash, b);
+            await Eventually(() => Service<CharacterService>().Stats(b)[2001] != full, "the SP burned");
+            long burned = full - await Attribute(b, 2001);
+            Assert.Equal(Math.Min(400, full * 20 / 100), burned);
+
+            effects.Roll = _ => 0;
+            await CastAt(alice, a, SwordSmash, b);
+            await Task.Delay(100);
+            Assert.Equal(full - burned, await Attribute(b, 2001));
+        }
+    }
+
+    // "A monster has no current SP": a hit on one rolls nothing.
+    [ClientDataFact]
+    public async Task DarkPriestRollsNothingOnAMonster()
+    {
+        const int card = 1440112;
+        var (alice, session) = await Socketed(card);
+        await using (alice)
+        {
+            var target = (await Dummies(session, 5000002))[0];
+            List<int> rolled = [];
+            Service<CardEffects>().Roll = bound => { rolled.Add(bound); return 0; };
+            await SwingOnce(alice, session, target);
+            await Task.Delay(100);
+            Assert.Empty(rolled);
+        }
+    }
 }

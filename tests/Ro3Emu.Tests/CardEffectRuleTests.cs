@@ -74,6 +74,13 @@ public sealed class CardEffectRuleTests
     public void AReflectGivesBackItsShareUpToItsCaps(long damage, long vit, long maxHp, long share, long cap, long perVit, double maxShare, long reflected) =>
         Assert.Equal(reflected, CardEffects.ReflectedDamage(damage, vit, maxHp, [1, 3, perVit, 3, 99999, 159, share, 101, cap], maxShare));
 
+    [Theory]
+    [InlineData(1000, 20, 400, 200)]
+    [InlineData(5000, 20, 400, 400)] // up to its most
+    [InlineData(0, 20, 400, 0)]
+    public void ASpBurnTakesItsShareUpToItsMost(long sp, long percent, long most, long burned) =>
+        Assert.Equal(burned, CardEffects.SpBurned(sp, percent, most));
+
     [Fact]
     public void AReflectRowOfAnotherShapeGivesNothing() => Assert.Equal(0, CardEffects.ReflectedDamage(1000, 0, 1000, [0, 3, 0, 1, 2000, 99, 1000], 60));
 

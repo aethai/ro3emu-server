@@ -41,8 +41,9 @@ namespace Ro3Emu.Server.Game;
 /// family name monsters. Divine Light and the cooldown reset follow the own cast whoever it reached. Splash takes monsters only.
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
+/// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
 /// Not executed (no machinery or no data link): armor element changes, status immunities, Endure,
-/// the uninterruptible cast, SP drain, detection, indestructible gear.
+/// the uninterruptible cast, detection, indestructible gear.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills.
 /// </summary>
 public sealed class CardEffects
@@ -76,7 +77,8 @@ public sealed class CardEffects
     private const long SingleTargetTag = 102; // SkillTagConfig "ST"
     private const long MagicDamage = 2; // SkillConfig._iDmgType
     private const int SilencedState = 20; // SpecialStatusConfig 20, BuffService.StateFor
-    private const int Vit = 3; // AttributeConfig 3
+    private const int Vit = 3, Sp = 2001; // AttributeConfig
+    private const int SpBurn = 20230;
     private const long Melee = 1; // SkillConfig._iDistanceType (G_ClientCfg.SkillDistanceType: Remote is 2)
     private const long PhysicalDamage = 1; // SkillConfig._iDmgType
 
@@ -239,6 +241,26 @@ public sealed class CardEffects
         if (new SkillConfig(row).IsFixedHit) return;
         await SettleNextHitAsync(s);
         await DealtProcsAsync(s, damage, () => !lethal && !target.Dead, (id, ms) => _combat.LandCardStatusAsync(s, target, id, ms));
+        if (damage > 0 && !lethal && !target.Dead) await BurnSpAsync(s, target);
+    }
+
+    internal static long SpBurned(long sp, long percent, long most) => Math.Min(most, sp * percent / 100);
+
+    /// <summary>
+    /// Dark Priest: "When dealing DMG, there is a @{1}% Chance to reduce the target's current SP by @{2}%, up to @{3}. Internal Cooldown: @{4}
+    /// sec. The trigger Chance stacks with multiple Cards." The chance as for a status on hit; base 2023001's [0, 2003101] names the row
+    /// "SP Reduction", whose _kLogicData [20, 400] is the share and the most. A monster has no current SP, so only a player's hit rolls.
+    /// (inferred) The row's show 20230 is not played: nothing on the wire carries an SP loss, so the target's SP bar is what shows it.
+    /// </summary>
+    private async Task BurnSpAsync(GameSession s, GameSession target)
+    {
+        foreach (var (basis, group, chance, desc) in Procs([.. Passives(s)]))
+        {
+            if (group != SpBurn || new BuffConfig(basis).LogicData is not [_, var id] || SkillConfig.Get(_data, id) is not { LogicData: [var percent, var most] }
+                || desc.Length == 0 || Roll(10000) >= chance || !Ready(s, SpBurn, (long)(desc[^1] * 1000))) continue;
+            long sp = _character.Stats(target)[Sp];
+            await _character.SetHpSpAsync(target, null, sp - SpBurned(sp, percent, most));
+        }
     }
 
     private async Task DealtProcsAsync(GameSession s, long damage, Func<bool> targetLives, Func<int, int, Task> landStatus)
