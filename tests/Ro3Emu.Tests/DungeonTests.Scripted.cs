@@ -88,7 +88,8 @@ public sealed partial class DungeonTests
                 Assert.True(ship.Y < 228, $"a ship flies below the deck, this one at {ship.Y}");
             });
             var map = Service<WorldData>().Map(1000501)!;
-            var ends = new[] { 97L, 95L, 96L }.Select(p => map.PatrolPaths[p][^1]).ToArray();
+            long[] patrols = [97, 95, 96];
+            var ends = patrols.Select(p => map.PatrolPaths[p][^1]).ToArray();
             Assert.All(ships, ship => Assert.Contains(ends, end => MathF.Abs(end.X - ship.X) < 0.01f && MathF.Abs(end.Z - ship.Z) < 0.01f));
         }
     }
