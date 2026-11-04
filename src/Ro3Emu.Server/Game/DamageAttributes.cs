@@ -16,6 +16,7 @@ internal static class DamageAttributes
     private const int Skill = 225, SkillTaken = 226;
     private const int VsRace = 400, FromRace = 410, ElementDealt = 300, ElementTaken = 310, VsElement = 320, FromElement = 330;
     private const int SizeBase = 499; // 501/502 small, 503/504 medium, 505/506 large
+    private const int HuntingMastery = 231, HuntingProtection = 232;
     private const int VsBoss = 601, FromBoss = 602, VsNormal = 603, FromNormal = 604; // boss_type, be_boss_type, normal_type, be_normal_type
     internal const int CritDamage = 209, CritDamageTaken = 210, CritChance = 237, CritChanceTaken = 238;
     internal const int IgnoreDef = 217, IgnoreDefPercent = 218, IgnoreMdef = 219, IgnoreMdefPercent = 220;
@@ -52,8 +53,15 @@ internal static class DamageAttributes
         // Monster Resistance: "-30% damage from monsters" is 602 and 604 together; its own group (inferred).
         factor *= 1 + ((hit.Target switch { Kind.Boss => A(VsBoss), Kind.Normal => A(VsNormal), _ => 0 })
             - (hit.Attacker switch { Kind.Boss => B(FromBoss), Kind.Normal => B(FromNormal), _ => 0 })) / BasisPoints;
+        // Hunting Mastery "Affects your damage against monsters" and Hunting Protection "... taken from monsters": Formula_APveDmg, Formula_BPveBeDmg
+        // and Formula_PvEaram. (inferred) As factors of their own, at x / (x + FormulaParamPVE) as the panel's type 7 shows 1328 and 1329.
+        if (hit.Target != Kind.Player) factor *= 1 + PveShare(A(HuntingMastery));
+        if (hit.Attacker != Kind.Player) factor *= 1 - PveShare(B(HuntingProtection));
         return Math.Clamp(factor, MinFactor, MaxFactor);
     }
+
+    /// <summary>PublicParamConfig FormulaParamPVE 10000.</summary>
+    internal static double PveShare(long value) => value <= 0 ? 0 : value / (value + BasisPoints);
 
     /// <summary>Formula_AIgnoreDef and Formula_AIgnoreDefPercent, and their magic pair: flat first, then the share.</summary>
     internal static double DefenseAfterPenetration(double defense, long flat, long percent) =>

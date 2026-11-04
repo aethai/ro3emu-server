@@ -81,6 +81,28 @@ public sealed class CardEffectRuleTests
     public void ASpBurnTakesItsShareUpToItsMost(long sp, long percent, long most, long burned) =>
         Assert.Equal(burned, CardEffects.SpBurned(sp, percent, most));
 
+    private static double HuntingFactor(long mastery, long protection, DamageAttributes.Kind attacker, DamageAttributes.Kind target) => DamageAttributes.Factor(
+        attacker == DamageAttributes.Kind.Player ? id => id == 231 ? mastery : 0 : null,
+        target == DamageAttributes.Kind.Player ? id => id == 232 ? protection : 0 : null,
+        new DamageAttributes.Hit(false, false, false, 1, 0, 0, 0, 0, 0, 0, attacker, target));
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(70, 70 / 10070d)]
+    [InlineData(10000, 0.5)]
+    [InlineData(-5, 0)]
+    public void AHuntingAttributeIsAShareOfItself(long value, double share) => Assert.Equal(share, DamageAttributes.PveShare(value), 10);
+
+    [Fact]
+    public void HuntingMasteryAndProtectionCountOnlyAgainstMonsters()
+    {
+        const DamageAttributes.Kind player = DamageAttributes.Kind.Player, monster = DamageAttributes.Kind.Normal, boss = DamageAttributes.Kind.Boss;
+        Assert.Equal(1 + 70 / 10070d, HuntingFactor(70, 0, player, monster), 10);
+        Assert.Equal(1 + 70 / 10070d, HuntingFactor(70, 0, player, boss), 10);
+        Assert.Equal(1, HuntingFactor(70, 70, player, player), 10); // a duel
+        Assert.Equal(1 - 70 / 10070d, HuntingFactor(0, 70, monster, player), 10);
+    }
+
     [Fact]
     public void AReflectRowOfAnotherShapeGivesNothing() => Assert.Equal(0, CardEffects.ReflectedDamage(1000, 0, 1000, [0, 3, 0, 1, 2000, 99, 1000], 60));
 

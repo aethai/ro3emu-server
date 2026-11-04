@@ -32,6 +32,8 @@ public sealed partial class CardRulesTests
         return (bot, session);
     }
 
+    private long _strikerAtk = 400;
+
     /// <summary>Monsters only of this test's, one of each element, 1 m from the player, who has no recovery tick between two hits.</summary>
     private async Task<MonsterUnit[]> Strikers(GameSession session, params int[] elements)
     {
@@ -39,7 +41,7 @@ public sealed partial class CardRulesTests
         var units = new MonsterUnit[elements.Length];
         for (int i = 0; i < elements.Length; i++)
         {
-            var template = monsters.Template(5000002)! with { RoamDistance = 0, SurroundDistance = 0, Element = elements[i], Atk = 400, Matk = 400 };
+            var template = monsters.Template(5000002)! with { RoamDistance = 0, SurroundDistance = 0, Element = elements[i], Atk = _strikerAtk, Matk = _strikerAtk };
             units[i] = await Service<GameLoop>().InvokeAsync(async () => (await monsters.SpawnSingleAsync(session.SceneEntry, 5000002,
                 new MapPoint(session.Position.X, session.Position.Y, session.Position.Z, 0), session.InstanceId, customTemplate: template))!);
         }
@@ -798,6 +800,63 @@ public sealed partial class CardRulesTests
             (id, _) = await StartFireBolt(alice, session, target);
             await Service<GameLoop>().InvokeAsync(() => buffs.AddAsync(session, control, 60_000, target.Uid));
             await Next(alice, CombatService.SkillEnd, SkillEndNotify.Parser, e => e.SessionId == id && e.Type == SkillEndNotify.Types.SkillEndType.Interrupted);
+        }
+    }
+
+    /// <summary>Raises the player's ATK on the sheet, for a hit big enough to read a small share in.</summary>
+    private async Task AddAtk(GameSession session, double atk)
+    {
+        await Service<GameLoop>().InvokeAsync(async () =>
+        {
+            Service<CharacterService>().ExtraAttributes.Add(s => s == session ? [(103L, atk)] : []);
+            await Service<CharacterService>().RefreshStatsAsync(session);
+        });
+    }
+
+    // Portrait Card: Drake T3: [[231, 70]], "Hunting Mastery: Affects your damage against monsters". Formula x / (x + 10000), 0.695%.
+    [ClientDataFact]
+    public async Task HuntingMasteryRaisesAHitOnAMonsterByItsStar()
+    {
+        const int card = 1440903;
+        var (alice, session) = await Holder("Alice", card, 10);
+        await using (alice)
+        {
+            await AddAtk(session, 100_000);
+            var target = (await Dummies(session, 5000002))[0];
+            await AtStar(session, card, 3);
+            Assert.Equal(70, await Attribute(session, 231));
+            long raised = await SwingDamage(alice, session, target);
+            await OnLoop(() => { session.Attack = null; return 0; });
+
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)10, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => Service<CharacterService>().Stats(session)[231] == 0, "the attribute gone");
+            long plain = (await QuickSwing(alice, session, target)).Damage;
+            Assert.True(plain > 10_000, "too little damage to read 0.7% in: " + plain);
+            Assert.InRange(raised, (long)(plain * (1 + 70 / 10070d)) - 1, (long)(plain * (1 + 70 / 10070d)) + 1);
+        }
+    }
+
+    // Portrait Card: Angeling T2: [[232, 56]], "Hunting Protection: Affects your damage taken from monsters", 0.557%.
+    [ClientDataFact]
+    public async Task HuntingProtectionLowersAMonstersHitByItsStar()
+    {
+        const int card = 1440901;
+        var (alice, session) = await Holder("Alice", card, 10);
+        await using (alice)
+        {
+            _strikerAtk = 4000;
+            var striker = (await Strikers(session, 1))[0];
+            await AtStar(session, card, 2);
+            Assert.Equal(56, await Attribute(session, 232));
+            long lowered = (await SwungAt(alice, session, striker)).Damage;
+
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)10, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => Service<CharacterService>().Stats(session)[232] == 0, "the attribute gone");
+            long plain = (await SwungAt(alice, session, striker)).Damage;
+            Assert.True(plain > 1000, "too little damage to read 0.5% in: " + plain);
+            Assert.InRange(lowered, (long)(plain * (1 - 56 / 10056d)) - 1, (long)(plain * (1 - 56 / 10056d)) + 1);
         }
     }
 }
