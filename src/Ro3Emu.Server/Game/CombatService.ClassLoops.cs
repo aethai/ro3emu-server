@@ -124,6 +124,7 @@ public sealed partial class CombatService
             if (s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene) return;
             var around = MonstersNear(s, s.Position, blast.Range.FirstOrDefault(1000) / 100f).Take((int)Math.Max(1, blast.TargetMax)).ToList();
             if (around.Count > 0) await CastExtraAsync(s, blast.Row, around);
+            if (s.Dead || s.Role?.Id != action.OwnerId) return; // the blast can outlive its caster
             var now = _character.Stats(s);
             long loss = now[101] * (long)(skill.DescData.Length > 4 && double.TryParse(skill.DescData[4], NumberStyles.Float, CultureInfo.InvariantCulture, out double share) ? share : 50) / 100;
             await _character.SetHpSpAsync(s, Math.Max(1, now[2000] - loss), null);

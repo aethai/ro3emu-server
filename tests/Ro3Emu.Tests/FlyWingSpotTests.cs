@@ -64,7 +64,7 @@ public sealed class FlyWingSpotTests : IDisposable
     {
         var options = Options.Create(new ServerOptions { GameDataDir = Path.Combine(ClientData.RepoRoot, "data") });
         var world = new WorldData(options, new GameData(options, NullLogger<GameData>.Instance), NullLogger<WorldData>.Instance);
-        var spots = await world.Map(10220)!.WarmRandomSpots(); // started by the load
+        var spots = await world.Map(10220)!.WarmRandomSpots();
         Assert.NotEmpty(spots);
         // The cut-off strip holds about 30 authored points at z 398-399.
         Assert.DoesNotContain(spots, p => p.Z > 397);
