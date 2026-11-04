@@ -748,10 +748,11 @@ public sealed partial class CombatService
     /// <summary>
     /// LC_State_Unit_Skill ends a skill in its action phase when StatusForbidden holds SkillCast. (inferred) SkillChant does the
     /// same for the chant, which is what the name says, though the client's own use of it was not found. So Sleep and Silence
-    /// break a cast, and Stun or Freeze, whose _kForbidden has neither, do not.
+    /// break a cast, and Stun or Freeze, whose _kForbidden has neither, do not. Card: Phen keeps a cast through them. OPEN: this only keeps the
+    /// server's cast; the forbid bits still go out, and LC_State_Unit_Skill may end the skill on the client by them (needs a client test).
     /// </summary>
     private Task BreakForbiddenCastAsync(GameSession s) =>
-        s.SkillCast is { Cancelled: false } cast
+        s.SkillCast is { Cancelled: false } cast && !ControlCannotInterrupt(s)
         && _buffs.HasForbidden(s, Now - cast.StartMs < cast.ChantMs ? ForbiddenState.SkillChant : ForbiddenState.SkillCast)
             ? CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.State) : Task.CompletedTask;
 

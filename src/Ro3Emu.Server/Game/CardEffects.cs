@@ -14,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// 304 of the 348 card operations; Attr(1) and Attr1CountAddAttr2(8) are EquipmentStunts'). The referenced BuffConfig rows are
 /// zero-time: like totem passives they are registered per source (the card GUID) for as long as the copy is socketed in an
 /// active socket (EquipmentStunts.ActiveCards), which publishes their icons, puts their _kChangeAttri on the sheet (Variable
-/// CT 2024001..4 only, and no chant reads it yet)
+/// CT 2024001..4, CombatService.ChantMilliseconds, whose holder a control no longer interrupts)
 /// and arms BuffService's lethal-hit revive for groups 20520/20521 (2052001.., 2052101..). (inferred) Their
 /// _iSceneClear removes them on a scene change; the loaded scene registers them again, carrying the revive cooldown.
 ///
@@ -42,8 +42,7 @@ namespace Ro3Emu.Server.Game;
 /// - what a hit on the holder becomes: Golden Thief Bug's nullify and Ladybug's reduction, see <see cref="AdjustDamageTaken"/>.
 /// - reflect on a player's single-target skill: Maya, Orc Lord, see <see cref="ReflectAsync"/>.
 /// - SP burn on a player: Dark Priest, see <see cref="BurnSpAsync"/>.
-/// Not executed (no machinery or no data link): armor element changes, status immunities, Endure,
-/// the uninterruptible cast.
+/// Not executed (no machinery or no data link): armor element changes, status immunities, Endure.
 /// No effect possible: indestructible gear (nothing breaks gear), and Maya Purple's "Reveals hidden or cloaked monsters": no NPC or AI row
 /// holds a hiding buff or a hiding skill, its 5000901 and 5002101 are applied by nothing, and the server never hides a monster.
 /// Skill(3) grants (Heal, Disguise, Magnum Break, Envenom, Sight, Sightless Mind) go into RoleProgress.GrantedSkills. The granted Magnum Break's

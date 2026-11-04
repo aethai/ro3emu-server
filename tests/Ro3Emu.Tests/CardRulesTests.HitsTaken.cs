@@ -732,4 +732,72 @@ public sealed partial class CardRulesTests
         foreach (var ai in data.Table("AIConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.AIConfig(r)))
             Assert.DoesNotContain(ai.Skills, hides.Contains);
     }
+
+    private const int Phen = 1440604, Sleep = 902201;
+
+    /// <summary>A Mage's Fire Bolt on the wire (31102): the chant its 31100 says.</summary>
+    private async Task<(long Session, int ChantMs)> StartFireBolt(BotClient bot, GameSession session, MonsterUnit target)
+    {
+        await OnLoop(() => { session.SkillCds.Clear(); session.SkillModeCds.Clear(); session.SkillCast = null; return 0; });
+        await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = FireBolt, TargetId = target.Uid });
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var use = await Next(bot, CombatService.UseInSkill, UseInSkillInfo.Parser, m => m.SessionId == accepted.SessionId);
+        return (accepted.SessionId, use.ChantMs);
+    }
+
+    // Card: Phen: 2024001 "Variable CT +25%" at T0, 2024004 +10% at T3, on a base of 1000 ms (Fire Bolt _iChantVar).
+    [ClientDataFact]
+    public async Task PhenLengthensAVariableChantByItsStar()
+    {
+        var (alice, session) = await Holder("Alice", Phen, 6);
+        await using (alice)
+        {
+            await Gm("alice", "!job 2100");
+            await Learn(session, 12004);
+            var target = (await Dummies(session, 5000002))[0];
+            int top = 0, bottom = 0;
+            await AtStar(session, Phen, 3);
+            top = (await StartFireBolt(alice, session, target)).ChantMs;
+            await AtStar(session, Phen, 0);
+            bottom = (await StartFireBolt(alice, session, target)).ChantMs;
+            Assert.InRange(bottom - top, 149, 151);
+
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)6, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => !session.Buffs.Any(b => b.IsPassive && !b.IsTotemOwned), "the passive gone");
+            Assert.InRange(bottom - (await StartFireBolt(alice, session, target)).ChantMs, 249, 251);
+        }
+    }
+
+    // "Control effects cannot interrupt casting": Silence and Sleep land in the middle of a chant and the hit still comes. Without the card
+    // the same Silence ends the chant in a 31106 Interrupted.
+    [ClientDataTheory]
+    [InlineData(Silence)]
+    [InlineData(Sleep)]
+    public async Task PhenKeepsAChantThroughAControl(int control)
+    {
+        var (alice, session) = await Holder("Alice", Phen, 6);
+        await using (alice)
+        {
+            await Gm("alice", "!job 2100");
+            await Learn(session, 12004);
+            var target = (await Dummies(session, 5000002))[0];
+            var buffs = Service<BuffService>();
+            var (id, _) = await StartFireBolt(alice, session, target);
+            await Service<GameLoop>().InvokeAsync(() => buffs.AddAsync(session, control, 60_000, target.Uid));
+            var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == id);
+            Assert.True(Assert.Single(hit.Dsts).Damage > 0);
+            Assert.DoesNotContain(alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillEnd)).Select(e => SkillEndNotify.Parser.ParseFrom(e.Body)),
+                e => e.SessionId == id && e.Type == SkillEndNotify.Types.SkillEndType.Interrupted);
+
+            await Service<GameLoop>().InvokeAsync(() => buffs.RemoveAsync(session, session.Buffs.Single(b => b.ConfigId == control)));
+            await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)6, SlotIndex = 1 });
+            Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
+            await Eventually(() => !session.Buffs.Any(b => b.IsPassive && !b.IsTotemOwned), "the passive gone");
+            (id, _) = await StartFireBolt(alice, session, target);
+            await Service<GameLoop>().InvokeAsync(() => buffs.AddAsync(session, control, 60_000, target.Uid));
+            await Next(alice, CombatService.SkillEnd, SkillEndNotify.Parser, e => e.SessionId == id && e.Type == SkillEndNotify.Types.SkillEndType.Interrupted);
+        }
+    }
 }
