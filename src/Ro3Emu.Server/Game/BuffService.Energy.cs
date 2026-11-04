@@ -130,6 +130,26 @@ public sealed partial class BuffService
             meter.Value -= amount;
             await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)5);
         }
+        if (costs.Any(c => c.EnergyId == EnhanceSpearCharges) && p.Energy[EnhanceSpearCharges].Value == 0)
+            foreach (var storm in p.Buffs.Where(b => b.ConfigId == FuriousStorm).ToArray()) await RemoveAsync(p, storm);
+    }
+
+    // BuffConfig "Furious Storm"; the EnergyConfig meters Rain of Spears' mode 0 and mode 1 rows pay.
+    internal const int FuriousStorm = 1132401;
+    private const int RainSpearCharges = 140002, EnhanceSpearCharges = 140003;
+
+    /// <summary>Sonic Burst's _kBuff1: "[Furious Storm]: Clears all current [Rain of Spears] charges and grants 5 charges of
+    /// [Hundred Spear - Enhance]". The buff switches Rain of Spears to its Enhance row, which pays the second meter, and no
+    /// data fills that meter. Its tuple's -1 sets no time, so it ends with its charges (<see cref="SpendEnergyAsync"/>),
+    /// and the row's 5 is the meter's limit (both inferred).</summary>
+    internal async Task StartFuriousStormAsync(GameSession p)
+    {
+        if (!p.Energy.TryGetValue(RainSpearCharges, out var rain) || !p.Energy.TryGetValue(EnhanceSpearCharges, out var enhance)
+            || Data.Config.EnergyConfig.Get(_data, EnhanceSpearCharges) is not { } config) return;
+        rain.Value = 0;
+        enhance.Value = config.LimitValue;
+        await SendEnergyAsync(p, RainSpearCharges, (EPlayerEnergyChangeReason)4);
+        await SendEnergyAsync(p, EnhanceSpearCharges, (EPlayerEnergyChangeReason)4);
     }
 
     /// <summary>SkillConfig._kHitRecoverEnergy [energy id, amount], after an accepted hit (inferred server trigger).</summary>
