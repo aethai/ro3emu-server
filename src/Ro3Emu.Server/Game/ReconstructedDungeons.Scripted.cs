@@ -51,7 +51,18 @@ public sealed partial class ReconstructedDungeons
         /// <summary>Milliseconds the step stays on after it is completed, before the next step or the settlement (0: none;
         /// inferred): a bubble of the actors it showed is still being read, or a defeated enemy is still falling.</summary>
         public int HoldAfterMs { get; init; }
+
+        /// <summary>The client's steerable slide while the step runs (DungeonService.Slide; null: none).</summary>
+        public Slide? Slide { get; init; }
     }
+
+    /// <summary>
+    /// A slide (inferred speeds): the client moves the player downhill at <paramref name="DownCm"/> cm/s and steers it sideways at
+    /// <paramref name="SideCm"/> cm/s, through the Camera row <paramref name="Camera"/> (0: the client's own). The player
+    /// carries the BuffConfig row <paramref name="Buff"/> (0: none) from its start. When the step completes the slide stops
+    /// and the player plays the SkillConfig row <paramref name="EndSkill"/>'s animation (0: none).
+    /// </summary>
+    public sealed record Slide(int SideCm, int DownCm, int EndSkill, int Camera = 0, int Buff = 0);
 
     /// <summary>A step's cannons: the actor's <paramref name="Interaction"/> seats its user, who fires the skill <paramref name="Fire"/>.</summary>
     public sealed record Cannon(long Interaction, int Fire);
@@ -99,7 +110,11 @@ public sealed partial class ReconstructedDungeons
     /// that shows them cannot be reached in the reconstruction (each has its reason in the json, "unplayed").
     /// </summary>
     public sealed record ScriptedScene(long Scene, string Name, string Confidence, IReadOnlyList<ScriptedStep> Steps,
-        IReadOnlyList<int> Unplayed, long ContinuesTo = 0, bool LeavesAfterClear = false);
+        IReadOnlyList<int> Unplayed, long ContinuesTo = 0, bool LeavesAfterClear = false)
+    {
+        /// <summary>Milliseconds from the clear to the entry into the scene that continues it (0: DungeonService.ContinueSeconds).</summary>
+        public int ContinueAfterMs { get; init; }
+    }
 
     private readonly Dictionary<long, ScriptedScene> _scripted = [];
 
@@ -123,7 +138,10 @@ public sealed partial class ReconstructedDungeons
             _scripted[scene] = new ScriptedScene(scene, entry.Value.GetProperty("name").GetString() ?? "",
                 entry.Value.GetProperty("confidence").GetString() ?? "", steps, unplayed,
                 entry.Value.TryGetProperty("continuesTo", out var next) ? next.GetInt64() : 0,
-                entry.Value.TryGetProperty("leavesAfterClear", out var leaves) && leaves.GetBoolean());
+                entry.Value.TryGetProperty("leavesAfterClear", out var leaves) && leaves.GetBoolean())
+            {
+                ContinueAfterMs = entry.Value.TryGetProperty("continueAfterMs", out var after) ? after.GetInt32() : 0,
+            };
         }
     }
 
@@ -163,6 +181,12 @@ public sealed partial class ReconstructedDungeons
             Companions = [.. listed.Where(IsCompanion).Select(Actor)],
             RideAfter = s.TryGetProperty("after", out var rideAfter) && rideAfter.TryGetProperty("ride", out var ride) ? ride.GetInt64() : 0,
             HoldAfterMs = s.TryGetProperty("after", out var holdAfter) && holdAfter.TryGetProperty("hold", out var hold) ? hold.GetInt32() : 0,
+            Slide = s.TryGetProperty("slide", out var slide)
+                ? new Slide(slide.GetProperty("side").GetInt32(), slide.GetProperty("down").GetInt32(),
+                    slide.TryGetProperty("endSkill", out var endSkill) ? endSkill.GetInt32() : 0,
+                    slide.TryGetProperty("camera", out var camera) ? camera.GetInt32() : 0,
+                    slide.TryGetProperty("buff", out var buff) ? buff.GetInt32() : 0)
+                : null,
         };
     }
 
