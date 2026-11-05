@@ -93,6 +93,7 @@ public sealed partial class DungeonService
         if (step.Seek is { } seek) StartSeek(a, seek);
         if (step.Shelter is { } shelter) StartShelter(a, shelter);
         if (step.React is { } react) StartReaction(a, react);
+        if (step.Slide is { } slide) await StartSlideAsync(a, slide);
         if (step.Story != 0 && !a.Settled && !a.Room.Closed)
             // Once, in a var-change event: the client calls PlayCutSceneStory on every push of this var.
             await BroadcastAsync(a, Event, new DungeonEventNotify
@@ -288,7 +289,7 @@ public sealed partial class DungeonService
         {
             bool inside = t.Kind switch
             {
-                Kind.Region => _catalog.SceneRegion(a.Plan.SceneEntry, t.Id) is { } region && region.Contains(s.Position.X, s.Position.Z),
+                Kind.Region => _catalog.SceneRegion(a.Plan.SceneEntry, t.Id) is { } region && Reached(s, region.Contains),
                 Kind.Point => _catalog.ScenePoint(a.Plan.SceneEntry, t.Id) is { } p
                     && MonsterService.Distance(s.Position.X, s.Position.Z, p.X, p.Z) <= t.Radius,
                 _ => false,
@@ -326,6 +327,7 @@ public sealed partial class DungeonService
         if (GoalParams(a) != null) await BroadcastAsync(a, BaseInfo, Snapshot(a));
         _log.LogInformation("Scripted scene {Scene} step {Step} '{Stage}' completed by {Role} ({Events})",
             a.Plan.SceneEntry, a.Wave + 1, step.Stage, s.Role?.Id, string.Join(", ", events));
+        if (step.Slide is { } slide) await EndSlideAsync(a, slide);
         int hold = await RespondAsync(a, step.React, step.React?.Complete, used);
         async Task FinishAsync()
         {

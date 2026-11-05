@@ -248,7 +248,18 @@ public sealed partial class DungeonTests
             "the jump lands at point 21, the top of the passage");
         await ActorsIn(alice, 0); // nothing is shown now
 
+        // The passage is the client's own steerable slide (DungeonService.Slide): its speed, camera and state 1 in 31018,
+        // and the step's buff (the speed lines).
+        var slide = Service<ReconstructedDungeons>().Scripted(scene)!.Steps[2].Slide!;
+        var on = await Next(alice, WorldCoreService.CustomChange, CustomDataChange.Parser, m => m.CustomDatas.Any(
+            d => d.Id == DungeonService.SlideStateData && d.CustomParam.LongParam == 1));
+        Assert.Equal(Session(alice).Role!.Id, on.EntityId);
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(DungeonService.Sliding(Session(alice))
+            && Session(alice).Buffs.Any(b => b.ConfigId == slide.Buff))));
+
         await WalkInto(alice, map.Regions[22]); // the bottom of the passage
+        await Next(alice, WorldCoreService.CustomChange, CustomDataChange.Parser, m => m.CustomDatas.Any(
+            d => d.Id == DungeonService.SlideStateData && d.CustomParam.LongParam == 0)); // the checkpoint ends the slide
         var result = await Next(alice, DungeonService.Result, DungeonResNotify.Parser);
         Assert.Equal((DungeonRes)1, result.Res);
         await StoryMovesOn(alice, 10104290, 10104300);

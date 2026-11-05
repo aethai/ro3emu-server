@@ -454,6 +454,16 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   once in a 30404 var-change event and
   never kept in 30401 (the client calls the function on every push). Louie's game plays stories 1013 and 1014 (plots
   140010 and 140020), which no task triggers and which show this Culvert, Louie's gang and dialogues 1010627001-004.
+- Slides: a step's `slide` (1000201's egg passage) switches each participant's client to its own steerable slide
+  (`LC_Movement_Controller_Slide`) with custom data in 31018 (`enum_CustomData`): Player_SlideSpeed 5400003
+  [side, down] in cm/s, Player_SlideCameraId 5400005, then Player_SlideState 5400001 = 1 (the client enters the slide
+  only once it has a speed). The client moves the player down the steepest slope, steers it with the joystick and
+  reports its position every 0.1 s, so a sliding walk skips the walk check (`SceneService.WalkOnRide`;
+  PublicParamConfig.IgnoreVerifyMaps lists 1000201 and 1000301) and a region is tested along the leg since the last
+  report. The step's buff (5363201, the speed lines; cleared by a scene change or death) is given with it. The step's
+  completion sends state 0 and plays its end skill's 31100 timeline; leaving the scene first also ends it. The speeds,
+  camera 14, the buff and the scene's 1 s wait before its continuation (`continueAfterMs`, then the client's
+  black-screen transition) are **(inferred)**, chosen in play-testing.
 - The next step (or the settlement) after a completing event runs in its own owner scope (`GameLoop.PostLegacy`): the
   route of the message that completed it does not reserve the settlement's role locks. Scene actors are room props
   (`InstanceService.AddPropAsync`), removed at settlement and before the room's final cleanup.

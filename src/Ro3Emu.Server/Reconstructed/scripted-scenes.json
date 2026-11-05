@@ -12,6 +12,7 @@
   "scenes": {
     "1000201": {
       "name": "Ant Queen's Nest: the vortex and the egg passage",
+      "continueAfterMs": 1000,
       "confidence": "medium",
       "evidence": [
         "DungeonQuestConfig 5300008-5300010: 1 Explore ahead (Head deeper into Maya's lair), 2 Bobo was sucked into the vortex (Jump into the vortex), 3 The Passage Beneath the Vortex (Avoid the ant eggs and reach the end of the passage).",
@@ -23,10 +24,15 @@
       "guessed": [
         "Step 1 completes in region 25 (the corridor where guide 24 ends): region 25 is regionType 1, not one of the explicit server regions.",
         "Bobo (5300027) stands at point 26 (the anchor of patrol 26, which runs into the vortex) during step 1 and is gone in step 2; the run into the vortex itself is not animated.",
-        "The jump is a teleport to point 21 at the top of the passage; the original fall/slide (and its camera) is not reproduced.",
+        "The jump is a teleport to point 21 at the top of the passage; the jump's camera is not reproduced.",
+        "Step 3 is the client's own steerable slide (LC_Movement_Controller_Slide, custom data Player_SlideSpeed/Player_SlideState); its speeds are not the original's, which are unknown: side 8 m/s is the client's default (Controller_Slide.Enter), down 30 m/s is three times its default 10 m/s (chosen in play-testing).",
+        "The slide stops at region 22 and the player plays the jump animation (skill 5362001 MainStory_JumpOff, 2067 ms) there; what the original played at the bottom (MainStory_Falldown 5363201?) is unknown.",
+        "The slide's camera is Camera 14 (ClientConfig Movement.SlideCamera's Locked presets use it), chosen in play-testing: the default camera trails a fast slide.",
+        "Buff 5363201 (group 53632: fx_player_speedline, fx_screen_speedline; no attributes, _iSceneClear 1, _iDeadClear 1) is the slide's speed lines: nothing in the client gives it, and 53632 is the story's fall (MainStory_Falldown's script). Given at the slide's start, it lasts until the scene changes.",
+        "1000301 is entered 1 s after the clear (continueAfterMs, chosen in play-testing): the jump at the bottom plays for a second, then the client's black-screen transition (DungeonConfig _iSameDupLoadingType 2, LC_SceneManagerNew, at least 1 s) covers the scene change.",
         "Region 20 does not end step 2: a player inside it before the auto interaction came had the step done, the vortex gone and the interaction refused (801), so the client never jumped and stayed above the abyss (#181).",
         "The exploding ant eggs are not reproduced: their creation trigger is not in the client data.",
-        "The original continued seamlessly into 1000301 (DungeonConfig 1000301 _iSameDupLoadingType 2 from 1000201); here the server enters the player into 1000301 three seconds after the clear (DungeonService.Continuation; the delay is inferred), as the quest tracker's action 3000 would."
+        "The original continued seamlessly into 1000301 (DungeonConfig 1000301 _iSameDupLoadingType 2 from 1000201); here the server enters the player into 1000301 one second after the clear (continueAfterMs; the delay is inferred), as the quest tracker's action 3000 would."
       ],
       "steps": [
         {
@@ -53,6 +59,7 @@
         {
           "quest": 3,
           "stage": "The passage beneath the vortex: reach the end of the passage",
+          "slide": { "side": 800, "down": 3000, "endSkill": 5362001, "camera": 14, "buff": 5363201, "why": "quest 3: avoid the ant eggs and reach the end of the passage; the client slides the player down the ramp and steers it" },
           "complete": [
             { "region": 22, "why": "the server region (regionType 2, triggerType 1) at the bottom of the ramp" }
           ]
