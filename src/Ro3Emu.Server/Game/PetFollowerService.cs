@@ -114,7 +114,16 @@ public sealed class PetFollowerActor(long uid, long ownerId, int petId, int npcT
         _offsetZ = FollowDistance * MathF.Cos(angle);
     }
 
-    /// <summary>31037 type 7, NPCConfig template and positive owner.</summary>
+    /// <summary>
+    /// 31037 type 7, NPCConfig template and positive owner. (proven) LC_CampRelationUtils.IsEnemyByUnit/IsFriendByUnit
+    /// (and LC_UnitChecker.CheckUnitCanSelect, which calls them) resolve relation from EntityCamp alone, with no
+    /// aiMasterEntityId check of their own; a same-camp follower is already Friend by that path. (inferred)
+    /// aiMasterEntityId is still set, matching every other server-projected owned unit (CombatService.Effects.cs,
+    /// TerritoryWarsService.WarRepair.cs): CheckUnitCanSelect hands its camp-relation result to the unit's own
+    /// CheckSelfCanSelect (a per-class method the client payload's obfuscation did not let this decompile further),
+    /// the natural place an owned-unit exclusion by aiMasterEntityId would live, and the one field every other owned
+    /// unit sets that this follower alone omitted (#418: Auto Battle still selects it as a target).
+    /// </summary>
     public EntityBase Entity()
     {
         var entity = new EntityBase
@@ -122,6 +131,7 @@ public sealed class PetFollowerActor(long uid, long ownerId, int petId, int npcT
             Uuid = (ulong)Uid,
             EntityTemplateID = (ulong)NpcTemplateId,
             Owner = OwnerId,
+            AiMasterEntityId = (ulong)OwnerId,
             EntityType = 7,
             EntityCamp = Camp,
             ElementType = Element,

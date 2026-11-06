@@ -73,6 +73,7 @@ public sealed class PetAoiTests
         await _world.JoinAsync(viewer);
         Assert.Equal(new[] { "Owner+pet:10001", "Viewer+owner:Owner", "Viewer+pet:10001", "Owner+owner:Viewer" }, _sink.Events);
         Assert.Equal((ulong)owner.Role!.Id, (ulong)pet.Entity().Owner);
+        Assert.Equal((ulong)owner.Role.Id, pet.Entity().AiMasterEntityId);
         Assert.Equal(7, pet.Entity().EntityType);
         Assert.Equal(2300440UL, pet.Entity().EntityTemplateID);
         Assert.Contains(pet.Entity().Property, property => property.Idx == 113 && property.Data == 700);
