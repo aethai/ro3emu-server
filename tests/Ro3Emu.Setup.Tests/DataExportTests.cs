@@ -144,6 +144,62 @@ public class DataExportTests
     }
 
     [Fact]
+    public void TraditionalChineseMapPairsTheClientsTaiwanTextsAndRecordsItsLanguage()
+    {
+        var dir = Directory.CreateTempSubdirectory("ro3emu-loc-tw-");
+        try
+        {
+            var zh = Path.Combine(dir.FullName, "zh.json");
+            var tw = Path.Combine(dir.FullName, "tw.json");
+            // 确定 has a Taiwan text, 取消 has none (empty), 英文 is only English in the Taiwan table, 无 is the same text.
+            File.WriteAllText(zh, """{"1":{"_kDes":"确定"},"2":{"_kDes":"取消"},"3":{"_kDes":"英文"},"4":{"_kDes":"无"}}""");
+            File.WriteAllText(tw, """{"1":{"_kDes":"確定"},"2":{"_kDes":" "},"3":{"_kDes":"English"},"4":{"_kDes":"无"}}""");
+            var map = new LocMapBuilder(LocMapBuilder.TraditionalChinese);
+            map.AddClientTables(zh, tw);
+            // A translation into Chinese is kept in this language (the English map drops it), one without the source's Chinese is not.
+            map.AddTranslations(["取消\t取消操作\nabc\t甲乙\n"]);
+            var outFile = Path.Combine(dir.FullName, "loc_en.tsv");
+            map.Write(outFile);
+            var lines = File.ReadAllLines(outFile);
+            Assert.StartsWith(ClientPatcher.GeneratedLocHeader, lines[0]);
+            Assert.Equal(["确定\t確定", "取消\t取消操作"], lines[1..]);
+            Assert.Equal(LocMapBuilder.TraditionalChinese, LocMapBuilder.LanguageOf(outFile));
+
+            var english = Path.Combine(dir.FullName, "english.tsv");
+            new LocMapBuilder().Write(english);
+            Assert.Equal(LocMapBuilder.English, LocMapBuilder.LanguageOf(english));
+            Assert.Equal(LocMapBuilder.English, LocMapBuilder.LanguageOf(Path.Combine(dir.FullName, "absent.tsv")));
+        }
+        finally { dir.Delete(true); }
+    }
+
+    [Theory]
+    [InlineData("en", "en")]
+    [InlineData("EN", "en")]
+    [InlineData("zh-tw", "zh-TW")]
+    [InlineData("zh-TW", "zh-TW")]
+    [InlineData("fr", null)]
+    [InlineData(null, null)]
+    public void OnlyEnglishAndTraditionalChineseAreSupportedLanguages(string? given, string? expected) =>
+        Assert.Equal(expected, LocMapBuilder.Supported(given));
+
+    [Fact]
+    public void EmbeddedTraditionalChineseTranslationsAreWellFormed()
+    {
+        var files = Flows.Translations(LocMapBuilder.TraditionalChinese);
+        Assert.NotEmpty(files);
+        var map = new LocMapBuilder(LocMapBuilder.TraditionalChinese);
+        map.AddTranslations(files);
+        Assert.True(map.Ours > 3000);
+        foreach (var line in files.SelectMany(f => f.Split('\n')).Where(l => l.Length > 0))
+        {
+            var columns = line.Split('\t');
+            Assert.True(columns.Length == 2 && columns[1].Length > 0, "two columns: " + line);
+            Assert.True(LocMapBuilder.HasCjk(columns[0]) && LocMapBuilder.HasCjk(columns[1]), "Chinese on both sides: " + line);
+        }
+    }
+
+    [Fact]
     public void ReferenceCheckFindsWhatAnAssemblyNeedsAndLacks()
     {
         var own = typeof(Vfs).Assembly.Location;

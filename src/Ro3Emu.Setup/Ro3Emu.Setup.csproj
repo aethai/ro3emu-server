@@ -36,6 +36,7 @@
        player's machine with the client's own English tables into <client>\ro3emu\loc_en.tsv. -->
   <ItemGroup>
     <EmbeddedResource Include="..\Ro3Emu.Loc\translations\*.tsv" LogicalName="translations/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\Ro3Emu.Loc\translations-zhtw\*.tsv" LogicalName="translations-zhtw/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

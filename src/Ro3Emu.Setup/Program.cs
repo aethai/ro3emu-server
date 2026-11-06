@@ -1,5 +1,6 @@
 using System.Text;
 using Ro3Emu.ClientTools;
+using Ro3Emu.DataExport;
 
 namespace Ro3Emu.Setup;
 
@@ -34,6 +35,8 @@ internal static class Program
         options:
           --client <folder>  the game folder (the one with ro3.exe); remembered for next time
           --reexport         export the game data again
+          --lang <en|zh-TW>  the language of the in-game texts RO3Emu supplies: en (English, the default) or zh-TW
+                             (Traditional Chinese, from the game's own Taiwan texts); remembered for next time
           --no-icons         no pictures for the web panel (item, monster, class, map and skill images from
                              the game; about 20 seconds and 120 MB): the panel shows letters instead
           --no-launch        do not start the game (server only)
@@ -84,6 +87,12 @@ internal static class Program
         }
         if (options.Home != null) SetupHome.Root = options.Home;
         if (options.Yes) Ui.Interactive = false;
+        if (options.Language != null)
+        {
+            var settings = Settings.Load();
+            settings.Language = options.Language;
+            settings.Save();
+        }
         SetupLog.Write($"RO3Emu {typeof(Program).Assembly.GetName().Version} {string.Join(' ', args)} (home {SetupHome.Root})");
 
         try
@@ -150,6 +159,7 @@ internal sealed class Options
     public string? ClientDir { get; private set; }
     public string? Home { get; private set; }
     public bool Reexport { get; private set; }
+    public string? Language { get; private set; }
     public bool NoLaunch { get; private set; }
     public bool Yes { get; private set; }
     public string? PublicHost { get; private set; }
@@ -183,6 +193,9 @@ internal sealed class Options
                 case "--client": o.ClientDir = Value("--client"); break;
                 case "--home": o.Home = Value("--home"); break;
                 case "--reexport": o.Reexport = true; break;
+                case "--lang":
+                    o.Language = LocMapBuilder.Supported(Value("--lang")) ?? throw new SetupException("--lang needs en or zh-TW.", "Run RO3Emu.exe help.");
+                    break;
                 case "--no-launch": o.NoLaunch = true; break;
                 case "--yes": case "-y": o.Yes = true; break;
                 case "--public": o.PublicHost = Value("--public"); break;
