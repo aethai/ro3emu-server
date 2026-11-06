@@ -52,6 +52,21 @@ public sealed class Ro1AggressiveMonstersTests
         Assert.All(unmatched, u => Assert.False(monsters.ContainsKey(int.Parse(u.Name, System.Globalization.CultureInfo.InvariantCulture))));
     }
 
+    /// <summary>Greatest General (rAthena 1277, aggressive in RO1) is excluded by the owner's decision: it keeps the
+    /// client's AIConfig 20000001 and only fights back.</summary>
+    [Fact]
+    public void AnOwnerExcludedMonsterIsNotListedAsAggressive()
+    {
+        const int greatestGeneral = 5000070;
+        Assert.False(MonsterService.LoadRo1AggressiveMonsters().ContainsKey(greatestGeneral));
+
+        using var stream = typeof(MonsterService).Assembly.GetManifestResourceStream(MonsterService.Ro1AggressiveResource)!;
+        using var doc = JsonDocument.Parse(stream);
+        var excluded = doc.RootElement.GetProperty("ownerExcluded");
+        Assert.True(excluded.TryGetProperty(greatestGeneral.ToString(System.Globalization.CultureInfo.InvariantCulture), out var entry));
+        Assert.False(string.IsNullOrWhiteSpace(entry.GetProperty("reason").GetString()));
+    }
+
     [ClientDataFact]
     public async Task WithTheSwitchOnAListedMonsterEngagesAPlayerInView()
     {

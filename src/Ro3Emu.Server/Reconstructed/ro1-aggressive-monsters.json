@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "about": "RO1 reference, NOT client evidence (inferred, docs/research/world-core-evidence.md). The server makes a field monster attack on sight when its NPCConfig _iAI is 20000004 (MonsterService.AggressiveAi); with the switch Ro3Emu:Ro1AggressiveMonsters on, the monsters below attack on sight too because their Ragnarok Online 1 counterpart does. Sources (rAthena master, fetched 2026-10-28): pre-renewal monster database https://raw.githubusercontent.com/rathena/rathena/master/db/pre-re/mob_db.yml, mode reference https://raw.githubusercontent.com/rathena/rathena/master/doc/mob_db_mode_list.txt, permanent spawn scripts https://github.com/rathena/rathena/tree/master/npc/pre-re/mobs (fields/, dungeons/, citycleaners.txt) and https://github.com/rathena/rathena/tree/master/npc/mobs; for comparison and for monsters absent from pre-renewal, https://raw.githubusercontent.com/rathena/rathena/master/db/re/mob_db.yml and https://github.com/rathena/rathena/tree/master/npc/re/mobs. A RO1 monster is aggressive when its mode has MD_AGGRESSIVE (0x4): the Aegis Ai type gives the base mode (aggressive types 04, 05, 08, 09, 10, 11, 12, 13, 19, 20, 21, 26, 27; a missing Ai is 06), then Class and Modes add or clear bits (no pre-renewal entry sets or clears Aggressive through Modes). ro1Flags also records MD_ASSIST (joins a same-class monster that attacks), MD_LOOTER, cast sensor (0x10/0x200), change target (0x400/0x1000/0x2000), Class Boss and MVP. Field monsters are NPCConfig rows with _iNPCType 1 that a scene editor spawns (m_kWorldMonsterSpawnPoints m_kConfigIds / m_kWorldMonsterSpawnGroups m_kMonsterRefreshLimitDatas) or that have _iWildMonsters 1: 223 rows; ro3.scenes lists the scenes that spawn each (the 4940xxx rows spawn only in gvg_lingtuzhan_* scenes). Bosses and elites are included (owner's decision: Maya and other MVPs as in RO1). Which RO1 entry is the monster: among the rAthena entries with the RO3 English name (NPCConfig _kName in Localization_en), the one that a pre-renewal field or dungeon spawn script places; variant copies (G_, EVENT_, E_, META_, R_, A_, M_, summons) are excluded because no spawn script places them, not because of their prefix. Where several entries of a name spawn (Goblin, Kobold, Picky, Petite, Whisper) or the RO3 name is a variant, the entry is chosen by the RO3 model / head icon, the RO3 Chinese name, element, and RO1 drops; `match` names the method and `why` the evidence. Race/element/size are cross-checked for the 5000xxx rows (the 4940xxx copies carry rescaled attributes); differences are noted in `why`. Four RO3 monsters (King Dramoh, Sropho, Pot Dofle, Squidgitte = Sedora) exist only in the renewal database and are judged from it. Renewal disagrees with pre-renewal on two listed monsters (Familiar 1005 and Scorpion 1001 are Ai 01, passive, in renewal); pre-renewal is used. Counts: 140 aggressive (monsters), 83 matched but not aggressive in RO1 (notAggressive), 0 unmatched. Never mixed into client data.",
+  "about": "RO1 reference, NOT client evidence (inferred, docs/research/world-core-evidence.md). The server makes a field monster attack on sight when its NPCConfig _iAI is 20000004 (MonsterService.AggressiveAi); with the switch Ro3Emu:Ro1AggressiveMonsters on, the monsters below attack on sight too because their Ragnarok Online 1 counterpart does. Sources (rAthena master, fetched 2026-10-28): pre-renewal monster database https://raw.githubusercontent.com/rathena/rathena/master/db/pre-re/mob_db.yml, mode reference https://raw.githubusercontent.com/rathena/rathena/master/doc/mob_db_mode_list.txt, permanent spawn scripts https://github.com/rathena/rathena/tree/master/npc/pre-re/mobs (fields/, dungeons/, citycleaners.txt) and https://github.com/rathena/rathena/tree/master/npc/mobs; for comparison and for monsters absent from pre-renewal, https://raw.githubusercontent.com/rathena/rathena/master/db/re/mob_db.yml and https://github.com/rathena/rathena/tree/master/npc/re/mobs. A RO1 monster is aggressive when its mode has MD_AGGRESSIVE (0x4): the Aegis Ai type gives the base mode (aggressive types 04, 05, 08, 09, 10, 11, 12, 13, 19, 20, 21, 26, 27; a missing Ai is 06), then Class and Modes add or clear bits (no pre-renewal entry sets or clears Aggressive through Modes). ro1Flags also records MD_ASSIST (joins a same-class monster that attacks), MD_LOOTER, cast sensor (0x10/0x200), change target (0x400/0x1000/0x2000), Class Boss and MVP. Field monsters are NPCConfig rows with _iNPCType 1 that a scene editor spawns (m_kWorldMonsterSpawnPoints m_kConfigIds / m_kWorldMonsterSpawnGroups m_kMonsterRefreshLimitDatas) or that have _iWildMonsters 1: 223 rows; ro3.scenes lists the scenes that spawn each (the 4940xxx rows spawn only in gvg_lingtuzhan_* scenes). Bosses and elites are included (owner's decision: Maya and other MVPs as in RO1). Which RO1 entry is the monster: among the rAthena entries with the RO3 English name (NPCConfig _kName in Localization_en), the one that a pre-renewal field or dungeon spawn script places; variant copies (G_, EVENT_, E_, META_, R_, A_, M_, summons) are excluded because no spawn script places them, not because of their prefix. Where several entries of a name spawn (Goblin, Kobold, Picky, Petite, Whisper) or the RO3 name is a variant, the entry is chosen by the RO3 model / head icon, the RO3 Chinese name, element, and RO1 drops; `match` names the method and `why` the evidence. Race/element/size are cross-checked for the 5000xxx rows (the 4940xxx copies carry rescaled attributes); differences are noted in `why`. Four RO3 monsters (King Dramoh, Sropho, Pot Dofle, Squidgitte = Sedora) exist only in the renewal database and are judged from it. Renewal disagrees with pre-renewal on two listed monsters (Familiar 1005 and Scorpion 1001 are Ai 01, passive, in renewal); pre-renewal is used. Counts: 139 aggressive (monsters), 83 matched but not aggressive in RO1 (notAggressive), 1 aggressive in RO1 but excluded by the owner (ownerExcluded: Greatest General, 2026-11-06), 0 unmatched. Never mixed into client data.",
   "monsters": {
     "4940001": {
       "name": "Orc Baby",
@@ -2231,37 +2231,6 @@
         "level": 53,
         "scenes": [
           "iz_dun02_001"
-        ]
-      }
-    },
-    "5000070": {
-      "name": "Greatest General",
-      "ro1": {
-        "id": 1277,
-        "aegisName": "GREATEST_GENERAL",
-        "name": "Greatest General"
-      },
-      "match": "English name, spawning entry",
-      "why": "rAthena pre-re 1277 GREATEST_GENERAL (db/pre-re/mob_db.yml line 12844): Ai 10 = 0x0084, has MD_AGGRESSIVE (0x4); spawns npc/pre-re/mobs/dungeons/pay_dun.txt:140 (pay_dun03 x3); 5 spawn lines in 3 file(s), 125 placed in fields, 18 in dungeons; 2 entries of this name; only 1277 is placed by a field/dungeon spawn script (1541 G_GREATEST_GENERAL is not); race/element/size agree",
-      "ro1Flags": {
-        "ai": "10",
-        "mode": "0x0084",
-        "aggressive": true,
-        "assist": false,
-        "looter": false,
-        "castSensor": false,
-        "changeTarget": false,
-        "boss": false,
-        "mvp": false
-      },
-      "ro3": {
-        "subType": 1,
-        "ai": 20000001,
-        "level": 55,
-        "scenes": [
-          "pay_dun03_001",
-          "pay_fild09_001",
-          "pay_fild10_001"
         ]
       }
     },
@@ -6727,6 +6696,40 @@
           "iz_dun04_001"
         ]
       }
+    }
+  },
+  "ownerExcluded": {
+    "5000070": {
+      "name": "Greatest General",
+      "ro1": {
+        "id": 1277,
+        "aegisName": "GREATEST_GENERAL",
+        "name": "Greatest General"
+      },
+      "match": "English name, spawning entry",
+      "why": "rAthena pre-re 1277 GREATEST_GENERAL (db/pre-re/mob_db.yml line 12844): Ai 10 = 0x0084, has MD_AGGRESSIVE (0x4); spawns npc/pre-re/mobs/dungeons/pay_dun.txt:140 (pay_dun03 x3); 5 spawn lines in 3 file(s), 125 placed in fields, 18 in dungeons; 2 entries of this name; only 1277 is placed by a field/dungeon spawn script (1541 G_GREATEST_GENERAL is not); race/element/size agree",
+      "ro1Flags": {
+        "ai": "10",
+        "mode": "0x0084",
+        "aggressive": true,
+        "assist": false,
+        "looter": false,
+        "castSensor": false,
+        "changeTarget": false,
+        "boss": false,
+        "mvp": false
+      },
+      "ro3": {
+        "subType": 1,
+        "ai": 20000001,
+        "level": 55,
+        "scenes": [
+          "pay_dun03_001",
+          "pay_fild09_001",
+          "pay_fild10_001"
+        ]
+      },
+      "reason": "Owner's decision (2026-11-06): Greatest General does not attack on sight although RO1 1277 is aggressive; it keeps the client's AIConfig 20000001 and only fights back when attacked."
     }
   },
   "unmatched": {}
