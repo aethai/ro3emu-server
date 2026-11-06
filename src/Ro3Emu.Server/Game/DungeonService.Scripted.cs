@@ -47,7 +47,7 @@ public sealed partial class DungeonService
         public List<BuffInfo> Buffs { get; } = [];
 
         /// <summary>Attribute 113 of an actor that can carry a rider: its own walking speed in cm/s, which the client moves it at.</summary>
-        public long CarrySpeed { get; init; }
+        public long CarrySpeed { get; set; }
 
         public override EntityBase Entity()
         {
@@ -88,12 +88,17 @@ public sealed partial class DungeonService
         // A fight-only step has no client event to wait for: its kills complete it.
         a.StepDone = step.Complete.Count == 0;
         await SyncSceneActorsAsync(a, step.Actors);
+        string actorsShown = _log.IsEnabled(LogLevel.Information)
+            ? string.Join("; ", a.SceneActors.Select(u => $"{u.NpcId} at {u.X:0.0},{u.Z:0.0} buffs [{string.Join(',', u.Buffs.Select(b => b.ConfigId))}]"))
+            : "";
+        LogStepBegins(a.Plan.SceneEntry, a.Wave + 1, step.Stage, actorsShown);
         await SyncCompanionsAsync(a, step.Companions);
         a.StepGeneration++;
         if (step.Seek is { } seek) StartSeek(a, seek);
         if (step.Shelter is { } shelter) StartShelter(a, shelter);
         if (step.React is { } react) StartReaction(a, react);
         if (step.Slide is { } slide) await StartSlideAsync(a, slide);
+        await ShowStepGuideWaysAsync(a);
         if (step.Story != 0 && !a.Settled && !a.Room.Closed)
             // Once, in a var-change event: the client calls PlayCutSceneStory on every push of this var.
             await BroadcastAsync(a, Event, new DungeonEventNotify
@@ -102,6 +107,9 @@ public sealed partial class DungeonService
                 StageNum = a.Wave + 1, LevelNum = 1, Vars = { new DungeonVar { VarId = StoryVar, Vi64 = { step.Story } } },
             });
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} step {Step} '{Stage}' begins; actors {Actors}")]
+    private partial void LogStepBegins(long scene, int step, string stage, string actors);
 
     /// <summary>
     /// Shows exactly the step's actors: one already shown at the same point with the same NPC stays (its buffs change in
@@ -283,6 +291,7 @@ public sealed partial class DungeonService
     public async Task PlayerMovedAsync(GameSession s)
     {
         if (Active(s) is { Raid.Active: { } trial } raid) await TrialTouchesAsync(raid, trial);
+        if (Active(s) is { Driving: not null } driven) await DroveAsync(driven, s);
         if (s.DungeonAttempt == null || Active(s) is not { } a || Step(a) is not { } step || a.StepDone) return;
         if (step.Seek != null) return; // a hiding place counts when the seeker looks (DungeonService.HideAndSeek)
         foreach (var t in step.Complete)
@@ -342,6 +351,6 @@ public sealed partial class DungeonService
             else _loop.PostLegacy(() => AdvanceAsync(a), "dungeon scripted step");
         }
         // A step with a ride first walks it; the teleport and the next step follow its arrival.
-        if (!TryStartRide(a, step, used, FinishAsync)) await FinishAsync();
+        if (!TryStartRide(a, step, used, FinishAsync) && !await TryStartDriveAsync(a, step, used, FinishAsync)) await FinishAsync();
     }
 }

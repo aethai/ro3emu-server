@@ -114,7 +114,7 @@ public sealed class WorldInteractionService
     {
         if (_active.TryGetValue(s, out var old))
         {
-            if (old.Npc.Uid == npc.Uid && req.InteractionId == 4900025) await ExitAsync(s, false);
+            if (old.Npc.Uid == npc.Uid && req.InteractionId == 4900025 && !Held(s, old)) await ExitAsync(s, false);
             return;
         }
         if (ValidateInteraction(s, npc, req) != 0 || _data.Row("NPCInteractConfig", req.InteractionId) is not { } interaction) return;
@@ -178,7 +178,7 @@ public sealed class WorldInteractionService
     public async Task UseActionAsync(GameSession s, UseInteractActionReq req)
     {
         int code = ErrorCodes.NpcParameter;
-        if (_active.TryGetValue(s, out var state) && StillHere(s, state)
+        if (_active.TryGetValue(s, out var state) && StillHere(s, state) && !Held(s, state)
             && _data.Row("GameplayStatusButtonConfig", req.ButtonId) is { } button
             && Id(button, "_iButtonFuncType") == 0
             && button.TryGetProperty("_kAction", out var actions)
@@ -317,4 +317,9 @@ public sealed class WorldInteractionService
 
     /// <summary>Whether the player is seated on a scripted dungeon's scene actor.</summary>
     internal bool IsSeatedOnSceneActor(GameSession s) => _active.TryGetValue(s, out var state) && state.Scripted;
+
+    /// <summary>Whether a scripted ride keeps its rider seated (DungeonService.RideHolds): the exit button is refused.</summary>
+    internal Func<GameSession, bool>? ExitHeld { get; set; }
+
+    private bool Held(GameSession s, Active state) => state.Scripted && ExitHeld?.Invoke(s) == true;
 }

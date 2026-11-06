@@ -94,6 +94,7 @@ public sealed partial class DungeonService
         this._vehicles = vehicles;
         // A rider's client reports the carrier's walk; a sliding client moves faster than it walks (DungeonService.Slide).
         scene.WalkOnRide = s => vehicles.IsSeatedOnSceneActor(s) || Sliding(s);
+        vehicles.ExitHeld = RideHolds;
         combat.GrantedSkill.Add(FiresCannon);
         combat.AimsFromSeat = FiresCannon;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
@@ -118,6 +119,9 @@ public sealed partial class DungeonService
     {
         /// <summary>Who sits on a scene actor now (a ride, DungeonService.Ride), with the seat's token.</summary>
         internal Dictionary<GameSession, long> Riders { get; } = [];
+
+        /// <summary>The ride its seated rider drives now (DungeonService.Ride), null when none.</summary>
+        internal Drive? Driving { get; set; }
 
         public required InstanceService.Room Room { get; init; }
         public required DungeonCatalog.Plan Plan { get; init; }
