@@ -325,7 +325,8 @@ Reconstructed story encounters (`ReconstructedDungeons`, switch `Ro3Emu:Reconstr
   (`LC_DunGeon_VarDefine.lua:736-741`, processed by `LC_SceneCom_GuideGfx`, which draws each route as the guide arrow
   line), and to an empty list in a 30404 var change after the clear. **(inferred)**: the scripts that set 10021 are
   not in the client, so all routes show from the start (a scene's routes chain into one path: the Culvert's 19 ends
-  where 21 starts). `DungeonService.GuideWays`, `SceneEditorGuides`.
+  where 21 starts), unless the scene names each step's routes (`guides.routes`, 1000301 and 1000401): then a step shows only its
+  own, in 30401 and in a 30404 var change when it begins. `DungeonService.GuideWays`, `SceneEditorGuides`.
 - Solo tuning: the story bosses were built for the original's allied NPC
   companions (mostly not reproduced); untuned, a level-matched player died in 3-36 s and needed 3-38 minutes to win.
   `soloTuning` scales each story template's HP and attack (basis points) so a Swordman at the boss level, every stat
@@ -426,6 +427,14 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   A step may also have a ride (`after.ride`, a `m_kGuidePoints` route): when a player completes it by using an actor,
   that actor walks the route at its own `UnitConfig._fSpeed` (the Deniro: 5.25 m/s) and the participants are moved
   with it in 100 ms forced-position steps, then the teleport and the next step follow (`DungeonService.Ride.cs`).
+  `after.speed` sets the carrier's speed in percent for the ride (sent as attribute 113, which the client moves it
+  at). With `after.drive` (a region) a seated driver steers the carrier after the route (seat `_iType` 0, Driver:
+  `LC_PassengerComponent` hands it the vehicle, `ChangeControlUnit`, and unblocks Move): the carrier follows the
+  driver's walk reports, the exit button is refused, and a walk into the region puts the riders down before the
+  teleport. With `after.alone` the carrier walks the route by itself (nobody is moved with it, it offers no
+  interaction on the way and is shown again where it parked, as the client keeps an NPC's interaction range where it
+  appeared **(inferred)**). 1000301: after the feeding the Deniro walks guide 35 to Bobo's place alone at 150%, then the
+  ride seats the player, who drives it down guide 36 to region 31 (play-tested).
   **(inferred)**: the client has no ride rule (the route and the scene's camera animation are data with no trigger, and
   the original's server script is not shipped), so the speed, the step size and the missing mount are guesses and the
   camera animation (`mianstorybingyicamera`) is not played.
@@ -435,11 +444,11 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   bubbles, 12 to 22 words each at `PublicParamConfig.BubblePerWordTime` 2; 2 s between boarding groups, 3 s after the Evil Boss,
   4.5 s for the captain's closing line). When a scripted scene is settled its defeated enemies keep their bodies and go by their
   own `_iBodyRemainTime` (Eddga's body stays where it fell); the living ones and the scene actors are cleared as before.
-  An actor interaction whose `NPCInteractConfig._iStatusID` is a vehicle status (the Deniro's first Ride, 5300005)
-  seats the player in the actor's seat through `WorldInteractionService` (32702, seat 32704; the client's exit button
-  works as for any vehicle); the actor puts them down after 2 s (`SeatedRideMs`, **(inferred)**: nothing in the
-  client says how long the first, failing ride lasts) or when they leave the scene. The second Ride (5300008) has no
-  gameplay status, so the player is not seated during the ride to the depths.
+  An actor interaction whose `NPCInteractConfig._iStatusID` is a vehicle status (the Deniro's Ride, 5300005) seats the
+  player in the actor's seat through `WorldInteractionService` (32702, seat 32704); in 1000301 the seat holds them
+  while they drive the Deniro (the client's exit button and the interaction 4900025 are refused, `ExitHeld`) until
+  the end region puts them down, or they leave the scene. The Deniro's 'Try to Ride' (5300008, no gameplay status,
+  buff 5365101) is not a step of this reconstruction: the walk to Bobo's place follows the feeding.
 - Client events: 32700 on a scene actor (its own UID namespace) with one of the actor's `_iInteractID`, also counted as
   the dungeon message of that interaction's server-hosted action 210 `SendDungeonMessage` (the client never runs it);
   a walk into a server region (regionType 2; no client consumer registers them, so the client never reports them;
@@ -468,7 +477,7 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   route of the message that completed it does not reserve the settlement's role locks. Scene actors are room props
   (`InstanceService.AddPropAsync`), removed at settlement and before the room's final cleanup.
 - Guessed (see each scene's "guessed" list): the corridor region that ends 1000201's first stage, Bobo's place there,
-  the jump as a teleport, the ride to the depths as a walk of guide route 36 (see below), no exploding ant eggs, no seamless 1000201 to 1000301 transfer, which bell hides
+  the jump as a teleport, the Deniro's walk to Bobo's place after the feeding and the ride to the depths as a drive to region 31 (see below), no exploding ant eggs, no seamless 1000201 to 1000301 transfer, which bell hides
   Katie (from both stories), a wrong guess changing nothing, the instrument retrieved within 4 m of mark point 37.
 - `DungeonTests.Scripted` resolves each scene against the client data, plays each one through its client events (wrong
   and premature events included) to a clear, and checks that the story step is delivered and the next one offered.
