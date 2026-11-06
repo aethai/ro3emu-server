@@ -89,9 +89,17 @@ internal static class Program
         if (options.Yes) Ui.Interactive = false;
         if (options.Language != null)
         {
-            var settings = Settings.Load();
-            settings.Language = options.Language;
-            settings.Save();
+            try
+            {
+                var settings = Settings.Load();
+                settings.Language = options.Language;
+                settings.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                SetupLog.Write("settings: " + e.Message);
+                Console.Error.WriteLine($"--lang {options.Language} could not be saved ({e.Message}).");
+            }
         }
         SetupLog.Write($"RO3Emu {typeof(Program).Assembly.GetName().Version} {string.Join(' ', args)} (home {SetupHome.Root})");
 

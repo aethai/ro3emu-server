@@ -165,8 +165,7 @@ internal static class Flows
     }
 
     /// <summary>The language of the in-game text map: "en" unless --lang (remembered in the settings) chose another.</summary>
-    internal static string TextLanguage() =>
-        Settings.Load().Language is { } language && LocMapBuilder.IsSupported(language) ? language : LocMapBuilder.English;
+    internal static string TextLanguage() => LocMapBuilder.Supported(Settings.Load().Language) ?? LocMapBuilder.English;
 
     /// <summary>Our translations into <paramref name="language"/>, embedded in RO3Emu.exe, in file name order.</summary>
     public static List<string> Translations(string language = LocMapBuilder.English)
@@ -189,7 +188,7 @@ internal static class Flows
         CheckClient(client, needExport: true);
         Ui.Ok("this game version works with RO3Emu");
         EnsureGameData(client, options.Reexport, !options.NoIcons);
-        EnsureLocMap(client); // the text language may have changed since the export
+        EnsureLocMap(client, languageChangeOnly: true); // the text language may have changed since the export
 
         var gms = options.GmAccounts.ToList();
         if (host && gms.Count == 0 && Ui.Interactive)
@@ -463,13 +462,15 @@ internal static class Flows
     /// and the client had no English map: every string the client draws in Chinese stayed Chinese. Build the map alone
     /// from the player's own client when it is missing or older than the client's Localization chunks.
     /// </summary>
-    internal static void EnsureLocMap(string client)
+    /// <param name="languageChangeOnly">After an export: rebuild only when the map is in another language than the one asked
+    /// for (the export has just built the map from the same sources, with the developer queue the map-only build lacks).</param>
+    internal static void EnsureLocMap(string client, bool languageChangeOnly = false)
     {
         var map = Path.Combine(SetupHome.DataDir, "loc_en.tsv");
         var language = TextLanguage();
         var sources = GameDataExport.LocSourceFiles(client, language);
         if (File.Exists(map) && LocMapBuilder.LanguageOf(map) == language
-            && sources.All(s => File.Exists(s) && File.GetLastWriteTimeUtc(s) <= File.GetLastWriteTimeUtc(map))) return;
+            && (languageChangeOnly || sources.All(s => File.Exists(s) && File.GetLastWriteTimeUtc(s) <= File.GetLastWriteTimeUtc(map)))) return;
         var name = language == LocMapBuilder.TraditionalChinese ? "Traditional Chinese" : "English";
         Ui.Step($"{name} texts");
         try

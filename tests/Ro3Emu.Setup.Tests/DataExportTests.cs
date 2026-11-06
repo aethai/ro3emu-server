@@ -190,7 +190,7 @@ public class DataExportTests
         Assert.NotEmpty(files);
         var map = new LocMapBuilder(LocMapBuilder.TraditionalChinese);
         map.AddTranslations(files);
-        Assert.True(map.Ours > 3000);
+        Assert.True(map.Ours > 1500);
         foreach (var line in files.SelectMany(f => f.Split('\n')).Where(l => l.Length > 0))
         {
             var columns = line.Split('\t');

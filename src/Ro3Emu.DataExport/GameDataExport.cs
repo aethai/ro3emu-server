@@ -137,14 +137,18 @@ public static class GameDataExport
     /// <summary>Client script folders (and files) whose modules become exported tables: a chunk among them that does not
     /// decode is a missing table.</summary>
     private static readonly string[] TableSources =
-        [@"Config\DataConfig\", @"Config\ComplexConfig\", @"Config\SceneEditor\", @"Config\Skill\", "Localization_en.", "Localization_zh_CN.", "Localization_zh_TW."];
+        [@"Config\DataConfig\", @"Config\ComplexConfig\", @"Config\SceneEditor\", @"Config\Skill\", "Localization_en.", "Localization_zh_CN."];
+
+    /// <summary>The Taiwan texts: a table of the export only for <see cref="LocMapBuilder.TraditionalChinese"/>.</summary>
+    private const string TaiwanTableSource = "Localization_zh_TW.";
 
     /// <summary>The table a <see cref="LuaChunkDecoder.DecodeTree"/> error ("&lt;relative path&gt;: message") loses, or
     /// null when the chunk is not one the export turns into a table.</summary>
-    internal static string? TableOfDecodeError(string error)
+    internal static string? TableOfDecodeError(string error, string language = LocMapBuilder.English)
     {
         string rel = error.Split(": ", 2)[0].Replace('/', '\\');
-        if (!TableSources.Any(prefix => rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) return null;
+        bool taiwan = language == LocMapBuilder.TraditionalChinese && rel.StartsWith(TaiwanTableSource, StringComparison.OrdinalIgnoreCase);
+        if (!taiwan && !TableSources.Any(prefix => rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) return null;
         string name = rel[(rel.LastIndexOf('\\') + 1)..]; // not Path.GetFileName: on Linux it does not split on '\'
         int dot = name.IndexOf('.');
         return dot > 0 ? name[..dot] : name;
@@ -228,7 +232,7 @@ public static class GameDataExport
         var decoded = LuaChunkDecoder.DecodeTree(LuaPayloadDir(clientDir), luac, error =>
         {
             errors.Add(error);
-            if (TableOfDecodeError(error) is { } table && !ExpectedTableFailures.Contains(table)) failedTables.Add(table);
+            if (TableOfDecodeError(error, options.Language) is { } table && !ExpectedTableFailures.Contains(table)) failedTables.Add(table);
         }, (d, t) => options.Progress?.Invoke("Reading the game scripts", d, t));
         log($"decoded {decoded.Ok} Lua chunks, failed {decoded.Failed}");
         if (decoded.Ok == 0) throw new ExportException("No game script could be read from the game folder.");
