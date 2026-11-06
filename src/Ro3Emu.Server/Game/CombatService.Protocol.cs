@@ -175,6 +175,20 @@ public sealed partial class CombatService
         return ToPlayerAndViewersAsync(caster, route, info);
     }
 
+    /// <summary>
+    /// A skill animation the server starts on a player, with no hit (a scripted slide's end, DungeonService.Slide): the same
+    /// 31100 timeline a cast sends, for the row's _iActionTime.
+    /// </summary>
+    public Task PlaySkillAnimationAsync(GameSession s, int skillId)
+    {
+        if (s.Role == null || SkillConfig.Get(_data, skillId) is not { } skill) return Task.CompletedTask;
+        return SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = skillId, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face,
+            SessionId = ++_sessionIds, SkillMs = (int)skill.ActionTime, StartTime = Now, PlayAct = true,
+        });
+    }
+
     public Task SendMonsterTimelineAsync(MonsterUnit monster, UseInSkillInfo info, bool highLevel = false, bool extra = false)
     {
         if (monster.Dead || info.SrcID != monster.Uid || info.SessionId <= 0
