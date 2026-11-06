@@ -37,6 +37,8 @@ public static class GameDataExport
     {
         /// <summary>Our translations (src/Ro3Emu.Loc/translations/*.tsv contents, in order); none skips them.</summary>
         public IReadOnlyList<string> Translations { get; init; } = [];
+        /// <summary>The language of the text map (data/loc_en.tsv): <see cref="LocMapBuilder.English"/> or <see cref="LocMapBuilder.TraditionalChinese"/>.</summary>
+        public string Language { get; init; } = LocMapBuilder.English;
         /// <summary>Developers: re/loc/translation_queue.tsv, applied first as build_locmap.js does.</summary>
         public string? TranslationQueue { get; init; }
         public Action<string>? Log { get; init; }
@@ -137,12 +139,16 @@ public static class GameDataExport
     private static readonly string[] TableSources =
         [@"Config\DataConfig\", @"Config\ComplexConfig\", @"Config\SceneEditor\", @"Config\Skill\", "Localization_en.", "Localization_zh_CN."];
 
+    /// <summary>The Taiwan texts: a table of the export only for <see cref="LocMapBuilder.TraditionalChinese"/>.</summary>
+    private const string TaiwanTableSource = "Localization_zh_TW.";
+
     /// <summary>The table a <see cref="LuaChunkDecoder.DecodeTree"/> error ("&lt;relative path&gt;: message") loses, or
     /// null when the chunk is not one the export turns into a table.</summary>
-    internal static string? TableOfDecodeError(string error)
+    internal static string? TableOfDecodeError(string error, string language = LocMapBuilder.English)
     {
         string rel = error.Split(": ", 2)[0].Replace('/', '\\');
-        if (!TableSources.Any(prefix => rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) return null;
+        bool taiwan = language == LocMapBuilder.TraditionalChinese && rel.StartsWith(TaiwanTableSource, StringComparison.OrdinalIgnoreCase);
+        if (!taiwan && !TableSources.Any(prefix => rel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) return null;
         string name = rel[(rel.LastIndexOf('\\') + 1)..]; // not Path.GetFileName: on Linux it does not split on '\'
         int dot = name.IndexOf('.');
         return dot > 0 ? name[..dot] : name;
@@ -226,7 +232,7 @@ public static class GameDataExport
         var decoded = LuaChunkDecoder.DecodeTree(LuaPayloadDir(clientDir), luac, error =>
         {
             errors.Add(error);
-            if (TableOfDecodeError(error) is { } table && !ExpectedTableFailures.Contains(table)) failedTables.Add(table);
+            if (TableOfDecodeError(error, options.Language) is { } table && !ExpectedTableFailures.Contains(table)) failedTables.Add(table);
         }, (d, t) => options.Progress?.Invoke("Reading the game scripts", d, t));
         log($"decoded {decoded.Ok} Lua chunks, failed {decoded.Failed}");
         if (decoded.Ok == 0) throw new ExportException("No game script could be read from the game folder.");
@@ -249,6 +255,7 @@ public static class GameDataExport
         var skills = Tables("Exporting the skills", Path.Combine(staged, "skills"), @"Config\Skill");
         var locDir = Path.Combine(work, "loc");
         Tables("Exporting the Chinese texts", locDir, "Localization_zh_CN.luac");
+        if (options.Language == LocMapBuilder.TraditionalChinese) Tables("Exporting the Traditional Chinese texts", locDir, "Localization_zh_TW.luac");
 
         var mapResource = Path.Combine(staged, "config", "MapResource.json");
         if (!File.Exists(mapResource)) throw new ExportException("The game tables could not be exported (no MapResource table). Is this a complete Ragnarok 3 PC client?");
@@ -272,9 +279,11 @@ public static class GameDataExport
         log($"nav: {nav.Names} names, extracted {nav.Extracted}, missing {nav.Missing.Count} {string.Join(" ", nav.Missing)}");
         if (nav.Extracted == 0) throw new ExportException("No walk map was found in the game's VFS folder; the game files look incomplete.");
 
-        options.Progress?.Invoke("Building the English text map", 0, 0);
-        var loc = BuildLocMap(Path.Combine(locDir, "Localization_zh_CN.json"), Path.Combine(staged, "config", "Localization_en.json"),
-            Path.Combine(staged, "loc_en.tsv"), options);
+        options.Progress?.Invoke("Building the text map", 0, 0);
+        var target = options.Language == LocMapBuilder.TraditionalChinese
+            ? Path.Combine(locDir, "Localization_zh_TW.json")
+            : Path.Combine(staged, "config", "Localization_en.json");
+        var loc = BuildLocMap(Path.Combine(locDir, "Localization_zh_CN.json"), target, Path.Combine(staged, "loc_en.tsv"), options);
 
         foreach (var e in errors.Take(50)) log("  " + e);
         if (failedTables.Count > 0) log($"INCOMPLETE: {failedTables.Count} game table(s) could not be exported: {string.Join(", ", failedTables.Take(20))}");
@@ -426,9 +435,11 @@ public static class GameDataExport
         else File.Move(from, to);
     }
 
-    /// <summary>The client's two Localization chunks, the only input of the English map.</summary>
-    public static string[] LocSourceFiles(string clientDir) =>
-        [.. new[] { "Localization_zh_CN", "Localization_en" }.Select(n => Path.Combine(LuaPayloadDir(clientDir), n + ".lua.bytes"))];
+    /// <summary>The client's two Localization chunks, the only input of the text map (the English or the Traditional Chinese one).</summary>
+    public static string[] LocSourceFiles(string clientDir, string language = LocMapBuilder.English) =>
+        [.. new[] { "Localization_zh_CN", TargetTable(language) }.Select(n => Path.Combine(LuaPayloadDir(clientDir), n + ".lua.bytes"))];
+
+    private static string TargetTable(string language) => language == LocMapBuilder.TraditionalChinese ? "Localization_zh_TW" : "Localization_en";
 
     /// <summary>
     /// The English map alone, without the rest of the export: what a player who joins someone else's server needs.
@@ -438,7 +449,7 @@ public static class GameDataExport
     public static int WriteLocMap(string clientDir, string path, Options? options = null)
     {
         options ??= new Options();
-        var sources = LocSourceFiles(clientDir);
+        var sources = LocSourceFiles(clientDir, options.Language);
         if (sources.FirstOrDefault(s => !File.Exists(s)) is { } absent)
             throw new ExportException("The game folder is incomplete: " + Path.GetRelativePath(clientDir, absent) + " is missing.");
         var work = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, ".locmap");
@@ -456,10 +467,10 @@ public static class GameDataExport
             var tables = Path.Combine(work, "tables");
             var errors = new List<string>();
             using (var exporter = new LuaConfigExporter(luac))
-                exporter.ExportDirs(tables, ["Localization_zh_CN.luac", "Localization_en.luac"], errors.Add);
+                exporter.ExportDirs(tables, ["Localization_zh_CN.luac", TargetTable(options.Language) + ".luac"], errors.Add);
             foreach (var e in errors) options.Log?.Invoke("  " + e);
             var zh = Path.Combine(tables, "Localization_zh_CN.json");
-            var en = Path.Combine(tables, "Localization_en.json");
+            var en = Path.Combine(tables, TargetTable(options.Language) + ".json");
             if (!File.Exists(zh) || !File.Exists(en)) throw new ExportException("The game's text tables could not be read: " + string.Join("; ", errors));
             var staged = Path.Combine(work, "loc_en.tsv");
             int count = BuildLocMap(zh, en, staged, options).Count;
@@ -473,11 +484,11 @@ public static class GameDataExport
         }
     }
 
-    private static LocMapBuilder BuildLocMap(string zhJson, string enJson, string outPath, Options options)
+    private static LocMapBuilder BuildLocMap(string zhJson, string targetJson, string outPath, Options options)
     {
-        var loc = new LocMapBuilder();
-        if (options.TranslationQueue is { } queue && File.Exists(queue)) loc.AddQueue(queue);
-        if (File.Exists(zhJson) && File.Exists(enJson)) loc.AddClientTables(zhJson, enJson);
+        var loc = new LocMapBuilder(options.Language);
+        if (options.Language == LocMapBuilder.English && options.TranslationQueue is { } queue && File.Exists(queue)) loc.AddQueue(queue);
+        if (File.Exists(zhJson) && File.Exists(targetJson)) loc.AddClientTables(zhJson, targetJson);
         loc.AddTranslations(options.Translations);
         loc.Write(outPath);
         options.Log?.Invoke($"loc_en.tsv: {loc.Count} entries ({loc.FromQueue} queue, {loc.FromTables} client tables, {loc.Ours} ours)");
