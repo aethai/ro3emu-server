@@ -37,7 +37,7 @@ public sealed partial class DungeonTests
         Assert.Equal(plan.Waves.Select(w => w.Quest).Order(), plan.Waves.Select(w => w.Quest));
     }
 
-    // The chitchat's last bubble is still being read when it completes the step: the crew stays for the step's hold (13 s,
+    // The chitchat's bubble is still being read when it completes the step: the crew stays for the step's hold (13 s,
     // 1.3 s at the tests' pace) instead of leaving with the same tick.
     [ClientDataFact]
     public async Task TheAirshipCrewStaysWhileTheLastChitchatBubbleIsRead()
@@ -49,7 +49,7 @@ public sealed partial class DungeonTests
         await Load(alice, scene);
         await Stage(alice, 1, quest: 1);
         var started = System.Diagnostics.Stopwatch.StartNew();
-        await Gm(alice, "!actors use"); // the four bubbles complete the step
+        await Gm(alice, "!actors use"); // a bubble completes the step
         Assert.Equal(1, Session(alice).DungeonAttempt!.Wave + 1);
         await Stage(alice, 2, quest: 2);
         Assert.True(started.ElapsedMilliseconds >= 1000, $"the next step came after {started.ElapsedMilliseconds} ms");
@@ -63,7 +63,7 @@ public sealed partial class DungeonTests
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = 1000501 }));
         long instance = await Load(alice, 1000501);
         await Stage(alice, 1, quest: 1);
-        await Gm(alice, "!actors use"); // the chitchat (all four)
+        await Gm(alice, "!actors use"); // the chitchat
         await Stage(alice, 2, quest: 2);
         var cannons = await ActorsIn(alice, 3, a => a.NpcId == 5300022);
         var ships = await WaveIn(instance, 3);
@@ -144,7 +144,7 @@ public sealed partial class DungeonTests
                 await Fire(ship);
                 int done = sunk + 1;
                 var goal = await Next(alice, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
-                    n => n.Vars.Any(v => v.VarId == 10003 && v.Vi64.Count == 2 && v.Vi64[0] == done));
+                    n => n.Stage == 2 && n.Vars.Any(v => v.VarId == 10003 && v.Vi64.Count == 2 && v.Vi64[0] == done));
                 Assert.Equal(ships.Count, goal.Vars.First(v => v.VarId == 10003).Vi64[1]);
             }
             await Stage(alice, 3, quest: 3); // the boarding
