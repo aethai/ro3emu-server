@@ -175,8 +175,17 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             DamageRadius = DamageRadiusOf(npc),
             IsBoss = new Data.Config.NPCConfig(npc).NPCSubType is 3 or 4 or 6,
             AnswersBattleCall = aiRow is { } answer && new Data.Config.AIConfig(answer).BattleCallResponse == 1,
+            HealsOnReturn = aiRow is not { } heal || new Data.Config.AIConfig(heal).UnFightBUFF.Contains(ResetHealBuff),
         };
     }
+
+    /// <summary>
+    /// BuffConfig 900101: T_AXadd0_etc [[2,10000,101,3]], 100 % of the recipient's attribute 101 (max HP), the only
+    /// buff of the AIConfig _iUnFightBUFF lists that restores HP. 1 420 monsters' AI lists it; 542 others' do not (AI
+    /// 20000001 of most field monsters: [900001, 901501], the reset marker and +100 % move speed). A monster back from
+    /// a lost fight is healed only when its AI lists it (inferred: the server applies the list when the fight ends).
+    /// </summary>
+    internal const long ResetHealBuff = 900101;
 
     private float DamageRadiusOf(JsonElement npc)
     {
@@ -497,7 +506,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         if (m.Returning && !m.Moving)
         {
             m.Returning = false;
-            if (m.Hp < m.Template.MaxHp && !m.KeepsDamage)
+            if (m.Hp < m.Template.MaxHp && !m.KeepsDamage && m.Template.HealsOnReturn)
             {
                 m.Hp = m.Template.MaxHp;
                 SendHealth(m);
@@ -617,7 +626,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         var target = m.PetTarget!;
         if (target.Dead || target.Hp <= 0 || target.Owner.SceneLoading || target.WorldScene != m.WorldScene
-            || Distance(LeashX(m), LeashZ(m), target.X, target.Z) > m.Template.LeashDistance)
+            || OutOfLeash(m, target.X, target.Z))
         {
             m.PetTarget = null;
             if (m.Target == null) Disengage(m, map);
@@ -664,7 +673,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         var target = m.Target!;
         bool lost = target.Role == null || target.Dead || target.SceneLoading || TargetVisible?.Invoke(m, target) == false || target.WorldScene != m.WorldScene
-                    || Distance(LeashX(m), LeashZ(m), target.Position.X, target.Position.Z) > m.Template.LeashDistance;
+                    || OutOfLeash(m, target.Position.X, target.Position.Z);
         if (lost)
         {
             // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: nearest first).
@@ -701,9 +710,24 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             float dx = target.Position.X - m.X, dz = target.Position.Z - m.Z;
             float len = MathF.Sqrt(dx * dx + dz * dz);
             float go = Math.Min(MaxSegment, len - m.Template.AttackRange * ApproachShare);
-            if (go > MinChaseStep) WalkTo(m, map, m.X + dx / len * go, m.Z + dz / len * go, 1f);
+            // An obstacle on the straight line is walked around, as FightPet does (#398).
+            if (go > MinChaseStep && !WalkTo(m, map, m.X + dx / len * go, m.Z + dz / len * go, 1f))
+                WalkAround(m, map, target.Position.X, target.Position.Z, now);
         }
     }
+
+    /// <summary>The swing reach a target in range is given (Fight's and FightPet's in-reach test).</summary>
+    private const float ReachSlack = 0.5f;
+
+    /// <summary>
+    /// The fight is lost at this point: a target the monster could not hit without leaving its leash circle
+    /// (AIConfig _iUnFightType 1, _iUnFightParam cm, equal to _iChaseDistance in 50 of the 67 rows that have it).
+    /// (inferred) The circle bounds where the monster may chase, not where its attacker stands: a player who hits it
+    /// from range beyond the circle is still fought, from its edge, while the monster reaches him. One that cannot walk
+    /// reaches only from where it stands.
+    /// </summary>
+    private static bool OutOfLeash(MonsterUnit m, float x, float z) =>
+        Distance(LeashX(m), LeashZ(m), x, z) > m.Template.LeashDistance + (m.Template.SpeedCm > 0 ? m.Template.AttackRange + ReachSlack : 0);
 
     /// <summary>In reach of its player: stand and swing when the swing interval allows.</summary>
     private void Swing(MonsterUnit m, GameSession target, long now)
@@ -725,7 +749,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         m.Hated.Remove(lost);
         m.Hated.RemoveAll(p => p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
-            || Distance(LeashX(m), LeashZ(m), p.Position.X, p.Position.Z) > m.Template.LeashDistance);
+            || OutOfLeash(m, p.Position.X, p.Position.Z));
         return m.Hated.Count == 0 ? null : m.Hated.MinBy(p => Distance(m.X, m.Z, p.Position.X, p.Position.Z));
     }
 

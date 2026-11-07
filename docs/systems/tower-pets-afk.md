@@ -41,3 +41,10 @@ dotnet test tests/Ro3Emu.Tests --filter "FullyQualifiedName~TowerPetTests|FullyQ
 ```
 
 These tests do not cover visual behavior in the game client.
+
+A floor started from inside the tower (32801 `isInClimTower`: the next floor, a replay or Try Again) reuses the
+settled floor's room: the server sends 30124 `DungeonResetNtf` and starts the floor (30401, 32809, pets, spawns) on
+the same scene, without a 70010. The client keeps its scene for it (`LC_ClimbTowerHelper` marks the current scene,
+`LC_Scene_Sync._dungeonResetNtf` reloads it), and `LC_Actor_AutoAttack._resetScene` keeps auto battle on through
+`DungeonConfig[2100001]._kResetChangeAutoBattle` [1, 27]; a 70010 would turn it off (`GameLogic.lua`, the
+`Unit.SwitchScene` handler). The first entry and the 30402 exit still switch scenes.

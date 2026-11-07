@@ -291,9 +291,9 @@ public sealed partial class TowerService
     }
 
     /// <summary>
-    /// A configured floor up to highest-clear + 1 may be entered/replayed (inferred accessibility policy).
-    /// Continuation requires a settled attempt and allocates another isolated instance (inferred), with the
-    /// isInClimTower flag matching the session. Success follows the shared 70010/30005 pipeline (inferred ordering).
+    /// A configured floor up to highest-clear + 1 may be entered/replayed (inferred accessibility policy). The first
+    /// entry follows the shared 70010/30005 pipeline (inferred ordering). A continuation (isInClimTower, after a settled
+    /// floor) resets the floor in place with 30124 instead, see <see cref="ResetFloorAsync"/>.
     /// </summary>
     public async Task StartAsync(GameSession s, ClimTowerStartReq req)
     {
@@ -326,7 +326,7 @@ public sealed partial class TowerService
         await s.SendGameAsync(Start, new ClimTowerStartRes { Result = error });
         if (error != 0) return;
 
-        var room = _instances.Create(mapId, [s]);
+        var room = InPlace(s, mapId) is { } kept ? kept : _instances.Create(mapId, [s]);
         bool nextFloor = GameData.Int(floor!.Value, "_iFloor") == Cleared(s) + 1;
         long challengeMs = nextFloor ? s.Tower!.ChallengeTime : 0;
         var now = _clock.GetUtcNow();
@@ -338,9 +338,35 @@ public sealed partial class TowerService
             DamageRatio = DifficultyRatio(floor.Value, 215, challengeMs, now),
             Suppressed = Suppress(s, floor.Value, hpRatio),
         };
-        if (!await _instances.EnterAsync(room, s, reason: 4)) return;
-        s.TowerAttempt = attempt;
+        if (ReferenceEquals(room, s.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt);
+        else
+        {
+            if (!await _instances.EnterAsync(room, s, reason: 4)) return;
+            s.TowerAttempt = attempt;
+        }
         _log.LogInformation("{Name} starts tower config {Floor} instance {Instance}", s.Role!.Name, req.Layer, attempt.InstanceId);
+    }
+
+    /// <summary>The settled floor's room when the next attempt is on the same map, which it then reuses.</summary>
+    private InstanceService.Room? InPlace(GameSession s, long mapId) =>
+        s.TowerAttempt is { Settled: true } previous && s.InstanceId == previous.InstanceId && previous.Room.SceneEntry == mapId
+        && s.SceneEntry == mapId && !previous.Room.Closed && ReferenceEquals(_instances.Find(previous.InstanceId), previous.Room)
+            ? previous.Room : null;
+
+    /// <summary>
+    /// The next floor, a replay or Try Again from inside the tower: 30124 DungeonResetNtf on the same scene, then the
+    /// floor starts as at a 30005. The client keeps its scene for it: LC_ClimbTowerHelper sends 32801 with
+    /// isInClimTower and marks the current scene (SetPlayCameraFxOnInit, read by LC_DunGeon_ClimbTower at the next
+    /// 30401), and LC_Scene_Sync._dungeonResetNtf reloads the scene and raises Scene.ResetDungeon, where
+    /// LC_Actor_AutoAttack._resetScene keeps auto battle for DungeonConfig._kResetChangeAutoBattle [1, group] (2100001:
+    /// [1, 27]) and _refreshAutoPathCache walks a ClimbTower player to that spawn group. A 70010 switch would end it:
+    /// GameLogic's Unit.SwitchScene handler turns isAutoBattle off. The player keeps his position (inferred).
+    /// </summary>
+    private async Task ResetFloorAsync(GameSession s, Attempt attempt)
+    {
+        s.TowerAttempt = attempt; // the settled floor's pending spawns and deadline lapse (Active)
+        await s.SendGameAsync(DungeonService.Reset, new DungeonResetNtf());
+        await LoadedAsync(s);
     }
 
     /// <summary>Tuple delay is milliseconds from scene readiness; each occurrence expands all group points (inferred).</summary>
