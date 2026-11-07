@@ -360,7 +360,7 @@ public sealed partial class CombatService
         var skill = new SkillConfig(action.Row);
         if (action.Cancelled || action.Resolved || skill.IsNormalAttack(_data) || Now < action.StartMs) return false;
         var template = _data.SkillTemplate(skill.ScriptShow);
-        var points = template is { } t ? Numbers(t, "m_kAtkPoints") : [];
+        var points = SkillShow.AttackPoints(template);
         return HitPrecedesYield(skill.InterruptedType, ImpactOffset(template, points.FirstOrDefault(0.2), action.ChantMs, action.ActionMs),
             SkillShow.InterruptOffset(template, action.ChantMs, action.ActionMs), Now - action.StartMs);
     }
