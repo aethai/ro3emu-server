@@ -77,6 +77,26 @@ public sealed partial class SkillCombatTests
         Assert.Equal(ErrorCodes.SkillCooldown, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
 
+    /// <summary>
+    /// #bug-reports "Show pet always": a deployed pet is not a field unit; the client draws it for its guardian skill
+    /// from the cast's petConfigId (LC_Scene_Sync._useInSkill), which the owner and the viewers receive.
+    /// </summary>
+    [ClientDataFact]
+    public async Task ADeployedPetAppearsInItsGuardianSkillNotAsAFieldUnit()
+    {
+        await using var alice = await InWorld("Alice");
+        await EquipGuardian(alice, 10001, 1610001);
+        var s = Session("alice");
+        var target = await Target("alice", stationary: true);
+        await Loop.InvokeAsync(() => { target.Hp = 100000; return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2353301, IsAutoCast = true });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.Equal(s.Role!.Id, (await Next(alice, CombatService.ExtraUseInSkill, UseInSkillInfo.Parser, p => p.PetConfigId == 10001)).SrcID);
+        Assert.Null(s.PetActor);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(31037)
+            && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Any(b => b.EntityType == 7));
+    }
+
     [ClientDataFact]
     public async Task GuardianRockerHealsNearbyPlayersWithoutDamagingThePresentationTarget()
     {

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Maps;
@@ -5,10 +6,11 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
-/// Roster-to-world projection.
+/// Roster-to-world projection, only with <see cref="ServerOptions.PetWorldFollower"/>: the client keeps a deployed pet out
+/// of the world and shows it in its guardian skill (docs/systems/pet-world-follow.md).
 /// The selected setup plan, not ownership alone, determines a visible type-7 actor (inferred).
 /// </summary>
-public sealed class PetFollowerService(World world, GameData data, FunctionService functions)
+public sealed class PetFollowerService(World world, GameData data, FunctionService functions, IOptions<ServerOptions> options)
 {
     private long _nextActorId = 1L << 52; // Separate from role IDs and monster IDs (1L << 41).
 
@@ -19,7 +21,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
         var pets = session.Pets;
         // (inferred) The tower's separate battle lineup replaces the passive follower projection, otherwise
         // the same pet can appear twice. Its ordinary 5017 plan is preserved and projected again on return.
-        if (session.TowerAttempt == null && session.Role is { } role && pets != null
+        if (options.Value.PetWorldFollower && session.TowerAttempt == null && session.Role is { } role && pets != null
             && pets.SetupPlans.TryGetValue(pets.CurrentPlan, out var plan))
         {
             // A support slot grants passive effects, not a world combat actor (inferred); the lowest valid owned

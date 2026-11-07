@@ -43,6 +43,9 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
   on an open field whose own spawns hold a common monster (at least 10% of them) more than
   `Ro3Emu__Ro1AggressiveMaxLevelGap` levels below it (default 15; `0` turns the gate off). Dungeons, towns, Territory
   War sandboxes, story and team rooms, bosses and MVPs, and monsters a map's spawns do not place keep the RO1 behaviour.
+- **Pets walking beside their owner** (off by default, as in the client): `Ro3Emu__PetWorldFollower=true` shows the pet
+  of the active setup plan in the field next to its owner. The client draws a deployed pet only while its guardian skill
+  plays; the walking pet is the emulator's own (inferred).
 - **Backups:** the database is backed up to `data/backups/` at start and every 6 hours (newest 20 kept). All but the
   newest two are gzip-compressed (`.db.gz`, about a quarter of the size); `Ro3Emu.Server --restore-backup` takes either
   kind. `Ro3Emu__Backup__Keep`, `Ro3Emu__Backup__IntervalHours` and `Ro3Emu__Backup__Uncompressed` (or `Backup` under
