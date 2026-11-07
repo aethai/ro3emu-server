@@ -63,4 +63,34 @@ public sealed class CastInterruptTests
         Assert.Null(SkillShow.InterruptOffset(Show(0, 0, 0, 1), 0, 1000));
         Assert.Null(SkillShow.InterruptOffset(ShowWithoutInterrupt(0, 0, 1), 0, 1000));
     }
+
+    [Theory]
+    [InlineData(349, false)] // the next skill is not let in yet
+    [InlineData(350, true)] // let in by the slack, before the hit at 400
+    [InlineData(450, true)]
+    public void AHitBeforeTheInterruptTimeLandsWhenTheSkillYields(long elapsed, bool lands) =>
+        Assert.Equal(lands, CombatService.HitPrecedesYield(2, impactMs: 400, interruptMs: 500, elapsed));
+
+    [Fact]
+    public void AHitAfterTheInterruptTimeOrAnotherTypeDoesNotLandEarly()
+    {
+        Assert.False(CombatService.HitPrecedesYield(2, impactMs: 600, interruptMs: 500, elapsedMs: 550));
+        Assert.False(CombatService.HitPrecedesYield(1, impactMs: 400, interruptMs: 500, elapsedMs: 450));
+        Assert.False(CombatService.HitPrecedesYield(2, impactMs: 400, interruptMs: null, elapsedMs: 450));
+    }
+
+    [ClientDataFact] // Turn Undead (14118): its show hits at 2.283 s and yields from 2.367 s, so the slack lets a held key in before the hit
+    public void TurnUndeadsHitLandsWhenAHeldPressCutsIn()
+    {
+        var data = new Ro3Emu.Server.Data.GameData(Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { GameDataDir = Path.Combine(ClientData.RepoRoot, "data") }),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<Ro3Emu.Server.Data.GameData>.Instance);
+        var row = SkillConfig.Get(data, 1411801)!.Value;
+        var show = data.SkillTemplate(row.ScriptShow);
+        int chant = 500, action = (int)row.ActionTime;
+        int impact = CombatService.ImpactOffset(show, show!.Value.GetProperty("m_kAtkPoints")[0].GetDouble(), chant, action);
+        int yield = SkillShow.InterruptOffset(show, chant, action)!.Value;
+        Assert.InRange(impact, yield - CombatService.SwingJitterMs + 1, yield); // the window a held press fell into
+        Assert.True(CombatService.CastYields(row.InterruptedType, sameSkill: true, impact - 1, yield));
+        Assert.True(CombatService.HitPrecedesYield(row.InterruptedType, impact, yield, impact - 1));
+    }
 }
