@@ -12,11 +12,12 @@ public sealed partial class CombatService
 {
     private const int FlyingBuff = 1632901, ImpactShieldBuff = 1633301, PulseBuff = 1633501, PulseGroup = 16335, TornadoEnhanceBuff = 1633601, TornadoEnhanceGroup = 16336;
     private const int ShadowEchoGroup = 15329, ShadowReturnBuffGroup = 115334;
+    private const string ShadowReturnScript = "RetreatingShadows2", ShadowReturnSeasonScript = "RetreatingShadows2S1";
     private const long PulseRatioBasis = 100;
     private const float PulseRadius = 8;
-    private const int PulseTargets = 14, FlightOutlastsMs = 500;
+    private const int PulseTargets = 14, FlightOutlastsMs = 500, ShadowReturnMs = 200;
 
-    private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; }
+    private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; public JsonElement Row; }
     private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
 
     /// <summary>High-Energy Impact: "become Flying and gain a Shield ... You can Move and have [Immunity] during this time. Tap the skill again or wait until the Flying duration ends to attack Below".
@@ -73,8 +74,9 @@ public sealed partial class CombatService
     }
 
     /// <summary>Move back Shadow Echo: "Leaves a shadow in place. Cast in a selected direction to move ... Cast again within ${2} seconds to return to the shadow." Its cooldown waits for the
-    /// return or the end of that time, or the second press would meet it; which the client asks is (inferred) and on the list for a client run.</summary>
-    private bool ReturnsToShadow(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1"
+    /// return or the end of that time, or the second press would meet it.
+    /// The status the first press gives names the return row (RetreatingShadows2), which the wheel then shows in the slot (SkillService.FollowUps).</summary>
+    private bool ReturnsToShadow(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1" or ShadowReturnScript or ShadowReturnSeasonScript
         && _shadowSpots.TryGetValue(s, out var spot) && spot.At != null && spot.Until > Now;
 
     private void LeaveShadow(GameSession s, ActiveSkillCast action)
@@ -84,7 +86,7 @@ public sealed partial class CombatService
         var spot = _shadowSpots.GetOrCreateValue(s);
         spot.At = s.Position.Clone();
         spot.Until = Now + (long)(seconds * 1000);
-        var row = action.Row;
+        var row = spot.Row = action.Row;
         ScheduleRuntime(action.WorldScene, TimeSpan.FromSeconds(seconds), async () =>
         {
             if (spot.At == null || s.Role?.Id != action.OwnerId) return; // it returned, and that started the cooldown
@@ -102,16 +104,19 @@ public sealed partial class CombatService
     private async Task ReturnToShadowAsync(GameSession s, ActiveSkillCast action)
     {
         if (!_shadowSpots.TryGetValue(s, out var spot) || spot.At is not { } at) return;
+        // The return row has a cooldown of its own: Move back Shadow Echo's starts at the return, as on a second press of its own row.
+        if (Script(action.Row) is ShadowReturnScript or ShadowReturnSeasonScript && spot.Row.ValueKind == JsonValueKind.Object) await StartCooldownAsync(s, spot.Row);
         spot.At = null;
         var start = s.Position.Clone();
         int effect = MovementEffect(new SkillConfig(action.Row).ScriptShow).Id;
         await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
         {
             EntityID = (ulong)s.Role!.Id, StartPos = start, EndPos = at, SkillConfigId = action.Request.SkillId,
-            EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = 200,
+            EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = ShadowReturnMs,
         });
         s.PreviousPosition = start;
         s.Position = at.Clone();
+        s.SkillMovedUntilMs = Now + ShadowReturnMs;
         await _world.MoveAsync(s, new WalkReq { Pos = at, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
         foreach (var mark in s.Buffs.Where(b => b.ConfigId / 100 is ShadowEchoGroup or ShadowReturnBuffGroup).ToArray()) await _buffs.RemoveAsync(s, mark);
     }

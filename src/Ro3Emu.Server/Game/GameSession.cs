@@ -208,6 +208,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     internal WalkAllowance WalkAllowance { get; } = new();
     /// <summary>A swing a move cancelled holds the next normal attack until this time (CombatService.CancelCastAsync).</summary>
     internal long SwingLockUntilMs { get; set; }
+    /// <summary>Until when a skill's 31112 moves this player (RoleSessionService.WalkAsync drops the client's walks meanwhile).</summary>
+    internal long SkillMovedUntilMs { get; set; }
 
     /// <summary>The game message budgets of this connection (GameMessageHandler.WithinRate).</summary>
     internal SessionRates? MessageRates { get; set; }
@@ -378,6 +380,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     public Romsg.DBSkillData? SkillPlans { get; set; }
     /// <summary>The normal attack the last skill sync put on the wheel for the ridden battle mount (0 for the career's own).</summary>
     internal int WheelAttack { get; set; }
+    /// <summary>The follow-up statuses (SkillService.FollowUps) the last skill sync showed on the wheel.</summary>
+    internal string FollowUpsShown { get; set; } = "";
     public DateTime TotemSwitchUtc { get; set; }
     /// <summary>5063 personal pre-buy counters and joined auction history.</summary>
     public Romsg.DBAuction? Auction { get; set; }

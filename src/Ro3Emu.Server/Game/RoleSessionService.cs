@@ -368,6 +368,12 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             SceneService.HoldWalk(session, DateTime.UtcNow, walking: false);
             return;
         }
+        // A skill's 31112 is moving the player: the client stops its walk and its perform agent puts the unit at the move's
+        // start and carries it to the end (LC_Scene_Sync._skillStartMove: StopMove, LC_PerformEffect_Agent.SkillStartMove).
+        // A walk that comes meanwhile was sent before the client had the move, or reports a point of it; taken, it put the
+        // server back where the move began, and the next walk from the landing was snapped back there (Rift Impact, whose
+        // move starts at its first attack point, 0 s). (inferred) It is dropped, without a correction.
+        if (MonsterService.NowMs < session.SkillMovedUntilMs) return;
         if (!await scene.AcceptWalkAsync(session, walk)) return;
         session.PreviousPosition = session.Position;
         session.Position = walk.Pos;

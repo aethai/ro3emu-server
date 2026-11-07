@@ -171,6 +171,8 @@ public sealed partial class CombatService
                 s.Position.X, s.Position.Z);
         if (own != null) await OwnSkillCast!(s, req.SkillId);
         else await StartCooldownAsync(s, row.Value, SkillConfig.Get(_data, request.SkillId) is { } asked ? (int)asked.Mode : null);
+        // A follow-up's cast spends the status that offered it (SkillService.FollowUps).
+        if (own == null && owned == null && _skills.FollowUpStatus(s, new SkillConfig(row.Value)) is { } offered) await _buffs.RemoveAsync(s, offered);
         await StartCastAsync(s, WargHuntRow(s, row.Value, req), req, id, owned, lead);
         if (owned == null && !lineup && new SkillConfig(row.Value).SystemType == SkillService.QueueSystemType)
             StartLineup(s, s.SkillCast);
@@ -344,6 +346,27 @@ public sealed partial class CombatService
     }
 
     internal const int SwingJitterMs = 150;
+
+    /// <summary>
+    /// A skill that yields from its show's m_fInterruptTime (_iInterruptedType 2) and whose hit (m_kAtkPoints) comes before
+    /// that time has shown its hit on the client by the time the client sends the next skill: a held key
+    /// (enum_SkillReleaseType.HoldContinue, _iPcReleasingSkill, UI_Sys_Main_JoyStickSkillWidgetBaseCtrl.OnInputKey) sends
+    /// one every 0.2 s. <see cref="SwingJitterMs"/> lets the next one in that much early, where the hit could still be ahead
+    /// on the server: Turn Undead hits at 2.283 s of its show and yields from 2.367 s, so a held Turn Undead lost a third of
+    /// its hits. Such a hit lands as the skill yields.
+    /// </summary>
+    private bool HitShownBeforeYield(ActiveSkillCast action)
+    {
+        var skill = new SkillConfig(action.Row);
+        if (action.Cancelled || action.Resolved || skill.IsNormalAttack(_data) || Now < action.StartMs) return false;
+        var template = _data.SkillTemplate(skill.ScriptShow);
+        var points = SkillShow.AttackPoints(template);
+        return HitPrecedesYield(skill.InterruptedType, ImpactOffset(template, points.FirstOrDefault(0.2), action.ChantMs, action.ActionMs),
+            SkillShow.InterruptOffset(template, action.ChantMs, action.ActionMs), Now - action.StartMs);
+    }
+
+    internal static bool HitPrecedesYield(long interruptedType, int impactMs, int? interruptMs, long elapsedMs) =>
+        interruptedType == 2 && interruptMs is { } yield && impactMs <= yield && elapsedMs >= yield - SwingJitterMs;
 
     private bool Learned(GameSession s, JsonElement row)
     {
@@ -794,6 +817,12 @@ public sealed partial class CombatService
     {
         s.WorldState.ResurrectionCastId = 0;
         if (s.SkillCast is not { } action) return;
+        if (cause == SkillInterruptedInfo.Types.SkillInterruptType.Skill && HitShownBeforeYield(action))
+        {
+            action.Resolved = true;
+            await ResolveCastAsync(s, action);
+            if (!ReferenceEquals(s.SkillCast, action)) return;
+        }
         action.Cancelled = true;
         s.SkillCast = null;
         // The client lets a move end a swing only from the show's m_fInterruptTime_move, well after its hit. Without this a
