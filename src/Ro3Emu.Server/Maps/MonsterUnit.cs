@@ -28,6 +28,9 @@ public sealed record MonsterTemplate(
     public float DamageRadius { get; init; }
     /// <summary>NPCConfig _iNPCSubType 3 MT_MINI, 4 MT_MVP, 6 MT_BOSS, as the boss skills and Paragon count them.</summary>
     public bool IsBoss { get; init; }
+    /// <summary>Its HP is restored when it is back from a lost fight: AIConfig _iUnFightBUFF holds the full-heal buff
+    /// (MonsterService.ResetHealBuff), or the NPC has no AI row (inferred).</summary>
+    public bool HealsOnReturn { get; init; } = true;
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war

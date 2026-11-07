@@ -47,7 +47,7 @@ public sealed partial class MonsterService
     {
         if (!_companionTargets.TryGetValue(m, out var target)) return false;
         if (target.Dead || target.Hp <= 0 || target.WorldScene != m.WorldScene
-            || Distance(m.Home.X, m.Home.Z, target.X, target.Z) > m.Template.LeashDistance)
+            || OutOfLeash(m, target.X, target.Z))
         {
             _companionTargets.Remove(m);
             Disengage(m, map);
