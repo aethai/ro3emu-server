@@ -15,7 +15,7 @@ public sealed partial class CombatService
     private const string ShadowReturnScript = "RetreatingShadows2", ShadowReturnSeasonScript = "RetreatingShadows2S1";
     private const long PulseRatioBasis = 100;
     private const float PulseRadius = 8;
-    private const int PulseTargets = 14, FlightOutlastsMs = 500;
+    private const int PulseTargets = 14, FlightOutlastsMs = 500, ShadowReturnMs = 200;
 
     private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; public JsonElement Row; }
     private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
@@ -112,10 +112,11 @@ public sealed partial class CombatService
         await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
         {
             EntityID = (ulong)s.Role!.Id, StartPos = start, EndPos = at, SkillConfigId = action.Request.SkillId,
-            EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = 200,
+            EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = ShadowReturnMs,
         });
         s.PreviousPosition = start;
         s.Position = at.Clone();
+        s.SkillMovedUntilMs = Now + ShadowReturnMs;
         await _world.MoveAsync(s, new WalkReq { Pos = at, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
         foreach (var mark in s.Buffs.Where(b => b.ConfigId / 100 is ShadowEchoGroup or ShadowReturnBuffGroup).ToArray()) await _buffs.RemoveAsync(s, mark);
     }

@@ -95,6 +95,33 @@ public sealed partial class SkillCombatTests
         Assert.InRange(MonsterService.Distance(aim.X, aim.Z, moved.EndPos.X, moved.EndPos.Z), stopsShort - 0.1f, stopsShort + 0.1f);
     }
 
+    [ClientDataFact] // Rift Impact moves at its first attack point (0 s): the stop the client sent on pressing it comes after the move
+    public async Task ADiveIsNotUndoneByTheStopSentBeforeIt()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job 1400"); await Teach("alice", 11301);
+        var s = Session("alice");
+        s.GmCastSkill = 1130101;
+        var nav = _app.Services.GetRequiredService<WorldData>().Map(s.SceneEntry)!.Nav;
+        var start = s.Position.Clone();
+        var (ux, uz) = new[] { (1f, 0f), (-1f, 0f), (0f, 1f), (0f, -1f) }.First(o => nav == null
+            || nav.CanWalk(start.X, start.Y, start.Z, start.X + o.Item1 * 7, start.Z + o.Item2 * 7));
+        var stop = new Vec3 { X = start.X - ux * 0.3f, Y = start.Y, Z = start.Z - uz * 0.3f };
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = stop, Face = 0, SpeedRate = 1 }); // walking when it is pressed
+        await Task.Delay(300);
+        var point = new Vec3 { X = start.X + ux * 6f, Y = start.Y, Z = start.Z + uz * 6f };
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1130101, TargetPos = point, Face = MonsterService.Angle(start.X, start.Z, point.X, point.Z) });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var dive = await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)s.Role!.Id);
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = stop, Face = 0, SpeedRate = 1, BStop = true }); // sent before the client had the move
+        await Task.Delay(dive.MoveTimeMs + 100);
+        await Loop.InvokeAsync(() => { Assert.InRange(MonsterService.Distance(s.Position.X, s.Position.Z, dive.EndPos.X, dive.EndPos.Z), 0f, 0.01f); return Task.CompletedTask; });
+        // The landing's own stop is taken, with no correction back to where the dive began.
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = dive.EndPos, Face = 0, SpeedRate = 1, BStop = true });
+        await Task.Delay(200);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(GameAoiSink.MovementChange) && MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == s.Role!.Id);
+    }
+
     [ClientDataFact] // "inflicts Knockback ... Move ${12} meters in that direction, then inflict Knock-Up": pushed once, caster 12 m on, hit twice
     public async Task FearlessChargeHitsPushesMovesAndHitsAgain()
     {
