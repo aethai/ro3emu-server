@@ -327,7 +327,7 @@ public sealed partial class WorldCoreService : IGameTicker
         // authoritative session value (unset = full), as the stat sheet does; a full sheet per board was 0.75 ms
         // per player per second (113 ms per snapshot at 150 players in one map).
         long maxHp = 0;
-        foreach (var (id, value) in p.EntityProperties) if (id == 101) { maxHp = value; break; }
+        foreach (var (id, value, _) in p.EntityProperties) if (id == 101) { maxHp = value; break; }
         if (maxHp <= 0) maxHp = _character.Stats(p)[101]; // properties not built yet
         long hp = Math.Clamp(p.CurrentHp ?? maxHp, 0, maxHp);
         return new EntityNameBoard
