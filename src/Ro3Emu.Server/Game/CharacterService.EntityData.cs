@@ -21,7 +21,7 @@ public sealed partial class CharacterService
     public void Refresh(GameSession session)
     {
         var stats = Stats(session);
-        session.EntityProperties = [.. PropertyIds(stats).Select(id => (Id: (long)id, Value: stats[id]))];
+        session.EntityProperties = EntityPropertiesOf(stats);
         session.EquipLook = EquipInfo(session);
         session.Speed = stats[Speed];
     }
@@ -252,6 +252,15 @@ public sealed partial class CharacterService
     /// <summary>The self property list: the fixed set plus every member attribute the sheet carries (1031 ...).</summary>
     private static IEnumerable<int> PropertyIds(StatSheet sheet) => SelfProperties.Union(sheet.Data.Keys).Order();
 
+    /// <summary>
+    /// ENTITYSELF's property list with the same baseData as 31008: the client files both through
+    /// LC_DAL_PlayerInfo._changeProperty into ServerAttrBaseInfo (baseData, or data when baseData is 0), the Base bucket
+    /// its stat point preview (_refreshFinalLocalVal) rebuilds each group from. The final value there made the preview
+    /// apply the percentages twice after every login and map change.
+    /// </summary>
+    private static (long Id, long Value, long Base)[] EntityPropertiesOf(StatSheet stats) =>
+        [.. PropertyIds(stats).Select(id => (Id: (long)id, Value: stats[id], Base: stats.Base.GetValueOrDefault(id, stats[id])))];
+
     private JsonElement? BaseRow(int career, int level)
     {
         // Every job has rows 1..100; fall back to the Novice table for unknown careers.
@@ -316,7 +325,7 @@ public sealed partial class CharacterService
         if (hp is { } h) session.CurrentHp = Math.Clamp(h, 0, before[MaxHp]);
         if (sp is { } s) session.CurrentSp = Math.Clamp(s, 0, before[MaxSp]);
         var stats = Stats(session);
-        session.EntityProperties = [.. PropertyIds(stats).Select(id => (Id: (long)id, Value: stats[id]))];
+        session.EntityProperties = EntityPropertiesOf(stats);
         var all = new AllProperty { EntityID = session.Role!.Id };
         var aoi = new AOIAttrChange { EntityUuid = (ulong)session.Role.Id };
         foreach (var id in new[] { Hp, Sp })
