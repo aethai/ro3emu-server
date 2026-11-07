@@ -242,9 +242,10 @@ public sealed partial class DungeonTests
         var (_, companions) = await EddgaStep(alice);
         var s = Session(alice);
         var wule = companions.Single(c => c.NpcId == Wule);
-        // An Eddga that cannot move, 12 m from Wule, whose 2 m swing cannot reach him.
+        // An Eddga that cannot move, 12 m from Wule, whose 2 m swing cannot reach him. Its HP shows the return's end
+        // (Eddga's own AI lists no full-heal buff, MonsterService.ResetHealBuff).
         var probe = await SpawnBeside(s, Service<MonsterService>().Template(Eddga)! with
-        { SpeedCm = 0, AttackRange = 2, LeashDistance = 1000, RoamDistance = 0 }, wule.HomeX + 12, wule.Y, wule.HomeZ);
+        { SpeedCm = 0, AttackRange = 2, LeashDistance = 1000, RoamDistance = 0, HealsOnReturn = true }, wule.HomeX + 12, wule.Y, wule.HomeZ);
         // It lost its player (hurt, on its way home, as Disengage leaves it) and Wule's hit draws it.
         await OnLoop(() =>
         {

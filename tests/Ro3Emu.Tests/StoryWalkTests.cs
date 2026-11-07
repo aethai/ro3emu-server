@@ -947,12 +947,14 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
             var next = floors.FirstOrDefault(r => GameData.Int(r, "_iFloor") == current + 1);
             if (next.ValueKind != JsonValueKind.Object) throw new WalkBlocked($"no tower floor after {current}");
             using var end = _bot.Inbox.Expect(e => e.IsGame(TowerService.End));
-            using var sw = _bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine));
+            // The first floor is a 70010 switch; the next ones are reset in place (30124, TowerService.ResetFloorAsync).
+            using var sw = _bot.Inbox.Expect(e => e.IsGame(inside ? DungeonService.Reset : MsgId.SwitchSceneLine));
             var start = await RequestAsync(TowerService.Start, new ClimTowerStartReq { Layer = (int)GameData.Int(next, "_iID"), IsInClimTower = inside },
                 ClimTowerStartRes.Parser);
             if (start.Result != 0) throw new WalkBlocked($"32801 tower floor {current + 1} refused {start.Result}");
-            long scene = SwitchSceneLineResp.Parser.ParseFrom((await sw.WaitAsync(Wait)).Body).SceneEntry;
-            await LoadSceneAsync(scene);
+            var switched = await sw.WaitAsync(Wait);
+            long scene = inside ? await OnLoop(s => s.SceneEntry) : SwitchSceneLineResp.Parser.ParseFrom(switched.Body).SceneEntry;
+            if (!inside) await LoadSceneAsync(scene);
             inside = true;
             long instance = await OnLoop(s => s.InstanceId);
             var until = DateTime.UtcNow + TimeSpan.FromSeconds(60);
