@@ -428,7 +428,10 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   after it. The engine is generic (`DungeonService.Scripted`): nothing knows a scene, task or NPC id.
   A step may also have a ride (`after.ride`, a `m_kGuidePoints` route): when a player completes it by using an actor,
   that actor walks the route at its own `UnitConfig._fSpeed` (the Deniro: 5.25 m/s) and the participants are moved
-  with it in 100 ms forced-position steps, then the teleport and the next step follow (`DungeonService.Ride.cs`).
+  with it every 100 ms, then the teleport and the next step follow (`DungeonService.Ride.cs`). A seated rider's seat
+  carries it; a rider who is not seated is told to walk there itself (**(proven)** transType 3 ServerControl calls the
+  local player's controlled unit's `SetMoveTargetPos` in every scene, the one transition type a surface scene does not
+  ignore: `LC_Scene_Sync.lua`, `_syncUnitMoveState`) and other viewers are told as if it had walked there.
   **(inferred)**: the client has no ride rule (the route and the scene's camera animation are data with no trigger, and
   the original's server script is not shipped), so the speed, the step size and the missing mount are guesses and the
   camera animation (`mianstorybingyicamera`) is not played.

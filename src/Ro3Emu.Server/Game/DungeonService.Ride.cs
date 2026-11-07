@@ -11,9 +11,10 @@ namespace Ro3Emu.Server.Game;
 /// editor (m_kGuidePoints) and the participants move with it, before the step's teleport and the next step. The client
 /// has no ride rule: the route and the scene's camera animation are data without a trigger, and the original's server
 /// script is not shipped. So (inferred) the carrier walks the route leg by leg at its own UnitConfig._fSpeed as a monster
-/// walks, a seated player goes with it on its seat, a player who is not seated is moved in short forced-position steps,
-/// and the camera animation is not played. The carrier stays where the route ends (only a scene's last step has a ride,
-/// so no later step shows it again).
+/// walks, a seated player goes with it on its seat, a player who is not seated walks there itself every tick
+/// (transType 3 ServerControl, (proven) LC_Scene_Sync.lua _syncUnitMoveState: the local player's controlled unit obeys
+/// it in every scene, unlike ForceTeleport which a surface scene ignores), and the camera animation is not played. The
+/// carrier stays where the route ends (only a scene's last step has a ride, so no later step shows it again).
 /// </summary>
 public sealed partial class DungeonService
 {
@@ -174,10 +175,31 @@ public sealed partial class DungeonService
                     member.PreviousPosition = member.Position;
                     member.Position = new Vec3 { X = at.X, Y = at.Y, Z = at.Z };
                 }
-                else await _scenes.TeleportInMapAsync(member, new MapPoint(at.X, at.Y, at.Z, at.Face));
+                else await WalkRiderAsync(member, at);
             }
             catch (Exception e) { LogRideMoveFailed(e, a.Plan.SceneEntry, 0); }
         }
+    }
+
+    /// <summary>
+    /// A not-seated rider is not the client's controlled vehicle, so its own client must be told to walk there itself.
+    /// (proven) transType 3 ServerControl calls the controlled unit's SetMoveTargetPos in every scene, the one
+    /// mechanism among transType 1/2/3 that a surface scene does not ignore (LC_Scene_Sync.lua, _syncUnitMoveState);
+    /// a per-tick instant reposition (ResetPos/ForceTeleport) is what made the rider stagger. Other viewers are not
+    /// this player's controlled unit, so they are told as if the rider had walked there, the ordinary multiplayer sync.
+    /// </summary>
+    private async Task WalkRiderAsync(GameSession member, (float X, float Y, float Z, float Face) at)
+    {
+        var pos = new Vec3 { X = at.X, Y = at.Y, Z = at.Z };
+        await member.SendGameAsync(GameAoiSink.MovementChange, new MovementChangeNtf
+        {
+            Uid = member.Role!.Id, TransType = MovementTransitionType.MoveTransServerControl,
+            MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = MonsterService.NowMs },
+        });
+        member.PreviousPosition = member.Position;
+        member.Position = pos;
+        member.Face = at.Face;
+        await _world.MoveAsync(member, new WalkReq { Pos = pos, Face = at.Face, BStop = false, SpeedRate = 1 });
     }
 
     /// <summary>Tells the viewers to walk the leg the carrier has reached, as a monster's walk is sent (MonsterService).</summary>
