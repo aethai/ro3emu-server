@@ -11,7 +11,7 @@ Implemented:
 - 33310 rebirth records and refunds the exact book denominations spent on new level-ups; pets levelled before this ledger existed receive an inferred equivalent in whole 500-EXP books.
 - Pet skills resolve from the current `PetStarConfig` row; the synchronized roster gives the client its configured protect/passive/active/stage skill choices. No synthetic learned-skill dataset is introduced.
 - [Ordinary guardian skills](pet-guardian-skills.md): slot-11 Primary casts, utility Reactive effects and the first utility King Core across the known exported families. Stateful combat and client-derived values retain explicit inference boundaries.
-- One type-7 follower with an independent actor UUID, NPC template, positive owner, NPC movement property and owner-bound AOI. Creation follows the owner; removal precedes the owner; accepted walks/stops/teleports send 31081. Concurrent owner entry and lineup changes serialize the ordering.
+- A deployed pet stays out of the world by default: the client shows it in its guardian skill only (`petConfigId` on the cast, `LC_Scene_Sync._useInSkill`), see [pet-world-follow.md](pet-world-follow.md). With `Ro3Emu:PetWorldFollower` on *(inferred)*: one type-7 follower with an independent actor UUID, NPC template, positive owner, NPC movement property and owner-bound AOI. Creation follows the owner; removal precedes the owner; accepted walks/stops/teleports send 31081. Concurrent owner entry and lineup changes serialize the ordering.
 - Functions 33/3301/3302 gate requests. A persisted setup cannot spawn when 33 is closed. Inventory/currency and pet state commit in one SQLite transaction, with in-memory rollback on failure. The existing ordinary item-exchange path retains its behavior.
 
 Inferred policies (not original-server parity claims):
@@ -24,7 +24,7 @@ Inferred policies (not original-server parity claims):
    The S-class guarantee follows `UI_Sys_PetGachaWidgetCtrl.RefreshPetHit`: remaining = `DrawConfig._iGuaranteedCnt` minus `AppearanceLotteryPoolPityInfo[key].m_iPityCount`, where key is the draw's `_iType` for the Normal pool and the draw id otherwise. Those records are `DBAppearanceLotteryData.pityRecords`, the store `LotteryService` already uses: a draw at the count rolls only `_kGuaranteedBanner` groups, a hit in them resets it, and the record is committed with the egg and synced by 5011. Counting at egg placement (when the outcome is fixed) is *(inferred)*.
 6. A chosen result persists at generation. One accelerator means 300 seconds; finish uses owned items first and buys each missing unit for 100 token-3 currency, matching the client confirmation path. All costs are atomic. An already-ready acceleration retry succeeds without spending. The wire has no nonce to distinguish an old retry after a new egg occupies the same round/slot.
 7. Collection grants configured result EXP once per egg, increments count and records collection time. A duplicate pet becomes `PetBaseConfig._kDecompose` fragments in the bag; `brokenItems` names the duplicate pet id with the fragment count, because `UI_Sys_Pet_CongratulationPanelCtrl` and `UI_Sys_PetGachaWidgetCtrl` resolve the shard from the pet's `_kDecompose`; directly drawn items use `normalItems`. Acquisition uses 5017 without an additional 33309 append. Combine's append reply precedes its 5017 roster replacement.
-8. The lowest deployed setup slot selects one follower; support slots do not create actors. Visibility follows the owner's visibility, and a missing friendly camp falls back to 1. The follower keeps a separate follow position next to the owner (see "World follow" below and [pet-world-follow.md](pet-world-follow.md) for the distance, presentation-policy evidence and unresolved original-server details). Server pet combat, target choice and skill damage are not inferred from the UI.
+8. With `PetWorldFollower` on, the lowest deployed setup slot selects one follower; support slots do not create actors. Visibility follows the owner's visibility, and a missing friendly camp falls back to 1. The follower keeps a separate follow position next to the owner (see "World follow" below and [pet-world-follow.md](pet-world-follow.md) for the distance, presentation-policy evidence and unresolved original-server details). Server pet combat, target choice and skill damage are not inferred from the UI.
 
 Explicitly unavailable:
 
@@ -36,6 +36,8 @@ Explicitly unavailable:
 ## World follow
 
 [pet-world-follow.md](pet-world-follow.md) explains why a synthetic `pendantInfo` entry cannot replace the existing actor with the supplied client tables.
+
+Everything below applies only with `Ro3Emu:PetWorldFollower` on (off by default).
 
 - Keep the separate type-7 actor in 31037 and owner-first / pet-first removal ordering. At entry,
   deployment and teleport, place it 3 m diagonally beside/behind the owner. The exported

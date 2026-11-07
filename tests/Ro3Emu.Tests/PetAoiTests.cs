@@ -1,6 +1,8 @@
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Romsg;
+using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
@@ -49,6 +51,8 @@ public sealed class PetAoiTests
             PreviousPosition = new Vec3 { X = x, Z = z },
         };
     }
+
+    private static readonly IOptions<ServerOptions> Follower = Options.Create(new ServerOptions { PetWorldFollower = true });
 
     private static PetFollowerActor Pet(GameSession owner, long id = 1L << 52, int petId = 10001) =>
         new(id, owner.Role!.Id, petId, 2300440, 1, owner.Position.Clone(), owner.Face, 700, 1);
@@ -366,6 +370,29 @@ public sealed class PetAoiTests
         Assert.InRange(Distance(next.Position, owner.Position), 2.99f, 3.01f);
     }
 
+    /// <summary>
+    /// #bug-reports "Show pet always": by default a deployed pet stays out of the world, as in the client, which shows it
+    /// only in its guardian skill (LC_Scene_Sync._useInSkill). The loaded progress would reach the function gate, which
+    /// throws on the absent services: the option stops the refresh before it.
+    /// </summary>
+    [Fact]
+    public async Task ADeployedPetHasNoWorldFollowerByDefault()
+    {
+        var owner = Player("Owner", 11);
+        var plan = new DBPetSetUpPlan();
+        plan.SetUpPets[1] = 10001;
+        var roster = new DBPetInfo { CurrentPlan = 1 };
+        roster.SetupPlans[1] = plan;
+        roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
+        owner.Pets = roster;
+        owner.Progress = new RoleProgress { Level = 50 };
+
+        await new PetFollowerService(_world, null!, null!, Options.Create(new ServerOptions())).RefreshAsync(owner);
+        await _world.JoinAsync(owner);
+        Assert.Null(owner.PetActor);
+        Assert.Empty(_sink.Events);
+    }
+
     [Fact]
     public async Task OwnedSupportPetDoesNotCreateFollower()
     {
@@ -377,7 +404,7 @@ public sealed class PetAoiTests
         roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
         owner.Pets = roster;
 
-        await new PetFollowerService(_world, null!, null!).RefreshAsync(owner);
+        await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
         Assert.Null(owner.PetActor);
         Assert.Empty(_sink.Events);
@@ -394,7 +421,7 @@ public sealed class PetAoiTests
         roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
         owner.Pets = roster;
 
-        await new PetFollowerService(_world, null!, null!).RefreshAsync(owner);
+        await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
         Assert.Null(owner.PetActor);
         Assert.Empty(_sink.Events);

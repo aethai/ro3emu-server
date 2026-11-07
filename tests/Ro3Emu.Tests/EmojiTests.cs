@@ -188,6 +188,40 @@ public sealed class EmojiTests : IAsyncLifetime
         Assert.Empty(DBEmojiPlayInfo.Parser.ParseFrom(saved).EmojiCollections);
     }
 
+    /// <summary>
+    /// #bug-reports "Nine-Tone Mantra": its emotes unlock on owning the look (condition [1104, 40050030], "Unlocked by
+    /// obtaining Appearance"), so they play unworn as on the client. The idle tab lists the player's sex only: Alice
+    /// (sex 1) sets 40605, not the sex-2 40606. 0 clears the idle action for the owner and the viewers.
+    /// </summary>
+    [ClientDataFact]
+    public async Task NineToneEmotesNeedTheOwnedLookAndTheIdleOneFollowsTheSexAndClears()
+    {
+        await using var alice = await InWorld("Alice");
+        await LoadedAsync("Alice");
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var registry = _app.Services.GetRequiredService<SessionRegistry>();
+        var emoji = _app.Services.GetRequiredService<EmojiService>();
+        await loop.InvokeAsync(async () =>
+        {
+            var s = registry.All().Single(x => x.Role?.Name == "Alice");
+            s.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
+            await emoji.LoginAsync(s);
+        });
+        Assert.Equal(10005, (await PlayAsync(alice, 10005)).BehaviorStateMachine.Param.EmojiPlay.EmojiId); // Moon Dance, unworn
+
+        await alice.SendGameAsync(EmojiService.SetIdle, new SetIdleEmojiReq { EmojiId = 40606 });
+        Assert.Equal(3601, (await Next(alice, EmojiService.SetIdle, SetIdleEmojiRsp.Parser)).Result);
+        await alice.SendGameAsync(EmojiService.SetIdle, new SetIdleEmojiReq { EmojiId = 40605 });
+        Assert.Equal(0, (await Next(alice, EmojiService.SetIdle, SetIdleEmojiRsp.Parser)).Result);
+        await Next(alice, 31048, AOIAttrChange.Parser, a => a.EntityUuid == Id(alice) && a.IdleInfo?.EmojiId == 40605);
+
+        await alice.SendGameAsync(EmojiService.SetIdle, new SetIdleEmojiReq { EmojiId = 0 });
+        Assert.Equal(0, (await Next(alice, EmojiService.SetIdle, SetIdleEmojiRsp.Parser, r => r.EmojiId == 0)).Result);
+        await Next(alice, 31048, AOIAttrChange.Parser, a => a.EntityUuid == Id(alice) && a.IdleInfo is { EmojiId: 0 });
+        var saved = _app.Services.GetRequiredService<Ro3Emu.Server.Accounts.RoleStore>().LoadEmojiPlay((long)Id(alice));
+        Assert.Equal(0, DBEmojiPlayInfo.Parser.ParseFrom(saved ?? []).IdleEmojiID);
+    }
+
     [ClientDataFact]
     public async Task ADuoEmoteNeedsBothPartnersReadyAndEndsForBoth()
     {
