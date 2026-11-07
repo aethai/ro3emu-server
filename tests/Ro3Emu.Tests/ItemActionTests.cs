@@ -89,6 +89,12 @@ public sealed class ItemActionTests : IAsyncLifetime
         Assert.Equal(before.ExpireMs, returned.ExpireMs);
         Assert.Equal([(1033L, 25d)], returned.Changes);
         Assert.DoesNotContain(kept, b => b.ConfigId is sceneBound or endless or shortLived);
+
+        // The economy snapshot reads the kept buffs as a known, strict shape: no asset, no unknown schema.
+        var database = _app.Services.GetRequiredService<AccountStore>().DatabasePath;
+        var catalog = Ro3Emu.Server.Economy.EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
+        var snapshot = Ro3Emu.Server.Economy.EconomySnapshotReader.Read(database, catalog, "auto");
+        Assert.DoesNotContain(snapshot.Issues, i => i.Key.Contains("offline_buffs", StringComparison.Ordinal));
     }
 
     private async Task<BotClient> Relogin(BotClient bot, string name)

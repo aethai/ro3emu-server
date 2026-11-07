@@ -15,6 +15,9 @@ public sealed partial class BuffService
 
     private sealed record OfflineBuff(int ConfigId, long ExpireMs, int DurationMs, long SourceId, int PileCount, OfflineChange[] Changes);
 
+    /// <summary>role.offline_buffs: an object, as every role JSON blob the economy snapshot reads.</summary>
+    private sealed record OfflineBuffState(OfflineBuff[] Buffs);
+
     private BuffConfig? SurvivesLogout(int configId) =>
         _data.Row("BuffConfig", configId) is { } row && new BuffConfig(row) is { Offline: 2, SceneClear: 0, Time: > 0 } config ? config : null;
 
@@ -25,7 +28,7 @@ public sealed partial class BuffService
         OfflineBuff[] kept = [.. p.Buffs
             .Where(b => !b.IsPassive && !b.IsTotemOwned && !b.IsGuardianOwned && b.ShieldRemaining == 0 && b.ExpireMs > now && SurvivesLogout(b.ConfigId) != null)
             .Select(b => new OfflineBuff(b.ConfigId, b.ExpireMs, b.DurationMs, b.SourceId, b.PileCount, [.. b.Changes.Select(c => new OfflineChange(c.Attr, c.Value))]))];
-        return JsonSerializer.SerializeToUtf8Bytes(kept);
+        return JsonSerializer.SerializeToUtf8Bytes(new OfflineBuffState(kept));
     }
 
     /// <summary>Puts the kept buffs back on a role being selected; entering the scene sends them (ResendAsync).</summary>
@@ -33,7 +36,7 @@ public sealed partial class BuffService
     {
         if (state == null) return;
         OfflineBuff[]? saved;
-        try { saved = JsonSerializer.Deserialize<OfflineBuff[]>(state); }
+        try { saved = JsonSerializer.Deserialize<OfflineBuffState>(state)?.Buffs; }
         catch (JsonException) { return; }
         long now = MonsterService.NowMs;
         foreach (var kept in saved ?? [])
