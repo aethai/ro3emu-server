@@ -486,8 +486,11 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>5035 field Bonus Time, daily consumption and drop history; transient activity never survives logout.</summary>
     public WildAfkService.State? WildAfk { get; set; }
 
-    /// <summary>Property list (AoIProperty idx, value) for ENTITYSELF / AOI bases, kept current by CharacterService.Refresh.</summary>
-    public (long Id, long Value)[] EntityProperties { get; set; } = [];
+    /// <summary>
+    /// Property list (AoIProperty idx, data, baseData) for ENTITYSELF / AOI bases, kept current by CharacterService.Refresh.
+    /// Base is the stat sheet's pre-percentage part (StatSheet.Base), the value 31008 sends as baseData.
+    /// </summary>
+    public (long Id, long Value, long Base)[] EntityProperties { get; set; } = [];
 
     /// <summary>Property ids already sent in 31008; retained across local Refresh until a zero is sent.</summary>
     public HashSet<int> SentPropertyIds { get; } = [];

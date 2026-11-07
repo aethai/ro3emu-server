@@ -486,10 +486,11 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         // AttributeConfig ids: STR..LUK 1-6, derived 101-116, HP/SP 2000/2001, level 2002 (CharacterService.Refresh).
         var properties = session.EntityProperties.Length > 0
             ? session.EntityProperties
-            : [(101, 100), (2000, 100), (102, 50), (2001, 50), (AttrSpeed, session.Speed), (AttrBaseAtkSpeed, 100)];
-        foreach (var (idx, value) in properties)
+            : [(101, 100, 100), (2000, 100, 100), (102, 50, 50), (2001, 50, 50), (AttrSpeed, session.Speed, session.Speed), (AttrBaseAtkSpeed, 100, 100)];
+        // baseData: the pre-percentage part (CharacterService.EntityPropertiesOf), as 31008 sends it.
+        foreach (var (idx, value, baseValue) in properties)
         {
-            entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
+            entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = baseValue });
         }
         entity.EquipInfo.Add(session.EquipLook);
         BuffService.PopulateEntity(session, entity);
