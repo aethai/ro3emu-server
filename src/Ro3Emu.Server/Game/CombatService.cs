@@ -331,6 +331,8 @@ public sealed partial class CombatService : IGameTicker
         skills.Learned.Add(RefreshSkillParametersAsync);
         skills.Learned.Add(character.RefreshStatsAsync);
         buffs.Changed.Add(RefreshSkillParametersAsync);
+        buffs.Changed.Add(skills.RefreshFollowUpsAsync);
+        GrantedSkill.Add((s, id) => SkillConfig.Get(_data, id) is { } row && skills.FollowUpStatus(s, row) != null);
         talents.EffectsChanged.Add(RefreshSkillParametersAsync);
         scene.Loaded.Add(RefreshSkillParametersAsync);
         scene.Leaving.Add(ClearSceneSkillProtocolAsync);

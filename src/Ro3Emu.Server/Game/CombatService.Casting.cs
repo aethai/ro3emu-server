@@ -171,6 +171,8 @@ public sealed partial class CombatService
                 s.Position.X, s.Position.Z);
         if (own != null) await OwnSkillCast!(s, req.SkillId);
         else await StartCooldownAsync(s, row.Value, SkillConfig.Get(_data, request.SkillId) is { } asked ? (int)asked.Mode : null);
+        // A follow-up's cast spends the status that offered it (SkillService.FollowUps).
+        if (own == null && owned == null && _skills.FollowUpStatus(s, new SkillConfig(row.Value)) is { } offered) await _buffs.RemoveAsync(s, offered);
         await StartCastAsync(s, WargHuntRow(s, row.Value, req), req, id, owned, lead);
         if (owned == null && !lineup && new SkillConfig(row.Value).SystemType == SkillService.QueueSystemType)
             StartLineup(s, s.SkillCast);
