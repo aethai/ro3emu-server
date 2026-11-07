@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -154,12 +155,17 @@ public sealed partial class EmojiService : IGameTicker
 
     private Task SyncAsync(GameSession session) => CharacterService.SyncAsync(session, Sync, session.EmojiPlay!.Clone());
 
+    /// <summary>
+    /// 82603. The idle tab lists the _iSort 4 rows of the player's sex or of none (Lua_CFG_PerformanceConfig.GetAllIDList);
+    /// a tap on the equipped one sends its id again and replays it (UI_Sys_Main_Action_ItemWidgetBaseCtrl). The client
+    /// has no control that sends 0; 0 clears the idle action (inferred).
+    /// </summary>
     public async Task SetIdleAsync(GameSession session, SetIdleEmojiReq req)
     {
         int result = session.EmojiPlay == null ? Busy
             : req.EmojiId == 0 ? 0
-            : Row(req.EmojiId) is not { } row ? NoConfig
-            : GameData.Int(row, "_iSort") != IdleSort ? NoConfig
+            : PerformanceConfig.Get(_data, req.EmojiId) is not { } row ? NoConfig
+            : row.Sort != IdleSort || (row.Sex != 0 && row.Sex != session.Role?.Sex) ? NoConfig
             : !session.EmojiPlay.EmojiUnlocks.Contains(req.EmojiId) ? Locked : 0;
         if (result == 0)
         {

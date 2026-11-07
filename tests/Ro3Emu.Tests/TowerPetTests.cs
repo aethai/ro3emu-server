@@ -28,6 +28,7 @@ public sealed class TowerPetTests : IAsyncLifetime
         {
             o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
+            o.PetWorldFollower = true; // the field follower the tower lineup replaces (off by default)
         });
         Service<SeasonService>().SetPlayBook(101);
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise

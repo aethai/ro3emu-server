@@ -29,7 +29,7 @@ public sealed class AchievementTests : IAsyncLifetime
         LoginDays2 = 104100200, Mvp1 = 101100100, Tower5 = 101100200, Tower20 = 101100201, TeamBoss = 101100300,
         GodBoss = 101100400, Guild = 102100100, GuildPosition = 102100200, Friend1 = 102100300, Affection2 = 102100400,
         Phoenix = 103100200, FashionLv2 = 103100100, FashionLv3 = 103100101, FashionLv4 = 103100102,
-        FashionLv5 = 103100103;
+        FashionLv5 = 103100103, DressedToImpress = 103100400;
     private const int ZenyLike = 1; // AwardConfig 1001001 = 5000 x item 1
 
     public async Task InitializeAsync()
@@ -171,10 +171,8 @@ public sealed class AchievementTests : IAsyncLifetime
         Assert.Equal(134, rows.Count);
         Assert.All(rows, r => Assert.All(r.Required, required => Assert.True(required > 0, $"{r.Id} has no R")));
         var blocked = rows.Where(r => r.Blocked).ToList();
-        Assert.Equal(3, blocked.Count); // 316002 (Echo Resonance) is read from the worn Soul Echoes, 106007/106008 from the Tavern, 303001 (Fashion Rating) from the Wardrobe
-        Assert.All(blocked, r => Assert.Contains(r.Targets[0][0],
-            new long[] { 302007, 326003, 303004 }));
-        Assert.Single(blocked, r => r.Targets[0][0] == 303004); // the fashion-grid variant only
+        Assert.Equal(2, blocked.Count); // 316002 (Echo Resonance) is read from the worn Soul Echoes, 106007/106008 from the Tavern, 303001 (Fashion Rating) and 303004's appearance grids from the Wardrobe
+        Assert.All(blocked, r => Assert.Contains(r.Targets[0][0], new long[] { 302007, 326003 }));
         Assert.Equal([1L, 1, 1], rows.Single(r => r.Id == TeamBoss).Required); // 210008 x3, R = p1
         Assert.Equal(40060010, rows.Single(r => r.Id == Phoenix).Required[0]); // 303002: R is the appearance id
 
@@ -615,6 +613,34 @@ public sealed class AchievementTests : IAsyncLifetime
             Assert.Equal(AchievementStatusType.Complete, (await Info("Alice", id))!.Status);
         Assert.Equal([4], (await Info("Alice", FashionLv5))!.Scores);
         Assert.Equal(AchievementStatusType.None, (await Info("Alice", FashionLv5))!.Status);
+    }
+
+    /// <summary>
+    /// #bug-reports "Dress to Impress": 303004 [5, 1, 8, 9, 10, 12, 13] lists the appearance grids headwear, facewear,
+    /// mouthwear, costume and backwear (enum_EquipGridType), which LC_FashionHelper.GetFashionTypeBySlot maps to the
+    /// wardrobe slots 1-5 worn by 31183. The row was blocked as an unknown grid and never counted.
+    /// </summary>
+    [ClientDataFact]
+    public async Task DressedToImpressCountsTheFiveWornAppearanceSlots()
+    {
+        await using var alice = await InWorld("Alice");
+        await Full(alice);
+        // One sex-free look per WardRobeConfig._iType 1-5: headwear, facewear, mouthwear, costume, backwear.
+        int[] looks = [10030417, 20030403, 30030403, 40030010, 50040306];
+        await OnLoop("Alice", s =>
+        {
+            foreach (int id in looks) s.Wardrobe!.AllLightUpAppearances[id] = new DBAppearanceInfo { AppearanceId = id };
+        });
+        await alice.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { looks[..4] } });
+        Assert.Equal(0, (await Next(alice, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(DressedToImpress)?.Scores.SequenceEqual([4]) == true,
+            "four of five slots worn");
+        Assert.Equal(AchievementStatusType.None, (await Info("Alice", DressedToImpress))!.Status);
+
+        await alice.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { looks } });
+        Assert.Equal(0, (await Next(alice, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        await ReachedIncrement(alice, DressedToImpress, SweepWait); // no hook: the 5 s sweep re-reads the wardrobe
+        Assert.Equal([5], (await Info("Alice", DressedToImpress))!.Scores);
     }
 
     [ClientDataFact]

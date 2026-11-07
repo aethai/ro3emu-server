@@ -36,6 +36,7 @@ public sealed class PetTests : IAsyncLifetime
             o.DataDir = _dataDir;
             o.GameDataDir = Path.Combine(RepoRoot(), "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
+            o.PetWorldFollower = true; // the follower projection under test (off by default)
         }, _clock);
         await _app.StartAsync();
         _http = $"http://127.0.0.1:{http}";
