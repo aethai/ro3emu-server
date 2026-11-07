@@ -12,6 +12,7 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     [ConfigField("_iActionTimeInfluence")] public partial long ActionTimeInfluence { get; }
     [ConfigField("_iActivateCondition")] public partial long ActivateCondition { get; }
     [ConfigField("_iAffectByArrow")] public partial long AffectByArrow { get; }
+    [ConfigField("_iAutoAssembly")] public partial long AutoAssembly { get; }
     [ConfigField("_iBasicType")] public partial long BasicType { get; }
     [ConfigField("_iCD")] public partial long Cd { get; }
     [ConfigField("_iCdModeGroup")] public partial long CdModeGroup { get; }

@@ -69,6 +69,24 @@ public sealed partial class SkillCombatTests
         Assert.True(dummy.Hp > 0);
     }
 
+    [ClientDataFact] // A held Turn Undead (HoldContinue: a press every 0.2 s) let in by the slack before its hit keeps that hit
+    public async Task AHeldTurnUndeadKeepsEveryHit()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        await CastAtAsync(bot, 1411801, dummy);
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var first = a.SkillCast!;
+        var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
+        int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
+        while (MonsterService.NowMs < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
+        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Task.CompletedTask; });
+        await CastAtAsync(bot, 1411801, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId)).Result);
+        Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
+    }
+
     [ClientDataFact] // Heavy Cannon Shot: "The next time you Deals DMG, removes Charge Up and triggers Charge Up Strike"
     public async Task ChargeUpGoesOffOnTheNextHit()
     {

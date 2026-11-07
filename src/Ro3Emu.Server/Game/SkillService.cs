@@ -641,6 +641,7 @@ public sealed partial class SkillService
     {
         var state = Build(session);
         ApplyCurrentAttack(session, state);
+        ApplyFollowUps(session, state);
         return state;
     }
 
