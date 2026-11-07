@@ -74,7 +74,14 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
                 await patience.WaitAsync();
             }
         }
-        await systems.LeaveAsync(session, Step, () => SavePosition(session));
+        // Read before leaving the scene, written after the position: the position barrier goes first.
+        byte[]? offlineBuffs = session.OfflineBuffsLoaded ? buffs.OfflineState(session) : null;
+        session.OfflineBuffsLoaded = false;
+        await systems.LeaveAsync(session, Step, () =>
+        {
+            SavePosition(session);
+            if (offlineBuffs != null && snapshotRole is { } kept) roles.SaveOfflineBuffs(kept, offlineBuffs);
+        });
         if (snapshotRole is { } released) roles.ReleaseLoginSnapshot(released);
         if (failures.Count != 0) throw new AggregateException("Essential role cleanup failed.", failures);
     }
@@ -282,6 +289,8 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.SkillModeCds.Clear();
         session.SkillCds.Clear();
         session.Buffs.Clear();
+        buffs.RestoreOffline(session, roles.LoadOfflineBuffs(role.Id));
+        session.OfflineBuffsLoaded = true;
         session.BuffEffectCds.Clear();
         session.ImmuneDeathOffer = null;
         session.ImmuneRecoveryUntilMs = 0;

@@ -163,6 +163,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
 
     /// <summary>Active buffs (BuffService) and cooldown ends in server ms: skills by group id, items by id, item share groups.</summary>
     public List<ActiveBuff> Buffs { get; } = [];
+    /// <summary>The role's kept buffs are on it, so a logout may save over them (BuffService.Offline).</summary>
+    internal bool OfflineBuffsLoaded { get; set; }
     /// <summary>Buff-owned portions of 2701/2702/2711; 2701 also contains CombatService's fighting bit.</summary>
     public ulong BuffStatusBits { get; set; }
     public ulong ForbiddenBits { get; set; }

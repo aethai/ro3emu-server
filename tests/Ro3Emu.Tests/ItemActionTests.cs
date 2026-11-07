@@ -61,6 +61,42 @@ public sealed class ItemActionTests : IAsyncLifetime
         return b;
     }
 
+    // Food keeps its end across a logout. What a scene clears, what has no end of its own and what ran out while away do not come back.
+    [ClientDataFact]
+    public async Task TimedBuffsMarkedForItOutliveALogoutWithTheEndTheyHad()
+    {
+        const int food = 985001, sceneBound = 1258001, endless = 4901401, shortLived = 980801;
+        var alice = await InWorld("Alice");
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        long role = (long)alice.Self!.Uuid;
+        GameSession Player() => Sessions.All().Single(x => x.Role?.Id == role);
+        ActiveBuff before = await loop.InvokeAsync(async () =>
+        {
+            foreach (var id in new[] { food, sceneBound, endless }) await buffs.AddAsync(Player(), id, 0, role);
+            await buffs.AddAsync(Player(), shortLived, 100, role);
+            int at = Player().Buffs.FindIndex(b => b.ConfigId == food);
+            Player().Buffs[at] = Player().Buffs[at] with { Changes = [(1033, 25)] };
+            return Player().Buffs[at];
+        });
+        await Task.Delay(150);
+
+        await using var back = await Relogin(alice, "Alice");
+        var shown = await Next(back, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == food));
+        Assert.Equal(before.ExpireMs, shown.Buffs.Single(b => b.ConfigId == food).ExpireTime);
+        var kept = await loop.InvokeAsync(() => Task.FromResult(Player().Buffs.ToArray()));
+        var returned = Assert.Single(kept, b => b.ConfigId == food);
+        Assert.Equal(before.ExpireMs, returned.ExpireMs);
+        Assert.Equal([(1033L, 25d)], returned.Changes);
+        Assert.DoesNotContain(kept, b => b.ConfigId is sceneBound or endless or shortLived);
+
+        // The economy snapshot reads the kept buffs as a known, strict shape: no asset, no unknown schema.
+        var database = _app.Services.GetRequiredService<AccountStore>().DatabasePath;
+        var catalog = Ro3Emu.Server.Economy.EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
+        var snapshot = Ro3Emu.Server.Economy.EconomySnapshotReader.Read(database, catalog, "auto");
+        Assert.DoesNotContain(snapshot.Issues, i => i.Key.Contains("offline_buffs", StringComparison.Ordinal));
+    }
+
     private async Task<BotClient> Relogin(BotClient bot, string name)
     {
         await bot.DisposeAsync();

@@ -174,6 +174,8 @@ internal sealed class RoleSchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "role", "gm_state", "BLOB");
         // JSON CharacterService.JobExpCatchUpState: the role's Job EXP debt is decided, and what is left of it.
         SchemaSql.AddColumn(db, tx, "role", "job_exp_catchup", "BLOB");
+        // JSON BuffService.OfflineBuffState: the buffs that outlive a logout.
+        SchemaSql.AddColumn(db, tx, "role", "offline_buffs", "BLOB");
         SchemaSql.Execute(db, tx, """
             CREATE TABLE IF NOT EXISTS role_lifecycle (
                 role_id INTEGER PRIMARY KEY,
