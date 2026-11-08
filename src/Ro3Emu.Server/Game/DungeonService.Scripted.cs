@@ -69,7 +69,7 @@ public sealed partial class DungeonService
                 foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level), (113, t.SpeedCm),
                              (102, t.MaxSp), (2001, t.MaxSp) })
                     entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = 113, Data = CarrySpeed, BaseData = CarrySpeed });
+            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = AttributeId.Speed, Data = CarrySpeed, BaseData = CarrySpeed });
             if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
             return entity;
         }

@@ -80,7 +80,11 @@ public sealed partial class DungeonService
     /// </summary>
     internal sealed record Drive(SceneActorUnit Carrier, long Region, Func<Task> Arrived, int Generation);
 
-    /// <summary>Whether a rider stays seated: the step's ride is driven on to a region (DriveAfter) not reached yet.</summary>
+    /// <summary>
+    /// Whether a rider stays seated: the step's ride is driven on to a region (DriveAfter) not reached yet. (inferred) The
+    /// original's script is not shipped, so holding the driver in the seat until that region (the client's own exit button,
+    /// VehicleSeatConfig 5300005 _kGameplayBtnId 26, is refused) is a guess that keeps the ride from being left halfway (play-tested).
+    /// </summary>
     private static bool RideHolds(GameSession s) => Active(s) is { } a && a.Riders.ContainsKey(s)
         && Step(a) is { DriveAfter: not 0 } && !a.Room.Closed;
 
@@ -207,7 +211,7 @@ public sealed partial class DungeonService
         await _world.ToUnitViewersAsync(carrier, CombatService.AoiAttrChange, new AOIAttrChange
         {
             EntityUuid = (ulong)carrier.Uid,
-            Property = { new AoIProperty { Idx = 113, Data = speedCm, BaseData = speedCm } },
+            Property = { new AoIProperty { Idx = AttributeId.Speed, Data = speedCm, BaseData = speedCm } },
         });
     }
 
@@ -285,9 +289,10 @@ public sealed partial class DungeonService
     private async Task DroveAsync(Attempt a, GameSession s)
     {
         if (a.Driving is not { } drive || a.Settled || a.Room.Closed || a.StepGeneration != drive.Generation) return;
-        if (a.Riders.ContainsKey(s) && _vehicles.IsSeatedOnSceneActor(s))
-            (drive.Carrier.X, drive.Carrier.Y, drive.Carrier.Z, drive.Carrier.Face) = (s.Position.X, s.Position.Y, s.Position.Z, s.Face);
-        if (_catalog.SceneRegion(a.Plan.SceneEntry, drive.Region) is not { } region || !Reached(s, region.Contains)) return;
+        bool driver = a.Riders.ContainsKey(s) && _vehicles.IsSeatedOnSceneActor(s);
+        if (driver) (drive.Carrier.X, drive.Carrier.Y, drive.Carrier.Z, drive.Carrier.Face) = (s.Position.X, s.Position.Y, s.Position.Z, s.Face);
+        // A driver's report can land past a narrow region it crossed since the last one, so its leg is tested too.
+        if (_catalog.SceneRegion(a.Plan.SceneEntry, drive.Region) is not { } region || !Reached(s, region.Contains, driver)) return;
         a.Driving = null;
         bool seated = a.Riders.Count > 0;
         await PutDownRidersAsync(a);

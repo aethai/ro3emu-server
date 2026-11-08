@@ -436,8 +436,11 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   `after.speed` sets the carrier's speed in percent for the ride (sent as attribute 113, which the client moves it
   at). With `after.drive` (a region) a seated driver steers the carrier after the route (seat `_iType` 0, Driver:
   `LC_PassengerComponent` hands it the vehicle, `ChangeControlUnit`, and unblocks Move): the carrier follows the
-  driver's walk reports, the exit button is refused, and a walk into the region puts the riders down before the
-  teleport. With `after.alone` the carrier walks the route by itself (nobody is moved with it, it offers no
+  driver's walk reports, the exit button is refused (**(inferred)**: holding the driver until the region is a guess,
+  play-tested), and a walk into the region puts the riders down before the teleport; the leg between two reports is
+  tested too, as at 150% a driver can cross the narrow region between them. Other players in the dungeon do not see the
+  Deniro move during the drive: `DroveAsync` updates it on the server only (left for later, only a solo run was
+  played). With `after.alone` the carrier walks the route by itself (nobody is moved with it, it offers no
   interaction on the way and is shown again where it parked, as the client keeps an NPC's interaction range where it
   appeared **(inferred)**). 1000301: after the feeding the Deniro walks guide 35 to Bobo's place alone at 150%, then the
   ride seats the player, who drives it down guide 36 to region 31 (play-tested).

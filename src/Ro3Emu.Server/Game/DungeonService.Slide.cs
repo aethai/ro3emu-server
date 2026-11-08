@@ -81,12 +81,13 @@ public sealed partial class DungeonService
     /// <summary>
     /// Whether the participant's walk reached a region. A sliding client reports every 0.1 s (Controller_Slide
     /// m_fSlideSyncInterval), so a fast slide can pass a narrow region (the 5 m deep end of the Ant Queen's passage) between
-    /// two reports: for a sliding player the leg since the last report is tested every metre too.
+    /// two reports: for a sliding player the leg since the last report is tested every metre too. A seated driver
+    /// (<paramref name="testLeg"/>) is as fast: the Deniro at 150% crosses the 6 m deep end region of the nest between two reports.
     /// </summary>
-    private static bool Reached(GameSession s, Func<float, float, bool> inside)
+    private static bool Reached(GameSession s, Func<float, float, bool> inside, bool testLeg = false)
     {
         if (inside(s.Position.X, s.Position.Z)) return true;
-        if (!Sliding(s)) return false;
+        if (!testLeg && !Sliding(s)) return false;
         var from = s.PreviousPosition;
         float dx = s.Position.X - from.X, dz = s.Position.Z - from.Z;
         int steps = Math.Min(SlideLegSamples, (int)MathF.Ceiling(MathF.Sqrt(dx * dx + dz * dz)));

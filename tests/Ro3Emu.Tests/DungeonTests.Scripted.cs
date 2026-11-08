@@ -318,7 +318,10 @@ public sealed partial class DungeonTests
         // The Deniro stands where it parked, so its rider drives it at once: a walk report into the end region puts them down.
         await Until(() => Session(alice).DungeonAttempt?.Driving != null, "the drive to the end region");
         Assert.True(Service<WorldInteractionService>().IsSeatedOnSceneActor(Session(alice)));
-        await WalkInto(alice, Service<WorldData>().Map(1000301)!.Regions[31]);
+        // One drive ends inside the region, the other crosses it between two reports: the leg is tested for a seated driver too.
+        var end = Service<WorldData>().Map(1000301)!.Regions[31];
+        if (exitByButton) await WalkAcross(alice, end);
+        else await WalkInto(alice, end);
         var down = await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser,
             m => m.Uid == me && m.DataInfo.EType == InteractInfo.Types.EState.Idle);
         Assert.False(down.Interrupt); // put down, not interrupted by leaving
@@ -850,6 +853,19 @@ public sealed partial class DungeonTests
     }
 
     private Task WalkInto(BotClient bot, MapRegion region) => WalkTo(bot, region.X, region.Y, region.Z);
+
+    /// <summary>One walk report from outside the region on one side to outside on the other: it never lands inside.</summary>
+    private async Task WalkAcross(BotClient bot, MapRegion region)
+    {
+        double turn = -region.Direction * Math.PI / 180, cos = Math.Cos(turn), sin = Math.Sin(turn);
+        float reach = region.Width / 2 + 8; // the footprint's local z is its width
+        (float X, float Z) Local(float lz) => (region.X - (float)(lz * sin), region.Z + (float)(lz * cos));
+        var (fromX, fromZ) = Local(-reach);
+        var (toX, toZ) = Local(reach);
+        Assert.False(region.Contains(fromX, fromZ) || region.Contains(toX, toZ));
+        await Beside(bot, fromX, region.Y, fromZ);
+        await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = new Vec3 { X = toX, Y = region.Y, Z = toZ }, BStop = true, SpeedRate = 1 });
+    }
 
     /// <summary>The clear counts for the story step (101018) and the chain offers the next one.</summary>
     private async Task StoryMovesOn(BotClient bot, long task, long next)

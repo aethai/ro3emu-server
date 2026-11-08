@@ -318,7 +318,10 @@ public sealed class WorldInteractionService
     /// <summary>Whether the player is seated on a scripted dungeon's scene actor.</summary>
     internal bool IsSeatedOnSceneActor(GameSession s) => _active.TryGetValue(s, out var state) && state.Scripted;
 
-    /// <summary>Whether a scripted ride keeps its rider seated (DungeonService.RideHolds): the exit button is refused.</summary>
+    /// <summary>
+    /// Whether a scripted ride keeps its rider seated (DungeonService.RideHolds): the exit button is refused. (inferred) The
+    /// original's script is not shipped, so holding the rider until the ride's end region is a guess (play-tested).
+    /// </summary>
     internal Func<GameSession, bool>? ExitHeld { get; set; }
 
     private bool Held(GameSession s, Active state) => state.Scripted && ExitHeld?.Invoke(s) == true;

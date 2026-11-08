@@ -56,7 +56,7 @@ public sealed partial class ReconstructedDungeons
         /// (inferred, play-tested).</summary>
         public bool RideAlone { get; init; }
 
-        /// <summary>The ride's carrier speed in percent of its own (UnitConfig._fSpeed), for its route and the drive (play-tested).</summary>
+        /// <summary>The ride's carrier speed in percent of its own (UnitConfig._fSpeed), for its route and the drive (inferred, play-tested).</summary>
         public int RideSpeedPercent { get; init; } = 100;
 
         /// <summary>Milliseconds the step stays on after it is completed, before the next step or the settlement (0: none;
