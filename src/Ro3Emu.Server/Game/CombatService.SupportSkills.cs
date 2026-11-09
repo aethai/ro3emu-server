@@ -33,13 +33,16 @@ public sealed partial class CombatService
         return script == "Harmony_Heal" && ratios.Length > 1 && SameParty?.Invoke(healer, recipient) == true ? ratios[1] : ratios.FirstOrDefault();
     }
 
-    /// <summary>Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium, Assumptio: a friendly row with a Buff1 and no damage. Its timeline
+    /// <summary>Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium, Assumptio: a friendly row with a Buff1 and no damage;
+    /// Crazy Uproar, Adrenaline Rush, Power-Thrust, Maximize Power, Cart Boost, Melt Down: the same (m_kSelectType 2 makes them friendly; _iTargetMax 1 keeps the last
+    /// three on the caster, the first three reach up to ${2} allies in range). Its timeline
     /// (SkillTemplate m_kShows) puts only the cast's own effects on the caster; the hit effect (EffectData show*100+k with m_kActionDamge, picked by HitEffect) plays on
     /// the units a 31101 SkillHit names, and with no damage or heal to list the cast sent none, so no ally ever got it (inferred: no capture of the original).
     /// A listed row shows it only when <see cref="BuffHitEffect"/> finds a drawn entry in its own range. Sacred Lily is left out: its range
     /// 430400-430499 has no hit entry, so the SkillHit would play HitEffect's fallback, a struck unit's flinch.</summary>
     private static bool ShowsBuffHit(string script) =>
-        script is "Blessing" or "IncreaseAGI" or "Angelus" or "Magnificat" or "ImpositioManus" or "Suffragium" or "Assumptio";
+        script is "Blessing" or "IncreaseAGI" or "Angelus" or "Magnificat" or "ImpositioManus" or "Suffragium" or "Assumptio"
+            or "CrazyUproar" or "AdrenalineRush" or "PowerThrust" or "PowerMaximize" or "CartBoost" or "ShatteringStrike";
 
     /// <summary>Impositio Manus's hit effect plays on the ally the cast locked, not on every ally its buff reaches (inferred); with none locked it is the caster.</summary>
     private static bool ShowsOnTargetOnly(string script) => script == "ImpositioManus";

@@ -105,6 +105,15 @@ public sealed partial class SkillCombatTests
             && SkillHitInfo.Parser.ParseFrom(e.Body).SessionId == accepted.SessionId);
     }
 
+    [ClientDataFact] // Crazy Uproar: "your and up to ${2} allies ... within a ${1}-meter radius": its hit effect plays on the caster and on the ally the buff reached
+    public async Task CrazyUproarShowsItsHitOnEveryAllyItReaches()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1600, 16008, 1600801, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.Contains(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
     [ClientDataFact] // Safety Wall: "melee Physical"; a melee magic hit passes through and spends nothing
     public async Task SafetyWallStopsMeleePhysicalOnly()
     {
