@@ -102,6 +102,15 @@ Sight Sprout's detection is in "Hiding and detection" below. The 6-digit season 
 
 Shield Bash Echo: "When casting [Rapid Smiting], there is a ${1}% Chance to change the Cooldown of your next Shield Boomerang to @{1} seconds ... up to @{2} times every ${2} seconds." Its effect description passes @{1} 0 and @{2} 1, and its buff is named "Rapid Smiting Resets Shield Boomerang CD", so the proc ends Shield Boomerang's running cooldown (a 31113 ending now) **(inferred)**. Falcon's Might is SpecialEffect `[20, 3, 215, 100]`: "Damage Increase: ${1}% while fighting alongside [Falcon]". Type 20 names a leased pendant's CartRemouldTable `_iSubType` (3: the falcon) as type 17 names a ridden mount's, and attribute 215 is Damage Increase% **(inferred)**. `SkillCombatTests.TalentCharges` checks Double Attack, Deadly Poison, Charged Shield Bash, Magic Cannon, Sacred Divine Light, Gravity Trap, Soul Reaper, Ember Zone, the per-enemy rows and a passive's crit tuple on the client data.
 
+## Buff-only support casts
+
+Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium, Assumptio and Sacred Lily have a Buff1 and no damage. Their timeline
+(`m_kShows`) plays the cast's own effects on the caster only; the hit effect (the EffectData entry of `_iScriptShow` with `m_kActionDamge`) plays on
+the units a 31101 SkillHit names. With no damage or heal to list, the cast sent no SkillHit and no ally saw the effect, the caster included.
+`ShowBuffHitAsync` sends one with a zero-value entry for each unit the buff reached (the caster alone when there is no party, each member
+otherwise), and for Impositio Manus only the locked ally, or the caster when none is locked. Nothing is recorded as damage or healing and no energy
+is recovered on hit. The entry is a zero-value DamageShare: a zero Heal entry draws a "0" heal number, DamageShare draws no number and still plays the hit effect. That is (inferred) from testing in the client; the original server was not captured.
+
 ## Hiding and detection
 
 `CombatService.Stealth` and `StealthEffects`. A BuffConfig row of category 31 hides its holder: Disguise ("While [Cloaking] is active, you cannot be seen or targeted"), Enhance Cloaking, a guardian's Stealth and the monsters' Hiding. Ruwach's hit row 1400601 names the same category in its `_kLogicData` ("Removes their [Disguise] Status Effect").

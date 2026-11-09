@@ -33,6 +33,28 @@ public sealed partial class CombatService
         return script == "Harmony_Heal" && ratios.Length > 1 && SameParty?.Invoke(healer, recipient) == true ? ratios[1] : ratios.FirstOrDefault();
     }
 
+    /// <summary>Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium, Assumptio, Sacred Lily: a friendly row with a Buff1 and no damage. Its timeline
+    /// (SkillTemplate m_kShows) puts only the cast's own effects on the caster; the hit effect (EffectData show*100+k with m_kActionDamge, picked by HitEffect) plays on
+    /// the units a 31101 SkillHit names, and with no damage or heal to list the cast sent none, so no ally ever got it (inferred: no capture of the original).</summary>
+    private static bool ShowsBuffHit(string script) =>
+        script is "Blessing" or "IncreaseAGI" or "Angelus" or "Magnificat" or "ImpositioManus" or "Suffragium" or "Assumptio" or "Cantocandidus";
+
+    /// <summary>Impositio Manus's hit effect plays on the ally the cast locked, not on every ally its buff reaches (inferred); with none locked it is the caster.</summary>
+    private static bool ShowsOnTargetOnly(string script) => script == "ImpositioManus";
+
+    /// <summary>The 31101 of a buff-only cast: one zero-value entry per unit that shows the hit effect, so nothing is recorded as damage or healing
+    /// (and no energy is recovered on hit). The entry is DamageShare, not Heal: a zero Heal draws a "0" heal number on the unit, DamageShare draws
+    /// none and still plays the hit effect (inferred: found by testing in the client, the original server was not captured). The caster is among the viewers, as in a damaging cast.</summary>
+    private async Task ShowBuffHitAsync(GameSession s, ActiveSkillCast action, SkillHitInfo hit, IReadOnlyList<GameSession> buffed, string script)
+    {
+        List<GameSession> shown = ShowsOnTargetOnly(script) ? [.. buffed.Where(p => p.Role!.Id == action.Request.TargetId)] : [.. buffed];
+        if (shown.Count == 0 && ShowsOnTargetOnly(script) && buffed.Contains(s)) shown.Add(s);
+        foreach (var ally in shown)
+            hit.Dsts.Add(new DamageInfo { DstID = ally.Role!.Id, DamageType = DamageType.DamageShare, HitResult = DamageHitResult.Normal, DstElement = 1 });
+        if (hit.Dsts.Count == 0) return;
+        foreach (var viewer in _world.Viewers(s).Append(s).Concat(shown).Distinct().ToArray()) await viewer.SendGameAsync(SkillHit, hit);
+    }
+
     private Task SupportSkillOnCastAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit) => Script(action.Row) switch
     {
         "Offertorium" => HymnOfDevotionAsync(s, action),

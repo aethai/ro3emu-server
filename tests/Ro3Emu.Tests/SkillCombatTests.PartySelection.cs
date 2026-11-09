@@ -53,6 +53,46 @@ public sealed partial class SkillCombatTests
         Assert.True(await BobGetsAsync(1410, 14105, 1410501, buff, sameParty: false));
     }
 
+    /// <summary>The SkillHit a buff cast by Alice sends while Bob stands next to her, in her party or not.</summary>
+    private async Task<(SkillHitInfo Hit, long Alice, long Bob)> BuffHitAsync(int job, int group, int skill, bool sameParty)
+    {
+        await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job " + job); await Teach("alice", group);
+        var (a, b) = (Session("alice"), Session("bob"));
+        a.GmCastSkill = skill;
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        var before = combat.SameParty;
+        combat.SameParty = (x, y) => sameParty;
+        try
+        {
+            await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
+            await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
+            var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+            Assert.Equal(0, accepted.Result);
+            var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
+            return (hit, a.Role!.Id, b.Role!.Id);
+        }
+        finally { combat.SameParty = before; }
+    }
+
+    [ClientDataFact] // Magnificat: no damage to list, yet its hit effect plays on the caster and on each ally the buff reached
+    public async Task MagnificatShowsItsHitOnEveryAllyItReaches()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1410, 14105, 1410501, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.Contains(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+        Assert.NotEqual(0, hit.ShowPoint);
+    }
+
+    [ClientDataFact] // Sacred Lily: "You and Party Members": a stranger gets neither the buff nor its hit effect
+    public async Task SacredLilyShowsItsHitOnPartyMembersOnly()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1430, 14304, 1430401, sameParty: false);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.DoesNotContain(hit.Dsts, d => d.DstID == bob);
+    }
+
     [ClientDataFact] // Safety Wall: "melee Physical"; a melee magic hit passes through and spends nothing
     public async Task SafetyWallStopsMeleePhysicalOnly()
     {
