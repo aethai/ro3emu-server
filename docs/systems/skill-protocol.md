@@ -104,12 +104,12 @@ Shield Bash Echo: "When casting [Rapid Smiting], there is a ${1}% Chance to chan
 
 ## Buff-only support casts
 
-Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium and Assumptio, and Crazy Uproar, Adrenaline Rush, Power-Thrust, Maximize Power, Cart Boost and Melt Down (`m_kSelectType` 2, friendly like Angelus), have a Buff1 and no damage. Their timeline
+Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium and Assumptio, and Crazy Uproar, Adrenaline Rush, Power-Thrust, Maximize Power, Cart Boost and Melt Down (`m_kSelectType` 2, friendly like Angelus), and Auto Guard, Shield Reflect, Defending Aura, Recoil and Battle Chant (`m_kSelectType` 2 too; their `m_kSelectSubType` 2 matches the caster only, so the buff and its hit effect land on the caster), have a Buff1 and no damage. Their timeline
 (`m_kShows`) plays the cast's own effects on the caster only; the hit effect (the EffectData entry of `_iScriptShow` with `m_kActionDamge`) plays on
 the units a 31101 SkillHit names. With no damage or heal to list, the cast sent no SkillHit and no ally saw the effect, the caster included.
 `ShowBuffHitAsync` sends one with a zero-value entry for each unit the buff reached (the caster alone when there is no party, each member
 otherwise), and for Impositio Manus only the locked ally, or the caster when none is locked. Nothing is recorded as damage or healing and no energy
-is recovered on hit. The entry is a zero-value DamageShare: a zero Heal entry draws a "0" heal number, DamageShare draws no number and still plays the hit effect. That is (inferred) from testing in the client; the original server was not captured. Maximum Over Thrust is left out: its hit entry (EffectData 1620402) lists no effect, so a SkillHit would show nothing.
+is recovered on hit. The entry is a zero-value DamageShare: a zero Heal entry draws a "0" heal number, DamageShare draws no number and still plays the hit effect. That is (inferred) from testing in the client; the original server was not captured. Maximum Over Thrust is left out: its hit entry (EffectData 1620402) lists no effect, so a SkillHit would show nothing, and so is Reflect Damage: EffectData 11609 holds only the cast animation (1160905), no hit entry. Battle Chant's text says "you and up to 10 allies" and a debuff on enemies, but its row holds `_iTargetMax` 2 and a caster-only selector; its ally reach and enemy debuff are not changed here.
 The SkillHit goes out only when `HitEffect` picks an entry of the show's own range whose `m_kActionDamge` draws something: an effect prefab
 (`m_kGfxList`) or a fresnel flash (`m_kFresnelEffectData`). Its fallback 1000002 is a struck unit's hit (`fx_common_hit_1`, `ReceivingDamage`, the
 hit sound), so a buff showing it would make every ally flinch. Sacred Lily is left out for that reason: its range 430400-430499 has no hit entry.

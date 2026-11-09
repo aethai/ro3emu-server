@@ -114,6 +114,31 @@ public sealed partial class SkillCombatTests
         Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
     }
 
+    [ClientDataFact] // Auto Guard: "increasing your PDEF and MDEF": a self buff, so its hit effect plays on the caster and not on a bystander
+    public async Task AutoGuardShowsItsHitOnTheCasterOnly()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1140, 11408, 1140801, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.DoesNotContain(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Shield Reflect: "Grants you [Shield Reflect]"
+    public async Task ShieldReflectShowsItsHitOnTheCaster()
+    {
+        var (hit, alice, _) = await BuffHitAsync(1140, 11410, 1141001, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Battle Chant: the caster at least shows its hit effect (who else it reaches is not asserted)
+    public async Task BattleChantShowsItsHitOnTheCaster()
+    {
+        var (hit, alice, _) = await BuffHitAsync(1150, 11503, 1150301, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
     [ClientDataFact] // Safety Wall: "melee Physical"; a melee magic hit passes through and spends nothing
     public async Task SafetyWallStopsMeleePhysicalOnly()
     {

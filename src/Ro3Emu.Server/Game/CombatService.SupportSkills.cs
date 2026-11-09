@@ -38,11 +38,14 @@ public sealed partial class CombatService
     /// three on the caster, the first three reach up to ${2} allies in range). Its timeline
     /// (SkillTemplate m_kShows) puts only the cast's own effects on the caster; the hit effect (EffectData show*100+k with m_kActionDamge, picked by HitEffect) plays on
     /// the units a 31101 SkillHit names, and with no damage or heal to list the cast sent none, so no ally ever got it (inferred: no capture of the original).
+    /// Auto Guard, Shield Reflect, Defending Aura, Recoil, Battle Chant: the same, each with a hit effect at show*100+21 (Recoil +02) and a selector of type 2
+    /// that only matches the caster, so the first four are self buffs ("Grants you ..."). Reflect Damage (show 11609) is left out: its EffectData has the cast animation only.
     /// A listed row shows it only when <see cref="BuffHitEffect"/> finds a drawn entry in its own range. Sacred Lily is left out: its range
     /// 430400-430499 has no hit entry, so the SkillHit would play HitEffect's fallback, a struck unit's flinch.</summary>
     private static bool ShowsBuffHit(string script) =>
         script is "Blessing" or "IncreaseAGI" or "Angelus" or "Magnificat" or "ImpositioManus" or "Suffragium" or "Assumptio"
-            or "CrazyUproar" or "AdrenalineRush" or "PowerThrust" or "PowerMaximize" or "CartBoost" or "ShatteringStrike";
+            or "CrazyUproar" or "AdrenalineRush" or "PowerThrust" or "PowerMaximize" or "CartBoost" or "ShatteringStrike"
+            or "Guard" or "ShieldReflect" or "DefendingAura" or "Shrink" or "BattleChant";
 
     /// <summary>Impositio Manus's hit effect plays on the ally the cast locked, not on every ally its buff reaches (inferred); with none locked it is the caster.</summary>
     private static bool ShowsOnTargetOnly(string script) => script == "ImpositioManus";
