@@ -16,7 +16,7 @@
     <!-- Roslyn for the server's source generator: no newer than the compiler of the oldest SDK band in use. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
     <!-- The QR code of the panel's two-factor setup (MIT, no dependencies). -->
