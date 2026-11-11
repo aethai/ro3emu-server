@@ -281,6 +281,24 @@ public sealed partial class CombatService
             MasterId = caster.Role.Id, SkillId = skillId,
         }, highLevel: true);
 
+    /// <summary>
+    /// The falcon of Blitz Beat's automatic proc (a Basic Attack's chance): the cast timeline on the extra high-level route
+    /// (31107, as the Genesis server sends for the automatic row 1311005) without the caster's action (PlayAct false), then
+    /// the falcon flight. The proc is no cast, so the caster pays and starts nothing. Without the timeline the client played
+    /// the flight twice and no hit sound (inferred: only the timeline separates it from a manual cast).
+    /// </summary>
+    internal async Task ShowAutoFalconAsync(GameSession s, JsonElement row, MonsterUnit target)
+    {
+        if (s.Role == null) return;
+        long skillId = new SkillConfig(row).Id;
+        await SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
+            SessionId = ++_sessionIds, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
+        }, highLevel: true, extra: true);
+        await SendFalconAsync(s, row, skillId, target.Uid);
+    }
+
     private int BulletLifeTime(int effect) =>
         SkillEffectData.Find(_data.SkillTemplateTable("Lua_Config_EffectData"), effect)?.BulletLifeTime ?? 0;
 

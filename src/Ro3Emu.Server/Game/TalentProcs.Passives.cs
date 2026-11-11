@@ -81,6 +81,8 @@ public sealed partial class TalentProcs
         if (Roll(10000) >= LogicValue(s, BlitzBeat, logic, 0) || _combat.ModeRow(s, (int)logic[1], level) is not { } row) return;
         var auto = new SkillConfig(row);
         var targets = Targets(s, BlitzBeatArea, auto.DescData, auto, target, []);
+        // The proc is no cast (CastExtraAsync sends no timeline): it shows only the falcon (ShowAutoFalconAsync).
+        if (targets.Count > 0) await _combat.ShowAutoFalconAsync(s, row, targets[0]);
         await _combat.CastExtraAsync(s, row, targets);
         await RuleProcsAsync(s, action, auto, targets);
     }
