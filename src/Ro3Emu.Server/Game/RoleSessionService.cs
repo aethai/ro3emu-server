@@ -458,8 +458,9 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
     /// is saved (or MovementCtrl is 2) and falls back to the mode's defaults only when both movement flags are off. The
     /// mode panel saves those defaults (_applyPCInteractDefault) only when the chosen mode differs from the one it opened
     /// with, and its close/timeout path (_returnCloseClock) never does: a role that keeps Classic that way has no
-    /// KeyBoardInfo, keyboard movement on and mouse movement off, so no ground cell under the cursor and clicks do not
-    /// walk. Such settings get mouse movement and the Classic key map. True when they changed.
+    /// KeyBoardInfo at all, so clicks do not walk. Such settings (absent or corrupt KeyBoardInfo only, plus the old
+    /// buggy inverted defaults) get the Nostalgic defaults written; any real save, including one with mouse movement
+    /// turned off, is left untouched. True when they changed.
     /// </summary>
     internal static bool RepairClassicMovement(DBSettingInfo settings)
     {
@@ -469,14 +470,27 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         try { mode = GameModeSetting.Parser.ParseFrom(modeBytes); }
         catch (InvalidProtocolBufferException) { return false; }
         if (mode.GameMode != oldSchool) return false;
+
+        bool hasKeyBoard = settings.ClientSetting.TryGetValue((int)SettingType.KeyBoard, out var keyBytes);
         var keys = new KeyBoardInfo();
-        if (settings.ClientSetting.TryGetValue((int)SettingType.KeyBoard, out var keyBytes))
+        if (hasKeyBoard)
         {
             try { keys = KeyBoardInfo.Parser.ParseFrom(keyBytes); }
-            catch (InvalidProtocolBufferException) { keys = new KeyBoardInfo(); }
+            catch (InvalidProtocolBufferException) { keys = new KeyBoardInfo(); hasKeyBoard = false; }
         }
-        if (keys.EnableMouseMove && keys.KeyBoardMode == oldSchool) return false;
+
+        // Migrate the old buggy server defaults (MoveBtn=1, SelectBtn=1, CameraMode=2) that inverted the mouse
+        bool isBuggyOldDefaults = hasKeyBoard && keys.MoveBtn == 1 && keys.SelectBtn == 1 && keys.CameraMode == 2;
+
+        // Repair only when no KeyBoardInfo exists at all (or it is corrupt): a player with saved settings owns them,
+        // including one who turned mouse movement off. Never re-enable EnableMouseMove over a real save.
+        if (hasKeyBoard && !isBuggyOldDefaults) return false;
+
         keys.EnableMouseMove = true;
+        keys.EnableKeyboardMove = false;
+        keys.SelectBtn = 0;  // enum_PCMouseBtn.Left (Unity MouseButton 0)
+        keys.MoveBtn = 0;    // enum_PCMouseBtn.Left (Unity MouseButton 0)
+        keys.CameraMode = 0; // enum_PCCameraDragMode.RightDrag (Unity MouseButton 1)
         keys.KeyBoardMode = oldSchool;
         settings.ClientSetting[(int)SettingType.KeyBoard] = keys.ToByteString();
         return true;
