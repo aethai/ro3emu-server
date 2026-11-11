@@ -734,8 +734,11 @@ public sealed partial class CombatService
             {
                 SrcID = action.SourceId, SkillID = req.SkillId, TargetId = req.TargetId, TargetPos = req.TargetPos ?? origin,
                 Face = face, SessionId = id, ChantMs = action.ChantMs, SkillMs = action.ActionMs, StartTime = action.StartMs, PlayAct = true,
-            }, highLevel: GameData.Int(row, "_iSkillEffectLevel") > 0 || FalconHigh(row), extra: actor != null || req.IsExtraSkill);
+            }, highLevel: GameData.Int(row, "_iSkillEffectLevel") > 0 || FalconHigh(row) || WargStrikeHigh(row), extra: actor != null || req.IsExtraSkill);
             if (FalconHigh(row)) await SendFalconAsync(s, row, req.SkillId, req.TargetId);
+            else if (WargStrikeHigh(row))
+                ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(WolfDelayMs),
+                    () => Live(s, action) ? SendWolfAsync(s, req.SkillId, req.TargetId) : Task.CompletedTask);
         }
         if (leadMs <= 0) await Timeline();
         else ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(leadMs), () => Live(s, action) ? Timeline() : Task.CompletedTask);

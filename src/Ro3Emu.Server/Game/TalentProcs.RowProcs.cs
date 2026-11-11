@@ -87,7 +87,10 @@ public sealed partial class TalentProcs
         // Warg Strike: "every ${7} seconds, using Focused Arrow Strike casts this skill on the target": 13317's [10000, row] at the level learned.
         if (cast.ScriptLogic.StartsWith("AimedBolt", StringComparison.Ordinal) && _skills.Level(s.Progress!, (int)WargStrike) is > 0 and var level
             && BuffConfig.Get(_data, WargAutoGroup * 100 + level)?.LogicData is [_, var strike, ..] && Ready(s, WargAutoKey, WargAutoEveryMs))
+        {
+            if (SkillConfig.Get(_data, strike) is { } wolf) await _combat.ShowAutoWolfAsync(s, wolf.Row, target);
             await CastNamedRowAsync(s, strike, [target]);
+        }
     }
 
     private async Task RowProcsOnDealtAsync(GameSession s, MonsterUnit target, JsonElement row, long amount)

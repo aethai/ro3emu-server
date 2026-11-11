@@ -233,7 +233,7 @@ public sealed partial class CombatService
         var hit = new SkillHitInfo
         {
             SrcID = field?.Uid ?? action.SourceId, SkillId = action.Request.SkillId, SessionId = action.Id,
-            RootCtxGuid = action.Id, ComboIndex = action.Request.ComboIndex, ShowPoint = HitEffect(GameData.Int(row, "_iScriptShow")),
+            RootCtxGuid = action.Id, ComboIndex = action.Request.ComboIndex, ShowPoint = WargStrikeHigh(row) ? WargHitEffect : HitEffect(GameData.Int(row, "_iScriptShow")),
             Split = HitSplit(row),
             SrcElement = attackElement,
         };
