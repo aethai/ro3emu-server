@@ -5,6 +5,9 @@ namespace Ro3Emu.Server.Data.Config;
 /// <summary>The client's skill show (data/skills/skill_*.json, GameData.SkillTemplate): its timeline.</summary>
 internal static class SkillShow
 {
+    /// <summary>The skill row's _iScriptShow: the id of its show (data/skills/skill_*.json).</summary>
+    public static long ScriptShowId(JsonElement row) => GameData.Int(row, "_iScriptShow");
+
     /// <summary>The show's m_kAtkPoints in seconds on its timeline, in table order.</summary>
     public static double[] AttackPoints(JsonElement? show) =>
         show is { } row && row.TryGetProperty("m_kAtkPoints", out var points) && points.ValueKind == JsonValueKind.Array

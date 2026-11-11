@@ -249,6 +249,24 @@ public sealed partial class CombatService
         }
     }
 
+    private const int BlitzBeatShow = 13102, FalconDisplayType = 5;
+
+    /// <summary>Blitz Beat (show 13102) is cast and shown on the HIGH_LEVEL routes (31106/31107/31109), as the Genesis server does.</summary>
+    internal static bool FalconHigh(JsonElement row) => SkillShow.ScriptShowId(row) == BlitzBeatShow;
+
+    /// <summary>
+    /// The Hunter's falcon flight: the cast's 31109 SkillEffectDisplayNotify, sent with the cast timeline, names effect
+    /// show*1000+200 (Blitz Beat 13102200) with effectType 5 at the target. Seen on the Genesis server for the manual (1310205)
+    /// and auto (1311005) cast; it sends no bullet notify for it.
+    /// </summary>
+    private Task SendFalconAsync(GameSession caster, JsonElement row, long skillId, long targetId) =>
+        caster.Role == null || targetId <= 0 ? Task.CompletedTask
+        : SendSkillEffectAsync(caster, new SkillEffectDisplayNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectId = BlitzBeatShow * 1000 + 200, EffectType = FalconDisplayType,
+            MasterId = caster.Role.Id, SkillId = skillId,
+        }, highLevel: true);
+
     private int BulletLifeTime(int effect) =>
         SkillEffectData.Find(_data.SkillTemplateTable("Lua_Config_EffectData"), effect)?.BulletLifeTime ?? 0;
 
