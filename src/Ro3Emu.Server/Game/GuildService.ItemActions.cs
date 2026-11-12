@@ -39,7 +39,7 @@ public sealed partial class GuildService
     private bool IconUnlocked(GuildStore.State? g, System.Text.Json.JsonElement row) =>
         DefaultIcon(row) || g?.UnlockedHeadIcons.ContainsKey(GameData.Int(row, "_iID")) == true;
 
-    private static IEnumerable<UnLockHeadIcon> UnlockedIcons(GuildStore.State g) =>
+    internal static IEnumerable<UnLockHeadIcon> UnlockedIcons(GuildStore.State g) =>
         g.UnlockedHeadIcons.OrderBy(p => p.Key).Select(p => new UnLockHeadIcon { Id = (int)p.Key, Removetime = p.Value });
 
     /// <summary>

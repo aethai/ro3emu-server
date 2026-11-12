@@ -1078,7 +1078,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             Resource = Resource(guild)
         }) : Task.CompletedTask;
 
-    private async Task PushBase(GuildStore.State g, GuildBaseInfoChangeNtf change)
+    internal async Task PushBase(GuildStore.State g, GuildBaseInfoChangeNtf change)
     {
         foreach (var m in g.Members.Values)
             if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);
