@@ -263,6 +263,104 @@ public sealed partial class CombatService
         }
     }
 
+    /// <summary>SkillConfig._kScriptLogic of Blitz Beat's rows, the manual 13102 and the automatic 13110 alike.</summary>
+    private const string BlitzBeatLogic = "BlitzBeat";
+
+    /// <summary>enum_DisplayEffectType.PendantShow (Lua_GameDefine): LC_PerformEffect_Mgr.PlayPendantShow flies the
+    /// caster's pendant (the falcon) along the effect's bullet.</summary>
+    private const int DisplayPendantShow = 5;
+
+    /// <summary>The falcon's EffectData id from the show: show * 1000 + 200 (Blitz Beat 13102200, a bullet with
+    /// m_kBulletFalcon). (inferred) From a capture of the Genesis server; no client table links the show to it.</summary>
+    private const int FalconEffectShowScale = 1000, FalconEffectOffset = 200;
+
+    /// <summary>
+    /// Blitz Beat is cast and shown on the HIGH_LEVEL routes (31106/31107/31109) although its rows' _iSkillEffectLevel is 0.
+    /// (inferred) From a capture of the Genesis server: the client handles 31100/31106 and 31119/31109 with the same
+    /// handlers (LC_Scene_Sync._useInSkill, _skillEffectDisplay), so nothing on the client asks for it.
+    /// </summary>
+    internal static bool FalconHigh(JsonElement row) => new SkillConfig(row).ScriptLogic == BlitzBeatLogic;
+
+    /// <summary>
+    /// The Hunter's falcon flight: the cast's 31109 SkillEffectDisplayNotify, sent with the cast timeline, names the falcon
+    /// effect (<see cref="FalconEffectOffset"/>) with effectType PendantShow at the target. Seen on the Genesis server for
+    /// the manual (1310205) and automatic (1311005) cast, with no bullet notify for it.
+    /// </summary>
+    private Task SendFalconAsync(GameSession caster, JsonElement row, long skillId, long targetId) =>
+        caster.Role == null || targetId <= 0 ? Task.CompletedTask
+        : SendSkillEffectAsync(caster, new SkillEffectDisplayNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectType = DisplayPendantShow,
+            EffectId = (int)(new SkillConfig(row).ScriptShow * FalconEffectShowScale + FalconEffectOffset),
+            MasterId = caster.Role.Id, SkillId = skillId,
+        }, highLevel: true);
+
+    /// <summary>
+    /// Blitz Beat's automatic proc (a Basic Attack's chance): the cast timeline on the extra high-level route (31107, as the
+    /// Genesis server sends for the automatic row 1311005) without the caster's action (PlayAct false), the falcon flight,
+    /// then the extra cast's hit. The proc is no cast, so the caster pays and starts nothing. Without the timeline the client
+    /// played the flight twice and no hit sound (inferred: only the timeline separates it from a manual cast). The timeline
+    /// and its 31101 share one session id: the client ties a hit to its cast by sessionId and rootCtxGuid (LC_DamageHelper).
+    /// </summary>
+    internal async Task CastAutoFalconAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets)
+    {
+        if (s.Role == null || targets.Count == 0) return;
+        var target = targets[0];
+        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
+        await SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
+            SessionId = id, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
+        }, highLevel: true, extra: true);
+        await SendFalconAsync(s, row, skillId, target.Uid);
+        await CastExtraAsync(s, row, targets, sessionId: id);
+    }
+
+    /// <summary>SkillConfig._kScriptLogic of Warg Strike's mode 0 rows (13312, show 13316), the rows a manual cast and the
+    /// automatic one of Focused Arrow Strike (13317's logic data) both cast.</summary>
+    private const string WargStrikeLogic = "WugStrike_";
+
+    /// <summary>
+    /// The wolf's effects, from a capture of the Genesis server for a manual Warg Strike (1331203): no client table names
+    /// them (show 13316's m_kShows is only [[1331601, 1]]). 1331605 is the 31108 bullet of the charge, 1331602 its 31109
+    /// PendantShow (a wolf bullet with the animation Skill7) and 1331204 the hit's showPoint (the wolf-attack hit sound).
+    /// </summary>
+    private const int WolfBullet = 1331605, WolfEffect = 1331602, WargHitEffect = 1331204;
+
+    /// <summary>(inferred) The capture's timings: the charge 334 ms after the cast timeline, its bullet 158 ms long, about
+    /// 190 ms before the hit.</summary>
+    private const int WolfDelayMs = 334, WolfBulletMs = 158;
+
+    /// <summary>
+    /// Warg Strike is cast and shown on the HIGH_LEVEL routes (31106/31108/31109), as in the capture, although its rows'
+    /// _iSkillEffectLevel is 0. (inferred) As for <see cref="FalconHigh"/>, nothing on the client asks for it.
+    /// </summary>
+    internal static bool WargStrikeHigh(JsonElement row) => new SkillConfig(row).ScriptLogic == WargStrikeLogic;
+
+    /// <summary>The 31101 showPoint of a row's hits, on monsters and players alike: Warg Strike's from the capture (inferred
+    /// for its automatic cast, which casts the same row), else the show's own damage effect.</summary>
+    private int HitShowPoint(JsonElement row) => WargStrikeHigh(row) ? WargHitEffect : HitEffect(new SkillConfig(row).ScriptShow);
+
+    /// <summary>
+    /// The wolf's charge of a manual Warg Strike: a 31108 bullet and a 31109 PendantShow (<see cref="WolfEffect"/>). Without
+    /// them the wolf never moved on screen. The automatic cast sends no timeline and shows no wolf, as on the Genesis server.
+    /// </summary>
+    private async Task SendWolfAsync(GameSession caster, long skillId, long targetId)
+    {
+        if (caster.Role == null || targetId <= 0) return;
+        await SendSkillBulletAsync(caster, new SkillFixTimeBulletNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectId = WolfBullet, FixedTime = WolfBulletMs,
+            TargetPosition = FindMonster(caster.WorldScene, targetId)?.Pos.Clone(), SkillConfigId = (int)skillId,
+            MasterId = caster.Role.Id, SourcePosition = caster.Position.Clone(), StartTimestampMs = Now,
+        }, highLevel: true);
+        await SendSkillEffectAsync(caster, new SkillEffectDisplayNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectId = WolfEffect, EffectType = DisplayPendantShow,
+            MasterId = caster.Role.Id, SkillId = skillId,
+        }, highLevel: true);
+    }
+
     private int BulletLifeTime(int effect) =>
         SkillEffectData.Find(_data.SkillTemplateTable("Lua_Config_EffectData"), effect)?.BulletLifeTime ?? 0;
 
