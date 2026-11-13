@@ -18,11 +18,20 @@ namespace Ro3Emu.Server.Game;
 /// A talent's BuffLogicData tuple (type 4) changes these values: Efficient Deadly Poison [15211, +2000 at 0], Seize the
 /// Initiative [15220, set 5 at 2], Combo Moonlit Challenger [15002, +1000 at 1]. Double Attack's _kLogicData has one value,
 /// so a tuple past its end changes that chance (inferred).
+/// Double Attack's hits go out as its own SkillConfig row, group 15115 "Double Attack" (1511501, PATK * 50% Neutral, as the
+/// passive's text), and Triple Slash's as group 15236 "Triple Slash" (1523601: "When Double Attack triggers, trigger an Extra
+/// [Double Attack - AoE]"). The client adds them to the swing's running total by those groups: the dagger's Basic Attack
+/// (1005001..1005211) has _iAccumDmgType [4, 1000, 15115] and 1511501 has [4, 1000, 15236], enum_SkillAccumDmgType 4
+/// AccumByParamSkillBigIds, which LC_DamageHelper._getAccumDmgValue reads by SkillHitInfo.skillId (_getFatherAccumSkillId,
+/// a 1000 ms window), and shows the sum as Dmg_Accumulate. Sent under the Basic Attack's own id, no total showed for them.
+/// The damage stays the passive's and the talent's described one; only the row is theirs.
 /// Blitz Beat is the Hunter's: <see cref="AutoBlitzBeatAsync"/>.
 /// </summary>
 public sealed partial class TalentProcs
 {
     private const int DoubleAttack = 15002, KatarMastery = 15220;
+    // SkillConfig groups of the hits Double Attack and Triple Slash deal (see the summary): 1511501 and 1523601.
+    private const int DoubleAttackHit = 15115, TripleSlashHit = 15236;
     private const long DeadlyPoison = 15211, Dagger = 1;
     private const int BuffLogicType = 4; // EBuffAffectValueType.BuffLogicData
     // Triple Slash: "When [Double Attack] triggers, it additionally Deals DMG equal to PATK * ${3}% + ${4} as Neutral Melee
@@ -57,13 +66,17 @@ public sealed partial class TalentProcs
         if (SkillConfig.Get(_data, id) is not { } passive || BuffConfig.Get(_data, id)?.LogicData is not { Length: > 0 } logic) return;
         if (Roll(10000) >= LogicValue(s, DoubleAttack, logic, 0)) return;
         var desc = passive.DescData;
-        var row = DescribedHit(cast, id, (long)(Value(desc, 2) * 100), 0, Neutral);
+        var row = DescribedHit(HitRow(DoubleAttackHit) ?? cast, id, (long)(Value(desc, 2) * 100), 0, Neutral);
         for (int i = 0; i < Math.Max(1, (int)Value(desc, 1)) && target.Hp > 0; i++) await _combat.CastExtraAsync(s, row, [target]);
         if (Talent(s, TripleSlash) is not { } triple || !Ready(s, TripleSlash, (long)(Value(triple, 4) * 1000))) return;
         var around = _combat.MonstersNear(s, s.Position, (float)Value(triple, 0)).Take((int)Value(triple, 1)).ToList();
         if (around.Count > 0)
-            await _combat.CastExtraAsync(s, DescribedHit(cast, TripleSlash, (long)(Value(triple, 2) * 100), (long)Value(triple, 3), Neutral), around);
+            await _combat.CastExtraAsync(s, DescribedHit(HitRow(TripleSlashHit) ?? cast, TripleSlash, (long)(Value(triple, 2) * 100),
+                (long)Value(triple, 3), Neutral), around);
     }
+
+    /// <summary>A proc's own hit row: the group's level 1 row, null when the data has none.</summary>
+    private SkillConfig? HitRow(int group) => SkillConfig.Get(_data, _skills.RealId(group, 1));
 
     /// <summary>
     /// Blitz Beat: "When using a Basic Attack, the Falcon has a ${8}% Chance to cast [Blitz Beat] on the enemy, dealing
