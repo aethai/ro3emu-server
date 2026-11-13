@@ -431,9 +431,9 @@ public sealed partial class CombatService
     {
         if (caster.Role == null) return;
         long id = caster.Role.Id;
-        await SendSkillEffectAsync(caster, ArrowStormGfx(id, ArrowStormHandGlow, skillId, id, caster.Position.Clone()), highLevel: true);
+        await SendSkillEffectAsync(caster, ArrowStormGfx(id, ArrowStormHandGlow, skillId, id, caster.Position.Clone()));
         foreach (int effect in (int[])[ArrowStormRing, ArrowStormBursts])
-            await SendSkillEffectAsync(caster, ArrowStormGfx(id, effect, skillId, targetId, point.Clone()), highLevel: true);
+            await SendSkillEffectAsync(caster, ArrowStormGfx(id, effect, skillId, targetId, point.Clone()));
     }
 
     private static SkillEffectDisplayNotify ArrowStormGfx(long caster, int effect, long skillId, long targetId, Vec3 at) => new()

@@ -9,7 +9,7 @@ public sealed partial class SkillCombatTests
     private const int DisplayGfx = 2; // enum_DisplayEffectType.Gfx
 
     private static SkillEffectDisplayNotify[] EffectsOf(Ro3Emu.Bot.BotClient bot, long skill) => [.. bot.Inbox.Snapshot()
-        .Where(e => e.IsGame(CombatService.SkillEffectHigh)).Select(e => SkillEffectDisplayNotify.Parser.ParseFrom(e.Body)).Where(x => x.SkillId == skill)];
+        .Where(e => e.IsGame(CombatService.SkillEffect)).Select(e => SkillEffectDisplayNotify.Parser.ParseFrom(e.Body)).Where(x => x.SkillId == skill)];
 
     [ClientDataFact] // Arrow Storm's ring, bursts and hand glow (show 13302 range, played by no timeline) come with the cast; its 31101 is unchanged
     public async Task ArrowStormShowsItsGroundWithTheCast()
