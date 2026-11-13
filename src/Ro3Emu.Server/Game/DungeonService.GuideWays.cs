@@ -13,10 +13,11 @@ public sealed partial class DungeonService
     internal const int GuideWayVar = 10021;
 
     /// <summary>
-    /// A solo story scene's guide arrows: every route of its scene editor file (m_kGuidePoints) while the run is open,
-    /// none once it is settled. (inferred) The original encounter scripts that set 10021 are not in the client, so when
-    /// each route was shown is unknown; a scene's routes chain into one path (the Culvert plane's route 19 ends where
-    /// 21 starts), so all of them are shown from the start. Null for scenes without routes and for group content.
+    /// A solo story scene's guide arrows while the run is open, none once it is settled. A scripted scene that names its
+    /// routes per step (ScriptedStep.Guides) shows only the current step's; otherwise every route of its scene editor
+    /// file (m_kGuidePoints). (inferred) The original encounter scripts that set 10021 are not in the client; a scene's
+    /// routes chain into one path (the Culvert plane's route 19 ends where 21 starts). Null for scenes without routes
+    /// and for group content.
     /// </summary>
     private DungeonVar? GuideWays(Attempt a)
     {
@@ -24,9 +25,24 @@ public sealed partial class DungeonService
             || new DungeonConfig(a.Plan.Config).RoleCntLimit != 1) return null;
         if (_catalog.GuideRoutes(a.Plan.SceneEntry) is not { Count: > 0 } routes) return null;
         var ways = new DungeonVar { VarId = GuideWayVar };
-        if (!a.Settled) ways.Vi64.AddRange(routes);
+        if (!a.Settled) ways.Vi64.AddRange(StepGuides(a) is { } own ? own.Where(routes.Contains) : routes);
         return ways;
     }
+
+    /// <summary>The current step's own routes when the scene names them per step, else null.</summary>
+    private static IReadOnlyList<long>? StepGuides(Attempt a)
+    {
+        if (!a.Plan.Waves.Any(w => w.Step?.Guides != null)) return null;
+        return Step(a)?.Guides ?? [];
+    }
+
+    /// <summary>A step of a scene with per-step routes begins: 10021 with its routes (the 30401 snapshot carries them too).</summary>
+    private Task ShowStepGuideWaysAsync(Attempt a) => StepGuides(a) != null && GuideWays(a) is { } ways
+        ? BroadcastAsync(a, Event, new DungeonEventNotify
+        {
+            DungeonEntry = a.Plan.SceneEntry, EventType = (DungeonEventType)4, StageNum = a.Wave + 1, LevelNum = 1, Vars = { ways },
+        })
+        : Task.CompletedTask;
 
     /// <summary>After the clear: 10021 with no routes, so the arrows go away (DungeonEventDungeonVarChange).</summary>
     private Task HideGuideWaysAsync(GameSession s, Attempt a) => GuideWays(a) is { } ways

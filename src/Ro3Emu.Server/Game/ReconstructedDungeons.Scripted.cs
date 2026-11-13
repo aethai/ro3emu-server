@@ -48,10 +48,36 @@ public sealed partial class ReconstructedDungeons
         /// participants with it, before <see cref="TeleportAfter"/> and the next step (0: none; inferred).</summary>
         public long RideAfter { get; init; }
 
+        /// <summary>A scene-editor region the seated player drives the ride's carrier to after its route, held in the seat
+        /// until it is reached; 0: the ride ends where its route ends (inferred, play-tested).</summary>
+        public long DriveAfter { get; init; }
+
+        /// <summary>The ride's carrier walks its route alone: the participants stay where they stand instead of going with it
+        /// (inferred, play-tested).</summary>
+        public bool RideAlone { get; init; }
+
+        /// <summary>The ride's carrier speed in percent of its own (UnitConfig._fSpeed), for its route and the drive (inferred, play-tested).</summary>
+        public int RideSpeedPercent { get; init; } = 100;
+
         /// <summary>Milliseconds the step stays on after it is completed, before the next step or the settlement (0: none;
         /// inferred): a bubble of the actors it showed is still being read, or a defeated enemy is still falling.</summary>
         public int HoldAfterMs { get; init; }
+
+        /// <summary>The scene editor guide routes (m_kGuidePoints) shown while the step runs (DungeonService.GuideWays); null: the
+        /// scene does not name them per step.</summary>
+        public IReadOnlyList<long>? Guides { get; init; }
+
+        /// <summary>The client's steerable slide while the step runs (DungeonService.Slide; null: none).</summary>
+        public Slide? Slide { get; init; }
     }
+
+    /// <summary>
+    /// A slide (inferred speeds): the client moves the player downhill at <paramref name="DownCm"/> cm/s and steers it sideways at
+    /// <paramref name="SideCm"/> cm/s, through the Camera row <paramref name="Camera"/> (0: the client's own). The player
+    /// carries the BuffConfig row <paramref name="Buff"/> (0: none) from its start. When the step completes the slide stops
+    /// and the player plays the SkillConfig row <paramref name="EndSkill"/>'s animation (0: none).
+    /// </summary>
+    public sealed record Slide(int SideCm, int DownCm, int EndSkill, int Camera = 0, int Buff = 0);
 
     /// <summary>A step's cannons: the actor's <paramref name="Interaction"/> seats its user, who fires the skill <paramref name="Fire"/>.</summary>
     public sealed record Cannon(long Interaction, int Fire);
@@ -99,7 +125,11 @@ public sealed partial class ReconstructedDungeons
     /// that shows them cannot be reached in the reconstruction (each has its reason in the json, "unplayed").
     /// </summary>
     public sealed record ScriptedScene(long Scene, string Name, string Confidence, IReadOnlyList<ScriptedStep> Steps,
-        IReadOnlyList<int> Unplayed, long ContinuesTo = 0, bool LeavesAfterClear = false);
+        IReadOnlyList<int> Unplayed, long ContinuesTo = 0, bool LeavesAfterClear = false)
+    {
+        /// <summary>Milliseconds from the clear to the entry into the scene that continues it (0: DungeonService.ContinueSeconds).</summary>
+        public int ContinueAfterMs { get; init; }
+    }
 
     private readonly Dictionary<long, ScriptedScene> _scripted = [];
 
@@ -123,7 +153,10 @@ public sealed partial class ReconstructedDungeons
             _scripted[scene] = new ScriptedScene(scene, entry.Value.GetProperty("name").GetString() ?? "",
                 entry.Value.GetProperty("confidence").GetString() ?? "", steps, unplayed,
                 entry.Value.TryGetProperty("continuesTo", out var next) ? next.GetInt64() : 0,
-                entry.Value.TryGetProperty("leavesAfterClear", out var leaves) && leaves.GetBoolean());
+                entry.Value.TryGetProperty("leavesAfterClear", out var leaves) && leaves.GetBoolean())
+            {
+                ContinueAfterMs = entry.Value.TryGetProperty("continueAfterMs", out var after) ? after.GetInt32() : 0,
+            };
         }
     }
 
@@ -162,7 +195,19 @@ public sealed partial class ReconstructedDungeons
         {
             Companions = [.. listed.Where(IsCompanion).Select(Actor)],
             RideAfter = s.TryGetProperty("after", out var rideAfter) && rideAfter.TryGetProperty("ride", out var ride) ? ride.GetInt64() : 0,
+            DriveAfter = s.TryGetProperty("after", out var driveAfter) && driveAfter.TryGetProperty("drive", out var drive) ? drive.GetInt64() : 0,
+            RideAlone = s.TryGetProperty("after", out var aloneAfter) && aloneAfter.TryGetProperty("alone", out var alone) && alone.GetBoolean(),
+            RideSpeedPercent = s.TryGetProperty("after", out var speedAfter) && speedAfter.TryGetProperty("speed", out var rideSpeed) ? rideSpeed.GetInt32() : 100,
             HoldAfterMs = s.TryGetProperty("after", out var holdAfter) && holdAfter.TryGetProperty("hold", out var hold) ? hold.GetInt32() : 0,
+            Guides = s.TryGetProperty("guides", out var guides)
+                ? [.. guides.GetProperty("routes").EnumerateArray().Select(v => v.GetInt64())]
+                : null,
+            Slide = s.TryGetProperty("slide", out var slide)
+                ? new Slide(slide.GetProperty("side").GetInt32(), slide.GetProperty("down").GetInt32(),
+                    slide.TryGetProperty("endSkill", out var endSkill) ? endSkill.GetInt32() : 0,
+                    slide.TryGetProperty("camera", out var camera) ? camera.GetInt32() : 0,
+                    slide.TryGetProperty("buff", out var buff) ? buff.GetInt32() : 0)
+                : null,
         };
     }
 

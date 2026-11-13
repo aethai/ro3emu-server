@@ -23,6 +23,9 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// <summary>The scene a scripted scene continues into after its clear, 0 when none.</summary>
     public long ScriptedContinuation(long scene) => reconstructed?.Scripted(scene)?.ContinuesTo ?? 0;
 
+    /// <summary>Milliseconds a scripted scene waits after its clear before the scene that continues it (0: the default).</summary>
+    public int ScriptedContinueAfterMs(long scene) => reconstructed?.Scripted(scene)?.ContinueAfterMs ?? 0;
+
     /// <summary>Whether a scripted scene returns the player to the field after its clear.</summary>
     public bool ScriptedLeavesAfterClear(long scene) => reconstructed?.Scripted(scene)?.LeavesAfterClear ?? false;
 
