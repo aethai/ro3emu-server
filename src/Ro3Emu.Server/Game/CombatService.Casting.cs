@@ -62,6 +62,7 @@ public sealed partial class CombatService
         else await s.SkillCastGate.WaitAsync();
         try
         {
+            await LandShownHitAsync(s);
             using var state = await CharacterService.Lock(s);
             // Complete the runtime admission before any socket send can suspend. Frozen packets
             // retain the original order; an obsolete attachment cannot start a committed cast.
@@ -363,6 +364,18 @@ public sealed partial class CombatService
         var points = SkillShow.AttackPoints(template);
         return HitPrecedesYield(skill.InterruptedType, ImpactOffset(template, points.FirstOrDefault(0.2), action.ChantMs, action.ActionMs),
             SkillShow.InterruptOffset(template, action.ChantMs, action.ActionMs), Now - action.StartMs);
+    }
+
+    /// <summary>
+    /// The next skill cuts a cast whose hit the client has already shown (<see cref="HitShownBeforeYield"/>): that hit lands
+    /// first. Called before the character lock is taken: a killing hit's reward takes that lock
+    /// (RewardService.CommitKillAsync), and the lock is not reentrant, so landing it under the lock stalled the role (#433).
+    /// </summary>
+    private async Task LandShownHitAsync(GameSession s)
+    {
+        if (s.SkillCast is not { } action || !HitShownBeforeYield(action)) return;
+        action.Resolved = true;
+        await ResolveCastAsync(s, action);
     }
 
     internal static bool HitPrecedesYield(long interruptedType, int impactMs, int? interruptMs, long elapsedMs) =>
@@ -796,6 +809,7 @@ public sealed partial class CombatService
         {
             s.Attack = null;
             _eventAttacks.Remove(s);
+            if (req?.NxtSkill != null) await LandShownHitAsync(s);
             await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
         }
         await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = interrupted });
@@ -817,12 +831,6 @@ public sealed partial class CombatService
     {
         s.WorldState.ResurrectionCastId = 0;
         if (s.SkillCast is not { } action) return;
-        if (cause == SkillInterruptedInfo.Types.SkillInterruptType.Skill && HitShownBeforeYield(action))
-        {
-            action.Resolved = true;
-            await ResolveCastAsync(s, action);
-            if (!ReferenceEquals(s.SkillCast, action)) return;
-        }
         action.Cancelled = true;
         s.SkillCast = null;
         // The client lets a move end a swing only from the show's m_fInterruptTime_move, well after its hit. Without this a
