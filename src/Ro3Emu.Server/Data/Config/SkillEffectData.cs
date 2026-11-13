@@ -63,6 +63,16 @@ public readonly record struct SkillEffectData(JsonElement Row)
     /// </summary>
     public bool Flinches => HitReaction is { } reaction && reaction.TryGetProperty("m_kAni", out _);
 
+    /// <summary>The hit reaction draws something on the unit: an effect prefab (m_kGfxList) or a fresnel flash
+    /// (m_kFresnelEffectData.m_iFresnelEffectId). A reaction with neither (Maximum Over Thrust's 1620402) shows nothing.</summary>
+    public bool HasHitVisual => Damage is { ValueKind: JsonValueKind.Object } damage
+        && damage.TryGetProperty("m_kActionDamge", out var reaction) && reaction.ValueKind == JsonValueKind.Object
+        && (reaction.TryGetProperty("m_kGfxList", out var gfx) && gfx.ValueKind == JsonValueKind.Array
+                && gfx.EnumerateArray().Any(g => g.ValueKind == JsonValueKind.Object && g.TryGetProperty("m_kGfxName", out var name)
+                    && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 })
+            || reaction.TryGetProperty("m_kFresnelEffectData", out var flash) && flash.ValueKind == JsonValueKind.Object
+                && flash.TryGetProperty("m_iFresnelEffectId", out var id) && id.TryGetInt64(out long value) && value > 0);
+
     /// <summary>The bullet's prefab name, or null when the row flies none.</summary>
     public string? BulletName => Bullet is { } bullet && bullet.TryGetProperty("m_kBulletName", out var name)
         && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 } text ? text : null;

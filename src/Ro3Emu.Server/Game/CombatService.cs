@@ -381,6 +381,16 @@ public sealed partial class CombatService : IGameTicker
         return first != 0 ? first : 1000002;
     }
 
+    /// <summary>The hit effect a buff-only cast shows on the units it buffed: HitEffect's pick when it is an entry of the show's own
+    /// range that draws a prefab or a flash, else 0. HitEffect's fallback 1000002 is a struck unit's hit (fx_common_hit_1, ReceivingDamage,
+    /// the hit sound): a buff showing it would make every ally flinch as if struck (Sacred Lily's range 430400-430499 has no hit entry).</summary>
+    private int BuffHitEffect(long scriptShow)
+    {
+        int id = HitEffect(scriptShow);
+        return id >= scriptShow * 100 && id < scriptShow * 100 + 100
+            && SkillEffectData.Find(_data.SkillTemplateTable("Lua_Config_EffectData"), id) is { HasHitVisual: true } ? id : 0;
+    }
+
     /// <summary>
     /// SkillHitInfo.split: how many damage words the client shows for one hit. SkillConfig._kShowDmg holds one count
     /// per show attack point and only the server reads it. LC_DamageHelper.ProcessDamageWord divides the damage into
