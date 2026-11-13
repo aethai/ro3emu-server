@@ -458,8 +458,8 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
     /// is saved (or MovementCtrl is 2) and falls back to the mode's defaults only when both movement flags are off. The
     /// mode panel saves those defaults (_applyPCInteractDefault) only when the chosen mode differs from the one it opened
     /// with, and its close/timeout path (_returnCloseClock) never does: a role that keeps Classic that way has no
-    /// KeyBoardInfo at all, so clicks do not walk. Such settings (absent or corrupt KeyBoardInfo only, plus the old
-    /// buggy inverted defaults) get the Nostalgic defaults written; any real save, including one with mouse movement
+    /// KeyBoardInfo at all, so clicks do not walk. Such settings (absent or corrupt KeyBoardInfo only) get the Nostalgic
+    /// defaults written (G_ClientCfg.PCInteractSetting.Nostalgic, as _applyPCInteractDefault saves them); any real save, including one with mouse movement
     /// turned off, is left untouched. True when they changed.
     /// </summary>
     internal static bool RepairClassicMovement(DBSettingInfo settings)
@@ -479,12 +479,9 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             catch (InvalidProtocolBufferException) { keys = new KeyBoardInfo(); hasKeyBoard = false; }
         }
 
-        // Migrate the old buggy server defaults (MoveBtn=1, SelectBtn=1, CameraMode=2) that inverted the mouse
-        bool isBuggyOldDefaults = hasKeyBoard && keys.MoveBtn == 1 && keys.SelectBtn == 1 && keys.CameraMode == 2;
-
         // Repair only when no KeyBoardInfo exists at all (or it is corrupt): a player with saved settings owns them,
         // including one who turned mouse movement off. Never re-enable EnableMouseMove over a real save.
-        if (hasKeyBoard && !isBuggyOldDefaults) return false;
+        if (hasKeyBoard) return false;
 
         keys.EnableMouseMove = true;
         keys.EnableKeyboardMove = false;

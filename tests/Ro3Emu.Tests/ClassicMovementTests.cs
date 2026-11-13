@@ -44,14 +44,13 @@ public sealed class ClassicMovementTests
     }
 
     [Fact]
-    public void BuggyInvertedDefaultsAreMigratedToClassicLeftClick()
+    public void ARightClickChoiceIsKept()
     {
+        // Right, Right and ShiftRightDrag are a player's own choice in the Button tab, not a broken default.
         var s = Settings(1, new KeyBoardInfo { KeyBoardMode = 1, EnableMouseMove = true, SelectBtn = 1, MoveBtn = 1, CameraMode = 2 });
-        Assert.True(RoleSessionService.RepairClassicMovement(s));
-        Assert.True(Keys(s).EnableMouseMove);
-        Assert.Equal(0, Keys(s).SelectBtn);
-        Assert.Equal(0, Keys(s).MoveBtn);
-        Assert.Equal(0, Keys(s).CameraMode);
+        Assert.False(RoleSessionService.RepairClassicMovement(s));
+        Assert.Equal(1, Keys(s).MoveBtn);
+        Assert.Equal(2, Keys(s).CameraMode);
     }
 
     [Fact]
