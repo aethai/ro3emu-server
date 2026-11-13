@@ -439,6 +439,83 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Equal(13323, Assert.Single(cooldown.Infos).SkillId);
     }
 
+    // Swift Warg: "Casting 【Warg Charge】 or 【Warg Hunt】 resets this skill's Cooldown". Warg Hunt resolves as its Melee or
+    // Ranged row (13329, 13330), which the reset has to name.
+    [ClientDataTheory]
+    [InlineData(3f)]
+    [InlineData(10f)]
+    public async Task WargHuntResetsSwiftWargsCooldown(float metres)
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(metres);
+        await SwiftWargOnCooldownAsync(1);
+        await CastOnAsync(a, 1332301, target);
+        await SwiftWargResetAsync();
+    }
+
+    // Swift Warg Lv. 2: "after casting 【Warg Charge】 or 【Warg Hunt】, your next movement instead casts this skill in the movement
+    // direction" (@{1} of its Lv. 1 text is 2). The first walk that sets off casts the learned row once, dashing with 1332606.
+    [ClientDataTheory]
+    [InlineData(2, true)]
+    [InlineData(1, false)]
+    public async Task SwiftWargDashesOnTheWalkAfterWargHunt(int level, bool dashes)
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(3);
+        await SwiftWargOnCooldownAsync(level);
+        await CastOnAsync(a, 1332301, target);
+        await SwiftWargResetAsync();
+        int row = 1332600 + level;
+        await WalkEastAsync(a);
+        if (dashes)
+        {
+            await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.SkillConfigId == row);
+            await Task.Delay(300); // the dash's 160 ms, in which a walk is dropped
+            await WalkEastAsync(a); // a plain walk: the dash comes once
+        }
+        await Task.Delay(1000); // past Warg Hunt's action, which a walk may have to wait for
+        var moves = a.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillMove))
+            .Select(e => SkillStartMoveNotify.Parser.ParseFrom(e.Body)).Where(m => m.SkillConfigId == row).ToList();
+        if (!dashes)
+        {
+            Assert.Empty(moves);
+            return;
+        }
+        var dash = Assert.Single(moves);
+        Assert.Equal(1332606, dash.EffectId);
+        Assert.True(dash.EndPos.X > dash.StartPos.X + 1, "dashes along the walk's direction (90 = +x)");
+        Assert.Contains(a.Inbox.Snapshot(), e => e.IsGame(CombatService.UseInSkill) && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == row);
+        Assert.DoesNotContain(a.Inbox.Snapshot(), e => e.IsGame(CombatService.UseSkill) && CastSkillRsp.Parser.ParseFrom(e.Body).Result != 0);
+    }
+
+    private async Task WalkEastAsync(BotClient a)
+    {
+        var at = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(Session("alice").Position.Clone()));
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = at, Dir = 90, Face = 90, SpeedRate = 1 });
+    }
+
+    private Task SwiftWargOnCooldownAsync(int level) => _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+    {
+        var alice = Session("alice");
+        alice.Progress!.Skills[13326] = level;
+        alice.SkillCds[13326] = MonsterService.NowMs + 60000;
+        return Task.CompletedTask;
+    });
+
+    private async Task SwiftWargResetAsync()
+    {
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        for (var until = DateTime.UtcNow + Wait; ; await Task.Delay(20))
+        {
+            if (!await loop.InvokeAsync(() => Task.FromResult(Session("alice").SkillCds.ContainsKey(13326)))) return;
+            Assert.True(DateTime.UtcNow < until, "Swift Warg's cooldown was not reset");
+        }
+    }
+
     // Warg King's BuffConfig 1332601 selects mode 1 of 13323, 13329 and 13330: the five-wolf rows.
     [ClientDataFact]
     public async Task WargHuntFollowsTheModeOfItsNearAndFarGroups()

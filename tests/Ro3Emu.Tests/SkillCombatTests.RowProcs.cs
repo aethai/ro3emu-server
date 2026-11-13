@@ -175,23 +175,24 @@ public sealed partial class SkillCombatTests
         Assert.Equal(WargHitPoint, hit.ShowPoint);
     }
 
-    // The automatic Warg Strike of Focused Arrow Strike casts the same row, but the Genesis server shows no wolf for it.
+    // The automatic Warg Strike of Focused Arrow Strike: on the Genesis server its wolf charges the target as for a manual cast
+    // (Genesis capture, Discord report), on the extra high-level timeline without the rider's action; its hit shares that session.
     [ClientDataFact]
-    public async Task TheAutomaticWargStrikeShowsNoWolf()
+    public async Task TheAutomaticWargStrikeSendsTheWolfsCharge()
     {
         await using var alice = await InWorld("Alice");
         var (bot, _, dummy) = await ReadyAsync(alice, 3400, 13305, 1330501);
         await Teach("alice", 13312);
         await CastAtAsync(bot, 1330501, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == WargStrikeRow && h.Dsts.Any(d => d.DstID == dummy.Uid));
-        await Task.Delay(200);
-        var inbox = bot.Inbox.Snapshot();
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.SkillEffectHigh)
-            && SkillEffectDisplayNotify.Parser.ParseFrom(e.Body).EffectId == WolfEffect);
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.SkillBulletHigh)
-            && SkillFixTimeBulletNotify.Parser.ParseFrom(e.Body).EffectId == WolfBullet);
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.ExtraUseInSkillHigh)
-            && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == WargStrikeRow);
+        var timeline = await Next(bot, CombatService.ExtraUseInSkillHigh, UseInSkillInfo.Parser, m => m.SkillID == WargStrikeRow);
+        Assert.False(timeline.PlayAct);
+        Assert.Equal(WolfBullet, (await Next(bot, CombatService.SkillBulletHigh, SkillFixTimeBulletNotify.Parser, m => m.SkillConfigId == WargStrikeRow)).EffectId);
+        var wolf = await Next(bot, CombatService.SkillEffectHigh, SkillEffectDisplayNotify.Parser, m => m.SkillId == WargStrikeRow);
+        Assert.Equal(WolfEffect, wolf.EffectId);
+        Assert.Equal(dummy.Uid, wolf.TargetId);
+        var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == WargStrikeRow && h.Dsts.Any(d => d.DstID == dummy.Uid));
+        Assert.Equal(timeline.SessionId, hit.SessionId);
+        Assert.Equal(WargHitPoint, hit.ShowPoint);
     }
 }
