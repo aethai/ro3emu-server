@@ -110,7 +110,7 @@ public sealed partial class CombatService
         if (error == 0)
         {
             int group = (int)GameData.Int(row!.Value, "_iSkillID"), mode = (int)GameData.Int(row.Value, "_iMode");
-            if (own == null && Math.Max(s.SkillCds.GetValueOrDefault(group), s.SkillModeCds.GetValueOrDefault((group, mode))) > Now) error = ErrorCodes.SkillCooldown;
+            if (own == null && CooldownEnd(s, group, mode) > Now) error = ErrorCodes.SkillCooldown;
             else if (own == null && Now < s.SwingLockUntilMs - SwingJitterMs && new SkillConfig(row.Value).IsNormalAttack(_data)) error = ErrorCodes.SkillBusy;
             else if (s.SkillCast is { Cancelled: false } active && Now < active.StartMs + active.ChantMs + active.ActionMs
                 && !CastYields(active, row.Value, req)) error = ErrorCodes.SkillBusy;
@@ -741,11 +741,18 @@ public sealed partial class CombatService
         s.WorldState.ResurrectionCastId = IsResurrection(row) ? id : 0;
         s.Face = face;
         req.Face = face;
-        Task Timeline() => SendCastTimelineAsync(s, new UseInSkillInfo
+        async Task Timeline()
         {
-            SrcID = action.SourceId, SkillID = req.SkillId, TargetId = req.TargetId, TargetPos = req.TargetPos ?? origin,
-            Face = face, SessionId = id, ChantMs = action.ChantMs, SkillMs = action.ActionMs, StartTime = action.StartMs, PlayAct = true,
-        }, highLevel: GameData.Int(row, "_iSkillEffectLevel") > 0, extra: actor != null || req.IsExtraSkill);
+            await SendCastTimelineAsync(s, new UseInSkillInfo
+            {
+                SrcID = action.SourceId, SkillID = req.SkillId, TargetId = req.TargetId, TargetPos = req.TargetPos ?? origin,
+                Face = face, SessionId = id, ChantMs = action.ChantMs, SkillMs = action.ActionMs, StartTime = action.StartMs, PlayAct = true,
+            }, highLevel: GameData.Int(row, "_iSkillEffectLevel") > 0 || FalconHigh(row) || WargStrikeHigh(row), extra: actor != null || req.IsExtraSkill);
+            if (FalconHigh(row)) await SendFalconAsync(s, row, req.SkillId, req.TargetId);
+            else if (WargStrikeHigh(row))
+                ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(WolfDelayMs),
+                    () => Live(s, action) ? SendWolfAsync(s, req.SkillId, req.TargetId) : Task.CompletedTask);
+        }
         if (leadMs <= 0) await Timeline();
         else ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(leadMs), () => Live(s, action) ? Timeline() : Task.CompletedTask);
         var template = _data.SkillTemplate(GameData.Int(row, "_iScriptShow"));

@@ -16,6 +16,7 @@ namespace Ro3Emu.Tests;
 public sealed partial class SkillCombatTests
 {
     private const int FalconLease = 1500100, AutoBlitzRow = 1311005, AutoBlitzRendingRow = 1311015, FalconStrikeRow = 1321401;
+    private const int BlitzBeatRow = 1310205, FalconEffect = 13102200, PendantShow = 5;
 
     private async Task<MonsterUnit> FalconHunter(string name, bool falcon = true)
     {
@@ -185,5 +186,45 @@ public sealed partial class SkillCombatTests
         long before = await Loop.InvokeAsync(() => Task.FromResult(Character.Stats(Session("alice"))[5]));
         await ChooseProfessionTalent(alice, "alice", 10102114);
         Assert.Equal(before + 5, await Loop.InvokeAsync(() => Task.FromResult(Character.Stats(Session("alice"))[5])));
+    }
+
+    // The falcon flight of a manual Blitz Beat, as a capture of the Genesis server has it: the cast on 31106 and the falcon
+    // on 31109, effect 13102200 (a bullet with m_kBulletFalcon) with effectType PendantShow at the target.
+    [ClientDataFact]
+    public async Task BlitzBeatSendsTheFalconFlightWithItsCast()
+    {
+        await using var alice = await InWorld("Alice");
+        var monster = await FalconHunter("alice");
+
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = BlitzBeatRow, TargetId = monster.Uid });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var timeline = await Next(alice, CombatService.UseInSkillHigh, UseInSkillInfo.Parser, x => x.SessionId == accepted.SessionId);
+        Assert.True(timeline.PlayAct);
+        var falcon = await Next(alice, CombatService.SkillEffectHigh, SkillEffectDisplayNotify.Parser, x => x.SkillId == BlitzBeatRow);
+        Assert.Equal(FalconEffect, falcon.EffectId);
+        Assert.Equal(PendantShow, falcon.EffectType);
+        Assert.Equal(monster.Uid, falcon.TargetId);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.UseInSkill)
+            && UseInSkillInfo.Parser.ParseFrom(e.Body).SessionId == accepted.SessionId);
+    }
+
+    // The proc's falcon, as a capture of the Genesis server has it for 1311005: the extra high-level timeline without the
+    // cast action and the falcon on 31109; the timeline and its hit share one sessionId and rootCtxGuid.
+    [ClientDataFact]
+    public async Task AutoBlitzBeatShowsTheFalconOnItsOwnTimeline()
+    {
+        await using var alice = await InWorld("Alice");
+        var monster = await FalconHunter("alice");
+
+        RollAtChance(0);
+        await BasicAttack(alice, monster);
+        var timeline = await Next(alice, CombatService.ExtraUseInSkillHigh, UseInSkillInfo.Parser, x => x.SkillID == AutoBlitzRow);
+        Assert.False(timeline.PlayAct);
+        var falcon = await Next(alice, CombatService.SkillEffectHigh, SkillEffectDisplayNotify.Parser, x => x.SkillId == AutoBlitzRow);
+        Assert.Equal(FalconEffect, falcon.EffectId);
+        var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SkillId == AutoBlitzRow);
+        Assert.Equal(timeline.SessionId, hit.SessionId);
+        Assert.Equal(timeline.SessionId, hit.RootCtxGuid);
     }
 }

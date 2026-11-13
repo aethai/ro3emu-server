@@ -50,8 +50,8 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1111001, TargetId = monster.Uid });
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
         Assert.Equal(0, accepted.Result);
-        var cd = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser, x => x.Infos.Any(i => i.SkillId == 11110));
-        Assert.Equal(0, cd.Infos.Single(i => i.SkillId == 11110).SkillMode);
+        var cd = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser, x => x.Infos.Any(i => i.SkillId == 11110 && i.CdEndTimestampMs > 0));
+        Assert.Equal(0, cd.Infos.Single(i => i.SkillId == 11110 && i.CdEndTimestampMs > 0).SkillMode);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
         Assert.NotEqual(1111001, hit.SkillId); // the talent's mode row was cast
     }
@@ -70,8 +70,8 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1309901, TargetId = monster.Uid });
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
         Assert.Equal(0, accepted.Result);
-        var cd = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser, x => x.Infos.Any(i => i.SkillId == 13099));
-        Assert.Equal(0, cd.Infos.Single(i => i.SkillId == 13099).SkillMode);
+        var cd = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser, x => x.Infos.Any(i => i.SkillId == 13099 && i.CdEndTimestampMs > 0));
+        Assert.Equal(0, cd.Infos.Single(i => i.SkillId == 13099 && i.CdEndTimestampMs > 0).SkillMode);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
         Assert.Equal(1309911, hit.SkillId);
     }

@@ -191,7 +191,7 @@ public sealed partial class CombatService
             targets.RemoveAll(m => !selected.Contains(m.Uid));
             action.PlayersStruck = [.. playerTargets.Where(p => selected.Contains(p.Role!.Id))];
             await HitEventPlayersAsync(s, action.PlayersStruck,
-                row, action.Request.SkillId, HitEffect(GameData.Int(row, "_iScriptShow")), action.Id, CanApplyMoreEffects,
+                row, action.Request.SkillId, HitShowPoint(row), action.Id, CanApplyMoreEffects,
                 action.GuardianDamage == null ? null : (id, amount) => RecordGuardianDamage(action, id, amount), center);
             if (IsGuardianEffect(row))
                 await GuardianPlayerDebuffsAsync(s, row, playerTargets.Where(p => selected.Contains(p.Role!.Id)),
@@ -233,7 +233,7 @@ public sealed partial class CombatService
         var hit = new SkillHitInfo
         {
             SrcID = field?.Uid ?? action.SourceId, SkillId = action.Request.SkillId, SessionId = action.Id,
-            RootCtxGuid = action.Id, ComboIndex = action.Request.ComboIndex, ShowPoint = HitEffect(GameData.Int(row, "_iScriptShow")),
+            RootCtxGuid = action.Id, ComboIndex = action.Request.ComboIndex, ShowPoint = HitShowPoint(row),
             Split = HitSplit(row),
             SrcElement = attackElement,
         };
@@ -298,6 +298,7 @@ public sealed partial class CombatService
                 if (CanApplyMoreEffects() && !target.Dead && target.Hp > 0) await DisplaceTargetAsync(s, action, target, center);
             }
             // Buff1 is self for hostile selectors, but actual friend recipients for ally selectors (Detoxify, Blessing).
+            var buffed = new List<GameSession>(); // who a friendly buff-only cast reached: ShowBuffHitAsync plays its hit effect on them
             foreach (var recipient in friendly ? allies : [s])
             {
                 if (!CanApplyMoreEffects()) break;
@@ -305,9 +306,12 @@ public sealed partial class CombatService
                     foreach (var tuple in Tuples(row, "_kBuff1"))
                         if (CanApplyMoreEffects() && RollBuff(tuple, out int id, out int duration)
                             && SkillBuffAllowed?.Invoke(s, recipient, id) != false && JobAllowsBuff(script, id, recipient) && !ComesFromALoop(script, id))
+                        {
+                            if (!buffed.Contains(recipient)) buffed.Add(recipient);
                             // "For each enemy hit, You gain a Shield": a stacking shield (Rift Impact, _iMaxStack 3) lands once per enemy, up to its stack.
                             for (int pile = PilesFor(id, targets.Count); pile > 0 && CanApplyMoreEffects(); pile--)
                                 await ApplySkillBuffAsync(stats, recipient, id, duration, castingRole.Id);
+                        }
                 if (friendly && damage)
                 {
                     double multiplier = HealRatio(s, recipient, row, script), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
@@ -356,6 +360,8 @@ public sealed partial class CombatService
                 if (CurrentCaster() && field?.Trap == true)
                     await ToPlayerAndViewersAsync(s, TrapDamage, new TrapDamageNtf { SkillConfigId = action.Request.SkillId, DamageValue = hit.Dsts.Sum(d => d.Damage), Pos = center.Clone() });
             }
+            else if (friendly && field == null && buffed.Count > 0 && ShowsBuffHit(script) && CurrentCaster())
+                await ShowBuffHitAsync(s, action, row, hit, buffed, script);
             foreach (var target in processed)
             {
                 if (!damage) continue;
@@ -425,15 +431,17 @@ public sealed partial class CombatService
 
     /// <summary>
     /// An extra cast of a SkillConfig row on monsters the caller chose, through the ordinary effect path (damage, kills,
-    /// statistics, 31101). It is an extra skill: it pays nothing, starts no cooldown and triggers no CastResolved.
+    /// statistics, 31101). It is an extra skill: it pays nothing, starts no cooldown and triggers no CastResolved. A caller
+    /// that already told its timeline passes that timeline's <paramref name="sessionId"/>, so the hit belongs to it.
     /// </summary>
-    internal Task CastExtraAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets, bool parametersApplied = false)
+    internal Task CastExtraAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets, bool parametersApplied = false,
+        long sessionId = 0)
     {
         if (s.Role == null || targets.Count == 0) return Task.CompletedTask;
         var target = targets[0];
         var action = new ActiveSkillCast
         {
-            Id = ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = sessionId > 0 ? sessionId : ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = parametersApplied ? row : ExtraRow(s, row),
             Request = new CastSkillReq
             {

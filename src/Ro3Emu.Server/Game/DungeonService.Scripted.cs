@@ -47,7 +47,7 @@ public sealed partial class DungeonService
         public List<BuffInfo> Buffs { get; } = [];
 
         /// <summary>Attribute 113 of an actor that can carry a rider: its own walking speed in cm/s, which the client moves it at.</summary>
-        public long CarrySpeed { get; init; }
+        public long CarrySpeed { get; set; }
 
         public override EntityBase Entity()
         {
@@ -66,10 +66,10 @@ public sealed partial class DungeonService
                 },
             };
             if (Template is { } t)
-                foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level), (113, t.SpeedCm),
-                             (102, t.MaxSp), (2001, t.MaxSp) })
+                foreach (var (idx, value) in new (long, long)[] { (AttributeId.MaxHp, t.MaxHp), (AttributeId.Hp, t.MaxHp), (2002, t.Level), (AttributeId.Speed, t.SpeedCm),
+                             (102, t.MaxSp), (AttributeId.Sp, t.MaxSp) })
                     entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = 113, Data = CarrySpeed, BaseData = CarrySpeed });
+            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = AttributeId.Speed, Data = CarrySpeed, BaseData = CarrySpeed });
             if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
             return entity;
         }
@@ -88,11 +88,17 @@ public sealed partial class DungeonService
         // A fight-only step has no client event to wait for: its kills complete it.
         a.StepDone = step.Complete.Count == 0;
         await SyncSceneActorsAsync(a, step.Actors);
+        string actorsShown = _log.IsEnabled(LogLevel.Information)
+            ? string.Join("; ", a.SceneActors.Select(u => $"{u.NpcId} at {u.X:0.0},{u.Z:0.0} buffs [{string.Join(',', u.Buffs.Select(b => b.ConfigId))}]"))
+            : "";
+        LogStepBegins(a.Plan.SceneEntry, a.Wave + 1, step.Stage, actorsShown);
         await SyncCompanionsAsync(a, step.Companions);
         a.StepGeneration++;
         if (step.Seek is { } seek) StartSeek(a, seek);
         if (step.Shelter is { } shelter) StartShelter(a, shelter);
         if (step.React is { } react) StartReaction(a, react);
+        if (step.Slide is { } slide) await StartSlideAsync(a, slide);
+        await ShowStepGuideWaysAsync(a);
         if (step.Story != 0 && !a.Settled && !a.Room.Closed)
             // Once, in a var-change event: the client calls PlayCutSceneStory on every push of this var.
             await BroadcastAsync(a, Event, new DungeonEventNotify
@@ -101,6 +107,9 @@ public sealed partial class DungeonService
                 StageNum = a.Wave + 1, LevelNum = 1, Vars = { new DungeonVar { VarId = StoryVar, Vi64 = { step.Story } } },
             });
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} step {Step} '{Stage}' begins; actors {Actors}")]
+    private partial void LogStepBegins(long scene, int step, string stage, string actors);
 
     /// <summary>
     /// Shows exactly the step's actors: one already shown at the same point with the same NPC stays (its buffs change in
@@ -282,13 +291,14 @@ public sealed partial class DungeonService
     public async Task PlayerMovedAsync(GameSession s)
     {
         if (Active(s) is { Raid.Active: { } trial } raid) await TrialTouchesAsync(raid, trial);
+        if (Active(s) is { Driving: not null } driven) await DroveAsync(driven, s);
         if (s.DungeonAttempt == null || Active(s) is not { } a || Step(a) is not { } step || a.StepDone) return;
         if (step.Seek != null) return; // a hiding place counts when the seeker looks (DungeonService.HideAndSeek)
         foreach (var t in step.Complete)
         {
             bool inside = t.Kind switch
             {
-                Kind.Region => _catalog.SceneRegion(a.Plan.SceneEntry, t.Id) is { } region && region.Contains(s.Position.X, s.Position.Z),
+                Kind.Region => _catalog.SceneRegion(a.Plan.SceneEntry, t.Id) is { } region && Reached(s, region.Contains),
                 Kind.Point => _catalog.ScenePoint(a.Plan.SceneEntry, t.Id) is { } p
                     && MonsterService.Distance(s.Position.X, s.Position.Z, p.X, p.Z) <= t.Radius,
                 _ => false,
@@ -326,6 +336,7 @@ public sealed partial class DungeonService
         if (GoalParams(a) != null) await BroadcastAsync(a, BaseInfo, Snapshot(a));
         _log.LogInformation("Scripted scene {Scene} step {Step} '{Stage}' completed by {Role} ({Events})",
             a.Plan.SceneEntry, a.Wave + 1, step.Stage, s.Role?.Id, string.Join(", ", events));
+        if (step.Slide is { } slide) await EndSlideAsync(a, slide);
         int hold = await RespondAsync(a, step.React, step.React?.Complete, used);
         async Task FinishAsync()
         {
@@ -340,6 +351,6 @@ public sealed partial class DungeonService
             else _loop.PostLegacy(() => AdvanceAsync(a), "dungeon scripted step");
         }
         // A step with a ride first walks it; the teleport and the next step follow its arrival.
-        if (!TryStartRide(a, step, used, FinishAsync)) await FinishAsync();
+        if (!TryStartRide(a, step, used, FinishAsync) && !await TryStartDriveAsync(a, step, used, FinishAsync)) await FinishAsync();
     }
 }

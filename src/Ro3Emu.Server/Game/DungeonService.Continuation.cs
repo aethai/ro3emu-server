@@ -25,7 +25,9 @@ public sealed partial class DungeonService
     private void ScheduleContinuation(GameSession s, Attempt a, long next)
     {
         long roleId = s.Role?.Id ?? 0;
-        _loop.ScheduleLegacy(TimeSpan.FromSeconds(ContinueSeconds), async () =>
+        // A scripted scene may name its own wait (ScriptedScene.ContinueAfterMs, the Ant Queen's passage: its last jump).
+        int ms = _catalog.ScriptedContinueAfterMs(a.Plan.SceneEntry);
+        _loop.ScheduleLegacy(ms > 0 ? TimeSpan.FromMilliseconds(ms) : TimeSpan.FromSeconds(ContinueSeconds), async () =>
         {
             // The player may have left, died out of it, or moved on (the quest tracker's own entry) in the meantime.
             if (s.Role?.Id != roleId || !ReferenceEquals(s.DungeonAttempt, a) || s.InstanceId != a.Room.Id

@@ -14,7 +14,8 @@ namespace Ro3Emu.Server.Game;
 /// walks, a seated player goes with it on its seat, a player who is not seated walks there itself every tick
 /// (transType 3 ServerControl, (proven) LC_Scene_Sync.lua _syncUnitMoveState: the local player's controlled unit obeys
 /// it in every scene, unlike ForceTeleport which a surface scene ignores), and the camera animation is not played. The
-/// carrier stays where the route ends (only a scene's last step has a ride, so no later step shows it again).
+/// carrier stays where the route ends (a later step that shows it at the same point finds it there). A ride that is
+/// alone moves only the carrier.
 /// </summary>
 public sealed partial class DungeonService
 {
@@ -25,6 +26,9 @@ public sealed partial class DungeonService
 
     /// <summary>(inferred) The rider's client plays the seat's exit animation for this long after being put down.</summary>
     private const int RideExitDelayMs = 2500;
+
+    /// <summary>(inferred) A carrier that walks alone waits for the 'Try to Ride' animation of the interaction (skill 5362901: 2367 ms).</summary>
+    private const int RideAloneDelayMs = 2400;
 
     /// <summary>
     /// An actor interaction that seats its user (NPCInteractConfig _iStatusID of a vehicle status, the Deniro's 5300005)
@@ -59,7 +63,30 @@ public sealed partial class DungeonService
 
         /// <summary>The route leg the carrier was last told to walk, -1 before the first.</summary>
         public int Leg { get; set; } = -1;
+
+        /// <summary>The region the rider drives the carrier to after the route (ScriptedStep.DriveAfter), 0: none.</summary>
+        public long DriveTo { get; init; }
+
+        /// <summary>The carrier's speed for this ride in cm/s (ScriptedStep.RideSpeedPercent), 0: its own.</summary>
+        public long SpeedCm { get; init; }
+
+        /// <summary>The carrier walks alone: nobody is moved with it (ScriptedStep.RideAlone).</summary>
+        public bool Alone { get; init; }
     }
+
+    /// <summary>
+    /// A ride after its route: the seated driver steers the carrier (its client controls the vehicle, LC_PassengerComponent
+    /// ChangeControlUnit) until someone reaches Region; then Arrived runs.
+    /// </summary>
+    internal sealed record Drive(SceneActorUnit Carrier, long Region, Func<Task> Arrived, int Generation);
+
+    /// <summary>
+    /// Whether a rider stays seated: the step's ride is driven on to a region (DriveAfter) not reached yet. (inferred) The
+    /// original's script is not shipped, so holding the driver in the seat until that region (the client's own exit button,
+    /// VehicleSeatConfig 5300005 _kGameplayBtnId 26, is refused) is a guess that keeps the ride from being left halfway (play-tested).
+    /// </summary>
+    private static bool RideHolds(GameSession s) => Active(s) is { } a && a.Riders.ContainsKey(s)
+        && Step(a) is { DriveAfter: not 0 } && !a.Room.Closed;
 
     /// <summary>The carrier's walking speed in metres per second: UnitConfig._fSpeed (cm/s) of its NPC's _iUnitID, 0 if none.</summary>
     private float RideSpeed(SceneActorUnit carrier) =>
@@ -113,18 +140,56 @@ public sealed partial class DungeonService
     /// </summary>
     private bool TryStartRide(Attempt a, ReconstructedDungeons.ScriptedStep step, SceneActorUnit? carrier, Func<Task> arrived)
     {
-        if (step.RideAfter == 0 || carrier == null || _catalog.GuidePath(a.Plan.SceneEntry, step.RideAfter) is not { } path) return false;
-        float speed = RideSpeed(carrier), length = RideLength(path);
-        if (speed <= 0 || length <= 0) return false;
-        TimeSpan delay = a.Riders.Count > 0 ? Paced(RideStartDelayMs) : TimeSpan.Zero;
+        if (step.RideAfter == 0 || carrier == null || _catalog.GuidePath(a.Plan.SceneEntry, step.RideAfter) is not { } path)
+        {
+            if (step.RideAfter != 0)
+            {
+                bool routeFound = carrier != null && _catalog.GuidePath(a.Plan.SceneEntry, step.RideAfter) != null;
+                LogRideNotStartedCarrier(a.Plan.SceneEntry, step.RideAfter, carrier?.NpcId ?? 0, routeFound);
+            }
+            return false;
+        }
+        float speed = RideSpeed(carrier) * step.RideSpeedPercent / 100f, length = RideLength(path);
+        if (speed <= 0 || length <= 0)
+        {
+            LogRideNotStartedSpeed(a.Plan.SceneEntry, step.RideAfter, speed, length);
+            return false;
+        }
+        TimeSpan delay = a.Riders.Count > 0 ? Paced(RideStartDelayMs) : step.RideAlone ? Paced(RideAloneDelayMs) : TimeSpan.Zero;
         var ride = new Ride(path, carrier, length, a.StepGeneration, MonsterService.NowMs + (long)delay.TotalMilliseconds,
-            Paced((int)(length / speed * 1000)).TotalMilliseconds);
+            Paced((int)(length / speed * 1000)).TotalMilliseconds)
+        {
+            DriveTo = step.DriveAfter, SpeedCm = step.RideSpeedPercent != 100 ? (long)MathF.Round(speed * 100) : 0, Alone = step.RideAlone,
+        };
+        long delayMs = (long)delay.TotalMilliseconds;
+        var (routeStart, routeEnd) = (path[0], path[^1]);
+        LogRideStarts(a.Plan.SceneEntry, step.RideAfter, delayMs, length, speed, step.RideAlone, carrier.NpcId, carrier.X, carrier.Z,
+            routeStart.X, routeStart.Z, routeEnd.X, routeEnd.Z);
+        // A carrier that walks alone offers nothing on its way (the feeding it has just had would still show its button).
+        if (step.RideAlone) _loop.PostLegacy(() => SetActorBuffsAsync(carrier, []), "dungeon ride");
         _loop.ScheduleLegacy(delay, () => RideTickAsync(a, ride, arrived), "dungeon ride");
         return true;
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Scripted scene {Scene} ride: moving unit {Npc} failed")]
     private partial void LogRideMoveFailed(Exception e, long scene, int npc);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} ride {Route} not started: carrier {Carrier}, route found {Found}")]
+    private partial void LogRideNotStartedCarrier(long scene, long route, int carrier, bool found);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} ride {Route} not started: speed {Speed} m/s, length {Length} m")]
+    private partial void LogRideNotStartedSpeed(long scene, long route, float speed, float length);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} ride {Route} starts in {Delay} ms: {Length:0.0} m at {Speed:0.0} m/s, alone {Alone}, "
+        + "carrier {Carrier} at {X:0.0},{Z:0.0}, route from {FromX:0.0},{FromZ:0.0} to {ToX:0.0},{ToZ:0.0}")]
+    private partial void LogRideStarts(long scene, long route, long delay, float length, float speed, bool alone, int carrier, float x, float z,
+        float fromX, float fromZ, float toX, float toZ);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} carrier {Carrier} shown again at {X:0.0},{Z:0.0} as {Uid}")]
+    private partial void LogCarrierShownAgain(long scene, int carrier, float x, float z, long uid);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Scripted scene {Scene} ride ended: carrier {Carrier} at {X:0.0},{Z:0.0}")]
+    private partial void LogRideEnded(long scene, int carrier, float x, float z);
 
     /// <summary>The route's points past <paramref name="from"/> and before <paramref name="to"/> metres, in route order.</summary>
     internal static IEnumerable<(float X, float Y, float Z, float Face)> RideCorners(IReadOnlyList<(float X, float Y, float Z)> path,
@@ -138,9 +203,55 @@ public sealed partial class DungeonService
         }
     }
 
+    /// <summary>Tells the viewers the carrier's walking speed in cm/s (attribute 113), when it is not that already; 0: its own.</summary>
+    private async Task SetCarrierSpeedAsync(SceneActorUnit carrier, long speedCm)
+    {
+        if (speedCm <= 0 || carrier.CarrySpeed == speedCm) return;
+        carrier.CarrySpeed = speedCm;
+        await _world.ToUnitViewersAsync(carrier, CombatService.AoiAttrChange, new AOIAttrChange
+        {
+            EntityUuid = (ulong)carrier.Uid,
+            Property = { new AoIProperty { Idx = AttributeId.Speed, Data = speedCm, BaseData = speedCm } },
+        });
+    }
+
+    /// <summary>
+    /// A step that is driven but has no route (ScriptedStep.DriveAfter without RideAfter): the seated player drives the
+    /// carrier from where it stands until someone reaches the region, then <paramref name="arrived"/> runs. False when
+    /// the step has none or nobody is seated, and the caller goes on at once.
+    /// </summary>
+    private async Task<bool> TryStartDriveAsync(Attempt a, ReconstructedDungeons.ScriptedStep step, SceneActorUnit? carrier,
+        Func<Task> arrived)
+    {
+        if (step.DriveAfter == 0 || step.RideAfter != 0 || carrier == null || !a.Riders.Keys.Any(_vehicles.IsSeatedOnSceneActor)) return false;
+        if (step.RideSpeedPercent != 100) await SetCarrierSpeedAsync(carrier, (long)MathF.Round(RideSpeed(carrier) * step.RideSpeedPercent));
+        a.Driving = new Drive(carrier, step.DriveAfter, arrived, a.StepGeneration);
+        return true;
+    }
+
+    /// <summary>The carrier leaves and enters again at its place with a new UID, as a scene actor of the next step would.</summary>
+    private async Task ReshowCarrierAsync(Attempt a, SceneActorUnit old)
+    {
+        int at = a.SceneActors.IndexOf(old);
+        if (at < 0 || a.Settled || a.Room.Closed) return;
+        var unit = new SceneActorUnit
+        {
+            Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = old.SceneEntry, InstanceId = old.InstanceId,
+            X = old.X, Y = old.Y, Z = old.Z, Face = old.Face, NpcId = old.NpcId, Point = old.Point, EntityType = old.EntityType,
+            Camp = old.Camp, Name = old.Name, Template = old.Template, BornMs = MonsterService.NowMs, CarrySpeed = old.CarrySpeed,
+        };
+        a.RetiredActors.Add(old.Uid);
+        await _instances.RemovePropAsync(a.Room, old);
+        if (await _instances.AddPropAsync(a.Room, unit)) a.SceneActors[at] = unit;
+        else a.SceneActors.RemoveAt(at);
+        LogCarrierShownAgain(a.Plan.SceneEntry, unit.NpcId, unit.X, unit.Z, unit.Uid);
+    }
+
     private async Task RideTickAsync(Attempt a, Ride ride, Func<Task> arrived)
     {
         if (a.Settled || a.Room.Closed || a.StepGeneration != ride.Generation) return;
+        // The ride's own speed, before the first move: the client walks the carrier, and its driver drives it, at attribute 113.
+        if (ride.Walked < 0) await SetCarrierSpeedAsync(ride.Carrier, ride.SpeedCm);
         double done = Math.Min(1.0, (MonsterService.NowMs - ride.StartMs) / Math.Max(1.0, ride.DurationMs));
         float walked = (float)(done * ride.Length);
         // The position follows the wall clock, so a late tick (a loaded loop) jumps ahead: the riders still pass every
@@ -151,6 +262,16 @@ public sealed partial class DungeonService
         await WalkLegAsync(a, ride, walked);
         if (done >= 1)
         {
+            LogRideEnded(a.Plan.SceneEntry, ride.Carrier.NpcId, ride.Carrier.X, ride.Carrier.Z);
+            // A carrier that walked alone is shown again where it parked: the client keeps an NPC's interaction range at the place it
+            // appeared (inferred), and the next step's interaction would only be offered at the start.
+            if (ride.Alone) await ReshowCarrierAsync(a, ride.Carrier);
+            // A driven ride: the route's end hands the carrier to its seated driver, who goes on until the region.
+            if (ride.DriveTo != 0 && a.Riders.Keys.Any(_vehicles.IsSeatedOnSceneActor))
+            {
+                a.Driving = new Drive(ride.Carrier, ride.DriveTo, arrived, ride.Generation);
+                return;
+            }
             // The step's end removes the carrier: not while a rider's client still plays the seat's exit animation, which reads
             // the vehicle (LC_PassengerComponent._detachFromVehicle), or its next scene change stops at the loading screen.
             bool seated = a.Riders.Count > 0;
@@ -161,9 +282,28 @@ public sealed partial class DungeonService
         else _loop.ScheduleLegacy(Paced(RideTickMs), () => RideTickAsync(a, ride, arrived), "dungeon ride");
     }
 
+    /// <summary>
+    /// A participant's accepted walk while a ride is driven: the carrier is where its seated driver is (the driver's client
+    /// moves it and reports its own walk, as VehicleSeats.MovedAsync), and the drive ends when anyone reaches its region.
+    /// </summary>
+    private async Task DroveAsync(Attempt a, GameSession s)
+    {
+        if (a.Driving is not { } drive || a.Settled || a.Room.Closed || a.StepGeneration != drive.Generation) return;
+        bool driver = a.Riders.ContainsKey(s) && _vehicles.IsSeatedOnSceneActor(s);
+        if (driver) (drive.Carrier.X, drive.Carrier.Y, drive.Carrier.Z, drive.Carrier.Face) = (s.Position.X, s.Position.Y, s.Position.Z, s.Face);
+        // A driver's report can land past a narrow region it crossed since the last one, so its leg is tested too.
+        if (_catalog.SceneRegion(a.Plan.SceneEntry, drive.Region) is not { } region || !Reached(s, region.Contains, driver)) return;
+        a.Driving = null;
+        bool seated = a.Riders.Count > 0;
+        await PutDownRidersAsync(a);
+        if (seated) _loop.ScheduleLegacy(Paced(RideExitDelayMs), drive.Arrived, "dungeon ride end");
+        else await drive.Arrived();
+    }
+
     private async Task MoveRidersAsync(Attempt a, Ride ride, (float X, float Y, float Z, float Face) at)
     {
         ride.Carrier.X = at.X; ride.Carrier.Y = at.Y; ride.Carrier.Z = at.Z; ride.Carrier.Face = at.Face;
+        if (ride.Alone) return;
         // A move that fails for one unit must not strand the step: the ride goes on and arrives.
         foreach (var member in Present(a).Where(m => a.Loaded.Contains(m) && !m.SceneLoading))
         {

@@ -23,6 +23,8 @@ public sealed partial class CombatService
     {
         public Dictionary<int, int> TemporarySlotRows { get; } = [];
         public string ParameterSignature { get; set; } = "";
+        /// <summary>Skill mode (BuffConfig type 15) last told per group, for the cooldown entries the client needs when a mode starts or ends.</summary>
+        public Dictionary<int, int> GroupModes { get; } = [];
         public bool TrainingPaused { get; set; }
         public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = [];
     }
@@ -95,6 +97,7 @@ public sealed partial class CombatService
                     && _data.Row("SkillConfig", _skills.RealId(learned, at)) is { } learnedRow
                     && mods.Any(m => m.Scope == 1 && SkillParameterRules.Matches(m, learned, SkillParameterRules.CategoriesOf(_data, learnedRow))))
                     groups.Add(learned);
+        var modes = new Dictionary<int, int>();
         foreach (var group in groups)
         {
             int level = _skills.Level(session.Progress, group);
@@ -104,7 +107,7 @@ public sealed partial class CombatService
             var groupInfo = new BeAffectedParamInfoEx();
             foreach (var type in mods.Where(m => SkillParameterRules.Matches(m, group, tags)).Select(m => m.Type).Distinct().Order())
             {
-                if (type == 15) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = SkillParameterRules.Mode(group, tags, mods) };
+                if (type == 15) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = modes[group] = SkillParameterRules.Mode(group, tags, mods) };
                 else if (type == 44) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = CanQueueSkill(session, group) ? 1 : 0 };
                 else if (SkillParameterRules.Field(type) is { } field)
                 {
@@ -127,10 +130,53 @@ public sealed partial class CombatService
         if (session.SkillProtocol.ParameterSignature != signature)
         {
             session.SkillProtocol.ParameterSignature = signature;
-            await session.SendGameAsync(SkillAffectedEx, update);
+            await SendParametersWithModeCooldownsAsync(session, update, modes);
         }
         await RefreshTemporarySlotsAsync(session);
     }
+
+    /// <summary>
+    /// The 31132 parameters, with the 31113 cooldown entries of the modes (type 15) that start or end. Genesis files a
+    /// cooldown entry under the new mode before it tells the mode, and another after the mode ends: the client keys its
+    /// cooldowns by group * 10000 + mode (LC_Skill_Function.GetSkillCDInfoKey) and its bar reads the key of the mode row
+    /// it shows, so without an entry the replaced skill (Focused Arrow Strike under Unlimited Shooting) neither swaps
+    /// nor lights up. Each entry tells the cooldown the cast check holds for that key (<see cref="CooldownEnd"/>).
+    /// </summary>
+    private static async Task SendParametersWithModeCooldownsAsync(GameSession session, SkillBeAffectedParamExNotify update, Dictionary<int, int> modes)
+    {
+        var told = session.SkillProtocol.GroupModes;
+        var started = new SkillCdNotify { Uuid = update.Uuid };
+        var ended = new SkillCdNotify { Uuid = update.Uuid };
+        long now = Now;
+        foreach (var (group, mode) in modes)
+            if (mode > 0 && told.GetValueOrDefault(group) != mode) started.Infos.Add(ModeCooldown(session, group, mode, now));
+        foreach (var (group, mode) in told)
+            if (mode > 0 && modes.GetValueOrDefault(group) != mode)
+            {
+                // The ended mode's key is closed; the plain key keeps the cooldown the server still holds, or is left alone
+                // when none runs (an empty entry would wipe a running one on the client: LC_Scene_Sync._skillCDNotify).
+                ended.Infos.Add(new SkillCdInfo { SkillId = group, SkillMode = mode, CdStartTimestampMs = now, CdEndTimestampMs = now });
+                if (CooldownEnd(session, group, 0) > now) ended.Infos.Add(ModeCooldown(session, group, 0, now));
+            }
+        told.Clear();
+        foreach (var (group, mode) in modes) if (mode > 0) told[group] = mode;
+        if (started.Infos.Count > 0) await session.SendGameAsync(SkillCdUpdate, started);
+        await session.SendGameAsync(SkillAffectedEx, update);
+        if (ended.Infos.Count > 0) await session.SendGameAsync(SkillCdUpdate, ended);
+    }
+
+    /// <summary>The 31113 entry of a group's mode key: its running cooldown, or an empty entry when none runs.</summary>
+    private static SkillCdInfo ModeCooldown(GameSession session, int group, int mode, long now)
+    {
+        var info = new SkillCdInfo { SkillId = group, SkillMode = mode };
+        long end = CooldownEnd(session, group, mode);
+        if (end > now) { info.CdStartTimestampMs = now; info.CdEndTimestampMs = end; }
+        return info;
+    }
+
+    /// <summary>When a cast of this group under this mode is ready again: the group's shared cooldown or the mode's own.</summary>
+    internal static long CooldownEnd(GameSession session, int group, int mode) =>
+        Math.Max(session.SkillCds.GetValueOrDefault(group), session.SkillModeCds.GetValueOrDefault((group, mode)));
 
     private async Task RefreshTemporarySlotsAsync(GameSession session)
     {
@@ -173,6 +219,20 @@ public sealed partial class CombatService
             || _data.Row("SkillConfig", info.SkillID) == null) return Task.CompletedTask;
         uint route = extra ? highLevel ? ExtraUseInSkillHigh : ExtraUseInSkill : highLevel ? UseInSkillHigh : UseInSkill;
         return ToPlayerAndViewersAsync(caster, route, info);
+    }
+
+    /// <summary>
+    /// A skill animation the server starts on a player, with no hit (a scripted slide's end, DungeonService.Slide): the same
+    /// 31100 timeline a cast sends, for the row's _iActionTime.
+    /// </summary>
+    public Task PlaySkillAnimationAsync(GameSession s, int skillId)
+    {
+        if (s.Role == null || SkillConfig.Get(_data, skillId) is not { } skill) return Task.CompletedTask;
+        return SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = skillId, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face,
+            SessionId = ++_sessionIds, SkillMs = (int)skill.ActionTime, StartTime = Now, PlayAct = true,
+        });
     }
 
     public Task SendMonsterTimelineAsync(MonsterUnit monster, UseInSkillInfo info, bool highLevel = false, bool extra = false)
@@ -247,6 +307,104 @@ public sealed partial class CombatService
             };
             foreach (var viewer in recipients) await viewer.SendGameAsync(SkillBullet, bullet);
         }
+    }
+
+    /// <summary>SkillConfig._kScriptLogic of Blitz Beat's rows, the manual 13102 and the automatic 13110 alike.</summary>
+    private const string BlitzBeatLogic = "BlitzBeat";
+
+    /// <summary>enum_DisplayEffectType.PendantShow (Lua_GameDefine): LC_PerformEffect_Mgr.PlayPendantShow flies the
+    /// caster's pendant (the falcon) along the effect's bullet.</summary>
+    private const int DisplayPendantShow = 5;
+
+    /// <summary>The falcon's EffectData id from the show: show * 1000 + 200 (Blitz Beat 13102200, a bullet with
+    /// m_kBulletFalcon). (inferred) From a capture of the Genesis server; no client table links the show to it.</summary>
+    private const int FalconEffectShowScale = 1000, FalconEffectOffset = 200;
+
+    /// <summary>
+    /// Blitz Beat is cast and shown on the HIGH_LEVEL routes (31106/31107/31109) although its rows' _iSkillEffectLevel is 0.
+    /// (inferred) From a capture of the Genesis server: the client handles 31100/31106 and 31119/31109 with the same
+    /// handlers (LC_Scene_Sync._useInSkill, _skillEffectDisplay), so nothing on the client asks for it.
+    /// </summary>
+    internal static bool FalconHigh(JsonElement row) => new SkillConfig(row).ScriptLogic == BlitzBeatLogic;
+
+    /// <summary>
+    /// The Hunter's falcon flight: the cast's 31109 SkillEffectDisplayNotify, sent with the cast timeline, names the falcon
+    /// effect (<see cref="FalconEffectOffset"/>) with effectType PendantShow at the target. Seen on the Genesis server for
+    /// the manual (1310205) and automatic (1311005) cast, with no bullet notify for it.
+    /// </summary>
+    private Task SendFalconAsync(GameSession caster, JsonElement row, long skillId, long targetId) =>
+        caster.Role == null || targetId <= 0 ? Task.CompletedTask
+        : SendSkillEffectAsync(caster, new SkillEffectDisplayNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectType = DisplayPendantShow,
+            EffectId = (int)(new SkillConfig(row).ScriptShow * FalconEffectShowScale + FalconEffectOffset),
+            MasterId = caster.Role.Id, SkillId = skillId,
+        }, highLevel: true);
+
+    /// <summary>
+    /// Blitz Beat's automatic proc (a Basic Attack's chance): the cast timeline on the extra high-level route (31107, as the
+    /// Genesis server sends for the automatic row 1311005) without the caster's action (PlayAct false), the falcon flight,
+    /// then the extra cast's hit. The proc is no cast, so the caster pays and starts nothing. Without the timeline the client
+    /// played the flight twice and no hit sound (inferred: only the timeline separates it from a manual cast). The timeline
+    /// and its 31101 share one session id: the client ties a hit to its cast by sessionId and rootCtxGuid (LC_DamageHelper).
+    /// </summary>
+    internal async Task CastAutoFalconAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets)
+    {
+        if (s.Role == null || targets.Count == 0) return;
+        var target = targets[0];
+        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
+        await SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
+            SessionId = id, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
+        }, highLevel: true, extra: true);
+        await SendFalconAsync(s, row, skillId, target.Uid);
+        await CastExtraAsync(s, row, targets, sessionId: id);
+    }
+
+    /// <summary>SkillConfig._kScriptLogic of Warg Strike's mode 0 rows (13312, show 13316), the rows a manual cast and the
+    /// automatic one of Focused Arrow Strike (13317's logic data) both cast.</summary>
+    private const string WargStrikeLogic = "WugStrike_";
+
+    /// <summary>
+    /// The wolf's effects, from a capture of the Genesis server for a manual Warg Strike (1331203): no client table names
+    /// them (show 13316's m_kShows is only [[1331601, 1]]). 1331605 is the 31108 bullet of the charge, 1331602 its 31109
+    /// PendantShow (a wolf bullet with the animation Skill7) and 1331204 the hit's showPoint (the wolf-attack hit sound).
+    /// </summary>
+    private const int WolfBullet = 1331605, WolfEffect = 1331602, WargHitEffect = 1331204;
+
+    /// <summary>(inferred) The capture's timings: the charge 334 ms after the cast timeline, its bullet 158 ms long, about
+    /// 190 ms before the hit.</summary>
+    private const int WolfDelayMs = 334, WolfBulletMs = 158;
+
+    /// <summary>
+    /// Warg Strike is cast and shown on the HIGH_LEVEL routes (31106/31108/31109), as in the capture, although its rows'
+    /// _iSkillEffectLevel is 0. (inferred) As for <see cref="FalconHigh"/>, nothing on the client asks for it.
+    /// </summary>
+    internal static bool WargStrikeHigh(JsonElement row) => new SkillConfig(row).ScriptLogic == WargStrikeLogic;
+
+    /// <summary>The 31101 showPoint of a row's hits, on monsters and players alike: Warg Strike's from the capture (inferred
+    /// for its automatic cast, which casts the same row), else the show's own damage effect.</summary>
+    private int HitShowPoint(JsonElement row) => WargStrikeHigh(row) ? WargHitEffect : HitEffect(new SkillConfig(row).ScriptShow);
+
+    /// <summary>
+    /// The wolf's charge of a manual Warg Strike: a 31108 bullet and a 31109 PendantShow (<see cref="WolfEffect"/>). Without
+    /// them the wolf never moved on screen. The automatic cast sends no timeline and shows no wolf, as on the Genesis server.
+    /// </summary>
+    private async Task SendWolfAsync(GameSession caster, long skillId, long targetId)
+    {
+        if (caster.Role == null || targetId <= 0) return;
+        await SendSkillBulletAsync(caster, new SkillFixTimeBulletNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectId = WolfBullet, FixedTime = WolfBulletMs,
+            TargetPosition = FindMonster(caster.WorldScene, targetId)?.Pos.Clone(), SkillConfigId = (int)skillId,
+            MasterId = caster.Role.Id, SourcePosition = caster.Position.Clone(), StartTimestampMs = Now,
+        }, highLevel: true);
+        await SendSkillEffectAsync(caster, new SkillEffectDisplayNotify
+        {
+            SourceId = caster.Role.Id, TargetId = targetId, EffectId = WolfEffect, EffectType = DisplayPendantShow,
+            MasterId = caster.Role.Id, SkillId = skillId,
+        }, highLevel: true);
     }
 
     private int BulletLifeTime(int effect) =>
