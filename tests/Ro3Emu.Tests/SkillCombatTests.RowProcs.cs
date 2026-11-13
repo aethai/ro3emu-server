@@ -87,6 +87,31 @@ public sealed partial class SkillCombatTests
         Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
     }
 
+    [ClientDataFact] // #433: a kept hit that kills lands outside the character lock its kill reward takes, so the next cast still answers
+    public async Task AHeldTurnUndeadThatKillsDoesNotStallTheNextCast()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, _) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        var mob = await Target("alice", stationary: true);
+        await Loop.InvokeAsync(() =>
+        {
+            mob.Hp = 1000000; mob.X = a.Position.X + 1; mob.Y = a.Position.Y; mob.Z = a.Position.Z;
+            return Task.CompletedTask;
+        });
+        await CastAtAsync(bot, 1411801, mob);
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var first = a.SkillCast!;
+        var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
+        int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
+        while (MonsterService.NowMs < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
+        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); mob.Hp = 1; return Task.CompletedTask; });
+        await CastAtAsync(bot, 1411801, mob);
+        var second = Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId);
+        Assert.Same(second, await Task.WhenAny(second, Task.Delay(TimeSpan.FromSeconds(5))));
+        Assert.True(mob.Hp <= 0);
+    }
+
     [ClientDataFact] // Heavy Cannon Shot: "The next time you Deals DMG, removes Charge Up and triggers Charge Up Strike"
     public async Task ChargeUpGoesOffOnTheNextHit()
     {
