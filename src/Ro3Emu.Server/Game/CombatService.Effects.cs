@@ -425,15 +425,17 @@ public sealed partial class CombatService
 
     /// <summary>
     /// An extra cast of a SkillConfig row on monsters the caller chose, through the ordinary effect path (damage, kills,
-    /// statistics, 31101). It is an extra skill: it pays nothing, starts no cooldown and triggers no CastResolved.
+    /// statistics, 31101). It is an extra skill: it pays nothing, starts no cooldown and triggers no CastResolved. A caller
+    /// that already told its timeline passes that timeline's <paramref name="sessionId"/>, so the hit belongs to it.
     /// </summary>
-    internal Task CastExtraAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets, bool parametersApplied = false)
+    internal Task CastExtraAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets, bool parametersApplied = false,
+        long sessionId = 0)
     {
         if (s.Role == null || targets.Count == 0) return Task.CompletedTask;
         var target = targets[0];
         var action = new ActiveSkillCast
         {
-            Id = ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = sessionId > 0 ? sessionId : ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = parametersApplied ? row : ExtraRow(s, row),
             Request = new CastSkillReq
             {

@@ -282,21 +282,24 @@ public sealed partial class CombatService
         }, highLevel: true);
 
     /// <summary>
-    /// The falcon of Blitz Beat's automatic proc (a Basic Attack's chance): the cast timeline on the extra high-level route
-    /// (31107, as the Genesis server sends for the automatic row 1311005) without the caster's action (PlayAct false), then
-    /// the falcon flight. The proc is no cast, so the caster pays and starts nothing. Without the timeline the client played
-    /// the flight twice and no hit sound (inferred: only the timeline separates it from a manual cast).
+    /// Blitz Beat's automatic proc (a Basic Attack's chance): the cast timeline on the extra high-level route (31107, as the
+    /// Genesis server sends for the automatic row 1311005) without the caster's action (PlayAct false), the falcon flight,
+    /// then the extra cast's hit. The proc is no cast, so the caster pays and starts nothing. Without the timeline the client
+    /// played the flight twice and no hit sound (inferred: only the timeline separates it from a manual cast). The timeline
+    /// and its 31101 share one session id: the client ties a hit to its cast by sessionId and rootCtxGuid (LC_DamageHelper).
     /// </summary>
-    internal async Task ShowAutoFalconAsync(GameSession s, JsonElement row, MonsterUnit target)
+    internal async Task CastAutoFalconAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets)
     {
-        if (s.Role == null) return;
-        long skillId = new SkillConfig(row).Id;
+        if (s.Role == null || targets.Count == 0) return;
+        var target = targets[0];
+        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
         await SendCastTimelineAsync(s, new UseInSkillInfo
         {
             SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
-            SessionId = ++_sessionIds, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
+            SessionId = id, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
         }, highLevel: true, extra: true);
         await SendFalconAsync(s, row, skillId, target.Uid);
+        await CastExtraAsync(s, row, targets, sessionId: id);
     }
 
     private int BulletLifeTime(int effect) =>

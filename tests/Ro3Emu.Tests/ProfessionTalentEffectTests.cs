@@ -223,40 +223,13 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
     {
         await Start();
         await using var bot = await _host.InWorldAsync("Talent");
-        var monster = await OnLoop(async () =>
-        {
-            var s = Session;
-            s.Progress!.Career = 1000;
-            s.Progress.Skills[BlitzBeatGroup] = 1;
-            s.Tasks ??= new DBTaskInfo();
-            s.Tasks.CompleteTaskNum[10101170] = 1;
-            s.Tasks.CompleteTaskNum[10103160] = 1;
-            s.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
-            await _host.Service<SeasonTalentService>().SyncAsync(s);
-            var spawned = await _host.Service<MonsterService>().SpawnSingleAsync(s.SceneEntry, 16320001,
-                new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, 0), s.InstanceId);
-            Assert.NotNull(spawned);
-            spawned.Hp = 1_000_000;
-            return spawned;
-        });
+        var monster = await BlitzBeatHunter();
 
         async Task<bool> FiresAt(int roll)
         {
             int Hits() => bot.Inbox.Snapshot().Count(e => e.IsGame(CombatService.SkillHit) && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == AutoRow);
             int before = Hits();
-            _host.Service<TalentProcs>().Roll = bound => bound == 10000 ? roll : bound - 1;
-            await OnLoop(async () =>
-            {
-                var action = new ActiveSkillCast
-                {
-                    Id = 1, OwnerId = Session.Role!.Id, WorldScene = Session.WorldScene, Origin = Session.Position.Clone(),
-                    Request = new CastSkillReq { SkillId = AttackRow, TargetId = monster.Uid },
-                    Row = _host.Service<GameData>().Row("SkillConfig", AttackRow)!.Value, StartMs = 0, ChantMs = 0, ActionMs = 1,
-                };
-                foreach (var resolved in _host.Service<CombatService>().CastResolved)
-                    await resolved(Session, action, [monster], new SkillHitInfo());
-                return 0;
-            });
+            await BasicAttackAt(monster, roll);
             await Task.Delay(100);
             return Hits() > before;
         }
@@ -274,5 +247,61 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
             body => SeasonTalentUpgradeResp.Parser.ParseFrom(body).Result));
         Assert.True(await FiresAt(3499));
         Assert.False(await FiresAt(3500));
+    }
+
+    // The automatic proc is no cast: it tells its own timeline (31107, no cast action) and the 31101 of its hit belongs to
+    // that timeline, one sessionId and rootCtxGuid, as the client ties a hit to its cast by them (LC_DamageHelper).
+    [Fact]
+    public async Task BlitzBeatsProcHitSharesItsTimelinesSession()
+    {
+        await Start();
+        await using var bot = await _host.InWorldAsync("Talent");
+        var monster = await BlitzBeatHunter();
+        await OnLoop(() => { Session.CareerPendants = [Falcon]; return Task.FromResult(0); });
+
+        await BasicAttackAt(monster, 0);
+        var timeline = UseInSkillInfo.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.ExtraUseInSkillHigh)
+            && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == AutoRow, TimeSpan.FromSeconds(5))).Body);
+        var hit = SkillHitInfo.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == AutoRow, TimeSpan.FromSeconds(5))).Body);
+        Assert.False(timeline.PlayAct);
+        Assert.Equal(timeline.SessionId, hit.SessionId);
+        Assert.Equal(timeline.SessionId, hit.RootCtxGuid);
+    }
+
+    /// <summary>A Hunter of the talent tree with Blitz Beat learned (no falcon yet) beside a sturdy monster.</summary>
+    private Task<MonsterUnit> BlitzBeatHunter() => OnLoop(async () =>
+    {
+        var s = Session;
+        s.Progress!.Career = 1000;
+        s.Progress.Skills[BlitzBeatGroup] = 1;
+        s.Tasks ??= new DBTaskInfo();
+        s.Tasks.CompleteTaskNum[10101170] = 1;
+        s.Tasks.CompleteTaskNum[10103160] = 1;
+        s.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
+        await _host.Service<SeasonTalentService>().SyncAsync(s);
+        var spawned = await _host.Service<MonsterService>().SpawnSingleAsync(s.SceneEntry, 16320001,
+            new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, 0), s.InstanceId);
+        Assert.NotNull(spawned);
+        spawned.Hp = 1_000_000;
+        return spawned;
+    });
+
+    /// <summary>A Basic Attack on the monster resolved with this proc roll.</summary>
+    private async Task BasicAttackAt(MonsterUnit monster, int roll)
+    {
+        _host.Service<TalentProcs>().Roll = bound => bound == 10000 ? roll : bound - 1;
+        await OnLoop(async () =>
+        {
+            var action = new ActiveSkillCast
+            {
+                Id = 1, OwnerId = Session.Role!.Id, WorldScene = Session.WorldScene, Origin = Session.Position.Clone(),
+                Request = new CastSkillReq { SkillId = AttackRow, TargetId = monster.Uid },
+                Row = _host.Service<GameData>().Row("SkillConfig", AttackRow)!.Value, StartMs = 0, ChantMs = 0, ActionMs = 1,
+            };
+            foreach (var resolved in _host.Service<CombatService>().CastResolved)
+                await resolved(Session, action, [monster], new SkillHitInfo());
+            return 0;
+        });
     }
 }
