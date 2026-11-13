@@ -29,6 +29,8 @@ public sealed class ActiveSkillCast
     public required int ActionMs { get; init; }
     public bool Cancelled { get; set; }
     public bool Resolved { get; set; }
+    /// <summary>The skills of the requests refused while this cast ran: the client waits on each until its reply.</summary>
+    internal HashSet<int> RefusedRequests { get; } = [];
     public SkillObject? Operator { get; init; }
     /// <summary>Extra effects remain bound to their equipped source after asynchronous publication.</summary>
     internal Func<bool>? SourceEligible { get; init; }
@@ -62,13 +64,16 @@ public sealed partial class CombatService
         else await s.SkillCastGate.WaitAsync();
         try
         {
-            await LandShownHitAsync(s);
+            // One instant for both: whether the running cast's shown hit lands and whether it yields. Read apart, a press at
+            // the edge of the slack found the hit still ahead, then the cast yielding a millisecond later, and lost the hit.
+            long arrivedMs = Now;
+            await LandShownHitAsync(s, arrivedMs);
             using var state = await CharacterService.Lock(s);
             // Complete the runtime admission before any socket send can suspend. Frozen packets
             // retain the original order; an obsolete attachment cannot start a committed cast.
             if (s.Owners?.Current is { Notices: null } context) notices = new OwnerNotices(context);
             if (IsGuardianRequest(request)) await CastGuardianAsync(s, request.Clone());
-            else await CastCoreAsync(s, request, lineup);
+            else await CastCoreAsync(s, request, arrivedMs, lineup);
         }
         finally { notices?.Dispose(); s.SkillCastGate.Release(); admission?.Dispose(); }
         if (notices != null) await notices.FlushAsync();
@@ -78,7 +83,7 @@ public sealed partial class CombatService
     private bool IsGuardianRequest(CastSkillReq request) => _data.Row("SkillConfig", request.SkillId) is { } row
         && GameData.Int(row, "_iSystemType") is GuardianPetRules.WrapperType or GuardianPetRules.EffectType;
 
-    private async Task CastCoreAsync(GameSession s, CastSkillReq request, bool lineup = false)
+    private async Task CastCoreAsync(GameSession s, CastSkillReq request, long arrivedMs, bool lineup = false)
     {
         var req = request.Clone();
         var row = EffectiveSkillRow(s, req.SkillId);
@@ -113,7 +118,7 @@ public sealed partial class CombatService
             if (own == null && CooldownEnd(s, group, mode) > Now) error = ErrorCodes.SkillCooldown;
             else if (own == null && Now < s.SwingLockUntilMs - SwingJitterMs && new SkillConfig(row.Value).IsNormalAttack(_data)) error = ErrorCodes.SkillBusy;
             else if (s.SkillCast is { Cancelled: false } active && Now < active.StartMs + active.ChantMs + active.ActionMs
-                && !CastYields(active, row.Value, req)) error = ErrorCodes.SkillBusy;
+                && !CastYields(active, row.Value, req, arrivedMs)) error = ErrorCodes.SkillBusy;
             else error = ValidateTarget(s, row.Value, req, origin, owned == null ? WalkSlack(s) : 0,
                 _data.Row("SkillConfig", request.SkillId) is { } askedRow ? Range(askedRow) : 0);
         }
@@ -285,6 +290,7 @@ public sealed partial class CombatService
     {
         var reply = new CastSkillRsp { Result = error, IsAutoCast = req.IsAutoCast };
         if (parameter != 0) reply.Params.Add(parameter);
+        if (s.SkillCast is { Cancelled: false } running) running.RefusedRequests.Add(req.SkillId);
         await s.SendGameAsync(UseSkill, reply);
         if (s.SkillCast is not { Cancelled: false })
         {
@@ -298,12 +304,12 @@ public sealed partial class CombatService
     /// May this cast cut the running one short? The running skill decides, as in LC_Skill_RunTimeContext.SkillCanInterrupted;
     /// the client reads _bCancelCast only for its cancel button. A normal attack during a normal attack keeps its own pacing.
     /// </summary>
-    private bool CastYields(ActiveSkillCast active, JsonElement row, CastSkillReq req)
+    private bool CastYields(ActiveSkillCast active, JsonElement row, CastSkillReq req, long nowMs)
     {
         var next = new SkillConfig(row);
         var running = new SkillConfig(active.Row);
         if (next.IsNormalAttack(_data) && running.IsNormalAttack(_data)) return next.CancelCast && !SwingInFlight(active, row, req);
-        return CastYields(running.InterruptedType, running.Id == next.Id, Now - active.StartMs,
+        return CastYields(running.InterruptedType, running.Id == next.Id, nowMs - active.StartMs,
             SkillShow.InterruptOffset(_data.SkillTemplate(running.ScriptShow), active.ChantMs, active.ActionMs));
     }
 
@@ -356,14 +362,14 @@ public sealed partial class CombatService
     /// on the server: Turn Undead hits at 2.283 s of its show and yields from 2.367 s, so a held Turn Undead lost a third of
     /// its hits. Such a hit lands as the skill yields.
     /// </summary>
-    private bool HitShownBeforeYield(ActiveSkillCast action)
+    private bool HitShownBeforeYield(ActiveSkillCast action, long nowMs)
     {
         var skill = new SkillConfig(action.Row);
-        if (action.Cancelled || action.Resolved || skill.IsNormalAttack(_data) || Now < action.StartMs) return false;
+        if (action.Cancelled || action.Resolved || skill.IsNormalAttack(_data) || nowMs < action.StartMs) return false;
         var template = _data.SkillTemplate(skill.ScriptShow);
         var points = SkillShow.AttackPoints(template);
         return HitPrecedesYield(skill.InterruptedType, ImpactOffset(template, points.FirstOrDefault(0.2), action.ChantMs, action.ActionMs),
-            SkillShow.InterruptOffset(template, action.ChantMs, action.ActionMs), Now - action.StartMs);
+            SkillShow.InterruptOffset(template, action.ChantMs, action.ActionMs), nowMs - action.StartMs);
     }
 
     /// <summary>
@@ -371,9 +377,9 @@ public sealed partial class CombatService
     /// first. Called before the character lock is taken: a killing hit's reward takes that lock
     /// (RewardService.CommitKillAsync), and the lock is not reentrant, so landing it under the lock stalled the role (#433).
     /// </summary>
-    private async Task LandShownHitAsync(GameSession s)
+    private async Task LandShownHitAsync(GameSession s, long nowMs)
     {
-        if (s.SkillCast is not { } action || !HitShownBeforeYield(action)) return;
+        if (s.SkillCast is not { } action || !HitShownBeforeYield(action, nowMs)) return;
         action.Resolved = true;
         await ResolveCastAsync(s, action);
     }
@@ -809,6 +815,11 @@ public sealed partial class CombatService
             else await CastAsync(s, nextSwing);
             return;
         }
+        if (DropsWaitingRequest(s, req))
+        {
+            await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = false });
+            return;
+        }
         bool valid = req == null || req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId
             || req.InterruptSkillId == s.Attack?.SkillId || _eventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
         bool interrupted = valid && (s.SkillCast != null || s.Attack != null || _eventAttacks.ContainsKey(s));
@@ -816,11 +827,33 @@ public sealed partial class CombatService
         {
             s.Attack = null;
             _eventAttacks.Remove(s);
-            if (req?.NxtSkill != null) await LandShownHitAsync(s);
+            if (req?.NxtSkill != null) await LandShownHitAsync(s, Now);
             await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
         }
         await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = interrupted });
         if (interrupted && req?.NxtSkill is { } next) await CastAsync(s, next);
+    }
+
+    /// <summary>
+    /// A 31124 without a next skill that only drops the request the client still waits on. The client keeps a pressed skill
+    /// as its "cache" from the 31102 it sends until the reply (LC_Skill_Function.SendSkill sets SetLocalSkillCacheInfo,
+    /// LC_Scene_Sync._useSkillReq clears it), and drops it with such a 31124: on letting go of the key
+    /// (UI_Sys_Main_JoyStickSkillWidgetBaseCtrl.CancelInputSkill: interruptSkillId is that skill) or on a move during a skill
+    /// that blocks moving (LC_UnitChecker.CheckClearCacheSkill: interruptSkillId 0). The running skill is no part of it: the
+    /// client lets a skill be cut only as LC_Skill_RunTimeContext.GetSkillCanInterrupted allows, and a held Turn Undead
+    /// (_iInterruptedType 2) cannot be cut before its m_fInterruptTime. So while the running cast cannot yield to the
+    /// skill named and a request for it was refused during the cast, the cast goes on: cutting it lost every hit of a Turn
+    /// Undead pressed again and again. This server queues no request, so there is nothing else to drop (inferred).
+    /// A swing is left out: the attack loop stops on a 31124.
+    /// </summary>
+    private bool DropsWaitingRequest(GameSession s, SkillInterruptReq? req)
+    {
+        if (req is not { NxtSkill: null } || s.SkillCast is not { Cancelled: false } running) return false;
+        var skill = new SkillConfig(running.Row);
+        if (skill.IsNormalAttack(_data)) return false;
+        bool waited = req.InterruptSkillId == 0 ? running.RefusedRequests.Count > 0 : running.RefusedRequests.Contains(req.InterruptSkillId);
+        return waited && !CastYields(skill.InterruptedType, req.InterruptSkillId == running.Request.SkillId, Now - running.StartMs,
+            SkillShow.InterruptOffset(_data.SkillTemplate(skill.ScriptShow), running.ChantMs, running.ActionMs));
     }
 
     /// <summary>
