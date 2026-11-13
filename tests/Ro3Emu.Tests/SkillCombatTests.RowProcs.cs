@@ -87,6 +87,41 @@ public sealed partial class SkillCombatTests
         Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
     }
 
+    [ClientDataFact] // Letting go of a key whose press still waits on its reply drops that press (CancelInputSkill), not the running cast
+    public async Task ReleasingAHeldTurnUndeadKeepsTheCastItInterruptsNothingOf()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        await CastAtAsync(bot, 1411801, dummy);
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        await CastAtAsync(bot, 1411801, dummy); // the held key's next press, refused while the first one chants
+        Assert.NotEqual(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId == 0)).Result);
+        await bot.SendGameAsync(CombatService.SkillInterrupt, new SkillInterruptReq { InterruptSkillId = 1411801 });
+        Assert.False((await Next(bot, CombatService.SkillInterrupt, SkillInterruptResp.Parser)).IsInterruptSucc);
+        Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
+        Assert.False(a.SkillCast?.Cancelled ?? false);
+    }
+
+    [ClientDataFact] // A key held for 12 s (a press every 0.2 s): every Turn Undead it started hits, at the slack's edge too
+    public async Task EveryCastOfAHeldTurnUndeadHits()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, _, dummy) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        for (int i = 0; i < 60; i++)
+        {
+            await CastAtAsync(bot, 1411801, dummy);
+            await Task.Delay(200);
+        }
+        await Task.Delay(2500);
+        var sessions = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.UseSkill)).Select(e => CastSkillRsp.Parser.ParseFrom(e.Body))
+            .Where(r => r.Result == 0).Select(r => r.SessionId).ToList();
+        var hit = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body))
+            .Where(h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0)).Select(h => h.SessionId).ToHashSet();
+        Assert.True(sessions.Count >= 8, $"{sessions.Count} casts");
+        Assert.All(sessions, id => Assert.Contains(id, hit));
+    }
+
     [ClientDataFact] // #433: a kept hit that kills lands outside the character lock its kill reward takes, so the next cast still answers
     public async Task AHeldTurnUndeadThatKillsDoesNotStallTheNextCast()
     {
@@ -175,23 +210,24 @@ public sealed partial class SkillCombatTests
         Assert.Equal(WargHitPoint, hit.ShowPoint);
     }
 
-    // The automatic Warg Strike of Focused Arrow Strike casts the same row, but the Genesis server shows no wolf for it.
+    // The automatic Warg Strike of Focused Arrow Strike: on the Genesis server its wolf charges the target as for a manual cast
+    // (Genesis capture, Discord report), on the extra high-level timeline without the rider's action; its hit shares that session.
     [ClientDataFact]
-    public async Task TheAutomaticWargStrikeShowsNoWolf()
+    public async Task TheAutomaticWargStrikeSendsTheWolfsCharge()
     {
         await using var alice = await InWorld("Alice");
         var (bot, _, dummy) = await ReadyAsync(alice, 3400, 13305, 1330501);
         await Teach("alice", 13312);
         await CastAtAsync(bot, 1330501, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == WargStrikeRow && h.Dsts.Any(d => d.DstID == dummy.Uid));
-        await Task.Delay(200);
-        var inbox = bot.Inbox.Snapshot();
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.SkillEffectHigh)
-            && SkillEffectDisplayNotify.Parser.ParseFrom(e.Body).EffectId == WolfEffect);
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.SkillBulletHigh)
-            && SkillFixTimeBulletNotify.Parser.ParseFrom(e.Body).EffectId == WolfBullet);
-        Assert.DoesNotContain(inbox, e => e.IsGame(CombatService.ExtraUseInSkillHigh)
-            && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == WargStrikeRow);
+        var timeline = await Next(bot, CombatService.ExtraUseInSkillHigh, UseInSkillInfo.Parser, m => m.SkillID == WargStrikeRow);
+        Assert.False(timeline.PlayAct);
+        Assert.Equal(WolfBullet, (await Next(bot, CombatService.SkillBulletHigh, SkillFixTimeBulletNotify.Parser, m => m.SkillConfigId == WargStrikeRow)).EffectId);
+        var wolf = await Next(bot, CombatService.SkillEffectHigh, SkillEffectDisplayNotify.Parser, m => m.SkillId == WargStrikeRow);
+        Assert.Equal(WolfEffect, wolf.EffectId);
+        Assert.Equal(dummy.Uid, wolf.TargetId);
+        var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == WargStrikeRow && h.Dsts.Any(d => d.DstID == dummy.Uid));
+        Assert.Equal(timeline.SessionId, hit.SessionId);
+        Assert.Equal(WargHitPoint, hit.ShowPoint);
     }
 }

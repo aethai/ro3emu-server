@@ -13,18 +13,24 @@ public sealed partial class TalentProcs
 {
     private const int EnchantPoisonGroup = 15120, FearBreezeGroup = 13301, MeltDownGroup = 16203, ChargeUpGroup = 11604, WargAutoGroup = 13317;
     private const long MeteoriteRow = 1235001, FearBreezeRows = 13304, WargStrike = 13312, WargBite = 13325;
-    private const int WargKingGroup = 13326, WargFollowers = 4;
+    private const int WargKingGroup = 13326, WargFollowers = 4, SwiftWarg = 13326;
+
+    /// <summary>Warg Hunt (13323) casts as one of its _kLogicData rows [1332901, 1333001] (CombatService.WargHuntRow), so a
+    /// resolved Warg Hunt is a cast of Warg Hunt (Melee) 13329 or (Ranged) 13330, at any of their modes.</summary>
+    private const long WargHuntMelee = 13329, WargHuntRanged = 13330;
     private const long FireElement = 4, UndeadElement = 10, BowWeapon = 11, WeaponCondition = 2001, CrescentWheel = 16308, AxeTornado = 16304;
     private const long WargAutoKey = -13317, ArrowBarrageKey = -13004;
     private const int WargAutoEveryMs = 2500;
 
     /// <summary>"Casting X resets this skill's Cooldown", by the cast's group: Warg Bite "resetting the Cooldown of Warg Hunt"; Swift Warg by Warg Charge or
-    /// Warg Hunt; Flowing Shadow by Shadow Guard, Thousand Shadows or Looping Shadow; Piercing Shadow "Immediately refreshes Shadow Guard".</summary>
+    /// Warg Hunt (cast as its Melee or Ranged row); Flowing Shadow by Shadow Guard, Thousand Shadows or Looping Shadow; Piercing Shadow "Immediately
+    /// refreshes Shadow Guard".</summary>
     private static readonly Dictionary<long, int[]> CastResets = new()
     {
         [13325] = [13323],
-        [WargStrike] = [13326],
-        [13323] = [13326],
+        [WargStrike] = [SwiftWarg],
+        [WargHuntMelee] = [SwiftWarg],
+        [WargHuntRanged] = [SwiftWarg],
         [15322] = [15321],
         [15323] = [15321],
         [15320] = [15321], // Looping Shadow, "chuanying"
@@ -51,6 +57,7 @@ public sealed partial class TalentProcs
     {
         if (CastResets.TryGetValue(cast.SkillId, out var resets))
             foreach (var group in resets) await CombatService.ResetCooldownAsync(s, group);
+        ArmSwiftWarg(s, cast);
         // Crescent Wheel: "For every @{1} enemies hit, reduce Axe Tornado's Cooldown by ${4} seconds".
         if (cast.SkillId == CrescentWheel && processed.Count > 0) await CombatService.CutCooldownAsync(s, (int)AxeTornado, (long)(Value(cast.DescData, 3) * 1000) * processed.Count);
         if ((processed.FirstOrDefault(m => m.Uid == action.Request.TargetId) ?? (processed.Count > 0 ? processed[0] : null)) is not { Hp: > 0 } target) return;
@@ -86,8 +93,34 @@ public sealed partial class TalentProcs
             && _combat.Rolls.Proc(10000) < chanceOfArrows) await CastNamedRowAsync(s, FearBreezeRows * 100 + breeze.ConfigId % 100, [target]);
         // Warg Strike: "every ${7} seconds, using Focused Arrow Strike casts this skill on the target": 13317's [10000, row] at the level learned.
         if (cast.ScriptLogic.StartsWith("AimedBolt", StringComparison.Ordinal) && _skills.Level(s.Progress!, (int)WargStrike) is > 0 and var level
-            && BuffConfig.Get(_data, WargAutoGroup * 100 + level)?.LogicData is [_, var strike, ..] && Ready(s, WargAutoKey, WargAutoEveryMs))
-            await CastNamedRowAsync(s, strike, [target]);
+            && BuffConfig.Get(_data, WargAutoGroup * 100 + level)?.LogicData is [_, var strike, ..] && Ready(s, WargAutoKey, WargAutoEveryMs)
+            && SkillConfig.Get(_data, strike) is { } wolf) await _combat.CastAutoWolfAsync(s, wolf.Row, [target]);
+    }
+
+    /// <summary>
+    /// Swift Warg: "When this skill reaches Lv. @{1}, after casting 【Warg Charge】 or 【Warg Hunt】, your next movement instead
+    /// casts this skill in the movement direction" (its Lv. 1 row's text, @{1} the last parameter of its _iDescription, 2).
+    /// The Genesis server dashes on the first step after the cast (Genesis capture, Discord report "Swift Warg / Warg Strike /
+    /// Warg Hunt not behaving properly"). The client has no rule for it (no _iMoveCacheSkill row, no Lua), so the server casts
+    /// the learned row on that walk (inferred), as it casts the Skill Bar's members.
+    /// </summary>
+    private void ArmSwiftWarg(GameSession s, SkillConfig cast)
+    {
+        if (cast.SkillId is not (WargStrike or WargHuntMelee or WargHuntRanged)) return;
+        int level = _skills.Level(s.Progress!, SwiftWarg);
+        if (level <= 0 || level < SwiftWargMoveLevel()) return;
+        int row = _skills.RealId(SwiftWarg, level);
+        if (row > 0) _combat.CastOnNextWalk(s, row);
+    }
+
+    /// <summary>The @{1} of Swift Warg's Lv. 1 text: its _iDescription's last value that is no colour or link markup.</summary>
+    private int SwiftWargMoveLevel()
+    {
+        if (SkillConfig.Get(_data, _skills.RealId(SwiftWarg, 1))?.Description is not { ValueKind: JsonValueKind.Array } text) return int.MaxValue;
+        string? last = null;
+        foreach (var value in text.EnumerateArray().Skip(1))
+            if (value.ValueKind == JsonValueKind.String && value.GetString() is { } word && !word.StartsWith('<')) last = word;
+        return int.TryParse(last, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int at) ? at : int.MaxValue;
     }
 
     private async Task RowProcsOnDealtAsync(GameSession s, MonsterUnit target, JsonElement row, long amount)

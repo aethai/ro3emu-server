@@ -388,8 +388,8 @@ public sealed partial class CombatService
     private int HitShowPoint(JsonElement row) => WargStrikeHigh(row) ? WargHitEffect : HitEffect(new SkillConfig(row).ScriptShow);
 
     /// <summary>
-    /// The wolf's charge of a manual Warg Strike: a 31108 bullet and a 31109 PendantShow (<see cref="WolfEffect"/>). Without
-    /// them the wolf never moved on screen. The automatic cast sends no timeline and shows no wolf, as on the Genesis server.
+    /// The wolf's charge of Warg Strike: a 31108 bullet and a 31109 PendantShow (<see cref="WolfEffect"/>). Without them the
+    /// wolf never moved on screen.
     /// </summary>
     private async Task SendWolfAsync(GameSession caster, long skillId, long targetId)
     {
@@ -405,6 +405,27 @@ public sealed partial class CombatService
             SourceId = caster.Role.Id, TargetId = targetId, EffectId = WolfEffect, EffectType = DisplayPendantShow,
             MasterId = caster.Role.Id, SkillId = skillId,
         }, highLevel: true);
+    }
+
+    /// <summary>
+    /// Warg Strike's automatic cast (Focused Arrow Strike, every ${7} seconds): on the Genesis server the wolf leaves the
+    /// rider, charges the target and strikes while the bubble still names Focused Arrow Strike (Genesis capture, Discord
+    /// report "Focused Arrow Strike should auto cast Warg Strike"). As <see cref="CastAutoFalconAsync"/>: the extra
+    /// high-level timeline without the caster's action (PlayAct false), the wolf's charge, then the extra cast's hit on the
+    /// same session id. Which messages carry it is (inferred) from the manual cast and the falcon's proc.
+    /// </summary>
+    internal async Task CastAutoWolfAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets)
+    {
+        if (s.Role == null || targets.Count == 0) return;
+        var target = targets[0];
+        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
+        await SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
+            SessionId = id, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = false,
+        }, highLevel: true, extra: true);
+        await SendWolfAsync(s, skillId, target.Uid);
+        await CastExtraAsync(s, row, targets, sessionId: id);
     }
 
     private int BulletLifeTime(int effect) =>

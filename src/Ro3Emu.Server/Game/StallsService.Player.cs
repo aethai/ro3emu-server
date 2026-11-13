@@ -34,6 +34,14 @@ public sealed partial class StallsService
             + PassPrivileges.Added(_data, s, PassPrivileges.StallSlotAdd);
     }
 
+    /// <summary>
+    /// The stall puppet is drawn from NpcStallsData.carrer and curUseAppearances (LC_Display_Agent, UT_Stall branch),
+    /// the same inputs as the seller's own entity, so it takes the worn wardrobe rather than the creation hair alone.
+    /// The look is captured when the stall opens; later wardrobe changes are not pushed to it (inferred).
+    /// </summary>
+    private static Dictionary<int, int> WornAppearances(GameSession s) =>
+        s.Wardrobe?.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value) ?? RoleProto.Appearances(s.Role!);
+
     private async Task StartAsync(GameSession s, PlayerStartStallsReq req)
     {
         var role = s.Role;
@@ -71,7 +79,7 @@ public sealed partial class StallsService
                     Key = PlayerKey(s.Role.Id), Owner = s.Role.Id, Scene = runtime.SceneEntry, LineNumber = runtime.LineNumber,
                     Title = req.StallsTitle,
                     OwnerName = s.Role.Name, Career = s.Progress!.Career, Level = s.Progress.Level, Sex = s.Role.Sex,
-                    Area = s.Role.Area, Appearance = RoleProto.Appearances(s.Role), X = s.Position.X, Y = s.Position.Y, Z = s.Position.Z,
+                    Area = s.Role.Area, Appearance = WornAppearances(s), X = s.Position.X, Y = s.Position.Y, Z = s.Position.Z,
                     OpenTime = Now, Timeout = Now + Param("StallsTime", 604800), MaxGrid = slots,
                     NextItemId = old?.NextItemId ?? 1, TaxRate = meta.CurTax.Key,
                 };
