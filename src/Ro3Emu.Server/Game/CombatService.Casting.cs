@@ -110,7 +110,7 @@ public sealed partial class CombatService
         if (error == 0)
         {
             int group = (int)GameData.Int(row!.Value, "_iSkillID"), mode = (int)GameData.Int(row.Value, "_iMode");
-            if (own == null && Math.Max(s.SkillCds.GetValueOrDefault(group), s.SkillModeCds.GetValueOrDefault((group, mode))) > Now) error = ErrorCodes.SkillCooldown;
+            if (own == null && CooldownEnd(s, group, mode) > Now) error = ErrorCodes.SkillCooldown;
             else if (own == null && Now < s.SwingLockUntilMs - SwingJitterMs && new SkillConfig(row.Value).IsNormalAttack(_data)) error = ErrorCodes.SkillBusy;
             else if (s.SkillCast is { Cancelled: false } active && Now < active.StartMs + active.ChantMs + active.ActionMs
                 && !CastYields(active, row.Value, req)) error = ErrorCodes.SkillBusy;

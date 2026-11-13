@@ -23,6 +23,8 @@ public sealed partial class CombatService
     {
         public Dictionary<int, int> TemporarySlotRows { get; } = [];
         public string ParameterSignature { get; set; } = "";
+        /// <summary>Skill mode (BuffConfig type 15) last told per group, for the cooldown entries the client needs when a mode starts or ends.</summary>
+        public Dictionary<int, int> GroupModes { get; } = [];
         public bool TrainingPaused { get; set; }
         public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = [];
     }
@@ -95,6 +97,7 @@ public sealed partial class CombatService
                     && _data.Row("SkillConfig", _skills.RealId(learned, at)) is { } learnedRow
                     && mods.Any(m => m.Scope == 1 && SkillParameterRules.Matches(m, learned, SkillParameterRules.CategoriesOf(_data, learnedRow))))
                     groups.Add(learned);
+        var modes = new Dictionary<int, int>();
         foreach (var group in groups)
         {
             int level = _skills.Level(session.Progress, group);
@@ -104,7 +107,7 @@ public sealed partial class CombatService
             var groupInfo = new BeAffectedParamInfoEx();
             foreach (var type in mods.Where(m => SkillParameterRules.Matches(m, group, tags)).Select(m => m.Type).Distinct().Order())
             {
-                if (type == 15) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = SkillParameterRules.Mode(group, tags, mods) };
+                if (type == 15) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = modes[group] = SkillParameterRules.Mode(group, tags, mods) };
                 else if (type == 44) groupInfo.AffectParam[type] = new BeAffectedValueEx { AffectValue = CanQueueSkill(session, group) ? 1 : 0 };
                 else if (SkillParameterRules.Field(type) is { } field)
                 {
@@ -127,10 +130,53 @@ public sealed partial class CombatService
         if (session.SkillProtocol.ParameterSignature != signature)
         {
             session.SkillProtocol.ParameterSignature = signature;
-            await session.SendGameAsync(SkillAffectedEx, update);
+            await SendParametersWithModeCooldownsAsync(session, update, modes);
         }
         await RefreshTemporarySlotsAsync(session);
     }
+
+    /// <summary>
+    /// The 31132 parameters, with the 31113 cooldown entries of the modes (type 15) that start or end. Genesis files a
+    /// cooldown entry under the new mode before it tells the mode, and another after the mode ends: the client keys its
+    /// cooldowns by group * 10000 + mode (LC_Skill_Function.GetSkillCDInfoKey) and its bar reads the key of the mode row
+    /// it shows, so without an entry the replaced skill (Focused Arrow Strike under Unlimited Shooting) neither swaps
+    /// nor lights up. Each entry tells the cooldown the cast check holds for that key (<see cref="CooldownEnd"/>).
+    /// </summary>
+    private static async Task SendParametersWithModeCooldownsAsync(GameSession session, SkillBeAffectedParamExNotify update, Dictionary<int, int> modes)
+    {
+        var told = session.SkillProtocol.GroupModes;
+        var started = new SkillCdNotify { Uuid = update.Uuid };
+        var ended = new SkillCdNotify { Uuid = update.Uuid };
+        long now = Now;
+        foreach (var (group, mode) in modes)
+            if (mode > 0 && told.GetValueOrDefault(group) != mode) started.Infos.Add(ModeCooldown(session, group, mode, now));
+        foreach (var (group, mode) in told)
+            if (mode > 0 && modes.GetValueOrDefault(group) != mode)
+            {
+                // The ended mode's key is closed; the plain key keeps the cooldown the server still holds, or is left alone
+                // when none runs (an empty entry would wipe a running one on the client: LC_Scene_Sync._skillCDNotify).
+                ended.Infos.Add(new SkillCdInfo { SkillId = group, SkillMode = mode, CdStartTimestampMs = now, CdEndTimestampMs = now });
+                if (CooldownEnd(session, group, 0) > now) ended.Infos.Add(ModeCooldown(session, group, 0, now));
+            }
+        told.Clear();
+        foreach (var (group, mode) in modes) if (mode > 0) told[group] = mode;
+        if (started.Infos.Count > 0) await session.SendGameAsync(SkillCdUpdate, started);
+        await session.SendGameAsync(SkillAffectedEx, update);
+        if (ended.Infos.Count > 0) await session.SendGameAsync(SkillCdUpdate, ended);
+    }
+
+    /// <summary>The 31113 entry of a group's mode key: its running cooldown, or an empty entry when none runs.</summary>
+    private static SkillCdInfo ModeCooldown(GameSession session, int group, int mode, long now)
+    {
+        var info = new SkillCdInfo { SkillId = group, SkillMode = mode };
+        long end = CooldownEnd(session, group, mode);
+        if (end > now) { info.CdStartTimestampMs = now; info.CdEndTimestampMs = end; }
+        return info;
+    }
+
+    /// <summary>When a cast of this group under this mode is ready again: the group's shared cooldown or the mode's own.</summary>
+    internal static long CooldownEnd(GameSession session, int group, int mode) =>
+        Math.Max(session.SkillCds.GetValueOrDefault(group), session.SkillModeCds.GetValueOrDefault((group, mode)));
 
     private async Task RefreshTemporarySlotsAsync(GameSession session)
     {
