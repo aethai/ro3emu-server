@@ -21,7 +21,10 @@ public sealed partial class CombatService
     private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
 
     /// <summary>High-Energy Impact: "become Flying and gain a Shield ... You can Move and have [Immunity] during this time. Tap the skill again or wait until the Flying duration ends to attack Below".
-    /// The first row's damage is its landing's, whose mode row (ten up) the flight buff switches the skill to. The flight lasts the row's action time.</summary>
+    /// The first row's damage is its landing's, whose mode row (ten up) the flight buff switches the skill to. The flight lasts the row's action time.
+    /// Left alone, the take-off's own show lands: show 16307 plays the landing animation Skill16_3 at 2.983 s and its impact effects at 3.367 s, and its
+    /// m_kAtkPoints [0, 3.2, 3.367] hit at 3.2 s of its 5.017 s. The landing hits at that second attack point (<see cref="LandingOffset"/>); at the
+    /// action's end it came about 1.7 s after the client had shown the impact.</summary>
     private async Task HighEnergyTakeOffAsync(GameSession s, ActiveSkillCast action)
     {
         var skill = new SkillConfig(action.Row);
@@ -30,7 +33,8 @@ public sealed partial class CombatService
         await _buffs.AddAsync(s, FlyingBuff, flight + FlightOutlastsMs, s.Role!.Id); // the landing ends it, and it must still be there for that
         await _buffs.AddAsync(s, ControlImmunity, flight, s.Role.Id);
         if (SkillConfig.Get(_data, skill.Id + 10) is not { } landing) return;
-        ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(flight), async () =>
+        int fallsIn = Math.Max(1, LandingOffset(skill, action) - (int)Math.Max(0, Now - action.StartMs));
+        ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(fallsIn), async () =>
         {
             if (s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene || !s.Buffs.Any(b => b.ConfigId == FlyingBuff)) return;
             var request = action.Request.Clone();
@@ -43,6 +47,14 @@ public sealed partial class CombatService
             };
             await ApplyEffectsAsync(s, fall, s.Position.Clone());
         });
+    }
+
+    /// <summary>When the take-off's show lands by itself: its attack point after the take-off's, else the action's end.</summary>
+    private int LandingOffset(SkillConfig skill, ActiveSkillCast action)
+    {
+        var template = _data.SkillTemplate(skill.ScriptShow);
+        return SkillShow.AttackPoints(template) is [_, var landing, ..]
+            ? ImpactOffset(template, landing, action.ChantMs, action.ActionMs) : Math.Max(1, action.ActionMs);
     }
 
     /// <summary>The landing: "For every ${7} enemies hit by this attack, gain @{2} stacks of Shield equal to ${8}% of your Max HP ... This also Enhances your next Axe Tornado, Launching
