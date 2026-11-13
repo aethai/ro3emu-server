@@ -384,7 +384,7 @@ public sealed partial class PetService
     /// The eggs it drew are synced as placed first and the final 5017 removes them, the slot changes the client already
     /// sees for 33318 then 33319 (inferred: what the original server sent for 33325 is unknown).
     /// </summary>
-    private async Task SyncPlacedAsync(GameSession s, long round, List<(long Slot, DBIncubateInfo Egg)> drawn)
+    private static async Task SyncPlacedAsync(GameSession s, long round, List<(long Slot, DBIncubateInfo Egg)> drawn)
     {
         if (drawn.Count == 0) return;
         var placed = s.Pets!.Clone();
