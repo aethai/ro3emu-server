@@ -26,9 +26,10 @@ public sealed partial class SkillCombatTests
         Assert.All(effects, x =>
         {
             Assert.Equal(DisplayGfx, x.EffectType);
-            Assert.Equal(a.Role!.Id, x.SourceId);
-            Assert.Equal(a.Role.Id, x.MasterId);
+            Assert.Equal(a.Role!.Id, x.MasterId);
         });
+        // The client plays a Gfx on its source unit and at targetPos only without one: the glow is the caster's, the ground has none.
+        Assert.Equal([a.Role!.Id, 0L, 0L], effects.Select(x => x.SourceId));
         Assert.Equal(dummy.Pos.X, effects[1].TargetPos.X, 3);
         Assert.Equal(dummy.Pos.Z, effects[2].TargetPos.Z, 3);
         Assert.Equal(a.Position.X, effects[0].TargetPos.X, 3);

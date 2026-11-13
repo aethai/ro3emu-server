@@ -422,10 +422,11 @@ public sealed partial class CombatService
 
     /// <summary>
     /// Arrow Storm's ground: sent with the cast timeline, as on the Genesis server, where the ring stands at the target point with
-    /// the skill's bubble and before its hit numbers (its m_kAtkPoints [0] lands the hit at once). 31109 Gfx, the route the client
-    /// test played them from: the glow on the caster, the ring and the bursts at the cast's point; masterId the caster, whose
-    /// quality settings LC_QualityCtrl.FilterSkillGfxPass applies. (inferred: Genesis capture + client test; the show's timeline
-    /// does not play them.)
+    /// the skill's bubble and before its hit numbers (its m_kAtkPoints [0] lands the hit at once). 31119 Gfx, the route the client
+    /// test played them from: the glow on the caster, the ring and the bursts at the cast's point. LC_PerformEffect_Mgr plays a Gfx
+    /// on the unit sourceId names and at targetPos only when there is none, so the ground effects name no source; masterId is the
+    /// caster, whose quality settings LC_QualityCtrl.FilterSkillGfxPass applies. (inferred: Genesis capture + client test; the
+    /// show's timeline does not play them.)
     /// </summary>
     private async Task SendArrowStormAsync(GameSession caster, long skillId, long targetId, Vec3 point)
     {
@@ -433,12 +434,12 @@ public sealed partial class CombatService
         long id = caster.Role.Id;
         await SendSkillEffectAsync(caster, ArrowStormGfx(id, ArrowStormHandGlow, skillId, id, caster.Position.Clone()));
         foreach (int effect in (int[])[ArrowStormRing, ArrowStormBursts])
-            await SendSkillEffectAsync(caster, ArrowStormGfx(id, effect, skillId, targetId, point.Clone()));
+            await ToPlayerAndViewersAsync(caster, SkillEffect, ArrowStormGfx(0, effect, skillId, targetId, point.Clone(), id));
     }
 
-    private static SkillEffectDisplayNotify ArrowStormGfx(long caster, int effect, long skillId, long targetId, Vec3 at) => new()
+    private static SkillEffectDisplayNotify ArrowStormGfx(long source, int effect, long skillId, long targetId, Vec3 at, long master = 0) => new()
     {
-        SourceId = caster, MasterId = caster, TargetId = targetId, EffectId = effect, EffectType = DisplayGfx, TargetPos = at, SkillId = skillId,
+        SourceId = source, MasterId = master != 0 ? master : source, TargetId = targetId, EffectId = effect, EffectType = DisplayGfx, TargetPos = at, SkillId = skillId,
     };
 
     /// <summary>
