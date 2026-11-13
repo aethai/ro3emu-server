@@ -305,6 +305,7 @@ public sealed partial class PetService
         var costs = new Dictionary<int, long>();
         var goods = new List<(int, int)>();
         var reply = new FastIncubateRes();
+        var drawn = new List<(long Slot, DBIncubateInfo Egg)>();
         int selected = 0;
         if (code == 0)
         {
@@ -317,6 +318,7 @@ public sealed partial class PetService
                 {
                     egg = Draw(next, config!.Value, lottery);
                     if (egg == null) { code = ErrorCodes.PetNoConfig; break; }
+                    drawn.Add((slot, egg));
                     foreach (var (item, count) in Cost(config.Value, "_kMaterial"))
                         costs[item] = checked(costs.GetValueOrDefault(item) + count);
                     seconds = Math.Max(0, GameData.Int(Room(next)!.Value, "_iIncubateTime"));
@@ -365,6 +367,7 @@ public sealed partial class PetService
             if (!await ExchangeAsync(s, "fast-egg", next!, cost, goods, lottery)) code = _character.ShortageOf(s, cost);
             else
             {
+                await SyncPlacedAsync(s, req.RoundId, drawn);
                 await AutoRoomLevelAsync(s);
                 await ChangedAsync(s, items: true);
             }
@@ -372,6 +375,26 @@ public sealed partial class PetService
         if (code != 0) reply = new FastIncubateRes();
         reply.Result = code;
         await s.SendGameAsync(FastEgg, reply);
+    }
+
+    /// <summary>
+    /// UI_Sys_PetGachaWidgetCtrl redraws the S-class countdown (RefreshPetHit) only on open, on a pool switch and when
+    /// the slot data changes (m_kSlotData -> RefreshPoolSlot); the pity sync 5011 alone does not redraw it. A fast hatch
+    /// that starts from empty slots ends with the same empty slots, so the countdown stayed stale until a pool switch.
+    /// The eggs it drew are synced as placed first and the final 5017 removes them, the slot changes the client already
+    /// sees for 33318 then 33319 (inferred: what the original server sent for 33325 is unknown).
+    /// </summary>
+    private static async Task SyncPlacedAsync(GameSession s, long round, List<(long Slot, DBIncubateInfo Egg)> drawn)
+    {
+        if (drawn.Count == 0) return;
+        var placed = s.Pets!.Clone();
+        foreach (var (slot, egg) in drawn)
+        {
+            if (!placed.IncubationSlot.TryGetValue(slot, out var info))
+                placed.IncubationSlot[slot] = info = new DBSlotInfo { SlotId = slot };
+            info.IncubateInfo[round] = egg.Clone();
+        }
+        await CharacterService.SyncAsync(s, PetSync, placed);
     }
 
     /// <summary>33317/33320 persist display preferences without changing the egg or its deadline.</summary>
