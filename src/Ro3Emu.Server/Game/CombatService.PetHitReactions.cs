@@ -45,9 +45,16 @@ public sealed partial class CombatService
         switch (pet.Reactive)
         {
             case GuardianPetRules.Reaction.RainbowExtraHit:
+                // Deleter_Passive's show (skill_23375) selects nobody (m_kSelectType 0): the server script aims it at the
+                // enemies the primary skill damaged, so a monster is handed over rather than looked up by the selector.
                 if (GuardianSkillAtStar(GuardianGroup.RainbowFire, pet.Star) is { } fire)
                     for (int i = 0; i < (int)Math.Clamp(Desc(0), 0, GuardianPetRules.MaxRepeats) && CurrentCastMap(source, parent); i++)
-                        await ApplyEffectsAsync(source, GuardianProcAction(source, pet, parent, fire, targetId), source.Position);
+                    {
+                        var monster = FindMonster(source.WorldScene, targetId);
+                        if (monster is { Dead: true } || monster?.Hp <= 0) break;
+                        await ApplyEffectsAsync(source, GuardianProcAction(source, pet, parent, fire, targetId), source.Position,
+                            chosenTargets: monster == null ? null : [monster]);
+                    }
                 break;
             case GuardianPetRules.Reaction.SarahExtraHit:
                 if (GuardianSkillAtStar(GuardianGroup.SarahFist, pet.Star) is { } fist && pet.Passive is { } passive)
