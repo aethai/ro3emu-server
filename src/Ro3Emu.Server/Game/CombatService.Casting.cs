@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
@@ -853,6 +854,27 @@ public sealed partial class CombatService
             SrcID = action.SourceId, SessionId = action.Id, Type = SkillEndNotify.Types.SkillEndType.Interrupted,
             ClearEffect = true, InterruptedInfo = new SkillInterruptedInfo { Type = cause },
         });
+    }
+
+    /// <summary>A skill row the server casts for the player on its next walk (Swift Warg after Warg Strike or Warg Hunt, TalentProcs).</summary>
+    private readonly ConditionalWeakTable<GameSession, StrongBox<int>> _castOnNextWalk = [];
+
+    internal void CastOnNextWalk(GameSession s, int row) => _castOnNextWalk.AddOrUpdate(s, new(row));
+
+    /// <summary>
+    /// A walk that sets off casts the row <see cref="CastOnNextWalk"/> holds, in the walk's direction (WalkReq.dir), once.
+    /// (inferred) It runs as one of the Skill Bar's casts: after this walk on the loop, without a 31103 the client did not
+    /// ask for, skipped when the row cannot be cast then. A step taken while the cast that armed it still holds the caster
+    /// (the walk's first 300 ms do not end it, PlayerMoved) waits for that cast's action to end, as a Lineup member does.
+    /// </summary>
+    internal void PlayerWalked(GameSession s, WalkReq walk)
+    {
+        if (walk.BStop || walk.SpeedRate <= 0 || s.Role == null || !_castOnNextWalk.TryGetValue(s, out var row)) return;
+        _castOnNextWalk.Remove(s);
+        long wait = s.SkillCast is { Cancelled: false } running ? Math.Max(0, running.StartMs + running.ChantMs + running.ActionMs + 1 - Now) : 0;
+        float face = s.WalkDir;
+        ScheduleRuntime(s.WorldScene, TimeSpan.FromMilliseconds(wait), () => s.Role == null ? Task.CompletedTask : CastAsync(s,
+            new CastSkillReq { SkillId = row.Value, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = face }, lineup: true));
     }
 
     public void PlayerMoved(GameSession s)

@@ -183,6 +183,7 @@ public sealed class RoleSystems(Maps.World world, ChatService chat, CharacterSer
         await territory.PlatformMovedAsync(session); // a SummonPlatform activator who walks off
         await gathering.PlayerMovedAsync(session);
         combat.PlayerMoved(session);
+        combat.PlayerWalked(session, walk); // Swift Warg's dash on the next walk
         await emoji.PlayerMovedAsync(session);
         await dungeons.PlayerMovedAsync(session); // scripted scene regions and points
     }
