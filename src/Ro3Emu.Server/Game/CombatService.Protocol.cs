@@ -407,6 +407,40 @@ public sealed partial class CombatService
         }, highLevel: true);
     }
 
+    /// <summary>SkillConfig._kScriptLogic of Arrow Storm's rows (13302, show 13302).</summary>
+    private const string ArrowStormLogic = "ArrowStorm";
+
+    /// <summary>
+    /// Arrow Storm's effects in its show's EffectData range (13302 * 100 up) that the show's timeline never plays (m_kShows only
+    /// [1330202, 1330205, 1330210, 1330211], and 1330205 is empty): 1330203 fx_skill_arrowstorm_01 on the caster's hand (DHandL),
+    /// 1330204 fx_skill_arrowstorm_02 the green ring with falling arrows and 1330208 fx_skill_arrowstorm_04 the arrow bursts, both
+    /// target effects (m_iCasterTargetEffect 2). (inferred: Genesis capture + client test; the show's timeline does not play them.)
+    /// </summary>
+    private const int ArrowStormHandGlow = 1330203, ArrowStormRing = 1330204, ArrowStormBursts = 1330208;
+
+    internal static bool IsArrowStorm(JsonElement row) => new SkillConfig(row).ScriptLogic == ArrowStormLogic;
+
+    /// <summary>
+    /// Arrow Storm's ground: sent with the cast timeline, as on the Genesis server, where the ring stands at the target point with
+    /// the skill's bubble and before its hit numbers (its m_kAtkPoints [0] lands the hit at once). 31109 Gfx, the route the client
+    /// test played them from: the glow on the caster, the ring and the bursts at the cast's point; masterId the caster, whose
+    /// quality settings LC_QualityCtrl.FilterSkillGfxPass applies. (inferred: Genesis capture + client test; the show's timeline
+    /// does not play them.)
+    /// </summary>
+    private async Task SendArrowStormAsync(GameSession caster, long skillId, long targetId, Vec3 point)
+    {
+        if (caster.Role == null) return;
+        long id = caster.Role.Id;
+        await SendSkillEffectAsync(caster, ArrowStormGfx(id, ArrowStormHandGlow, skillId, id, caster.Position.Clone()), highLevel: true);
+        foreach (int effect in (int[])[ArrowStormRing, ArrowStormBursts])
+            await SendSkillEffectAsync(caster, ArrowStormGfx(id, effect, skillId, targetId, point.Clone()), highLevel: true);
+    }
+
+    private static SkillEffectDisplayNotify ArrowStormGfx(long caster, int effect, long skillId, long targetId, Vec3 at) => new()
+    {
+        SourceId = caster, MasterId = caster, TargetId = targetId, EffectId = effect, EffectType = DisplayGfx, TargetPos = at, SkillId = skillId,
+    };
+
     /// <summary>
     /// Warg Strike's automatic cast (Focused Arrow Strike, every ${7} seconds): on the Genesis server the wolf leaves the
     /// rider, charges the target and strikes while the bubble still names Focused Arrow Strike (Genesis capture, Discord
