@@ -92,25 +92,36 @@ public sealed partial class SkillService
         .Where(r => r.Mode > 0).GroupBy(r => (r.SkillId, r.Level, r.Mode)).ToDictionary(g => g.Key, g => g.First().Id);
 
     /// <summary>The mode (BuffConfig type 15) a live buff gives this row's group, and the latest end of the buffs that give it;
-    /// 0 when no buff does (a mode from a talent or a mount is told by 31132 and 31027, not by the wheel).</summary>
+    /// 0 when no buff does (a mode from a talent or a mount is told by 31132 and 31027, not by the wheel). A buff that lasts until
+    /// it is spent (<see cref="ActiveBuff.UntilSpent"/>) gives the mode no end: <paramref name="end"/> is then 0.</summary>
     private long BuffMode(GameSession session, SkillConfig row, out long end)
     {
         end = 0;
+        bool given = false, untilSpent = false;
         long now = MonsterService.NowMs;
         int group = (int)row.SkillId;
         var tags = SkillParameterRules.CategoriesOf(_data, row.Row);
         foreach (var buff in session.Buffs)
-            if (buff.ExpireMs > now)
-                foreach (var mod in SkillParameterRules.BuffModifiers(_data, buff.ConfigId))
-                    if (mod.Type == 15 && SkillParameterRules.Matches(mod, group, tags)) end = Math.Max(end, buff.ExpireMs);
-        if (end == 0) return 0;
+            if (buff.ExpireMs > now && GivesMode(buff, group, tags))
+            {
+                given = true;
+                untilSpent |= buff.UntilSpent;
+                end = Math.Max(end, buff.ExpireMs);
+            }
+        if (!given) return 0;
+        if (untilSpent) end = 0; // (inferred) a mode that lasts until spent has no end to count down to
         long mode = SkillParameterRules.Mode(group, tags, SkillParameterRules.Active(session, _data));
         return ModeRows.ContainsKey((row.SkillId, row.Level, mode)) ? mode : 0;
     }
 
+    private bool GivesMode(ActiveBuff buff, int group, int[] tags) =>
+        SkillParameterRules.BuffModifiers(_data, buff.ConfigId).Any(mod => mod.Type == 15 && SkillParameterRules.Matches(mod, group, tags));
+
     /// <summary>While a buff selects a mode, the slot of that skill shows the mode's row with the buff's end as its countdown
     /// (Genesis 5025: Focused Arrow Strike under Unlimited Shooting is the mode 1 row, enabled, mode 1, highlightEndTimeMs the
-    /// buff's end); originSkillWheel keeps the skill's own row.</summary>
+    /// buff's end); originSkillWheel keeps the skill's own row. A mode with no end (a buff until spent: Cannon Enhance on Arm Cannon)
+    /// sends highlightEndTimeMs 0, which UI_Sys_Main_JoyStickSkillItemWidgetBaseCtrl._refreshSkillHighCountDown draws no countdown for;
+    /// the server's bound sent as the end showed 3598 seconds counting down.</summary>
     private void ApplyBuffModes(GameSession session, DBSkillData state)
     {
         foreach (var (key, slot) in state.SkillWheel.WhellSkills)
