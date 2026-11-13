@@ -298,7 +298,7 @@ public sealed partial class CombatService
         await ToPlayerAndViewersAsync(source, SkillHit, new SkillHitInfo
         {
             SrcID = owner, SkillId = skillId, SessionId = castId, RootCtxGuid = castId,
-            ShowPoint = HitEffect(_data.Row("SkillConfig", skillId) is { } row ? GameData.Int(row, "_iScriptShow") : 0),
+            ShowPoint = HealEffect(_data.Row("SkillConfig", skillId) is { } row ? GameData.Int(row, "_iScriptShow") : 0),
             Dsts = { new DamageInfo { DstID = target, Damage = actual, DamageType = DamageType.Heal, DstElement = 1 } },
         });
         if (!current()) return;
