@@ -87,6 +87,41 @@ public sealed partial class SkillCombatTests
         Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
     }
 
+    [ClientDataFact] // Letting go of a key whose press still waits on its reply drops that press (CancelInputSkill), not the running cast
+    public async Task ReleasingAHeldTurnUndeadKeepsTheCastItInterruptsNothingOf()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        await CastAtAsync(bot, 1411801, dummy);
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        await CastAtAsync(bot, 1411801, dummy); // the held key's next press, refused while the first one chants
+        Assert.NotEqual(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId == 0)).Result);
+        await bot.SendGameAsync(CombatService.SkillInterrupt, new SkillInterruptReq { InterruptSkillId = 1411801 });
+        Assert.False((await Next(bot, CombatService.SkillInterrupt, SkillInterruptResp.Parser)).IsInterruptSucc);
+        Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
+        Assert.False(a.SkillCast?.Cancelled ?? false);
+    }
+
+    [ClientDataFact] // A key held for 12 s (a press every 0.2 s): every Turn Undead it started hits, at the slack's edge too
+    public async Task EveryCastOfAHeldTurnUndeadHits()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, _, dummy) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        for (int i = 0; i < 60; i++)
+        {
+            await CastAtAsync(bot, 1411801, dummy);
+            await Task.Delay(200);
+        }
+        await Task.Delay(2500);
+        var sessions = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.UseSkill)).Select(e => CastSkillRsp.Parser.ParseFrom(e.Body))
+            .Where(r => r.Result == 0).Select(r => r.SessionId).ToList();
+        var hit = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body))
+            .Where(h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0)).Select(h => h.SessionId).ToHashSet();
+        Assert.True(sessions.Count >= 8, $"{sessions.Count} casts");
+        Assert.All(sessions, id => Assert.Contains(id, hit));
+    }
+
     [ClientDataFact] // #433: a kept hit that kills lands outside the character lock its kill reward takes, so the next cast still answers
     public async Task AHeldTurnUndeadThatKillsDoesNotStallTheNextCast()
     {

@@ -22,6 +22,20 @@ public sealed partial class SkillCombatTests
         Assert.Contains(a.Buffs, b => b.ConfigId == 1633601);
     }
 
+    [ClientDataFact] // Its show 16307 lands by itself at its attack point 3.2 s of 5.017 s, not at the action's end
+    public async Task HighEnergyImpactLandsWhenItsShowDoes()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 6400, 16307, 1630701);
+        await CastAtAsync(bot, 1630701, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var takeOff = a.SkillCast!;
+        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
+        long landed = MonsterService.NowMs - takeOff.StartMs;
+        int expected = (int)Math.Round(3.2 / 5.016667 * takeOff.ActionMs);
+        Assert.InRange(landed, expected - 50, expected + 250);
+    }
+
     [ClientDataFact] // Move back Shadow Echo: "Cast again within 6 seconds to return to the shadow"
     public async Task ShadowEchoReturnsOnTheSecondPress()
     {
