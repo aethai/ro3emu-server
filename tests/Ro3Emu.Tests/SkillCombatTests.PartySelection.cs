@@ -81,16 +81,28 @@ public sealed partial class SkillCombatTests
         var (hit, alice, bob) = await BuffHitAsync(1410, 14105, 1410501, sameParty: true);
         Assert.Contains(hit.Dsts, d => d.DstID == alice);
         Assert.Contains(hit.Dsts, d => d.DstID == bob);
-        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
-        Assert.NotEqual(0, hit.ShowPoint);
+        Assert.All(hit.Dsts, d => Assert.Equal(DamageType.DamageShare, d.DamageType));
+        // The drawn entry of its own range (EffectData 1410502, fx_buff_ourladysing), not HitEffect's fallback 1000002 (a struck unit's flinch).
+        Assert.Equal(1410502, hit.ShowPoint);
     }
 
-    [ClientDataFact] // Sacred Lily: "You and Party Members": a stranger gets neither the buff nor its hit effect
-    public async Task SacredLilyShowsItsHitOnPartyMembersOnly()
+    [ClientDataFact] // Sacred Lily: its range 430400-430499 has no hit entry, so the buff lands and no SkillHit plays a struck unit's flinch
+    public async Task SacredLilySendsNoHitWithoutAHitEntry()
     {
-        var (hit, alice, bob) = await BuffHitAsync(1430, 14304, 1430401, sameParty: false);
-        Assert.Contains(hit.Dsts, d => d.DstID == alice);
-        Assert.DoesNotContain(hit.Dsts, d => d.DstID == bob);
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job 1430"); await Teach("alice", 14304);
+        var a = Session("alice");
+        a.GmCastSkill = 1430401;
+        int buff = (int)SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), 1430401)!.Value.Buff1[0][0];
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1430401, TargetPos = a.Position.Clone(), Face = a.Face });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var deadline = DateTime.UtcNow + Wait;
+        while (!a.Buffs.Any(x => x.ConfigId == buff) && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.Contains(a.Buffs, x => x.ConfigId == buff);
+        await Task.Delay(300);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SessionId == accepted.SessionId);
     }
 
     [ClientDataFact] // Safety Wall: "melee Physical"; a melee magic hit passes through and spends nothing

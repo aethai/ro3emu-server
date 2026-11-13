@@ -361,7 +361,7 @@ public sealed partial class CombatService
                     await ToPlayerAndViewersAsync(s, TrapDamage, new TrapDamageNtf { SkillConfigId = action.Request.SkillId, DamageValue = hit.Dsts.Sum(d => d.Damage), Pos = center.Clone() });
             }
             else if (friendly && field == null && buffed.Count > 0 && ShowsBuffHit(script) && CurrentCaster())
-                await ShowBuffHitAsync(s, action, hit, buffed, script);
+                await ShowBuffHitAsync(s, action, row, hit, buffed, script);
             foreach (var target in processed)
             {
                 if (!damage) continue;
