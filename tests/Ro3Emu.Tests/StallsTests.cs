@@ -302,6 +302,25 @@ public sealed partial class StallsTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task StallActorWearsTheSellersWornWardrobe()
+    {
+        await using var seller = await InWorld("Outfit"); await using var buyer = await InWorld("Looker");
+        await Ready(seller); await Ready(buyer);
+        await Gm(seller, "!item 1000100 2");
+        long guid = Items(seller).Single(i => i.Entry == 1000100).Guid;
+        // An outfit slot beside the creation hair: the puppet must not fall back to the hair-only look.
+        var worn = await Service<GameLoop>().InvokeAsync(() =>
+        {
+            var wardrobe = Session(seller).Wardrobe!; wardrobe.CurUseAppearances[2] = 4242;
+            return Task.FromResult(wardrobe.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value));
+        });
+        Assert.Equal(0, (await Open(seller, Offer(guid))).Result);
+        var aoi = await Next(buyer, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, m => m.Bases.Any(b => b.StallsInfo?.StallsID == Id(seller)));
+        var stall = aoi.Bases.Single(b => b.StallsInfo?.StallsID == Id(seller)).StallsInfo;
+        Assert.Equal(worn.OrderBy(p => p.Key), stall.CurUseAppearances.OrderBy(p => p.Key));
+    }
+
+    [ClientDataFact]
     public async Task PlayerPurchasePreservesMetadataAndSettlesThroughMailWithAoiClosure()
     {
         await using var seller = await InWorld("Seller"); await using var buyer = await InWorld("Buyer");
