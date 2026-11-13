@@ -86,7 +86,7 @@ public sealed partial class CombatService
             var hit = new SkillHitInfo
             {
                 SrcID = pet.Uid, SkillId = skillId, SessionId = castId, SrcElement = pet.Element,
-                ShowPoint = HitEffect(GameData.Int(row, "_iScriptShow"))
+                ShowPoint = HealEffect(GameData.Int(row, "_iScriptShow"))
             };
             foreach (var recipient in recipients.OrderBy(r => r.Id == pet.Uid ? 0 : 1)
                          .ThenBy(r => r.Distance).ThenBy(r => r.Id).Take(maximum))
