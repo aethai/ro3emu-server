@@ -125,6 +125,20 @@ public sealed partial class SkillCombatTests
         Assert.Equal(100000, target.Hp);
     }
 
+    [ClientDataFact] // the Fairy's heal keeps its own effect 2348107 (fx_mavka_skill1_3, no m_kAni): its gfx and sound, no flinch
+    public async Task AGuardianHealKeepsItsOwnEffect()
+    {
+        await using var alice = await InWorld("Alice");
+        await EquipGuardian(alice, 21001, 1621001, pieces: 40);
+        var s = Session("alice");
+        await Loop.InvokeAsync(() => Character.SetHpSpAsync(s, 1, null));
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2348001 });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var heal = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 2348101);
+        Assert.Equal(DamageType.Heal, Assert.Single(heal.Dsts).DamageType);
+        Assert.Equal(2348107, heal.ShowPoint);
+    }
+
     [ClientDataFact]
     public async Task GuardianWildRoseDamagesThroughSharedCombatAndRejectsUnequippedOrChildCasts()
     {
