@@ -756,6 +756,7 @@ public sealed partial class CombatService
                 Face = face, SessionId = id, ChantMs = action.ChantMs, SkillMs = action.ActionMs, StartTime = action.StartMs, PlayAct = true,
             }, highLevel: GameData.Int(row, "_iSkillEffectLevel") > 0 || FalconHigh(row) || WargStrikeHigh(row), extra: actor != null || req.IsExtraSkill);
             if (FalconHigh(row)) await SendFalconAsync(s, row, req.SkillId, req.TargetId);
+            else if (IsArrowStorm(row)) await SendArrowStormAsync(s, req.SkillId, req.TargetId, req.TargetPos ?? origin);
             else if (WargStrikeHigh(row))
                 ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(WolfDelayMs),
                     () => Live(s, action) ? SendWolfAsync(s, req.SkillId, req.TargetId) : Task.CompletedTask);

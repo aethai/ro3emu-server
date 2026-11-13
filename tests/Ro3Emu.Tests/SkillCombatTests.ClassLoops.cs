@@ -6,6 +6,8 @@ namespace Ro3Emu.Tests;
 
 public sealed partial class SkillCombatTests
 {
+    private const int FlameLauncherGroup = 16315, FlameLauncherRow = 1631501, ArmCannonGroup = 16312, CannonEnhance = 1632001, FirepowerLoaded = 1631701;
+
     private async Task CastAndWait(Ro3Emu.Bot.BotClient bot, int skill, Ro3Emu.Server.Maps.MonsterUnit target)
     {
         await Loop.InvokeAsync(() => { Session("alice").SkillCds.Clear(); Session("alice").SkillModeCds.Clear(); return Task.CompletedTask; });
@@ -76,5 +78,29 @@ public sealed partial class SkillCombatTests
         await CastAndWait(bot, 1131501, dummy);
         Assert.Equal(0, a.Energy[140001].Value);
         Assert.Equal(1, a.Energy[140002].Value);
+    }
+
+    [ClientDataFact] // Flame Launcher: Cannon Enhance switches Arm Cannon's mode until spent, so its slot counts nothing down and the buffs carry no time
+    public async Task FlameLauncherEnhancesArmCannonWithNoCountdown()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 6400, FlameLauncherGroup, FlameLauncherRow);
+        await Teach("alice", ArmCannonGroup);
+        await Loop.InvokeAsync(() => { a.Progress!.SkillBar.Clear(); a.Progress.SkillBar[1] = ArmCannonGroup; return Task.CompletedTask; });
+        await CastAndWait(bot, FlameLauncherRow, dummy);
+        var deadline = DateTime.UtcNow + Wait;
+        while (!a.Buffs.Any(b => b.ConfigId == CannonEnhance) && DateTime.UtcNow < deadline) await Task.Delay(50);
+
+        var slot = (await ShownSkills("alice")).SkillWheel.WhellSkills[1];
+        Assert.NotEqual(0, slot.Mode);
+        Assert.Equal(0L, slot.HighlightEndTimeMs);
+        foreach (int buff in new[] { CannonEnhance, FirepowerLoaded })
+        {
+            var sent = bot.Inbox.Snapshot().Where(e => e.IsGame(BuffService.BuffUpdate))
+                .SelectMany(e => BuffUpdateNotify.Parser.ParseFrom(e.Body).Buffs).Last(b => b.ConfigId == buff);
+            Assert.Equal(0L, sent.ExpireTime);
+            Assert.Equal(0L, sent.Duration);
+        }
+        Assert.Equal(3, a.Buffs.Single(b => b.ConfigId == FirepowerLoaded).PileCount);
     }
 }

@@ -17,8 +17,6 @@ public sealed partial class CombatService
     private const int FirepowerPilesGroup = 16313, FirepowerGroup = 16317, FirepowerBuff = 1631701, CannonEnhanceBuff = 1632001;
     private const int FirepowerAttacks = 3, EnergyReleaseShield = 1635101, EnergyReleaseRow = 1635201, ControlImmunity = 903201;
     private const int JointBeatGroup = 11221, ShatteredPartGroups = 11222, JetAccelerationBuff = 1634901, UltraBashGroup = 11631;
-    /// <summary>(inferred) These buffs carry no time of their own, -1 in their rows; they end when they are spent.</summary>
-    private const int UntilSpentMs = 3_600_000;
 
     private sealed class Swings { public int Count; }
     private readonly ConditionalWeakTable<GameSession, Swings> _wargSwings = [];
@@ -39,7 +37,7 @@ public sealed partial class CombatService
             // Warg Strike: "After casting this skill @{1} times, the next [Warg Strike] becomes [Empowered Warg Strike]", the buff that switches its mode.
             case "WolfAttack" when skill.DescData.Length >= 6:
                 var swings = _wargSwings.GetOrCreateValue(s);
-                if (++swings.Count >= WargStrikesToEmpower(skill)) { swings.Count = 0; await _buffs.AddAsync(s, EmpoweredWargStrikeBuff, UntilSpentMs, s.Role!.Id); }
+                if (++swings.Count >= WargStrikesToEmpower(skill)) { swings.Count = 0; await _buffs.AddUntilSpentAsync(s, EmpoweredWargStrikeBuff, s.Role!.Id); }
                 break;
             case "WolfAttackPlus":
                 foreach (var empowered in s.Buffs.Where(b => b.ConfigId == EmpoweredWargStrikeBuff).ToArray()) await _buffs.RemoveAsync(s, empowered);
@@ -67,8 +65,8 @@ public sealed partial class CombatService
             // Vulcan Arm: "Every ${5} casts ... trigger [Firepower Loaded]": the piles of its first buff.
             case "VulcanArm" when _buffs.HasBuffPiles(s, FirepowerPilesGroup, (int)Desc(4)) && await _buffs.ConsumeBuffPilesAsync(s, FirepowerPilesGroup, (int)Desc(4)):
             case "FlameLauncher":
-                await _buffs.AddPilesAsync(s, FirepowerBuff, UntilSpentMs, s.Role!.Id, FirepowerAttacks);
-                await _buffs.AddAsync(s, CannonEnhanceBuff, UntilSpentMs, s.Role!.Id);
+                await _buffs.AddUntilSpentAsync(s, FirepowerBuff, s.Role!.Id, FirepowerAttacks);
+                await _buffs.AddUntilSpentAsync(s, CannonEnhanceBuff, s.Role!.Id);
                 break;
         }
         if (script.StartsWith("AxeTornado", StringComparison.Ordinal)) await HighEnergyPulsesAsync(s, skill);

@@ -66,8 +66,8 @@ public sealed partial class CombatService
         var stats = _character.Stats(s);
         int shieldMs = skill.DescData.Length > 9 && int.TryParse(skill.DescData[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) ? seconds * 1000 : 10000;
         foreach (var _ in processed) await ApplySkillBuffAsync(stats, s, ImpactShieldBuff, shieldMs, s.Role!.Id);
-        await _buffs.AddPilesAsync(s, PulseBuff, UntilSpentMs, s.Role!.Id, Math.Min(processed.Count, 5));
-        await _buffs.AddAsync(s, TornadoEnhanceBuff, UntilSpentMs, s.Role.Id);
+        await _buffs.AddUntilSpentAsync(s, PulseBuff, s.Role!.Id, Math.Min(processed.Count, 5));
+        await _buffs.AddUntilSpentAsync(s, TornadoEnhanceBuff, s.Role.Id);
     }
 
     /// <summary>The Axe Tornado that follows a landing: its mode row runs, and it spends the enhancement and its pulses.</summary>
