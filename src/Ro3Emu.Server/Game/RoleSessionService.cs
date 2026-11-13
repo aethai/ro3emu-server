@@ -338,6 +338,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         // Saved client settings (intro skipped, control mode, key bindings...) via the generic DB increment sync.
         session.Settings = LoadSettings(role.Id); // C/D 17: kept on the session, merged and written lazily from now on
         session.SettingsPart = null;
+        if (RepairClassicMovement(session.Settings)) settings.MarkDirty(session, urgent: false);
         await session.SendGameAsync(MsgId.AutoSyncSettings, SettingsSync(session.Settings));
         EnsureSelection(session, lease);
         await systems.LoginAsync(session, () => EnsureSelection(session, lease));
@@ -424,12 +425,18 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
                 return;
             }
             MergeSettings(stored, wire);
+            bool repaired = RepairClassicMovement(stored);
             if (req.Type.Contains(SettingType.WildAfk) && stored.WildAFKInfo != null)
             {
                 // AFK accounting follows this preference: durable now, together with its reconciliation.
                 roles.SaveSettings(role.Id, stored.ToByteArray());
                 settings.Persisted(session);
                 await afk.SettingsChangedAsync(session, stored.WildAFKInfo);
+                await session.SendGameAsync(MsgId.AutoSyncSettings, SettingsSync(stored));
+            }
+            else if (repaired)
+            {
+                settings.MarkDirty(session, urgent: false);
                 await session.SendGameAsync(MsgId.AutoSyncSettings, SettingsSync(stored));
             }
             else settings.MarkDirty(session, urgent: false);
@@ -458,6 +465,47 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         var settings = roles.LoadSettings(roleId) is { } bytes ? DBSettingInfo.Parser.ParseFrom(bytes) : new DBSettingInfo();
         settings.WildAFKInfo ??= new SettingWildAFKInfo(); // OnHook's setting editor requires a real object.
         return settings;
+    }
+
+    /// <summary>
+    /// Classic mode (GameModeSetting.gameMode 1, enum_GameMode.OldSchool) walks by mouse, but the client takes mouse
+    /// movement from the saved KeyBoardInfo only: LC_DAL_Setting._processKeyBoardInfo turns EnableMouseMove on only when it
+    /// is saved (or MovementCtrl is 2) and falls back to the mode's defaults only when both movement flags are off. The
+    /// mode panel saves those defaults (_applyPCInteractDefault) only when the chosen mode differs from the one it opened
+    /// with, and its close/timeout path (_returnCloseClock) never does: a role that keeps Classic that way has no
+    /// KeyBoardInfo at all, so clicks do not walk. Such settings (absent or corrupt KeyBoardInfo only) get the Nostalgic
+    /// defaults written (G_ClientCfg.PCInteractSetting.Nostalgic, as _applyPCInteractDefault saves them); any real save, including one with mouse movement
+    /// turned off, is left untouched. True when they changed.
+    /// </summary>
+    internal static bool RepairClassicMovement(DBSettingInfo settings)
+    {
+        const int oldSchool = 1;
+        if (!settings.ClientSetting.TryGetValue((int)SettingType.GameMode, out var modeBytes)) return false;
+        GameModeSetting mode;
+        try { mode = GameModeSetting.Parser.ParseFrom(modeBytes); }
+        catch (InvalidProtocolBufferException) { return false; }
+        if (mode.GameMode != oldSchool) return false;
+
+        bool hasKeyBoard = settings.ClientSetting.TryGetValue((int)SettingType.KeyBoard, out var keyBytes);
+        var keys = new KeyBoardInfo();
+        if (hasKeyBoard)
+        {
+            try { keys = KeyBoardInfo.Parser.ParseFrom(keyBytes); }
+            catch (InvalidProtocolBufferException) { keys = new KeyBoardInfo(); hasKeyBoard = false; }
+        }
+
+        // Repair only when no KeyBoardInfo exists at all (or it is corrupt): a player with saved settings owns them,
+        // including one who turned mouse movement off. Never re-enable EnableMouseMove over a real save.
+        if (hasKeyBoard) return false;
+
+        keys.EnableMouseMove = true;
+        keys.EnableKeyboardMove = false;
+        keys.SelectBtn = 0;  // enum_PCMouseBtn.Left (Unity MouseButton 0)
+        keys.MoveBtn = 0;    // enum_PCMouseBtn.Left (Unity MouseButton 0)
+        keys.CameraMode = 0; // enum_PCCameraDragMode.RightDrag (Unity MouseButton 1)
+        keys.KeyBoardMode = oldSchool;
+        settings.ClientSetting[(int)SettingType.KeyBoard] = keys.ToByteString();
+        return true;
     }
 
     /// <summary>Full-state increment (syncAllMark): each field N of DBSettingInfo travels as field N*10 { all = value }.</summary>
