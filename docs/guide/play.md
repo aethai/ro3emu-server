@@ -34,8 +34,13 @@ Your server also serves a [web panel](panel.md) on `http://127.0.0.1:5381` (your
 an admin area for GM accounts). `--panel-port <n>` moves it, `--no-panel` turns it off; two servers on one PC need
 different ports for it too (`--http-port`, `--micro-port`, `--game-port`, `--panel-port`).
 
+**Language.** The texts the client draws in Simplified Chinese are shown in English by default. `RO3Emu.exe --lang zh-TW`
+shows them in Traditional Chinese instead, using the Taiwan texts of your own game (`Localization_zh_TW`) plus our
+translations for what that table lacks; `--lang en` goes back. The choice is remembered in `RO3Emu.settings.json`, and the
+next start rebuilds the map once.
+
 **What it changes.** In the game folder: a few DLLs in `ro3_Data\Managed` (the originals are kept in `ro3emu-backup`)
-and `ro3emu\loc_en.tsv` (English texts, built from your own game files). Next to RO3Emu.exe: `data\` (game data and
+and `ro3emu\loc_en.tsv` (English or Traditional Chinese texts, built from your own game files). Next to RO3Emu.exe: `data\` (game data and
 your characters), `logs\` and `RO3Emu.settings.json`.
 
 > [!WARNING]

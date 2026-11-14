@@ -93,7 +93,7 @@ dotnet_diagnostic.CA1822.severity = suggestion
 dotnet_diagnostic.CA1848.severity = suggestion
 # 59: use concrete types for performance
 dotnet_diagnostic.CA1859.severity = suggestion
-# 100: avoid constant arrays as arguments
+# 99: avoid constant arrays as arguments
 dotnet_diagnostic.CA1861.severity = suggestion
 # 10: cache and reuse JsonSerializerOptions
 dotnet_diagnostic.CA1869.severity = suggestion
