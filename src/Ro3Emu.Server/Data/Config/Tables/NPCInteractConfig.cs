@@ -10,6 +10,7 @@ public readonly partial record struct NPCInteractConfig(JsonElement Row)
     [ConfigField("_iCondition")] public partial long Condition { get; }
     [ConfigField("_iEXECAction")] public partial JsonElement? EXECAction { get; }
     [ConfigField("_iNPCCondition")] public partial long NPCCondition { get; }
+    [ConfigField("_kStatusPerformance")] public partial long[] StatusPerformance { get; }
     [ConfigField("_iStatusID")] public partial long StatusId { get; }
     [ConfigField("_iStatusLocation")] public partial long StatusLocation { get; }
 }

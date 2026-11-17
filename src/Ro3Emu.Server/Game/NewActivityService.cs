@@ -40,6 +40,7 @@ public sealed partial class NewActivityService
     private readonly GameLoop _loop;
     private readonly Deadlines _deadlines;
     private readonly SceneService _scene;
+    private readonly Maps.WorldData _worldData;
     private readonly InstanceService _instances;
     private readonly DungeonService _dungeons;
     private readonly PronteraDefenseService _defense;
@@ -52,7 +53,7 @@ public sealed partial class NewActivityService
 
     public NewActivityService(GameData data, CharacterService character, FunctionService functions, RoleStore roles,
         AccountStore accounts, ItemStore items, MailService mail, SeasonService seasons, TimeProvider clock, ActivityClock activityClock,
-        AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene,
+        AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene, Maps.WorldData worldData,
         InstanceService instances, DungeonService dungeons, PronteraDefenseService defense, CombatService combat,
         Deadlines deadlines, TeamService teams, MvpService mvps, ChatService chat, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
         ILogger<NewActivityService> log)
@@ -62,6 +63,7 @@ public sealed partial class NewActivityService
         this._activityClock = activityClock; this._awards = awards; this._tasks = tasks; this._sessions = sessions;
         this._loop = loop; this._scene = scene; this._instances = instances; this._defense = defense; this._log = log;
         this._deadlines = deadlines;
+        this._worldData = worldData;
         this._dungeons = dungeons;
         this._teams = teams;
         _freePremiumPass = options.Value.Pass.FreePremium;
@@ -77,6 +79,9 @@ public sealed partial class NewActivityService
         combat.EventDamageRecorded.Add(OnTreasureMonsterDamagedAsync);
         scene.TreasureComplete = CompleteTreasureHuntAsync;
         scene.Loaded.Add(OnTreasureSceneLoadedAsync);
+        scene.Loaded.Add(ReloadConchesAsync);
+        scene.Resync.Add(ReloadConchesAsync);
+        scene.Leaving.Add(LeaveConchesAsync);
         character.StateChanged.Add(QueueRefresh);
         character.ProgressHandlers.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
@@ -186,6 +191,7 @@ public sealed partial class NewActivityService
             await SyncAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
             session.ActivitiesReady = true;
+            await SyncConchesAsync(session);
             _tasks.OnStateChanged(session); // the open activities' quests (TaskService.ActivityTasks.cs)
             ScheduleDeadline(session);
             PassEvent(session, []); // the day played, and any daily activity earned while the pass was not watching
@@ -530,7 +536,11 @@ public sealed partial class NewActivityService
         if (!_deadlines.IsCurrent(session, lease)) return;
         await SyncTreasureAsync(session, lease);
         if (!_deadlines.IsCurrent(session, lease)) return;
-        if (session.ActivitiesReady) ScheduleDeadline(session);
+        if (session.ActivitiesReady)
+        {
+            await SyncConchesAsync(session);
+            ScheduleDeadline(session);
+        }
         foreach (var changed in ProjectionChanged) changed(session);
     }
 

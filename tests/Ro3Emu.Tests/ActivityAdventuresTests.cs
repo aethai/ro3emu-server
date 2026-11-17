@@ -256,6 +256,91 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task GenesisConchPaysOncePerPlayerAfterTheCastAndSurvivesReconnect()
+    {
+        var seasons = _app.Services.GetRequiredService<SeasonService>();
+        var data = _app.Services.GetRequiredService<GameData>();
+        long start = new SeasonClock(data, seasons.Start, 101, seasons.Zone).Build().StageTimeInfo[101002].StartTime + 60;
+        _clock.Set(start);
+        var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        const int map = 10112, pointId = 150;
+        long uid = NewActivityService.ConchUid(map, pointId);
+        var registry = _app.Services.GetRequiredService<SessionRegistry>();
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        async Task<GameSession> Visit(string account, BotClient bot)
+        {
+            await Gm(account, "!lvl 99");
+            await Gm(account, $"!warp {map}");
+            await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
+                view => view.Bases.Any(b => b.Uuid == (ulong)uid && b.EntityTemplateID == 8000002));
+            return registry.All().Single(s => s.Account == account);
+        }
+        var a = await Visit("alice", alice);
+        var b = await Visit("bob", bob);
+        var point = _app.Services.GetRequiredService<WorldData>().Map(map)!.SpawnGroups
+            .SelectMany(g => g.Points).Single(p => p.Id == pointId);
+        async Task Place(GameSession s, float dx = 0) => await loop.InvokeAsync(() =>
+        {
+            s.Position = new Vec3 { X = point.X + dx, Y = point.Y, Z = point.Z };
+            return Task.CompletedTask;
+        });
+        async Task<int> Use(BotClient bot, int action = 7000006, int scene = map)
+        {
+            await bot.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+            { SceneConfigId = scene, InteractionId = action, NpcUid = uid });
+            return (await Next(bot, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result;
+        }
+        static long Notes(GameSession s) => s.Items.Where(i => i.Entry is >= 1113001 and <= 1113007).Sum(i => i.Stack);
+        static long Collected(GameSession s) =>
+            s.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect.GetValueOrDefault(map)?.Sum ?? 0;
+        await Place(a, 15);
+        Assert.Equal(ErrorCodes.NpcTooFar, await Use(alice));
+        await Place(a);
+        Assert.NotEqual(0, await Use(alice, scene: 10113));
+        Assert.NotEqual(0, await Use(alice, action: 7000007));
+        long before = Notes(a);
+        Assert.Equal(0, await Use(alice));
+        var cast = await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+            n => n.DataInfo.EType == InteractInfo.Types.EState.ExploreCollection);
+        Assert.Equal(32001, cast.DataInfo.CollectionInfo.PlayInfo.PlayConfigId);
+        Assert.Equal(ErrorCodes.Cooldown, await Use(alice));
+        Assert.Equal(before, Notes(a));
+        await Place(a, 15);
+        _clock.Set(start + 3);
+        await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser, n => n.Interrupt);
+        Assert.Equal(0, Collected(a));
+        await Place(a);
+        await Place(b);
+        Assert.Equal(0, await Use(alice));
+        Assert.Equal(0, await Use(bob));
+        _clock.Set(start + 6);
+        foreach (var bot in new[] { alice, bob })
+            await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
+        Assert.Equal(1, Collected(a));
+        Assert.Equal(1, Collected(b));
+        Assert.Equal(before + 3, Notes(a));
+        Assert.NotEqual(0, await Use(alice));
+        await alice.DisposeAsync();
+        await using var relog = await InWorld("Alice", create: false);
+        await Next(relog, NewActivityService.ActivitySync, DBNewActivityInfoIncrement.Parser);
+        var restored = registry.All().Single(s => s.Account == "alice");
+        Assert.Equal(1, Collected(restored));
+        Assert.Equal(before + 3, Notes(restored));
+        Assert.NotEqual(0, await Use(relog));
+
+        // All seven possible notes occur in the first chapter. Spend one of the notes actually collected.
+        int item = restored.Items.First(i => i.Entry is >= 1113001 and <= 1113007).Entry;
+        var node = Ro3Emu.Server.Data.Config.ExploreNodeConfig.All(data)
+            .Where(n => n.NodeId is >= 1011 and <= 1014).First(n => n.PiecesId.Contains(item));
+        var fill = new WorldExplorationFillPhaseNodeReq
+        { PhaseCfgId = 101, NodeCfgId = node.NodeId, ItemId = item, Position = Array.IndexOf(node.PiecesId, (long)item) + 1 };
+        await relog.SendGameAsync(NewActivityService.Common, new CommonActivityReq { ActivityId = 111, RequestId = 17, FillPhaseNodeReq = fill });
+        Assert.Equal(0, (await Next(relog, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == 17)).Result);
+        Assert.Equal(before + 2, Notes(restored));
+    }
+
+    [ClientDataFact]
     public async Task ExplorationFillConsumesTheConfiguredNoteOnceAndPersistsAcrossReconnect()
     {
         var season = _app.Services.GetRequiredService<SeasonService>();

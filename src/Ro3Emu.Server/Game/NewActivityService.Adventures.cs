@@ -160,8 +160,13 @@ public sealed partial class NewActivityService
         return result;
     }
 
-    private bool WorldPhaseOpen(GameSession session, JsonElement row)
+    private bool WorldPhaseOpen(GameSession session, JsonElement row) =>
+        WorldPhaseWindow(session, row, out long start, out long end)
+        && (_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows || start <= Now && Now <= end);
+
+    private bool WorldPhaseWindow(GameSession session, JsonElement row, out long start, out long end)
     {
+        end = 0;
         var stages = _seasons.Clock(Playbook(session)).StageTimeInfo;
         static bool Bound(JsonElement phase, string field, Google.Protobuf.Collections.MapField<long, SeasonStageTimeInfo> stages, out long seconds)
         {
@@ -176,9 +181,7 @@ public sealed partial class NewActivityService
         // OpenContent (PerpetualWindows): the chapters (days 8/10/12 to 14 of the season, ExplorePhaseConfig type-4
         // tuples on stages 101002/101003) open with the activity and never close; the stage clock itself is not moved.
         // ClientHooks.ServerDayGates opens LC_SeasonExplorationHelper.IsChapterInActivityTime to match.
-        return Bound(row, "_kStartTime", stages, out long start)
-            && Bound(row, "_kEndTime", stages, out long end)
-            && (_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows || start <= Now && Now <= end);
+        return Bound(row, "_kStartTime", stages, out start) && Bound(row, "_kEndTime", stages, out end);
     }
 
     private static bool Contains(JsonElement row, string field, long id) =>
