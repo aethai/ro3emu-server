@@ -14,7 +14,7 @@ namespace Ro3Emu.Server.Micro;
 /// including itself.
 /// </summary>
 public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners, GameLoop loop, SessionRegistry sessions, GuildService guilds,
-    TeamService teams, GuildStore guildStore, GameData data, TimeProvider clock, IOptions<ServerOptions> options,
+    TeamService teams, PersonalService personalCards, GuildStore guildStore, GameData data, TimeProvider clock, IOptions<ServerOptions> options,
     ILogger<UserDataService> log) : IMicroService
 {
     // (inferred) Full profile replies use increasing versions, so a previous guild/online snapshot is replaceable.
@@ -134,13 +134,11 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
         additional.FashionScore = (int)Math.Min(int.MaxValue, WardrobeService.FashionScore(data, session?.Wardrobe
             ?? (profile.Wardrobe is { Length: > 0 } wardrobe ? DBWardRobeInfo.Parser.ParseFrom(wardrobe) : null)));
         // The profile card's current preset: Base carries its avatar, frame and title (inferred mirror of PersonalInfo).
-        var card = PersonalService.Current(session?.Personal
+        var card = personalCards.PublicCard(session?.Personal
             ?? (profile.Personal is { Length: > 0 } stored ? DBPersonalInfo.Parser.ParseFrom(stored) : null));
-        if (card != null)
-        {
-            additional.AvatarId = card.AvatarId; additional.AvatarFrameId = card.AvatarFrameId;
-            additional.PersonalTitleId = card.PersonalTitleId;
-        }
+        additional.AvatarId = card.AvatarId;
+        additional.AvatarFrameId = card.AvatarFrameId;
+        additional.PersonalTitleId = card.PersonalTitleId;
         // The worn chat cosmetics (slot type to outfit): other players' chat bubble, honor, overhead title and profile card
         // index them unguarded (UI_Sys_Chat_BgWidgetCtrl, UI_Sys_Personal_InfoWidgetCtrl), so the defaults are sent too.
         additional.SocialOutfitData = SocialOutfitService.Worn(data, role.Sex, live?.Career ?? role.Career, session?.SocialOutfit
@@ -157,8 +155,8 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
             ["GuildSnap"] = (guild == null ? new GuildSnapInfo() : guilds.Snapshot(guild)).ToByteArray(),
         };
         if (asked.Contains("Team")) fields["Team"] = teams.CacheTeam(role.Id).ToByteArray();
-        // "Personal" (romsg.PersonalInfo bytes) only when asked for (UI_Sys_PersonalPanelModel.BindRoleGuid) and parseable.
-        if (asked.Contains("Personal") && card != null && PersonalService.Parseable(card)) fields["Personal"] = card.ToByteArray();
+        // "Personal" (romsg.PersonalInfo bytes) only when asked for (UI_Sys_PersonalPanelModel.BindRoleGuid) including untouched presets.
+        if (asked.Contains("Personal")) fields["Personal"] = card.ToByteArray();
         // The profile card asks for PopularityStar with resend-until-present (UI_Sys_Personal_InfoWidgetCtrl.GetPopularity:
         // BindPersonalDataChangeByUIDAndTypeDoOnce), and every reply bumps the versions here, so without it the card
         // refreshes and asks again about five times a second. Zeros are written too (_refreshPopularity, the like counter).

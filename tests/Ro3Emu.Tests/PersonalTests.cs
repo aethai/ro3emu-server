@@ -246,6 +246,31 @@ public sealed class PersonalTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task UntouchedProfileMatchesTheOwnersCardOnlineAndOffline()
+    {
+        await using var reader = await InWorld("Reader");
+        var owner = await InWorld("Owner");
+        long id = (long)owner.Self!.Uuid;
+        var initial = await Next(owner, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.SyncAllMark);
+        var expected = initial.PlanInfos[initial.CurPlanId].All;
+        Assert.Empty(expected.DecalInfos);
+
+        async Task Inspect(bool online)
+        {
+            var fields = await Card(reader, id, "Name", "Base", "Online", "Personal");
+            Assert.Equal("Owner", fields["Name"]);
+            Assert.Equal(online, fields["Online"]);
+            Assert.Equal(expected, PersonalInfo.Parser.ParseFrom(Assert.IsType<byte[]>(fields["Personal"])));
+        }
+
+        await Inspect(true);
+        await owner.DisposeAsync();
+        await WaitUntil(() => !_app.Services.GetRequiredService<SessionRegistry>().All()
+            .Any(s => s.Role?.Id == id), "owner still online");
+        await Inspect(false);
+    }
+
+    [ClientDataFact]
     public async Task EditsAreCheckedPersistedAndShownToOthers()
     {
         await using var bob = await InWorld("Bob");
@@ -304,7 +329,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal("Mine", (await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser,
             i => i.PlanInfos.ContainsKey(2))).PlanInfos[2].Inc.PlanName);
 
-        // Others: Base carries the card's avatar fields; "Personal" only when asked for and only a card the client parses.
+        // Others: Base carries the card's avatar fields; "Personal" only when asked for with the selected preset.
         var seen = await Card(bob, aliceId, "Base", "Personal");
         var card = PersonalInfo.Parser.ParseFrom((byte[])seen["Personal"]!);
         Assert.Equal("Hello there", card.Sign);
@@ -318,14 +343,16 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.False(social.ContainsKey("PersonalUpvoteList")); // an empty list would reach pairs(nil)
         Assert.False((await Card(bob, aliceId, "Base")).ContainsKey("PopularityStar"));
 
-        // 82559 to preset 2 (no stickers): the client could not parse it, so it is not published.
+        // Switching to an undecorated preset must still return that preset to the viewer.
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 5 });
         Assert.Equal(PersonalService.ErrPreset, (await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser)).Result);
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 2 });
         var current = await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser);
         Assert.Equal((0, 2), (current.Result, current.PlanId));
         Assert.Equal(2, (await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.HasCurPlanId)).CurPlanId);
-        Assert.False((await Card(bob, aliceId, "Base", "Personal")).ContainsKey("Personal"));
+        var plain = PersonalInfo.Parser.ParseFrom((byte[])(await Card(bob, aliceId, "Base", "Personal"))["Personal"]!);
+        Assert.Equal("Mine", plain.PlanName);
+        Assert.Empty(plain.DecalInfos);
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser)).Result);
 
