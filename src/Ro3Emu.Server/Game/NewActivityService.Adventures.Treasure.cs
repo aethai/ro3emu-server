@@ -126,6 +126,8 @@ public sealed partial class NewActivityService
             if (cursor.PointId == 0 || cursor.PendingMonsterAward != 0 || cursor.Began + 10800 <= Now
                 || _scene.TreasurePoint(cursor.PointId) is not { } target || target.Scene != session.SceneEntry)
                 return ErrorCodes.NpcMissing;
+            int counterItem = TreasureCounterItem(session);
+            if (counterItem == 0) return ErrorCodes.RewardMissing;
             var outcomes = _data.Table("TreasureHuntResultRateConfig").Values
                 .Where(r => TreasureGroup(r, cursor.GroupId) && GameData.Int(r, "_kGroupProbability") > 0)
                 .OrderBy(r => GameData.Int(r, "_iId")).ToArray();
@@ -179,7 +181,8 @@ public sealed partial class NewActivityService
                 PendingMonsterId = monsterId,
             };
             if (monster != null && assistGroup > 0) TrackTreasureHelpers(monster.Uid);
-            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(), extra: grants, runtime: runtime);
+            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(),
+            extra: [.. grants, new AwardGrant(counterItem, 1)], runtime: runtime);
             if (result != 0)
             {
                 if (monster != null)
@@ -213,6 +216,17 @@ public sealed partial class NewActivityService
     private static bool TreasureGroup(System.Text.Json.JsonElement row, long groupId) =>
         row.TryGetProperty("_kGroupId", out var groups) && groups.ValueKind == System.Text.Json.JsonValueKind.Array
         && groups.EnumerateArray().Any(v => GameData.Number(v) == groupId);
+
+    private int TreasureCounterItem(GameSession session)
+        {
+            var items = _data.Table("GenericStageRewardsConfig").Values
+                .Where(row => TowerService.FitsPlayBook(row, Playbook(session)))
+                .Select(row => new Data.Config.GenericStageRewardsConfig(row))
+                .Where(row => row.Type == DailyActivityService.TreasureStage)
+                .Select(row => row.Item).Distinct().Take(2).ToArray();
+            return items is [> 0 and <= int.MaxValue and var item] && _data.Row("ItemConfig", item) != null
+                ? (int)item : 0;
+        }
 
     private static int TreasureAction(System.Text.Json.JsonElement row, int index) =>
         row.TryGetProperty("_iAction", out var actions) && actions.ValueKind == System.Text.Json.JsonValueKind.Array
