@@ -7,29 +7,72 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class NewActivityService
 {
-    private const int ExplorationActivity = 111, ConchInteraction = 7000006;
+    private const int ExplorationActivity = 111, ConchInteraction = 7000006, SpecialConchInteraction = 7000008;
     private const string ConchDeadline = "exploration-conch";
     private const long ConchUidBase = 3L << 42;
-    private readonly ConcurrentDictionary<long, IReadOnlyDictionary<long, SpawnPoint>> _conchMaps = new();
+    private sealed record ConchTrigger(MapRegion Area, ExplorePhaseConfig Phase, long Function);
+    private sealed class ConchMap
+    {
+        public Dictionary<long, SpawnPoint> Points { get; } = [];
+        public Dictionary<long, ConchTrigger> Triggers { get; } = [];
+    }
+
+    private readonly ConcurrentDictionary<long, ConchMap> _conchMaps = new();
 
     // The same editor point on different maps has a different wire UID. The client stores UIDs as doubles.
     internal static long ConchUid(long map, int point) => ConchUidBase | map << 20 | (uint)point;
 
-    private IReadOnlyDictionary<long, SpawnPoint> Conches(long map) => _conchMaps.GetOrAdd(map, id =>
+    private ConchMap Conches(long map) => _conchMaps.GetOrAdd(map, id =>
     {
-        var result = new Dictionary<long, SpawnPoint>();
+        var result = new ConchMap();
         if (id is <= 0 or >= (1 << 20) || _worldData.Map(id) is not { } world) return result;
         foreach (var group in world.SpawnGroups)
             foreach (var point in group.Points)
             {
-                // NPCConfig 8000002..4 use ordinary collection. Pillars have a separate rhythm interaction.
                 if (point.Id is <= 0 or >= (1 << 20) || point.ConfigId <= 0) continue;
-                if (NPCConfig.Get(_data, point.ConfigId) is { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
-                    && npc.InteractId is [ConchInteraction] && npc.CTimes is [0, 1])
-                    result.TryAdd(ConchUid(id, point.Id), point);
+                if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
+                    || npc.CTimes is not [0, 1] || npc.InteractId is not [var action]) continue;
+                long uid = ConchUid(id, point.Id);
+                if (action == SpecialConchInteraction && ReadConchTrigger(world, npc) is { } trigger)
+                    result.Triggers[uid] = trigger;
+                else if (action != ConchInteraction) continue;
+                result.Points.TryAdd(uid, point);
             }
         return result;
     });
+
+    // LC_InteractCondition: CheckArea (4003), exploration chapter time (16001), function open (1100).
+    // Only project the special pickup when its complete authored show condition is understood.
+    private ConchTrigger? ReadConchTrigger(MapWorld world, NPCConfig npc)
+    {
+        if (LCConditionList.Get(_data, npc.NpcShowCondition) is not { Type: 1, Inverse: false, SubConditionList: { } subs }
+            || subs.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+        MapRegion? area = null;
+        ExplorePhaseConfig? phase = null;
+        long function = 0;
+        foreach (var sub in subs.EnumerateArray())
+        {
+            var leaf = new LCConditionList(sub);
+            if (leaf.Type != 3 || leaf.Inverse) return null;
+            switch (leaf.Data)
+            {
+                case [4003, var scene, var region] when scene == world.SceneEntry && area == null:
+                    if (!world.Regions.TryGetValue(region, out area)) return null;
+                    break;
+                case [16001, var chapter] when phase == null:
+                    if (ExplorePhaseConfig.Get(_data, chapter) is not { Activityid: ExplorationActivity } row) return null;
+                    phase = row;
+                    break;
+                case [1100, > 0 and var id] when function == 0: function = id; break;
+                default: return null;
+            }
+        }
+        return area != null && phase.HasValue && function > 0 ? new(area, phase.Value, function) : null;
+    }
+
+    private bool ConchShown(GameSession session, ConchMap map, long uid) =>
+        !map.Triggers.TryGetValue(uid, out var trigger) || trigger.Area.Contains(session.Position.X, session.Position.Z)
+        && WorldPhaseOpen(session, trigger.Phase.Row) && _functions.IsOpen(session, trigger.Function);
 
     private bool ConchMapOpen(GameSession session) =>
         !session.SceneLoading && session.InstanceId == 0 && session.ActivitiesReady &&
@@ -59,9 +102,10 @@ public sealed partial class NewActivityService
         {
             var state = session.NewActivities!.ActivityInfo[ExplorationActivity].ActivityParam.WorldExploration;
             var collected = state.MapCollect.GetValueOrDefault(session.SceneEntry);
-            foreach (var (uid, point) in Conches(session.SceneEntry))
+            var map = Conches(session.SceneEntry);
+            foreach (var (uid, point) in map.Points)
             {
-                if (collected?.CollectCount.ContainsKey(point.Id) == true) continue;
+                if (collected?.CollectCount.ContainsKey(point.Id) == true || !ConchShown(session, map, uid)) continue;
                 visible.Add(uid);
                 if (session.VisibleConches.Contains(uid)) continue;
                 var npc = NPCConfig.Get(_data, point.ConfigId)!.Value;
@@ -81,7 +125,8 @@ public sealed partial class NewActivityService
     {
         point = null;
         if (!ConchMapOpen(session)) return ErrorCodes.ActivityClosed;
-        if (!session.VisibleConches.Contains(uid) || !Conches(session.SceneEntry).TryGetValue(uid, out point))
+        var map = Conches(session.SceneEntry);
+        if (!session.VisibleConches.Contains(uid) || !map.Points.TryGetValue(uid, out point) || !ConchShown(session, map, uid))
             return ErrorCodes.NpcMissing;
         if (session.Dead) return ErrorCodes.NpcParameter;
         var npc = NPCConfig.Get(_data, point.ConfigId)!.Value;
@@ -93,13 +138,19 @@ public sealed partial class NewActivityService
     internal async Task<bool> TryConchAsync(GameSession session, NpcInteractionReq req)
     {
         if (req.NpcUid >> 40 != ConchUidBase >> 40) return false;
-        var interaction = NPCInteractConfig.Get(_data, ConchInteraction);
+        SpawnPoint? point = null;
+        int result = req.SceneConfigId != session.SceneEntry ? ErrorCodes.NpcParameter : CheckConch(session, req.NpcUid, out point);
+        if (point != null && result == 0)
+        {
+            if (NPCConfig.Get(_data, point.ConfigId)?.InteractId is not [var action] || action != req.InteractionId)
+                result = ErrorCodes.NpcParameter;
+            else if (session.PendingConch != 0) result = ErrorCodes.Cooldown;
+        }
+        var interaction = result == 0 ? NPCInteractConfig.Get(_data, req.InteractionId) : null;
         var play = interaction?.StatusPerformance;
         var status = interaction is { } row ? GameplayStatusConfig.Get(_data, row.StatusId) : null;
-        int result = req.InteractionId != ConchInteraction || req.SceneConfigId != session.SceneEntry ? ErrorCodes.NpcParameter
-            : session.PendingConch != 0 ? ErrorCodes.Cooldown
-            : status?.StatusType != (int)InteractInfo.Types.EState.ExploreCollection || play is not [> 0 and <= int.MaxValue, > 0 and <= int.MaxValue] ? ErrorCodes.FeatureUnavailable
-            : CheckConch(session, req.NpcUid, out _);
+        if (result == 0 && (status?.StatusType != (int)InteractInfo.Types.EState.ExploreCollection
+            || play is not [> 0 and <= int.MaxValue, > 0 and <= int.MaxValue])) result = ErrorCodes.FeatureUnavailable;
         await session.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Req = req, Result = result });
         if (result != 0) return true;
         var end = _clock.GetUtcNow().AddMilliseconds(play![1]);
@@ -112,7 +163,7 @@ public sealed partial class NewActivityService
             DataInfo = new InteractInfo
             {
                 EType = InteractInfo.Types.EState.ExploreCollection, StateId = interaction!.Value.StatusId,
-                ActiveObjId = req.NpcUid, InteractConfigId = ConchInteraction,
+                ActiveObjId = req.NpcUid, InteractConfigId = req.InteractionId,
                 CollectionInfo = new CollectionState
                 {
                     PlayInfo = new InteractPlayInfo
@@ -123,9 +174,19 @@ public sealed partial class NewActivityService
         return true;
     }
 
-    internal Task ConchMovedAsync(GameSession session) =>
-        session.ConchStartPosition is { } start && !start.Equals(session.Position)
-            ? InterruptConchAsync(session) : Task.CompletedTask;
+    internal async Task ConchMovedAsync(GameSession session)
+    {
+        if (session.ConchStartPosition is { } start && !start.Equals(session.Position))
+            await InterruptConchAsync(session);
+        if (session.InstanceId != 0 || !_conchMaps.TryGetValue(session.SceneEntry, out var map)) return;
+        foreach (var trigger in map.Triggers.Values)
+        {
+            var previous = session.PreviousPosition;
+            if (trigger.Area.Contains(previous.X, previous.Z) == trigger.Area.Contains(session.Position.X, session.Position.Z)) continue;
+            await SyncConchesAsync(session);
+            break;
+        }
+    }
 
     internal Task InterruptConchAsync(GameSession session)
     {

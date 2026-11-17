@@ -38,6 +38,62 @@ public sealed class GenesisNoteDropTests
     }
 
     [ClientDataFact]
+    public async Task SpecialConchAppearsInItsTriggerAndPaysOnceAfterTheCast()
+    {
+        var clock = new Clock();
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
+            o.PlayBook = 101;
+            o.SeasonStart = "2026-10-05";
+        }, clock);
+        const int map = 10110, point = 491;
+        long uid = NewActivityService.ConchUid(map, point);
+        var seasons = host.Service<SeasonService>();
+        long start = new SeasonClock(host.Service<GameData>(), seasons.Start, 101, seasons.Zone)
+            .Build().StageTimeInfo[101002].StartTime + 60;
+        clock.Set(start);
+        await using var alice = await host.InWorldAsync("Alice");
+        await Gm(host, alice, "!lvl 99");
+        await Gm(host, alice, "!warp 10110 89.65 240.87");
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
+        async Task<int> Pick(int action)
+        {
+            await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+            { SceneConfigId = map, NpcUid = uid, InteractionId = action });
+            return (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result;
+        }
+        async Task EnterTrigger()
+        {
+            await Gm(host, alice, "!jump 89.65 238.28");
+            await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
+                v => v.Bases.Any(b => b.Uuid == (ulong)uid && b.EntityTemplateID == 8100004));
+        }
+
+        Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
+        await EnterTrigger();
+        Assert.Equal(ErrorCodes.NpcParameter, await Pick(7000006));
+        Assert.Equal(0, await Pick(7000008));
+        var cast = await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+            n => n.DataInfo.EType == InteractInfo.Types.EState.ExploreCollection);
+        Assert.Equal(7000008, cast.DataInfo.InteractConfigId);
+        await Gm(host, alice, "!jump 89.65 240.87");
+        await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser, n => n.Interrupt);
+        await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
+        Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
+
+        await EnterTrigger();
+        long before = session.Progress!.Currency.GetValueOrDefault(CharacterService.ZenyId);
+        Assert.Equal(0, await Pick(7000008));
+        clock.Set(start + 3);
+        await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
+        Assert.Equal(before + 1000, session.Progress.Currency.GetValueOrDefault(CharacterService.ZenyId));
+        var collected = session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
+        Assert.Equal(1, collected.CollectCount[point]);
+        Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
+    }
+
+    [ClientDataFact]
     public async Task GenesisFieldAndGatherNotesShareFivePerDayAcrossReconnect()
     {
         var clock = new Clock();
