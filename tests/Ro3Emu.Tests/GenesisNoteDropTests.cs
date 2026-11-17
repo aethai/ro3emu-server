@@ -55,7 +55,7 @@ public sealed class GenesisNoteDropTests
         clock.Set(start);
         await using var alice = await host.InWorldAsync("Alice");
         await Gm(host, alice, "!lvl 99");
-        await Gm(host, alice, "!warp 10110 89.65 240.87");
+        await Gm(host, alice, "!warp 10110 95.4 241");
         var session = host.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
         async Task<int> Pick(int action)
         {
@@ -65,7 +65,7 @@ public sealed class GenesisNoteDropTests
         }
         async Task EnterTrigger()
         {
-            await Gm(host, alice, "!jump 89.65 238.28");
+            await Gm(host, alice, "!jump 94.9 241");
             await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
                 v => v.Bases.Any(b => b.Uuid == (ulong)uid && b.EntityTemplateID == 8100004));
         }
@@ -77,7 +77,7 @@ public sealed class GenesisNoteDropTests
         var cast = await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.ExploreCollection);
         Assert.Equal(7000008, cast.DataInfo.InteractConfigId);
-        await Gm(host, alice, "!jump 89.65 240.87");
+        await Gm(host, alice, "!jump 95.4 241");
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser, n => n.Interrupt);
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
         Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
