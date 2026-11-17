@@ -66,7 +66,7 @@ public sealed partial class NewActivityService
                 if (session.VisibleConches.Contains(uid)) continue;
                 var npc = NPCConfig.Get(_data, point.ConfigId)!.Value;
                 var entity = SceneService.NpcEntity(new WorldNpc(uid, session.SceneEntry, WorldNpcKind.Npc,
-                    point.ConfigId, _data.TextOf(npc.Row, "_kName"), (int)npc.Camp, point.X, point.Y, point.Z, point.Face, default));
+                    point.ConfigId, npc.DisplayName(_data), (int)npc.Camp, point.X, point.Y, point.Z, point.Face, default));
                 view.Bases.Add(entity);
             }
         }
