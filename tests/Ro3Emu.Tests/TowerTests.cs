@@ -742,6 +742,34 @@ public sealed class TowerTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task TheNextFloorMovesThePlayerBackToTheBornPointAfterTheReset()
+    {
+        await using var alice = await InWorld("Alice");
+        await Eligible(alice);
+        var first = await EnterFloor(alice, 1);
+        foreach (var monster in first.Monsters) await Kill(alice, monster.Uuid);
+        Assert.True((await Next(alice, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
+        var born = Service<WorldData>().Map(2100001)!.Born!.Value;
+        float walkedTo = 0;
+        await OnLoop(() => { walkedTo = Session(alice).Position.Z; return Task.CompletedTask; });
+        Assert.True(Math.Abs(walkedTo - born.Z) > 1, "the kills walked the player off the born point");
+
+        // LC_Actor_AutoAttack._resetScene pauses auto battle at the 30124; only _refreshAutoPathCache resumes it, and
+        // it runs on Unit.LocalPlayerGridChange alone, so the reset must be followed by a server move of the player.
+        long self = (long)alice.Self!.Uuid;
+        using var teleport = alice.Inbox.Expect(e => e.IsGame(GameAoiSink.MovementChange) && MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == self);
+        await EnterFloor(alice, 2, inside: true);
+        var moved = await teleport.WaitAsync(Wait);
+        var move = MovementChangeNtf.Parser.ParseFrom(moved.Body);
+        Assert.Equal(MovementTransitionType.MoveTransForceTeleport, move.TransType);
+        Assert.Equal((born.X, born.Z), (move.MovementInfo.Pos.X, move.MovementInfo.Pos.Z));
+        var packets = alice.Inbox.Snapshot().ToList();
+        int reset = packets.FindLastIndex(e => e.IsGame(DungeonService.Reset)), started = packets.FindLastIndex(e => e.IsGame(TowerService.DungeonInfo));
+        Assert.InRange(packets.IndexOf(moved), reset + 1, started - 1);
+        await OnLoop(() => { Assert.Equal(born.Z, Session(alice).Position.Z); return Task.CompletedTask; });
+    }
+
+    [ClientDataFact]
     public async Task EveryWaveOccurrenceSurvivesExpansionAndExitCancelsTheRest()
     {
         var data = Service<GameData>();
