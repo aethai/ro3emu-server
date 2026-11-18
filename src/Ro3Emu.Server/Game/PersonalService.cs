@@ -186,14 +186,8 @@ public sealed class PersonalService
     public static PersonalInfo? Current(DBPersonalInfo? info) =>
         info != null && info.PlanInfos.TryGetValue(info.CurPlanId, out var plan) ? plan : null;
 
-    /// <summary>
-    /// Whether the client can parse the card: LC_DAL_Personal.ParsePersonalInfo walks decalInfos and showcaseVisibleList with
-    /// pairs() unguarded (:724-747), and an empty repeated field decodes as nil. A card without stickers or showcases
-    /// would abort LC_DAL_RolePublic's whole public-card parse (:874-900, before Library, GuildSnap and Team), so it is
-    /// left out of the public data. The own 5016 has no such choice: an unpatched client builds no PersonalPlayerInfo for
-    /// it; Ro3Emu.ClientHooks.PersonalCards reads the missing lists as empty. Kept until that patch is proven in game.
-    /// </summary>
-    public static bool Parseable(PersonalInfo plan) => plan.DecalInfos.Count > 0 && plan.ShowcaseVisibleList.Count > 0;
+    // An untouched role has no stored personal blob. Use the same default preset it sees at login.
+    internal PersonalInfo PublicCard(DBPersonalInfo? info) => Current(info) ?? DefaultPlan();
 
     // ------------------------------------------------------------------ 82553 / 82559 / 82560
 
