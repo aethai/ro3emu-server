@@ -28,6 +28,14 @@ internal static class MountFlight
     /// straight above or below, and no client value bounds it.</summary>
     public const float Reach = 10;
 
+    /// <summary>How far the client looks for its landing spot: LC_MountComponent._injectSkillPos aims a landing at
+    /// Lua_SceneSpace.SearchWalkableAround(position, ..., 100), so the point can lie well away from a rider over trees or
+    /// water.</summary>
+    public const float LandingReach = 100;
+
+    /// <summary>(inferred) How far around the rider the server looks for ground itself when the client's spot is unusable.</summary>
+    private const int LandingSearch = 30;
+
     /// <summary>The highest a flyer may be above its floor (the bound WorldCoreService.FlyMoveAsync already used, inferred).</summary>
     public const float MaxHeight = 50;
 
@@ -37,15 +45,16 @@ internal static class MountFlight
 
     /// <summary>
     /// The switch skill <paramref name="skillId"/>'s move from <paramref name="from"/>, null when it moves nobody (no
-    /// displacement in its _kLogicData) or a landing finds no ground to land on. A missing or implausible aimed point
-    /// falls back to the row's own m_fHeight straight up for a take-off, and the ground below for a landing (inferred).
+    /// displacement in its _kLogicData). A missing or implausible aimed point falls back to the row's own m_fHeight
+    /// straight up for a take-off, and the nearest walkable ground for a landing (inferred); a landing always lands.
     /// A take-off aimed at no climb (the rider's own spot, where the server fills in a target unit's position) is one.
     /// </summary>
     public static Move? Plan(GameData data, int skillId, bool takeOff, MapWorld? map, Vec3 from, Vec3? aimed)
     {
         if (SkillConfig.Get(data, skillId)?.LogicData is not [_, var delay, var effectId, ..]
             || SkillEffectData.Find(data.SkillTemplateTable("Lua_Config_EffectData"), effectId) is not { IsMovement: true } effect) return null;
-        var aim = aimed is { } a && WorldCoreService.Finite(a) && MonsterService.Distance(from.X, from.Z, a.X, a.Z) <= Reach ? a : null;
+        var aim = aimed is { } a && WorldCoreService.Finite(a)
+            && MonsterService.Distance(from.X, from.Z, a.X, a.Z) <= (takeOff ? Reach : LandingReach) ? a : null;
         var end = takeOff ? TakeOffEnd(map, from, aim, effect.MovementHeight) : LandingEnd(map, from, aim);
         return end == null ? null : new Move((int)effectId, Math.Max(1, effect.MovementMs), (int)Math.Max(0, delay), end);
     }
@@ -58,7 +67,10 @@ internal static class MountFlight
     {
         if (map == null) return null;
         if (aim != null && Standable(map, aim) is { } aimed) return aimed;
-        return Standable(map, from);
+        if (Standable(map, from) is { } below) return below;
+        // Over trees, roofs or water nothing below is walkable: the nearest ground around, else the floor under the rider.
+        var near = map.Standable(new MapPoint(from.X, Floor(map, from) ?? from.Y, from.Z, 0), LandingSearch);
+        return new Vec3 { X = near.X, Y = near.Y, Z = near.Z };
     }
 
     private static Vec3? Standable(MapWorld map, Vec3 p)

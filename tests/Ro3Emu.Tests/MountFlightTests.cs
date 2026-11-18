@@ -73,15 +73,19 @@ public sealed class MountFlightTests : IDisposable
     }
 
     [Fact]
-    public void ALandingEndsOnWalkableGroundOrNowhere()
+    public void ALandingAlwaysEndsOnWalkableGround()
     {
         var aimed = MountFlight.Plan(_data, Landing, takeOff: false, _map, At(3, 30, 3), At(5, 2.4f, 4));
         Assert.Equal((Descent, 5f, 2f, 4f), (aimed!.Value.EffectId, aimed.Value.End.X, aimed.Value.End.Y, aimed.Value.End.Z));
         // Aimed into the lake: the ground below the rider instead.
         var below = MountFlight.Plan(_data, Landing, takeOff: false, _map, At(3, 30, 3), At(12, 7, 3));
         Assert.Equal((3f, 2f, 3f), (below!.Value.End.X, below.Value.End.Y, below.Value.End.Z));
-        // Over the lake with no ground in reach: no landing.
-        Assert.Null(MountFlight.Plan(_data, Landing, takeOff: false, _map, At(15, 30, 3), At(16, 7, 3)));
+        // Over the lake, aimed into it: the nearest shore, never a landing that does nothing.
+        var shore = MountFlight.Plan(_data, Landing, takeOff: false, _map, At(15, 30, 3), At(16, 7, 3));
+        Assert.Equal((9.5f, 2f), (shore!.Value.End.X, shore.Value.End.Y));
+        // The client's spot can lie far off (SearchWalkableAround up to 100): taken when it is ground.
+        var far = MountFlight.Plan(_data, Landing, takeOff: false, _map, At(19, 30, 9), At(1, 2, 1));
+        Assert.Equal((1f, 2f, 1f), (far!.Value.End.X, far.Value.End.Y, far.Value.End.Z));
     }
 
     [Fact]
