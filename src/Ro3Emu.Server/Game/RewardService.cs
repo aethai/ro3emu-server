@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
@@ -17,6 +18,10 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed class RewardService
 {
+    internal ExplorationNoteDrops? ExplorationNotes { get; set; }
+    internal Func<GameSession, MonsterUnit, bool>? IsExplorationHunt { get; set; }
+    internal Func<GameSession, Task>? SyncExplorationRestriction { get; set; }
+
     private const int BaseExpItem = 100, JobExpItem = 101;
     private const int RewardDrop = 8; // ManifestType Drop
 
@@ -58,6 +63,8 @@ public sealed class RewardService
     {
         internal required Role Role;
         internal required List<(int Entry, int Count)> Items;
+        internal ExplorationNoteDrops.Roll? Note;
+        internal bool NoteGranted;
         internal long BaseExp;
         internal long JobExp;
         internal bool Published;
@@ -102,21 +109,41 @@ public sealed class RewardService
             if (_outcomes.TryGetValue(monster, out var stale) && stale.Role.Id != role.Id) _outcomes.Remove(monster);
             if (!_outcomes.TryGetValue(monster, out var outcome))
             {
-                var (items, baseExp, jobExp) = ResolveKill(player, monster, bonus);
+                var (drops, baseExp, jobExp) = ResolveKill(player, monster, bonus);
                 // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
-                items = PassPrivileges.BoostDrops(_data, player, items);
-                outcome = new KillOutcome { Role = role, Items = items, BaseExp = baseExp, JobExp = jobExp };
+                drops = PassPrivileges.BoostDrops(_data, player, drops);
+                outcome = new KillOutcome { Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp };
+                if (IsExplorationHunt?.Invoke(player, monster) == true) outcome.Note = ExplorationNotes?.Choose(player);
                 _outcomes.Add(monster, outcome);
             }
             _character.StageKillTaskObligations?.Invoke(player, monster, settlement);
             // A retry re-stages: the later stage is undone first, so the AFK reset never restores a stale wrapper.
             settlement.ResetHuntStage?.Invoke();
-            StageAfkKill?.Invoke(player, monster, settlement, outcome.Items, outcome.BaseExp, outcome.JobExp);
+            var items = outcome.Items;
+            DBRestrictInfo? restrict = null;
+            if (outcome.Note is { } note && ExplorationNotes?.Spend(player, note) is { } remaining)
+            {
+                items = [.. items, (note.Item, 1)];
+                restrict = player.Restrictions!.Clone();
+                restrict.RestrictCount[remaining.Id] = remaining;
+            }
+            StageAfkKill?.Invoke(player, monster, settlement, items, outcome.BaseExp, outcome.JobExp);
             StageHuntKill?.Invoke(player, monster, settlement);
             settlement.LibraryMonster = monster.Template.NpcId;
-            outcome.Granted = await _character.ExchangeLockedAsync(player, [], outcome.Items, popup: false,
-                sync: outcome.Items.Count > 0, baseExp: outcome.BaseExp, jobExp: outcome.JobExp, rewardSettlement: settlement,
-                persist: settlement.Enlist, committed: settlement.Applied) ?? [];
+            outcome.Granted = await _character.ExchangeLockedAsync(player, [], items, popup: false,
+                sync: items.Count > 0, baseExp: outcome.BaseExp, jobExp: outcome.JobExp, rewardSettlement: settlement,
+                persist: tx =>
+                {
+                    settlement.Enlist?.Invoke(tx);
+                    if (restrict != null) tx.RoleBlob(role.Id, "life_restrict", restrict.ToByteArray());
+                }, committed: () =>
+                {
+                    settlement.Applied?.Invoke();
+                    if (restrict == null) return;
+                    player.Restrictions = restrict;
+                    outcome.NoteGranted = true;
+                    outcome.Items = items;
+                }) ?? [];
         }
         catch
         {
@@ -200,6 +227,7 @@ public sealed class RewardService
         {
             if (!ReferenceEquals(player.Role, role) || player.Attachment?.Cancelled == true) return;
             await monster.RewardSettlement!.PresentAsync();
+            if (outcome.NoteGranted && SyncExplorationRestriction != null) await SyncExplorationRestriction(player);
             if (outcome.Items.Count > 0)
             {
                 var notify = new GetRewardNotify

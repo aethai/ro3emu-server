@@ -75,6 +75,8 @@ public sealed class MapWorld
     public MapPoint? Revive { get; init; }
     public IReadOnlyList<WorldNpc> Npcs { get; init; } = [];
     public IReadOnlyDictionary<long, MapPoint> Points { get; init; } = new Dictionary<long, MapPoint>();
+    /// <summary>Editor point IDs explicitly marked isOnGround=false. Missing flags default to ground placement.</summary>
+    internal HashSet<long> OffGroundPoints { get; init; } = [];
     public NavGrid? Nav { get; init; }
     public IReadOnlyList<SpawnGroup> SpawnGroups { get; init; } = [];
     public IReadOnlyList<GatheringSpawnPoint> GatheringPoints { get; init; } = [];
@@ -104,6 +106,12 @@ public sealed class MapWorld
     /// <summary>The point with y moved onto the walkable layer nearest to it (the client takes y as sent).</summary>
     public MapPoint Grounded(MapPoint p) =>
         Nav?.WalkHeight(p.X, p.Z, p.Y) is { } h ? p with { Y = h } : p;
+
+    /// <summary>Raise a ground-marked NPC sunk below its nearest walkable layer; preserve authored offsets above it.</summary>
+    internal float RaisedGroundNpcHeight(long pointId, float x, float y, float z) =>
+        !OffGroundPoints.Contains(pointId) && Nav?.WalkHeight(x, z, y) is { } floor && floor - y > SunkTolerance ? floor : y;
+
+    private const float SunkTolerance = 0.3f;
 
     public bool IsWalkable(float x, float y, float z) => Nav?.IsWalkable(x, y, z) ?? true;
 
@@ -370,7 +378,12 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
         var points = new Dictionary<long, MapPoint>();
         if (se.TryGetProperty("m_kAllPoints", out var all) && all.ValueKind == JsonValueKind.Object)
             foreach (var p in all.EnumerateObject())
-                if (long.TryParse(p.Name, out var id) && Point(p.Value, "direction") is { } point) points[id] = point;
+            {
+                if (!long.TryParse(p.Name, out var id)) continue;
+                if (Point(p.Value, "direction") is { } point) points[id] = point;
+                if (p.Value.TryGetProperty("isOnGround", out var flag) && flag.ValueKind == JsonValueKind.False)
+                    map.OffGroundPoints.Add(id);
+            }
 
         var npcs = new List<WorldNpc>();
         if (se.TryGetProperty("kNpcList", out var list2) && list2.ValueKind == JsonValueKind.Object)
@@ -399,8 +412,8 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
                 // #bug-reports "Payon - NPC in the ground": an ordinary NPC the editor marks isOnGround can sit below the
                 // only walkable layer (Payon's Monster Ecology Research Scholar 100181: y 14.70 on ground 21.69), drawn
                 // inside the hill and out of its 3D talk range. Raise a sunk one onto that floor; NPCs above it stay.
-                else if (kind == WorldNpcKind.Npc && OnGround(all, (int)GameData.Int(e, "Id")) && map.Nav?.WalkHeight(x, z, y) is { } floor
-                    && floor - y > SunkTolerance) y = floor;
+                else if (kind == WorldNpcKind.Npc)
+                    y = map.RaisedGroundNpcHeight(GameData.Int(e, "Id"), x, y, z);
                 npcs.Add(new WorldNpc(NpcUidBase | sceneEntry << 16 | (long)npcs.Count, sceneEntry, kind, npcId,
                     data.TextOf(npcRow, "_kName"), (int)GameData.Int(npcRow, "_iCamp"), x, y, z, face, e));
             }
@@ -420,20 +433,13 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
             sceneEntry, data.MapName(sceneEntry), npcs.Count, spawnGroups.Count, born, map.Nav?.Width, map.Nav?.Height);
         return new MapWorld
         {
-            SceneEntry = sceneEntry, Born = born, Revive = revive, Npcs = npcs, Points = points, Nav = map.Nav, SpawnGroups = spawnGroups,
+            SceneEntry = sceneEntry, Born = born, Revive = revive, Npcs = npcs, Points = points, OffGroundPoints = map.OffGroundPoints,
+            Nav = map.Nav, SpawnGroups = spawnGroups,
             GatheringPoints = LoadGatheringPoints(se, sceneEntry), DungeonGroups = LoadDungeonGroups(se), Regions = LoadRegions(se),
             GuideRoutes = SceneEditorGuides.RouteIds(se), GuidePaths = SceneEditorGuides.Paths(se), PatrolPaths = SceneEditorGuides.Patrols(se),
             AirWalls = SceneEditorAirWalls.Read(se)
         };
     }
-
-    /// <summary>An NPC more than this far below the walkable floor is drawn inside the ground.</summary>
-    private const float SunkTolerance = 0.3f;
-
-    /// <summary>m_kAllPoints[id].isOnGround (absent counts as on the ground).</summary>
-    private static bool OnGround(JsonElement all, int pointId) =>
-        all.ValueKind != JsonValueKind.Object || !all.TryGetProperty(pointId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var point)
-        || !point.TryGetProperty("isOnGround", out var flag) || flag.ValueKind != JsonValueKind.False;
 
     private static Dictionary<long, MapRegion> LoadRegions(JsonElement se)
     {

@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -131,7 +132,7 @@ public sealed partial class NewActivityService
 
     private async Task<int> WorldFillCoreAsync(GameSession session, long activityId, WorldExplorationFillPhaseNodeReq req)
     {
-        if (ActivityError(session, activityId, 14) is var error and not 0) return error;
+        if (ActivityError(session, activityId, WorldExplorationType) is var error and not 0) return error;
         if (_data.Row("ExplorePhaseConfig", req.PhaseCfgId) is not { } phaseRow
             || GameData.Int(phaseRow, "_iActivityid") != activityId
             || !WorldPhaseOpen(session, phaseRow)
@@ -147,21 +148,49 @@ public sealed partial class NewActivityService
         if (node.Items.ContainsKey(req.Position) || node.IsFinished) return ErrorCodes.MailAlreadyClaimed;
         node.Items[req.Position] = req.ItemId;
         node.IsFinished = node.Items.Count == pieces.GetArrayLength();
-        int slots = phase.NodeInfos.Keys.Sum(nodeId =>
-            _data.Row("ExploreNodeConfig", nodeId) is { } configured
-            && configured.TryGetProperty("_kPiecesID", out var list) && list.ValueKind == JsonValueKind.Array
-                ? list.GetArrayLength() : 0);
-        // (inferred) GetChapterProgress divides totalRate by 100 for the displayed
-        // percentage, so normalize the filled note slots to 10,000 basis points.
-        phase.TotalRate = slots > 0 ? (int)(10000L * phase.NodeInfos.Values.Sum(n => n.Items.Count) / slots) : 0;
+        UpdateChapterProgress(session, phase);
         int result = await CommitAdventureAsync(session, next, costs: [((int)req.ItemId, 1)]);
         // Quest target 107101 (TaskService.EventTargets.cs) and a finished node's quest (TaskService.MiscTargets.cs).
         if (result == 0) _tasks.OnStateChanged(session);
         return result;
     }
 
-    private bool WorldPhaseOpen(GameSession session, JsonElement row)
+    private void OnExplorationQuestDelivered(GameSession session, long quest, AwardPlan _)
     {
+        if (ExploreNodeConfig.All(_data).Any(n => n.FinishQuestId == quest)) QueueRefresh(session);
+    }
+
+    // The rules credit story quests, and MovementPlay_CellWidgetCtrl checks the delivered finish quest.
+    // The export supplies no weights: one unit per note slot and one per completed measure's final quest (inferred).
+    private bool UpdateChapterProgress(GameSession session, DBWorldExplorationPhase phase)
+    {
+        if (session.Tasks == null || ExplorePhaseConfig.Get(_data, phase.PhaseCfgId) is not { } chapter) return false;
+        int total = 0, earned = 0;
+        foreach (long id in chapter.Nodes)
+        {
+            if (ExploreNodeConfig.Get(_data, id) is not { } config) continue;
+            var pieces = config.PiecesId;
+            total += pieces.Length + (config.FinishQuestId > 0 ? 1 : 0);
+            if (!phase.NodeInfos.TryGetValue(id, out var node)) continue;
+            for (int i = 0; i < pieces.Length; i++)
+                if (node.Items.TryGetValue(i + 1, out long item) && item == pieces[i]) earned++;
+            if (node.IsFinished && config.FinishQuestId > 0 && TaskService.IsDelivered(session, config.FinishQuestId))
+                earned++;
+        }
+        if (total == 0) return false;
+        int rate = (int)(10000L * earned / total);
+        if (phase.TotalRate == rate) return false;
+        phase.TotalRate = rate;
+        return true;
+    }
+
+    private bool WorldPhaseOpen(GameSession session, JsonElement row) =>
+        WorldPhaseWindow(session, row, out long start, out long end)
+        && (_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows || start <= Now && Now <= end);
+
+    private bool WorldPhaseWindow(GameSession session, JsonElement row, out long start, out long end)
+    {
+        end = 0;
         var stages = _seasons.Clock(Playbook(session)).StageTimeInfo;
         static bool Bound(JsonElement phase, string field, Google.Protobuf.Collections.MapField<long, SeasonStageTimeInfo> stages, out long seconds)
         {
@@ -176,9 +205,7 @@ public sealed partial class NewActivityService
         // OpenContent (PerpetualWindows): the chapters (days 8/10/12 to 14 of the season, ExplorePhaseConfig type-4
         // tuples on stages 101002/101003) open with the activity and never close; the stage clock itself is not moved.
         // ClientHooks.ServerDayGates opens LC_SeasonExplorationHelper.IsChapterInActivityTime to match.
-        return Bound(row, "_kStartTime", stages, out long start)
-            && Bound(row, "_kEndTime", stages, out long end)
-            && (_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows || start <= Now && Now <= end);
+        return Bound(row, "_kStartTime", stages, out start) && Bound(row, "_kEndTime", stages, out end);
     }
 
     private static bool Contains(JsonElement row, string field, long id) =>

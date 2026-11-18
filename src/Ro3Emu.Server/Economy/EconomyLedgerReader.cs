@@ -945,7 +945,7 @@ public static class EconomyLedgerReader
         };
         string[] allowed = commandKind switch
         {
-            "monster-kill" => ["inventory", "progress", "library", "task_followup", "tower", "tasks", "wild_afk", "area_concur"],
+            "monster-kill" => ["inventory", "progress", "library", "task_followup", "tower", "tasks", "wild_afk", "area_concur", "life_restrict"],
             "cd13e/daily-reset" => [.. required, "wild_afk"],
             "gather-yield" => [.. required, "library", "task_followup"],
             "dungeon-reward" => [.. required, "auction_order", "library", "task_followup"],
@@ -971,6 +971,7 @@ public static class EconomyLedgerReader
         bool creditedKill = commandKind == "monster-kill" && childReceipts.Length > 2 &&
             childReceipts[^1] is long[];
         if (required.Except(bParts.Keys).Any() || bParts.Keys.Except(allowed).Any() ||
+            commandKind == "monster-kill" && bParts.ContainsKey("life_restrict") && !bParts.ContainsKey("wild_afk") ||
             followup && !library && !(creditedKill && bParts.ContainsKey("tasks")) ||
             (creditedKill && ((long[])childReceipts[^1]!).Contains(actorRole) !=
                 (bParts.ContainsKey("tasks") && followup)) ||

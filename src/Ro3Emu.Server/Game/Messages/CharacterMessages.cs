@@ -5,7 +5,7 @@ using Romsg;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>The role itself: stats, skills, equipment, cards, pets, mounts, wardrobe, life jobs, emotes and achievements.</summary>
-public sealed class CharacterMessages(CharacterService character, SkillService skills, CombatService combat, SceneService scene, TaskService tasks, GuideService guides, EmojiService emoji, AchievementService achievements, CardService cards, EquipmentService equipment, AppraisalService appraisal, EnchantService enchants, SeasonPageService seasonPage, SeasonRefineService seasonRefine, SeasonTalentService talents, PetService pets, DungeonService dungeons, LifeJobService life, GatheringService gathering, TimedBattleService timedBattles, GuildCampfireService campfire, MountService mounts, CareerSpecialService careerSpecial, WardrobeService wardrobe, TotemService totems, GrowthClassService growthClass, ParagonService paragon, TitleService titles) : Messaging.IMessageModule
+public sealed class CharacterMessages(CharacterService character, SkillService skills, CombatService combat, SceneService scene, TaskService tasks, GuideService guides, EmojiService emoji, AchievementService achievements, CardService cards, EquipmentService equipment, AppraisalService appraisal, EnchantService enchants, SeasonPageService seasonPage, SeasonRefineService seasonRefine, SeasonTalentService talents, PetService pets, DungeonService dungeons, LifeJobService life, GatheringService gathering, TimedBattleService timedBattles, GuildCampfireService campfire, NewActivityService activities, MountService mounts, CareerSpecialService careerSpecial, WardrobeService wardrobe, TotemService totems, GrowthClassService growthClass, ParagonService paragon, TitleService titles) : Messaging.IMessageModule
 {
     public void Map(Messaging.MessageRoutes routes)
     {
@@ -493,6 +493,7 @@ public sealed class CharacterMessages(CharacterService character, SkillService s
         routes.Map(CombatService.UseSkill, "gathering", async (session, msgId, body) =>
         {
             // Starting another action cancels collection even if it never lands a combat hit (inferred).
+            await activities.InterruptConchAsync(session);
             await gathering.InterruptAsync(session);
             var cast = CastSkillReq.Parser.ParseFrom(body.Span);
             // Dragon Coffin Island's crystals and soul are taken by their interaction skills (TimedBattleService.DragonIsland).
@@ -521,6 +522,8 @@ public sealed class CharacterMessages(CharacterService character, SkillService s
         routes.Map(SceneService.NpcInteraction, "gathering", async (session, msgId, body) =>
         {
             var npcInteraction = NpcInteractionReq.Parser.ParseFrom(body.Span);
+            if (await activities.TryConchAsync(session, npcInteraction)) return;
+            await activities.InterruptConchAsync(session);
             if (!await dungeons.TryInteractAsync(session, npcInteraction) // scripted scene actors (own UID namespace)
                 && !await gathering.TryInteractAsync(session, npcInteraction)
                 && !await timedBattles.TryInteractAsync(session, npcInteraction)

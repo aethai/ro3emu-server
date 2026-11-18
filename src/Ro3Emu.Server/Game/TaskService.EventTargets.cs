@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 ///   inferred). Read again when a territory battle the role fought in settles, and at every other refresh.
 /// - 107101 [phase, pct] "Reach ${2}% completion for ${1}" (2101001-2101004, Genesis Movement 111): the ExplorePhaseConfig
 ///   phase's DBWorldExplorationPhase.totalRate, which LC_SeasonExplorationHelper.GetChapterProgress shows divided by 100
-///   (whole percent here). Read again after every committed note fill (NewActivityService).
+///   (whole percent here). Read again after note placement and final story quest delivery (NewActivityService).
 /// </summary>
 public sealed partial class TaskService
 {

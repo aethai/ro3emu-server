@@ -21,6 +21,7 @@ public sealed partial class LifeJobService
         HealthAll = 33513, HealthOne = 33514, HealthNotify = 33515;
     public const int VigorId = 1004, VigorUsesId = 1005, VigorCurrencyId = 407;
 
+    internal ExplorationNoteDrops? ExplorationNotes { get; set; }
     private readonly GameData _data;
     private readonly CharacterService _character;
     private readonly FunctionService _functions;
@@ -379,6 +380,7 @@ public sealed partial class LifeJobService
     internal sealed class GatherResolution
     {
         internal required long RoleId { get; init; }
+        internal ExplorationNoteDrops.Roll? Note { get; init; }
         internal required byte[] BeforeLife { get; init; }
         internal required byte[] BeforeRestrict { get; init; }
         internal required byte[] BeforeRuntime { get; init; }
@@ -442,6 +444,7 @@ public sealed partial class LifeJobService
         restrict.RestrictCount[VigorId].LimitCount = VigorLimit(s, next);
         return (0, new GatherResolution
         {
+            Note = sceneEntry == s.SceneEntry && sceneEntry > 0 && pointId > 0 && s.InstanceId == 0 ? ExplorationNotes?.Choose(s) : null,
             RoleId = s.Role!.Id, BeforeLife = beforeLife,
             BeforeRestrict = beforeRestrict, BeforeRuntime = beforeRuntime, BeforeCurrencyVigor = beforeCurrencyVigor,
             Life = next, Restrict = restrict, Runtime = runtime, Grants = [.. grants],
@@ -454,7 +457,15 @@ public sealed partial class LifeJobService
         RewardSettlement settlement, Action committed)
     {
         if (!resolved.Matches(s)) return ErrorCodes.Cooldown;
-        return await CommitAsync(s, "gather-yield", resolved.Life, resolved.Restrict, resolved.Runtime, [], resolved.Grants,
+        var restrict = resolved.Restrict;
+        var grants = resolved.Grants;
+        if (resolved.Note is { } note && ExplorationNotes?.Spend(s, note) is { } remaining)
+        {
+            restrict = restrict.Clone();
+            restrict.RestrictCount[remaining.Id] = remaining;
+            grants = [.. grants, new AwardGrant(note.Item, 1, 0, 0)];
+        }
+        return await CommitAsync(s, "gather-yield", resolved.Life, restrict, resolved.Runtime, [], grants,
             rewardSettlement: settlement, gatherCommitted: committed,
             vigorCurrencyCost: resolved.CurrencyVigorCost) != null ? 0 : ErrorCodes.ItemsShort;
     }
