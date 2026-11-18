@@ -1092,7 +1092,9 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     public Task ReconcileOnHeartbeatAsync()
     {
         long nowMs = NowMs();
-         if (_lastReconcileMs is { } last && nowMs >= last && nowMs - last < 1000) return Task.CompletedTask;
+        // Null until the first heartbeat: the long.MinValue it used to start from overflowed nowMs - last into a
+        // negative number, so the throttle skipped every heartbeat and finished buildings waited for a guild operation.
+        if (_lastReconcileMs is { } last && nowMs - last is >= 0 and < 1000) return Task.CompletedTask;
         _lastReconcileMs = nowMs;
         return ReconcileAsync();
     }

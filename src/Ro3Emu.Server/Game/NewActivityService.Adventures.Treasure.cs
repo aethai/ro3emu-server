@@ -126,8 +126,6 @@ public sealed partial class NewActivityService
             if (cursor.PointId == 0 || cursor.PendingMonsterAward != 0 || cursor.Began + 10800 <= Now
                 || _scene.TreasurePoint(cursor.PointId) is not { } target || target.Scene != session.SceneEntry)
                 return ErrorCodes.NpcMissing;
-            int counterItem = TreasureCounterItem(session);
-            if (counterItem == 0) return ErrorCodes.RewardMissing;
             var outcomes = _data.Table("TreasureHuntResultRateConfig").Values
                 .Where(r => TreasureGroup(r, cursor.GroupId) && GameData.Int(r, "_kGroupProbability") > 0)
                 .OrderBy(r => GameData.Int(r, "_iId")).ToArray();
@@ -181,8 +179,8 @@ public sealed partial class NewActivityService
                 PendingMonsterId = monsterId,
             };
             if (monster != null && assistGroup > 0) TrackTreasureHelpers(monster.Uid);
-            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(),
-            extra: [.. grants, new AwardGrant(counterItem, 1)], runtime: runtime);
+            AwardGrant[] counted = TreasureCounterItem(session) is var counter and > 0 ? [.. grants, new(counter, 1)] : grants;
+            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(), extra: counted, runtime: runtime);
             if (result != 0)
             {
                 if (monster != null)
@@ -217,16 +215,23 @@ public sealed partial class NewActivityService
         row.TryGetProperty("_kGroupId", out var groups) && groups.ValueKind == System.Text.Json.JsonValueKind.Array
         && groups.EnumerateArray().Any(v => GameData.Number(v) == groupId);
 
+    /// <summary>
+    /// The Total Treasure Hunts counter: the season panel counts the item its treasure milestones are bound to
+    /// (GenericStageRewardsConfig._iType 8 rows' _iItem, 130401 enum_CurrencyType.SeasonTreasure;
+    /// UI_Sys_Season_TreasureWidgetCtrl.lua:704-710 GetBindItemID, :845-883 GetItemCount as iCurrentNum) and
+    /// DailyActivityService.StageError claims against that count. No table grants it. (inferred) One per committed dig,
+    /// whether it paid loot or spawned an elite or boss. Zero when the playbook names no single such item.
+    /// </summary>
     private int TreasureCounterItem(GameSession session)
-        {
-            var items = _data.Table("GenericStageRewardsConfig").Values
-                .Where(row => TowerService.FitsPlayBook(row, Playbook(session)))
-                .Select(row => new Data.Config.GenericStageRewardsConfig(row))
-                .Where(row => row.Type == DailyActivityService.TreasureStage)
-                .Select(row => row.Item).Distinct().Take(2).ToArray();
-            return items is [> 0 and <= int.MaxValue and var item] && _data.Row("ItemConfig", item) != null
-                ? (int)item : 0;
-        }
+    {
+        var items = _data.Table("GenericStageRewardsConfig").Values
+            .Where(row => TowerService.FitsPlayBook(row, Playbook(session)))
+            .Select(row => new Data.Config.GenericStageRewardsConfig(row))
+            .Where(row => row.Type == DailyActivityService.TreasureStage)
+            .Select(row => row.Item).Distinct().Take(2).ToArray();
+        return items is [> 0 and <= int.MaxValue and var item] && _data.Row("ItemConfig", item) != null
+            ? (int)item : 0;
+    }
 
     private static int TreasureAction(System.Text.Json.JsonElement row, int index) =>
         row.TryGetProperty("_iAction", out var actions) && actions.ValueKind == System.Text.Json.JsonValueKind.Array
