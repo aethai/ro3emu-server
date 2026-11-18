@@ -492,6 +492,33 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.DoesNotContain(a.Inbox.Snapshot(), e => e.IsGame(CombatService.UseSkill) && CastSkillRsp.Parser.ParseFrom(e.Body).Result != 0);
     }
 
+    // Warg Hunt's far row charges in 80 ms. At a round trip above that, a walk the client sent before it had the charge
+    // arrives after it: taken, it set off Swift Warg from where the charge began, in that walk's direction.
+    [ClientDataFact]
+    public async Task AWalkSentBeforeWargHuntsChargeDoesNotSetOffSwiftWarg()
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(10);
+        await SwiftWargOnCooldownAsync(2);
+        var before = Session("alice").Position.Clone();
+        await CastOnAsync(a, 1332301, target);
+        var charge = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)Session("alice").Role!.Id);
+        await SwiftWargResetAsync();
+        await Task.Delay(200); // the round trip
+        float back = MonsterService.Angle(charge.EndPos.X, charge.EndPos.Z, charge.StartPos.X, charge.StartPos.Z);
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = before, Dir = back, Face = back, SpeedRate = 1 });
+        await Task.Delay(1300); // past Warg Hunt's 1200 ms action, which a walk would wait for
+        Assert.DoesNotContain(a.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillMove) && SkillStartMoveNotify.Parser.ParseFrom(e.Body).SkillConfigId == 1332602);
+
+        // The first walk from the landing sets it off there, along that walk.
+        float on = MonsterService.Angle(charge.StartPos.X, charge.StartPos.Z, charge.EndPos.X, charge.EndPos.Z);
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = charge.EndPos, Dir = on, Face = on, SpeedRate = 1 });
+        var dash = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.SkillConfigId == 1332602);
+        Assert.InRange(MonsterService.Distance(dash.StartPos.X, dash.StartPos.Z, charge.EndPos.X, charge.EndPos.Z), 0f, 0.01f);
+    }
+
     private async Task WalkEastAsync(BotClient a)
     {
         var at = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(Session("alice").Position.Clone()));

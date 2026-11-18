@@ -99,6 +99,12 @@ public sealed class ServerOptions
     /// </summary>
     public string TravelCheck { get; set; } = "enforce";
 
+    /// <summary>
+    /// Debugging only: holds every game gate frame sent to a client this long before it goes out (PhonestChannel.SendDelay),
+    /// in order, so a local client plays as at that ping (a round trip of about this much). 0 (default) sends at once.
+    /// </summary>
+    public int DebugSendDelayMs { get; set; }
+
     /// <summary>Anti-cheat limits and the web panel's suspicious-activity thresholds (CheatMonitor, docs/systems/anticheat.md).</summary>
     public AntiCheatOptions AntiCheat { get; set; } = new();
 

@@ -745,16 +745,14 @@ public sealed partial class CombatService
         // The rest of the show plays where the charge ended: a stop reported there is no walk that interrupts the cast.
         if (move.Kind is DisplaceKind.CasterToTarget or DisplaceKind.CasterToPoint) action.Origin = end.Clone();
         var start = s.Position.Clone();
+        int ms = move.Ms > 0 ? move.Ms : action.ActionMs;
         await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
         {
             EntityID = (ulong)s.Role!.Id, StartPos = start, EndPos = end, SkillConfigId = action.Request.SkillId,
-            EffectId = move.EffectId, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face,
-            MoveTimeMs = move.Ms > 0 ? move.Ms : action.ActionMs,
+            EffectId = move.EffectId, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = ms,
         });
         // MoveAsync updates persistent position and AOI membership from the same authoritative destination.
-        s.PreviousPosition = start;
-        s.Position = end;
-        s.SkillMovedUntilMs = Now + (move.Ms > 0 ? move.Ms : action.ActionMs);
+        s.CarryBySkill(start, end, Now, ms);
         s.LastWalkUtc = DateTime.UtcNow; // the dash ends the walk it interrupted (GameSession.WalkReportLag)
         s.Walking = false;
         await _world.MoveAsync(s, new WalkReq { Pos = end, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
@@ -835,9 +833,7 @@ public sealed partial class CombatService
             EntityID = (ulong)role.Id, StartPos = start, EndPos = end, SkillConfigId = skillId, EffectId = effectId,
             MoveType = 2, StartTimestampMs = Now, Face = p.Face, MoveTimeMs = Math.Max(1, ms),
         });
-        p.PreviousPosition = start;
-        p.Position = end;
-        p.SkillMovedUntilMs = Now + Math.Max(1, ms);
+        p.CarryBySkill(start, end, Now, ms);
         p.Walking = false;
         await _world.MoveAsync(p, new WalkReq { Pos = end, Dir = p.Face, Face = p.Face, BStop = true }, forceTeleport: true);
     }

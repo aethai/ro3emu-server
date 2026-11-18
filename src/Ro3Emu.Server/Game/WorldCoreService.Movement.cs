@@ -59,10 +59,8 @@ public sealed partial class WorldCoreService
             await EndMountFlightAsync(s);
         }
         // As a skill's caster move (CombatService.MoveCasterAsync): the server is at the end at once, and a walk report
-        // sent while the client is still carried is dropped (RoleSessionService, SkillMovedUntilMs).
-        s.PreviousPosition = start;
-        s.Position = move.End.Clone();
-        s.SkillMovedUntilMs = Now + move.MoveMs;
+        // that predates the move is dropped (RoleSessionService.WalkAsync, SkillCarry).
+        s.CarryBySkill(start, move.End, Now, move.MoveMs);
         s.LastWalkUtc = DateTime.UtcNow;
         s.Walking = false;
         await ToSelfAndViewersAsync(s, CombatService.SkillMove, new SkillStartMoveNotify
