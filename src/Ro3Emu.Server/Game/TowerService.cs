@@ -338,7 +338,7 @@ public sealed partial class TowerService
             DamageRatio = DifficultyRatio(floor.Value, 215, challengeMs, now),
             Suppressed = Suppress(s, floor.Value, hpRatio),
         };
-        if (ReferenceEquals(room, s.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt);
+        if (ReferenceEquals(room, s.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt, map!.Born!.Value);
         else
         {
             if (!await _instances.EnterAsync(room, s, reason: 4)) return;
@@ -357,15 +357,22 @@ public sealed partial class TowerService
     /// The next floor, a replay or Try Again from inside the tower: 30124 DungeonResetNtf on the same scene, then the
     /// floor starts as at a 30005. The client keeps its scene for it: LC_ClimbTowerHelper sends 32801 with
     /// isInClimTower and marks the current scene (SetPlayCameraFxOnInit, read by LC_DunGeon_ClimbTower at the next
-    /// 30401), and LC_Scene_Sync._dungeonResetNtf reloads the scene and raises Scene.ResetDungeon, where
-    /// LC_Actor_AutoAttack._resetScene keeps auto battle for DungeonConfig._kResetChangeAutoBattle [1, group] (2100001:
-    /// [1, 27]) and _refreshAutoPathCache walks a ClimbTower player to that spawn group. A 70010 switch would end it:
-    /// GameLogic's Unit.SwitchScene handler turns isAutoBattle off. The player keeps his position (inferred).
+    /// 30401), and LC_Scene_Sync._dungeonResetNtf reloads the scene and raises Scene.ResetDungeon. A 70010 switch would
+    /// end auto battle: GameLogic's Unit.SwitchScene handler turns isAutoBattle off.
+    /// <para>The reset alone leaves auto battle paused: LC_Actor_AutoAttack._resetScene, for
+    /// DungeonConfig._kResetChangeAutoBattle [1, point] (2100001: [1, 27], the 起始点 start point of
+    /// sc_pm_pata_001_dg01_sceneeditor), caches that point and calls PauseAutoAttack. Only _refreshAutoPathCache walks
+    /// there and resumes it on arrival (m_fFindPathBack = ResumeAutoAttack, bResetAnchor), and it runs on
+    /// Unit.LocalPlayerGridChange alone, which a walk across a grid (LC_Movement_AStarAgentNew) or a server move of the
+    /// controlled unit (LC_Scene_Sync._syncUnitMoveState, MOVEMENT_CHANGE) raises. So the player is put back on the
+    /// born point he entered on, with a same-map teleport after the 30124. The born point as the target is
+    /// (inferred); that the client needs a server move here is not.</para>
     /// </summary>
-    private async Task ResetFloorAsync(GameSession s, Attempt attempt)
+    private async Task ResetFloorAsync(GameSession s, Attempt attempt, MapPoint born)
     {
         s.TowerAttempt = attempt; // the settled floor's pending spawns and deadline lapse (Active)
         await s.SendGameAsync(DungeonService.Reset, new DungeonResetNtf());
+        await _scene.TeleportInMapAsync(s, born);
         await LoadedAsync(s);
     }
 

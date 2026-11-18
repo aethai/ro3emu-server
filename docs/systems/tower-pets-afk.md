@@ -48,3 +48,8 @@ the same scene, without a 70010. The client keeps its scene for it (`LC_ClimbTow
 `LC_Scene_Sync._dungeonResetNtf` reloads it), and `LC_Actor_AutoAttack._resetScene` keeps auto battle on through
 `DungeonConfig[2100001]._kResetChangeAutoBattle` [1, 27]; a 70010 would turn it off (`GameLogic.lua`, the
 `Unit.SwitchScene` handler). The first entry and the 30402 exit still switch scenes.
+
+`_resetScene` only pauses auto battle and caches scene point 27 (the start point); `_refreshAutoPathCache` walks
+there and resumes it, and it runs only on `Unit.LocalPlayerGridChange`. After the 30124 the server therefore moves
+the player back to the floor's born point with a same-map teleport (`MOVEMENT_CHANGE` ForceTeleport), which raises
+that event; a player left where he stood keeps a paused auto battle. The born point as the target is **(inferred)**.
