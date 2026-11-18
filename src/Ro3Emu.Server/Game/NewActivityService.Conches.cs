@@ -207,12 +207,15 @@ public sealed partial class NewActivityService
         return true;
     }
 
+    [LoggerMessage(Level = LogLevel.Information, SkipEnabledCheck = true, Message = "Note Pillar {Point} rejected interaction {Action} on map {Map} (request map {RequestMap}): result {Result}, song pending {Pending}")]
+    private partial void LogPillarRejected(int point, int action, long map, long requestMap, int result, bool pending);
+
     private async Task RejectPillarAsync(GameSession session, NpcInteractionReq req, int result)
     {
         if (!session.VisibleConches.Contains(req.NpcUid) || !Conches(session.SceneEntry).Points.TryGetValue(req.NpcUid, out var point)
             || NPCConfig.Get(_data, point.ConfigId)?.InteractId is not [_, PillarFinishInteraction]) return;
-        _log.LogInformation("Note Pillar {Point} rejected interaction {Action} on map {Map} (request map {RequestMap}): result {Result}, song pending {Pending}",
-            point.Id, req.InteractionId, session.SceneEntry, req.SceneConfigId, result, session.PlayingPillar != null);
+        if (_log.IsEnabled(LogLevel.Information))
+            LogPillarRejected(point.Id, req.InteractionId, session.SceneEntry, req.SceneConfigId, result, session.PlayingPillar != null);
         if (req.InteractionId != PillarFinishInteraction || session.PendingConch != 0 || session.Dead || session.Role == null
             || req.SceneConfigId != session.SceneEntry || (session.PlayingPillar is { } song && song.Uid != req.NpcUid)
             || NPCInteractConfig.Get(_data, PillarFinishInteraction) is not { StatusPerformance: [> 0 and <= int.MaxValue and var animation, > 0 and <= int.MaxValue and var duration] } finish) return;
