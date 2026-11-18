@@ -652,6 +652,8 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(0, interaction.Result);
         var eventResult = await Next(alice, 83251, TreasureEventNotify.Parser);
         Assert.Contains((int)eventResult.Type, new[] { 1, 4, 5 });
+        // Total Treasure Hunts: GenericStageRewardsConfig type 8 _iItem 130401, enum_CurrencyType.SeasonTreasure.
+        Assert.Equal(1, _app.Services.GetRequiredService<CharacterService>().CountOf(session, 130401));
 
         await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
         {

@@ -1085,14 +1085,16 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     }
 
     /// <summary>Persisted end times finish on login, heartbeat or next guild operation; restart does not lose progress.</summary>
-    private long _lastReconcileMs = long.MinValue;
+    private long? _lastReconcileMs;
 
     /// <summary>The heartbeat trigger of <see cref="ReconcileAsync"/>, at most once per second realm-wide: every
     /// player's ping ran the full scan of every guild (100 scans a second at 500 players).</summary>
     public Task ReconcileOnHeartbeatAsync()
     {
         long nowMs = NowMs();
-        if (nowMs - _lastReconcileMs < 1000) return Task.CompletedTask;
+        // Null until the first heartbeat: the long.MinValue it used to start from overflowed nowMs - last into a
+        // negative number, so the throttle skipped every heartbeat and finished buildings waited for a guild operation.
+        if (_lastReconcileMs is { } last && nowMs - last is >= 0 and < 1000) return Task.CompletedTask;
         _lastReconcileMs = nowMs;
         return ReconcileAsync();
     }
