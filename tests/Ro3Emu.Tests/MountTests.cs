@@ -317,6 +317,34 @@ public sealed class MountTests : IAsyncLifetime
         Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
     }
 
+    /// <summary>
+    /// The Worldscorch Feather costume (WardRobeConfig 40060010) names Take Flight 3112101 in _iSkillID, but only the
+    /// wardrobe and shop panels read that field, to preview a skill (UI_Sys_WardrobePanelCtrl._showDetailsInfo,
+    /// UI_Sys_AppearanceShopWidgetCtrl): it is the Lord of the Starry Firmament's take-off (MountsConfig 60060010
+    /// _kFlySwitchSkills; SkillConfig 3112101 _iDescription 10110300421 speaks of the dragon). The client flies only a
+    /// ridden fly mount (LC_Unit_Player.IsRideFlyMount, MountsConfig._iType), so the costume grants no flight switch.
+    /// </summary>
+    [ClientDataFact]
+    public async Task WorldscorchFeatherCostumeGrantsNoTakeFlight()
+    {
+        const int costume = 40060010, voucher = 3016401, takeFlight = 3112101; // 3016401: ItemConfig action 200
+        await using var a = await InWorld("Alice");
+        await UnlockMount(a, "alice", voucher);
+        var use = new WardRobeUseAppearanceReq();
+        use.AppearanceIds.Add(costume);
+        await a.SendGameAsync(WardrobeService.Use, use);
+        Assert.Equal(0, (await Next(a, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        var s = Session("alice");
+        Assert.Equal(costume, s.Wardrobe!.CurUseAppearances[4]);
+
+        var wheel = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+            Task.FromResult(_app.Services.GetRequiredService<SkillService>().Build(s).SkillWheel.WhellSkills));
+        Assert.Equal(0, wheel.TryGetValue(8, out var mount1) ? mount1.SkillConfigId : 0);
+        Assert.Equal(0, wheel.TryGetValue(9, out var mount2) ? mount2.SkillConfigId : 0);
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = takeFlight, TargetId = s.Role!.Id });
+        Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+    }
+
     [ClientDataFact]
     public async Task QuestRideDeliveryPersistsAcrossRelogAndRecycleRemovesOnlyTemporaryRide()
     {
