@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Romsg;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
@@ -10,7 +12,9 @@ public sealed partial class NewActivityService
     private const int ExplorationActivity = 111, ConchInteraction = 7000006, SpecialConchInteraction = 7000008;
     private const string ConchDeadline = "exploration-conch";
     private const long ConchUidBase = 3L << 42;
-    private sealed record ConchTrigger(MapRegion Area, ExplorePhaseConfig Phase, long Function);
+    private const int PillarFinishInteraction = 7000100, EnterMusicGameAction = 350;
+    internal sealed record PillarAttempt(long Uid, long Cycle, DateTimeOffset End);
+    private sealed record ConchTrigger(MapRegion? Area, ExplorePhaseConfig Phase, long Function);
     private sealed class ConchMap
     {
         public Dictionary<long, SpawnPoint> Points { get; } = [];
@@ -31,18 +35,35 @@ public sealed partial class NewActivityService
             {
                 if (point.Id is <= 0 or >= (1 << 20) || point.ConfigId <= 0) continue;
                 if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
-                    || npc.CTimes is not [0, 1] || npc.InteractId is not [var action]) continue;
+                    || npc.CTimes is not [0, 1]) continue;
                 long uid = ConchUid(id, point.Id);
-                if (action == SpecialConchInteraction && ReadConchTrigger(world, npc) is { } trigger)
+                if (npc.InteractId is not [ConchInteraction])
+                {
+                    bool special = npc.InteractId is [SpecialConchInteraction];
+                    if (!special && !IsMusicPillar(npc)) continue;
+                    if (ReadConchTrigger(world, npc) is not { } trigger || (special && trigger.Area == null)) continue;
                     result.Triggers[uid] = trigger;
-                else if (action != ConchInteraction) continue;
+                }
                 result.Points.TryAdd(uid, point);
             }
         return result;
     });
 
+    // EnterMusicGame's arguments are the song, success interaction and replay interaction.
+    private bool IsMusicPillar(NPCConfig npc)
+    {
+        if (npc.InteractId is not [var start, PillarFinishInteraction] ||
+            NPCInteractConfig.Get(_data, start)?.EXECAction is not { ValueKind: JsonValueKind.Array } actions) return false;
+        foreach (var action in actions.EnumerateArray())
+            if (action.ValueKind == JsonValueKind.Array && action.GetArrayLength() == 4
+                && GameData.Number(action[0]) == EnterMusicGameAction && GameData.Number(action[1]) > 0
+                && GameData.Number(action[2]) == PillarFinishInteraction && GameData.Number(action[3]) == start)
+                return true;
+        return false;
+    }
+
     // LC_InteractCondition: CheckArea (4003), exploration chapter time (16001), function open (1100).
-    // Only project the special pickup when its complete authored show condition is understood.
+    // Only project a conditional pickup when its complete authored show condition is understood.
     private ConchTrigger? ReadConchTrigger(MapWorld world, NPCConfig npc)
     {
         if (LCConditionList.Get(_data, npc.NpcShowCondition) is not { Type: 1, Inverse: false, SubConditionList: { } subs }
@@ -71,11 +92,11 @@ public sealed partial class NewActivityService
                 default: return null;
             }
         }
-        return area != null && phase.HasValue && function > 0 ? new(area, phase.Value, function) : null;
+        return phase.HasValue && phase.Value.Map.Contains(world.SceneEntry) && function > 0 ? new(area, phase.Value, function) : null;
     }
 
     private bool ConchShown(GameSession session, ConchMap map, long uid) =>
-        !map.Triggers.TryGetValue(uid, out var trigger) || trigger.Area.Contains(session.Position.X, session.Position.Z)
+        !map.Triggers.TryGetValue(uid, out var trigger) || (trigger.Area?.Contains(session.Position.X, session.Position.Z) ?? true)
         && WorldPhaseOpen(session, trigger.Phase.Row) && _functions.IsOpen(session, trigger.Function);
 
     private bool ConchMapOpen(GameSession session) =>
@@ -85,6 +106,7 @@ public sealed partial class NewActivityService
 
     private Task ReloadConchesAsync(GameSession session)
     {
+        session.PlayingPillar = null;
         session.VisibleConches.Clear();
         return SyncConchesAsync(session);
     }
@@ -144,49 +166,98 @@ public sealed partial class NewActivityService
         if (req.NpcUid >> 40 != ConchUidBase >> 40) return false;
         SpawnPoint? point = null;
         int result = req.SceneConfigId != session.SceneEntry ? ErrorCodes.NpcParameter : CheckConch(session, req.NpcUid, out point);
-        if (point != null && result == 0)
+        var interaction = NPCInteractConfig.Get(_data, req.InteractionId);
+        var play = interaction?.StatusPerformance;
+        var state = interaction is { } row ? GameplayStatusConfig.Get(_data, row.StatusId)?.StatusType : null;
+        bool startSong = state == (int)InteractInfo.Types.EState.ExploreCollectionMiniGame;
+        if (result == 0 && point != null)
         {
-            if (NPCConfig.Get(_data, point.ConfigId)?.InteractId is not [var action] || action != req.InteractionId)
+            var actions = NPCConfig.Get(_data, point.ConfigId)!.Value.InteractId;
+            if (!actions.Contains(req.InteractionId) || (req.InteractionId == PillarFinishInteraction && !CanFinishPillar(session, req.NpcUid)))
                 result = ErrorCodes.NpcParameter;
             else if (session.PendingConch != 0) result = ErrorCodes.Cooldown;
+            else if ((state != (int)InteractInfo.Types.EState.ExploreCollection && !startSong)
+                || play is not [> 0 and <= int.MaxValue, > 0 and <= int.MaxValue]) result = ErrorCodes.FeatureUnavailable;
         }
-        var interaction = result == 0 ? NPCInteractConfig.Get(_data, req.InteractionId) : null;
-        var play = interaction?.StatusPerformance;
-        var status = interaction is { } row ? GameplayStatusConfig.Get(_data, row.StatusId) : null;
-        if (result == 0 && (status?.StatusType != (int)InteractInfo.Types.EState.ExploreCollection
-            || play is not [> 0 and <= int.MaxValue, > 0 and <= int.MaxValue])) result = ErrorCodes.FeatureUnavailable;
         await session.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Req = req, Result = result });
-        if (result != 0) return true;
+        if (result != 0)
+        {
+            await RejectPillarAsync(session, req, result);
+            return true;
+        }
         var end = _clock.GetUtcNow().AddMilliseconds(play![1]);
+        long cycle = session.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime;
+        if (startSong)
+        {
+            // The successful 32700 reply runs EnterMusicGame on the client. Closing the HUD sends no cancellation.
+            session.PlayingPillar = new(req.NpcUid, cycle, end);
+            return true;
+        }
+        session.PlayingPillar = null;
+        session.ConchCycle = cycle;
         session.PendingConch = req.NpcUid;
         session.ConchStartPosition = session.Position.Clone();
         _deadlines.Set(session, ConchDeadline, end, FinishConchAsync, callbackOwnsScope: true);
-        await session.SendGameAsync(GatheringService.StateChange, new InteractChangeNtf
+        await SendConchCastAsync(session, req, interaction!.Value, (int)play[0], end);
+        return true;
+    }
+
+    private async Task RejectPillarAsync(GameSession session, NpcInteractionReq req, int result)
+    {
+        if (!session.VisibleConches.Contains(req.NpcUid) || !Conches(session.SceneEntry).Points.TryGetValue(req.NpcUid, out var point)
+            || NPCConfig.Get(_data, point.ConfigId)?.InteractId is not [_, PillarFinishInteraction]) return;
+        _log.LogInformation("Note Pillar {Point} rejected interaction {Action} on map {Map} (request map {RequestMap}): result {Result}, song pending {Pending}",
+            point.Id, req.InteractionId, session.SceneEntry, req.SceneConfigId, result, session.PlayingPillar != null);
+        if (req.InteractionId != PillarFinishInteraction || session.PendingConch != 0 || session.Dead || session.Role == null
+            || req.SceneConfigId != session.SceneEntry || (session.PlayingPillar is { } song && song.Uid != req.NpcUid)
+            || NPCInteractConfig.Get(_data, PillarFinishInteraction) is not { StatusPerformance: [> 0 and <= int.MaxValue and var animation, > 0 and <= int.MaxValue and var duration] } finish) return;
+        // On a normal HUD finish, LC_State_Unit_Interact.StateStart schedules Exit3C using the
+        // configured animation duration. An already expired cast followed immediately by idle
+        // can collapse into one frame. Allow the client to enter and leave the recovery animation.
+        // Its callback can only release controls; it never calls FinishConchAsync or settles loot.
+        var end = _clock.GetUtcNow().AddMilliseconds(duration);
+        session.PendingConch = req.NpcUid;
+        _deadlines.Set(session, ConchDeadline, end, (s, _, _, _) => EndConchAsync(s, interrupted: true));
+        await SendConchCastAsync(session, req, finish, (int)animation, end);
+    }
+
+    private static Task SendConchCastAsync(GameSession session, NpcInteractionReq req, NPCInteractConfig interaction,
+        int animation, DateTimeOffset end) =>
+        session.SendGameAsync(GatheringService.StateChange, new InteractChangeNtf
         {
             Uid = session.Role!.Id,
             DataInfo = new InteractInfo
             {
-                EType = InteractInfo.Types.EState.ExploreCollection, StateId = interaction!.Value.StatusId,
+                EType = InteractInfo.Types.EState.ExploreCollection, StateId = interaction.StatusId,
                 ActiveObjId = req.NpcUid, InteractConfigId = req.InteractionId,
                 CollectionInfo = new CollectionState
                 {
                     PlayInfo = new InteractPlayInfo
-                    { PlayConfigId = (int)play[0], PlayEndTimeStamp = end.ToUnixTimeMilliseconds() }
+                    { PlayConfigId = animation, PlayEndTimeStamp = end.ToUnixTimeMilliseconds() }
                 },
             }
         });
-        return true;
-    }
+
+    // The stock HUD reports its result without notes or a start token. Live clients can finish with
+    // no pending song on the server. CheckConch still validates the point, chapter, life and reach;
+    // when we do have a start, also enforce its target, cycle and time limit.
+    private bool CanFinishPillar(GameSession session, long uid) =>
+        session.PlayingPillar is not { } song || (song.Uid == uid && song.End > _clock.GetUtcNow()
+        && song.Cycle == session.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime);
 
     internal async Task ConchMovedAsync(GameSession session)
     {
+        // LC_DAL_Interact.OnActionReq force-syncs raw movement before the finish packet.
+        // Keep the song across in-range corrections, but walking out and back requires a new start.
+        if (session.PlayingPillar is { } song && CheckConch(session, song.Uid, out _) != 0)
+            session.PlayingPillar = null;
         if (session.ConchStartPosition is { } start && !start.Equals(session.Position))
             await InterruptConchAsync(session);
         if (session.InstanceId != 0 || !_conchMaps.TryGetValue(session.SceneEntry, out var map)) return;
         foreach (var trigger in map.Triggers.Values)
         {
             var previous = session.PreviousPosition;
-            if (trigger.Area.Contains(previous.X, previous.Z) == trigger.Area.Contains(session.Position.X, session.Position.Z)) continue;
+            if (trigger.Area is not { } area || area.Contains(previous.X, previous.Z) == area.Contains(session.Position.X, session.Position.Z)) continue;
             await SyncConchesAsync(session);
             break;
         }
@@ -194,6 +265,7 @@ public sealed partial class NewActivityService
 
     internal Task InterruptConchAsync(GameSession session)
     {
+        session.PlayingPillar = null;
         if (session.PendingConch == 0) return Task.CompletedTask;
         _deadlines.Cancel(session, ConchDeadline);
         return EndConchAsync(session, interrupted: true);
@@ -227,7 +299,7 @@ public sealed partial class NewActivityService
             if (!_deadlines.IsCurrent(session, lease) || CheckConch(session, session.PendingConch, out var point) != 0) return;
             var next = session.NewActivities!.Clone();
             var activity = next.ActivityInfo[ExplorationActivity];
-            if (!RecordConch(activity.ActivityParam.WorldExploration, session.SceneEntry, point!.Id)) return;
+            if (activity.CycleStartTime != session.ConchCycle || !RecordConch(activity.ActivityParam.WorldExploration, session.SceneEntry, point!.Id)) return;
             long award = NPCConfig.Get(_data, point.ConfigId)!.Value.CAward;
             int result = await CommitAsync(session, next, [award],
                 source: $"conch/{activity.CycleStartTime}/{session.SceneEntry}/{point.Id}");

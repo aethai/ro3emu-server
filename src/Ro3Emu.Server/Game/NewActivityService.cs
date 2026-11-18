@@ -88,6 +88,7 @@ public sealed partial class NewActivityService
         combat.EventDamageRecorded.Add(OnTreasureMonsterDamagedAsync);
         scene.TreasureComplete = CompleteTreasureHuntAsync;
         scene.Loaded.Add(OnTreasureSceneLoadedAsync);
+        combat.PlayerDied.Add(InterruptConchAsync);
         scene.AfterTeleport = ConchMovedAsync;
         scene.Loaded.Add(ReloadConchesAsync);
         scene.Resync.Add(ReloadConchesAsync);

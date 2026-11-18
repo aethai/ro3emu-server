@@ -70,7 +70,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
         Achievements = null; AchievementRuntime = null; AdventureGroupRole = null;
         Library = null; CardLibraryReadyAttachment = null; GrowthClass = null;
         NewActivities = null; ActivitiesReady = false;
-        VisibleConches.Clear(); PendingConch = 0; ConchStartPosition = null;
+        VisibleConches.Clear(); PlayingPillar = null; PendingConch = 0; ConchStartPosition = null;
         Dungeons = null; DungeonAttempt = null;
         Tower = null; TowerAttempt = null;
         Training = null; EventFaction = 0;
@@ -276,6 +276,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     public ActivityRuntimeState ActivityRuntime { get; set; } = new();
     public SemaphoreSlim ActivityGate { get; } = new(1, 1);
     internal HashSet<long> VisibleConches { get; } = [];
+    internal NewActivityService.PillarAttempt? PlayingPillar { get; set; }
+    internal long ConchCycle { get; set; }
     internal long PendingConch { get; set; }
     internal Romsg.Vec3? ConchStartPosition { get; set; }
     public bool ActivitiesReady { get; set; }

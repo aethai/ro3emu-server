@@ -37,6 +37,78 @@ public sealed class GenesisNoteDropTests
         await Next(bot, MsgId.EntitySelf, EntitySelf.Parser);
     }
 
+    [ClientDataTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NotePillarCompletesWithOrWithoutAPendingSong(bool startSeen)
+    {
+        var clock = new Clock();
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
+            o.PlayBook = 101;
+            o.SeasonStart = "2026-10-05";
+        }, clock);
+        const int map = 10110, pillar = 8000305, play = 7000104, finish = 7000100;
+        var seasons = host.Service<SeasonService>();
+        long start = new SeasonClock(host.Service<GameData>(), seasons.Start, 101, seasons.Zone)
+            .Build().StageTimeInfo[101002].StartTime + 60;
+        clock.Set(start);
+        var point = host.Service<WorldData>().Map(map)!.SpawnGroups.SelectMany(g => g.Points).Single(p => p.ConfigId == pillar);
+        long uid = NewActivityService.ConchUid(map, point.Id);
+        await using var alice = await host.InWorldAsync("Alice");
+        await Gm(host, alice, "!lvl 99");
+        await Gm(host, alice, "!warp 10110 194.77 203.36");
+        await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
+            v => v.Bases.Any(b => b.Uuid == (ulong)uid && b.EntityTemplateID == pillar));
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
+        async Task<int> Interact(int action)
+        {
+            await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+            { SceneConfigId = map, NpcUid = uid, InteractionId = action });
+            return (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result;
+        }
+        long Notes() => session.Items.Where(i => i.Entry is >= 1113001 and <= 1113007).Sum(i => i.Stack);
+        long before = Notes();
+        await Gm(host, alice, "!jump 206 203.36");
+        Assert.Equal(ErrorCodes.NpcTooFar, await Interact(finish));
+        async Task WaitForRecovery()
+        {
+            var release = await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+                n => n.DataInfo.InteractConfigId == finish);
+            long end = release.DataInfo.CollectionInfo.PlayInfo.PlayEndTimeStamp;
+            Assert.Equal(clock.GetUtcNow().AddSeconds(3).ToUnixTimeMilliseconds(), end);
+            clock.Set(end / 1000);
+            await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+                n => n.Interrupt && n.DataInfo.EType == InteractInfo.Types.EState.Idle);
+            Assert.Equal(before, Notes());
+        }
+        await WaitForRecovery();
+        await Gm(host, alice, "!jump 194.77 203.36");
+        if (startSeen)
+        {
+            Assert.Equal(0, await Interact(play));
+            clock.Set(start + 185);
+            Assert.Equal(ErrorCodes.NpcParameter, await Interact(finish));
+            await WaitForRecovery();
+            Assert.Equal(0, await Interact(play));
+        }
+        var correction = session.Position.Clone();
+        correction.X += 0.25f;
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = correction, BStop = true, SpeedRate = 1 });
+        Assert.Equal(0, await Interact(finish));
+        await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+            n => n.DataInfo.EType == InteractInfo.Types.EState.ExploreCollection && n.DataInfo.InteractConfigId == finish);
+        Assert.Equal(before, Notes());
+        Assert.Equal(ErrorCodes.Cooldown, await Interact(play));
+        clock.Set(clock.GetUtcNow().AddSeconds(3).ToUnixTimeSeconds());
+        await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
+        Assert.Equal(before + 3, Notes());
+        var collected = session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
+        Assert.Equal(1, collected.CollectCount[point.Id]);
+        Assert.Equal(ErrorCodes.NpcMissing, await Interact(finish));
+    }
+
     [ClientDataFact]
     public async Task SpecialConchAppearsInItsTriggerAndPaysOnceAfterTheCast()
     {
@@ -87,7 +159,9 @@ public sealed class GenesisNoteDropTests
         Assert.Equal(0, await Pick(7000008));
         clock.Set(start + 3);
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
-        Assert.Equal(before + 1000, session.Progress.Currency.GetValueOrDefault(CharacterService.ZenyId));
+        // Award 100118002 pays 1,000 Zeny plus one pick from group 1230, which can itself pay Zeny.
+        long paid = session.Progress.Currency.GetValueOrDefault(CharacterService.ZenyId) - before;
+        Assert.True(paid is 1000 or (>= 2000 and <= 4000) or 6000, $"Unexpected special conch Zeny reward: {paid}");
         var collected = session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
         Assert.Equal(1, collected.CollectCount[point]);
         Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
