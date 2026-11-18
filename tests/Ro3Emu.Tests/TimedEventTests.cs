@@ -1162,8 +1162,25 @@ public sealed class TimedEventTests : IAsyncLifetime
         Assert.All(round, s => Assert.InRange(s.Star, 1, 6));
         Assert.True(round.Count(s => s.Star == 6) <= 5);
 
+        var world = Service<WorldData>();
+        foreach (var spawn in round)
+        {
+            var at = spawn.Point;
+            Assert.Equal(at.Y, world.Map(spawn.Map)!.Nav!.WalkHeight(at.X, at.Z, at.Y));
+        }
+
         await WarpRiftMapAsync(bot);
+        // The walkable surface rises across the GM command's two-unit offset on this East Gate slope.
+        await Gm(bot, "!jump 322 295");
         var stone = await GmRiftStoneAsync(bot, "!rift 3 Gryphon");
+        var nav = world.Map(stone.Map)!.Nav!;
+        Assert.NotEqual(nav.WalkHeight(322, 295, stone.Point.Y), nav.WalkHeight(324, 295, stone.Point.Y));
+        var appeared = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
+            v => v.Bases.Any(b => b.Uuid == (ulong)stone.Uid));
+        var pos = appeared.Bases.Single(b => b.Uuid == (ulong)stone.Uid).MovementInfo.Pos;
+        Assert.Equal((324f, 295f), (pos.X, pos.Z));
+        Assert.Equal(nav.WalkHeight(pos.X, pos.Z, stone.Point.Y), pos.Y);
+        Assert.Equal(stone.Point.Y, pos.Y);
         Assert.Equal((10110L, 3, 3200201L), (stone.Map, stone.Star, stone.Scene));
         Assert.Equal(16000008, stone.Boss); // the third Gryphon (stars 1-5 are 16000006-16000010)
         // GM test aid: a one-member party may challenge (the data asks for 3-5).

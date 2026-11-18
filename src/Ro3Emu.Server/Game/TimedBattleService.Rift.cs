@@ -165,6 +165,14 @@ public sealed partial class TimedBattleService
         long chosen = scene ?? (scenes.Count > 0 ? Weighted(scenes, p => p.Value, rng).Key : 0);
         if (_data.Row("OnePieceRewardConfig", chosen) is not { } reward) return null;
         int stoneNpc = (int)GameData.Int(row, "_iId");
+        // The OnePieceMapConfig marker can lie below the walkable surface. Use the layer nearest its
+        // height hint at the stone's own X/Z, including the GM command's offset beside the player (inferred).
+        if (_worldData.Map(map)?.Nav is { } nav)
+        {
+            // Two configured marker cells are blocked; the farther one has a walkable neighbour three cells away.
+            if (nav.NearestWalkable(point.X, point.Z, point.Y, cells: 3) is not { } ground) return null;
+            point = new MapPoint(ground.X, ground.Y, ground.Z, point.Face);
+        }
         long uid = RiftUidBase + map * 4096 + _riftSeq++ % 4096;
         var stone = new RiftStone
         {
@@ -303,7 +311,7 @@ public sealed partial class TimedBattleService
         }
         var here = new MapPoint(s.Position.X + 2, s.Position.Y, s.Position.Z, 0);
         if (AddRiftStone(s.SceneEntry, here, star, scene, Random.Shared) is not { } stone)
-        { await GmCommands.ReplyAsync(s, "No Rift stone could be made for that star."); return; }
+        { await GmCommands.ReplyAsync(s, "No Rift stone could be placed here for that star."); return; }
         PostRiftMap(stone.Map, async p => { await RiftViewAsync(p, [], [stone]); await SendOnePieceMapAsync(p); });
         var (least, most) = RiftPartySize();
         await GmCommands.ReplyAsync(s, $"Placed a {star}-star Rift Stone next to you: {NpcName(stone.Boss)} (scene {stone.Scene}). "
