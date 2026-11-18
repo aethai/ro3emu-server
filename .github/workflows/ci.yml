@@ -46,6 +46,8 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
+          # The tool targets net10.0 like the projects: the SDK of global.json builds it, the .NET 10 runtime runs it.
+          dotnet-version: 10.0.x
           cache: true
           cache-dependency-path: |
             Directory.Packages.props

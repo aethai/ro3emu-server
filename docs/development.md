@@ -2,7 +2,8 @@
 
 ## Running from source
 
-You need only the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). `scripts\start.cmd` builds the server, the
+You need only the [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) and the ASP.NET Core
+[.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) the projects run on. `scripts\start.cmd` builds the server, the
 client DLLs and RO3Emu from source and runs RO3Emu with this repository as its home; `scripts\join.cmd <address>` does the
 same for joining, and both take any RO3Emu.exe option. On Linux, `scripts/server.sh` builds and runs the server from source.
 
