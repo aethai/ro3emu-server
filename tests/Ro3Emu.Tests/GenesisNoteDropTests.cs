@@ -137,7 +137,7 @@ public sealed partial class GenesisNoteDropTests
         }
         async Task EnterTrigger()
         {
-            await Gm(host, alice, "!jump 94.9 241");
+            await Gm(host, alice, "!jump 89.65 238.27"); // inside region 547, the conch's own one-unit circle
             await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
                 v => v.Bases.Any(b => b.Uuid == (ulong)uid && b.EntityTemplateID == 8100004));
         }

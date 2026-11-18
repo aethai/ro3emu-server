@@ -88,11 +88,8 @@ public sealed partial class NewActivityService
             switch (leaf.Data)
             {
                 case [CheckAreaCondition, var scene, var region] when scene == world.SceneEntry && area == null:
+                    // The client runs the same circle (LC_InteractCondition.CheckArea -> LC_AreaHelper.CheckInArea).
                     if (!world.Regions.TryGetValue(region, out area)) return null;
-                    // East Gate server customization: the stock one-unit circle ends before the visible conch.
-                    // Apply the wider trigger only to the original footprint so edited scene files still take precedence.
-                    if (scene == 10110 && region == 547 && area is { Shape: 1, X: 89.65f, Z: 238.2755f, Length: 1 })
-                        area = area with { X = 90.3f, Z = 241, Length = 5 };
                     break;
                 case [ChapterTimeCondition, var chapter] when phase == null:
                     if (ExplorePhaseConfig.Get(_data, chapter) is not { Activityid: ExplorationActivity } row) return null;
