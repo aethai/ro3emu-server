@@ -279,7 +279,7 @@ public sealed class MountService : IGameTicker
     /// and holds a skill while its unit rides a system mount until the ride ends (LC_State_Unit_Skill.lua:51-71), so the
     /// ride ends here, before the cast's timeline and hit. A battle mount is ridden into the fight, a flying rider keeps
     /// its mount (inferred), and so does either flight switch (<see cref="FlySkills"/>, WorldCoreService.
-    /// MountFlightCastAsync), whichever BeforeCast hook runs first. The caller holds the character lock.
+    /// MountFlightSwitchAsync). The caller holds the character lock.
     /// </summary>
     /// <returns>The milliseconds the cast waits for the dismount to play, zero when nobody got off.</returns>
     private async Task<int> DismountForCastAsync(GameSession s, int skillId)

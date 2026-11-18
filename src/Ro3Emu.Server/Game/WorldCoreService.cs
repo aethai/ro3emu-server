@@ -103,7 +103,7 @@ public sealed partial class WorldCoreService : IGameTicker
         combat.ReviveCheck = dungeons.ExternalReviveError;
         dungeons.SetCustomData = SetCustomAsync;
         combat.ReviveItemSkill = ReviveItemSkillAsync;
-        combat.BeforeCast.Add(MountFlightCastAsync);
+        combat.MountFlightSwitch = MountFlightSwitchAsync;
         character.WingJump = WingJumpAsync;
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;

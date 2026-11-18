@@ -59,6 +59,8 @@ public sealed partial class CombatService
             await OwnSkillLanded(s, row);
             return;
         }
+        // A flying mount's take-off/landing only moves its rider; their enemy-selector templates hit nobody.
+        if (Script(row) is FlightTakeOffScript or FlightLandingScript) { await MountFlightSwitchAsync(s, action); return; }
         if (IsResurrection(row))
         {
             var target = FindPlayer(s, action.Request.TargetId, dead: true);
@@ -99,6 +101,21 @@ public sealed partial class CombatService
         if (Script(row) == "AxeLeapAttack") { await HighEnergyTakeOffAsync(s, action); return; }
         if (Script(row) == "huixuanshizizhan") { await ApplyEffectsAsync(s, WithRow(action, await CrossRipperRowAsync(s, row)), action.Request.TargetPos ?? action.Origin); return; }
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
+    }
+
+    /// <summary>
+    /// The take-off/landing (<see cref="MountFlightSwitch"/>) starts its _kLogicData[1] ms after the cast's action began
+    /// (0 for the balloon's pair, 1133 ms for the dragon's take-off, which climbs only after its Takeoff animation has
+    /// begun), and only while that cast still runs.
+    /// </summary>
+    private async Task MountFlightSwitchAsync(GameSession s, ActiveSkillCast action)
+    {
+        if (MountFlightSwitch is not { } flight) return;
+        long delay = new SkillConfig(action.Row).LogicData is [_, var after, ..] ? Math.Max(0, after) : 0;
+        long wait = action.StartMs + action.ChantMs + delay - Now;
+        var (skill, aimed) = (action.Request.SkillId, action.Request.TargetPos?.Clone());
+        if (wait <= 0) { await flight(s, skill, aimed); return; }
+        ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(wait), () => Live(s, action) ? flight(s, skill, aimed) : Task.CompletedTask);
     }
 
     /// <summary>Chain Lightning: "the designated ST enemy ... and up to ${3} Other enemies within ${2} meters of the target". Its _kRange is [0].</summary>
@@ -177,16 +194,13 @@ public sealed partial class CombatService
             && ReferenceEquals(s.Attachment, action.Attachment)
             && _sessions.Contains(s);
         string script = Script(row);
-        // Mount flight switches (take-off/landing, WorldCoreService.MountFlight) use enemy-selector visual
-        // templates but only move the rider; they must not enter combat or hit a nearby unit.
-        bool flightSwitch = script is FlightTakeOffScript or FlightLandingScript;
-        List<MonsterUnit> targets = flightSwitch ? [] : chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
+        var targets = chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
             ?? (ChainRadius(row) is { } chain
                 ? SelectEnemies(s, action, FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? center, chain)
                 : SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null));
         // "Undead-property and Demon Race monsters within the area take ranged Holy magic damage": its selector names no race.
         if (script == "Sanctuary") targets.RemoveAll(m => m.Template.Race != DemonRace && m.Template.Element != UndeadElement);
-        var playerTargets = flightSwitch ? [] : EffectPlayerTargets(s, action, center);
+        var playerTargets = EffectPlayerTargets(s, action, center);
         var alreadySlowed = GuardianPreviouslySlowed(row, targets, playerTargets);
         if (playerTargets.Length > 0)
         {

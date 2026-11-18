@@ -42,6 +42,19 @@ public readonly record struct SkillEffectData(JsonElement Row)
     public static double? WarningSeconds(JsonElement row) => row.TryGetProperty("m_kPoint", out var point) && point.TryGetProperty("m_kWarningRange", out var warning)
         ? warning.TryGetProperty("m_fDuration", out var seconds) && seconds.TryGetDouble(out double value) ? value : 0 : null;
 
+    private JsonElement? MovementPoint => Row.TryGetProperty("m_kPoint", out var point) && point.ValueKind == JsonValueKind.Object
+        && point.TryGetProperty("m_bMovement", out var moves) && moves.ValueKind == JsonValueKind.True ? point : null;
+
+    /// <summary>A displacement row (m_kPoint.m_bMovement), the only kind LC_PerformEffect_Agent.SkillStartMove moves a unit by.</summary>
+    public bool IsMovement => MovementPoint != null;
+
+    /// <summary>The displacement's m_kPoint.m_iMovementTime (ms), the client's own time when a 31112 names none; 0 without one.</summary>
+    public int MovementMs => MovementPoint is { } point && point.TryGetProperty("m_iMovementTime", out var ms) && ms.TryGetInt32(out int t) ? t : 0;
+
+    /// <summary>The displacement's m_kPoint.m_fHeight (m), the rise _customizeBattleAnim adds along m_kHeightCurveName to
+    /// a move that is not enum_SkillMoveType.Move3D; 0 without one.</summary>
+    public float MovementHeight => MovementPoint is { } point && point.TryGetProperty("m_fHeight", out var h) && h.TryGetSingle(out float m) ? m : 0;
+
     private JsonElement? Damage => Row.TryGetProperty("m_kDamage", out var damage) ? damage : null;
 
     private JsonElement? Bullet => Damage is { ValueKind: JsonValueKind.Object } damage

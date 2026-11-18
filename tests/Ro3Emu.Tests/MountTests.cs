@@ -247,7 +247,8 @@ public sealed class MountTests : IAsyncLifetime
     /// <summary>
     /// The Lord of the Starry Firmament's _kFlySwitchSkills (3112101 Take Flight / 3112201 Burrow Underground):
     /// MountService.FlySkills grants only the direction matching the current flight state, and neither one ends the
-    /// ride the way an ordinary cast does (MountService.DismountForCastAsync, WorldCoreService.MountFlightCastAsync).
+    /// ride the way an ordinary cast does (MountService.DismountForCastAsync, WorldCoreService.MountFlightSwitchAsync).
+    /// Each switch carries the rider with a 31112 on its _kLogicData displacement (3112121 up, 3112221 down).
     /// </summary>
     [ClientDataFact]
     public async Task TakeOffAndLandingSkillsToggleFlightWithoutDismounting()
@@ -274,8 +275,13 @@ public sealed class MountTests : IAsyncLifetime
         await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role!.Id });
         Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
 
+        var ground = s.Position.Clone();
         await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
         Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var climb = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser); // _kLogicData[1]: 1133 ms in
+        Assert.Equal((3112121, MountFlight.Move3D, 1600), (climb.EffectId, climb.MoveType, climb.MoveTimeMs));
+        Assert.Equal(ground.Y + 20, climb.EndPos.Y, 3); // no aimed point: the row's own m_fHeight straight up
+        Assert.Equal(climb.EndPos.Y, s.Position.Y, 3);
         Assert.True(s.WorldState.Flying);
         Assert.Equal(dragon, MountService.Rider(s)); // the take-off did not get the rider off
         Assert.Equal(flyBit, s.StatusBits & flyBit); // LC_UnitBase.CheckFlyMask: the client only enters flight on this bit
@@ -286,9 +292,11 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
 
         await Task.Delay(5100); // both skills share _iPubCDGroup 31101 (5 s), real time: CombatService.Now is wall-clock
-        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role.Id });
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role.Id, TargetPos = ground });
         Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        await Next(a, WorldCoreService.FixLand, FixLandNtf.Parser);
+        var descent = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser);
+        Assert.Equal((3112221, MountFlight.Move3D), (descent.EffectId, descent.MoveType));
+        Assert.Equal(ground.Y, descent.EndPos.Y, 1); // the aimed ground point
         Assert.False(s.WorldState.Flying);
         Assert.Equal(dragon, MountService.Rider(s));
         Assert.Equal(0, s.StatusBits & flyBit);
@@ -298,6 +306,8 @@ public sealed class MountTests : IAsyncLifetime
         await Task.Delay(5100);
         await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
         Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser);
+        Assert.True(s.WorldState.Flying);
         await a.SendGameAsync(32745, new PlayerRiderMountReq { Tp = (eRiderType)0 });
         Assert.Equal(0, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
         _clock.Set(_clock.GetUtcNow().AddSeconds(2)); // the heartbeat tick runs on the host clock

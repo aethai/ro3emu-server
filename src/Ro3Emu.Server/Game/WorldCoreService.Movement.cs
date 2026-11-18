@@ -12,7 +12,7 @@ public sealed partial class WorldCoreService
     private const long FlyBit = 1L << 42;
 
     // FlyBuffTag and MapConfig._iFly are consumed by the client's flight availability checks. A flying mount's take-off
-    // (MountFlightCastAsync) grants its landing skill's id as a buff tagged 3100000, the same chain any other source of
+    // (MountFlightSwitchAsync) grants its landing skill's id as a buff tagged 3100000, the same chain any other source of
     // this tag would use; there is no separate mount-only path here.
     private bool CanFly(GameSession s) => Ready(s) && !s.Dead
         && _data.Row("MapConfig", s.SceneEntry) is { } map && GameData.Int(map, "_iFly") == 1
@@ -29,26 +29,48 @@ public sealed partial class WorldCoreService
     private const int FlyBuffMs = 24 * 60 * 60 * 1000;
 
     /// <summary>
-    /// CombatService.BeforeCast: a flying mount's take-off skill starts authoritative flight in place (the client's own
-    /// climb plays locally and it already sends 31084 to move from there); its landing skill ends it. MountService.
-    /// FlySkills names the pair and CombatService.GrantedSkill lets only the direction matching the current flight state
-    /// through, so only one of the two is ever the skill actually cast here. Neither changes the cast's own timing.
-    /// Conditions 86000556/86000558 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) refuse the take-off on a
-    /// map whose _kRiderForbidden[3] forbids flying mounts; CanFly's _iFly check still gates the flight moves.
+    /// CombatService.MountFlightSwitch, at _kLogicData[1] ms into a flying mount's take-off or landing cast: the one
+    /// place mount flight starts or ends. MountService.FlySkills names the pair and CombatService.GrantedSkill lets only
+    /// the direction matching the current flight state through. A take-off grants the flight buff and eObjectStateFly
+    /// (the client's LC_UnitSpecialStatus.CheckFlyMask, 1 &lt;&lt; (43 - 1)), a landing takes both away; then the rider is
+    /// carried by a 31112 to the end <see cref="MountFlight.Plan"/> picks (the client's aimed point when plausible), the
+    /// climb the client needs to reach its flight mesh before WASD moves it (and it sends 31084) at all. Conditions
+    /// 86000556/86000558 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) refuse the take-off on a map whose
+    /// _kRiderForbidden[3] forbids flying mounts; CanFly's _iFly check still gates the flight moves.
     /// </summary>
-    private async Task<int> MountFlightCastAsync(GameSession s, int skillId)
+    private async Task MountFlightSwitchAsync(GameSession s, int skillId, Vec3? aimed)
     {
-        if (MountService.FlySkills(_data, s) is not { } fly) return 0;
-        if (skillId == fly.Up && !s.WorldState.Flying)
+        if (s.Role is not { } role || MountService.FlySkills(_data, s) is not { } fly) return;
+        bool takeOff = skillId == fly.Up;
+        if (takeOff == s.WorldState.Flying || !takeOff && skillId != fly.Down) return;
+        var start = s.Position.Clone();
+        if (MountFlight.Plan(_data, skillId, takeOff, _worldData.Map(s.SceneEntry), start, aimed) is not { } move) return;
+        if (takeOff)
         {
-            await _buffs.AddAsync(s, fly.Down, FlyBuffMs, s.Role!.Id);
+            await _buffs.AddAsync(s, fly.Down, FlyBuffMs, role.Id);
             s.WorldState.Flying = true;
             s.WorldState.MountFlightBuff = fly.Down;
             s.WorldState.LastFlyMs = Now;
             await SetFlyBitAsync(s, true);
         }
-        else if (skillId == fly.Down && s.WorldState.Flying) await LandAsync(s, s.Position, s.Face);
-        return 0;
+        else
+        {
+            s.WorldState.Flying = false;
+            await EndMountFlightAsync(s);
+        }
+        // As a skill's caster move (CombatService.MoveCasterAsync): the server is at the end at once, and a walk report
+        // sent while the client is still carried is dropped (RoleSessionService, SkillMovedUntilMs).
+        s.PreviousPosition = start;
+        s.Position = move.End.Clone();
+        s.SkillMovedUntilMs = Now + move.MoveMs;
+        s.LastWalkUtc = DateTime.UtcNow;
+        s.Walking = false;
+        await ToSelfAndViewersAsync(s, CombatService.SkillMove, new SkillStartMoveNotify
+        {
+            EntityID = (ulong)role.Id, StartPos = start, EndPos = move.End.Clone(), SkillConfigId = skillId, EffectId = move.EffectId,
+            StartTimestampMs = Now, MoveType = MountFlight.Move3D, Face = s.Face, MoveTimeMs = move.MoveMs,
+        });
+        await _world.MoveAsync(s, new WalkReq { Pos = move.End.Clone(), Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
     }
 
     /// <summary>
@@ -115,16 +137,17 @@ public sealed partial class WorldCoreService
         ? Math.Max(1, (float)(GameData.Number(value) ?? s.Speed) / 100) : Math.Max(1, s.Speed / 100f);
 
     /// <summary>31084: AStarAgentNew sends position plus a three-dimensional direction, not a ground yaw. The distance is
-    /// held to the flight speed's budget (WalkAllowance, as walks are); a move beyond it is put back and counted.</summary>
+    /// held to the flight speed's budget (WalkAllowance, as walks are); a move beyond it is put back and counted. The
+    /// height is judged from <see cref="MountFlight.Floor"/>, so a flight over ground nobody walks on (water, cliffs)
+    /// is not put back.</summary>
     public async Task FlyMoveAsync(GameSession s, FlyMoveReq req)
     {
         float speed = FlightSpeed(s);
         var map = _worldData.Map(s.SceneEntry);
-        var grounded = Finite(req.Pos) && map != null ? map.Grounded(new MapPoint(req.Pos.X, req.Pos.Y, req.Pos.Z, req.Face)) : default;
+        float? floor = Finite(req.Pos) && map != null ? MountFlight.Floor(map, req.Pos) : null;
         if (!s.WorldState.Flying || !CanFly(s) || !Finite(req.Pos) || !Finite(req.Dir) || !float.IsFinite(req.Face)
             || Distance(new Vec3(), req.Dir) > 2
-            || map == null || !map.IsWalkable(grounded.X, grounded.Y, grounded.Z)
-            || req.Pos.Y < grounded.Y - 1 || req.Pos.Y > grounded.Y + 50)
+            || floor is not { } under || req.Pos.Y < under - 1 || req.Pos.Y > under + MountFlight.MaxHeight)
         { await ErrorAsync(s, FlyMove, ErrorCodes.Parameter); await CorrectFlightAsync(s); return; }
         float distance = Distance(s.Position, req.Pos);
         if (!s.FlightAllowance.TrySpend(DateTime.UtcNow, speed, distance))
