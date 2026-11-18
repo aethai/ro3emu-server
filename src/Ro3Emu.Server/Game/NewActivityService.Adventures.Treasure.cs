@@ -218,15 +218,15 @@ public sealed partial class NewActivityService
         && groups.EnumerateArray().Any(v => GameData.Number(v) == groupId);
 
     private int TreasureCounterItem(GameSession session)
-        {
-            var items = _data.Table("GenericStageRewardsConfig").Values
-                .Where(row => TowerService.FitsPlayBook(row, Playbook(session)))
-                .Select(row => new Data.Config.GenericStageRewardsConfig(row))
-                .Where(row => row.Type == DailyActivityService.TreasureStage)
-                .Select(row => row.Item).Distinct().Take(2).ToArray();
-            return items is [> 0 and <= int.MaxValue and var item] && _data.Row("ItemConfig", item) != null
-                ? (int)item : 0;
-        }
+    {
+        var items = _data.Table("GenericStageRewardsConfig").Values
+            .Where(row => TowerService.FitsPlayBook(row, Playbook(session)))
+            .Select(row => new Data.Config.GenericStageRewardsConfig(row))
+            .Where(row => row.Type == DailyActivityService.TreasureStage)
+            .Select(row => row.Item).Distinct().Take(2).ToArray();
+        return items is [> 0 and <= int.MaxValue and var item] && _data.Row("ItemConfig", item) != null
+            ? (int)item : 0;
+    }
 
     private static int TreasureAction(System.Text.Json.JsonElement row, int index) =>
         row.TryGetProperty("_iAction", out var actions) && actions.ValueKind == System.Text.Json.JsonValueKind.Array

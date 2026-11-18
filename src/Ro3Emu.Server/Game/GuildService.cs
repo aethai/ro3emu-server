@@ -1092,7 +1092,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     public Task ReconcileOnHeartbeatAsync()
     {
         long nowMs = NowMs();
-         if (_lastReconcileMs is { } last && nowMs >= last && nowMs - last < 1000) return Task.CompletedTask;
+        if (_lastReconcileMs is { } last && nowMs >= last && nowMs - last < 1000) return Task.CompletedTask;
         _lastReconcileMs = nowMs;
         return ReconcileAsync();
     }
