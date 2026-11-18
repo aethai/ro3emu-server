@@ -234,10 +234,12 @@ public sealed partial class GuildTests : IAsyncLifetime
         Assert.Equal(0, store.Get(id)!.Contribute);
         await alice.SendGameAsync(GuildService.BuildUpgrade, new GuildBuildLevelUpReq { BuildingID = 1 });
         Assert.Equal(ErrorCodes.GuildBuildBusy, (await Next(alice, GuildService.BuildUpgrade, GuildBuildLevelUpResp.Parser, x => x.Result != 0)).Result);
+        _clock.Freeze();
+        _clock.Advance(TimeSpan.FromSeconds(2)); // past the heartbeat throttle's last run
         guild = store.Get(id)!;
-        guild.BuildingEndTimes[1] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1;
+        guild.BuildingEndTimes[1] = _clock.GetUtcNow().ToUnixTimeMilliseconds() - 1;
         Assert.True(store.Save(guild));
-        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => _app.Services.GetRequiredService<GuildService>().ReconcileAsync());
+        await alice.HeartbeatAsync(); // GuildService.ReconcileOnHeartbeatAsync finishes it, no guild operation needed
         guild = store.Get(id)!;
         Assert.Equal(2, guild.Buildings[1]);
         Assert.Equal(2, guild.Level);
