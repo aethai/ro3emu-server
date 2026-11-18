@@ -152,7 +152,8 @@ public sealed partial class CombatService
         _eventAttacks.Remove(s);
         await PayCostsAsync(s, costs);
         if (!unlimited) await _buffs.SpendEnergyAsync(s, row!.Value);
-        int lead = (owned == null && BeforeCast is { } before ? await before(s) : 0) + turn;
+        int lead = turn;
+        if (owned == null) foreach (var before in BeforeCast) lead += await before(s, req.SkillId);
         if (!lineup) await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
         var target = FindMonster(s.WorldScene, req.TargetId);
         var playerTarget = EventTarget(s, req.TargetId);

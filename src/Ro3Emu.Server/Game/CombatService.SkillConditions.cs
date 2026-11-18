@@ -9,7 +9,8 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class CombatService
 {
-    private const long CondBuffLayer = 2000, CondEquip = 2001, CondMountIs = 2003, CondMountIsNot = 2004, CondPendant = 2006;
+    private const long CondBuffLayer = 2000, CondEquip = 2001, CondMountIs = 2003, CondMountIsNot = 2004, CondPendant = 2006,
+        CondSceneFlyable = 2009;
 
     private bool SkillConditionMet(GameSession s, JsonElement row) =>
         new SkillConfig(row).SkillCondition is not (var id and not 0) || LCConditionList.Get(_data, id) is not { } node || NodeMet(s, node);
@@ -24,8 +25,10 @@ public sealed partial class CombatService
     private static List<LCConditionList> SubNodes(LCConditionList node) => node.SubConditionList is { ValueKind: JsonValueKind.Array } subs
         ? [.. subs.EnumerateArray().Select(sub => new LCConditionList(sub))] : [];
 
-    /// <summary>LC_InteractCondition.CheckEquipStatue, CheckMountStatue, CheckPendantStatue and LC_BattleCondition.CheckBuffLayer.
-    /// (inferred) CheckHaveBuff (1 row) and CheckSceneFlyable (3 rows) are not judged here, so they do not refuse a cast.</summary>
+    /// <summary>LC_InteractCondition.CheckEquipStatue, CheckMountStatue, CheckPendantStatue, CheckBuffLayer and
+    /// CheckSceneFlyable (the mount take-off skills' gate: Lua_CFG_MapConfigBase.CanFlyMount, _kRiderForbidden[3] == 0
+    /// of the current map; not _iFly, which CanFly reads for wings). (inferred) CheckHaveBuff (1 row) is not judged here,
+    /// so it does not refuse a cast.</summary>
     private bool LeafMet(GameSession s, long[] data) => data switch
     {
         [CondEquip, var type, ..] => s.Items.Any(i => i.Grid != 0 && ItemConfig.Get(_data, i.Entry)?.SubType == type), // all gear, not only the hands: subtype 50 is worn in part 3
@@ -33,6 +36,7 @@ public sealed partial class CombatService
         [CondMountIsNot, var mount, ..] => MountService.Rider(s) != mount,
         [CondPendant, var type, ..] => s.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == type),
         [CondBuffLayer, var buff, var most, var least, ..] => s.Buffs.Any(b => b.ConfigId == buff && b.ExpireMs > Now && b.PileCount >= least && b.PileCount <= most),
+        [CondSceneFlyable, ..] => MapConfig.Get(_data, s.SceneEntry)?.RiderForbidden is [_, _, 0, ..],
         _ => true,
     };
 }

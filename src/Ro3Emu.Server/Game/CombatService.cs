@@ -285,11 +285,19 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, JsonElement, Task>? OwnSkillLanded { get; set; }
 
     /// <summary>
-    /// Runs once a player's own cast is accepted, before its timeline starts, and returns the milliseconds that cast must
-    /// wait. MountService gets a system-mount rider off first (the client holds a skill until the unit is off one,
-    /// LC_State_Unit_Skill.InitSkillState), so the dismount plays and the hit follows. The cast is never refused.
+    /// Run in order once a player's own cast is accepted, before its timeline starts; each returns the milliseconds that
+    /// cast must additionally wait. MountService gets a system-mount rider off first (the client holds a skill until the
+    /// unit is off one, LC_State_Unit_Skill.InitSkillState), so the dismount plays and the hit follows; it
+    /// lets either flight switch keep the ride. The cast is never refused here.
     /// </summary>
-    public Func<GameSession, Task<int>>? BeforeCast { get; set; }
+    public List<Func<GameSession, int, Task<int>>> BeforeCast { get; } = [];
+
+    /// <summary>
+    /// A flying mount's take-off or landing (_kScriptLogic normal_leisuremount_upper/_below) as it lands: the skill id and
+    /// the point the client aimed it at (LC_MountComponent._injectSkillPos). WorldCoreService starts or ends the flight
+    /// and moves the rider there; the cast hits nobody.
+    /// </summary>
+    public Func<GameSession, int, Vec3?, Task>? MountFlightSwitch { get; set; }
 
     /// <summary>
     /// Skills a player may cast without learning them, resolved like any other (a war vehicle seat's skills,

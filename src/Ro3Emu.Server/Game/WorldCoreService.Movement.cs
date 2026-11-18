@@ -7,12 +7,93 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class WorldCoreService
 {
-    // FlyBuffTag and MapConfig._iFly are consumed by the client's flight availability checks.
+    /// <summary>eObjectState.eObjectStateFly (43), set directly (not buff-driven, like eObjectStateBattling in
+    /// CombatService): the client enters flight only once LC_UnitBase.CheckFlyMask sees this bit.</summary>
+    private const long FlyBit = 1L << 42;
+
+    // FlyBuffTag and MapConfig._iFly are consumed by the client's flight availability checks. A flying mount's take-off
+    // (MountFlightSwitchAsync) grants its landing skill's id as a buff tagged 3100000, the same chain any other source of
+    // this tag would use; there is no separate mount-only path here.
     private bool CanFly(GameSession s) => Ready(s) && !s.Dead
         && _data.Row("MapConfig", s.SceneEntry) is { } map && GameData.Int(map, "_iFly") == 1
         && s.Buffs.Any(b => b.ExpireMs > Now && _data.Row("BuffConfig", b.ConfigId) is { } row
             && row.TryGetProperty("_kBuffCategory", out var tags) && tags.ValueKind == JsonValueKind.Array
             && tags.EnumerateArray().Any(t => GameData.Number(t) == 3100000));
+
+    // A flight a mount's take-off started lasts only while that mount is ridden: a rider who gets off in the air (or
+    // swaps the System-slot mount) is put down by the heartbeat tick (inferred).
+    private bool MountFlightLost(GameSession s) =>
+        s.WorldState.MountFlightBuff != 0 && MountService.FlySkills(_data, s)?.Down != s.WorldState.MountFlightBuff;
+
+    /// <summary>A day's worth: long enough that only landing (or the buff falling off some other way) ends it.</summary>
+    private const int FlyBuffMs = 24 * 60 * 60 * 1000;
+
+    /// <summary>
+    /// CombatService.MountFlightSwitch, at _kLogicData[1] ms into a flying mount's take-off or landing cast: the one
+    /// place mount flight starts or ends. MountService.FlySkills names the pair and CombatService.GrantedSkill lets only
+    /// the direction matching the current flight state through. A take-off grants the flight buff and eObjectStateFly
+    /// (the client's LC_UnitSpecialStatus.CheckFlyMask, 1 &lt;&lt; (43 - 1)), a landing takes both away; then the rider is
+    /// carried by a 31112 to the end <see cref="MountFlight.Plan"/> picks (the client's aimed point when plausible), the
+    /// climb the client needs to reach its flight mesh before WASD moves it (and it sends 31084) at all. Conditions
+    /// 86000556/86000558 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) refuse the take-off on a map whose
+    /// _kRiderForbidden[3] forbids flying mounts; CanFly's _iFly check still gates the flight moves.
+    /// </summary>
+    private async Task MountFlightSwitchAsync(GameSession s, int skillId, Vec3? aimed)
+    {
+        if (s.Role is not { } role || MountService.FlySkills(_data, s) is not { } fly) return;
+        bool takeOff = skillId == fly.Up;
+        if (takeOff == s.WorldState.Flying || !takeOff && skillId != fly.Down) return;
+        var start = s.Position.Clone();
+        if (MountFlight.Plan(_data, skillId, takeOff, _worldData.Map(s.SceneEntry), start, aimed) is not { } move) return;
+        if (takeOff)
+        {
+            await _buffs.AddAsync(s, fly.Down, FlyBuffMs, role.Id);
+            s.WorldState.Flying = true;
+            s.WorldState.MountFlightBuff = fly.Down;
+            s.WorldState.LastFlyMs = Now;
+            await SetFlyBitAsync(s, true);
+        }
+        else
+        {
+            s.WorldState.Flying = false;
+            await EndMountFlightAsync(s);
+        }
+        // As a skill's caster move (CombatService.MoveCasterAsync): the server is at the end at once, and a walk report
+        // sent while the client is still carried is dropped (RoleSessionService, SkillMovedUntilMs).
+        s.PreviousPosition = start;
+        s.Position = move.End.Clone();
+        s.SkillMovedUntilMs = Now + move.MoveMs;
+        s.LastWalkUtc = DateTime.UtcNow;
+        s.Walking = false;
+        await ToSelfAndViewersAsync(s, CombatService.SkillMove, new SkillStartMoveNotify
+        {
+            EntityID = (ulong)role.Id, StartPos = start, EndPos = move.End.Clone(), SkillConfigId = skillId, EffectId = move.EffectId,
+            StartTimestampMs = Now, MoveType = MountFlight.Move3D, Face = s.Face, MoveTimeMs = move.MoveMs,
+        });
+        await _world.MoveAsync(s, new WalkReq { Pos = move.End.Clone(), Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
+    }
+
+    /// <summary>
+    /// Every landing path (the skill, 31083, a free fall, the forced landing on the heartbeat tick) and leaving the scene
+    /// ends here, so a mount's flight buff and the status bit never outlive the authoritative Flying flag, even when the
+    /// mount that granted the buff is no longer ridden.
+    /// </summary>
+    private async Task EndMountFlightAsync(GameSession s)
+    {
+        int granted = s.WorldState.MountFlightBuff;
+        s.WorldState.MountFlightBuff = 0;
+        foreach (var buff in s.Buffs.Where(b => granted != 0 && b.ConfigId == granted).ToList()) await _buffs.RemoveAsync(s, buff);
+        await SetFlyBitAsync(s, false);
+    }
+
+    private async Task SetFlyBitAsync(GameSession s, bool flying)
+    {
+        long next = flying ? s.StatusBits | FlyBit : s.StatusBits & ~FlyBit;
+        if (next == s.StatusBits) return;
+        s.StatusBits = next;
+        await ToSelfAndViewersAsync(s, CombatService.AoiAttrChange, new AOIAttrChange
+        { EntityUuid = (ulong)s.Role!.Id, StateInfo = new AoiObjStateInfo { Data = new CommonBigMask { Values = { (ulong)s.StatusBits } } } });
+    }
 
     /// <summary>
     /// Wing use effects (ActionConfig 101 JumpSameMap / 102 JumpOtherMap, _iEXECHost 1; ItemConfig 1002001 Fly Wing and
@@ -56,16 +137,17 @@ public sealed partial class WorldCoreService
         ? Math.Max(1, (float)(GameData.Number(value) ?? s.Speed) / 100) : Math.Max(1, s.Speed / 100f);
 
     /// <summary>31084: AStarAgentNew sends position plus a three-dimensional direction, not a ground yaw. The distance is
-    /// held to the flight speed's budget (WalkAllowance, as walks are); a move beyond it is put back and counted.</summary>
+    /// held to the flight speed's budget (WalkAllowance, as walks are); a move beyond it is put back and counted. The
+    /// height is judged from <see cref="MountFlight.Floor"/>, so a flight over ground nobody walks on (water, cliffs)
+    /// is not put back.</summary>
     public async Task FlyMoveAsync(GameSession s, FlyMoveReq req)
     {
         float speed = FlightSpeed(s);
         var map = _worldData.Map(s.SceneEntry);
-        var grounded = Finite(req.Pos) && map != null ? map.Grounded(new MapPoint(req.Pos.X, req.Pos.Y, req.Pos.Z, req.Face)) : default;
+        float? floor = Finite(req.Pos) && map != null ? MountFlight.Floor(map, req.Pos) : null;
         if (!s.WorldState.Flying || !CanFly(s) || !Finite(req.Pos) || !Finite(req.Dir) || !float.IsFinite(req.Face)
             || Distance(new Vec3(), req.Dir) > 2
-            || map == null || !map.IsWalkable(grounded.X, grounded.Y, grounded.Z)
-            || req.Pos.Y < grounded.Y - 1 || req.Pos.Y > grounded.Y + 50)
+            || floor is not { } under || req.Pos.Y < under - 1 || req.Pos.Y > under + MountFlight.MaxHeight)
         { await ErrorAsync(s, FlyMove, ErrorCodes.Parameter); await CorrectFlightAsync(s); return; }
         float distance = Distance(s.Position, req.Pos);
         if (!s.FlightAllowance.TrySpend(DateTime.UtcNow, speed, distance))
@@ -93,6 +175,7 @@ public sealed partial class WorldCoreService
         var at = map.Grounded(new MapPoint(requested.X, requested.Y, requested.Z, face));
         if (!map.IsWalkable(at.X, at.Y, at.Z)) { await ErrorAsync(s, FreeFall, ErrorCodes.Parameter); return; }
         s.WorldState.Flying = false;
+        await EndMountFlightAsync(s);
         await MoveFlightAsync(s, new Vec3 { X = at.X, Y = at.Y, Z = at.Z }, face, new Vec3(), true, MovementTransitionType.MoveTransLanding);
         // FixLandNtf instructs the client to end the special landing state; immediate landing has zero remaining time.
         await ToSelfAndViewersAsync(s, FixLand, new FixLandNtf { Uuid = s.Role!.Id, FixLandTime = 0 });

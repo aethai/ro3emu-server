@@ -42,6 +42,9 @@ public sealed partial class CombatService
 {
     private long _skillObjectIds = 0x600000000000L;
 
+    /// <summary>SkillConfig._kScriptLogic of a flying mount's take-off/landing (both pairs share these two scripts).</summary>
+    private const string FlightTakeOffScript = "normal_leisuremount_upper", FlightLandingScript = "normal_leisuremount_below";
+
     private async Task ResolveCastAsync(GameSession s, ActiveSkillCast action)
     {
         var row = action.Row;
@@ -56,6 +59,8 @@ public sealed partial class CombatService
             await OwnSkillLanded(s, row);
             return;
         }
+        // A flying mount's take-off/landing only moves its rider; their enemy-selector templates hit nobody.
+        if (Script(row) is FlightTakeOffScript or FlightLandingScript) { await MountFlightSwitchAsync(s, action); return; }
         if (IsResurrection(row))
         {
             var target = FindPlayer(s, action.Request.TargetId, dead: true);
@@ -96,6 +101,21 @@ public sealed partial class CombatService
         if (Script(row) == "AxeLeapAttack") { await HighEnergyTakeOffAsync(s, action); return; }
         if (Script(row) == "huixuanshizizhan") { await ApplyEffectsAsync(s, WithRow(action, await CrossRipperRowAsync(s, row)), action.Request.TargetPos ?? action.Origin); return; }
         await ApplyEffectsAsync(s, action, action.Request.TargetPos ?? action.Origin);
+    }
+
+    /// <summary>
+    /// The take-off/landing (<see cref="MountFlightSwitch"/>) starts its _kLogicData[1] ms after the cast's action began
+    /// (0 for the balloon's pair, 1133 ms for the dragon's take-off, which climbs only after its Takeoff animation has
+    /// begun), and only while that cast still runs.
+    /// </summary>
+    private async Task MountFlightSwitchAsync(GameSession s, ActiveSkillCast action)
+    {
+        if (MountFlightSwitch is not { } flight) return;
+        long delay = new SkillConfig(action.Row).LogicData is [_, var after, ..] ? Math.Max(0, after) : 0;
+        long wait = action.StartMs + action.ChantMs + delay - Now;
+        var (skill, aimed) = (action.Request.SkillId, action.Request.TargetPos?.Clone());
+        if (wait <= 0) { await flight(s, skill, aimed); return; }
+        ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(wait), () => Live(s, action) ? flight(s, skill, aimed) : Task.CompletedTask);
     }
 
     /// <summary>Chain Lightning: "the designated ST enemy ... and up to ${3} Other enemies within ${2} meters of the target". Its _kRange is [0].</summary>

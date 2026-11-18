@@ -35,6 +35,9 @@ public sealed partial class SkillService
     public Func<GameSession, int, bool>? QueueEligibility { get; set; }
     /// <summary>Ordinary pet guardian projection; LC_System_Skill consumes whellSkills[SkillWheelPet].</summary>
     internal Func<GameSession, SkillWheelSlot?>? PetWheel { get; set; }
+    /// <summary>A flying mount's take-off/landing pair; JoyStickSkillNormalMixin shows them from
+    /// whellSkills[SkillWheelMount1/2] only, so without this the HUD never offers the buttons.</summary>
+    internal Func<GameSession, (SkillWheelSlot Up, SkillWheelSlot Down)?>? MountFlyWheel { get; set; }
 
     public SkillService(GameData data, CharacterService character, RoleStore roles, ILogger<SkillService> log)
     {
@@ -480,6 +483,11 @@ public sealed partial class SkillService
         }
         if (PetWheel?.Invoke(session) is { } pet)
             state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelPet] = pet;
+        if (MountFlyWheel?.Invoke(session) is { } fly)
+        {
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelMount1] = fly.Up;
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelMount2] = fly.Down;
+        }
         state.OriginSkillWheel = state.SkillWheel.Clone();
         return state;
     }

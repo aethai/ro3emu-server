@@ -21,6 +21,8 @@ public sealed class WorldSessionState
     public string NameBoardSnapshot { get; set; } = "";
     public string TeamTargetSnapshot { get; set; } = "";
     public bool Flying { get; set; }
+    /// <summary>The flight buff a flying mount's take-off granted (its landing id), 0 for any other flight.</summary>
+    public int MountFlightBuff { get; set; }
     public long LastFlyMs { get; set; }
     public bool Watching { get; set; }
     public EFightStatus? FightStatus { get; set; }
@@ -65,6 +67,7 @@ public sealed partial class WorldCoreService : IGameTicker
     private readonly SceneService _scene;
     private readonly CharacterService _character;
     private readonly CombatService _combat;
+    private readonly BuffService _buffs;
     private readonly TeamService _teams;
     private readonly DungeonService _dungeons;
     private readonly DailyActivityService _daily;
@@ -79,12 +82,12 @@ public sealed partial class WorldCoreService : IGameTicker
     private readonly ulong _serverOpenSeconds;
 
     public WorldCoreService(World world, WorldData worldData, GameData data, RoleStore roles, SessionRegistry sessions,
-        SceneService scene, CharacterService character, CombatService combat, MonsterService monsters, TeamService teams,
+        SceneService scene, CharacterService character, CombatService combat, BuffService buffs, MonsterService monsters, TeamService teams,
         GameLoop loop, TimeProvider clock, GmCommands gm, DungeonService dungeons, SeasonService seasons,
         DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines, ChatService chat)
     {
         this._world = world; this._worldData = worldData; this._data = data; this._roles = roles; this._sessions = sessions;
-        this._scene = scene; this._character = character; this._combat = combat; this._teams = teams; this._clock = clock;
+        this._scene = scene; this._character = character; this._combat = combat; this._buffs = buffs; this._teams = teams; this._clock = clock;
         this._loop = loop;
         this._lines = lines;
         this._dungeons = dungeons;
@@ -100,6 +103,7 @@ public sealed partial class WorldCoreService : IGameTicker
         combat.ReviveCheck = dungeons.ExternalReviveError;
         dungeons.SetCustomData = SetCustomAsync;
         combat.ReviveItemSkill = ReviveItemSkillAsync;
+        combat.MountFlightSwitch = MountFlightSwitchAsync;
         character.WingJump = WingJumpAsync;
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;
@@ -249,6 +253,7 @@ public sealed partial class WorldCoreService : IGameTicker
             foreach (var id in state.Hatred) await s.SendGameAsync(MonsterLocked, new PlayerBeMonsterLockedNotify { RemoveEnemy = id });
         }
         state.Hatred.Clear(); state.Monitored.Clear(); state.MiniMap = false; state.Flying = false;
+        await EndMountFlightAsync(s);
         state.Watching = false; state.ReviveSource = 0; state.ReviveExpiresMs = 0;
         state.NameBoardSnapshot = ""; state.QueueScene = 0; state.TemporaryLeaveUntilMs = 0;
         state.FightStatus = null;
@@ -459,7 +464,7 @@ public sealed partial class WorldCoreService : IGameTicker
         {
             await BoardsAsync(s, boards);
             if (s.WorldState.MiniMap) await MiniMapSnapshotAsync(s);
-            if (s.WorldState.Flying && !CanFly(s)) await LandAsync(s, s.Position, s.Face);
+            if (s.WorldState.Flying && (!CanFly(s) || MountFlightLost(s))) await LandAsync(s, s.Position, s.Face);
             if (s.WorldState.TemporaryLeaveUntilMs > 0 && s.WorldState.TemporaryLeaveUntilMs <= Now) await ForceLeaveAsync(s);
         }
         await AdmitQueuedAsync();

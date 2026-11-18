@@ -66,9 +66,29 @@ separate ownership, selected slot and visible riding. In particular:
   `MountService.DismountForCastAsync`) commits the dismount and publishes 5012 and 31049 before the cast's reply, and the
   cast's timeline (31100) and hit (31101) start `MountService.DismountMs` later. A battle mount (slot 2, `m_kMountType` Battle),
   and a flying rider keep the ride. The cast is only delayed; a refused cast (cooldown, cost, target) dismounts nobody.
-  The fly mounts' take-off and landing skills (`MountsConfig._kFlySwitchSkills`, injected by `LC_MountComponent._injectSkillPos`)
-  have no server path that grants them yet, so a cast of them is refused as not learned before this runs; once one does,
-  those skills must be excluded here.
+  A take-off cast also keeps the ride (next point), since it is the only way flight itself starts.
+- The fly mounts' take-off and landing skills (`MountsConfig._kFlySwitchSkills`: `60040033` Flying Goblin Balloon
+  3110101/3110201, `60060010` 3112101/3112201, `LC_MountComponent._injectSkillPos` aims them from the HUD's
+  `SkillWheelMount1` slot) have no learned-skill row; `MountService.FlySkills` names the ridden System-slot mount's pair
+  and `CombatService.GrantedSkill` lets through only the one matching the current flight state (`WorldState.Flying`), so
+  a player can never cast the wrong direction. `WorldCoreService.MountFlightSwitchAsync` (`CombatService.MountFlightSwitch`,
+  run when the cast lands, `_kLogicData[1]` ms after its action begins) is what actually starts or ends flight. A take-off
+  grants the flight buff (tag 3100000) and `eObjectStateFly` (31048 `stateInfo`, `1 << (43 - 1)`,
+  `LC_UnitSpecialStatus.CheckFlyMask`), a landing removes both; then a 31112 `SkillStartMoveNotify` carries the rider to
+  the point the client aimed the skill at: the take-off's `Lua_PF_NavMesh.GetNearestValidPos` (the flight mesh above),
+  the landing's `Lua_SceneSpace.SearchWalkableAround` (ground). The 31112 names the skill row's `_kLogicData[2]`
+  displacement (`3110121`/`3110221`, 1666 ms) with `moveType` Move3D (5), so `LC_PerformEffect_Agent._customizeBattleAnim`
+  climbs exactly to the aimed height (inferred: Move would add the row's +20 m on top). Without that climb the client is
+  stuck: in flight `LC_Move_System._refreshPlayerPathMove` switches the unit to `enum_NavigationMode.NavMesh`, whose
+  controller moves only near the flight mesh, so WASD did nothing and no 31084 was sent. An aimed point more than
+  `MountFlight.Reach` away, or outside the flight height band, falls back to the row's `m_fHeight` straight up (take-off)
+  or the ground below (landing) (inferred). `LandAsync` still puts a flyer down wherever `CanFly` next turns false (the
+  periodic tick, `WorldCoreService.TickAsync`), including on losing a flying mount's own System-slot ride.
+- A flight move (31084) is judged against `MountFlight.Floor`: the walkable layer below, else the cell's own recorded
+  height over ground nobody walks on (water, cliffs, roofs), so flying over it is not put back (inferred).
+- Take-off and landing scripts (`normal_leisuremount_upper`/`normal_leisuremount_below`, `SkillConfig._kScriptLogic`) carry
+  an enemy-selector visual template although they only change flight state; `CombatService.ResolveCastAsync` hands them
+  to the flight switch before any targeting, so a passive monster near the switch cannot be hit or force a dismount.
 - Connected-session expiry runs every second. Scene restrictions are reconciled after 30005 but
   before ENTITYSELF/AOI. Class changes revalidate riding. Role selection clears previous-role state.
 

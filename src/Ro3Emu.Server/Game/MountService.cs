@@ -53,7 +53,8 @@ public sealed class MountService : IGameTicker
         WardrobeService wardrobe, CombatService combat)
     {
         this._wardrobe = wardrobe;
-        combat.BeforeCast = DismountForCastAsync;
+        combat.BeforeCast.Add(DismountForCastAsync);
+        combat.GrantedSkill.Add((s, id) => FlySkills(data, s) is { } fly && id == (s.WorldState.Flying ? fly.Down : fly.Up));
         this._data = data; this._character = character; this._roles = roles; this._functions = functions;
         this._world = world; this._loop = loop; this._sessions = sessions; this._deadlines = deadlines; this._clock = clock;
         character.ExtraAttributes.Add(Attributes);
@@ -155,6 +156,19 @@ public sealed class MountService : IGameTicker
 
     public static long Rider(GameSession s) => s.MountState.QuestMount != 0 ? s.MountState.QuestMount
         : s.Mounts?.MountIds.OrderBy(p => p.Key).FirstOrDefault(p => p.Value.IsRiding).Value?.MountId ?? 0;
+
+    /// <summary>
+    /// The flying mount ridden in the System slot (1): its MountsConfig._kFlySwitchSkills [take-off, landing].
+    /// LC_MountComponent.Ride marks the rider m_bRideFlyMount and aims these two skills on the HUD's skill wheel
+    /// (SkillWheelMount1 slot, JoyStickSkillNormalMixin). A quest ride has no System-slot entry, so it never flies.
+    /// </summary>
+    public static (int Up, int Down)? FlySkills(GameData data, GameSession s)
+    {
+        if (s.MountState.QuestMount != 0 || s.Mounts == null || !s.Mounts.MountIds.TryGetValue(SystemSlot, out var system)
+            || !system.IsRiding || MountsConfig.Get(data, system.MountId) is not { } mount) return null;
+        var skills = mount.FlySwitchSkills;
+        return skills is [> 0 and var up, > 0 and var down, ..] ? ((int)up, (int)down) : null;
+    }
 
     private IEnumerable<(long Id, double Value)> Attributes(GameSession s) =>
         Config((int)Rider(s)) is { } row ? GameData.Pairs(row, "_kAttr") : [];
@@ -263,14 +277,16 @@ public sealed class MountService : IGameTicker
     /// CombatService.BeforeCast: a rider casts or attacks, so it gets off a system mount first, without refusing the cast.
     /// The client never sends the dismount itself (only an interaction skill does, UI_Sys_MainRoleSkillWidgetCtrl.lua:481-488)
     /// and holds a skill while its unit rides a system mount until the ride ends (LC_State_Unit_Skill.lua:51-71), so the
-    /// ride ends here, before the cast's timeline and hit. A battle mount is ridden into the fight, and a flying rider
-    /// keeps its mount (inferred). The caller holds the character lock.
+    /// ride ends here, before the cast's timeline and hit. A battle mount is ridden into the fight, a flying rider keeps
+    /// its mount (inferred), and so does either flight switch (<see cref="FlySkills"/>, WorldCoreService.
+    /// MountFlightSwitchAsync). The caller holds the character lock.
     /// </summary>
     /// <returns>The milliseconds the cast waits for the dismount to play, zero when nobody got off.</returns>
-    private async Task<int> DismountForCastAsync(GameSession s)
+    private async Task<int> DismountForCastAsync(GameSession s, int skillId)
     {
         long id = s.Mounts == null ? 0 : Rider(s);
-        if (id == 0 || Slot(id) != SystemSlot || s.WorldState.Flying) return 0;
+        if (id == 0 || Slot(id) != SystemSlot || s.WorldState.Flying
+            || FlySkills(_data, s) is { } fly && (skillId == fly.Up || skillId == fly.Down)) return 0;
         var next = s.Mounts!.Clone();
         if (next.MountIds.TryGetValue(SystemSlot, out var choice)) choice.IsRiding = false;
         var state = CopyState(s); state.QuestMount = 0;

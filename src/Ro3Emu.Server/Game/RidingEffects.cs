@@ -58,6 +58,11 @@ public sealed class RidingEffects : IGameTicker
         character.ExtraAttributes.Add(RideAttributes);
         mounts.RideChanged.Add(SyncAsync);
         mounts.RideChanged.Add(skills.AttackInputChangedAsync);
+        // A flying mount's take-off/landing buttons (SkillWheelMount1/2) come and go with its own ride, not with the
+        // normal attack AttackInputChangedAsync alone watches, so mounting or dismounting one always resyncs the wheel.
+        mounts.RideChanged.Add(skills.SyncAsync);
+        skills.MountFlyWheel = s => MountService.FlySkills(data, s) is { } fly
+            ? (new() { SkillConfigId = fly.Up, Enable = true }, new() { SkillConfigId = fly.Down, Enable = true }) : null;
         character.WornGearChanged.Add(skills.AttackInputChangedAsync);
         // It touches only the loaded session's own buffs, inside the scene load's scope.
         scenes.AddOwnedAfterLoaded(SyncAsync);
