@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
@@ -27,8 +26,9 @@ public sealed partial class CombatService
         ? [.. subs.EnumerateArray().Select(sub => new LCConditionList(sub))] : [];
 
     /// <summary>LC_InteractCondition.CheckEquipStatue, CheckMountStatue, CheckPendantStatue, CheckBuffLayer and
-    /// CheckSceneFlyable (MapConfig._iFly of the current scene, the mount take-off/landing skills' own gate).
-    /// (inferred) CheckHaveBuff (1 row) is not judged here, so it does not refuse a cast.</summary>
+    /// CheckSceneFlyable (the mount take-off skills' gate: Lua_CFG_MapConfigBase.CanFlyMount, _kRiderForbidden[3] == 0
+    /// of the current map; not _iFly, which CanFly reads for wings). (inferred) CheckHaveBuff (1 row) is not judged here,
+    /// so it does not refuse a cast.</summary>
     private bool LeafMet(GameSession s, long[] data) => data switch
     {
         [CondEquip, var type, ..] => s.Items.Any(i => i.Grid != 0 && ItemConfig.Get(_data, i.Entry)?.SubType == type), // all gear, not only the hands: subtype 50 is worn in part 3
@@ -36,7 +36,7 @@ public sealed partial class CombatService
         [CondMountIsNot, var mount, ..] => MountService.Rider(s) != mount,
         [CondPendant, var type, ..] => s.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == type),
         [CondBuffLayer, var buff, var most, var least, ..] => s.Buffs.Any(b => b.ConfigId == buff && b.ExpireMs > Now && b.PileCount >= least && b.PileCount <= most),
-        [CondSceneFlyable, ..] => _data.Row("MapConfig", s.SceneEntry) is { } map && GameData.Int(map, "_iFly") == 1,
+        [CondSceneFlyable, ..] => MapConfig.Get(_data, s.SceneEntry)?.RiderForbidden is [_, _, 0, ..],
         _ => true,
     };
 }
