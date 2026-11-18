@@ -20,6 +20,7 @@ public sealed partial class NewActivityService
         bool hasLocalDay = false;
         bool needsRefresh = session.ActivityServerDay != (long)Math.Floor((now - _activityClock.ServerOpen) / 86400d) + 1;
         int book = Playbook(session);
+        if (session.NewActivities.ActivityInfo.ContainsKey(ExplorationActivity)) next = NoteDrops.Day().End;
         void Consider(long seconds)
         {
             if (seconds > now && seconds < next) next = seconds;
@@ -52,6 +53,13 @@ public sealed partial class NewActivityService
                     }
                 }
             }
+            if (id == ExplorationActivity && !(_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows))
+                foreach (var phase in Data.Config.ExplorePhaseConfig.All(_data))
+                    if (phase.Activityid == id && WorldPhaseWindow(session, phase.Row, out long start, out long end))
+                    {
+                        Consider(start);
+                        Consider(end + 1);
+                    }
             if (type is 5 or 8 or 21 && window.End > now) hasLocalDay = true;
             long timeLimit = GameData.Int(row, "_iTimeLimitId");
             if (timeLimit > 0)

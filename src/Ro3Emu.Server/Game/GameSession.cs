@@ -70,6 +70,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
         Achievements = null; AchievementRuntime = null; AdventureGroupRole = null;
         Library = null; CardLibraryReadyAttachment = null; GrowthClass = null;
         NewActivities = null; ActivitiesReady = false;
+        VisibleConches.Clear(); PlayingPillar = null; PendingConch = 0; ConchStartPosition = null;
         Dungeons = null; DungeonAttempt = null;
         Tower = null; TowerAttempt = null;
         Training = null; EventFaction = 0;
@@ -274,6 +275,11 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     public Romsg.DBNewActivityInfo? NewActivities { get; set; }
     public ActivityRuntimeState ActivityRuntime { get; set; } = new();
     public SemaphoreSlim ActivityGate { get; } = new(1, 1);
+    internal HashSet<long> VisibleConches { get; } = [];
+    internal NewActivityService.PillarAttempt? PlayingPillar { get; set; }
+    internal long ConchCycle { get; set; }
+    internal long PendingConch { get; set; }
+    internal Romsg.Vec3? ConchStartPosition { get; set; }
     public bool ActivitiesReady { get; set; }
     /// <summary>The client has the pass challenge rows (Ro3Emu.ClientHooks.PassChallenges sent 77014): 5027 may carry them.</summary>
     public bool PassChallengeRows { get; set; }

@@ -481,6 +481,8 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         sceneEntry != 0 && data.Table("PublicParamConfig").TryGetValue("NoviceDungeonReverseDungeonID", out var id)
         && Data.GameData.Number(id) == sceneEntry;
 
+    internal Func<GameSession, Task>? AfterTeleport { get; set; }
+
     /// <summary>
     /// Same-map teleport of the local player (MOVEMENT_CHANGE), then the watchers are told. (proven) The client applies
     /// transType 2 ForceTeleport to its controlled unit only when that unit does not move on surfaces
@@ -505,6 +507,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         s.LastWalkUtc = DateTime.UtcNow;
         s.Walking = false;
         await world.MoveAsync(s, new WalkReq { Pos = pos, Face = at.Face, BStop = true, SpeedRate = 1 }, forceTeleport: true);
+        if (AfterTeleport != null) await AfterTeleport(s);
     }
 
     /// <summary>Set by TerritoryWarsService: whether a walk from a point to another crosses an air wall its dungeon has

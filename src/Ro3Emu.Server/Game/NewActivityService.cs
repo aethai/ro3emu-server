@@ -39,7 +39,10 @@ public sealed partial class NewActivityService
     private readonly SessionRegistry _sessions;
     private readonly GameLoop _loop;
     private readonly Deadlines _deadlines;
+    private readonly LifeJobService _life;
+    internal ExplorationNoteDrops NoteDrops { get; }
     private readonly SceneService _scene;
+    private readonly Maps.WorldData _worldData;
     private readonly InstanceService _instances;
     private readonly DungeonService _dungeons;
     private readonly PronteraDefenseService _defense;
@@ -52,16 +55,24 @@ public sealed partial class NewActivityService
 
     public NewActivityService(GameData data, CharacterService character, FunctionService functions, RoleStore roles,
         AccountStore accounts, ItemStore items, MailService mail, SeasonService seasons, TimeProvider clock, ActivityClock activityClock,
-        AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene,
+        AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene, Maps.WorldData worldData,
         InstanceService instances, DungeonService dungeons, PronteraDefenseService defense, CombatService combat,
         Deadlines deadlines, TeamService teams, MvpService mvps, ChatService chat, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
-        ILogger<NewActivityService> log)
+        LifeJobService life, WildAfkService afk, RewardService rewards, ILogger<NewActivityService> log)
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
         this._accounts = accounts; this._items = items; this._mail = mail; this._seasons = seasons; this._clock = clock;
         this._activityClock = activityClock; this._awards = awards; this._tasks = tasks; this._sessions = sessions;
         this._loop = loop; this._scene = scene; this._instances = instances; this._defense = defense; this._log = log;
         this._deadlines = deadlines;
+        this._worldData = worldData;
+        _life = life;
+        NoteDrops = new(data, seasons, clock, s => ActivityError(s, ExplorationActivity, WorldExplorationType) == 0);
+        life.ExplorationNotes = NoteDrops;
+        life.ProjectedRestrictions.Add(NoteDrops.Remaining);
+        rewards.ExplorationNotes = NoteDrops;
+        rewards.IsExplorationHunt = afk.IsExplorationHunt;
+        rewards.SyncExplorationRestriction = life.SyncRestrictionsAsync;
         this._dungeons = dungeons;
         this._teams = teams;
         _freePremiumPass = options.Value.Pass.FreePremium;
@@ -77,11 +88,17 @@ public sealed partial class NewActivityService
         combat.EventDamageRecorded.Add(OnTreasureMonsterDamagedAsync);
         scene.TreasureComplete = CompleteTreasureHuntAsync;
         scene.Loaded.Add(OnTreasureSceneLoadedAsync);
+        combat.PlayerDied.Add(InterruptConchAsync);
+        scene.AfterTeleport = ConchMovedAsync;
+        scene.Loaded.Add(ReloadConchesAsync);
+        scene.Resync.Add(ReloadConchesAsync);
+        scene.Leaving.Add(LeaveConchesAsync);
         character.StateChanged.Add(QueueRefresh);
         character.ProgressHandlers.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
         seasons.ScheduleChanged.Add(InvalidateAllSchedules);
         tasks.OpenActivityTaskGroups = OpenTaskGroups;
+        tasks.QuestDelivered.Add(OnExplorationQuestDelivered);
     }
 
     /// <summary>TimeLimitConfig 18 "refreshTaskDaily" (_iTimeLimitId 1013): a _kTaskRenew group renewed every game day.</summary>
@@ -186,6 +203,8 @@ public sealed partial class NewActivityService
             await SyncAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
             session.ActivitiesReady = true;
+            await SyncConchesAsync(session);
+            await _life.SyncRestrictionsAsync(session);
             _tasks.OnStateChanged(session); // the open activities' quests (TaskService.ActivityTasks.cs)
             ScheduleDeadline(session);
             PassEvent(session, []); // the day played, and any daily activity earned while the pass was not watching
@@ -485,6 +504,10 @@ public sealed partial class NewActivityService
     private async Task SaveCalendarAsync(GameSession session, DBNewActivityInfo next, byte[]? before,
         bool initializeRuntime = false)
     {
+        bool chapterChanged = false;
+        if (next.ActivityInfo.GetValueOrDefault(ExplorationActivity)?.ActivityParam?.WorldExploration is { } world)
+            foreach (var phase in world.PhaseInfos.Values)
+                chapterChanged |= UpdateChapterProgress(session, phase);
         byte[] info = next.ToByteArray();
         bool changed = before == null || !info.AsSpan().SequenceEqual(before);
         if (!changed && !initializeRuntime) return;
@@ -493,6 +516,7 @@ public sealed partial class NewActivityService
         if (initializeRuntime) tx.RoleBlob(session.Role!.Id, "activity_runtime",
             JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime));
         await _roles.CommitAsync(tx, "activity/calendar", _ => session.NewActivities = next);
+        if (chapterChanged && session.ActivitiesReady) _tasks.OnStateChanged(session);
     }
 
     private async Task RefreshCalendarAndSaveAsync(GameSession session)
@@ -530,7 +554,12 @@ public sealed partial class NewActivityService
         if (!_deadlines.IsCurrent(session, lease)) return;
         await SyncTreasureAsync(session, lease);
         if (!_deadlines.IsCurrent(session, lease)) return;
-        if (session.ActivitiesReady) ScheduleDeadline(session);
+        if (session.ActivitiesReady)
+        {
+            await SyncConchesAsync(session);
+            if (exploration != null) await _life.SyncRestrictionsAsync(session);
+            ScheduleDeadline(session);
+        }
         foreach (var changed in ProjectionChanged) changed(session);
     }
 
