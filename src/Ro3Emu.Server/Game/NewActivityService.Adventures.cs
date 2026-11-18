@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
@@ -147,17 +148,40 @@ public sealed partial class NewActivityService
         if (node.Items.ContainsKey(req.Position) || node.IsFinished) return ErrorCodes.MailAlreadyClaimed;
         node.Items[req.Position] = req.ItemId;
         node.IsFinished = node.Items.Count == pieces.GetArrayLength();
-        int slots = phase.NodeInfos.Keys.Sum(nodeId =>
-            _data.Row("ExploreNodeConfig", nodeId) is { } configured
-            && configured.TryGetProperty("_kPiecesID", out var list) && list.ValueKind == JsonValueKind.Array
-                ? list.GetArrayLength() : 0);
-        // (inferred) GetChapterProgress divides totalRate by 100 for the displayed
-        // percentage, so normalize the filled note slots to 10,000 basis points.
-        phase.TotalRate = slots > 0 ? (int)(10000L * phase.NodeInfos.Values.Sum(n => n.Items.Count) / slots) : 0;
+        UpdateChapterProgress(session, phase);
         int result = await CommitAdventureAsync(session, next, costs: [((int)req.ItemId, 1)]);
         // Quest target 107101 (TaskService.EventTargets.cs) and a finished node's quest (TaskService.MiscTargets.cs).
         if (result == 0) _tasks.OnStateChanged(session);
         return result;
+    }
+
+    private void OnExplorationQuestDelivered(GameSession session, long quest, AwardPlan _)
+    {
+        if (ExploreNodeConfig.All(_data).Any(n => n.FinishQuestId == quest)) QueueRefresh(session);
+    }
+
+    // The rules credit story quests, and MovementPlay_CellWidgetCtrl checks the delivered finish quest.
+    // The export supplies no weights: one unit per note slot and one per completed measure's final quest (inferred).
+    private bool UpdateChapterProgress(GameSession session, DBWorldExplorationPhase phase)
+    {
+        if (session.Tasks == null || ExplorePhaseConfig.Get(_data, phase.PhaseCfgId) is not { } chapter) return false;
+        int total = 0, earned = 0;
+        foreach (long id in chapter.Nodes)
+        {
+            if (ExploreNodeConfig.Get(_data, id) is not { } config) continue;
+            var pieces = config.PiecesId;
+            total += pieces.Length + (config.FinishQuestId > 0 ? 1 : 0);
+            if (!phase.NodeInfos.TryGetValue(id, out var node)) continue;
+            for (int i = 0; i < pieces.Length; i++)
+                if (node.Items.TryGetValue(i + 1, out long item) && item == pieces[i]) earned++;
+            if (node.IsFinished && config.FinishQuestId > 0 && TaskService.IsDelivered(session, config.FinishQuestId))
+                earned++;
+        }
+        if (total == 0) return false;
+        int rate = (int)(10000L * earned / total);
+        if (phase.TotalRate == rate) return false;
+        phase.TotalRate = rate;
+        return true;
     }
 
     private bool WorldPhaseOpen(GameSession session, JsonElement row) =>

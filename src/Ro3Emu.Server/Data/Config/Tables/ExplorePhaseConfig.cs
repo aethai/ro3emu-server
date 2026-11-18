@@ -10,6 +10,7 @@ public readonly partial record struct ExplorePhaseConfig(JsonElement Row)
     [ConfigField("_iPhaseID")] public partial long PhaseId { get; }
     [ConfigField("_kEndTime")] public partial long[] EndTime { get; }
     [ConfigField("_kMap")] public partial long[] Map { get; }
+    [ConfigField("_kMapCollect")] public partial long[] MapCollect { get; }
     [ConfigField("_kNodes")] public partial long[] Nodes { get; }
     [ConfigField("_kStartTime")] public partial long[] StartTime { get; }
 }

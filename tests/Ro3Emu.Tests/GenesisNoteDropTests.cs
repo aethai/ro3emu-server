@@ -9,7 +9,7 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Tests;
 
-public sealed class GenesisNoteDropTests
+public sealed partial class GenesisNoteDropTests
 {
     private sealed class Clock : TimeProvider
     {

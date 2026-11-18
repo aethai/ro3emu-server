@@ -30,22 +30,26 @@ public sealed partial class NewActivityService
     {
         var result = new ConchMap();
         if (id is <= 0 or >= (1 << 20) || _worldData.Map(id) is not { } world) return result;
-        foreach (var group in world.SpawnGroups)
-            foreach (var point in group.Points)
+        foreach (var point in ConchPlacements(world))
+        {
+            if (point.Id is <= 0 or >= (1 << 20) || point.ConfigId <= 0) continue;
+            if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
+                || npc.CTimes is not [0, 1]) continue;
+            long uid = ConchUid(id, point.Id);
+            var placement = point;
+            if (npc.InteractId is not [ConchInteraction])
             {
-                if (point.Id is <= 0 or >= (1 << 20) || point.ConfigId <= 0) continue;
-                if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
-                    || npc.CTimes is not [0, 1]) continue;
-                long uid = ConchUid(id, point.Id);
-                if (npc.InteractId is not [ConchInteraction])
-                {
-                    bool special = npc.InteractId is [SpecialConchInteraction];
-                    if (!special && !IsMusicPillar(npc)) continue;
-                    if (ReadConchTrigger(world, npc) is not { } trigger || (special && trigger.Area == null)) continue;
-                    result.Triggers[uid] = trigger;
-                }
-                result.Points.TryAdd(uid, point);
+                bool special = npc.InteractId is [SpecialConchInteraction];
+                if (!special && !IsMusicPillar(npc)) continue;
+                if (ReadConchTrigger(world, npc) is not { } trigger || (special && trigger.Area == null)) continue;
+                result.Triggers[uid] = trigger;
+                // Geffen North Gate's pillar (editor point 69) is marked isOnGround but stored 14 m below the floor.
+                // Use the same corrected position for the NPC shown to the player and its 3D interaction check.
+                if (!special)
+                    placement = point with { Y = world.RaisedGroundNpcHeight(point.Id, point.X, point.Y, point.Z) };
             }
+            result.Points.TryAdd(uid, placement);
+        }
         return result;
     });
 
@@ -96,8 +100,9 @@ public sealed partial class NewActivityService
     }
 
     private bool ConchShown(GameSession session, ConchMap map, long uid) =>
-        !map.Triggers.TryGetValue(uid, out var trigger) || (trigger.Area?.Contains(session.Position.X, session.Position.Z) ?? true)
-        && WorldPhaseOpen(session, trigger.Phase.Row) && _functions.IsOpen(session, trigger.Function);
+        !MorrocFallbackQuotaReached(session) &&
+        (!map.Triggers.TryGetValue(uid, out var trigger) || (trigger.Area?.Contains(session.Position.X, session.Position.Z) ?? true)
+            && WorldPhaseOpen(session, trigger.Phase.Row) && _functions.IsOpen(session, trigger.Function));
 
     private bool ConchMapOpen(GameSession session) =>
         !session.SceneLoading && session.InstanceId == 0 && session.ActivitiesReady &&
@@ -248,7 +253,7 @@ public sealed partial class NewActivityService
     internal async Task ConchMovedAsync(GameSession session)
     {
         // LC_DAL_Interact.OnActionReq force-syncs raw movement before the finish packet.
-        // Keep the song across in-range corrections, but walking out and back requires a new start.
+        // Keep the tracked start across in-range corrections. Leaving range drops it; a later finish still checks reach.
         if (session.PlayingPillar is { } song && CheckConch(session, song.Uid, out _) != 0)
             session.PlayingPillar = null;
         if (session.ConchStartPosition is { } start && !start.Equals(session.Position))

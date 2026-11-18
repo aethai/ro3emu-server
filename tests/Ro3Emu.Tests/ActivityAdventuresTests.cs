@@ -9,6 +9,7 @@ using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game.Ownership;
 using Ro3Emu.Server.Maps;
 
@@ -369,14 +370,14 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(0, success.FillPhaseNodeRes.Err);
         await Next(alice, NewActivityService.WorldExplorationSync, DBWorldExplorationIncrement.Parser,
             m => m.PhaseInfos.ContainsKey(101));
-        Assert.Equal(555, session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
+        Assert.Equal(454, session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
 
         fill.RequestId = 2;
         fill.FillPhaseNodeReq.Position = 2;
         fill.FillPhaseNodeReq.ItemId = 1113002;
         await alice.SendGameAsync(NewActivityService.Common, fill);
         Assert.Equal(0, (await Next(alice, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == 2)).Result);
-        Assert.Equal(1111, session.NewActivities.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
+        Assert.Equal(909, session.NewActivities.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
 
         fill.RequestId = 3;
         await alice.SendGameAsync(NewActivityService.Common, fill);
@@ -407,6 +408,68 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         fill.FillPhaseNodeReq.ItemId = 1113001;
         await relog.SendGameAsync(NewActivityService.Common, fill);
         Assert.NotEqual(0, (await Next(relog, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == 6)).Result);
+    }
+
+    [ClientDataFact]
+    public async Task ExplorationChapterReconcilesOldPercentAndRequiresDeliveredFinalStoryQuest()
+    {
+        const long phaseId = 103, milestone = 2101003;
+        var seasons = _app.Services.GetRequiredService<SeasonService>();
+        var data = _app.Services.GetRequiredService<GameData>();
+        var stage = new SeasonClock(data, seasons.Start, 101, seasons.Zone).Build().StageTimeInfo[101002];
+        _clock.Set(stage.StartTime + 345600 + 60);
+        var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99");
+        await QuestProbe.AtAsync(_app, "alice", milestone, 0);
+        long role = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice").Role!.Id;
+        await alice.DisposeAsync();
+        await QuestProbe.OfflineAsync(_app, "alice");
+
+        // An existing character under the previous slot-only formula: 13 notes, all measures filled, no story claims.
+        var roles = _app.Services.GetRequiredService<RoleStore>();
+        var saved = DBNewActivityInfo.Parser.ParseFrom(roles.LoadNewActivities(role)!);
+        var phase = saved.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[phaseId];
+        foreach (var (id, node) in phase.NodeInfos)
+        {
+            var pieces = ExploreNodeConfig.Get(data, id)!.Value.PiecesId;
+            for (int i = 0; i < pieces.Length; i++) node.Items[i + 1] = pieces[i];
+            node.IsFinished = true;
+        }
+        phase.TotalRate = 10000;
+        var oldTasks = DBTaskInfo.Parser.ParseFrom(roles.LoadTasks(role)!);
+        oldTasks.Infos[milestone].Status = TaskState.Finish;
+        oldTasks.Infos[milestone].CompleteNum[0] = 100;
+        var setup = roles.NewTransaction();
+        setup.RoleBlob(role, "new_activities", saved.ToByteArray());
+        setup.RoleBlob(role, "tasks", oldTasks.ToByteArray());
+        await roles.CommitAsync(setup, "test/legacy-exploration");
+
+        await using var relog = await InWorld("Alice", create: false);
+        async Task WaitForRate(int rate)
+        {
+            await Next(relog, NewActivityService.WorldExplorationSync, DBWorldExplorationIncrement.Parser,
+                m => m.PhaseInfos.TryGetValue(phaseId, out var p) && (p.All?.TotalRate == rate || p.Inc?.TotalRate == rate));
+            await QuestProbe.AtAsync(_app, "alice", milestone, rate / 100);
+        }
+        await WaitForRate(8125);
+        var claim = new TaskDeliveryReq { Req = { new TaskDeliverySingleReq { Id = milestone } } };
+        await relog.SendGameAsync(TaskService.TaskDelivery, claim);
+        Assert.Empty((await Next(relog, TaskService.TaskDelivery, TaskDeliveryResp.Parser)).Data);
+
+        await Gm("alice", "!quest done 301004");
+        await WaitForRate(8750);
+        await Gm("alice", "!quest done 301005");
+        await WaitForRate(9375);
+        await Gm("alice", "!quest done 301006"); // first step of measure 1033; its finish quest is 301007
+        await QuestProbe.WaitAsync(_app, "alice", 301007, _ => true, "offered after 301006");
+        await relog.SendGameAsync(TaskService.TaskDelivery, claim);
+        Assert.Empty((await Next(relog, TaskService.TaskDelivery, TaskDeliveryResp.Parser)).Data);
+        await Gm("alice", "!quest done 301007");
+        await WaitForRate(10000);
+        await relog.SendGameAsync(TaskService.TaskDelivery, claim);
+        Assert.Single((await Next(relog, TaskService.TaskDelivery, TaskDeliveryResp.Parser)).Data);
+        await relog.SendGameAsync(TaskService.TaskDelivery, claim);
+        Assert.Empty((await Next(relog, TaskService.TaskDelivery, TaskDeliveryResp.Parser)).Data);
     }
 
     [ClientDataFact]

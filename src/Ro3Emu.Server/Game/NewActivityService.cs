@@ -98,6 +98,7 @@ public sealed partial class NewActivityService
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
         seasons.ScheduleChanged.Add(InvalidateAllSchedules);
         tasks.OpenActivityTaskGroups = OpenTaskGroups;
+        tasks.QuestDelivered.Add(OnExplorationQuestDelivered);
     }
 
     /// <summary>TimeLimitConfig 18 "refreshTaskDaily" (_iTimeLimitId 1013): a _kTaskRenew group renewed every game day.</summary>
@@ -503,6 +504,10 @@ public sealed partial class NewActivityService
     private async Task SaveCalendarAsync(GameSession session, DBNewActivityInfo next, byte[]? before,
         bool initializeRuntime = false)
     {
+        bool chapterChanged = false;
+        if (next.ActivityInfo.GetValueOrDefault(ExplorationActivity)?.ActivityParam?.WorldExploration is { } world)
+            foreach (var phase in world.PhaseInfos.Values)
+                chapterChanged |= UpdateChapterProgress(session, phase);
         byte[] info = next.ToByteArray();
         bool changed = before == null || !info.AsSpan().SequenceEqual(before);
         if (!changed && !initializeRuntime) return;
@@ -511,6 +516,7 @@ public sealed partial class NewActivityService
         if (initializeRuntime) tx.RoleBlob(session.Role!.Id, "activity_runtime",
             JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime));
         await _roles.CommitAsync(tx, "activity/calendar", _ => session.NewActivities = next);
+        if (chapterChanged && session.ActivitiesReady) _tasks.OnStateChanged(session);
     }
 
     private async Task RefreshCalendarAndSaveAsync(GameSession session)
