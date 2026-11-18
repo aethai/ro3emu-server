@@ -49,7 +49,7 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
             || notes.ValueKind != JsonValueKind.Array || notes.GetArrayLength() == 0) return null;
         // (inferred) No per-note weights are supplied in ExploreNotes.
         int item = (int)(GameData.Number(notes[Draw(notes.GetArrayLength())]) ?? 0);
-        return item > 0 && data.Row("ItemConfig", item) != null ? new(item, left.LastRecoverTime) : null;
+        return item > 0 && ItemConfig.Get(data, item) != null ? new(item, left.LastRecoverTime) : null;
     }
 
     // Recheck the shared balance at settlement. An old roll cannot spend tomorrow's allowance.

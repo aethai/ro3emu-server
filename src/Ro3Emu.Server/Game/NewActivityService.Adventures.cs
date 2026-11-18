@@ -132,7 +132,7 @@ public sealed partial class NewActivityService
 
     private async Task<int> WorldFillCoreAsync(GameSession session, long activityId, WorldExplorationFillPhaseNodeReq req)
     {
-        if (ActivityError(session, activityId, 14) is var error and not 0) return error;
+        if (ActivityError(session, activityId, WorldExplorationType) is var error and not 0) return error;
         if (_data.Row("ExplorePhaseConfig", req.PhaseCfgId) is not { } phaseRow
             || GameData.Int(phaseRow, "_iActivityid") != activityId
             || !WorldPhaseOpen(session, phaseRow)

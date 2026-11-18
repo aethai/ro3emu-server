@@ -13,6 +13,12 @@ public sealed partial class NewActivityService
     private const string ConchDeadline = "exploration-conch";
     private const long ConchUidBase = 3L << 42;
     private const int PillarFinishInteraction = 7000100, EnterMusicGameAction = 350;
+    // NewActivityConfig._iActivityType of World Exploration (111).
+    private const int WorldExplorationType = 14;
+    // NPCConfig _iNPCType/_iNPCSubType of the Genesis pickups (8000002-8000004, 8000301-8000315, 8100004).
+    private const int ConchNpcType = 2, ConchNpcSubType = 12;
+    // LC_ConditionDefine: CheckArea, the exploration chapter's activity time and function open.
+    private const int CheckAreaCondition = 4003, ChapterTimeCondition = 16001, FunctionOpenCondition = 1100;
     internal sealed record PillarAttempt(long Uid, long Cycle, DateTimeOffset End);
     private sealed record ConchTrigger(MapRegion? Area, ExplorePhaseConfig Phase, long Function);
     private sealed class ConchMap
@@ -33,7 +39,7 @@ public sealed partial class NewActivityService
         foreach (var point in ConchPlacements(world))
         {
             if (point.Id is <= 0 or >= (1 << 20) || point.ConfigId <= 0) continue;
-            if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: 2, NPCSubType: 12, CAward: > 0 } npc
+            if (NPCConfig.Get(_data, point.ConfigId) is not { NPCType: ConchNpcType, NPCSubType: ConchNpcSubType, CAward: > 0 } npc
                 || npc.CTimes is not [0, 1]) continue;
             long uid = ConchUid(id, point.Id);
             var placement = point;
@@ -66,7 +72,7 @@ public sealed partial class NewActivityService
         return false;
     }
 
-    // LC_InteractCondition: CheckArea (4003), exploration chapter time (16001), function open (1100).
+    // LC_InteractCondition: CheckArea, exploration chapter time and function open.
     // Only project a conditional pickup when its complete authored show condition is understood.
     private ConchTrigger? ReadConchTrigger(MapWorld world, NPCConfig npc)
     {
@@ -81,18 +87,18 @@ public sealed partial class NewActivityService
             if (leaf.Type != 3 || leaf.Inverse) return null;
             switch (leaf.Data)
             {
-                case [4003, var scene, var region] when scene == world.SceneEntry && area == null:
+                case [CheckAreaCondition, var scene, var region] when scene == world.SceneEntry && area == null:
                     if (!world.Regions.TryGetValue(region, out area)) return null;
                     // East Gate server customization: the stock one-unit circle ends before the visible conch.
                     // Apply the wider trigger only to the original footprint so edited scene files still take precedence.
                     if (scene == 10110 && region == 547 && area is { Shape: 1, X: 89.65f, Z: 238.2755f, Length: 1 })
                         area = area with { X = 90.3f, Z = 241, Length = 5 };
                     break;
-                case [16001, var chapter] when phase == null:
+                case [ChapterTimeCondition, var chapter] when phase == null:
                     if (ExplorePhaseConfig.Get(_data, chapter) is not { Activityid: ExplorationActivity } row) return null;
                     phase = row;
                     break;
-                case [1100, > 0 and var id] when function == 0: function = id; break;
+                case [FunctionOpenCondition, > 0 and var id] when function == 0: function = id; break;
                 default: return null;
             }
         }
@@ -107,7 +113,7 @@ public sealed partial class NewActivityService
     private bool ConchMapOpen(GameSession session) =>
         !session.SceneLoading && session.InstanceId == 0 && session.ActivitiesReady &&
         ExplorePhaseConfig.All(_data).Any(p => p.Activityid == ExplorationActivity && p.Map.Contains(session.SceneEntry)
-            && WorldPhaseOpen(session, p.Row)) && _functions.IsOpen(session, 91) && ActivityError(session, ExplorationActivity, 14) == 0;
+            && WorldPhaseOpen(session, p.Row)) && _functions.IsOpen(session, EveConstant("ExploreFunction")) && ActivityError(session, ExplorationActivity, WorldExplorationType) == 0;
 
     private Task ReloadConchesAsync(GameSession session)
     {

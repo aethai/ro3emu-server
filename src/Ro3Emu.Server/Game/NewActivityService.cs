@@ -67,7 +67,7 @@ public sealed partial class NewActivityService
         this._deadlines = deadlines;
         this._worldData = worldData;
         _life = life;
-        NoteDrops = new(data, seasons, clock, s => ActivityError(s, ExplorationActivity, 14) == 0);
+        NoteDrops = new(data, seasons, clock, s => ActivityError(s, ExplorationActivity, WorldExplorationType) == 0);
         life.ExplorationNotes = NoteDrops;
         life.ProjectedRestrictions.Add(NoteDrops.Remaining);
         rewards.ExplorationNotes = NoteDrops;
