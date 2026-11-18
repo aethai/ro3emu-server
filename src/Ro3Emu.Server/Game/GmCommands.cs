@@ -294,6 +294,8 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
         ["lvl"] = ("<base> [job]", (s, a) => Op(s, OpSetLevel, a)),
         ["exp"] = ("<base> [job]", (s, a) => Op(s, OpAddExp, a)),
         ["points"] = ("<n>", (s, a) => Op(s, OpAddAttrPnt, a)),
+        // Skill points come from the job level (JobLvConfig._iSkillPoint, SkillService.SkillPoints); this is the GM panel's 110.
+        ["skillsmax"] = ("[0 clears]", (s, a) => Op(s, OpAllSkillsMax, a.Length == 0 ? ["1"] : a)),
         ["job"] = ("<jobId>", (s, a) => Op(s, OpSetJob, a)),
         ["clearbag"] = ("", (s, a) => Op(s, OpClearPack, a)),
         ["client"] = ("<find name>", ClientDiagnostics),
