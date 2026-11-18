@@ -101,7 +101,7 @@ And to everyone who reported bugs and tested on their own servers. [All contribu
 <details>
 <summary><b>For developers</b></summary>
 
-- [Running from source](docs/development.md#running-from-source): the .NET 10 SDK and `scripts\start.cmd`
+- [Running from source](docs/development.md#running-from-source): the .NET 11 SDK, the .NET 10 runtime and `scripts\start.cmd`
 - [Repository layout and architecture](docs/development.md#repository-layout)
 - [Tests and load tests](docs/development.md#tests)
 - [System notes](docs/systems) and [client research](docs/research)
