@@ -22,6 +22,12 @@ The first added favorite resends a full 5034 **(inferred compatibility)**. An em
 
 Mount appearances (type 6) are linked to mount ownership; see [mount-totem.md](mount-totem.md).
 
+`WardRobeConfig._iSkillID`, `_iVideo` and `_iSkillVideo` are previews only: the client reads them in the wardrobe and shop
+panels (`Lua_CFG_WardRobeConfig.GetSkillId`, `UI_Sys_WardrobePanelCtrl._showDetailsInfo`, `UI_Sys_AppearanceShopWidgetCtrl`,
+`UI_Sys_Shop_UnblockingPanelCtrl`) and nowhere else, so wearing a look grants no skill. Two rows carry one: the dragon mount
+60060010 and the Worldscorch Feather costume 40060010, which both show Take Flight 3112101, the dragon's take-off
+(`MountsConfig` 60060010 `_kFlySwitchSkills`). Flight needs that dragon ridden (`LC_Unit_Player.IsRideFlyMount`).
+
 ## Dye/color search boundary
 
 The search covered all `data/config/*.json`, `data/sceneeditor/*` (including `*_monsteridmap.json`), `data/nav`, `data/loc`, the entire `re/lua-src` and `re/clientB/lua-src` (Config and Logic included), `re/decomp`, `src/Ro3Emu.Server/Protos` and `re/proto`. Patterns: `dye|dyed|dyeing|染色|wardrobe.?color|appearance.?color|color.?appearance|color.?wardrobe`, plus `_iConflictField|ConflictField|_iSexNeed|_iDefaultLightUp`, and targeted `ActivatedAppearance|_iUseEffect` in ActionConfig/ItemConfig. Scope counts and relevant hits are recorded below; a search hit is not itself a bound dye request.
