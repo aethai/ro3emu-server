@@ -7,12 +7,52 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class WorldCoreService
 {
-    // FlyBuffTag and MapConfig._iFly are consumed by the client's flight availability checks.
+    /// <summary>eObjectState.eObjectStateFly (43), set directly (not buff-driven, like eObjectStateBattling in
+    /// CombatService): the client enters flight only once LC_UnitBase.CheckFlyMask sees this bit.</summary>
+    private const long FlyBit = 1L << 42;
+
+    // FlyBuffTag and MapConfig._iFly are consumed by the client's flight availability checks. A flying mount's take-off
+    // (MountFlightCastAsync) grants its landing skill's id as a buff tagged 3100000, the same chain any other source of
+    // this tag would use; there is no separate mount-only path here.
     private bool CanFly(GameSession s) => Ready(s) && !s.Dead
         && _data.Row("MapConfig", s.SceneEntry) is { } map && GameData.Int(map, "_iFly") == 1
         && s.Buffs.Any(b => b.ExpireMs > Now && _data.Row("BuffConfig", b.ConfigId) is { } row
             && row.TryGetProperty("_kBuffCategory", out var tags) && tags.ValueKind == JsonValueKind.Array
             && tags.EnumerateArray().Any(t => GameData.Number(t) == 3100000));
+
+    /// <summary>A day's worth: long enough that only landing (or the buff falling off some other way) ends it.</summary>
+    private const int FlyBuffMs = 24 * 60 * 60 * 1000;
+
+    /// <summary>
+    /// CombatService.BeforeCast: a flying mount's take-off skill starts authoritative flight in place (the client's own
+    /// climb plays locally and it already sends 31084 to move from there); its landing skill ends it. MountService.
+    /// FlySkills names the pair and CombatService.GrantedSkill lets only the direction matching the current flight state
+    /// through, so only one of the two is ever the skill actually cast here. Neither changes the cast's own timing.
+    /// Condition 86000556 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) already refuses the cast over a
+    /// map with no _iFly, so CanFly's own map check here is redundant insurance, not the only gate.
+    /// </summary>
+    private async Task<int> MountFlightCastAsync(GameSession s, int skillId)
+    {
+        if (MountService.FlySkills(_data, s) is not { } fly) return 0;
+        if (skillId == fly.Up && !s.WorldState.Flying)
+        {
+            await _buffs.AddAsync(s, fly.Down, FlyBuffMs, s.Role!.Id);
+            s.WorldState.Flying = true;
+            s.WorldState.LastFlyMs = Now;
+            await SetFlyBitAsync(s, true);
+        }
+        else if (skillId == fly.Down && s.WorldState.Flying) await LandAsync(s, s.Position, s.Face);
+        return 0;
+    }
+
+    private async Task SetFlyBitAsync(GameSession s, bool flying)
+    {
+        long next = flying ? s.StatusBits | FlyBit : s.StatusBits & ~FlyBit;
+        if (next == s.StatusBits) return;
+        s.StatusBits = next;
+        await ToSelfAndViewersAsync(s, CombatService.AoiAttrChange, new AOIAttrChange
+        { EntityUuid = (ulong)s.Role!.Id, StateInfo = new AoiObjStateInfo { Data = new CommonBigMask { Values = { (ulong)s.StatusBits } } } });
+    }
 
     /// <summary>
     /// Wing use effects (ActionConfig 101 JumpSameMap / 102 JumpOtherMap, _iEXECHost 1; ItemConfig 1002001 Fly Wing and
@@ -93,6 +133,11 @@ public sealed partial class WorldCoreService
         var at = map.Grounded(new MapPoint(requested.X, requested.Y, requested.Z, face));
         if (!map.IsWalkable(at.X, at.Y, at.Z)) { await ErrorAsync(s, FreeFall, ErrorCodes.Parameter); return; }
         s.WorldState.Flying = false;
+        // Every landing path (the skill, 31083, a free fall, the forced landing on the heartbeat tick) ends here, so
+        // the mount's flight buff and the status bit it grants never outlive the authoritative Flying flag.
+        if (MountService.FlySkills(_data, s) is { } fly && s.Buffs.FirstOrDefault(b => b.ConfigId == fly.Down) is { } buff)
+            await _buffs.RemoveAsync(s, buff);
+        await SetFlyBitAsync(s, false);
         await MoveFlightAsync(s, new Vec3 { X = at.X, Y = at.Y, Z = at.Z }, face, new Vec3(), true, MovementTransitionType.MoveTransLanding);
         // FixLandNtf instructs the client to end the special landing state; immediate landing has zero remaining time.
         await ToSelfAndViewersAsync(s, FixLand, new FixLandNtf { Uuid = s.Role!.Id, FixLandTime = 0 });

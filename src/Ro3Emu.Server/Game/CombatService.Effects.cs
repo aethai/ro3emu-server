@@ -42,6 +42,9 @@ public sealed partial class CombatService
 {
     private long _skillObjectIds = 0x600000000000L;
 
+    /// <summary>SkillConfig._kScriptLogic of a flying mount's take-off/landing (both pairs share these two scripts).</summary>
+    private const string FlightTakeOffScript = "normal_leisuremount_upper", FlightLandingScript = "normal_leisuremount_below";
+
     private async Task ResolveCastAsync(GameSession s, ActiveSkillCast action)
     {
         var row = action.Row;
@@ -174,13 +177,16 @@ public sealed partial class CombatService
             && ReferenceEquals(s.Attachment, action.Attachment)
             && _sessions.Contains(s);
         string script = Script(row);
-        var targets = chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
+        // Mount flight switches (take-off/landing, WorldCoreService.MountFlight) use enemy-selector visual
+        // templates but only move the rider; they must not enter combat or hit a nearby unit.
+        bool flightSwitch = script is FlightTakeOffScript or FlightLandingScript;
+        List<MonsterUnit> targets = flightSwitch ? [] : chosenTargets?.Where(m => m.Hp > 0 && CanHitMonster(s, m)).ToList()
             ?? (ChainRadius(row) is { } chain
                 ? SelectEnemies(s, action, FindMonster(s.WorldScene, action.Request.TargetId)?.Pos ?? center, chain)
                 : SelectEnemies(s, action, center, field?.Trap == true ? field.Radius : null));
         // "Undead-property and Demon Race monsters within the area take ranged Holy magic damage": its selector names no race.
         if (script == "Sanctuary") targets.RemoveAll(m => m.Template.Race != DemonRace && m.Template.Element != UndeadElement);
-        var playerTargets = EffectPlayerTargets(s, action, center);
+        var playerTargets = flightSwitch ? [] : EffectPlayerTargets(s, action, center);
         var alreadySlowed = GuardianPreviouslySlowed(row, targets, playerTargets);
         if (playerTargets.Length > 0)
         {

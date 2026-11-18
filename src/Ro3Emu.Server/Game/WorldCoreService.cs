@@ -65,6 +65,7 @@ public sealed partial class WorldCoreService : IGameTicker
     private readonly SceneService _scene;
     private readonly CharacterService _character;
     private readonly CombatService _combat;
+    private readonly BuffService _buffs;
     private readonly TeamService _teams;
     private readonly DungeonService _dungeons;
     private readonly DailyActivityService _daily;
@@ -79,12 +80,12 @@ public sealed partial class WorldCoreService : IGameTicker
     private readonly ulong _serverOpenSeconds;
 
     public WorldCoreService(World world, WorldData worldData, GameData data, RoleStore roles, SessionRegistry sessions,
-        SceneService scene, CharacterService character, CombatService combat, MonsterService monsters, TeamService teams,
+        SceneService scene, CharacterService character, CombatService combat, BuffService buffs, MonsterService monsters, TeamService teams,
         GameLoop loop, TimeProvider clock, GmCommands gm, DungeonService dungeons, SeasonService seasons,
         DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines, ChatService chat)
     {
         this._world = world; this._worldData = worldData; this._data = data; this._roles = roles; this._sessions = sessions;
-        this._scene = scene; this._character = character; this._combat = combat; this._teams = teams; this._clock = clock;
+        this._scene = scene; this._character = character; this._combat = combat; this._buffs = buffs; this._teams = teams; this._clock = clock;
         this._loop = loop;
         this._lines = lines;
         this._dungeons = dungeons;
@@ -100,6 +101,7 @@ public sealed partial class WorldCoreService : IGameTicker
         combat.ReviveCheck = dungeons.ExternalReviveError;
         dungeons.SetCustomData = SetCustomAsync;
         combat.ReviveItemSkill = ReviveItemSkillAsync;
+        combat.BeforeCast.Add(MountFlightCastAsync);
         character.WingJump = WingJumpAsync;
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;

@@ -66,9 +66,20 @@ separate ownership, selected slot and visible riding. In particular:
   `MountService.DismountForCastAsync`) commits the dismount and publishes 5012 and 31049 before the cast's reply, and the
   cast's timeline (31100) and hit (31101) start `MountService.DismountMs` later. A battle mount (slot 2, `m_kMountType` Battle),
   and a flying rider keep the ride. The cast is only delayed; a refused cast (cooldown, cost, target) dismounts nobody.
-  The fly mounts' take-off and landing skills (`MountsConfig._kFlySwitchSkills`, injected by `LC_MountComponent._injectSkillPos`)
-  have no server path that grants them yet, so a cast of them is refused as not learned before this runs; once one does,
-  those skills must be excluded here.
+  A take-off cast also keeps the ride (next point), since it is the only way flight itself starts.
+- The fly mounts' take-off and landing skills (`MountsConfig._kFlySwitchSkills`: `60040033` Flying Goblin Balloon
+  3110101/3110201, `60060010` 3112101/3112201, `LC_MountComponent._injectSkillPos` aims them from the HUD's
+  `SkillWheelMount1` slot) have no learned-skill row; `MountService.FlySkills` names the ridden System-slot mount's pair
+  and `CombatService.GrantedSkill` lets through only the one matching the current flight state (`WorldState.Flying`), so
+  a player can never cast the wrong direction. `WorldCoreService.MountFlightCastAsync` (`CombatService.BeforeCast`) is
+  what actually starts or ends flight: a take-off sets `WorldState.Flying` where the rider stands, leaving the client's
+  own climb animation and its own first `FlyMoveAsync` (31084) reports to carry the position from there (inferred: no
+  client-authored climb height or duration is in the exported tables to reproduce instead); a landing calls the existing
+  `LandAsync`, which already puts a flyer down wherever `CanFly` next turns false (the periodic tick, `WorldCoreService.
+  TickAsync`), now extended to also cover losing a flying mount's own System-slot ride.
+- Take-off and landing scripts (`normal_leisuremount_upper`/`normal_leisuremount_below`, `SkillConfig._kScriptLogic`) carry
+  an enemy-selector visual template although they only change flight state; `CombatService.ApplyEffectsAsync` excludes
+  both scripts from targeting, so a passive monster near the switch cannot be hit or force a dismount.
 - Connected-session expiry runs every second. Scene restrictions are reconciled after 30005 but
   before ENTITYSELF/AOI. Class changes revalidate riding. Role selection clears previous-role state.
 
