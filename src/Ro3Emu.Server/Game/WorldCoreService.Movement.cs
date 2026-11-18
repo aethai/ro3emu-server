@@ -20,6 +20,11 @@ public sealed partial class WorldCoreService
             && row.TryGetProperty("_kBuffCategory", out var tags) && tags.ValueKind == JsonValueKind.Array
             && tags.EnumerateArray().Any(t => GameData.Number(t) == 3100000));
 
+    // A flight a mount's take-off started lasts only while that mount is ridden: a rider who gets off in the air (or
+    // swaps the System-slot mount) is put down by the heartbeat tick (inferred).
+    private bool MountFlightLost(GameSession s) =>
+        s.WorldState.MountFlightBuff != 0 && MountService.FlySkills(_data, s)?.Down != s.WorldState.MountFlightBuff;
+
     /// <summary>A day's worth: long enough that only landing (or the buff falling off some other way) ends it.</summary>
     private const int FlyBuffMs = 24 * 60 * 60 * 1000;
 
@@ -28,8 +33,8 @@ public sealed partial class WorldCoreService
     /// climb plays locally and it already sends 31084 to move from there); its landing skill ends it. MountService.
     /// FlySkills names the pair and CombatService.GrantedSkill lets only the direction matching the current flight state
     /// through, so only one of the two is ever the skill actually cast here. Neither changes the cast's own timing.
-    /// Condition 86000556 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) already refuses the cast over a
-    /// map with no _iFly, so CanFly's own map check here is redundant insurance, not the only gate.
+    /// Conditions 86000556/86000558 [2009,1] CheckSceneFlyable (CombatService.SkillConditions) refuse the take-off on a
+    /// map whose _kRiderForbidden[3] forbids flying mounts; CanFly's _iFly check still gates the flight moves.
     /// </summary>
     private async Task<int> MountFlightCastAsync(GameSession s, int skillId)
     {
@@ -38,11 +43,25 @@ public sealed partial class WorldCoreService
         {
             await _buffs.AddAsync(s, fly.Down, FlyBuffMs, s.Role!.Id);
             s.WorldState.Flying = true;
+            s.WorldState.MountFlightBuff = fly.Down;
             s.WorldState.LastFlyMs = Now;
             await SetFlyBitAsync(s, true);
         }
         else if (skillId == fly.Down && s.WorldState.Flying) await LandAsync(s, s.Position, s.Face);
         return 0;
+    }
+
+    /// <summary>
+    /// Every landing path (the skill, 31083, a free fall, the forced landing on the heartbeat tick) and leaving the scene
+    /// ends here, so a mount's flight buff and the status bit never outlive the authoritative Flying flag, even when the
+    /// mount that granted the buff is no longer ridden.
+    /// </summary>
+    private async Task EndMountFlightAsync(GameSession s)
+    {
+        int granted = s.WorldState.MountFlightBuff;
+        s.WorldState.MountFlightBuff = 0;
+        foreach (var buff in s.Buffs.Where(b => granted != 0 && b.ConfigId == granted).ToList()) await _buffs.RemoveAsync(s, buff);
+        await SetFlyBitAsync(s, false);
     }
 
     private async Task SetFlyBitAsync(GameSession s, bool flying)
@@ -133,11 +152,7 @@ public sealed partial class WorldCoreService
         var at = map.Grounded(new MapPoint(requested.X, requested.Y, requested.Z, face));
         if (!map.IsWalkable(at.X, at.Y, at.Z)) { await ErrorAsync(s, FreeFall, ErrorCodes.Parameter); return; }
         s.WorldState.Flying = false;
-        // Every landing path (the skill, 31083, a free fall, the forced landing on the heartbeat tick) ends here, so
-        // the mount's flight buff and the status bit it grants never outlive the authoritative Flying flag.
-        if (MountService.FlySkills(_data, s) is { } fly && s.Buffs.FirstOrDefault(b => b.ConfigId == fly.Down) is { } buff)
-            await _buffs.RemoveAsync(s, buff);
-        await SetFlyBitAsync(s, false);
+        await EndMountFlightAsync(s);
         await MoveFlightAsync(s, new Vec3 { X = at.X, Y = at.Y, Z = at.Z }, face, new Vec3(), true, MovementTransitionType.MoveTransLanding);
         // FixLandNtf instructs the client to end the special landing state; immediate landing has zero remaining time.
         await ToSelfAndViewersAsync(s, FixLand, new FixLandNtf { Uuid = s.Role!.Id, FixLandTime = 0 });

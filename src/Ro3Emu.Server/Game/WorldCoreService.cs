@@ -21,6 +21,8 @@ public sealed class WorldSessionState
     public string NameBoardSnapshot { get; set; } = "";
     public string TeamTargetSnapshot { get; set; } = "";
     public bool Flying { get; set; }
+    /// <summary>The flight buff a flying mount's take-off granted (its landing id), 0 for any other flight.</summary>
+    public int MountFlightBuff { get; set; }
     public long LastFlyMs { get; set; }
     public bool Watching { get; set; }
     public EFightStatus? FightStatus { get; set; }
@@ -251,6 +253,7 @@ public sealed partial class WorldCoreService : IGameTicker
             foreach (var id in state.Hatred) await s.SendGameAsync(MonsterLocked, new PlayerBeMonsterLockedNotify { RemoveEnemy = id });
         }
         state.Hatred.Clear(); state.Monitored.Clear(); state.MiniMap = false; state.Flying = false;
+        await EndMountFlightAsync(s);
         state.Watching = false; state.ReviveSource = 0; state.ReviveExpiresMs = 0;
         state.NameBoardSnapshot = ""; state.QueueScene = 0; state.TemporaryLeaveUntilMs = 0;
         state.FightStatus = null;
@@ -461,7 +464,7 @@ public sealed partial class WorldCoreService : IGameTicker
         {
             await BoardsAsync(s, boards);
             if (s.WorldState.MiniMap) await MiniMapSnapshotAsync(s);
-            if (s.WorldState.Flying && !CanFly(s)) await LandAsync(s, s.Position, s.Face);
+            if (s.WorldState.Flying && (!CanFly(s) || MountFlightLost(s))) await LandAsync(s, s.Position, s.Face);
             if (s.WorldState.TemporaryLeaveUntilMs > 0 && s.WorldState.TemporaryLeaveUntilMs <= Now) await ForceLeaveAsync(s);
         }
         await AdmitQueuedAsync();

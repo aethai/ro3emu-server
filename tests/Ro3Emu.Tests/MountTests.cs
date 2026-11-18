@@ -288,8 +288,21 @@ public sealed class MountTests : IAsyncLifetime
         await Task.Delay(5100); // both skills share _iPubCDGroup 31101 (5 s), real time: CombatService.Now is wall-clock
         await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role.Id });
         Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(a, WorldCoreService.FixLand, FixLandNtf.Parser);
         Assert.False(s.WorldState.Flying);
         Assert.Equal(dragon, MountService.Rider(s));
+        Assert.Equal(0, s.StatusBits & flyBit);
+        Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
+
+        // Getting off in the air: the heartbeat tick lands the rider and takes the flight buff and status bit with it.
+        await Task.Delay(5100);
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
+        Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await a.SendGameAsync(32745, new PlayerRiderMountReq { Tp = (eRiderType)0 });
+        Assert.Equal(0, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
+        _clock.Set(_clock.GetUtcNow().AddSeconds(2)); // the heartbeat tick runs on the host clock
+        await Next(a, WorldCoreService.FixLand, FixLandNtf.Parser);
+        Assert.False(s.WorldState.Flying);
         Assert.Equal(0, s.StatusBits & flyBit);
         Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
     }

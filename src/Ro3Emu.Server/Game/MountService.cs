@@ -278,15 +278,15 @@ public sealed class MountService : IGameTicker
     /// The client never sends the dismount itself (only an interaction skill does, UI_Sys_MainRoleSkillWidgetCtrl.lua:481-488)
     /// and holds a skill while its unit rides a system mount until the ride ends (LC_State_Unit_Skill.lua:51-71), so the
     /// ride ends here, before the cast's timeline and hit. A battle mount is ridden into the fight, a flying rider keeps
-    /// its mount (inferred), and so does a take-off cast about to make it one (<see cref="FlySkills"/>, WorldCoreService.
-    /// MountFlightCastAsync). The caller holds the character lock.
+    /// its mount (inferred), and so does either flight switch (<see cref="FlySkills"/>, WorldCoreService.
+    /// MountFlightCastAsync), whichever BeforeCast hook runs first. The caller holds the character lock.
     /// </summary>
     /// <returns>The milliseconds the cast waits for the dismount to play, zero when nobody got off.</returns>
     private async Task<int> DismountForCastAsync(GameSession s, int skillId)
     {
         long id = s.Mounts == null ? 0 : Rider(s);
         if (id == 0 || Slot(id) != SystemSlot || s.WorldState.Flying
-            || FlySkills(_data, s) is { } fly && skillId == fly.Up) return 0;
+            || FlySkills(_data, s) is { } fly && (skillId == fly.Up || skillId == fly.Down)) return 0;
         var next = s.Mounts!.Clone();
         if (next.MountIds.TryGetValue(SystemSlot, out var choice)) choice.IsRiding = false;
         var state = CopyState(s); state.QuestMount = 0;
