@@ -209,8 +209,16 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     internal WalkAllowance WalkAllowance { get; } = new();
     /// <summary>A swing a move cancelled holds the next normal attack until this time (CombatService.CancelCastAsync).</summary>
     internal long SwingLockUntilMs { get; set; }
-    /// <summary>Until when a skill's 31112 moves this player (RoleSessionService.WalkAsync drops the client's walks meanwhile).</summary>
-    internal long SkillMovedUntilMs { get; set; }
+    /// <summary>The last move a skill's 31112 carried this player on (RoleSessionService.WalkAsync drops the walks that predate it).</summary>
+    internal SkillCarry? Carry { get; private set; }
+
+    /// <summary>A 31112 carries this player from <paramref name="start"/> to <paramref name="end"/> in <paramref name="moveMs"/>: the server is at the end at once.</summary>
+    internal void CarryBySkill(Romsg.Vec3 start, Romsg.Vec3 end, long nowMs, int moveMs)
+    {
+        PreviousPosition = start.Clone();
+        Position = end.Clone();
+        Carry = new SkillCarry(start.Clone(), end.Clone(), nowMs, nowMs + Math.Max(1, moveMs));
+    }
 
     /// <summary>The game message budgets of this connection (GameMessageHandler.WithinRate).</summary>
     internal SessionRates? MessageRates { get; set; }

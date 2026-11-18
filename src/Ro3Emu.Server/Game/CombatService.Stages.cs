@@ -126,9 +126,7 @@ public sealed partial class CombatService
             EntityID = (ulong)s.Role!.Id, StartPos = start, EndPos = at, SkillConfigId = action.Request.SkillId,
             EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = ShadowReturnMs,
         });
-        s.PreviousPosition = start;
-        s.Position = at.Clone();
-        s.SkillMovedUntilMs = Now + ShadowReturnMs;
+        s.CarryBySkill(start, at, Now, ShadowReturnMs);
         await _world.MoveAsync(s, new WalkReq { Pos = at, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
         foreach (var mark in s.Buffs.Where(b => b.ConfigId / 100 is ShadowEchoGroup or ShadowReturnBuffGroup).ToArray()) await _buffs.RemoveAsync(s, mark);
     }

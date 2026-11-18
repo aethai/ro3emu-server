@@ -122,6 +122,51 @@ public sealed partial class SkillCombatTests
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(GameAoiSink.MovementChange) && MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == s.Role!.Id);
     }
 
+    // Heavy Axe Smash charges at its first attack point (0.167 s) in 100 ms (1630505). At a round trip above that, the step
+    // the client sent along its walk before it had the 31112, and the stop LC_Scene_Sync._skillStartMove's StopMove sends
+    // from the move's start, arrive after the charge: taken, they put the server back where it began.
+    [ClientDataFact]
+    public async Task AChargeIsNotUndoneByWalksThatArriveAfterIt()
+    {
+        await using var alice = await InWorld("Alice");
+        var data = _app.Services.GetRequiredService<GameData>();
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job " + SkillConfig.Get(data, 1630501)!.Value.Job); await Teach("alice", 16305);
+        var s = Session("alice");
+        s.GmCastSkill = 1630501;
+        var nav = _app.Services.GetRequiredService<WorldData>().Map(s.SceneEntry)!.Nav;
+        var start = s.Position.Clone();
+        var (ux, uz) = new[] { (1f, 0f), (-1f, 0f), (0f, 1f), (0f, -1f) }.First(o => nav == null
+            || nav.CanWalk(start.X, start.Y, start.Z, start.X + o.Item1 * 8, start.Z + o.Item2 * 8));
+        var target = await Target("alice", stationary: true, npcId: 5000002);
+        await Loop.InvokeAsync(() =>
+        {
+            target.StaysOutOfBattle = true; target.Hp = 1000000;
+            target.X = start.X + ux * 6.5f; target.Z = start.Z + uz * 6.5f;
+            foreach (var other in _app.Services.GetRequiredService<World>().Map(s.WorldScene).Units.OfType<MonsterUnit>())
+                if (other != target) { other.X += 200; other.Z += 200; }
+            return Task.CompletedTask;
+        });
+        float face = MonsterService.Angle(start.X, start.Z, target.X, target.Z);
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = start, Dir = face, Face = face, SpeedRate = 1 }); // walking at it
+        await Task.Delay(100);
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1630501, TargetId = target.Uid, TargetPos = target.Pos, Face = face });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var charge = await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)s.Role!.Id);
+        Assert.Equal(1630505, charge.EffectId);
+        await Task.Delay(250); // the round trip
+        var step = new Vec3 { X = start.X + ux * 0.5f, Y = start.Y, Z = start.Z + uz * 0.5f };
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = step, Dir = face, Face = face, SpeedRate = 1 });
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = charge.StartPos, Dir = face, Face = face, SpeedRate = 1, BStop = true });
+        await Task.Delay(200);
+        await Loop.InvokeAsync(() => { Assert.InRange(MonsterService.Distance(s.Position.X, s.Position.Z, charge.EndPos.X, charge.EndPos.Z), 0f, 0.01f); return Task.CompletedTask; });
+        // A walk from the landing on is taken, with no correction back to where the charge began.
+        var on = new Vec3 { X = charge.EndPos.X - ux * 1f, Y = charge.EndPos.Y, Z = charge.EndPos.Z - uz * 1f };
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = on, Dir = face + 180, Face = face + 180, SpeedRate = 1, BStop = true });
+        await Task.Delay(200);
+        await Loop.InvokeAsync(() => { Assert.InRange(MonsterService.Distance(s.Position.X, s.Position.Z, on.X, on.Z), 0f, 0.01f); return Task.CompletedTask; });
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(GameAoiSink.MovementChange) && MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == s.Role!.Id);
+    }
+
     [ClientDataFact] // "inflicts Knockback ... Move ${12} meters in that direction, then inflict Knock-Up": pushed once, caster 12 m on, hit twice
     public async Task FearlessChargeHitsPushesMovesAndHitsAgain()
     {

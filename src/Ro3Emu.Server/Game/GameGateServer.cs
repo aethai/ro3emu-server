@@ -41,10 +41,16 @@ public sealed class GameGateServer(
     protected override void OnCleanupFailed(PhonestChannel channel, Exception error)
         => loop.ReportCleanupFailure($"game disconnect {channel.Remote}: {error.GetType().Name}");
 
+    private GameSession NewSession(PhonestChannel channel)
+    {
+        if (options.Value.DebugSendDelayMs > 0) channel.SendDelay = TimeSpan.FromMilliseconds(options.Value.DebugSendDelayMs);
+        return new GameSession(channel, traffic);
+    }
+
     protected override async ValueTask OnFrameAsync(PhonestChannel channel, ushort index, ReadOnlyMemory<byte> body)
     {
         if (loop.Phase != GameLoopPhase.Accepting) throw new OperationCanceledException("Game gate is quiescing.");
-        var session = channel.Session as GameSession ?? (GameSession)(channel.Session = new GameSession(channel, traffic));
+        var session = channel.Session as GameSession ?? (GameSession)(channel.Session = NewSession(channel));
         // A silent reconnect moved the session to a newer connection: this (half-open) one is ignored.
         if (!ReferenceEquals(session.Channel, channel)) return;
         switch (index)
