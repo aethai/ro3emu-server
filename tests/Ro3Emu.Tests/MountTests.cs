@@ -302,17 +302,29 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(0, s.StatusBits & flyBit);
         Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
 
-        // Getting off in the air: the heartbeat tick lands the rider and takes the flight buff and status bit with it.
+        // Getting off or swapping mounts in the air is refused (ErrorCodeConfig 2045 "Cannot mount or dismount while
+        // Flying"): a client that gets off in flight is left hovering without a mount and cannot walk.
         await Task.Delay(5100);
         await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
         Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser);
         Assert.True(s.WorldState.Flying);
         await a.SendGameAsync(32745, new PlayerRiderMountReq { Tp = (eRiderType)0 });
-        Assert.Equal(0, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
-        _clock.Set(_clock.GetUtcNow().AddSeconds(2)); // the heartbeat tick runs on the host clock
+        Assert.Equal(ErrorCodes.MountFlying, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
+        await a.SendGameAsync(32743, new PlayerMountsSetCfgReq { MountId = 0 });
+        Assert.Equal(ErrorCodes.MountFlying, (await Next(a, 32743, PlayerMountsSetCfgResp.Parser)).Result);
+        Assert.True(s.WorldState.Flying);
+        Assert.Equal(dragon, MountService.Rider(s));
+
+        // A ride the server ends by itself (the mount expires) lands the rider first, with the flight buff and status bit.
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            s.Mounts!.Mounts[dragon].OverdueTimeMs = _clock.GetUtcNow().ToUnixTimeMilliseconds() - 1;
+            return _app.Services.GetRequiredService<MountService>().ReconcileAsync(s);
+        });
         await Next(a, WorldCoreService.FixLand, FixLandNtf.Parser);
         Assert.False(s.WorldState.Flying);
+        Assert.Equal(0, MountService.Rider(s));
         Assert.Equal(0, s.StatusBits & flyBit);
         Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
     }

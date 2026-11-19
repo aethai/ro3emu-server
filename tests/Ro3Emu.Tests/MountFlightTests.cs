@@ -89,6 +89,16 @@ public sealed class MountFlightTests : IDisposable
     }
 
     [Fact]
+    public void AServerLandingFindsTheGroundBelowOrTheNearestShore()
+    {
+        var below = MountFlight.GroundBelow(_map, At(3, 30, 3));
+        Assert.Equal((3f, 2f, 3f), (below!.X, below.Y, below.Z));
+        var shore = MountFlight.GroundBelow(_map, At(15, 30, 3));
+        Assert.Equal((9.5f, 2f), (shore!.X, shore.Y));
+        Assert.Null(MountFlight.GroundBelow(null, At(3, 30, 3)));
+    }
+
+    [Fact]
     public void ASwitchWhoseRowNamesNoDisplacementMovesNobody()
     {
         Assert.Null(MountFlight.Plan(_data, NoMove, takeOff: true, _map, At(3, 2, 3), At(4, 30, 3)));

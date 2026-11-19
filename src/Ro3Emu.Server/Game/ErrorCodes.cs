@@ -364,6 +364,7 @@ public static class ErrorCodes
     // Mount, totem and Build results from ErrorCodeConfig / Localization_en (request mapping inferred).
     public const int MountNotOwned = 2033, MountStateInvalid = 2035, MountAlreadyOwned = 2036;
     public const int MountExpired = 2037, MountArea = 2038, MountJob = 2039, MountConfig = 2040, MountCombat = 2042;
+    public const int MountFlying = 2045;          // "Cannot mount or dismount while Flying"
     public const int TotemInvalid = 2401, TotemSlotEmpty = 2402, TotemMismatch = 2404, TotemAttribute = 2405;
     public const int TotemSkillExists = 2406, TotemCombine = 2409, TotemJob = 2410, TotemPlan = 2412;
     public const int GenreInvalid = 5004, GenreChildInvalid = 5009, GenreCooldown = 5012, GenreExpired = 5023;
