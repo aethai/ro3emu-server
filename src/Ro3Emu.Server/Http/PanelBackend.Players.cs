@@ -113,19 +113,13 @@ public sealed partial class PanelBackend
     private async Task<List<PanelRankPosition>> RoleRanksAsync(Role role)
     {
         var positions = new List<PanelRankPosition>();
+        var hidden = await HiddenCharactersAsync();
+        if (hidden.Contains(role.Id)) return positions;
         foreach (var (info, board) in BoardList.Where(b => !b.Info.Guild))
         {
-            if (board == 0)
-            {
-                var rows = (await LevelRowsAsync(0)).ToList();
-                int at = rows.FindIndex(r => string.Equals(r.Name, role.Name, StringComparison.Ordinal));
-                if (at >= 0 && at < BoardSize) positions.Add(new PanelRankPosition(info.Id, info.Title, at + 1, rows[at].Score, info.Score));
-                continue;
-            }
-            int rank = await ranks.RankOfAsync(board, role.Id);
-            if (rank is <= 0 or > BoardSize) continue;
-            var top = await ranks.TopAsync(board, rank);
-            positions.Add(new PanelRankPosition(info.Id, info.Title, rank, top.Count >= rank ? top[rank - 1].Score : 0, info.Score));
+            var rows = (await CharacterRowsAsync(board, 0, hidden)).Take(BoardSize).ToList();
+            int at = rows.FindIndex(row => row.Name == role.Name);
+            if (at >= 0) positions.Add(new PanelRankPosition(info.Id, info.Title, at + 1, rows[at].Score, info.Score));
         }
         return positions;
     }
