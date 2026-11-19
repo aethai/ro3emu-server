@@ -82,8 +82,12 @@ separate ownership, selected slot and visible riding. In particular:
   stuck: in flight `LC_Move_System._refreshPlayerPathMove` switches the unit to `enum_NavigationMode.NavMesh`, whose
   controller moves only near the flight mesh, so WASD did nothing and no 31084 was sent. An aimed point more than
   `MountFlight.Reach` away, or outside the flight height band, falls back to the row's `m_fHeight` straight up (take-off)
-  or the ground below (landing) (inferred). `LandAsync` still puts a flyer down wherever `CanFly` next turns false (the
-  periodic tick, `WorldCoreService.TickAsync`), including on losing a flying mount's own System-slot ride.
+  or the ground below (landing) (inferred). `ForceLandAsync` still puts a flyer down wherever `CanFly` next turns false (the
+  periodic tick, `WorldCoreService.TickAsync`), on the ground below or the nearest ground around (`MountFlight.GroundBelow`).
+- No mounting or dismounting in flight: 5011 ride and 32743 mount choice answer `ErrorCodeConfig` 2045 "Cannot mount or
+  dismount while Flying" while `WorldState.Flying`. A client that gets off in the air keeps its flight camera and screen
+  tint (`LC_MountComponent.GetDown` exits the mount's 3C, not the flight) and cannot walk, even after a landing arrives.
+  A ride the server ends by itself (a flying mount expiring) lands the rider first (`MountService.LandFlyingRider`) (inferred).
 - A flight move (31084) is judged against `MountFlight.Floor`: the walkable layer below, else the cell's own recorded
   height over ground nobody walks on (water, cliffs, roofs), so flying over it is not put back (inferred).
 - Take-off and landing scripts (`normal_leisuremount_upper`/`normal_leisuremount_below`, `SkillConfig._kScriptLogic`) carry

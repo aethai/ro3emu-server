@@ -63,6 +63,9 @@ internal static class MountFlight
         aim != null && aim.Y > from.Y + 1 && map != null && Floor(map, aim) is { } floor && aim.Y >= floor - 1 && aim.Y <= floor + MaxHeight
             ? aim.Clone() : new Vec3 { X = from.X, Y = from.Y + Math.Max(0, height), Z = from.Z };
 
+    /// <summary>Where a landing nobody aimed ends: the ground below, else the nearest ground around.</summary>
+    public static Vec3? GroundBelow(MapWorld? map, Vec3 from) => LandingEnd(map, from, null);
+
     private static Vec3? LandingEnd(MapWorld? map, Vec3 from, Vec3? aim)
     {
         if (map == null) return null;

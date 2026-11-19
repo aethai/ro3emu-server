@@ -154,6 +154,9 @@ public sealed class MountService : IGameTicker
         return (MountsConfig.Get(_data, id) is { } mount ? mount.BindBuff : [], 0);
     }
 
+    /// <summary>WorldCoreService's landing of a flying rider, before a ride the server ends by itself (an expiry).</summary>
+    internal Func<GameSession, Task>? LandFlyingRider { get; set; }
+
     public static long Rider(GameSession s) => s.MountState.QuestMount != 0 ? s.MountState.QuestMount
         : s.Mounts?.MountIds.OrderBy(p => p.Key).FirstOrDefault(p => p.Value.IsRiding).Value?.MountId ?? 0;
 
@@ -234,6 +237,7 @@ public sealed class MountService : IGameTicker
         using var gate = await CharacterService.Lock(s);
         int slot = (int)req.Tp == 0 ? 1 : (int)req.Tp;
         int error = !_functions.IsOpen(s, 27) ? ErrorCodes.FunctionLocked : slot is < 1 or > 2 ? ErrorCodes.Parameter
+            : s.WorldState.Flying ? ErrorCodes.MountFlying
             : req.MountId != 0 && Slot(req.MountId) != slot ? ErrorCodes.MountConfig
             : req.MountId != 0 ? OwnedError(s, req.MountId) : 0;
         bool riding = s.Mounts!.MountIds.TryGetValue(slot, out var old) && old.IsRiding;
@@ -254,7 +258,8 @@ public sealed class MountService : IGameTicker
         int tp = (int)req.Tp, slot = tp < 2 ? 1 : 2;
         bool on = tp is 1 or 3;
         var selected = s.Mounts!.MountIds.GetValueOrDefault(slot);
-        int error = tp is < 0 or > 3 ? ErrorCodes.Parameter : on && !_functions.IsOpen(s, 27) ? ErrorCodes.FunctionLocked
+        int error = tp is < 0 or > 3 ? ErrorCodes.Parameter : s.WorldState.Flying ? ErrorCodes.MountFlying
+            : on && !_functions.IsOpen(s, 27) ? ErrorCodes.FunctionLocked
             : on ? OwnedError(s, selected?.MountId ?? 0) : 0;
         if (error == 0 && on) error = RidingError(s, selected!.MountId, slot);
         if (error == 0)
@@ -370,8 +375,12 @@ public sealed class MountService : IGameTicker
         using var gate = await CharacterService.Lock(s);
         if (!_deadlines.IsCurrent(s, lease) || s.Mounts == null) return;
         var next = s.Mounts.Clone();
+        if (!Normalize(s, next)) return;
+        // A flying rider whose mount expires is put down first: the client leaves a flight only through a landing it gets
+        // while it still rides; LC_MountComponent.GetDown exits the mount's 3C, not the flight (inferred).
+        if (s.WorldState.Flying && LandFlyingRider is { } land) await land(s);
         // A timed mount and its appearance share one deadline; drop both in the expiry commit.
-        if (Normalize(s, next)) await CommitAsync(s, next, look: _wardrobe.WithoutExpired(s));
+        await CommitAsync(s, next, look: _wardrobe.WithoutExpired(s));
     }
 
     public void Tick(GameTime time)

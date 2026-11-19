@@ -166,6 +166,13 @@ public sealed partial class WorldCoreService
         await LandAsync(s, req.ToPos, req.Face);
     }
 
+    /// <summary>
+    /// A landing the server starts by itself (the heartbeat's, a flying mount expiring): on the ground below, else on
+    /// the nearest ground around (MountFlight.GroundBelow), so a rider over trees or roofs is not left in the air.
+    /// </summary>
+    private Task ForceLandAsync(GameSession s) => !s.WorldState.Flying ? Task.CompletedTask
+        : LandAsync(s, MountFlight.GroundBelow(_worldData.Map(s.SceneEntry), s.Position) ?? s.Position, s.Face);
+
     private async Task LandAsync(GameSession s, Vec3 requested, float face)
     {
         var map = _worldData.Map(s.SceneEntry);

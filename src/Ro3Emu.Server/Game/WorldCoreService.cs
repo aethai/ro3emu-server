@@ -84,7 +84,8 @@ public sealed partial class WorldCoreService : IGameTicker
     public WorldCoreService(World world, WorldData worldData, GameData data, RoleStore roles, SessionRegistry sessions,
         SceneService scene, CharacterService character, CombatService combat, BuffService buffs, MonsterService monsters, TeamService teams,
         GameLoop loop, TimeProvider clock, GmCommands gm, DungeonService dungeons, SeasonService seasons,
-        DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines, ChatService chat)
+        DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines, ChatService chat,
+        MountService mounts)
     {
         this._world = world; this._worldData = worldData; this._data = data; this._roles = roles; this._sessions = sessions;
         this._scene = scene; this._character = character; this._combat = combat; this._buffs = buffs; this._teams = teams; this._clock = clock;
@@ -104,6 +105,7 @@ public sealed partial class WorldCoreService : IGameTicker
         dungeons.SetCustomData = SetCustomAsync;
         combat.ReviveItemSkill = ReviveItemSkillAsync;
         combat.MountFlightSwitch = MountFlightSwitchAsync;
+        mounts.LandFlyingRider = ForceLandAsync;
         character.WingJump = WingJumpAsync;
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;
@@ -464,7 +466,7 @@ public sealed partial class WorldCoreService : IGameTicker
         {
             await BoardsAsync(s, boards);
             if (s.WorldState.MiniMap) await MiniMapSnapshotAsync(s);
-            if (s.WorldState.Flying && (!CanFly(s) || MountFlightLost(s))) await LandAsync(s, s.Position, s.Face);
+            if (s.WorldState.Flying && (!CanFly(s) || MountFlightLost(s))) await ForceLandAsync(s);
             if (s.WorldState.TemporaryLeaveUntilMs > 0 && s.WorldState.TemporaryLeaveUntilMs <= Now) await ForceLeaveAsync(s);
         }
         await AdmitQueuedAsync();
