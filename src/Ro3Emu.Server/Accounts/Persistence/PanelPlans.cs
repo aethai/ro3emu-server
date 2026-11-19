@@ -210,6 +210,23 @@ internal sealed class PanelRolesRead(string? account, int limit) : DbReadPlan
     }
 }
 
+/// <summary>Every active character owned by an explicitly listed staff account, including alts.</summary>
+internal sealed class PanelStaffCharactersRead(string[] accounts) : DbReadPlan
+{
+    internal override int Bytes => 256 + accounts.Length * 64;
+    internal override string Label => "panel/staff-characters";
+    internal override object Execute(SqliteConnection db, SqliteTransaction tx)
+    {
+        using var query = DbSql.Command(db, tx,
+            "SELECT id FROM role WHERE deleted_time=0 AND account IN (SELECT value FROM json_each($accounts))");
+        query.Parameters.AddWithValue("$accounts", System.Text.Json.JsonSerializer.Serialize(accounts));
+        using var rows = query.ExecuteReader();
+        var ids = new HashSet<long>();
+        while (rows.Read()) ids.Add(rows.GetInt64(0));
+        return ids;
+    }
+}
+
 /// <summary>Names, classes and levels of the given characters (a leaderboard's rows), by id.</summary>
 internal sealed class PanelRoleNamesRead(IReadOnlyList<long> ids) : DbReadPlan
 {

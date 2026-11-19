@@ -82,6 +82,8 @@ public interface IPanelOperations
 
     Task<bool> CancelScheduleAsync(string admin);
 
+    Task SetHideStaffRankingsAsync(string admin, bool enabled);
+
     /// <summary>Maintenance on: game logins of accounts without a staff role are refused.</summary>
     Task SetMaintenanceAsync(string admin, bool enabled, string note);
 
@@ -169,4 +171,4 @@ public sealed record PanelBackupFile(string Name, long Bytes, DateTimeOffset Cre
 
 /// <param name="LastRestore">What the last restore at a start did (the server's own words), or null.</param>
 public sealed record PanelServerState(PanelMaintenance Maintenance, PanelScheduled? Scheduled, IReadOnlyList<PanelBackupFile> Backups,
-    string? LastRestore);
+    string? LastRestore, bool HideStaffRankings);

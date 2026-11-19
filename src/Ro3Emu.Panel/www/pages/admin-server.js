@@ -9,6 +9,17 @@ registerAdminPage({ id: 'server', label: 'Server control', icon: 'pulse', path: 
 const scheduleKinds = { restart: 'Restart', shutdown: 'Shutdown', restore: 'Restore and restart', update: 'Update and restart', rollback: 'Roll back and restart' };
 const megabytes1 = n => (n / (1 << 20)).toFixed(n < 10 << 20 ? 1 : 0);
 
+function rankingsCard(hidden) {
+  const checkbox = h('input', { type: 'checkbox' });
+  checkbox.checked = hidden;
+  const save = form([h('label', null, checkbox, ' Hide staff accounts from public character rankings')], 'Save', async () => {
+    await api('POST', '/api/admin/server/rankings', { hideStaff: checkbox.checked });
+    toast('Ranking visibility saved.');
+  });
+  return card('Rankings', null, body(h('p', { class: 'hint' },
+    'Applies to Moderator, GM, and Admin accounts on website rankings and character profiles.'), save));
+}
+
 function maintenanceCard(m) {
   const toggle = form([textField('Note for the audit log', 'note', m.note || '', { maxlength: '300' })],
     m.on ? 'End maintenance' : 'Start maintenance', async values => {
@@ -95,6 +106,7 @@ async function adminServerPage() {
     h('div', { class: 'grid' },
       h('div', { class: 'span-6' }, scheduleCard(s.scheduled)),
       h('div', { class: 'span-6' }, maintenanceCard(s.maintenance))),
+    rankingsCard(s.hideStaffRankings),
     h('div', { class: 'grid' }, h('div', { class: 'span-12' }, backupsCard(s.backups))),
     h('h2', { class: 'section-title' }, 'Updates'),
     updatesSection(updates));

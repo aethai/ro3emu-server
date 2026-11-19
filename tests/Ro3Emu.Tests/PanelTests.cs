@@ -381,6 +381,60 @@ public sealed class PanelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StaffRankingVisibilityAppliesToBoardsAndProfilesAndSurvivesRestart()
+    {
+        const string setting = "/api/admin/server/rankings";
+        Assert.Equal(0, await SdkLoginAsync(_host, Admin, "pw-admin"));
+        using var admin = new PanelBrowser(_panel);
+        await admin.LoginAsync(Admin, "pw-admin");
+        using var reader = new PanelBrowser(_panel);
+        await using (var mod = await _host.InWorldAsync("Helper"))
+        await using (var player = await _host.InWorldAsync("Walker"))
+        {
+            Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/roles", new { account = "helper", role = "moderator" })).StatusCode);
+            Assert.False((await admin.GetJsonAsync("/api/admin/server")).GetProperty("hideStaffRankings").GetBoolean());
+            Assert.Equal(2, (await reader.GetJsonAsync("/api/rankings/level")).GetProperty("rows").GetArrayLength());
+            using var moderator = new PanelBrowser(_panel);
+            await moderator.LoginAsync("helper", "pw");
+            Assert.Equal(HttpStatusCode.Forbidden, (await moderator.PostAsync(setting, new { hideStaff = true })).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync(setting, new { hideStaff = true })).StatusCode);
+            var only = Assert.Single((await reader.GetJsonAsync("/api/rankings/level")).GetProperty("rows").EnumerateArray());
+            Assert.Equal(("Walker", 1), (only.GetProperty("name").GetString(), only.GetProperty("rank").GetInt32()));
+            Assert.Empty((await reader.GetJsonAsync("/api/profiles/Helper")).GetProperty("ranks").EnumerateArray());
+            var ranks = (await reader.GetJsonAsync("/api/profiles/Walker")).GetProperty("ranks").EnumerateArray();
+            Assert.Contains(ranks, r => r.GetProperty("board").GetString() == "level" && r.GetProperty("rank").GetInt32() == 1);
+        }
+        await _host.RestartAsync();
+        using var afterRestart = new PanelBrowser(_panel);
+        await afterRestart.LoginAsync(Admin, "pw-admin");
+        Assert.True((await afterRestart.GetJsonAsync("/api/admin/server")).GetProperty("hideStaffRankings").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await afterRestart.PostAsync(setting, new { hideStaff = false })).StatusCode);
+        Assert.Equal(2, (await reader.GetJsonAsync("/api/rankings/level")).GetProperty("rows").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task HiddenStaffAndTheirAltsLeaveAllHundredPlacesForPlayers()
+    {
+        Assert.Equal(0, await SdkLoginAsync(_host, Admin, "pw-admin"));
+        Assert.Equal(0, await SdkLoginAsync(_host, "helper", "pw"));
+        var roles = _host.Service<RoleStore>();
+        async Task Create(string account, string name) =>
+            Assert.NotNull(await roles.CreateAsync(account, 1, name, 1, 1000, 1, SyntheticData.Town, 0, 0, 0, 0));
+        await Create(Admin, "Staff");
+        await Create(Admin, "StaffAlt");
+        await Create("helper", "GameMaster");
+        for (int i = 1; i <= 100; i++) await Create("players", FormattableString.Invariant($"Player{i:D3}"));
+        using var admin = new PanelBrowser(_panel);
+        await admin.LoginAsync(Admin, "pw-admin");
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/roles", new { account = "helper", role = "gm" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await admin.PostAsync("/api/admin/server/rankings", new { hideStaff = true })).StatusCode);
+        var rows = (await admin.GetJsonAsync("/api/rankings/level")).GetProperty("rows");
+        Assert.Equal(100, rows.GetArrayLength());
+        Assert.Equal("Player001", rows[0].GetProperty("name").GetString());
+        Assert.Equal(("Player100", 100), (rows[99].GetProperty("name").GetString(), rows[99].GetProperty("rank").GetInt32()));
+    }
+
+    [Fact]
     public async Task OnlineRankingsAndTheAccountPageShowTheCharacters()
     {
         Assert.Equal(0, await SdkLoginAsync(_host, Admin, "pw-admin"));

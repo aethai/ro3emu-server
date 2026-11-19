@@ -49,6 +49,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
     private DateTimeOffset _onlineAt;
     private Task<List<PanelRoleRow>>? _levels;
     private DateTimeOffset _levelsAt;
+    private int _levelsLimit;
     private Task<(int, int)>? _counts;
     private DateTimeOffset _countsAt;
 
@@ -136,35 +137,49 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
         var entry = BoardList.FirstOrDefault(b => b.Info.Id == board);
         if (entry.Info == null) return null;
         if (!entry.Info.ByClass) rootClass = 0;
-        IEnumerable<PanelBoardRow> rows = entry.RankBoard == 0 ? await LevelRowsAsync(rootClass)
-            : entry.Info.Guild ? await GuildRowsAsync(entry.RankBoard) : await RoleRowsAsync(entry.RankBoard, rootClass);
+        var rows = entry.Info.Guild ? await GuildRowsAsync(entry.RankBoard)
+            : await CharacterRowsAsync(entry.RankBoard, rootClass, await HiddenCharactersAsync());
         return new PanelBoard(entry.Info, [.. rows.Take(BoardSize).Select((r, i) => r with { Rank = i + 1 })]);
     }
 
+    private async Task<HashSet<long>> HiddenCharactersAsync()
+    {
+        if (await accounts.ReadAsync<string?>(new PanelSettingRead(PanelSettingKeys.HideStaffRankings)) != "1") return [];
+        var listed = staff.All();
+        return listed.Count == 0 ? [] : await accounts.ReadAsync<HashSet<long>>(new PanelStaffCharactersRead([.. listed.Select(s => s.Account)]));
+    }
+
+    private Task<IEnumerable<PanelBoardRow>> CharacterRowsAsync(int board, long rootClass, HashSet<long> hidden) =>
+        board == 0 ? LevelRowsAsync(rootClass, hidden) : RoleRowsAsync(board, rootClass, hidden);
+
     private bool InClass(int career, long rootClass) => rootClass == 0 || TrainingService.RootJob(data, career) == rootClass;
 
-    private async Task<IEnumerable<PanelBoardRow>> LevelRowsAsync(long rootClass)
+    private async Task<IEnumerable<PanelBoardRow>> LevelRowsAsync(long rootClass, HashSet<long> hidden)
     {
+        int limit = 3000 + hidden.Count;
         Task<List<PanelRoleRow>> task;
         lock (_gate)
         {
             var now = clock.GetUtcNow();
-            if (_levels == null || _levels.IsFaulted || _levels.IsCompleted && now - _levelsAt >= LevelBoardTtl)
+            if (_levels == null || _levelsLimit < limit || _levels.IsFaulted || _levels.IsCompleted && now - _levelsAt >= LevelBoardTtl)
             {
                 // Enough rows that a class filter still fills its board on a realm of a few thousand characters.
-                _levels = accounts.ReadAsync<List<PanelRoleRow>>(new PanelRolesRead(null, 3000));
+                _levels = accounts.ReadAsync<List<PanelRoleRow>>(new PanelRolesRead(null, limit));
+                _levelsLimit = limit;
                 _levelsAt = now;
             }
             task = _levels;
         }
-        return (await task).Where(r => InClass(r.Career, rootClass))
+        return (await task).Where(r => !hidden.Contains(r.Id)).Take(3000).Where(r => InClass(r.Career, rootClass))
             .Select(r => new PanelBoardRow(0, r.Name, ClassName(r.Career), r.Level, r.JobLevel, ClassIcon(r.Career)));
     }
 
     /// <summary>A character board of RankService, its rows named from the role table; deleted characters drop out.</summary>
-    private async Task<IEnumerable<PanelBoardRow>> RoleRowsAsync(int board, long rootClass)
+    private async Task<IEnumerable<PanelBoardRow>> RoleRowsAsync(int board, long rootClass, HashSet<long> hidden)
     {
-        var top = await ranks.TopAsync(board, rootClass == 0 ? BoardSize : 3000);
+        int limit = rootClass == 0 ? BoardSize : 3000;
+        var ranked = await ranks.TopAsync(board, limit + hidden.Count);
+        var top = ranked.Where(t => !hidden.Contains(t.Id)).Take(limit).ToList();
         var names = await accounts.ReadAsync<Dictionary<long, (string Name, int Career, int Level)>>(new PanelRoleNamesRead([.. top.Select(t => t.Id)]));
         return top.Where(t => names.ContainsKey(t.Id) && InClass(names[t.Id].Career, rootClass))
             .Select(t => new PanelBoardRow(0, names[t.Id].Name, ClassName(names[t.Id].Career), names[t.Id].Level, t.Score, ClassIcon(names[t.Id].Career)));
