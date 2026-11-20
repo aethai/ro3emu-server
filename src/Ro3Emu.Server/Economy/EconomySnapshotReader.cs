@@ -207,6 +207,31 @@ public static partial class EconomySnapshotReader
         return (state.Holdings, state.Issues);
     }
 
+    /// <summary>
+    /// <see cref="ReadTransaction"/> limited to the rows of the given roles (the role row, its inventory items and caravan
+    /// member row) and guilds (the guild row, its recovery, campfire and challenge rows), decoded the same way. An envelope
+    /// that touches only these needs no realm-wide read: its before and after cuts differ only in rows it wrote, and a full
+    /// read of a realm with thousands of characters took seconds per envelope on the writer thread, which every other write
+    /// then waited behind.
+    /// </summary>
+    internal static (IReadOnlyList<EconomyHolding> Holdings, IReadOnlyList<EconomyIssue> Issues) ReadParticipants(
+        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, IReadOnlySet<long> roles, IReadOnlySet<long> guilds)
+    {
+        var tables = new HashSet<string>(StringComparer.Ordinal);
+        using (var command = db.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+            using var rows = command.ExecuteReader();
+            while (rows.Read()) tables.Add(rows.GetString(0));
+        }
+        var state = new State(db, tx, catalog, tables) { RoleScope = roles, GuildScope = guilds };
+        state.ReadRoles();
+        state.ReadItems();
+        state.ReadGuilds();
+        return (state.Holdings, state.Issues);
+    }
+
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private sealed partial class State(SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, HashSet<string> tables)
@@ -255,6 +280,18 @@ public static partial class EconomySnapshotReader
             Metrics[repo] = (m.Rows, m.Blobs, checked(m.Bytes + bytes));
         }
         private SqliteCommand Command(string sql) { var c = db.CreateCommand(); c.Transaction = tx; c.CommandText = sql; return c; }
+        /// <summary>Set by <see cref="ReadParticipants"/>: only these roles and guilds are read; null reads them all.</summary>
+        internal IReadOnlySet<long>? RoleScope { get; init; }
+        internal IReadOnlySet<long>? GuildScope { get; init; }
+        internal bool Scoped => RoleScope != null || GuildScope != null;
+        // " WHERE <column> IN (...)" for a scoped read, bound with ScopeIds; empty for a realm-wide one.
+        private static string ScopeFilter(IReadOnlySet<long>? scope, string column) =>
+            scope == null ? "" : $" WHERE {column} IN (SELECT value FROM json_each($scope))";
+        private static SqliteCommand ScopeIds(SqliteCommand command, IReadOnlySet<long>? scope)
+        {
+            if (scope != null) command.Parameters.AddWithValue("$scope", System.Text.Json.JsonSerializer.Serialize(scope.Order()));
+            return command;
+        }
         private static long SqlLong(SqliteDataReader row, int index)
             => row.GetValue(index) is long value ? value : throw new InvalidCastException("Expected persisted INTEGER column.");
         private static string SqlText(SqliteDataReader row, int index)

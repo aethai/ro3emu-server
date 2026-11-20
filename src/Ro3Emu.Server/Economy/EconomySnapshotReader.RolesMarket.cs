@@ -17,7 +17,7 @@ public static partial class EconomySnapshotReader
             if (!columns.ContainsKey("id")) return;
             string select = string.Join(",", new[] { "id", "deleted_time", "currency" }.Concat(RoleBlobs.Keys)
                 .Where(columns.ContainsKey).Select(n => "\"" + n + "\""));
-            using var cmd = Command("SELECT " + select + " FROM role ORDER BY id");
+            using var cmd = ScopeIds(Command("SELECT " + select + " FROM role" + ScopeFilter(RoleScope, "id") + " ORDER BY id"), RoleScope);
             using var r = cmd.ExecuteReader();
             var names = Enumerable.Range(0, r.FieldCount).Select(r.GetName).ToArray();
             long rowIndex = 0;
@@ -289,7 +289,8 @@ public static partial class EconomySnapshotReader
         {
             if (!Has("item") || !new[] { "guid", "role_id", "entry", "stack", "pack", "sort", "grid", "attrs", "enchantments", "str_attrs", "bind_type", "bind_expire", "is_locked" }
                 .All(Columns("item").ContainsKey)) return;
-            using var cmd = Command("SELECT guid,role_id,entry,stack,pack,sort,grid,attrs,enchantments,str_attrs,bind_type,bind_expire,is_locked FROM item ORDER BY guid");
+            using var cmd = ScopeIds(Command("SELECT guid,role_id,entry,stack,pack,sort,grid,attrs,enchantments,str_attrs,bind_type,bind_expire,is_locked FROM item"
+                + ScopeFilter(RoleScope, "role_id") + " ORDER BY guid"), RoleScope);
             using var r = cmd.ExecuteReader();
             long rowIndex = 0;
             while (r.Read())
