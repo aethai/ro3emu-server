@@ -10,7 +10,7 @@ public sealed record RunnerOptions(string Scenario, int Bots, int TargetBots, in
     public static RunnerOptions Parse(string[] args)
     {
         if (args.Contains("--help") || args.Length == 0)
-            throw new ArgumentException("Usage: --scenario S1|S2|S3|S4|S5|S6|S7 (--server-local | --server URL) [--pem PATH] [--operator-token-file PATH] [--bots N] [--duration-seconds N] [--walk-phase realistic|sync] [--output PREFIX]");
+            throw new ArgumentException("Usage: --scenario S1|S2|S3|S4|S5|S6|S7|S8 (--server-local | --server URL) [--pem PATH] [--operator-token-file PATH] [--bots N] [--duration-seconds N] [--walk-phase realistic|sync] [--output PREFIX]");
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         bool local = false;
         for (int i = 0; i < args.Length; i++)
@@ -20,12 +20,12 @@ public sealed record RunnerOptions(string Scenario, int Bots, int TargetBots, in
             values[args[i]] = args[++i];
         }
         string scenario = values.GetValueOrDefault("--scenario")?.ToUpperInvariant() ?? throw new ArgumentException("--scenario required");
-        if (scenario is not ("S1" or "S2" or "S3" or "S4" or "S5" or "S6" or "S7")) throw new ArgumentException("Unknown scenario");
-        int target = scenario switch { "S1" or "S3" => 500, "S2" => 300, "S4" => 200, "S5" => 160, "S6" or "S7" => 100, _ => 0 };
-        int duration = scenario switch { "S1" or "S4" => 60, "S2" or "S5" => 600, "S6" or "S7" => 300, _ => 1800 };
+        if (scenario is not ("S1" or "S2" or "S3" or "S4" or "S5" or "S6" or "S7" or "S8")) throw new ArgumentException("Unknown scenario");
+        int target = scenario switch { "S1" or "S3" => 500, "S2" => 300, "S4" => 200, "S5" => 160, "S6" or "S7" or "S8" => 100, _ => 0 };
+        int duration = scenario switch { "S1" or "S4" => 60, "S2" or "S5" => 600, "S6" or "S7" or "S8" => 300, _ => 1800 };
         if (values.TryGetValue("--bots", out var b)) target = int.Parse(b);
         int requested = target;
-        int qualifiedTarget = scenario switch { "S1" or "S3" => 500, "S4" => 200, "S5" => 160, "S6" or "S7" => 100, _ => 300 };
+        int qualifiedTarget = scenario switch { "S1" or "S3" => 500, "S4" => 200, "S5" => 160, "S6" or "S7" or "S8" => 100, _ => 300 };
         if (values.TryGetValue("--duration-seconds", out var d)) duration = int.Parse(d);
         if (requested < 1 || duration < 1) throw new ArgumentException("Bot count and duration must be positive");
         string? url = values.GetValueOrDefault("--server");

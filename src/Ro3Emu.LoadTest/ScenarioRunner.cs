@@ -75,6 +75,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             else await PrepareActorsAsync(report, ct);
             if (options.Scenario == "S3") await PrepareS3Async(report, ct);
             if (options.Scenario == "S5") await PrepareSiegeAsync(report, ct);
+            if (options.Scenario == "S8") await PreparePartiesAsync(ct);
             if (server != null) await ResetLocalMetricsAsync(ct);
             report.ServerBefore = await SnapshotAsync(ct);
             foreach (var actor in _actors) actor.BeginMeasurement();
@@ -91,6 +92,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                 case "S5": await RunSiegeAsync([.. _actors], options.DurationSeconds, ct); break;
                 case "S6": await RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct); break;
                 case "S7": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
+                case "S8": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct, PartyLeader), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
             }
             if (options.Scenario == "S3") await CloseS3Async(report, ct);
             report.ServerAfter = await SnapshotAsync(ct);
@@ -599,7 +601,9 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
         catch (Exception e) { attempt.Fail(e); throw; }
     }
 
-    private async Task RunFighterTrafficAsync(BotActor[] actors, int seconds, CancellationToken ct)
+    /// <param name="anchor">Whose position picks the target (S8: the party leader's, so a party fights together).</param>
+    private async Task RunFighterTrafficAsync(BotActor[] actors, int seconds, CancellationToken ct,
+        Func<BotActor, BotActor>? anchor = null)
     {
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         stop.CancelAfter(TimeSpan.FromSeconds(seconds));
@@ -615,7 +619,8 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                     if (due > clock.Elapsed) await Task.Delay(due - clock.Elapsed, stop.Token);
                     if (slot % 3 == 0) await actor.Sender!.SendAsync(() => actor.Bot.SendGameAsync(MsgId.Heartbeat, new Ping()), stop.Token);
                     var monsters = actor.Reducer.Monsters();
-                    var target = monsters.OrderBy(x => Distance(actor, x)).FirstOrDefault();
+                    var near = anchor?.Invoke(actor) ?? actor;
+                    var target = monsters.OrderBy(x => Distance(near, x)).FirstOrDefault();
                     if (target == null)
                     {
                         var search = _counts.Action("fighter-search"); search.Plan(); search.Offer(); search.Complete(0);
