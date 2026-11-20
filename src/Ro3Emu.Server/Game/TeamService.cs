@@ -87,6 +87,20 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         return ExpBuff[Math.Clamp(sameMap, 1, ExpBuff.Length) - 1];
     }
 
+    /// <summary>
+    /// Party item drop rate for a kill (‱): PublicParamConfig.TeamDropBuffWeights per member beyond the first on the same
+    /// map, the drop half of the party tip (Localization 24113-24116 via TeamBuffInfo: "2-player Party: ... Item drop rate
+    /// increased by 30%" up to 120% for five). That the rate scales each drop slot's chance is (inferred).
+    /// </summary>
+    public int DropBonus(GameSession killer)
+    {
+        if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return 10000;
+        int sameMap = team.Members.Count(m => Session(m) is { } s && s.WorldScene == killer.WorldScene);
+        long perMember = _data.Table("PublicParamConfig").TryGetValue("TeamDropBuffWeights", out var weight)
+            ? (long)(GameData.Number(weight) ?? 0) : 0;
+        return (int)Math.Clamp(10000 + perMember * (Math.Clamp(sameMap, 1, ExpBuff.Length) - 1), 10000, 100000);
+    }
+
     /// <summary>After a party's roster or a member's card (career, online state) changed, with the roles it concerns: the
     /// members and one who left (PassiveSkills: Union).</summary>
     internal List<Func<IReadOnlyList<long>, Task>> RosterChanged { get; } = [];

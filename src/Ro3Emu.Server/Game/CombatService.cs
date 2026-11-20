@@ -587,9 +587,19 @@ public sealed partial class CombatService : IGameTicker
         foreach (var handler in TowerPetDied) await handler(pet);
     }
 
+    /// <summary>
+    /// A rider in mount flight (WorldState.Flying, eObjectStateFly) is out of every monster's reach: monsters do not take
+    /// it as a target, drop it when it takes off, and their swings, skills and boss areas pass it by (inferred: the
+    /// client gives monsters no rule for flyers, but stops its own player's auto attack the moment it flies,
+    /// LC_Actor_AutoAttack._unitFlyStateChange, and a monster's reach is measured on the ground, so a flyer far above it
+    /// was hit as if it stood beside it).
+    /// </summary>
+    internal static bool Airborne(GameSession p) => p.WorldState.Flying;
+
     private async Task MonsterAttackAsync(MonsterUnit m, GameSession p)
     {
-        if (m.Dead || m.Hp <= 0 || _buffs.UnitForbidden(m, ForbiddenState.NormalAttack) || Stealthed(p) || !_buffs.CanSeePosition(m, p.Position)) return;
+        if (m.Dead || m.Hp <= 0 || _buffs.UnitForbidden(m, ForbiddenState.NormalAttack) || Stealthed(p) || Airborne(p)
+            || !_buffs.CanSeePosition(m, p.Position)) return;
         var targetRole = p.Role;
         if (targetRole == null) return;
         long targetScene = p.WorldScene;

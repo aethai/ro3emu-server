@@ -1,4 +1,5 @@
 {
   "AUCTION_CURRENCY": 1,
-  "BaseToJobConversionPercent": 2500
+  "BaseToJobConversionPercent": 2500,
+  "TeamDropBuffWeights": 2000
 }

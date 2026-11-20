@@ -179,8 +179,9 @@ public sealed class RewardService
             return ([], 0, 0);
         if (_data.Row("NPCConfig", monster.Template.NpcId) is not { } npc) return ([], 0, 0);
         var drops = new List<(int Entry, int Count)>();
+        int partyRate = _teams.DropBonus(player);
         foreach (var (row, maps) in KillDropRows(_data, npc, bonus))
-            if (maps.Count == 0 || maps.Contains(player.SceneEntry)) RollPools(row, player, drops, monster.Template.Level);
+            if (maps.Count == 0 || maps.Contains(player.SceneEntry)) RollPools(row, player, drops, monster.Template.Level, partyRate);
 
         foreach (var extra in ExtraKillDrops) drops.AddRange(extra(player, monster));
         long baseExp = drops.Where(d => d.Entry == BaseExpItem).Sum(d => (long)d.Count);
@@ -333,24 +334,27 @@ public sealed class RewardService
     /// </summary>
     /// <summary>A kill's pools: <paramref name="monsterLevel"/> is the slain monster's level (DropAttenuationConfig); a
     /// DropGroupConfig row with an _iQuestLimit drops only while the killer has that quest under way.</summary>
-    private void RollPools(JsonElement row, GameSession player, List<(int, int)> drops, int monsterLevel)
+    /// <param name="rate">‱ applied to each slot's chance, capped at certain (TeamService.DropBonus): a slot that always
+    /// drops, like the EXP slots, is not drawn twice.</param>
+    private void RollPools(JsonElement row, GameSession player, List<(int, int)> drops, int monsterLevel, int rate = 10000)
     {
         foreach (long poolId in DropPools(row))
-            RollPool(poolId, player.Progress!, drops, null, monsterLevel, quest => TaskService.IsActive(player, quest));
+            RollPool(poolId, player.Progress!, drops, null, monsterLevel, quest => TaskService.IsActive(player, quest), rate);
     }
 
     private void RollPool(long poolId, GameSession player, List<(int, int)> drops, List<(int Entry, int Count, int Bind)>? bound = null)
         => RollPool(poolId, player.Progress!, drops, bound);
 
     private void RollPool(long poolId, RoleProgress progress, List<(int, int)> drops, List<(int Entry, int Count, int Bind)>? bound = null,
-        int monsterLevel = DropAttenuation.NoMonster, Func<long, bool>? questActive = null)
+        int monsterLevel = DropAttenuation.NoMonster, Func<long, bool>? questActive = null, int rate = 10000)
     {
         if (_data.Row("DropPoolConfig", poolId) is not { } pool) return;
         foreach (var (group, chance, rolls, picks) in PoolSlots(pool))
         {
+            double odds = Math.Min(1_000_000d, (double)chance * rate / 10000);
             for (int r = 0; r < rolls; r++)
             {
-                if (_random.NextDouble() * 1_000_000 >= chance) continue;
+                if (_random.NextDouble() * 1_000_000 >= odds) continue;
                 PickFromGroup(group, progress, drops, bound, monsterLevel, questActive, picks);
             }
         }
