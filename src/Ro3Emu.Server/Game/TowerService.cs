@@ -106,11 +106,23 @@ public sealed partial class TowerService
         && s.SeasonState is { } state && state.SeasonId == _seasons.SeasonId && state.PlayBookId == _seasons.PlayBook
         && _functions.IsOpen(s, 89) && _functions.IsOpen(s, 5001);
 
-    /// <summary>PetFloorConfig is an array. Lookup and sorting use its explicit _iID / _iFloor domains.</summary>
-    private List<JsonElement> Floors()
+    /// <summary>PetFloorConfig is an array. Lookup and sorting use its explicit _iID / _iFloor domains. Built once per
+    /// playbook (and per loaded table): achievements read a role's cleared floor on every probe, and filtering and sorting
+    /// the table there each time took most of their tick at 500 players (LoadTest S3).</summary>
+    private (int PlayBook, object Table, IReadOnlyList<JsonElement> Rows, Dictionary<long, JsonElement> ById)? _floors;
+
+    private IReadOnlyList<JsonElement> Floors() => FloorTable().Rows;
+
+    private (int PlayBook, object Table, IReadOnlyList<JsonElement> Rows, Dictionary<long, JsonElement> ById) FloorTable()
     {
         int playBook = _seasons.PlayBook;
-        return [.. _data.Table("PetFloorConfig").Values.Where(r => FitsPlayBook(r, playBook)).OrderBy(r => GameData.Int(r, "_iFloor"))];
+        var table = _data.Table("PetFloorConfig");
+        if (_floors is { } cached && cached.PlayBook == playBook && ReferenceEquals(cached.Table, table)) return cached;
+        List<JsonElement> rows = [.. table.Values.Where(r => FitsPlayBook(r, playBook)).OrderBy(r => GameData.Int(r, "_iFloor"))];
+        var byId = new Dictionary<long, JsonElement>();
+        foreach (var row in rows) byId.TryAdd(GameData.Int(row, "_iID"), row);
+        _floors = (playBook, table, rows, byId);
+        return _floors.Value;
     }
 
     /// <summary>LC_SeasonHelper.GetMultiverseFitSeason: empty/[0], explicit membership, or [minimum,-1].</summary>
@@ -122,7 +134,7 @@ public sealed partial class TowerService
         return books.EnumerateArray().Any(b => GameData.Number(b) == playBook);
     }
 
-    private JsonElement? Floor(long id) => Floors().Where(r => GameData.Int(r, "_iID") == id).Select(r => (JsonElement?)r).FirstOrDefault();
+    private JsonElement? Floor(long id) => FloorTable().ById.TryGetValue(id, out var row) ? row : null;
     private int Cleared(GameSession s) => Floor(s.Tower!.LayerConfID) is { } f ? (int)GameData.Int(f, "_iFloor") : 0;
 
     /// <summary>The highest Spirit Tower floor this role has cleared (PetFloorConfig._iFloor of its record), 0 without one.</summary>
