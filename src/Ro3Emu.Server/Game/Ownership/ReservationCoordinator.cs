@@ -129,14 +129,17 @@ public sealed class ReservationCoordinator(TimeProvider? clock = null)
     }
 
     /// <summary>Each loop tick (GameLoop): requests held back behind a realm request retry once nothing has been released
-    /// for <see cref="StallGrace"/>, when the realm priority stands aside, since no release would wake them.</summary>
-    internal void Pulse()
+    /// for <see cref="StallGrace"/>, when the realm priority stands aside, since no release would wake them. True when it
+    /// stood aside: some holder waited for work the priority held back (GameLoop logs the holders).</summary>
+    internal bool Pulse()
     {
         if (_heldBack && _realmWaiting.Count != 0 && _clock.GetElapsedTime(_lastRelease) >= StallGrace)
         {
             _heldBack = false;
             Signal();
+            return true;
         }
+        return false;
     }
     // The entities whose exclusive keys in the request are blocked only by shared holds; empty when anything else blocks.
     private string[] ReaderOnlyBlocks(ReservationKey[] request)

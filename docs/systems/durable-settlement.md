@@ -59,12 +59,16 @@ conflict.
   twice); it binds it with `OutcomeHash`. Receipts written with the v1 intent stay valid: replay and
   `EconomyLedgerReader` recompute the v1 bytes (`LegacyIntent()`) when the stored hash is not the v2 one.
 - **Retention** (`Accounts/ReceiptRetention.cs`, options `ReceiptRetention`). A receipt older than `Days` (2) has its
-  `intent_payload` replaced by the marker `compacted` and its `outcome` emptied, `BatchSize` (500) rows per write
-  transaction, every `IntervalMinutes` (60). The row, its hashes, sequence, child receipts, revisions, legs and source
-  claims stay. A replay of a compacted operation is accepted by its intent hash (the same request) and returns the
-  stored child receipts; the ledger reader certifies its sequence, legs and sources and counts it in
-  `CompactedReceipts` instead of re-checking its intent. `mail/*` receipts are never compacted: a delivery's payload is
-  read again when its delivery key comes back. Each run starts from the watermark `economy_meta.compacted_seq` and
-  stops at the first receipt that is not due yet, so it walks only the receipts recorded since the last run instead of
-  the whole history.
+  `intent_payload` replaced by the marker `compacted`, its `outcome` emptied, its `child_receipts` replaced by the
+  same marker, its revision vectors emptied and its `owner_operation_receipt` row deleted, `BatchSize` (500) rows per
+  write transaction, every `IntervalMinutes` (60). The row, its hashes, sequence, legs and source claims stay. A replay
+  of a compacted operation is refused as a conflict (`EconomyTransactionPlan.DecodeChildReceipts`): it is never paid
+  twice, but it is no longer answered with its old result, which only a retry within seconds of the commit needs.
+  Kept forever, the child results and owner acknowledgements of monster kills grew a small realm by about 3 GB a week
+  (issue #473). The ledger reader certifies a compacted receipt's sequence, legs and sources and counts it in
+  `CompactedReceipts` instead of re-checking its intent. `mail/*` receipts are never compacted: a delivery's payload
+  is read again when its delivery key comes back. Escrow receipts (auction, market) keep their child receipts. Each
+  run starts from the watermark `economy_meta.compacted_seq` and stops at the first receipt that is not due yet, so it
+  walks only the receipts recorded since the last run instead of the whole history. Receipts compacted by a version
+  that kept child results are walked once more, from `economy_meta.compacted_full_seq`, before new ones.
 - SQLite reuses the freed pages, so the file stops growing; it only shrinks after an offline `VACUUM`.

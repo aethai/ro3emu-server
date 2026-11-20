@@ -5,13 +5,14 @@ using Ro3Emu.Server.Accounts.Persistence;
 namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
-/// Keeps <c>operation_receipt</c> from growing with every kill and activity. A receipt's payload and outcome bytes are
-/// needed while its operation can still be replayed after a lost acknowledgement or resolved after a crash, which
-/// happens within seconds of the commit; after <c>ReceiptRetention:Days</c> (2) they are dropped by
-/// <see cref="ReceiptCompactionPlan"/>, in small writer transactions off the game loop. Hashes, child receipts, legs
-/// and source claims stay, so replay and idempotency keep working (<see cref="ReceiptBlobs"/>) and the offline ledger
-/// audit still checks the sequence, legs and claims; it skips the intent checks of a compacted receipt.
-/// SQLite reuses the freed pages for new rows, so the file stops growing; it shrinks only with an offline VACUUM.
+/// Keeps <c>operation_receipt</c> and <c>owner_operation_receipt</c> from growing with every kill and activity. A
+/// receipt's payload, outcome, child results and owner acknowledgement are needed while its operation can still be
+/// replayed after a lost acknowledgement or resolved after a crash, which happens within seconds of the commit; after
+/// <c>ReceiptRetention:Days</c> (2) they are dropped by <see cref="ReceiptCompactionPlan"/>, in small writer transactions
+/// off the game loop. Hashes, legs and source claims stay, so idempotency holds (a late replay is refused, never granted
+/// twice) and the offline ledger audit still checks the sequence, legs and claims; it skips the intent checks of a
+/// compacted receipt. SQLite reuses the freed pages for new rows, so the file stops growing; it shrinks only with an
+/// offline VACUUM.
 /// </summary>
 public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, AccountStore accounts, TimeProvider clock,
     ILogger<ReceiptRetention> log) : BackgroundService
@@ -55,7 +56,7 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
         long cutoff = now.AddDays(-settings.Days).ToUnixTimeMilliseconds();
         long future = now.Add(FutureMargin).ToUnixTimeMilliseconds();
         int batch = Math.Clamp(settings.BatchSize, 1, MaxBatch);
-        long total = 0, passed = 0, misdated = 0;
+        long total = 0, passed = 0, misdated = 0, backfilled = 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -63,6 +64,7 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
             total += result.Compacted;
             passed += result.Passed;
             misdated += result.Future;
+            backfilled += result.Backfilled;
             LastPassed = passed;
             if (!result.More) break;
             // Game writes share the single writer: leave it room between batches.
@@ -70,6 +72,7 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
         }
         if (total > 0) LogCompacted(log, total, settings.Days);
         if (misdated > 0) LogMisdated(log, misdated);
+        if (backfilled > 0) LogBackfilled(log, backfilled);
         return total;
     }
 
@@ -78,6 +81,9 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} economic receipts are dated more than a day ahead of the clock, so the clock was wrong when they were written or is wrong now; compaction passed them and kept their data")]
     private static partial void LogMisdated(ILogger logger, long count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dropped the child results and owner acknowledgements of {Count} receipts compacted by an earlier version")]
+    private static partial void LogBackfilled(ILogger logger, long count);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Receipt compaction failed; it runs again at the next interval")]
     private static partial void LogFailed(ILogger logger, Exception exception);
