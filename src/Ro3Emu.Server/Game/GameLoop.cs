@@ -488,8 +488,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     var time = new GameTime(now, now - _lastTick);
                     _lastTick = now;
                     if (Owners?.Reservations.Pulse() == true)
-                        _log.LogWarning("Realm priority stood aside: nothing was released for {Grace} s while a realm request waited. Holders: {Held}",
-                            Ownership.ReservationCoordinator.StallGrace.TotalSeconds, Owners.LongHeld(TimeSpan.Zero));
+                        LogRealmPriorityStoodAside(_log, Ownership.ReservationCoordinator.StallGrace.TotalSeconds, Owners.LongHeld(TimeSpan.Zero));
                     long tickerStart = Stopwatch.GetTimestamp();
                     foreach (var ticker in Phase == GameLoopPhase.Accepting ? _tickers.ToArray() : [])
                     {
@@ -710,4 +709,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
 
         public override SynchronizationContext CreateCopy() => this;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Realm priority stood aside: nothing was released for {Grace} s while a realm request waited. Holders: {Held}")]
+    private static partial void LogRealmPriorityStoodAside(ILogger logger, double grace, string held);
 }
