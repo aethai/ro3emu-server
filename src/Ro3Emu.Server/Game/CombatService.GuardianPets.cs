@@ -24,7 +24,7 @@ public sealed partial class CombatService
         DamageAdjusters.Add((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
         _buffs.UnitChanged.Add(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;
-        _monsters.TargetVisible = (m, p) => !Stealthed(p) && _buffs.CanSeePosition(m, p.Position);
+        _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
     }
 
     private Task SyncGuardianWheelAsync(GameSession session) => session.SkillPlans == null

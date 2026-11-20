@@ -127,7 +127,7 @@ public sealed partial class CombatService
         if (skill.Area == BossSkillArea.Target)
         {
             // The locked target, unless it left the skill's reach or the scene meanwhile.
-            if (player != null && role != null && ReferenceEquals(player.Role, role) && !player.Dead && !player.SceneLoading
+            if (player != null && role != null && ReferenceEquals(player.Role, role) && !player.Dead && !player.SceneLoading && !Airborne(player)
                 && player.WorldScene == boss.WorldScene && MonsterService.Distance(boss, player) <= skill.Reach + 2f) victims.Add(player);
             else if (pet != null && !pet.Dead && pet.Hp > 0 && pet.WorldScene == boss.WorldScene
                 && MonsterService.Distance(boss.X, boss.Z, pet.X, pet.Z) <= skill.Reach + 2f) pets.Add(pet);
@@ -138,7 +138,7 @@ public sealed partial class CombatService
             var near = new List<GameSession>();
             _world.CollectPlayers(boss.WorldScene, center.X, center.Z, reach + 0.5f, near);
             foreach (var p in near)
-                if (p.Role != null && !p.Dead && !p.SceneLoading && p.WorldScene == boss.WorldScene
+                if (p.Role != null && !p.Dead && !p.SceneLoading && p.WorldScene == boss.WorldScene && !Airborne(p)
                     && InBossArea(skill, origin, center, face, p.Position.X, p.Position.Z)) victims.Add(p);
             if (boss.InstanceId != 0)
                 foreach (var unit in _world.Map(boss.WorldScene).Near(center.X, center.Z, reach + 0.5f))

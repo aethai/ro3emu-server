@@ -31,7 +31,7 @@ public sealed partial class CombatService
         foreach (var p in targets.ToArray())
         {
             var targetRole = p.Role;
-            if (targetRole == null || p.Dead || p.SceneLoading || p.Progress == null || p.WorldScene != caster.WorldScene) continue;
+            if (targetRole == null || p.Dead || p.SceneLoading || p.Progress == null || p.WorldScene != caster.WorldScene || Airborne(p)) continue;
             long scene = p.WorldScene, generation = p.SceneGeneration;
             var lease = p.Attachment;
             bool Current() => ReferenceEquals(p.Role, targetRole) && p.WorldScene == scene && p.SceneGeneration == generation
