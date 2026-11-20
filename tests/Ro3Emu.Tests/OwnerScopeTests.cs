@@ -474,10 +474,10 @@ public sealed class OwnerScopeTests : IAsyncLifetime
         clock.Advance(ReservationCoordinator.RealmPriorityAfter);
         Assert.False(reservations.TryReserve(3, [ReservationKey.Role(2)]));
         var woken = reservations.Changed;
-        reservations.Pulse();
+        Assert.False(reservations.Pulse());
         Assert.False(woken.IsCompleted);
         clock.Advance(ReservationCoordinator.StallGrace);
-        reservations.Pulse();
+        Assert.True(reservations.Pulse()); // GameLoop logs the holders
         await woken.WaitAsync(TimeSpan.FromSeconds(1));
         Assert.True(reservations.TryReserve(3, [ReservationKey.Role(2)]));
         // A realm request that gives up wakes what it held back.

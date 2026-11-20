@@ -1386,8 +1386,9 @@ public static class EconomyReceiptReader
         using var row = command.ExecuteReader();
         if (!row.Read()) return null;
         bool escrow = EscrowEconomyIntent.IsKind(row.GetString(5));
-        object?[] child = escrow ? EscrowEconomyReceiptCodec.Decode((byte[])row.GetValue(14))
-            : EconomyTransactionPlan.DecodeChildReceipts((byte[])row.GetValue(14));
+        byte[] children = (byte[])row.GetValue(14);
+        object?[] child = ReceiptBlobs.IsCompacted(children) ? [] // dropped by ReceiptRetention
+            : escrow ? EscrowEconomyReceiptCodec.Decode(children) : EconomyTransactionPlan.DecodeChildReceipts(children);
         var typed = child.Select((value, index) => value switch
         {
             null => new EconomyChildReceipt(index, "null"),

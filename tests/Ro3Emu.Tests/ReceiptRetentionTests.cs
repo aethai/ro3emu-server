@@ -100,6 +100,7 @@ public sealed class ReceiptRetentionTests : IDisposable
         await _roles.CommitAsync(KillTransaction(mutation, 10), "test/retention-first");
         string recent = Commit(20);
         Run("UPDATE operation_receipt SET recorded_utc_ms=1 WHERE operation_id=$op", ("$op", operation));
+        long recentOwners = Scalar<long>("SELECT COUNT(*) FROM owner_operation_receipt WHERE operation_id=$op", recent);
 
         Assert.Equal(1, await Retention().CompactAsync());
         var (payload, outcome) = Blobs(operation);
@@ -107,8 +108,14 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.Empty(outcome);
         Assert.False(ReceiptBlobs.IsCompacted(Blobs(recent).Payload)); // recent receipts keep their bytes
 
-        // The same operation again is recognised as the committed one (by its hashes), not a conflict nor a second grant.
-        await _roles.CommitAsync(KillTransaction(Kill(operation, 10), 10), "test/retention-replay");
+        // Its child results and owner acknowledgement are gone too (#473: about 4 KB a kill, kept for good before).
+        Assert.True(ReceiptBlobs.IsCompacted(Scalar<byte[]>("SELECT child_receipts FROM operation_receipt WHERE operation_id=$op", operation)));
+        Assert.Equal(0L, Scalar<long>("SELECT COUNT(*) FROM owner_operation_receipt WHERE operation_id=$op", operation));
+        Assert.Equal(recentOwners, Scalar<long>("SELECT COUNT(*) FROM owner_operation_receipt WHERE operation_id=$op", recent));
+
+        // The same operation again, past the window, is refused as a conflict: never a second grant.
+        await Assert.ThrowsAnyAsync<EconomyOperationConflictException>(() =>
+            _roles.CommitAsync(KillTransaction(Kill(operation, 10), 10), "test/retention-replay"));
         Assert.Equal(20, _roles.LoadProgress(_role).Exp);
 
         var ledger = EconomyLedgerReader.Read(_accounts.DatabasePath, Catalog, "auto", 0, 2);
@@ -149,6 +156,41 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.Equal(1, await Retention().CompactAsync());
         Assert.False(ReceiptBlobs.IsCompacted(Blobs(mail).Payload));
         Assert.True(ReceiptBlobs.IsCompacted(Blobs(kill).Payload));
+    }
+
+    private T Scalar<T>(string sql, string operation)
+    {
+        using var db = _accounts.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$op", operation);
+        return (T)command.ExecuteScalar()!;
+    }
+
+    /// <summary>A database compacted by an earlier version: payloads dropped up to the watermark, child results and owner
+    /// acknowledgements kept. The next run drops those once (compacted_full_seq), then compacts new receipts as usual.</summary>
+    [Fact]
+    public async Task ReceiptsCompactedByAnEarlierVersionLoseTheirChildResultsOnce()
+    {
+        string[] old = [Commit(10), Commit(20), Commit(30)];
+        string mail = Commit(40);
+        Run("UPDATE operation_receipt SET command_kind='mail/deliver' WHERE operation_id=$op", ("$op", mail));
+        Run("UPDATE operation_receipt SET intent_payload=$marker,outcome=X'' WHERE command_kind NOT LIKE 'mail/%'",
+            ("$marker", ReceiptBlobs.CompactedPayload));
+        Run("UPDATE economy_meta SET compacted_seq=(SELECT MAX(commit_seq) FROM operation_receipt),compacted_full_seq=0");
+        string fresh = Commit(50);
+        Run("UPDATE operation_receipt SET recorded_utc_ms=1 WHERE operation_id=$op", ("$op", fresh));
+
+        Assert.Equal(1, await Retention().CompactAsync()); // the backfill (two batches of 2), then the new receipt
+        foreach (string op in old.Append(fresh))
+        {
+            Assert.True(ReceiptBlobs.IsCompacted(Scalar<byte[]>("SELECT child_receipts FROM operation_receipt WHERE operation_id=$op", op)));
+            Assert.Equal(0L, Scalar<long>("SELECT COUNT(*) FROM owner_operation_receipt WHERE operation_id=$op", op));
+        }
+        Assert.False(ReceiptBlobs.IsCompacted(Scalar<byte[]>("SELECT child_receipts FROM operation_receipt WHERE operation_id=$op", mail)));
+        Assert.Equal(LastSequence(), Watermark());
+        Assert.Equal(Watermark(), Scalar<long>("SELECT compacted_full_seq FROM economy_meta WHERE singleton=1 AND $op=$op", ""));
+        Assert.Equal(0, await Retention().CompactAsync());
     }
 
     private long Watermark()

@@ -554,6 +554,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
 
     internal static object?[] DecodeChildReceipts(byte[] payload)
     {
+        // ReceiptRetention dropped them: the operation committed before the retention window and is not answered again.
+        if (ReceiptBlobs.IsCompacted(payload))
+            throw new EconomyOperationConflictException("The operation committed before the receipt retention window; its results are no longer kept.");
         using var stream = new MemoryStream(payload, writable: false);
         using var reader = new BinaryReader(stream, Encoding.UTF8);
         int count = reader.ReadInt32();
