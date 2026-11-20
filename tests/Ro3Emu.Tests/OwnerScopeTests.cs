@@ -427,6 +427,68 @@ public sealed class OwnerScopeTests : IAsyncLifetime
         Assert.True(reservations.TryReserve(7, [shared]));
     }
 
+    /// <summary>A coordinator clock that moves only when told to.</summary>
+    private sealed class StepClock : TimeProvider
+    {
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _ticks;
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+    }
+
+    [Fact]
+    public void ARealmRequestThatWaitedHoldsYoungerRequestsBackUntilItGetsIn()
+    {
+        // A live realm of 80 players: role work kept arriving, so a realm request (Revive) waited up to 174 s for a
+        // moment when nothing at all was held.
+        var clock = new StepClock();
+        var reservations = new ReservationCoordinator(clock);
+        Assert.True(reservations.TryReserve(1, [ReservationKey.Role(1)]));
+        Assert.False(reservations.TryReserve(2, [ReservationKey.Realm]));
+        // Overlapping role work keeps it out while it is young...
+        Assert.True(reservations.TryReserve(3, [ReservationKey.Role(2)]));
+        reservations.Release(1);
+        Assert.False(reservations.TryReserve(2, [ReservationKey.Realm]));
+        // ...but once it has waited, younger keyed requests queue behind it and the holders drain.
+        clock.Advance(ReservationCoordinator.RealmPriorityAfter);
+        Assert.False(reservations.TryReserve(4, [ReservationKey.Role(5)]));
+        Assert.Equal(1, reservations.RealmHoldBacks);
+        Assert.True(reservations.TryReserve(5, [])); // keyless runtime work is never held back
+        reservations.Release(5);
+        reservations.Release(3);
+        Assert.True(reservations.TryReserve(2, [ReservationKey.Realm]));
+        Assert.Equal(0, reservations.RealmWaiting);
+        Assert.False(reservations.TryReserve(4, [ReservationKey.Role(5)])); // now behind the realm's own hold
+        reservations.Release(2);
+        Assert.True(reservations.TryReserve(4, [ReservationKey.Role(5)]));
+    }
+
+    [Fact]
+    public async Task TheRealmPriorityStandsAsideWhenNothingIsReleasedOrTheRealmRequestGivesUp()
+    {
+        var clock = new StepClock();
+        var reservations = new ReservationCoordinator(clock);
+        // A holder that never releases (it awaits younger work): after StallGrace the younger request gets in.
+        Assert.True(reservations.TryReserve(1, [ReservationKey.Role(1)]));
+        Assert.False(reservations.TryReserve(2, [ReservationKey.Realm]));
+        clock.Advance(ReservationCoordinator.RealmPriorityAfter);
+        Assert.False(reservations.TryReserve(3, [ReservationKey.Role(2)]));
+        var woken = reservations.Changed;
+        reservations.Pulse();
+        Assert.False(woken.IsCompleted);
+        clock.Advance(ReservationCoordinator.StallGrace);
+        reservations.Pulse();
+        await woken.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.True(reservations.TryReserve(3, [ReservationKey.Role(2)]));
+        // A realm request that gives up wakes what it held back.
+        reservations.Release(3);
+        Assert.False(reservations.TryReserve(4, [ReservationKey.Role(3)]));
+        woken = reservations.Changed;
+        reservations.Abandon(2);
+        await woken.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.True(reservations.TryReserve(4, [ReservationKey.Role(3)]));
+    }
+
     [Fact]
     public void ReleasingAnOperationWithoutKeysWakesNoWaiter()
     {

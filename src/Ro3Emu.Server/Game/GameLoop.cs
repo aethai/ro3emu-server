@@ -487,6 +487,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     if (Phase != GameLoopPhase.Accepting) _timers.Clear();
                     var time = new GameTime(now, now - _lastTick);
                     _lastTick = now;
+                    Owners?.Reservations.Pulse();
                     long tickerStart = Stopwatch.GetTimestamp();
                     foreach (var ticker in Phase == GameLoopPhase.Accepting ? _tickers.ToArray() : [])
                     {

@@ -207,7 +207,7 @@
 31040	session Realm:legacy: dispatcher/unrouted	refused
 31041	session Realm:legacy: dispatcher/unrouted	refused
 31042	session Realm:legacy: dispatcher/unrouted	refused
-31043	session Realm:legacy: dispatcher/31043	refused
+31043	session role:WholeRole dispatcher/31043	refused
 31044	session Realm:legacy: dispatcher/unrouted	refused
 31045	session Realm:legacy: dispatcher/unrouted	refused
 31046	session Realm:legacy: dispatcher/unrouted	refused
@@ -218,7 +218,7 @@
 31051	session Realm:legacy: dispatcher/unrouted	refused
 31052	session Realm:legacy: dispatcher/unrouted	refused
 31053	session Realm:legacy: dispatcher/unrouted	refused
-31054	session Realm:legacy: dispatcher/31054	refused
+31054	session role:WholeRole dispatcher/31054	refused
 31055	session Realm:legacy: dispatcher/unrouted	refused
 31070	session Realm:legacy: dispatcher/unrouted	refused
 31071	session Realm:legacy: dispatcher/unrouted	refused
@@ -233,11 +233,11 @@
 31080	session Realm:legacy: dispatcher/31080	refused
 31081	session Realm:legacy: dispatcher/unrouted	refused
 31082	session role:WholeRole dispatcher/31082	refused
-31083	session Realm:legacy: dispatcher/31083	refused
-31084	session Realm:legacy: dispatcher/31084	refused
+31083	session role:WholeRole dispatcher/31083	refused
+31084	session role:WholeRole dispatcher/31084	refused
 31085	session Realm:legacy: dispatcher/unrouted	refused
 31086	session Realm:legacy: dispatcher/unrouted	refused
-31087	session Realm:legacy: dispatcher/31087	refused
+31087	session role:WholeRole dispatcher/31087	refused
 31088	session Realm:legacy: dispatcher/unrouted	refused
 31089	session Realm:legacy: dispatcher/31089	refused
 31090	session Realm:legacy: dispatcher/31090	refused
