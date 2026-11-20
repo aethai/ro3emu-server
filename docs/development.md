@@ -33,7 +33,7 @@ chunks into standard Lua 5.4 bytecode for any decompiler.
 | `src/Ro3Emu.ClientTools` | client patcher (patch, restore, play; the chat and voice redirects) and patch-repository releases |
 | `src/Ro3Emu.ClientHooks` · `src/Ro3Emu.Loc` | code injected into the client: Lua patches, party voice and the English text layer |
 | `src/Ro3Emu.Bot` · `src/Ro3Emu.BotCli` | a scripted client speaking the real protocol (tests, load, extra players) |
-| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S7 with protocol bots |
+| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S8 with protocol bots |
 | `src/Ro3Emu.Launcher` · `src/Ro3Emu.Patcher` | a player launcher and its content-addressed update engine |
 | `tests/` | end-to-end tests: the server in-process, bots over real sockets |
 | `tools/` | Lua, config, nav and message-table export, release scripts |
@@ -60,7 +60,8 @@ dotnet run -c Release --project src/Ro3Emu.LoadTest -- --scenario S2 --server-lo
 
 S1 is a login storm (500 logins in 60 s), S2 300 players in one town, S3 500 players in a mixed economy with a ledger
 check, S4 map changes and relogs, S5 a full castle siege (two guilds of 80), S6 100 players fighting on one field,
-S7 the same fight plus the background requests a real client sends while it plays (a flyer's moves, the activity poll).
+S7 the same fight plus the background requests a real client sends while it plays (a flyer's moves, the activity poll),
+S8 S7 in parties of four that fight together, so kills have several contributors.
 Each report marks every target (tick p99,
 reply latency, login time, players per view, database work on the loop, GC, CPU, memory) as PASS, FAIL or NOT MEASURED
 with the evidence. Against a server started elsewhere (`--server URL`), pass a copy of its `data/operator.token` with

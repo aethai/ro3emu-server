@@ -76,12 +76,17 @@ public sealed class PassiveSkills : IGameTicker
         scenes.AddOwnedAfterLoaded(StandingBuffsAsync);
         skills.Learned.Add(StandingBuffsAsync);
         character.JobChanged.Add(StandingBuffsAsync);
-        // A roster or member card change runs in the party's scope; each member's Union is set in a work item of its own.
+        // A roster or member card change runs in the party's scope; each member's Union is set in a work item of its own,
+        // under that member's role only: it reads the roster and changes only the member's own buff. As a realm-wide
+        // timer it fired for every member of every party on each card change and held the whole realm each time
+        // (LoadTest S8: 366 runs waited 87 s in 4 minutes; a live realm saw 192 s). A member without the passive or its
+        // buff has nothing to update.
         teams.RosterChanged.Add(roles =>
         {
             foreach (long role in roles)
-                if (_sessions.All().FirstOrDefault(p => p.Role?.Id == role) is { } member)
-                    loop.PostLegacy(() => UnionAsync(member), "union stacks");
+                if (_sessions.All().FirstOrDefault(p => p.Role?.Id == role) is { } member
+                    && (Learned(member, Union) != null || member.Buffs.Any(b => b.ConfigId == UnionBuff)))
+                    loop.PostOwned(member, () => UnionAsync(member), "union stacks");
             return Task.CompletedTask;
         });
     }
