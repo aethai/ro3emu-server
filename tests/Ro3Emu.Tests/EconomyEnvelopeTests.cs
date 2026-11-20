@@ -118,7 +118,18 @@ public sealed class EconomyEnvelopeTests : IDisposable
         StoreItem(other, 900_001, Unknown);
         await Spend("e05d-tolerates-" + Guid.NewGuid().ToString("N"), "src-" + Guid.NewGuid().ToString("N")).CommitAsync(_accounts, "test");
         Assert.Equal(90, _roles.LoadProgress(_role).Currency[1]);
-        Assert.Equal(1, _accounts.StandingEconomyIssues);
+        // A spend on the actor's own purse reads only its participants (EconomyEnvelopePlan.Participants), so the other
+        // character's row is not even read; a realm-wide envelope reports it as a standing issue instead.
+        Assert.Equal(0, _accounts.StandingEconomyIssues);
+    }
+
+    [Fact]
+    public async Task AParticipantReadStillRefusesAnUndeclaredChange()
+    {
+        // A debit it does not declare (10 spent, 0 declared) is still refused on the participant read.
+        var undeclared = Spend("e05d-undeclared-" + Guid.NewGuid().ToString("N"), "src-" + Guid.NewGuid().ToString("N"), declared: 0);
+        await Assert.ThrowsAnyAsync<Exception>(() => undeclared.CommitAsync(_accounts, "test"));
+        Assert.Equal(100, _roles.LoadProgress(_role).Currency[1]);
     }
 
     [Fact]

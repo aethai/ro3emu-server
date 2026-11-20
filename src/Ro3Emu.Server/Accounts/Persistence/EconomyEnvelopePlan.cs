@@ -85,7 +85,8 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
         var beforeEntities = EntityWrites.Concat(EntityDeltaWrites).Distinct()
             .ToDictionary(key => key, key => ReadEntity(db, tx, key));
         var generatedEntities = new HashSet<OwnerRevisionKey>();
-        var (before, standing) = Read(db, tx);
+        var scope = Participants();
+        var (before, standing) = Read(db, tx, catalog, scope);
         foreach (var issue in standing) DbWriter.ReportStandingIssue(issue);
         var children = (object?[])child.Execute(db, tx);
         EconomyTransactionPlan.EncodeChildReceipts(children); // Reject any non-durable child result before receipt work.
@@ -103,7 +104,7 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             if (ReadEntity(db, tx, key) is not { Exists: true, Revision: 1 })
                 throw new InvalidDataException("E05d guild creation did not install initial owner revision.");
         }
-        var (after, issues) = Read(db, tx);
+        var (after, issues) = Read(db, tx, catalog, scope);
         RefuseNewIssues(standing, issues);
         List<EconomyLeg> legs = Match(before, after, ResolveEffects(db, tx, children));
         long sequence;
@@ -226,12 +227,14 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             ? new OwnerRevisionValue(key, value, true) : new OwnerRevisionValue(key, 0, false);
     }
 
-    /// <summary>The holdings and the row issues of the realm. This snapshot covers every character, so one bad row is reported
-    /// and leaves other players' operations alone (inferred). The row's value is left out of the holdings.</summary>
+    /// <summary>The holdings and the row issues of the realm, or of the envelope's participants only (<see cref="Participants"/>).
+    /// A realm-wide snapshot covers every character, so one bad row is reported and leaves other players' operations alone
+    /// (inferred). The row's value is left out of the holdings.</summary>
     private static (Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> Holdings, HashSet<EconomyIssue> Issues) Read(
-        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog)
+        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, (HashSet<long> Roles, HashSet<long> Guilds)? scope)
     {
-        var decoded = EconomySnapshotReader.ReadTransaction(db, tx, catalog);
+        var decoded = scope is { } only ? EconomySnapshotReader.ReadParticipants(db, tx, catalog, only.Roles, only.Guilds)
+            : EconomySnapshotReader.ReadTransaction(db, tx, catalog);
         var result = new Dictionary<(EconomyAsset, EconomyLocation), EconomyHolding>();
         foreach (var holding in decoded.Holdings)
             if (!result.TryAdd((holding.Asset, holding.Location), holding))
@@ -247,8 +250,40 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             throw new InvalidDataException("E05d economic decoder found unclassified/corrupt stored value: " + created.Detail);
     }
 
-    private (Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> Holdings, HashSet<EconomyIssue> Issues) Read(
-        SqliteConnection db, SqliteTransaction tx) => Read(db, tx, catalog);
+    /// <summary>
+    /// The roles and guilds a participant read covers, or null for a realm-wide read. Every family this envelope can change
+    /// must be one EconomySnapshotReader.ReadParticipants decodes: owner writes to guilds and their caravan, campfire and
+    /// challenge rows only, declared
+    /// effects on a role's or guild's currency, inventory, mail, treasury or pending caravan grants, and no guild created
+    /// inside the writer (its id is unknown before). Roles it writes or pins are read with all their rows, so a change it
+    /// made there and did not declare is still refused; anything else (auction, market, territory, obligations) keeps the
+    /// realm-wide read.
+    /// </summary>
+    private (HashSet<long> Roles, HashSet<long> Guilds)? Participants()
+    {
+        if (child.Parts.Any(part => part is GuildSavePlan { EntityWrites.Count: 0 })) return null;
+        var roles = new HashSet<long> { envelope.ActorRoleId };
+        var guilds = new HashSet<long>();
+        foreach (var key in RoleWrites) roles.Add(key.RoleId);
+        foreach (long pin in RolePins) roles.Add(pin);
+        foreach (var key in EntityWrites.Concat(EntityDeltaWrites))
+        {
+            if (!long.TryParse(key.Id, NumberStyles.None, CultureInfo.InvariantCulture, out long id)) return null;
+            if (key.Kind is "guild" or "guild_caravan_version" or "guild_campfire" or "guild_challenge") guilds.Add(id);
+            else if (key.Kind == "guild_caravan_member") roles.Add(id);
+            else return null;
+        }
+        foreach (var effect in envelope.Effects)
+        {
+            if (effect.Compartment is not (EconomyCompartment.Inventory or EconomyCompartment.Currency or EconomyCompartment.Mail
+                or EconomyCompartment.GuildTreasury or EconomyCompartment.CaravanPending)
+                || !long.TryParse(effect.Owner.Id, NumberStyles.None, CultureInfo.InvariantCulture, out long owner)) return null;
+            if (effect.Owner.Kind == EconomyOwnerKind.Role) roles.Add(owner);
+            else if (effect.Owner.Kind == EconomyOwnerKind.Guild) guilds.Add(owner);
+            else return null;
+        }
+        return (roles, guilds);
+    }
 
     private IReadOnlyList<EconomyEffect> ResolveEffects(SqliteConnection db, SqliteTransaction tx, object?[] children)
     {

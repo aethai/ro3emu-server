@@ -133,7 +133,7 @@ public static partial class EconomySnapshotReader
             // Guild ids are collected before market/caravan ownership is checked.
             if (Has("guild") && new[] { "id", "state" }.All(Columns("guild").ContainsKey))
             {
-                using var cmd = Command("SELECT id,state FROM guild ORDER BY id");
+                using var cmd = ScopeIds(Command("SELECT id,state FROM guild" + ScopeFilter(GuildScope, "id") + " ORDER BY id"), GuildScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -164,7 +164,8 @@ public static partial class EconomySnapshotReader
             }
             if (Has("guild_recovery") && new[] { "guild_id", "state", "created_ms" }.All(Columns("guild_recovery").ContainsKey))
             {
-                using var cmd = Command("SELECT guild_id,state,created_ms FROM guild_recovery ORDER BY guild_id");
+                using var cmd = ScopeIds(Command("SELECT guild_id,state,created_ms FROM guild_recovery" + ScopeFilter(GuildScope, "guild_id")
+                    + " ORDER BY guild_id"), GuildScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -195,7 +196,8 @@ public static partial class EconomySnapshotReader
                     });
                 }
             }
-            ScanJsonEvidence("guild_market", "id", "state", (key, state) =>
+            // A participant read leaves out the other families an envelope in that mode never writes (EconomyEnvelopePlan).
+            if (!Scoped) ScanJsonEvidence("guild_market", "id", "state", (key, state) =>
             {
                 Fields(state, "NextId RecentAvgPrice RecentPrices PriceHistory Stalls RecoveryStalls Trades LastListedMs");
                 if (!Try(state, "Stalls", out var stalls)) return;
@@ -227,7 +229,8 @@ public static partial class EconomySnapshotReader
             });
             if (Has("guild_caravan_member") && new[] { "role_id", "state" }.All(Columns("guild_caravan_member").ContainsKey))
             {
-                using var cmd = Command("SELECT role_id,state FROM guild_caravan_member ORDER BY role_id");
+                using var cmd = ScopeIds(Command("SELECT role_id,state FROM guild_caravan_member" + ScopeFilter(RoleScope, "role_id")
+                    + " ORDER BY role_id"), RoleScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -275,11 +278,12 @@ public static partial class EconomySnapshotReader
                     });
                 }
             }
-            if (Has("guild_caravan_version")) ScanIntegerKeys("guild_caravan_version", "guild_id");
+            if (!Scoped && Has("guild_caravan_version")) ScanIntegerKeys("guild_caravan_version", "guild_id");
             ScanJsonEvidence("guild_campfire", "guild_id", "state", (key, root) =>
-                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages"));
+                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages"), GuildScope);
             ScanJsonEvidence("guild_challenge", "guild_id", "state", (key, root) =>
-                Fields(root, "Season Cycle Activated Unlocked LastUnlocked PassedDifficulty Difficulty Stage Selected Complete Progress BestTimeMs AuctionEntries"));
+                Fields(root, "Season Cycle Activated Unlocked LastUnlocked PassedDifficulty Difficulty Stage Selected Complete Progress BestTimeMs AuctionEntries"),
+                GuildScope);
         }
 
         private void ScanTextKeys(string table, string column)
@@ -308,10 +312,12 @@ public static partial class EconomySnapshotReader
             });
         }
 
-        private void ScanJsonEvidence(string table, string keyColumn, string blobColumn, Action<string, System.Text.Json.JsonElement> decode)
+        private void ScanJsonEvidence(string table, string keyColumn, string blobColumn, Action<string, System.Text.Json.JsonElement> decode,
+            IReadOnlySet<long>? scope = null)
         {
             if (!Has(table) || !new[] { keyColumn, blobColumn }.All(Columns(table).ContainsKey)) return;
-            using var cmd = Command($"SELECT \"{keyColumn}\",\"{blobColumn}\" FROM \"{table}\" ORDER BY \"{keyColumn}\"");
+            using var cmd = ScopeIds(Command($"SELECT \"{keyColumn}\",\"{blobColumn}\" FROM \"{table}\"" + ScopeFilter(scope, $"\"{keyColumn}\"")
+                + $" ORDER BY \"{keyColumn}\""), scope);
             using var r = cmd.ExecuteReader();
             int rowNumber = 0;
             while (r.Read())
