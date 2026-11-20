@@ -468,6 +468,8 @@ public sealed class ActivitiesMessages(PraiseService praise, CasualBattleService
         {
             await tower.ClaimFirstPassAsync(session);
         });
+        // The auto battle switch settles only the sender's Field Bonus Time, in its own role scope (WildAfkService).
+        routes.AdmitRole(id => id is SetAutoBattle);
         routes.Map(SetAutoBattle, "afk", async (session, msgId, body) =>
         {
             await afk.SetAutoBattleAsync(session, SetAutoBattleReq.Parser.ParseFrom(body.Span).IsAutoBattle);

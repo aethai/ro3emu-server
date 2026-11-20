@@ -22,6 +22,11 @@ public sealed class WorldMessages(Maps.World world, CombatService combat, SceneS
         routes.AdmitRole(id => id is WorldCoreService.ReliveItem); // owns the role payment and the exclusive revive claim
         // The chat typing state changes only the sender's own unit custom data, shown to its viewers.
         routes.AdmitRole(id => id is WorldCoreService.TypeDown);
+        // Flight moves, switches and falls change only the flyer, as a walk does; a flying rider sends 31084 about once a
+        // second, and as Realm each one waited for every other player's work and held all of it back (a live realm of
+        // 80 players). The minimap toggle is the sender's own WorldState flag.
+        routes.AdmitRole(id => id is WorldCoreService.FlyMove or WorldCoreService.FlySwitch or WorldCoreService.FreeFall
+            or SyncMiniMapStatus);
 
         // Siege, territory battle and an ordinary dungeon answer the same statistics requests; escort cargo and
         // territory pickups are NPCs behind the ordinary interaction.

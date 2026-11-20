@@ -32,9 +32,23 @@ public readonly record struct ReservationKey(ReservationKind Kind, string Id, st
 }
 
 /// <summary>Loop-only, all-or-none reservations. Waiting never retains a partial key set.</summary>
-public sealed class ReservationCoordinator
+public sealed class ReservationCoordinator(TimeProvider? clock = null)
 {
+    /// <summary>How long a realm request waits on its own before younger requests start waiting behind it.</summary>
+    internal static readonly TimeSpan RealmPriorityAfter = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>With nothing released for this long, the realm priority stands aside (see <see cref="Pulse"/>).</summary>
+    internal static readonly TimeSpan StallGrace = TimeSpan.FromSeconds(2);
+
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly Dictionary<long, ReservationKey[]> _held = [];
+    // Realm priority: a realm request is admitted only when nothing at all is held, so on a busy realm the role work that
+    // keeps arriving could hold it out for minutes (a live realm of 80 players: Revive waited 174 s). A realm request
+    // that has waited RealmPriorityAfter makes every younger keyed request wait; the work already holding keys finishes
+    // and the realm request gets in. Older requests and keyless runtime work are never held back.
+    private readonly SortedDictionary<long, long> _realmWaiting = [];
+    private long _lastRelease = (clock ?? TimeProvider.System).GetTimestamp();
+    private bool _heldBack;
     private readonly Dictionary<string, ReservationKey[]> _recovery = [];
     // Writer preference on shared entities: an exclusive request blocked only by shared holds of an entity marks the
     // entity, and new shared requests for it then wait, so overlapping readers cannot starve the writer. A writer
@@ -64,12 +78,22 @@ public sealed class ReservationCoordinator
         if (ordered.Length > 1) Array.Sort(ordered, KeyOrder);
         if (_recovery.Values.Any(held => held.Any(a => ordered.Any(a.Overlaps))))
             throw new InvalidOperationException("An overlapping committed owner operation requires recovery.");
+        bool realm = ordered.Any(key => key.Kind == ReservationKind.Realm);
         if (_held.Values.Any(held => held.Any(a => ordered.Any(a.Overlaps))))
         {
             Conflicts++;
             var starved = ReaderOnlyBlocks(ordered);
             if (starved.Length != 0) _waitingWriters[operation] = starved;
-            else Abandon(operation);
+            else if (_waitingWriters.Remove(operation)) Signal();
+            if (realm) _realmWaiting.TryAdd(operation, _clock.GetTimestamp());
+            return false;
+        }
+        if (ordered.Length != 0 && BehindRealm(operation))
+        {
+            Conflicts++;
+            RealmHoldBacks++;
+            _heldBack = true;
+            if (realm) _realmWaiting.TryAdd(operation, _clock.GetTimestamp());
             return false;
         }
         if (_waitingWriters.Count != 0 && ordered.Any(key => key.Kind == ReservationKind.Entity && key.Part == ReservationKey.SharedPart
@@ -79,13 +103,40 @@ public sealed class ReservationCoordinator
             return false;
         }
         _waitingWriters.Remove(operation); // admitted: it holds the entity now, readers wait for its release
+        _realmWaiting.Remove(operation);
         _held.Add(operation, ordered);
         return true;
     }
-    /// <summary>A waiting request gave up (cancelled, or a one-shot try): its writer mark no longer holds readers back.</summary>
+    /// <summary>A waiting request gave up (cancelled, or a one-shot try): its writer mark no longer holds readers back,
+    /// nor does its realm priority.</summary>
     internal void Abandon(long operation)
     {
-        if (_waitingWriters.Remove(operation)) Signal();
+        if (_waitingWriters.Remove(operation) | _realmWaiting.Remove(operation)) Signal();
+    }
+    /// <summary>Requests a waiting realm request held back (diagnostics).</summary>
+    public long RealmHoldBacks { get; private set; }
+    internal int RealmWaiting => _realmWaiting.Count;
+
+    // An older realm request has waited long enough: this one queues behind it, unless nothing has been released for
+    // StallGrace. A holder that awaits younger work would otherwise wait for it forever while the realm request waits
+    // for that holder; standing aside lets the younger work run and the holder finish.
+    private bool BehindRealm(long operation)
+    {
+        if (_realmWaiting.Count == 0) return false;
+        var (oldest, since) = _realmWaiting.First();
+        return oldest < operation && _clock.GetElapsedTime(since) >= RealmPriorityAfter
+            && _clock.GetElapsedTime(_lastRelease) < StallGrace;
+    }
+
+    /// <summary>Each loop tick (GameLoop): requests held back behind a realm request retry once nothing has been released
+    /// for <see cref="StallGrace"/>, when the realm priority stands aside, since no release would wake them.</summary>
+    internal void Pulse()
+    {
+        if (_heldBack && _realmWaiting.Count != 0 && _clock.GetElapsedTime(_lastRelease) >= StallGrace)
+        {
+            _heldBack = false;
+            Signal();
+        }
     }
     // The entities whose exclusive keys in the request are blocked only by shared holds; empty when anything else blocks.
     private string[] ReaderOnlyBlocks(ReservationKey[] request)
@@ -105,6 +156,7 @@ public sealed class ReservationCoordinator
     public void Release(long operation)
     {
         if (!_held.Remove(operation, out var released)) throw new InvalidOperationException("Reservation released twice.");
+        if (released.Length != 0) _lastRelease = _clock.GetTimestamp();
         // A runtime operation holds no keys: its release cannot unblock anyone, so it wakes no waiter.
         if (released.Length != 0) Signal();
     }

@@ -89,6 +89,8 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                 case "S3": await RunS3Async(report, ct); break;
                 case "S4": await RunS4Async(report, ct); break;
                 case "S5": await RunSiegeAsync([.. _actors], options.DurationSeconds, ct); break;
+                case "S6": await RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct); break;
+                case "S7": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
             }
             if (options.Scenario == "S3") await CloseS3Async(report, ct);
             report.ServerAfter = await SnapshotAsync(ct);
