@@ -130,8 +130,16 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
                     }
     }
 
+    // The tick's snapshot (a unit's tick may spawn or remove units), reused so a tick allocates nothing.
+    private readonly List<WorldUnit> _ticking = [];
+
     public void Tick(GameTime time)
     {
-        foreach (var unit in _units.ToArray()) unit.Tick(this, time);
+        _ticking.AddRange(_units);
+        try
+        {
+            foreach (var unit in _ticking) unit.Tick(this, time);
+        }
+        finally { _ticking.Clear(); }
     }
 }

@@ -440,7 +440,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     /// <summary>A guardian control that forbids walking stops a moving monster where it is.</summary>
     private void StopWhenRooted(MonsterUnit m, long now)
     {
-        if (Forbidden?.Invoke(m, ForbiddenState.Walk) != true || !m.Moving) return;
+        if (!m.Moving || Forbidden?.Invoke(m, ForbiddenState.Walk) != true) return;
         m.Advance(now);
         m.Moving = false;
         SendStop(m, now);
@@ -448,6 +448,12 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     public void Tick(MonsterUnit m, MapInstance map)
     {
+        if (m.Viewers.Count == 0 && Dormant(m))
+        {
+            // Nothing below acts for it: only the roam clock runs, as it would (see the end of this method).
+            if (!m.Dead && m.Hp > 0 && m.Template.RoamDistance > 0) ScheduleRoam(m, NowMs);
+            return;
+        }
         if (m.RuntimeMap.Kind == RuntimeMapKind.PublicLine
             && (!_spawns.TryGetValue(m.RuntimeMap, out var state) || state.Retired)) return;
         if (m.Dead || m.Hp <= 0) return; // lethal HP is authoritative before the awaited death broadcast finishes
@@ -513,11 +519,22 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             }
         }
         // Roam only where somebody can see it.
-        if (!m.Moving && m.Template.RoamDistance > 0 && now >= m.NextRoamMs)
-        {
-            m.NextRoamMs = now + m.Template.RoamTimeMs + _random.Next(-m.Template.RoamTimeMs / 4, m.Template.RoamTimeMs / 4);
-            if (m.Viewers.Count > 0) Roam(m, map);
-        }
+        if (!m.Moving && m.Template.RoamDistance > 0 && ScheduleRoam(m, now) && m.Viewers.Count > 0) Roam(m, map);
+    }
+
+    /// <summary>A monster no player shows that has nothing in progress: no walk, fight, march, return, timed slow or
+    /// companion. Its tick changes nothing but the roam clock, so the map skips the rest (a field map holds ~1500
+    /// monsters and keeps ticking after its players leave).</summary>
+    private bool Dormant(MonsterUnit m) => m.Dead || m.Hp <= 0
+        || !m.Moving && m.Target == null && m.PetTarget == null && m.March == null && !m.Returning
+            && m.SlowMovementExpireMs == 0 && (_companionTargets.Count == 0 || !_companionTargets.ContainsKey(m));
+
+    /// <summary>Moves the roam clock on when it is due; true when the monster may roam now.</summary>
+    private bool ScheduleRoam(MonsterUnit m, long now)
+    {
+        if (now < m.NextRoamMs) return false;
+        m.NextRoamMs = now + m.Template.RoamTimeMs + _random.Next(-m.Template.RoamTimeMs / 4, m.Template.RoamTimeMs / 4);
+        return true;
     }
 
     /// <summary>Totem Icebound Protection: apply a timed movement reduction to one attacking monster.</summary>
