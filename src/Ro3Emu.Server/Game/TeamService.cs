@@ -87,6 +87,15 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         return ExpBuff[Math.Clamp(sameMap, 1, ExpBuff.Length) - 1];
     }
 
+    /// <summary>The killer's party members on the killer's map line, online, alive and not loading a scene (PartyExpShare).</summary>
+    internal List<GameSession> SameMapMembers(GameSession killer)
+    {
+        if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return [];
+        return [.. team.Members.Where(m => m != role.Id).Select(Session).OfType<GameSession>()
+            .Where(s => s.WorldScene == killer.WorldScene && s.Progress != null && !s.Dead && !s.SceneLoading
+                && s.Attachment?.Cancelled != true)];
+    }
+
     /// <summary>
     /// Party item drop rate for a kill (‱): PublicParamConfig.TeamDropBuffWeights per member beyond the first on the same
     /// map, the drop half of the party tip (Localization 24113-24116 via TeamBuffInfo: "2-player Party: ... Item drop rate

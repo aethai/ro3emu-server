@@ -279,6 +279,12 @@ public sealed class ServerOptions
     public List<FieldExpRule> FieldExpRates { get; set; } = [];
 
     /// <summary>
+    /// Kill EXP shared with the killer's party (Ro3Emu:PartyExpShare). Off by default: the killer alone gets a kill's EXP, as
+    /// on the original server. (inferred: the original had no such knob; the client's own party bonus is TeamExpBuffNum.)
+    /// </summary>
+    public PartyExpShareOptions PartyExpShare { get; set; } = new();
+
+    /// <summary>
     /// (inferred) Star Cores drop for roles with the Astral Level open (ParagonService.StarCoreDrops). The client data gives
     /// them no source; false turns the reconstructed drop off.
     /// </summary>
@@ -661,6 +667,19 @@ public sealed class SpawnLimitRule
     public int Npc { get; set; }
     public int Max { get; set; }
 }
+
+/// <summary>
+/// <see cref="ServerOptions.PartyExpShare"/>: with <see cref="Enabled"/>, a kill's Base EXP (after the level gap, the party
+/// bonus and FieldExpRates) is shared with the killer's party members who are alive on the same map line.
+/// </summary>
+public sealed class PartyExpShareOptions
+{
+    public bool Enabled { get; set; }
+    public PartyExpShareMode Mode { get; set; } = PartyExpShareMode.Split;
+}
+
+/// <summary>Split: the EXP is divided evenly between the killer and the members. Full: every member gets the killer's EXP.</summary>
+public enum PartyExpShareMode { Split, Full }
 
 /// <summary>One <see cref="ServerOptions.FieldExpRates"/> rule: killers of base level <see cref="MinLevel"/> to
 /// <see cref="MaxLevel"/> get <see cref="Percent"/> percent of the EXP a field monster pays (100 leaves it as it is).</summary>

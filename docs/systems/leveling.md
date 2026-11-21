@@ -69,6 +69,21 @@ are rolled as their claim would have paid them, kept in `DailyState.Compensation
 Not original: an operator who wants quicker levelling sets `Ro3Emu:FieldExpRates` (or `!fieldexp` in game), which scales
 the Base EXP of open-field kills by the killer's level ([monster AI](monster-ai.md)). Empty by default.
 
+## Party EXP sharing
+
+Not original: on the original server a kill's EXP goes to the killer alone; the party's part is the bonus
+`PublicParamConfig.TeamExpBuffNum` gives the killer for each member on the same map. A small server can share kill EXP
+with the party instead:
+
+```json
+"Ro3Emu": { "PartyExpShare": { "Enabled": true, "Mode": "Split" } }
+```
+
+With it on, a kill's Base EXP (after the level gap, the party bonus and `FieldExpRates`) is shared with the killer's party
+members who are online, alive and on the same map line. `Split` divides it evenly between the killer and those members,
+`Full` gives each of them the killer's whole amount. Each member's part is that member's own EXP grant, with its
+catch-up bonus and Job EXP; items stay with the killer. Off by default (`Enabled` false).
+
 ## Tests
 
 ```powershell

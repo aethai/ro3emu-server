@@ -34,6 +34,8 @@ public sealed class RewardService
     private readonly DropAttenuation _attenuation;
     private readonly FieldExpRule[] _configuredFieldExp; // Ro3Emu:FieldExpRates (inferred), empty unless an operator set it
     private volatile FieldExpRule[] _fieldExp; // the rules in force: the configured ones until a GM changes them
+    private readonly GameLoop? _loop;
+    private readonly PartyExpShareOptions? _partyShare; // Ro3Emu:PartyExpShare (inferred), null unless an operator enabled it
 
     /// <summary>Field AFK selects the enhanced _iDrop table only for qualified ordinary field kills.
     /// Other kills use environment 0, preserving ordinary rewards (localization 10960000077; mapping inferred).</summary>
@@ -47,9 +49,11 @@ public sealed class RewardService
     internal Action<GameSession, MonsterUnit, RewardSettlement>? StageHuntKill { get; set; }
 
     public RewardService(CombatService combat, CharacterService character, TeamService teams, GameData data, ILogger<RewardService> log,
-        Microsoft.Extensions.Options.IOptions<ServerOptions>? options = null)
+        GameLoop? loop = null, Microsoft.Extensions.Options.IOptions<ServerOptions>? options = null)
     {
         _fieldExp = _configuredFieldExp = FieldExpRates.Valid(options?.Value);
+        _loop = loop;
+        _partyShare = options?.Value.PartyExpShare is { Enabled: true } share ? share : null;
         this._character = character;
         this._teams = teams;
         this._data = data;
@@ -67,6 +71,8 @@ public sealed class RewardService
         internal bool NoteGranted;
         internal long BaseExp;
         internal long JobExp;
+        internal List<(GameSession Member, long Exp)> Shares = [];
+        internal bool SharesPosted;
         internal bool Published;
         /// <summary>The bag items the committed kill created (auto-decomposed ones are gone).</summary>
         internal List<InvItem> Granted = [];
@@ -113,6 +119,7 @@ public sealed class RewardService
                 // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
                 drops = PassPrivileges.BoostDrops(_data, player, drops);
                 outcome = new KillOutcome { Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp };
+                ShareWithParty(player, outcome);
                 if (IsExplorationHunt?.Invoke(player, monster) == true) outcome.Note = ExplorationNotes?.Choose(player);
                 _outcomes.Add(monster, outcome);
             }
@@ -144,6 +151,7 @@ public sealed class RewardService
                     outcome.NoteGranted = true;
                     outcome.Items = items;
                 }) ?? [];
+            if (settlement.Committed) PostShares(outcome);
         }
         catch
         {
@@ -196,6 +204,42 @@ public sealed class RewardService
         // BaseExpAddConfig catch-up below the server level (CharacterService.LevelRules).
         baseExp = _character.WithPursueBonus(player.Progress!.Level, baseExp);
         return (items, baseExp, _character.JobExpFromBase(baseExp));
+    }
+
+    /// <summary>
+    /// PartyExpShare (inferred, an operator option): a kill's Base EXP as the killer earned it, shared with the party members
+    /// alive on the same map line. Split divides it evenly between the killer and them (the killer's Job EXP follows its
+    /// part), Full gives each member all of it. The members' parts are granted after the kill commits
+    /// (<see cref="PostShares"/>) as each member's own EXP grant (CharacterService.AddExpAsync: its Job EXP and catch-up).
+    /// </summary>
+    private void ShareWithParty(GameSession player, KillOutcome outcome)
+    {
+        if (_partyShare is not { } share || _loop == null || outcome.BaseExp <= 0) return;
+        var members = _teams.SameMapMembers(player);
+        if (members.Count == 0) return;
+        long part = outcome.BaseExp;
+        if (share.Mode == PartyExpShareMode.Split)
+        {
+            part = Math.Max(1, outcome.BaseExp / (members.Count + 1));
+            outcome.BaseExp = part;
+            outcome.JobExp = _character.JobExpFromBase(part);
+        }
+        outcome.Shares = [.. members.Select(m => (m, part))];
+    }
+
+    /// <summary>Each member's part as that role's own EXP grant, once, after the killer's reward committed. A part lost to a
+    /// crash in between is not granted again (inferred: an operator option, not a durable obligation of the kill).</summary>
+    private void PostShares(KillOutcome outcome)
+    {
+        if (outcome.SharesPosted || _loop == null) return;
+        outcome.SharesPosted = true;
+        foreach (var (member, exp) in outcome.Shares)
+        {
+            var role = member.Role;
+            bool Current() => role != null && ReferenceEquals(member.Role, role) && member.Progress != null
+                && member.Attachment?.Cancelled != true;
+            _loop.PostOwned(member, () => _character.AddExpAsync(member, exp, 0, Current), "party exp share");
+        }
     }
 
     /// <summary>FieldExpRates (inferred): an open-field monster (NPCConfig._iWildMonsters 1) pays the rate of the killer's level.</summary>
