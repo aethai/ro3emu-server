@@ -479,6 +479,7 @@ public sealed partial class DungeonService
         if (a.Dracula is { } dracula) snapshot.Vars.Add(dracula.Vars());
         if (FunctionButtons(a) is { } buttons) snapshot.Vars.Add(buttons);
         if (GuideWays(a) is { } ways) snapshot.Vars.Add(ways);
+        if (Resurrections(a) is { } revives) snapshot.Vars.Add(revives);
         if (a.Preparing)
         {
             // (inferred) The preparation phase is the map's initializing state, ending when the boss fight begins.
@@ -744,14 +745,26 @@ public sealed partial class DungeonService
     /// <summary>The run revives this role without using a count: OnClickRevive [0], or its timed [2,n] request pending.</summary>
     private static bool ReviveIsFree(Attempt a, long roleId) => ImmediateRevive(a) || a.AutoReviveAt.ContainsKey(roleId);
 
-    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance, as ReviveAsync reads it.</summary>
+    // A NoRevive boss room (Phantom Realm, TenGameplayBossConfig) refuses the dead player's own revive (ErrorCodeConfig
+    // 554 "Manual Revive is not allowed in this area"), not a teammate's: the boss's _iOriginalReviveNum plus the Divine
+    // Blessing's _iAddReviveNum is the party's count (Localization_en: "increases the number of party Revives available
+    // in the Dungeon"; ErrorCodeConfig 570 "Not enough party Revive attempts remaining"). The whole room shares it, one
+    // count per revive (inferred).
+    private static bool PartyRevives(Attempt a) => a.Plan.Boss != null && GameData.Int(a.Plan.Config, "_iReviveTrigger") == NoRevive;
+    private static int PartyRevivesLeft(Attempt a) => a.Plan.Boss is { } boss
+        ? Math.Max(0, (int)GameData.Int(boss, "_iOriginalReviveNum")) + BlessingRevives(a) - a.RevivesUsed.Values.Sum() : 0;
+    private const int NoRevive = 2; // Lua_GameDefine enum_ReviveTriggerType.NoRevive
+
+    /// <summary>All resurrection sources obey the active dungeon's click-revive allowance, as ReviveAsync reads it, or in
+    /// a NoRevive boss room the party's count.</summary>
     public int ExternalReviveError(GameSession s)
     {
         if (!s.Dead) return ErrorCodes.TargetAlive;
         if (s.DungeonAttempt == null) return 0;
         var a = Active(s);
-        return a == null || s.Role == null || a.Reviving.Contains(s)
-            || !ReviveIsFree(a, s.Role.Id) && a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
+        if (a == null || s.Role == null || a.Reviving.Contains(s)) return ErrorCodes.FeatureUnavailable;
+        if (PartyRevives(a)) return PartyRevivesLeft(a) > 0 ? 0 : ErrorCodes.PartyRevivesUsedUp;
+        return !ReviveIsFree(a, s.Role.Id) && a.RevivesUsed.GetValueOrDefault(s.Role.Id) >= ReviveLimit(a)
             ? ErrorCodes.FeatureUnavailable : 0;
     }
 
@@ -765,8 +778,23 @@ public sealed partial class DungeonService
         a.AutoReviveAt.Remove(s.Role.Id); // or the next death keeps this one's time (PlayerDiedAsync TryAdd)
     }
 
-    public Task PublishExternalReviveAsync(GameSession s) => s.Role != null && Active(s) is { } a
-        ? SendReviveInfoAsync(s, a) : Task.CompletedTask;
+    public async Task PublishExternalReviveAsync(GameSession s)
+    {
+        if (s.Role == null || Active(s) is not { } a) return;
+        await SendReviveInfoAsync(s, a);
+        if (Resurrections(a) is { } revives)
+            await BroadcastAsync(a, Event, new DungeonEventNotify
+            {
+                DungeonEntry = a.Plan.SceneEntry, EventType = (DungeonEventType)4, StageNum = a.Wave + 1, LevelNum = 1, Vars = { revives },
+            });
+    }
+
+    /// <summary>LC_DunGeon_VarDefine 140 CNumberOfResurrections: the party's count left, which the HUD shows as
+    /// "Revives Remaining: ${1}" (UI_Sys_Main_Team_ResurrectionsWidget, UIWords 56126). Without it the HUD keeps its
+    /// prefab's "10".</summary>
+    private static DungeonVar? Resurrections(Attempt a) => PartyRevives(a)
+        ? new DungeonVar { VarId = ResurrectionsVar, Vi64 = { PartyRevivesLeft(a) } } : null;
+    private const int ResurrectionsVar = 140;
 
     private async Task PlayerDiedAsync(GameSession s)
     {

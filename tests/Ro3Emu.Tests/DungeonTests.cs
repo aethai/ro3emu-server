@@ -281,7 +281,16 @@ public sealed partial class DungeonTests : IAsyncLifetime
         });
         var noRevive = await Next(bob, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => info.BDead);
         Assert.Equal(0, noRevive.ReviveTime);
-        Assert.Equal(ErrorCodes.FeatureUnavailable, Service<DungeonService>().ExternalReviveError(Session(bob)));
+        // NoRevive refuses Bob's own revive, not a teammate's: the boss's count is the party's.
+        Assert.Equal(0, Service<DungeonService>().ExternalReviveError(Session(bob)));
+        await OnLoop(() =>
+        {
+            var attempt = Session(bob).DungeonAttempt!;
+            attempt.RevivesUsed[Session(alice).Role!.Id] = (int)GameData.Int(attempt.Plan.Boss!.Value, "_iOriginalReviveNum");
+            Assert.Equal(ErrorCodes.PartyRevivesUsedUp, Service<DungeonService>().ExternalReviveError(Session(bob)));
+            attempt.RevivesUsed.Clear();
+            return Task.CompletedTask;
+        });
         await bob.SendGameAsync(CombatService.Relive, new EntityReliveReq());
         Assert.Equal(ErrorCodes.FeatureUnavailable,
             (await Next(bob, CombatService.Relive, EntityReliveAck.Parser)).Result);
