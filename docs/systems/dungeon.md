@@ -244,6 +244,11 @@ original-server encounter parity:
    Killing all configured actors before the time limit wins; timeout, surrender or defeat loses.
 5. For finite OnClickRevive counts, the boss's initial count is per participant. The existing map resurrection point,
    full HP and all-dead loss when no revival option remains are inferred. Scene 3120401 is explicitly NoRevive.
+   NoRevive refuses only the dead player's own revive (ErrorCodeConfig 554). In a boss room (Phantom Realm, every
+   TenGameplayBossConfig dungeon) a teammate's skill or item revive works while the party's count lasts: the boss's
+   `_iOriginalReviveNum` plus the Divine Blessing's `_iAddReviveNum` ("the number of party Revives available in the
+   Dungeon"), then ErrorCodeConfig 570 "Not enough party Revive attempts remaining". Sharing it across the whole room
+   and spending one per revive are inferred.
    The top-level automatic mode appears only in other gameplay types here; no script-only mode is given a generic
    self-revive bypass.
 6. Only the leader may surrender or reset. Reset requires settlement, repeats admission/readiness and creates a new
