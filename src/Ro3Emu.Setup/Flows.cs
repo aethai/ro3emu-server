@@ -126,9 +126,11 @@ internal static class Flows
     private static GameDataExport.Options ExportOptions(bool icons)
     {
         var last = Stopwatch.StartNew();
+        var language = TextLanguage();
         return new GameDataExport.Options
         {
-            Translations = Translations(),
+            Language = language,
+            Translations = Translations(language),
             TranslationQueue = SetupHome.RepositoryRoot() is { } repo ? Path.Combine(repo, "re", "loc", "translation_queue.tsv") : null,
             Log = SetupLog.Write,
             Progress = (stage, done, total) =>
@@ -153,7 +155,7 @@ internal static class Flows
         var result = GameDataExport.Run(client, dataDir, ExportOptions(icons));
         Ui.EndProgress();
         Ui.Ok($"exported in {Ui.Duration(watch.Elapsed)}: {result.ConfigTables} tables, {result.SceneEditor} maps, {result.Skills} skills, " +
-              $"{result.NavFiles} walk maps, {result.Messages} messages, {result.LocEntries} English texts");
+              $"{result.NavFiles} walk maps, {result.Messages} messages, {result.LocEntries} texts");
         if (icons) ReportIcons(result.Icons);
         if (result.FailedTables.Count > 0)
             Ui.Warn($"{result.FailedTables.Count} game table(s) could not be exported ({string.Join(", ", result.FailedTables.Take(5))}" +
@@ -162,11 +164,15 @@ internal static class Flows
         return result;
     }
 
-    /// <summary>Our translations, embedded in RO3Emu.exe, in file name order.</summary>
-    public static List<string> Translations()
+    /// <summary>The language of the in-game text map: "en" unless --lang (remembered in the settings) chose another.</summary>
+    internal static string TextLanguage() => LocMapBuilder.Supported(Settings.Load().Language) ?? LocMapBuilder.English;
+
+    /// <summary>Our translations into <paramref name="language"/>, embedded in RO3Emu.exe, in file name order.</summary>
+    public static List<string> Translations(string language = LocMapBuilder.English)
     {
         var assembly = Assembly.GetExecutingAssembly();
-        return [.. assembly.GetManifestResourceNames().Where(n => n.StartsWith("translations/", StringComparison.Ordinal)).Order(StringComparer.Ordinal)
+        var folder = language == LocMapBuilder.TraditionalChinese ? "translations-zhtw/" : "translations/";
+        return [.. assembly.GetManifestResourceNames().Where(n => n.StartsWith(folder, StringComparison.Ordinal)).Order(StringComparer.Ordinal)
             .Select(n =>
             {
                 using var reader = new StreamReader(assembly.GetManifestResourceStream(n)!);
@@ -182,6 +188,7 @@ internal static class Flows
         CheckClient(client, needExport: true);
         Ui.Ok("this game version works with RO3Emu");
         EnsureGameData(client, options.Reexport, !options.NoIcons);
+        EnsureLocMap(client, languageChangeOnly: true); // the text language may have changed since the export
 
         var gms = options.GmAccounts.ToList();
         if (host && gms.Count == 0 && Ui.Interactive)
@@ -455,22 +462,27 @@ internal static class Flows
     /// and the client had no English map: every string the client draws in Chinese stayed Chinese. Build the map alone
     /// from the player's own client when it is missing or older than the client's Localization chunks.
     /// </summary>
-    internal static void EnsureLocMap(string client)
+    /// <param name="languageChangeOnly">After an export: rebuild only when the map is in another language than the one asked
+    /// for (the export has just built the map from the same sources, with the developer queue the map-only build lacks).</param>
+    internal static void EnsureLocMap(string client, bool languageChangeOnly = false)
     {
         var map = Path.Combine(SetupHome.DataDir, "loc_en.tsv");
-        var sources = GameDataExport.LocSourceFiles(client);
-        if (File.Exists(map) && sources.All(s => File.Exists(s) && File.GetLastWriteTimeUtc(s) <= File.GetLastWriteTimeUtc(map))) return;
-        Ui.Step("English texts");
+        var language = TextLanguage();
+        var sources = GameDataExport.LocSourceFiles(client, language);
+        if (File.Exists(map) && LocMapBuilder.LanguageOf(map) == language
+            && (languageChangeOnly || sources.All(s => File.Exists(s) && File.GetLastWriteTimeUtc(s) <= File.GetLastWriteTimeUtc(map)))) return;
+        var name = language == LocMapBuilder.TraditionalChinese ? "Traditional Chinese" : "English";
+        Ui.Step($"{name} texts");
         try
         {
-            int entries = GameDataExport.WriteLocMap(client, map, new GameDataExport.Options { Translations = Translations(), Log = SetupLog.Write });
-            Ui.Ok($"{entries} English texts made from your game files");
+            int entries = GameDataExport.WriteLocMap(client, map, new GameDataExport.Options { Language = language, Translations = Translations(language), Log = SetupLog.Write });
+            Ui.Ok($"{entries} {name} texts made from your game files");
         }
         catch (Exception e) when (e is ExportException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            // English text is a comfort, not a requirement: joining still works with the client's own texts.
-            SetupLog.Write("English text map not built: " + e);
-            Ui.Warn("The English texts could not be made from your game files; some texts may stay in Chinese. " + e.Message);
+            // The translated text is a comfort, not a requirement: joining still works with the client's own texts.
+            SetupLog.Write($"{name} text map not built: " + e);
+            Ui.Warn($"The {name} texts could not be made from your game files; some texts may stay in Chinese. " + e.Message);
         }
     }
 

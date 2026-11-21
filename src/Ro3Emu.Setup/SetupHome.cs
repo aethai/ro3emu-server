@@ -70,6 +70,9 @@ internal sealed class Settings
 {
     public string? ClientDir { get; set; }
 
+    /// <summary>"en" (the default) or "zh-TW": the language of the in-game texts RO3Emu supplies (--lang).</summary>
+    public string? Language { get; set; }
+
     /// <summary>The highest publisher release installed into each folder: an older signed manifest is refused (no downgrade).</summary>
     public Dictionary<string, long> InstalledSequence { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
