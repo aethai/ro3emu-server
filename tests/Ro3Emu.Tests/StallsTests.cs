@@ -114,9 +114,9 @@ public sealed partial class StallsTests : IAsyncLifetime
 
     private async Task<byte[]> SaleMailParams(BotClient seller)
     {
-        var reply = await seller.MicroAsync("MailService", "getUserMailList", new() { ["Uid"] = Id(seller).ToString(), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
+        var reply = await seller.MicroAsync("MailService", "getUserMailList", new() { ["Uid"] = Id(seller).ToString(System.Globalization.CultureInfo.InvariantCulture), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
         var sale = Assert.IsType<object?[]>(reply["MailList"]).Select(raw => Assert.IsType<Dictionary<object, object?>>(Assert.IsType<Dictionary<object, object?>>(raw)["Params"]))
-            .Single(p => Convert.ToInt32(p["cfg_id"]) == 1029);
+            .Single(p => Convert.ToInt32(p["cfg_id"], System.Globalization.CultureInfo.InvariantCulture) == 1029);
         return Assert.IsType<byte[]>(sale["content_params"]);
     }
 
