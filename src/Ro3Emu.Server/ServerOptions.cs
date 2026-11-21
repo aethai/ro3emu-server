@@ -235,6 +235,14 @@ public sealed class ServerOptions
     public int ReconnectGraceSeconds { get; set; } = 60;
 
     /// <summary>
+    /// Seconds a scene load (a map change, a line switch, entering the world) may take before the role must reconnect
+    /// (SceneService.ExpireLineLoad). The client names no deadline, so the value is (inferred). It was 30, which dropped
+    /// slower PCs on a busy realm: a live server running a fork saw 615 such timeouts in a day at 30 s and none in its
+    /// first 112 loads at 90 s. Each timeout is logged with its map and the deadline.
+    /// </summary>
+    public int SceneLoadTimeoutSeconds { get; set; } = 90;
+
+    /// <summary>
     /// TEST AID, not original behaviour: Survivor Battle (match entry 2) starts with this many entrants in teams of
     /// <see cref="ChickenTestTeamSize"/> instead of EatChickenMatchConfig's 100 in teams of 5 (the client gives no sign of
     /// server-side filler bots). 0 keeps the config. GM "!chicken shape" sets the same in memory.

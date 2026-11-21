@@ -137,7 +137,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             throw;
         }
         var destination = reservation?.Map ?? RuntimeMapKey.Private(scene, instanceId);
-        var handoff = new SceneHandoff(++s.SceneGeneration, destination, clock.GetUtcNow().AddSeconds(30), reservation)
+        var handoff = new SceneHandoff(++s.SceneGeneration, destination, clock.GetUtcNow().AddSeconds(LoadTimeoutSeconds), reservation)
         { AdmissionValid = transfer?.Valid };
         s.Handoff = handoff;
         bool CurrentTransfer() => s.Handoff == handoff && !s.SceneRecoveryRequired

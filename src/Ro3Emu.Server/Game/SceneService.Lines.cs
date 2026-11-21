@@ -61,13 +61,20 @@ public sealed partial class SceneService
         lines.Release(s);
     }
 
-    /// <summary>(inferred) Bounded 30-second load timeout; reconnect chooses a new valid line.
-    /// Never reuse a cancelled same-config handshake: 30005 cannot identify its old line.</summary>
+    /// <summary>ServerOptions.SceneLoadTimeoutSeconds, at least 10.</summary>
+    private int LoadTimeoutSeconds => Math.Max(10, options.Value.SceneLoadTimeoutSeconds);
+
+    /// <summary>(inferred) Bounded load timeout (ServerOptions.SceneLoadTimeoutSeconds); reconnect chooses a new valid
+    /// line. Never reuse a cancelled same-config handshake: 30005 cannot identify its old line.</summary>
     public void ExpireLineLoad(GameSession s)
     {
         // A completing handoff (the client acknowledged the load; its hooks are still running) does not expire: forcing a
         // reconnect then would drop a player who did load, whenever the hooks outlast the deadline (C/D 16).
-        if (s.Handoff is { Completing: false } pending && clock.GetUtcNow() >= pending.Deadline) RequireReconnect(s, pending);
+        if (s.Handoff is { Completing: false } pending && clock.GetUtcNow() >= pending.Deadline)
+        {
+            LogLoadTimedOut(log, s.Role?.Id ?? 0, pending.Destination.SceneEntry, LoadTimeoutSeconds);
+            RequireReconnect(s, pending);
+        }
     }
 
     public async Task LineCommandAsync(GameSession s, string[] args)
@@ -87,4 +94,7 @@ public sealed partial class SceneService
         }
         await SwitchLineAsync(s, new SwitchSceneLineReq { Linenum = int.Parse(args[0]), ESource = SwitchSceneSourceType.SwitchSceneSourceManual });
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Role {Role} did not finish loading scene {Scene} within {Seconds} s; it must reconnect (Ro3Emu:SceneLoadTimeoutSeconds)")]
+    private static partial void LogLoadTimedOut(ILogger logger, long role, long scene, int seconds);
 }

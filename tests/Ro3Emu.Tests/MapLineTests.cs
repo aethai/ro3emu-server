@@ -186,7 +186,11 @@ public sealed class MapLineTests : IAsyncLifetime
         var old = a.Handoff!;
         await OnLoop(() =>
         {
+            // Ro3Emu:SceneLoadTimeoutSeconds, 90 by default: a slow load past 30 s still finishes.
             _clock.Offset = TimeSpan.FromSeconds(31);
+            Service<SceneService>().ExpireLineLoad(a);
+            Assert.False(a.SceneRecoveryRequired);
+            _clock.Offset = TimeSpan.FromSeconds(91);
             Service<SceneService>().ExpireLineLoad(a);
             Assert.True(a.SceneRecoveryRequired);
             Assert.Null(Service<PublicLineManager>().Reserved(a));
