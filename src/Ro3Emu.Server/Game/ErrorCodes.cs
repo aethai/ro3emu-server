@@ -158,6 +158,7 @@ public static class ErrorCodes
     public const int ReviveInvitationExpired = 563; // "The Revive invitation you sent has expired."
     public const int SkillReviveNotAllowed = 566; // "Skill-based Revive is not allowed in this area."
     public const int ItemReviveNotAllowed = 567; // "Item-based Revive is not allowed in this area."
+    public const int PartyRevivesUsedUp = 570;   // "Not enough party Revive attempts remaining"
     public const int ReviveHelpCooldown = 571;  // "Revive requests are on cooldown."
     public const int ReviveNotAwaited = 572;    // "This player is not awaiting Revive"
 
