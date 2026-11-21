@@ -260,19 +260,18 @@ public sealed partial class StallsService
                 if (tax > 0) tx.Economy.Sink(new(EconomyAssetKind.Currency, offer.Currency), tax, EconomyReason.StallTax,
                     EconomyCompartment.Currency, new(EconomyOwnerKind.Role, buyer.RoleId.ToString(CultureInfo.InvariantCulture)));
                 long net = gross - tax;
-                if (net > 0) tx.DeliverMail(row.Owner, (int)Param("StallsSellItemMailId", 1029),
-                    currency: new Dictionary<int, long> { [offer.Currency] = net }, contentParams:
-                    [_data.ItemName(bought.Entry), req.Num.ToString(CultureInfo.InvariantCulture), s.Role.Name,
-                        DateTimeOffset.FromUnixTimeSeconds(Now).UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                        tax.ToString(CultureInfo.InvariantCulture), net.ToString(CultureInfo.InvariantCulture)]); // (inferred) UTC display format.
-                row.Gains[offer.Currency] = checked(row.Gains.GetValueOrDefault(offer.Currency) + net);
-                meta.WeekMoney.Value = checked(meta.WeekMoney.Value + gross);
-                row.TaxRate = TaxRate(meta.WeekMoney.Value);
                 var record = new StallsRecord
                 {
                     ItemEntryID = bought.Entry, ItemNum = req.Num, Buytime = Now, Tradetax = tax,
                     Gainmoney = net, Areaid = s.Role.Area, Buyerid = s.Role.Id, Buyername = s.Role.Name, CoinEntryID = offer.Currency
                 };
+                // The client decodes mail 1029's content_params as this StallsRecord; a LanguageData payload fails in
+                // ParseMailInfo ("itemEntryID: varint expected, got bytes") and the whole mail is dropped from the list.
+                if (net > 0) tx.DeliverMailRaw(row.Owner, (int)Param("StallsSellItemMailId", 1029), record.ToByteArray(),
+                    new Dictionary<int, long> { [offer.Currency] = net });
+                row.Gains[offer.Currency] = checked(row.Gains.GetValueOrDefault(offer.Currency) + net);
+                meta.WeekMoney.Value = checked(meta.WeekMoney.Value + gross);
+                row.TaxRate = TaxRate(meta.WeekMoney.Value);
                 row.Records.Insert(0, record.ToByteArray());
                 if (row.Records.Count > Param("StallsLogsNumMax", 100)) row.Records.RemoveAt(row.Records.Count - 1);
                 if (offer.Item.Stack == 0) row.Stock.Remove(offer);

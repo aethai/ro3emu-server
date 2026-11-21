@@ -253,7 +253,8 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
 
     /// <summary>Caller-side market capture; the builder guards the original mailbox and stages the new blob.</summary>
     internal string DeliverMarket(RoleItemPlanBuilder transaction, DateTimeOffset now, long role, int templateId,
-        IEnumerable<InvItem>? items, IReadOnlyDictionary<int, long>? currency, string[] contentParams)
+        IEnumerable<InvItem>? items, IReadOnlyDictionary<int, long>? currency, string[] contentParams,
+        byte[]? rawContentParams = null)
     {
         if (role <= 0 || !MarketTemplates.Contains(templateId) || data.Row("MailConfig", templateId) == null)
             throw new ArgumentOutOfRangeException(nameof(templateId));
@@ -272,7 +273,9 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         {
             Id = id, TemplateId = templateId, Sender = "", CreatedTime = now.ToUnixTimeSeconds(),
             RemoveTime = attached.Count > 0 || amounts.Count > 0 ? 0 : now.AddDays(30).ToUnixTimeSeconds(),
-            Items = attached, Currency = amounts, ContentParams = EncodeLanguageData([.. contentParams.Cast<object>()]),
+            Items = attached, Currency = amounts,
+            // Stall sale mail 1029 carries a StallsRecord (the client decodes it as one), not LanguageData.
+            ContentParams = rawContentParams ?? EncodeLanguageData([.. contentParams.Cast<object>()]),
         });
         transaction.RoleBlob(role, "mailbox", JsonSerializer.SerializeToUtf8Bytes(box));
         return id;
