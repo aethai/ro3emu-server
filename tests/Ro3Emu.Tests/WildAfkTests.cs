@@ -277,8 +277,11 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.Equal(info.CurrentSnapshot.All, saved.Info.CurrentSnapshot);
     }
 
-    [ClientDataFact]
-    public async Task ManualFieldKillUsesReducedExpAndBonusKillUsesConfiguredHigherTable()
+    [ClientDataTheory]
+    [InlineData(0, true, 207)]
+    [InlineData(10, true, 235)] // 207 + floor(207 * 14%)
+    [InlineData(11, false, 24)] // 21 + floor(21 * 16%)
+    public async Task FieldKillAppliesTheStatueOnlyInAutoBattle(int statueLevel, bool bonusTime, int expectedAutoExp)
     {
         await using var bot = await InWorld();
         await Eligible(bot);
@@ -309,12 +312,20 @@ public sealed class WildAfkTests : IAsyncLifetime
         }
 
         Assert.Equal(37, await State(bot, s => s.Progress!.Level));
+        await OnLoop(() =>
+        {
+            Session(bot).OdinStatue!.CurLv = statueLevel;
+            return Task.CompletedTask;
+        });
         int reduced = await KillYoyoAndReadExp(1);
         Assert.Equal(21, reduced); // NPCDropConfig env 0: item 100 x30, corrected by 70%.
+        if (!bonusTime)
+        {
+            await bot.SendGameAsync(WildAfkService.Pause, new PauseHighMultiplierTimeReq());
+            Assert.Equal(0, (await Next(bot, WildAfkService.Pause, PauseHighMultiplierTimeRsp.Parser)).Result);
+        }
         await Auto(bot, true);
-        int bonus = await KillYoyoAndReadExp(2);
-        Assert.Equal(207, bonus); // NPCDropConfig env 1: item 100 x296, same correction.
-        Assert.True(bonus > reduced);
+        Assert.Equal(expectedAutoExp, await KillYoyoAndReadExp(2));
     }
 
     private Task RunningClock(BotClient bot) => OnOwnedLoop(bot, "AFK running fixture", _ =>

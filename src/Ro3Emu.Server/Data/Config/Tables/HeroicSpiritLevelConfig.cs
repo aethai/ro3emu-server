@@ -8,4 +8,5 @@ public readonly partial record struct HeroicSpiritLevelConfig(JsonElement Row)
 {
     [ConfigField("_iExp")] public partial long Exp { get; }
     [ConfigField("_iLevel")] public partial long Level { get; }
+    [ConfigField("_kAttributes")] public partial (long Id, double Value)[] Attributes { get; }
 }

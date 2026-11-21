@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -12,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// with Einherjar Coins. 83490 enters a layer's dungeon (DungeonService runs it; the clear is recorded with its
 /// _iPassReward, see DungeonService.Obligations), 83491 prays, 5046 DBHeroicSpiritInfo shows both
 /// (lua-src Logic/Asset/LC_DAL_Valhalla.lua). The statue is role blob "heroic_spirit" (DBOdinStatue).
-/// Not done: the statue's attribute 4008 "Field Auto-Battle EXP Bonus" has no consumer in this server.
+/// The statue's cumulative Field Auto-Battle EXP Bonus is applied by RewardService.
 /// </summary>
 public sealed class ValhallaService
 {
@@ -20,7 +21,7 @@ public sealed class ValhallaService
     public const int Function = 96;
     // ErrorCodeConfig 7101-7108 (texts proven; which request answers which is inferred). 7107 is ErrorCodes.DungeonBusy.
     public const int ErrDone = 7101, ErrCoins = 7102, ErrNoLayer = 7103, ErrPrevious = 7104, ErrLevel = 7105, ErrConfig = 7108;
-    private const int GamePlayType = 23;
+    private const int GamePlayType = 23, FieldAutoBattleExp = 4008;
 
     private readonly GameData _data;
     private readonly DungeonCatalog _catalog;
@@ -44,6 +45,20 @@ public sealed class ValhallaService
 
     private int Param(string key, int fallback) => _data.Table("PublicParamConfig").TryGetValue(key, out var row)
         ? (int)(GameData.Number(row) ?? fallback) : fallback;
+
+    // HeroicSpiritLevelConfig._kAttributes gives each level's increment in ten-thousandths.
+    internal static Dictionary<long, long> FieldExpBonuses(GameData data)
+    {
+        Dictionary<long, long> rates = [];
+        long total = 0;
+        foreach (var row in HeroicSpiritLevelConfig.All(data).OrderBy(row => row.Level))
+        {
+            foreach (var (id, value) in row.Attributes)
+                if (id == FieldAutoBattleExp) total += (long)value;
+            rates[row.Level] = total;
+        }
+        return rates;
+    }
 
     // ------------------------------------------------------------------ state / 5046
 

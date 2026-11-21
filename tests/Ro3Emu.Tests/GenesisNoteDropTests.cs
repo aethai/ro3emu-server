@@ -213,7 +213,7 @@ public sealed partial class GenesisNoteDropTests
         {
             session.AutoBattle = true;
             var monsters = host.Service<World>().UnitsIn(session.WorldScene).OfType<MonsterUnit>()
-                .Where(m => afk.IsExplorationHunt(session, m)).Take(7).ToArray();
+                .Where(m => afk.IsFieldAutoBattle(session, m)).Take(7).ToArray();
             Assert.Equal(7, monsters.Length);
             session.AutoBattle = false;
             await rewards.PrepareKilledAsync(session, monsters[0]);

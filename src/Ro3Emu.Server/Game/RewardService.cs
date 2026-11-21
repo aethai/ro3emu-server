@@ -19,7 +19,7 @@ namespace Ro3Emu.Server.Game;
 public sealed class RewardService
 {
     internal ExplorationNoteDrops? ExplorationNotes { get; set; }
-    internal Func<GameSession, MonsterUnit, bool>? IsExplorationHunt { get; set; }
+    internal Func<GameSession, MonsterUnit, bool>? IsFieldAutoBattle { get; set; }
     internal Func<GameSession, Task>? SyncExplorationRestriction { get; set; }
 
     private const int BaseExpItem = 100, JobExpItem = 101;
@@ -31,6 +31,7 @@ public sealed class RewardService
     private readonly ILogger<RewardService> _log;
     private Random _random = new();
     private Dictionary<int, long>? _expCorrection;
+    private readonly Dictionary<long, long> _statueFieldExp;
     private readonly DropAttenuation _attenuation;
     private readonly FieldExpRule[] _configuredFieldExp; // Ro3Emu:FieldExpRates (inferred), empty unless an operator set it
     private volatile FieldExpRule[] _fieldExp; // the rules in force: the configured ones until a GM changes them
@@ -52,6 +53,7 @@ public sealed class RewardService
         GameLoop? loop = null, Microsoft.Extensions.Options.IOptions<ServerOptions>? options = null)
     {
         _fieldExp = _configuredFieldExp = FieldExpRates.Valid(options?.Value);
+        _statueFieldExp = ValhallaService.FieldExpBonuses(data);
         _loop = loop;
         _partyShare = options?.Value.PartyExpShare is { Enabled: true } share ? share : null;
         this._character = character;
@@ -115,12 +117,13 @@ public sealed class RewardService
             if (_outcomes.TryGetValue(monster, out var stale) && stale.Role.Id != role.Id) _outcomes.Remove(monster);
             if (!_outcomes.TryGetValue(monster, out var outcome))
             {
-                var (drops, baseExp, jobExp) = ResolveKill(player, monster, bonus);
+                bool fieldAutoBattle = IsFieldAutoBattle?.Invoke(player, monster) == true;
+                var (drops, baseExp, jobExp) = ResolveKill(player, monster, bonus, fieldAutoBattle);
                 // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
                 drops = PassPrivileges.BoostDrops(_data, player, drops);
                 outcome = new KillOutcome { Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp };
                 ShareWithParty(player, outcome);
-                if (IsExplorationHunt?.Invoke(player, monster) == true) outcome.Note = ExplorationNotes?.Choose(player);
+                if (fieldAutoBattle) outcome.Note = ExplorationNotes?.Choose(player);
                 _outcomes.Add(monster, outcome);
             }
             _character.StageKillTaskObligations?.Invoke(player, monster, settlement);
@@ -179,7 +182,7 @@ public sealed class RewardService
         }
     }
 
-    internal (List<(int Entry, int Count)> Items, long BaseExp, long JobExp) ResolveKill(GameSession player, MonsterUnit monster, bool bonus)
+    internal (List<(int Entry, int Count)> Items, long BaseExp, long JobExp) ResolveKill(GameSession player, MonsterUnit monster, bool bonus, bool fieldAutoBattle = false)
     {
         if (ResolveKillForTest != null) return ResolveKillForTest(player, monster);
         // Team-boss personal awards have their own durable dungeon obligation; ordinary loot stays empty.
@@ -200,6 +203,8 @@ public sealed class RewardService
             baseExp = baseExp * Correction((int)Math.Clamp(gap, -200, 200)) / 10000;
             baseExp = Math.Max(1, baseExp * _teams.ExpBonus(player) / 10000);
             baseExp = ScaleFieldExp(monster.Template.NpcId, player.Progress!.Level, baseExp);
+            if (fieldAutoBattle && player.OdinStatue is { CurLv: > 0 } statue)
+                baseExp += baseExp * _statueFieldExp.GetValueOrDefault(statue.CurLv) / 10000;
         }
         // BaseExpAddConfig catch-up below the server level (CharacterService.LevelRules).
         baseExp = _character.WithPursueBonus(player.Progress!.Level, baseExp);
