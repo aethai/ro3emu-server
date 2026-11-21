@@ -530,9 +530,10 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     /// <summary>A monster no player shows that has nothing in progress: no walk, fight, march, return, timed slow or
     /// companion. Its tick changes nothing but the roam clock, so the map skips the rest (a field map holds ~1500
     /// monsters and keeps ticking after its players leave).</summary>
-    public bool Dormant(MonsterUnit m) => m.Dead || m.Hp <= 0
-        || !m.Moving && m.Target == null && m.PetTarget == null && m.March == null && !m.Returning
-            && m.SlowMovementExpireMs == 0 && (_companionTargets.Count == 0 || !_companionTargets.ContainsKey(m));
+    public bool Dormant(MonsterUnit monster) => monster.Dead || monster.Hp <= 0
+        || !monster.Moving && monster.Target == null && monster.PetTarget == null && monster.March == null
+            && !monster.Returning && monster.SlowMovementExpireMs == 0
+            && (_companionTargets.Count == 0 || !_companionTargets.ContainsKey(monster));
 
     /// <summary>Moves the roam clock on when it is due; true when the monster may roam now.</summary>
     private bool ScheduleRoam(MonsterUnit m, long now)
