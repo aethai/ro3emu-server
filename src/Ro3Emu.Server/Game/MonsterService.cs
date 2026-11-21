@@ -308,8 +308,12 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         state.Deadlines.Add((_loop.Now + delay, work));
 
     /// <summary>Owned deadlines can be dropped immediately when a runtime retires.</summary>
+    // MonsterService.Tick(GameTime) stamps it once per loop tick for the dormant path of the map ticks.
+    private long _tickNowMs = NowMs;
+
     public void Tick(GameTime time)
     {
+        _tickNowMs = NowMs;
         // The capture of each state lives in RunDue: a lambda over the loop variable here allocated a closure for
         // every spawn state on every tick, due or not.
         List<SpawnState>? ready = null;
@@ -450,8 +454,9 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         if (m.Viewers.Count == 0 && Dormant(m))
         {
-            // Nothing below acts for it: only the roam clock runs, as it would (see the end of this method).
-            if (!m.Dead && m.Hp > 0 && m.Template.RoamDistance > 0) ScheduleRoam(m, NowMs);
+            // Nothing below acts for it: only the roam clock runs, as it would (see the end of this method). It reads
+            // the loop tick's time: a clock read per monster was half the cost of a map nobody is on.
+            if (_tickNowMs >= m.NextRoamMs && !m.Dead && m.Hp > 0 && m.Template.RoamDistance > 0) ScheduleRoam(m, _tickNowMs);
             return;
         }
         if (m.RuntimeMap.Kind == RuntimeMapKind.PublicLine
@@ -525,7 +530,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     /// <summary>A monster no player shows that has nothing in progress: no walk, fight, march, return, timed slow or
     /// companion. Its tick changes nothing but the roam clock, so the map skips the rest (a field map holds ~1500
     /// monsters and keeps ticking after its players leave).</summary>
-    private bool Dormant(MonsterUnit m) => m.Dead || m.Hp <= 0
+    public bool Dormant(MonsterUnit m) => m.Dead || m.Hp <= 0
         || !m.Moving && m.Target == null && m.PetTarget == null && m.March == null && !m.Returning
             && m.SlowMovementExpireMs == 0 && (_companionTargets.Count == 0 || !_companionTargets.ContainsKey(m));
 

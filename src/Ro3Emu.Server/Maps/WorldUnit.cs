@@ -45,6 +45,9 @@ public abstract class WorldUnit
     /// <summary>Called by the map's tick (AI, regeneration...).</summary>
     public virtual void Tick(MapInstance map, GameTime time) { }
 
+    /// <summary>Its tick has nothing to do while no player is on its map (<see cref="MapInstance.Tick"/>).</summary>
+    internal virtual bool Resting => false;
+
     public Vec3 Pos => new() { X = X, Y = Y, Z = Z };
 }
 
@@ -77,6 +80,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
 
     internal void Add(WorldUnit unit)
     {
+        _resting = false;
         _units.Add(unit);
         _members.Add(unit);
         unit.Cell = CellOf(unit.X, unit.Z);
@@ -133,13 +137,33 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
     // The tick's snapshot (a unit's tick may spawn or remove units), reused so a tick allocates nothing.
     private readonly List<WorldUnit> _ticking = [];
 
+    /// <summary>Ticks of a map nobody is on between two passes over its resting units: once a second at 20 Hz.</summary>
+    internal const int RestingTickEvery = 20;
+    private bool _resting;
+    private int _skipped;
+
+    /// <summary>
+    /// A field map keeps its monsters after its players leave, so a server ends up ticking every map anyone visited.
+    /// While no player is on the map and every unit rested after the last pass, the map wakes once a second; that
+    /// pass only moves the monsters' roam clocks (MonsterService.Dormant). A unit added or a player arriving makes it
+    /// tick every time again. (inferred: no client shows such a map, the original server's schedule is unknown)
+    /// </summary>
     public void Tick(GameTime time)
     {
+        bool unseen = !world.HasPlayers(sceneEntry);
+        if (unseen && _resting && ++_skipped < RestingTickEvery) return;
+        _skipped = 0;
+        bool resting = unseen;
         _ticking.AddRange(_units);
         try
         {
-            foreach (var unit in _ticking) unit.Tick(this, time);
+            foreach (var unit in _ticking)
+            {
+                unit.Tick(this, time);
+                if (resting) resting = unit.Resting;
+            }
         }
         finally { _ticking.Clear(); }
+        _resting = resting;
     }
 }
