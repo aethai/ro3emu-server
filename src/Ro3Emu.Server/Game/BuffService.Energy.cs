@@ -207,9 +207,13 @@ public sealed partial class BuffService
         await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)2);
     }
 
+    /// <summary>Auto-recovery (EnergyConfig _iAutoRecoverInterval/_iAutoRecoverValue) changes only this role's in-memory
+    /// meters, so its notices go out under the role's own reservation, one job for every meter that recovered this tick.
+    /// As a realm job each recovery stopped the whole loop (#484: 4,029 realm holds in 27 minutes with 5 players).</summary>
     private void TickEnergy(GameSession p, long now)
     {
         if (p.Role == null) return;
+        List<int>? recovered = null;
         foreach (var (id, meter) in p.Energy)
         {
             if (meter.NextRecoverMs == 0 || meter.NextRecoverMs > now || _data.Row("EnergyConfig", id) is not { } row) continue;
@@ -220,11 +224,19 @@ public sealed partial class BuffService
             meter.Value = Math.Clamp(meter.Value + ticks * change, 0, GameData.Int(row, "_iLimitValue"));
             meter.LastRecoverMs = meter.NextRecoverMs + (ticks - 1) * interval;
             meter.NextRecoverMs += ticks * interval;
-            _loop.TrackLegacyDetached("energy recovery send", () => SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)1));
+            (recovered ??= []).Add(id);
         }
+        if (recovered != null) _loop.PostOwned(p, () => SendRecoveredAsync(p, recovered), "energy recovery send");
     }
 
-    private async Task SendEnergyAsync(GameSession p, int id, EPlayerEnergyChangeReason reason)
+    private async Task SendRecoveredAsync(GameSession p, List<int> ids)
+    {
+        foreach (int id in ids)
+            if (p.Energy.ContainsKey(id)) await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)1, notifyChanged: false);
+        foreach (var handler in Changed) await handler(p);
+    }
+
+    private async Task SendEnergyAsync(GameSession p, int id, EPlayerEnergyChangeReason reason, bool notifyChanged = true)
     {
         var meter = p.Energy[id];
         await p.SendGameAsync(EnergyNotify, new PlayerEnergyNotify
@@ -232,6 +244,6 @@ public sealed partial class BuffService
             EnergyConfigId = id, EnergyValue = meter.Value, ChangeReason = reason,
             LastRecoverTimeMs = meter.LastRecoverMs, NextRecoverTimeMs = meter.NextRecoverMs,
         });
-        foreach (var handler in Changed) await handler(p);
+        if (notifyChanged) foreach (var handler in Changed) await handler(p);
     }
 }
