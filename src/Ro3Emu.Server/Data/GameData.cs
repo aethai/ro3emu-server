@@ -17,6 +17,9 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
 {
     private readonly Dictionary<string, Dictionary<string, JsonElement>> _tables = [];
     private readonly object _sync = new();
+    // SkillTemplate by script show: a cast asks for its template on every hit moment and target (#484), and the lookup built
+    // its table key and an enumerator each time. Templates never change once loaded.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement?> _skillTemplates = new();
     private volatile Dictionary<long, string>? _texts;
     private volatile FrozenDictionary<string, Dictionary<string, JsonElement>>? _frozen;
 
@@ -184,7 +187,10 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     /// A skill template (Config/Skill/skill_<scriptShow>.lua exported to data/skills): m_fAtkRange (m), m_fTotalTime (s),
     /// m_kAtkPoints (hit moments in s on the template timeline).
     /// </summary>
-    public JsonElement? SkillTemplate(long scriptShow)
+    public JsonElement? SkillTemplate(long scriptShow) =>
+        _skillTemplates.TryGetValue(scriptShow, out var known) ? known : _skillTemplates.GetOrAdd(scriptShow, LoadSkillTemplate(scriptShow));
+
+    private JsonElement? LoadSkillTemplate(long scriptShow)
     {
         string key = "skills/skill_" + scriptShow;
         if (_frozen is { } frozen && frozen.TryGetValue(key, out var hit)) return hit.Values.Cast<JsonElement?>().FirstOrDefault();

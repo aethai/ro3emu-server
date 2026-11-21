@@ -225,6 +225,29 @@ public sealed class SkillBuffTests : IAsyncLifetime
         Assert.False(session.Energy.ContainsKey(540001));
     }
 
+    /// <summary>EnergyConfig 540001 recovers 1 every 7.5 s (_iAutoRecoverInterval 7500). Recovery changes only the role's own
+    /// meter, so its notice is the role's own job: as a realm job each one stopped the whole loop (#484).</summary>
+    [ClientDataFact]
+    public async Task AutoRecoveryReachesTheMeterWithoutARealmHold()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!job 5400");
+        var session = Session("alice");
+        await Next(alice, BuffService.EnergyNotify, PlayerEnergyNotify.Parser, x => x.EnergyConfigId == 540001);
+        var skill = _app.Services.GetRequiredService<GameData>().Row("SkillConfig", 1530101)!.Value;
+        await Run(() => Buffs.SpendEnergyAsync(session, skill));
+        await Next(alice, BuffService.EnergyNotify, PlayerEnergyNotify.Parser, x => x.EnergyConfigId == 540001 && x.EnergyValue == 1);
+
+        var recovered = PlayerEnergyNotify.Parser.ParseFrom((await alice.Inbox.WaitAsync(e => e.IsGame(BuffService.EnergyNotify) &&
+            PlayerEnergyNotify.Parser.ParseFrom(e.Body) is { EnergyConfigId: 540001, EnergyValue: 2 }, TimeSpan.FromSeconds(15))).Body);
+        Assert.Equal((EPlayerEnergyChangeReason)1, recovered.ChangeReason);
+        Assert.Equal(2, session.Energy[540001].Value);
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var report = System.Text.Json.JsonSerializer.SerializeToNode(
+            await loop.InvokeAsync(() => Task.FromResult(loop.Owners!.Snapshot())))!;
+        Assert.False(report["realmByOrigin"]!.AsObject().ContainsKey("timer/energy recovery send"), report.ToJsonString());
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
