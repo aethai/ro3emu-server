@@ -112,6 +112,14 @@ public sealed partial class StallsTests : IAsyncLifetime
         })];
     }
 
+    private async Task<byte[]> SaleMailParams(BotClient seller)
+    {
+        var reply = await seller.MicroAsync("MailService", "getUserMailList", new() { ["Uid"] = Id(seller).ToString(System.Globalization.CultureInfo.InvariantCulture), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
+        var sale = Assert.IsType<object?[]>(reply["MailList"]).Select(raw => Assert.IsType<Dictionary<object, object?>>(Assert.IsType<Dictionary<object, object?>>(raw)["Params"]))
+            .Single(p => Convert.ToInt32(p["cfg_id"], System.Globalization.CultureInfo.InvariantCulture) == 1029);
+        return Assert.IsType<byte[]>(sale["content_params"]);
+    }
+
     private async Task Claim(BotClient bot, params int[] templates)
     {
         var mail = (await Mail(bot, Id(bot))).Where(m => !m.Claimed && templates.Contains(m.Template) && m.Items.Items.Count > 0).ToList();
@@ -354,6 +362,9 @@ public sealed partial class StallsTests : IAsyncLifetime
         Assert.Equal(42, received.Attrs![999]); Assert.Equal("history", received.StringAttrs![510]);
         Assert.Equal(5, received.Enchantments[7].Attr[103]); Assert.Equal(123, received.Enchantments[7].GetTime);
         Assert.Equal(2, received.BindType); Assert.NotEqual(guid, received.Guid);
+        var sale = StallsRecord.Parser.ParseFrom(await SaleMailParams(seller)); // the client reads mail 1029 as a StallsRecord
+        Assert.Equal((1000100, 1, Id(buyer), "Buyer", 2), (sale.ItemEntryID, sale.ItemNum, sale.Buyerid, sale.Buyername, sale.CoinEntryID));
+        Assert.Equal(9100, sale.Gainmoney); Assert.Equal(900, sale.Tradetax);
         await Claim(seller, 1029); Assert.Equal(9100, Money(seller, 2));
         await seller.SendGameAsync(StallsService.End, new PlayerStallsEndReq());
         Assert.Equal(0, (await Next(seller, StallsService.End, PlayerStallsEndResp.Parser)).Result);

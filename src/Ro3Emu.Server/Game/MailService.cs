@@ -227,8 +227,21 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
 
     // Award letters (1042/1045) written before 11.10 carry the currency, tab and item as strings; the client decoder
     // reads integers and logs a Lua error per letter on every mail sync. Without parameters it shows the bare text.
-    internal static bool LegacyAwardParams(Letter mail) => mail.TemplateId is 1042 or 1045
-        && LanguageData.Parser.ParseFrom(mail.ContentParams).Param.Any(p => p.Tp != LanguageParamType.Int);
+    // Stall sale letters (1029) written before #480 carry six LanguageData strings; the client reads 1029 as a
+    // StallsRecord, fails in ParseMailInfo and drops the whole row, zeny included. Without parameters the row shows
+    // and its zeny can be claimed. A StallsRecord has no length-delimited field 1, so it parses to no LanguageData params.
+    internal static bool LegacyAwardParams(Letter mail) => mail.TemplateId switch
+    {
+        1042 or 1045 => LanguageData.Parser.ParseFrom(mail.ContentParams).Param.Any(p => p.Tp != LanguageParamType.Int),
+        1029 => LegacyStallSale(mail.ContentParams),
+        _ => false,
+    };
+
+    private static bool LegacyStallSale(byte[]? contentParams)
+    {
+        try { return LanguageData.Parser.ParseFrom(contentParams).Param.Count > 0; }
+        catch (InvalidProtocolBufferException) { return false; }
+    }
 
     private static byte[]? EncodeLanguageData(object[] values)
     {
@@ -253,7 +266,8 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
 
     /// <summary>Caller-side market capture; the builder guards the original mailbox and stages the new blob.</summary>
     internal string DeliverMarket(RoleItemPlanBuilder transaction, DateTimeOffset now, long role, int templateId,
-        IEnumerable<InvItem>? items, IReadOnlyDictionary<int, long>? currency, string[] contentParams)
+        IEnumerable<InvItem>? items, IReadOnlyDictionary<int, long>? currency, string[] contentParams,
+        byte[]? rawContentParams = null)
     {
         if (role <= 0 || !MarketTemplates.Contains(templateId) || data.Row("MailConfig", templateId) == null)
             throw new ArgumentOutOfRangeException(nameof(templateId));
@@ -272,7 +286,9 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
         {
             Id = id, TemplateId = templateId, Sender = "", CreatedTime = now.ToUnixTimeSeconds(),
             RemoveTime = attached.Count > 0 || amounts.Count > 0 ? 0 : now.AddDays(30).ToUnixTimeSeconds(),
-            Items = attached, Currency = amounts, ContentParams = EncodeLanguageData([.. contentParams.Cast<object>()]),
+            Items = attached, Currency = amounts,
+            // Stall sale mail 1029 carries a StallsRecord (the client decodes it as one), not LanguageData.
+            ContentParams = rawContentParams ?? EncodeLanguageData([.. contentParams.Cast<object>()]),
         });
         transaction.RoleBlob(role, "mailbox", JsonSerializer.SerializeToUtf8Bytes(box));
         return id;
