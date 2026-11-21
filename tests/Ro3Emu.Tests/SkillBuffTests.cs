@@ -248,6 +248,23 @@ public sealed class SkillBuffTests : IAsyncLifetime
         Assert.False(report["realmByOrigin"]!.AsObject().ContainsKey("timer/energy recovery send"), report.ToJsonString());
     }
 
+    // #484: a role's buff that runs out was removed by a realm job, so every expiry stopped the whole loop.
+    [ClientDataFact]
+    public async Task AnExpiredBuffIsRemovedWithoutARealmHold()
+    {
+        await using var alice = await InWorld("Alice");
+        var session = Session("alice");
+        await Run(() => Buffs.AddAsync(session, 1120801, 300, session.Role!.Id));
+        long guid = (await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, x => x.Buffs.Any(b => b.ConfigId == 1120801)))
+            .Buffs.Single().BuffGuid;
+        Assert.Contains(guid, (await Next(alice, BuffService.BuffRemove, BuffRemoveNotify.Parser)).BuffGuids);
+        Assert.DoesNotContain(session.Buffs, b => b.Guid == guid);
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var report = System.Text.Json.JsonSerializer.SerializeToNode(
+            await loop.InvokeAsync(() => Task.FromResult(loop.Owners!.Snapshot())))!;
+        Assert.False(report["realmByOrigin"]!.AsObject().ContainsKey("timer/buff expiration"), report.ToJsonString());
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
