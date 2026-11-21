@@ -1,6 +1,6 @@
 using Romsg;
 using Ro3Emu.Bot;
-using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Tests;
@@ -51,7 +51,7 @@ public sealed partial class DungeonTests
             var attempt = Session(bob).DungeonAttempt!;
             Assert.False(Session(bob).Dead);
             Assert.Equal(1, attempt.RevivesUsed.Values.Sum());
-            count = (int)GameData.Int(attempt.Plan.Boss!.Value, "_iOriginalReviveNum");
+            count = (int)new TenGameplayBossConfig(attempt.Plan.Boss!.Value).OriginalReviveNum;
             attempt.RevivesUsed[Session(carol).Role!.Id] = count - 1; // the rest spent on Carol: the count is shared
             return Task.CompletedTask;
         });
@@ -72,7 +72,7 @@ public sealed partial class DungeonTests
         }
     }
 
-    private async Task<int> CastResurrection(BotClient priest, BotClient target)
+    private static async Task<int> CastResurrection(BotClient priest, BotClient target)
     {
         await priest.SendGameAsync(CombatService.UseSkill,
             new CastSkillReq { SkillId = Resurrection, TargetId = (long)target.Self!.Uuid });

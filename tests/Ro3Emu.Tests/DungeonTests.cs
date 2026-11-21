@@ -10,6 +10,7 @@ using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
 
@@ -286,7 +287,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         await OnLoop(() =>
         {
             var attempt = Session(bob).DungeonAttempt!;
-            attempt.RevivesUsed[Session(alice).Role!.Id] = (int)GameData.Int(attempt.Plan.Boss!.Value, "_iOriginalReviveNum");
+            attempt.RevivesUsed[Session(alice).Role!.Id] = (int)new TenGameplayBossConfig(attempt.Plan.Boss!.Value).OriginalReviveNum;
             Assert.Equal(ErrorCodes.PartyRevivesUsedUp, Service<DungeonService>().ExternalReviveError(Session(bob)));
             attempt.RevivesUsed.Clear();
             return Task.CompletedTask;

@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -750,9 +751,9 @@ public sealed partial class DungeonService
     // Blessing's _iAddReviveNum is the party's count (Localization_en: "increases the number of party Revives available
     // in the Dungeon"; ErrorCodeConfig 570 "Not enough party Revive attempts remaining"). The whole room shares it, one
     // count per revive (inferred).
-    private static bool PartyRevives(Attempt a) => a.Plan.Boss != null && GameData.Int(a.Plan.Config, "_iReviveTrigger") == NoRevive;
+    private static bool PartyRevives(Attempt a) => a.Plan.Boss != null && new DungeonConfig(a.Plan.Config).ReviveTrigger == NoRevive;
     private static int PartyRevivesLeft(Attempt a) => a.Plan.Boss is { } boss
-        ? Math.Max(0, (int)GameData.Int(boss, "_iOriginalReviveNum")) + BlessingRevives(a) - a.RevivesUsed.Values.Sum() : 0;
+        ? Math.Max(0, (int)new TenGameplayBossConfig(boss).OriginalReviveNum) + BlessingRevives(a) - a.RevivesUsed.Values.Sum() : 0;
     private const int NoRevive = 2; // Lua_GameDefine enum_ReviveTriggerType.NoRevive
 
     /// <summary>All resurrection sources obey the active dungeon's click-revive allowance, as ReviveAsync reads it, or in
