@@ -563,7 +563,7 @@ public sealed partial class BuffService : IGameTicker
         {
             // Every session, every tick: copy the list only when something in it has expired.
             if (AnyExpired(s.Buffs, now))
-                foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b));
+                foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b), owner: s);
             TickEnergy(s, now);
             TickImmuneDeath(s, now);
         }
@@ -592,9 +592,10 @@ public sealed partial class BuffService : IGameTicker
 
     /// <summary>One queued removal per expired buff: a removal waits for its reservation, and queuing one every tick
     /// meanwhile built tens of thousands of waiters on a busy live realm.</summary>
-    /// <param name="runtime">Run without reservation keys (an in-memory unit buff); otherwise realm-wide, as a role's buff
-    /// removal reaches stats, energy and every Changed handler.</param>
-    private void ExpireOnce(ActiveBuff buff, string name, Func<Task> remove, bool runtime = false)
+    /// <param name="runtime">Run without reservation keys (an in-memory unit buff); otherwise realm-wide.</param>
+    /// <param name="owner">A role's own buff: its removal runs as that role's job, as the client's own 31332 removal
+    /// does. As a realm job every expiry stopped the whole loop (#484: 7 334 holds in 2.5 h with six players).</param>
+    private void ExpireOnce(ActiveBuff buff, string name, Func<Task> remove, bool runtime = false, GameSession? owner = null)
     {
         long now = MonsterService.NowMs;
         // A loop at its work limit drops the job without running it, so one that never finished is queued again.
@@ -605,7 +606,8 @@ public sealed partial class BuffService : IGameTicker
             try { await remove(); }
             finally { _expiring.Remove(buff.Guid); }
         };
-        if (runtime) _loop.TrackRuntimeDetached(name, work);
+        if (owner != null) _loop.PostOwned(owner, work, name, () => _expiring.Remove(buff.Guid));
+        else if (runtime) _loop.TrackRuntimeDetached(name, work);
         else _loop.TrackLegacyDetached(name, work);
     }
 
