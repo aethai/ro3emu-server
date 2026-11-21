@@ -114,6 +114,8 @@ public class MonsterUnit : WorldUnit
 
     public override void Tick(MapInstance map, GameTime time) => Brain?.Tick(this, map);
 
+    internal override bool Resting => Viewers.Count == 0 && Brain?.Dormant(this) != false;
+
     /// <summary>Position along the current segment at <paramref name="nowMs"/> (updates X/Y/Z).</summary>
     public void Advance(long nowMs)
     {
@@ -203,4 +205,7 @@ public sealed class MonsterMarch(float goalX, float goalZ, float arriveRadius)
 public interface IMonsterBrain
 {
     void Tick(MonsterUnit monster, MapInstance map);
+
+    /// <summary>Nothing is in progress for it: its tick only moves the roam clock.</summary>
+    bool Dormant(MonsterUnit monster);
 }

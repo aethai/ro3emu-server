@@ -715,6 +715,12 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         lock (_sync) return [.. session.Observers];
     }
 
+    /// <summary>Is any player on the runtime map (without copying the list, for the map tick).</summary>
+    public bool HasPlayers(long worldScene)
+    {
+        lock (_sync) return _scenes.TryGetValue(worldScene, out var members) && members.Count != 0;
+    }
+
     public IReadOnlyList<GameSession> PlayersIn(long sceneEntry)
     {
         lock (_sync) return _scenes.TryGetValue(sceneEntry, out var members) ? members.ToList() : [];

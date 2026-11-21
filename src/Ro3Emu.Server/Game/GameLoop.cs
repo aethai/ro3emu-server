@@ -570,14 +570,22 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     {
         object? target = state ?? callback.Target;
         if (target == null) return callback.Method.DeclaringType?.Name + "." + callback.Method.Name;
+        // An await continuation posts the state machine's MoveNext as a plain Action: name what it resumes.
+        if (target is Delegate posted)
+        {
+            if (!IsStateMachine(posted.Target?.GetType()))
+                return (posted.Method.DeclaringType?.FullName?.Split('.').Last() ?? "?") + "." + posted.Method.Name;
+            target = posted.Target!;
+        }
         var type = target.GetType();
-        if (type.IsGenericType && type.Name.StartsWith("AsyncStateMachineBox"))
-            return type.GetGenericArguments().Last().FullName?.Split('.').Last() ?? type.Name;
+        if (IsStateMachine(type)) return type.GetGenericArguments().Last().FullName?.Split('.').Last() ?? type.Name;
         foreach (var field in type.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
             if (field.GetValue(target) is Delegate inner && inner.Method.DeclaringType != typeof(GameLoop))
                 return (inner.Method.DeclaringType?.FullName?.Split('.').Last() ?? "?") + "." + inner.Method.Name;
         return type.FullName?.Split('.').Last() ?? type.Name;
     }
+
+    private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox");
 
     private void Execute((SendOrPostCallback Callback, object? State, long EnqueuedAt, WorkPermit Permit) item)
     {
