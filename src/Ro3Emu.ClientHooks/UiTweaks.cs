@@ -47,6 +47,7 @@ namespace Ro3Emu.ClientHooks
                 PassChallenges.Tick();
                 PassButton.Tick();
                 TitleButton.Tick();
+                NightCycle.Tick();
             }
             catch (Exception e)
             {

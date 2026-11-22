@@ -299,6 +299,11 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
         ["job"] = ("<jobId>", (s, a) => Op(s, OpSetJob, a)),
         ["clearbag"] = ("", (s, a) => Op(s, OpClearPack, a)),
         ["client"] = ("<find name>", ClientDiagnostics),
+        ["day"] = ("", (s, a) => NightLook(s, "day")),
+        ["dusk"] = ("", (s, a) => NightLook(s, "dusk")),
+        ["night"] = ("", (s, a) => NightLook(s, "night")),
+        ["dawn"] = ("", (s, a) => NightLook(s, "dawn")),
+        ["time"] = ("<auto|day|dusk|night|dawn|hour 0-24>", (s, a) => NightLook(s, a.Length == 0 ? "auto" : a[0])),
         ["fieldexp"] = ("[set <minLevel> <maxLevel> <percent> [...] | clear | reset] (in memory, until the next start)", async (s, a) =>
         {
             // FieldExpRates (inferred): the operator's rate for open-field kills, changed here without a restart.
@@ -406,7 +411,23 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
         await ReplyAsync(s, "Sent to the client; see Player.log [Ro3Emu.Diag].");
     }
 
-    private const uint ClientDiagnosticsMsg = 77012;
+    internal const uint ClientDiagnosticsMsg = 77012;
+
+    private static readonly string[] NightLooks = ["auto", "day", "dusk", "night", "dawn"];
+
+    /// <summary>The night look on this GM's own screen only (client hook NightCycle, over the same 77012 message as
+    /// <c>!client</c>): day, dusk, night, dawn, an hour 0-24, or auto (the PC clock again). It works whether or not
+    /// <see cref="ServerOptions.NightCycle"/> is on, and changes nothing on the server or for other players.</summary>
+    private static async Task NightLook(GameSession s, string setting)
+    {
+        string look = setting.ToLowerInvariant();
+        bool hour = float.TryParse(look, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float h) && h is >= 0 and <= 24;
+        if (!hour && !NightLooks.Contains(look)) throw new ArgumentException("<auto|day|dusk|night|dawn|hour 0-24>");
+        await s.SendGameRawAsync(ClientDiagnosticsMsg, System.Text.Encoding.UTF8.GetBytes("time " + look));
+        await ReplyAsync(s, look == "auto"
+            ? "Night look: your PC clock again (towns and fields only, your screen only)."
+            : $"Night look: {look} on your screen only (towns and fields only). !time auto goes back to the clock.");
+    }
 
     private async Task Op(GameSession s, int op, string[] args)
     {

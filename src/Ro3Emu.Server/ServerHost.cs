@@ -118,6 +118,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<CareerSpecialService>();
         builder.Services.AddSingleton<WardrobeService>();
         builder.Services.AddSingleton<TotemEffects>();
+        builder.Services.AddSingleton<NightCycleService>();
         builder.Services.AddSingleton<TotemService>();
         builder.Services.AddSingleton<GenreService>();
         builder.Services.AddSingleton<PowerService>();
@@ -598,6 +599,7 @@ internal sealed class GameLoopTickers(IServiceProvider services) : IHostedServic
         Add<DungeonMatchService>();
         Add<GatheringService>();
         Add<TotemEffects>();
+        Add<NightCycleService>();
         Add<Game.Persistence.PositionPersistence>();
         Add<Game.Persistence.SettingsPersistence>();
         Add<Game.Persistence.WildAfkPersistence>();

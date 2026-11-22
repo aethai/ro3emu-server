@@ -25,6 +25,9 @@ namespace Ro3Emu.ClientHooks
                     case "find":
                         Find(parts.Length > 1 ? parts[1] : "weapon");
                         break;
+                    case "time":
+                        NightCycle.Command(parts.Length > 1 ? parts[1] : "auto");
+                        break;
                     case "panels":
                         Panels();
                         break;
