@@ -76,6 +76,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             if (options.Scenario == "S3") await PrepareS3Async(report, ct);
             if (options.Scenario == "S5") await PrepareSiegeAsync(report, ct);
             if (options.Scenario == "S8") await PreparePartiesAsync(ct);
+            if (options.Scenario == "S9") await PrepareAutoBattleAsync(ct);
             if (server != null) await ResetLocalMetricsAsync(ct);
             report.ServerBefore = await SnapshotAsync(ct);
             foreach (var actor in _actors) actor.BeginMeasurement();
@@ -93,6 +94,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                 case "S6": await RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct); break;
                 case "S7": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
                 case "S8": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct, PartyLeader), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
+                case "S9": await RunAutoBattleAsync([.. _actors], options.DurationSeconds, ct); break;
             }
             if (options.Scenario == "S3") await CloseS3Async(report, ct);
             report.ServerAfter = await SnapshotAsync(ct);
@@ -902,6 +904,8 @@ public sealed class BotActor(string account, BotClient bot, WorldReducer reducer
     public WorldReducer Reducer { get; } = reducer;
     public BotSendQueue? Sender { get; set; }
     public long RoleId { get; set; }
+    /// <summary>S9: the skill bar of the bot's GM preset, cast in order.</summary>
+    public int[] Bar { get; set; } = [];
     public long Scene { get; set; }
     public SceneLocation Location => Reducer.Location;
     public int LineNumber => Location.LineNumber;

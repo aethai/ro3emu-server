@@ -11,7 +11,7 @@ public sealed partial class BuffService
     public async Task AddPermanentAsync(WorldUnit unit, int configId, long sourceId)
     {
         if (_data.Row("BuffConfig", configId) is not { } row || GameData.Int(row, "_iBuffID") <= 0) return;
-        if (!_unitBuffs.TryGetValue(unit.Uid, out var list)) _unitBuffs[unit.Uid] = list = [];
+        var list = UnitBuffList(unit);
         if (list.Any(b => b.ConfigId == configId && b.IsPassive)) return;
         var buff = new ActiveBuff(Interlocked.Increment(ref _guids), configId, long.MaxValue, 0,
             [.. GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)], sourceId, IsPassive: true);
@@ -34,5 +34,19 @@ public sealed partial class BuffService
     {
         if (!_unitBuffs.TryGetValue(unit.Uid, out var list)) return;
         foreach (var buff in list.Where(b => b.ConfigId == configId).ToArray()) await RemoveUnitBuffAsync(unit, buff);
+    }
+
+    /// <summary>The unit's buff list, created with its owner entry on first use.</summary>
+    private List<ActiveBuff> UnitBuffList(WorldUnit unit)
+    {
+        if (!_unitBuffs.TryGetValue(unit.Uid, out var list)) _unitBuffs[unit.Uid] = list = [];
+        _unitOwners[unit.Uid] = unit;
+        return list;
+    }
+
+    private void ForgetUnit(long uid)
+    {
+        _unitBuffs.Remove(uid);
+        _unitOwners.Remove(uid);
     }
 }

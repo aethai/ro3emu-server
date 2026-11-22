@@ -165,8 +165,23 @@ public sealed partial class CombatService
             ? (height <= 0 || MathF.Abs(m.Y - center.Y) <= height) && Distance(center, m.Pos) <= radius + 0.1f
             : Script(row) is "yingliu" or "yingliuS1" ? InDashStrip(row, action, m.Pos)
             : SkillAreaContains(row, action.Origin, center, action.Request.Face, m.Pos);
-        return [.. _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
+        var map = _world.Map(s.WorldScene);
+        // Only the units near the area are tested (a field map holds ~1500 and every area hit tested them all); the
+        // bound holds every shape InShape accepts, so the result is the same set in the same order.
+        IEnumerable<WorldUnit> candidates = Script(row) is "yingliu" or "yingliuS1" ? map.Units
+            : map.Near(center.X, center.Z, (radiusOverride ?? AreaBound(row)) + MapInstance.CellSize);
+        return [.. candidates.OfType<MonsterUnit>().Where(m => m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && InShape(m))
             .OrderBy(m => Distance(center, m.Pos)).ThenBy(m => m.Uid).Take(max)];
+    }
+
+    /// <summary>A radius around the area's center that holds every shape <see cref="SkillAreaContains"/> accepts: the
+    /// range, twice the largest of its width and offsets, and the default 3 m width. A filter only, never a rule.</summary>
+    private static float AreaBound(JsonElement row)
+    {
+        var range = new SkillConfig(row).Range;
+        double radius = (range.Length > 0 ? range[0] : 300) / 100.0;
+        double extra = Math.Max(range.ElementAtOrDefault(1), Math.Max(range.ElementAtOrDefault(3), range.ElementAtOrDefault(4))) / 100.0;
+        return (float)(radius + 2 * extra + 3);
     }
 
     /// <summary>The monsters a cast's own row covers now, nearest its point first.</summary>
@@ -176,6 +191,7 @@ public sealed partial class CombatService
     private async Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
         IReadOnlyList<MonsterUnit>? chosenTargets = null, IReadOnlyList<GameSession>? chosenAllies = null)
     {
+        _character.ReuseStatsInThisWork(s);
         if (s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene || s.SceneLoading
             || s.SceneGeneration != action.SceneGeneration || field?.Removing == true
             || !ReferenceEquals(s.Attachment, action.Attachment) || action.Attachment?.Cancelled == true

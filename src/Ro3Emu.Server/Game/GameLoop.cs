@@ -479,6 +479,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                         var priorPermit = _currentPermit.Value;
                         SynchronizationContext.SetSynchronizationContext(new LoopContext(this, permit));
                         _currentPermit.Value = permit;
+                        WorkSerial++;
                         try { _ = RunGuarded(timer, permit); }
                         finally { _currentPermit.Value = priorPermit; SynchronizationContext.SetSynchronizationContext(prior); }
                         _metrics?.RecordTimer(lateness, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -498,6 +499,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                         var priorPermit = _currentPermit.Value;
                         SynchronizationContext.SetSynchronizationContext(new LoopContext(this, tickerPermit));
                         _currentPermit.Value = tickerPermit;
+                        WorkSerial++;
                         try { TickOwned(ticker, time); }
                         catch (Exception e) { _log.LogError(e, "Ticker {Ticker} failed", ticker.GetType().Name); }
                         finally
@@ -587,8 +589,13 @@ public sealed partial class GameLoop : IHostedService, IDisposable
 
     private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox");
 
+    /// <summary>Counts the work the loop runs: each queued item, timer and ticker gets a new number. A memo keyed by it
+    /// (CharacterService.Stats) can never outlive the work it was made in.</summary>
+    public long WorkSerial { get; private set; }
+
     private void Execute((SendOrPostCallback Callback, object? State, long EnqueuedAt, WorkPermit Permit) item)
     {
+        WorkSerial++;
         var previous = SynchronizationContext.Current;
         var priorPermit = _currentPermit.Value;
         SynchronizationContext.SetSynchronizationContext(new LoopContext(this, item.Permit));

@@ -60,6 +60,7 @@ public sealed class LocalServer : IAsyncDisposable
         start.Environment["Ro3Emu__TravelCheck"] = "log"; // the scenarios place their bots with a raw 30012
         start.Environment["Logging__LogLevel__Default"] = "Warning";
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        start.Environment["Ro3Emu__GmOpenWhenEmpty"] = "true"; // S9 dresses its bots with the client's GM presets
         Directory.CreateDirectory(outputDir);
         Process? process = null;
         LocalServer? result = null;
