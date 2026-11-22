@@ -20,7 +20,9 @@ public sealed partial class CharacterService
     /// </summary>
     internal static Task SyncAsync(GameSession session, uint msgId, IMessage live, Func<IMessage> snapshot, Action<IMessage>? prepare = null)
     {
-        if (session.Synced.TryGetValue(msgId, out var before) && before.Equals(live))
+        if (Packed.Contains(msgId)
+            ? session.SyncedPacked.TryGetValue(msgId, out var bytes) && live.ToByteString().Span.SequenceEqual(bytes)
+            : session.Synced.TryGetValue(msgId, out var before) && before.Equals(live))
         {
             NextVersion(session, msgId);
             return Task.CompletedTask;
@@ -28,14 +30,30 @@ public sealed partial class CharacterService
         return SyncAsync(session, msgId, snapshot(), prepare);
     }
 
+    /// <summary>
+    /// Datasets whose last-sent copy is kept serialized rather than as objects. The talents are 5 plans and a global
+    /// view of every node (~1,400 node objects, each in a protobuf map entry), a third of a player's heap, and the copy
+    /// doubled it; serialized they are a few KB, parsed back only when the next sync needs the difference. Nothing else
+    /// reads these from <see cref="GameSession.Synced"/>.
+    /// </summary>
+    private static readonly System.Collections.Frozen.FrozenSet<uint> Packed =
+        System.Collections.Frozen.FrozenSet.ToFrozenSet([SeasonTalentService.TalentSync]);
+
+    /// <summary>What the client was last sent for the dataset, or null before its first (full) send.</summary>
+    private static IMessage? LastSent(GameSession session, uint msgId, IMessage now) =>
+        Packed.Contains(msgId)
+            ? session.SyncedPacked.TryGetValue(msgId, out var bytes) ? now.Descriptor.Parser.ParseFrom(bytes) : null
+            : session.Synced.GetValueOrDefault(msgId);
+
     /// <summary>Sends the dataset's change since the last send (the full object, with syncAllMark, the first time).</summary>
     internal static async Task SyncAsync(GameSession session, uint msgId, IMessage now, Action<IMessage>? prepare = null)
     {
         session.PlanPowers?.Invoke(msgId, now);
-        var inc = session.Synced.TryGetValue(msgId, out var before)
+        var inc = LastSent(session, msgId, now) is { } before
             ? AutoSync.Changes(before, now, NextVersion(session, msgId))
             : AutoSync.Full(now, NextVersion(session, msgId));
-        session.Synced[msgId] = now;
+        if (Packed.Contains(msgId)) session.SyncedPacked[msgId] = now.ToByteArray();
+        else session.Synced[msgId] = now;
         if (inc != null)
         {
             // Optional wire-only initialization for Lua datasets whose full handlers require empty maps.

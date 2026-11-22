@@ -527,6 +527,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
 
     /// <summary>The last version of each AUTO_SYNC dataset the client got (msg id -> DB object), for AutoSync increments.</summary>
     public Dictionary<uint, Google.Protobuf.IMessage> Synced { get; } = [];
+    /// <summary>The serialized last-sent copy of the large datasets CharacterService keeps packed (see there).</summary>
+    internal Dictionary<uint, byte[]> SyncedPacked { get; } = [];
 
     /// <summary>Items still marked new in the bag (guidToNew, the red dot).</summary>
     public HashSet<long> NewItems { get; } = [];

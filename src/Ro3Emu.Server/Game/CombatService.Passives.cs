@@ -86,21 +86,44 @@ public sealed partial class CombatService
     {
         foreach (var row in PassiveRows(session))
         {
-            var skill = new SkillConfig(row);
-            foreach (var pair in skill.Attri)
-                if (pair is [var id, var value]) yield return (id, value);
-            if (OwnBuff(skill) is { } own)
-                foreach (var pair in own.ChangeAttri)
-                    if (pair is [var id, var value]) yield return (id, value);
-            if (MasteryBuff(skill) is { } mastery && MasteryWeapons.TryGetValue((int)skill.SkillId, out var weapons)
-                && weapons.Any(w => SkillParameterRules.Wields(session, _data, w)))
-                foreach (var pair in mastery.ChangeAttri)
-                    if (pair is [var id, var value]) yield return (id, value);
-            if (skill.SkillId == DoubleAttackGroup && Katars.Any(w => SkillParameterRules.Wields(session, _data, w))
-                && skill.DescData.Length > 3 && double.TryParse(skill.DescData[3], System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out double crit))
+            var attrs = PassiveAttrsOf(row);
+            foreach (var pair in attrs.Always) yield return pair;
+            if (attrs.Mastery.Length > 0 && attrs.MasteryWeapons.Any(w => SkillParameterRules.Wields(session, _data, w)))
+                foreach (var pair in attrs.Mastery) yield return pair;
+            if (attrs.KatarCrit is { } crit && Katars.Any(w => SkillParameterRules.Wields(session, _data, w)))
                 yield return (CritAttribute, crit * 100);
         }
+    }
+
+    /// <summary>What a learned passive row gives, read from the tables once per row: its own attributes and its own
+    /// buff's, a weapon mastery's conditional ones with the weapons they need, and Double Attack's katar CRIT. The
+    /// stat sheet reads every passive on each cast, and parsing these JSON rows was a third of building it.</summary>
+    private sealed record PassiveAttrs((long Id, double Value)[] Always, long[] MasteryWeapons, (long Id, double Value)[] Mastery,
+        double? KatarCrit);
+
+    private readonly Dictionary<long, PassiveAttrs> _passiveAttrs = [];
+
+    private PassiveAttrs PassiveAttrsOf(JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        if (_passiveAttrs.TryGetValue(skill.Id, out var cached)) return cached;
+        var always = new List<(long, double)>();
+        foreach (var pair in skill.Attri)
+            if (pair is [var id, var value]) always.Add((id, value));
+        if (OwnBuff(skill) is { } own)
+            foreach (var pair in own.ChangeAttri)
+                if (pair is [var id, var value]) always.Add((id, value));
+        var mastery = new List<(long, double)>();
+        long[] weapons = [];
+        if (MasteryBuff(skill) is { } masteryRow && MasteryWeapons.TryGetValue((int)skill.SkillId, out var masteryWeapons))
+        {
+            weapons = [.. masteryWeapons];
+            foreach (var pair in masteryRow.ChangeAttri)
+                if (pair is [var id, var value]) mastery.Add((id, value));
+        }
+        double? katar = skill.SkillId == DoubleAttackGroup && skill.DescData.Length > 3 && double.TryParse(skill.DescData[3],
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double crit) ? crit : null;
+        return _passiveAttrs[skill.Id] = new PassiveAttrs([.. always], weapons, [.. mastery], katar);
     }
 
     /// <summary>

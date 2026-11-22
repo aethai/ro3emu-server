@@ -126,10 +126,11 @@ public sealed class PhonestChannelTests : IAsyncLifetime
         await using var channel = new PhonestChannel(_server, NullLogger.Instance);
         var key = new byte[20];
         var peer = new StreamConvertor(key);
-        // 48 MiB of valid frames in one small write: even if TCP splits it once, one of the reads passes the limit.
+        // 12 MiB of valid frames in one small write (under one 16 KB read): even if TCP splits it once, one of the
+        // reads passes the 4 MiB limit.
         var frame = Frame(1, 1024 * 1024 - 2);
-        var wire = Frame(0, 0).Concat(Enumerable.Range(0, 48).SelectMany(_ => peer.ConvertOutput(frame))).ToArray();
-        Assert.True(wire.Length < 64 * 1024);
+        var wire = Frame(0, 0).Concat(Enumerable.Range(0, 12).SelectMany(_ => peer.ConvertOutput(frame))).ToArray();
+        Assert.True(wire.Length < 16 * 1024);
         await _client.SendAsync(wire, SocketFlags.None);
         var error = await Assert.ThrowsAsync<InvalidDataException>(() => channel.RunAsync((ch, index, _) =>
         {

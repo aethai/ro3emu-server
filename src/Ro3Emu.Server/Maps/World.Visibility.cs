@@ -10,7 +10,7 @@ public sealed partial class World
 
     internal async Task RefreshVisibilityAsync(GameSession changed)
     {
-        await _aoiDispatch.WaitAsync();
+        var hold = await HoldAsync(changed);
         try
         {
             var leaves = new List<(GameSession Viewer, GameSession Subject)>();
@@ -30,6 +30,6 @@ public sealed partial class World
             foreach (var (viewer, subject) in leaves) await LeavePlayerAsync(viewer, subject);
             foreach (var (viewer, subject) in enters) await EnterPlayerAsync(viewer, subject);
         }
-        finally { _aoiDispatch.Release(); }
+        finally { hold.Release(); }
     }
 }
