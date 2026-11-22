@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -39,8 +40,13 @@ internal static class SkillParameterRules
     /// part at its index, Decapitation's "Sonic Blow fixed +10" on a row whose other branches take 30 (inferred).</summary>
     private const int CostType = 35, LogicType = 31, FlatAtIndexType = 20, FlatType = 30;
 
-    private static readonly ConditionalWeakTable<GameData, Dictionary<int, Modifier[]>> Parsed = [];
-    private static readonly ConditionalWeakTable<GameData, Dictionary<int, int[]>> Categories = [];
+    // Read from every runtime that casts, so they are lock-free: a lock here showed up as contention under load.
+    private static readonly ConditionalWeakTable<GameData, ConcurrentDictionary<int, Modifier[]>> Parsed = [];
+    private static readonly ConditionalWeakTable<GameData, ConcurrentDictionary<int, int[]>> Categories = [];
+    // Effective rows by row id and the modifiers that changed it, shared by sessions: under auto battle buffs come and
+    // go every few seconds, and each change used to re-serialize the session's rows. Cleared when it grows past the cap.
+    private static readonly ConditionalWeakTable<GameData, ConcurrentDictionary<(int Row, string Mods), JsonElement>> SharedRows = [];
+    private const int SharedRowsCap = 20_000;
     private static readonly ConditionalWeakTable<GameSession, SessionCache> Sessions = [];
 
     /// <summary>The session's modifiers and effective rows, kept while its buff set is unchanged: auto-attack swings
@@ -57,16 +63,13 @@ internal static class SkillParameterRules
     internal static Modifier[] BuffModifiers(GameData data, int configId)
     {
         var table = Parsed.GetValue(data, _ => []);
-        lock (table)
-        {
-            if (table.TryGetValue(configId, out var hit)) return hit;
-            var result = new List<Modifier>();
-            if (data.Row("BuffConfig", configId) is { } row && row.TryGetProperty("_kSkillAttributeList", out var list)
-                && list.ValueKind == JsonValueKind.Array)
-                foreach (var item in list.EnumerateArray())
-                    if (Parse(item) is { } mod) result.Add(mod);
-            return table[configId] = [.. result];
-        }
+        if (table.TryGetValue(configId, out var hit)) return hit;
+        var result = new List<Modifier>();
+        if (data.Row("BuffConfig", configId) is { } row && row.TryGetProperty("_kSkillAttributeList", out var list)
+            && list.ValueKind == JsonValueKind.Array)
+            foreach (var item in list.EnumerateArray())
+                if (Parse(item) is { } mod) result.Add(mod);
+        return table.GetOrAdd(configId, [.. result]);
     }
 
     internal static Modifier? Parse(JsonElement item)
@@ -154,13 +157,10 @@ internal static class SkillParameterRules
     {
         int id = (int)GameData.Int(row, "_iID");
         var table = Categories.GetValue(data, _ => []);
-        lock (table)
-        {
-            if (table.TryGetValue(id, out var hit)) return hit;
-            int[] tags = row.TryGetProperty("_kSkillCategory", out var list) && list.ValueKind == JsonValueKind.Array
-                ? [.. list.EnumerateArray().Select(v => GameData.Number(v)).Where(v => v != null).Select(v => (int)v!.Value)] : [];
-            return table[id] = tags;
-        }
+        if (table.TryGetValue(id, out var hit)) return hit;
+        int[] tags = row.TryGetProperty("_kSkillCategory", out var list) && list.ValueKind == JsonValueKind.Array
+            ? [.. list.EnumerateArray().Select(v => GameData.Number(v)).Where(v => v != null).Select(v => (int)v!.Value)] : [];
+        return table.GetOrAdd(id, tags);
     }
 
     /// <summary>Does the modifier reach a skill of this group whose row carries these tags.</summary>
@@ -235,15 +235,32 @@ internal static class SkillParameterRules
         if (cache.Modifiers.Count == 0) return row;
         int id = (int)GameData.Int(row, "_iID");
         if (cache.Rows.TryGetValue(id, out var hit)) return hit;
-        return cache.Rows[id] = Effective(row, cache.Modifiers, CategoriesOf(data, row));
+        var relevant = Relevant(row, cache.Modifiers, CategoriesOf(data, row));
+        if (relevant.Count == 0) return cache.Rows[id] = row;
+        // What Build reads of a modifier, in order: matching is already done, so group and tags are left out.
+        string mods = string.Join(';', relevant.Select(m => FormattableString.Invariant($"{m.Type},{m.Operation},{m.Value},{m.Index},{m.Column}")));
+        var shared = SharedRows.GetValue(data, _ => []);
+        if (!shared.TryGetValue((id, mods), out var built))
+        {
+            if (shared.Count >= SharedRowsCap) shared.Clear();
+            built = shared.GetOrAdd((id, mods), Build(row, relevant));
+        }
+        return cache.Rows[id] = built;
     }
 
-    internal static JsonElement Effective(JsonElement row, IReadOnlyList<Modifier> modifiers, int[] tags)
+    internal static JsonElement Effective(JsonElement row, IReadOnlyList<Modifier> modifiers, int[] tags) =>
+        Relevant(row, modifiers, tags) is { Count: > 0 } relevant ? Build(row, relevant) : row;
+
+    /// <summary>The modifiers that change this row, in the order they apply.</summary>
+    private static List<Modifier> Relevant(JsonElement row, IReadOnlyList<Modifier> modifiers, int[] tags)
     {
         int group = (int)GameData.Int(row, "_iSkillID");
-        var relevant = modifiers.Where(m => Matches(m, group, tags) && (Field(m.Type) != null || m.Type is Buff1Type or Buff2Type or CostType or LogicType or FlatAtIndexType)
-            && m.Operation is 1 or 2 or 5).ToList();
-        if (relevant.Count == 0) return row;
+        return [.. modifiers.Where(m => Matches(m, group, tags) && (Field(m.Type) != null || m.Type is Buff1Type or Buff2Type or CostType or LogicType or FlatAtIndexType)
+            && m.Operation is 1 or 2 or 5)];
+    }
+
+    private static JsonElement Build(JsonElement row, List<Modifier> relevant)
+    {
         var json = JsonNode.Parse(row.GetRawText())!.AsObject();
         foreach (var mod in relevant)
         {
