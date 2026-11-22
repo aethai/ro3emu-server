@@ -104,7 +104,17 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     /// <summary>tools/ConfigExport writes this next to config/ for a complete client export.</summary>
     public const string ExportManifest = "export.json";
 
-    public JsonElement? Row(string table, long id) => Table(table).TryGetValue(id.ToString(), out var row) ? row : null;
+    public JsonElement? Row(string table, long id)
+    {
+        // The key is formatted on the stack and looked up as a span: id.ToString() was a string per row read, and rows are
+        // read thousands of times a second in combat. Same text as ToString() (current culture, as before).
+        var rows = Table(table);
+        Span<char> key = stackalloc char[24];
+        if (rows is Dictionary<string, JsonElement> dict && dict.TryGetAlternateLookup<ReadOnlySpan<char>>(out var lookup)
+            && id.TryFormat(key, out int written, default, System.Globalization.CultureInfo.CurrentCulture))
+            return lookup.TryGetValue(key[..written], out var hit) ? hit : null;
+        return rows.TryGetValue(id.ToString(), out var row) ? row : null;
+    }
 
     /// <summary>Localized text (Localization_en: id -> {_kDes}); config "names" are arrays of text ids.</summary>
     public string Text(long id)
