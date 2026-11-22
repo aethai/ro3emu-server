@@ -193,10 +193,21 @@ public sealed partial class CombatService
     /// <summary>The SkillConfig row of each learned mode-0 passive at its level.</summary>
     private IEnumerable<JsonElement> PassiveRows(GameSession session)
     {
-        if (session.Progress == null) yield break;
+        if (session.Progress is not { } progress) yield break;
+        // The learned groups, then the passives with a starting level that are not learned: the same order as before.
+        // A group outside the career's tree has no row (LearnedPassive), so the starting-level list is kept per career.
+        foreach (int group in progress.Skills.Keys)
+            if (LearnedPassive(session, group) is { } row) yield return row.Row;
+        foreach (int group in InitialPassives(progress.Career))
+            if (!progress.Skills.ContainsKey(group) && LearnedPassive(session, group) is { } row) yield return row.Row;
+    }
+
+    private int[] InitialPassives(int career) => _initialPassives.GetOrAdd(career, c =>
+    {
         _passiveGroups ??= [.. SkillConfig.All(_data).Where(r => r.BasicType == 0 && r.Mode == 0 && r.InitialLevel > 0)
             .Select(r => (int)r.SkillId).Where(g => g > 0).Distinct()];
-        foreach (int group in session.Progress.Skills.Keys.Concat(_passiveGroups).Distinct())
-            if (LearnedPassive(session, group) is { } row) yield return row.Row;
-    }
+        return [.. _passiveGroups.Where(g => _skills.InTree(c, g))];
+    });
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int[]> _initialPassives = new();
 }

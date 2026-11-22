@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
@@ -5,8 +6,18 @@ namespace Ro3Emu.Server.Game;
 /// <summary>Final attribute values (property data) and the pre-percentage part the client previews from (baseData).</summary>
 public sealed class StatSheet
 {
-    public Dictionary<int, long> Data { get; } = [];
-    public Dictionary<int, long> Base { get; } = [];
+    public StatSheet() : this([], []) { }
+
+    internal StatSheet(int capacity) : this(new Dictionary<int, long>(capacity), new Dictionary<int, long>(capacity)) { }
+
+    private StatSheet(Dictionary<int, long> data, Dictionary<int, long> @base)
+    {
+        Data = data;
+        Base = @base;
+    }
+
+    public Dictionary<int, long> Data { get; }
+    public Dictionary<int, long> Base { get; }
 
     public long this[int id]
     {
@@ -15,13 +26,7 @@ public sealed class StatSheet
     }
 
     /// <summary>An independent copy: callers may change what <see cref="CharacterService.Stats"/> hands them.</summary>
-    public StatSheet Clone()
-    {
-        var copy = new StatSheet();
-        foreach (var (id, value) in Data) copy.Data[id] = value;
-        foreach (var (id, value) in Base) copy.Base[id] = value;
-        return copy;
-    }
+    public StatSheet Clone() => new(new Dictionary<int, long>(Data), new Dictionary<int, long>(Base));
 }
 
 /// <summary>
@@ -35,23 +40,21 @@ public static class StatCalculator
 {
     public static StatSheet Compute(IReadOnlyDictionary<int, double> raw, GameData data)
     {
-        var sheet = new StatSheet();
+        var metas = Metas(data);
+        var sheet = new StatSheet(raw.Count + 8);
         var groups = new Dictionary<int, double[]>();
         foreach (var (id, value) in raw)
         {
-            var row = data.Row("AttributeConfig", id);
-            int root = row is { } r1 ? (int)GameData.Int(r1, "_iPreAttri") : 0;
-            if (row == null || root == 0)
+            int root = metas.TryGetValue(id, out var meta) ? meta.Root : 0;
+            if (root == 0)
             {
                 // Not part of a group (client-derived values such as 117-119): sent as is.
                 sheet.Data[id] = (long)Math.Round(value);
                 sheet.Base[id] = (long)Math.Floor(value);
                 continue;
             }
-            int calc = (int)GameData.Int(row.Value, "_iCalculateType");
-            if (calc is < 1 or > 6 or 5) calc = 1;
             if (!groups.TryGetValue(root, out var b)) groups[root] = b = new double[7];
-            b[calc] += Scale(DataType(id, data), value);
+            b[meta.Calc] += Scale(meta.DataType, value);
             if (id != root)
             {
                 // Members (per_atk 1031 ...) travel as their own properties so the client's preview can redo the group.
@@ -62,15 +65,31 @@ public static class StatCalculator
         foreach (var (root, b) in groups)
         {
             double final = b[1] * (1 + b[2] + b[6]) * (1 + b[4]) + b[3];
-            int dt = DataType(root, data);
+            int dt = metas.TryGetValue(root, out var rootMeta) ? rootMeta.DataType : 0;
             sheet.Data[root] = dt == 0 ? (long)Math.Ceiling(final - 1e-6) : (long)Math.Round(Unscale(dt, final));
             sheet.Base[root] = (long)Math.Floor(raw.GetValueOrDefault(root));
         }
         return sheet;
     }
 
-    private static int DataType(int id, GameData data) =>
-        data.Row("AttributeConfig", id) is { } row ? (int)GameData.Int(row, "_iDataType") : 0;
+    /// <summary>One AttributeConfig row as the pipeline reads it: _iPreAttri, _iCalculateType (anything but 1-4 and 6
+    /// counts as 1) and _iDataType.</summary>
+    private readonly record struct Meta(int Root, int Calc, int DataType);
+
+    // A stat build computes several sheets and read three fields of every attribute's row each time.
+    private static FrozenDictionary<int, Meta> Metas(GameData data) => data.Derived("StatCalculator.Metas", () =>
+    {
+        var metas = new Dictionary<int, Meta>();
+        foreach (var (key, row) in data.Table("AttributeConfig"))
+        {
+            if (!int.TryParse(key, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int id)
+                || data.Row("AttributeConfig", id) is not { } own || !own.Equals(row)) continue;
+            int calc = (int)GameData.Int(row, "_iCalculateType");
+            if (calc is < 1 or > 6 or 5) calc = 1;
+            metas[id] = new Meta((int)GameData.Int(row, "_iPreAttri"), calc, (int)GameData.Int(row, "_iDataType"));
+        }
+        return metas.ToFrozenDictionary();
+    });
 
     private static double Scale(int dt, double v) => dt switch { 1 => v / 10000, 2 => v / 100, _ => v };
 

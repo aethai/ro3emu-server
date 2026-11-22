@@ -29,8 +29,17 @@ public sealed partial class CombatService
     internal static bool StealthBuff(BuffConfig row) => row.BuffCategory.Contains(StealthCategory);
 
     /// <summary>A player holding a live category 31 buff.</summary>
-    internal bool Stealthed(GameSession player) => player.Buffs.Any(b => b.ExpireMs > Now
-        && BuffConfig.Get(_data, b.ConfigId) is { } row && StealthBuff(row));
+    internal bool Stealthed(GameSession player)
+    {
+        // Monsters ask this of every player in view on every tick: no closure, and the category read once per buff row.
+        long now = Now;
+        foreach (var buff in player.Buffs)
+            if (buff.ExpireMs > now && _stealthRows.GetOrAdd(buff.ConfigId, id => BuffConfig.Get(_data, id) is { } row && StealthBuff(row)))
+                return true;
+        return false;
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> _stealthRows = new();
 
     /// <summary>The widest radius (cm) within which the player detects hidden units; 0 when none.</summary>
     internal int DetectionRadiusCm(GameSession player)
