@@ -66,7 +66,15 @@ public sealed partial class SkillService
     /// The career's normal attack: JobConfig._kSkillNormalID (a row id). (inferred) The Magician careers name 1200001, which has
     /// no SkillConfig row; those take their unarmed JobAttackConfig row, the career's or the nearest parent's.
     /// </summary>
-    public int NormalAttack(int career)
+    public int NormalAttack(int career) => _normalAttacks.GetOrAdd(career, FindNormalAttack);
+
+    // Level() asks for the career's attack group on every passive of every stat sheet; both are fixed per career.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _normalAttacks = new(), _attackGroups = new();
+
+    private int AttackGroup(int career) => _attackGroups.GetOrAdd(career, c =>
+        _data.Row("SkillConfig", NormalAttack(c)) is { } atk ? (int)GameData.Int(atk, "_iSkillID") : -1);
+
+    private int FindNormalAttack(int career)
     {
         int named = _data.Row("JobConfig", career) is { } job && job.TryGetProperty("_kSkillNormalID", out var n) && n.ValueKind == JsonValueKind.Array && n.GetArrayLength() > 0
             ? n[0].GetInt32() : 1000001;
@@ -191,8 +199,7 @@ public sealed partial class SkillService
     public int Level(RoleProgress p, int group)
     {
         int initial = InTree(p.Career, group) ? Initial(p, group) : 0;
-        if (_data.Row("SkillConfig", NormalAttack(p.Career)) is { } atk && GameData.Int(atk, "_iSkillID") == group)
-            initial = Math.Max(1, initial);
+        if (AttackGroup(p.Career) == group) initial = Math.Max(1, initial);
         if (TreeAttackGroups(p.Career).Contains(group)) initial = Math.Max(1, initial);
         if (group > 0 && group == QueueGroup(p.Career)) initial = Math.Max(1, initial); // everyone has the Lineup button
         int saved = Math.Max(p.Skills.GetValueOrDefault(group), p.GrantedSkills.GetValueOrDefault(group));
