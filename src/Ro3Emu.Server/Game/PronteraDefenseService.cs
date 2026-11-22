@@ -27,6 +27,12 @@ public sealed partial class PronteraDefenseService : IGameTicker
     internal const float HeartRadius = 2f;
     /// <summary>(inferred) The invaders' spots spread this far around the heart, so a wave does not stand in one cell.</summary>
     internal const float HeartSpread = 4f;
+    /// <summary>The scene editor group the heart is taken from: sc_prontera_001's 832 "普隆德拉保卫战刷怪点位" (Battle of
+    /// Prontera spawn points), whose members 833/857/864 stand on the central plaza at 156.4,203.</summary>
+    internal const string HeartGroup = "普隆德拉保卫战刷怪点位";
+    /// <summary>(inferred) For this long after a revive, invaders do not take the player on sight. The waves from the South
+    /// Gate march past Prontera's resurrection point to the plaza, and anyone who revived in their path died again (#499).</summary>
+    internal const long ReviveGraceMs = 10_000;
     private readonly GameData _data;
     private readonly ActivityClock _clock;
     private readonly RoleStore _roles;
@@ -74,6 +80,8 @@ public sealed partial class PronteraDefenseService : IGameTicker
         this._sessions = sessions; this._loop = loop; this._log = log; this._buffs = buffs;
         LoadWorld();
         combat.Killed.Add(OnKilledAsync);
+        combat.PlayerRevived.Add(OnRevivedAsync);
+        _ignoresRevived = RecentlyRevived;
         scene.Loaded.Add(ApplyPrepBuffAsync);
         gm.Register("defense", "round <1-4> | end | status (Battle for Prontera test aid: TimeLimit 1012 opens so that round n starts now, "
             + "or back to the real schedule; status lists City Defense and the invaders)", GmAsync);
@@ -314,9 +322,11 @@ public sealed partial class PronteraDefenseService : IGameTicker
     /// 12009-12038) tell the story the point schedule follows: the enemy gathers south, breaks in at the South Gate
     /// (point 837 at 30 s), presses on the Inn and Library and the flanks (851/852/853/854) and closes on "the heart of
     /// Prontera" (855/856/858-861 from 1440 s, Osiris at 858 at 1560 s). Inferred from that: every invader walks from
-    /// its point to the city's heart, the map's default born point (Prontera: 156,182, the central plaza beside the
-    /// scene editor's defense group 832 at 156,203), attacks the players it meets on the way (aggressive while it
-    /// invades) and holds the heart. NPCs without a monster template (the rift 21001068, NPCType 2) do not appear.
+    /// its point to the city's heart, the scene editor's defense group <see cref="HeartGroup"/> on the central plaza (156,203;
+    /// a map without it takes its default born point), attacks the players it meets on the way (aggressive while it
+    /// invades) and holds the heart. The heart was the born point (156,182), 1 m from the resurrection point (10, at
+    /// 156,181): every revive came up inside the held wave and died again (#499). The group is 22 m from it.
+    /// NPCs without a monster template (the rift 21001068, NPCType 2) do not appear.
     /// </summary>
     private async Task SpawnAsync(long map, int selector, MapPoint point)
     {
@@ -326,6 +336,25 @@ public sealed partial class PronteraDefenseService : IGameTicker
         _actors[unit.Uid] = unit;
         _restore[unit.Uid] = PronteraDefenseDifficultyConfig.Get(_data, config.Difficulty)?.KillPoint ?? 0;
         if (Heart(map) is { } heart) unit.March = new MonsterMarch(heart.X, heart.Z, HeartRadius) { LeashX = unit.X, LeashZ = unit.Z };
+        unit.Ignores = _ignoresRevived;
+    }
+
+    private readonly Func<GameSession, bool> _ignoresRevived;
+    // Role id -> when it last revived (ms); read by the invaders' target choice.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, long> _revivedAt = new();
+
+    private Task OnRevivedAsync(GameSession session)
+    {
+        if (session.Role is { } role) _revivedAt[role.Id] = MonsterService.NowMs;
+        return Task.CompletedTask;
+    }
+
+    internal bool RecentlyRevived(GameSession session)
+    {
+        if (session.Role is not { } role || !_revivedAt.TryGetValue(role.Id, out long at)) return false;
+        if (MonsterService.NowMs - at < ReviveGraceMs) return true;
+        _revivedAt.TryRemove(new KeyValuePair<long, long>(role.Id, at));
+        return false;
     }
 
     /// <summary>The live round's invaders (read on the game loop).</summary>
@@ -338,12 +367,23 @@ public sealed partial class PronteraDefenseService : IGameTicker
         return _invaders[npc] = template with { Aggressive = true };
     }
 
-    /// <summary>The invader's own spot at the city's heart: the default born point, spread a little, on walkable ground.</summary>
+    /// <summary>The invader's own spot at the city's heart (<see cref="HeartCentre"/>), spread a little, on walkable ground.</summary>
     private MapPoint? Heart(long map)
     {
-        if (_worldData.Map(map) is not { Born: { } born } world) return null;
+        if (_worldData.Map(map) is not { } world || HeartCentre(world) is not { } centre) return null;
         double angle = Random.Shared.NextDouble() * Math.PI * 2, radius = Random.Shared.NextDouble() * HeartSpread;
-        return world.Standable(born with { X = born.X + (float)(Math.Cos(angle) * radius), Z = born.Z + (float)(Math.Sin(angle) * radius) });
+        return world.Standable(centre with { X = centre.X + (float)(Math.Cos(angle) * radius), Z = centre.Z + (float)(Math.Sin(angle) * radius) });
+    }
+
+    /// <summary>A member point of the map's <see cref="HeartGroup"/>, or its default born point when it has none.</summary>
+    internal static MapPoint? HeartCentre(MapWorld world)
+    {
+        if (world.SceneGroups.FirstOrDefault(g => g.Name == HeartGroup) is { } group)
+        {
+            MapPoint[] members = [.. group.Points.Where(world.Points.ContainsKey).Select(id => world.Points[id])];
+            if (members.Length > 0) return members[Random.Shared.Next(members.Length)];
+        }
+        return world.Born;
     }
 
     private async Task OnKilledAsync(GameSession killer, MonsterUnit monster)

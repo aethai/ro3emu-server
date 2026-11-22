@@ -8,6 +8,9 @@ namespace Ro3Emu.Server.Maps;
 /// <summary>A server-chosen spot on a map: position and facing in degrees.</summary>
 public readonly record struct MapPoint(float X, float Y, float Z, float Face);
 
+/// <summary>A scene editor group (m_kGroups): its name and the ids of its member points (itemIdList).</summary>
+public sealed record SceneGroup(int Id, string Name, IReadOnlyList<long> Points);
+
 /// <summary>NpcTag of the scene-editor kNpcList (enum_NpcTagType): what a world NPC entry is.</summary>
 public enum WorldNpcKind { Npc = 2, Portal = 26, Kafra = 28 }
 
@@ -91,6 +94,9 @@ public sealed class MapWorld
     /// <summary>The points of each patrol of kPatrolList, id -> (x, y, z) list (what a scripted scene's unit flies).</summary>
     public IReadOnlyDictionary<long, IReadOnlyList<(float X, float Y, float Z)>> PatrolPaths { get; init; } =
         new Dictionary<long, IReadOnlyList<(float X, float Y, float Z)>>();
+
+    /// <summary>Every m_kGroups entry by name and member ids (the members' positions are in <see cref="Points"/>).</summary>
+    public IReadOnlyList<SceneGroup> SceneGroups { get; init; } = [];
 
     /// <summary>Dungeon m_kGroups joined to m_kMonsterSpawnPoints; templates/timing belong to PetFloorConfig.</summary>
     public IReadOnlyDictionary<int, IReadOnlyList<SpawnPoint>> DungeonGroups { get; init; } = new Dictionary<int, IReadOnlyList<SpawnPoint>>();
@@ -435,7 +441,8 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
         {
             SceneEntry = sceneEntry, Born = born, Revive = revive, Npcs = npcs, Points = points, OffGroundPoints = map.OffGroundPoints,
             Nav = map.Nav, SpawnGroups = spawnGroups,
-            GatheringPoints = LoadGatheringPoints(se, sceneEntry), DungeonGroups = LoadDungeonGroups(se), Regions = LoadRegions(se),
+            GatheringPoints = LoadGatheringPoints(se, sceneEntry), DungeonGroups = LoadDungeonGroups(se), SceneGroups = LoadSceneGroups(se),
+            Regions = LoadRegions(se),
             GuideRoutes = SceneEditorGuides.RouteIds(se), GuidePaths = SceneEditorGuides.Paths(se), PatrolPaths = SceneEditorGuides.Patrols(se),
             AirWalls = SceneEditorAirWalls.Read(se)
         };
@@ -457,11 +464,28 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
         return regions;
     }
 
+    /// <summary>The scene editor's groups (m_kGroups), read by <see cref="LoadSceneGroups"/> and <see cref="LoadDungeonGroups"/>.</summary>
+    private const string GroupsField = "m_kGroups";
+
+    private static List<SceneGroup> LoadSceneGroups(JsonElement se)
+    {
+        var groups = new List<SceneGroup>();
+        if (!se.TryGetProperty(GroupsField, out var gs) || gs.ValueKind != JsonValueKind.Object) return groups;
+        foreach (var g in gs.EnumerateObject())
+        {
+            if (!g.Value.TryGetProperty("itemIdList", out var ids) || ids.ValueKind != JsonValueKind.Array) continue;
+            string name = g.Value.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString()! : "";
+            groups.Add(new SceneGroup((int)GameData.Int(g.Value, "Id"), name,
+                [.. ids.EnumerateArray().Select(id => (long)(GameData.Number(id) ?? 0)).Where(id => id > 0)]));
+        }
+        return groups;
+    }
+
     /// <summary>use DungeonConfig's dg01 editor, retaining every member point.</summary>
     private static Dictionary<int, IReadOnlyList<SpawnPoint>> LoadDungeonGroups(JsonElement se)
     {
         var groups = new Dictionary<int, IReadOnlyList<SpawnPoint>>();
-        if (!se.TryGetProperty("m_kGroups", out var gs) || gs.ValueKind != JsonValueKind.Object
+        if (!se.TryGetProperty(GroupsField, out var gs) || gs.ValueKind != JsonValueKind.Object
             || !se.TryGetProperty("m_kMonsterSpawnPoints", out var ps) || ps.ValueKind != JsonValueKind.Object) return groups;
         foreach (var g in gs.EnumerateObject())
         {
