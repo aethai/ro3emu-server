@@ -105,6 +105,7 @@ namespace Ro3Emu.ClientHooks
                     global.Obf_RuA<Obf_R.Obf_ff>("LC_SeasonHelper") ?? Module(manager, global, "lc_seasonhelper"),
                     global.Obf_RuA<Obf_R.Obf_ff>("LC_SeasonExplorationHelper") ?? Module(manager, global, "lc_seasonexplorationhelper"));
                 LevelCapTip.Install(Module(manager, global, "lua_cfg_baselvlimitconfig"));
+                SeasonRefineAttrs.Install(Module(manager, global, "lua_cfg_refiningseasonattrconfig"));
                 PersonalCards.Install((Obf_R.Obf_Cf)env, Module(manager, global, "lc_dal_personal"));
                 LuaLogs.Install(global);
                 EmoteWidget.Install(Module(manager, global, "ui_sys_main_actionwidgetbasectrl"));
