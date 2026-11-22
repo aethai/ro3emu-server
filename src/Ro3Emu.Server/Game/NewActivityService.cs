@@ -58,7 +58,7 @@ public sealed partial class NewActivityService
         AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene, Maps.WorldData worldData,
         InstanceService instances, DungeonService dungeons, PronteraDefenseService defense, CombatService combat,
         Deadlines deadlines, TeamService teams, MvpService mvps, ChatService chat, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
-        LifeJobService life, WildAfkService afk, RewardService rewards, ILogger<NewActivityService> log)
+        LifeJobService life, RewardService rewards, ILogger<NewActivityService> log)
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
         this._accounts = accounts; this._items = items; this._mail = mail; this._seasons = seasons; this._clock = clock;
@@ -71,7 +71,6 @@ public sealed partial class NewActivityService
         life.ExplorationNotes = NoteDrops;
         life.ProjectedRestrictions.Add(NoteDrops.Remaining);
         rewards.ExplorationNotes = NoteDrops;
-        rewards.IsExplorationHunt = afk.IsExplorationHunt;
         rewards.SyncExplorationRestriction = life.SyncRestrictionsAsync;
         this._dungeons = dungeons;
         this._teams = teams;
