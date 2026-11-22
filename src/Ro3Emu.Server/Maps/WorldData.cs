@@ -464,10 +464,13 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
         return regions;
     }
 
+    /// <summary>The scene editor's groups (m_kGroups), read by <see cref="LoadSceneGroups"/> and <see cref="LoadDungeonGroups"/>.</summary>
+    private const string GroupsField = "m_kGroups";
+
     private static List<SceneGroup> LoadSceneGroups(JsonElement se)
     {
         var groups = new List<SceneGroup>();
-        if (!se.TryGetProperty("m_kGroups", out var gs) || gs.ValueKind != JsonValueKind.Object) return groups;
+        if (!se.TryGetProperty(GroupsField, out var gs) || gs.ValueKind != JsonValueKind.Object) return groups;
         foreach (var g in gs.EnumerateObject())
         {
             if (!g.Value.TryGetProperty("itemIdList", out var ids) || ids.ValueKind != JsonValueKind.Array) continue;
@@ -482,7 +485,7 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
     private static Dictionary<int, IReadOnlyList<SpawnPoint>> LoadDungeonGroups(JsonElement se)
     {
         var groups = new Dictionary<int, IReadOnlyList<SpawnPoint>>();
-        if (!se.TryGetProperty("m_kGroups", out var gs) || gs.ValueKind != JsonValueKind.Object
+        if (!se.TryGetProperty(GroupsField, out var gs) || gs.ValueKind != JsonValueKind.Object
             || !se.TryGetProperty("m_kMonsterSpawnPoints", out var ps) || ps.ValueKind != JsonValueKind.Object) return groups;
         foreach (var g in gs.EnumerateObject())
         {
