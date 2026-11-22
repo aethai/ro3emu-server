@@ -48,6 +48,7 @@ public sealed partial class CharacterService
         LoadEquipmentPlans(session);
         session.AutoDecompose = roles.LoadAutoDecompose(role.Id) is { } setting ? AutoDecomposeSetting.Parser.ParseFrom(setting) : new();
         session.Synced.Clear();
+        session.SyncedPacked.Clear();
         session.SentPropertyIds.Clear();
         session.NewItems.Clear();
         session.SyncVersions.Clear();

@@ -17,8 +17,8 @@ public sealed class PhonestChannel : IAsyncDisposable
     /// <summary>Largest accepted client frame. The client's biggest requests (settings blobs, chat) are a few KB.</summary>
     private const int MaxFrame = 1024 * 1024;
     /// <summary>Plain bytes one socket read may inflate to (a decompression bomb of many small valid frames): zlib can reach
-    /// about 1000:1, so a full read could reach 64 MiB. Ordinary coalesced frames are far below this (inferred).</summary>
-    private const int MaxInflatedPerRead = 16 * 1024 * 1024;
+    /// about 1000:1, so a full 16 KB read could reach 16 MiB. Ordinary coalesced frames are far below this (inferred).</summary>
+    private const int MaxInflatedPerRead = 4 * 1024 * 1024;
     /// <summary>
     /// Bytes queued for one connection's writer before it counts as a stalled reader. Past it the connection is closed
     /// (reconnect = full resync) rather than letting the queue grow without bound or dropping reliable messages.
@@ -99,7 +99,9 @@ public sealed class PhonestChannel : IAsyncDisposable
 
     public async Task RunAsync(FrameHandler handler, CancellationToken ct)
     {
-        var buf = new byte[64 * 1024];
+        // Clients send small requests; a larger frame collects in _pending over several reads. Two connections per player
+        // held 64 KB each for the whole session (pinned while a receive waits).
+        var buf = new byte[16 * 1024];
         while (!ct.IsCancellationRequested)
         {
             int n = await _socket.ReceiveAsync(buf, SocketFlags.None, ct);
