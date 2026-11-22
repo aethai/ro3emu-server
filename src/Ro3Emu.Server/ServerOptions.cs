@@ -72,6 +72,12 @@ public sealed class ServerOptions
     /// returns false. The projection is (inferred), kept for an operator who wants the pet visible.</summary>
     public bool PetWorldFollower { get; set; }
 
+    /// <summary>An optional night look (NightCycleService, docs/systems/night-cycle.md): each player's client draws a dark
+    /// layer over the world by the PC clock (dusk 17-19, night 19-05, dawn 05-06), in towns and fields only. Off by default:
+    /// the original game has no day and night (MapConfig _iWeather is 0 on every map and the client has no weather, sky or
+    /// time-of-day module), so this is the emulator's own addition for an operator who wants it.</summary>
+    public bool NightCycle { get; set; }
+
     /// <summary>Game-message JSON log (data/logs/traffic-*.jsonl): "off", "on" or a comma-separated account list.
     /// Formatting and writes run off the game loop; keep it off for load tests and production.</summary>
     public string TrafficLog { get; set; } = "off";
