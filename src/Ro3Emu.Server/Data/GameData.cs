@@ -111,7 +111,7 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
         var rows = Table(table);
         Span<char> key = stackalloc char[24];
         if (rows is Dictionary<string, JsonElement> dict && dict.TryGetAlternateLookup<ReadOnlySpan<char>>(out var lookup)
-            && id.TryFormat(key, out int written))
+            && id.TryFormat(key, out int written, default, System.Globalization.CultureInfo.CurrentCulture))
             return lookup.TryGetValue(key[..written], out var hit) ? hit : null;
         return rows.TryGetValue(id.ToString(), out var row) ? row : null;
     }
