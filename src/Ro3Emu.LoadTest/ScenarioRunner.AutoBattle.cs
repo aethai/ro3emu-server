@@ -26,14 +26,14 @@ public sealed partial class ScenarioRunner
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(options.RepositoryRoot, "data", "config", "GMCombinationConfig.json")));
         var kits = new List<AutoBattleKit>();
-        foreach (var row in doc.RootElement.EnumerateObject().OrderBy(p => int.Parse(p.Name)))
+        foreach (var row in doc.RootElement.EnumerateObject().OrderBy(p => int.Parse(p.Name, System.Globalization.CultureInfo.InvariantCulture)))
         {
             if (!row.Value.TryGetProperty("_kCombinationScript", out var script)) continue;
             var steps = script.EnumerateArray().Select(s => s.EnumerateArray().Select(x => x.GetString() ?? "").ToArray()).ToArray();
             if (!steps.Any(s => s is ["GmSetLevel", "99", ..])) continue;
             var wheel = steps.FirstOrDefault(s => s.Length > 1 && s[0] == "GmsetSkillWheel");
-            int[] bar = wheel?.Skip(1).Select(int.Parse).Where(id => id > 0).ToArray() ?? [];
-            if (bar.Length > 0) kits.Add(new(int.Parse(row.Name), bar));
+            int[] bar = wheel?.Skip(1).Select(x => int.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).Where(id => id > 0).ToArray() ?? [];
+            if (bar.Length > 0) kits.Add(new(int.Parse(row.Name, System.Globalization.CultureInfo.InvariantCulture), bar));
         }
         return kits.Count > 0 ? [.. kits] : throw new InvalidOperationException("No level 99 GM preset with a skill bar");
     }
@@ -43,8 +43,8 @@ public sealed partial class ScenarioRunner
     {
         using var doc = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(options.RepositoryRoot, "data", "config", "MapConfig.json")));
         return [.. doc.RootElement.EnumerateObject()
-            .Where(p => p.Value.TryGetProperty("_iSceneType", out var t) && t.GetInt32() == 1 && long.TryParse(p.Name, out _))
-            .Select(p => long.Parse(p.Name))
+            .Where(p => p.Value.TryGetProperty("_iSceneType", out var t) && t.GetInt32() == 1 && long.TryParse(p.Name, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _))
+            .Select(p => long.Parse(p.Name, System.Globalization.CultureInfo.InvariantCulture))
             .Where(id => _world.Map(id) is { SpawnGroups.Count: > 0 })
             .Order()];
     }
