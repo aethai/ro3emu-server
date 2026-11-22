@@ -165,6 +165,29 @@ public sealed class PronteraDefenseInvaderTests : IAsyncLifetime
         Assert.DoesNotContain(await OnLoop(() => Invaders().ToArray()), m => m.Template.NpcId == 21001068);
     }
 
+    [ClientDataFact]
+    public async Task AnInvaderLeavesAPlayerWhoJustRevivedOnItsWay()
+    {
+        await using var bot = await InWorld("Revived");
+        await Gm(bot, "!lvl 99");
+        await WarpAsync(bot, Prontera);
+        await OpenRoundAsync(bot, 30);
+        var invader = await Until(() => Invaders().FirstOrDefault(m => m.Moving && ToHeart(m) > 40), "a marching invader");
+        var session = await OnLoop(() => Session(bot));
+        // #499: the South Gate waves march past the resurrection point; a player who has just revived is not taken on sight.
+        await Service<GameLoop>().InvokeAsync(() => Service<CombatService>().RefreshRevivedAsync(session));
+        var (x, z) = await OnLoop(() =>
+        {
+            var (tx, tz) = invader.March!.Route.Count > 0 ? (invader.March.Route[0].X, invader.March.Route[0].Z) : (invader.ToX, invader.ToZ);
+            float dx = tx - invader.X, dz = tz - invader.Z, len = MathF.Max(0.1f, MathF.Sqrt(dx * dx + dz * dz)), ahead = MathF.Min(3f, len);
+            return (invader.X + dx / len * ahead, invader.Z + dz / len * ahead);
+        });
+        await Gm(bot, string.Create(CultureInfo.InvariantCulture, $"!jump {x:0.00} {z:0.00}"));
+        await Task.Delay(2000);
+        Assert.False(await OnLoop(() => ReferenceEquals(invader.Target, session)));
+        Assert.True(await OnLoop(() => Service<PronteraDefenseService>().RecentlyRevived(session)));
+    }
+
     private IEnumerable<MonsterUnit> Invaders() => Service<PronteraDefenseService>().Invaders.Where(m => !m.Dead);
 
     private static float ToHeart(MonsterUnit m) => MonsterService.Distance(m.X, m.Z, HeartX, HeartZ);

@@ -426,7 +426,8 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         float best = float.MaxValue;
         foreach (var p in m.Viewers)
         {
-            if (p.Role == null || p.Dead || TargetVisible?.Invoke(m, p) == false || Spares?.Invoke(m, p) == true) continue;
+            if (p.Role == null || p.Dead || TargetVisible?.Invoke(m, p) == false || Spares?.Invoke(m, p) == true
+                || m.Ignores?.Invoke(p) == true) continue;
             float d = Distance(m, p);
             if (d <= m.Template.ViewRange && d < best) { best = d; near = p; }
         }

@@ -30,6 +30,9 @@ public sealed partial class PronteraDefenseService : IGameTicker
     /// <summary>The scene editor group the heart is taken from: sc_prontera_001's 832 "普隆德拉保卫战刷怪点位" (Battle of
     /// Prontera spawn points), whose members 833/857/864 stand on the central plaza at 156.4,203.</summary>
     internal const string HeartGroup = "普隆德拉保卫战刷怪点位";
+    /// <summary>(inferred) For this long after a revive, invaders do not take the player on sight. The waves from the South
+    /// Gate march past Prontera's resurrection point to the plaza, and anyone who revived in their path died again (#499).</summary>
+    internal const long ReviveGraceMs = 10_000;
     private readonly GameData _data;
     private readonly ActivityClock _clock;
     private readonly RoleStore _roles;
@@ -77,6 +80,8 @@ public sealed partial class PronteraDefenseService : IGameTicker
         this._sessions = sessions; this._loop = loop; this._log = log; this._buffs = buffs;
         LoadWorld();
         combat.Killed.Add(OnKilledAsync);
+        combat.PlayerRevived.Add(OnRevivedAsync);
+        _ignoresRevived = RecentlyRevived;
         scene.Loaded.Add(ApplyPrepBuffAsync);
         gm.Register("defense", "round <1-4> | end | status (Battle for Prontera test aid: TimeLimit 1012 opens so that round n starts now, "
             + "or back to the real schedule; status lists City Defense and the invaders)", GmAsync);
@@ -331,6 +336,25 @@ public sealed partial class PronteraDefenseService : IGameTicker
         _actors[unit.Uid] = unit;
         _restore[unit.Uid] = PronteraDefenseDifficultyConfig.Get(_data, config.Difficulty)?.KillPoint ?? 0;
         if (Heart(map) is { } heart) unit.March = new MonsterMarch(heart.X, heart.Z, HeartRadius) { LeashX = unit.X, LeashZ = unit.Z };
+        unit.Ignores = _ignoresRevived;
+    }
+
+    private readonly Func<GameSession, bool> _ignoresRevived;
+    // Role id -> when it last revived (ms); read by the invaders' target choice.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, long> _revivedAt = new();
+
+    private Task OnRevivedAsync(GameSession session)
+    {
+        if (session.Role is { } role) _revivedAt[role.Id] = MonsterService.NowMs;
+        return Task.CompletedTask;
+    }
+
+    internal bool RecentlyRevived(GameSession session)
+    {
+        if (session.Role is not { } role || !_revivedAt.TryGetValue(role.Id, out long at)) return false;
+        if (MonsterService.NowMs - at < ReviveGraceMs) return true;
+        _revivedAt.TryRemove(new KeyValuePair<long, long>(role.Id, at));
+        return false;
     }
 
     /// <summary>The live round's invaders (read on the game loop).</summary>
