@@ -20,6 +20,7 @@ public sealed partial class CharacterService
     /// </summary>
     public void Refresh(GameSession session)
     {
+        session.StatsMemo = null; // a refresh publishes what changed: always from the inputs
         var stats = Stats(session);
         session.EntityProperties = EntityPropertiesOf(stats);
         session.EquipLook = EquipInfo(session);
@@ -67,9 +68,68 @@ public sealed partial class CharacterService
     /// AttributeConversionConfig per point of STR..LUK (_kAttribute2 for ranged jobs), grouped and rounded up.
     /// Current HP/SP come from the session (full when unset).
     /// </summary>
+    /// <summary>Set by ServerHost: the loop's <see cref="GameLoop.WorkSerial"/>. Unset, nothing is memoized.</summary>
+    internal Func<long>? WorkSerial { get; set; }
+
+    /// <summary>The build part of a sheet (before HP, SP and the dynamic properties) and what it was computed from.</summary>
+    private sealed record StatsMemoEntry(long Serial, RoleProgress Progress, long Level, long SpeedBonus, long Mount, ActiveBuff[] Buffs,
+        StatSheet Sheet);
+
+    /// <summary>A combat path (cast, hit, swing) allows <see cref="Stats"/> to reuse the build part for the rest of the
+    /// current loop work item: until its next real await, nothing it does changes the character's build except buffs,
+    /// HP and the ridden mount, which the memo checks. Everywhere else (GM ops, trades, equipment) the sheet is fresh.</summary>
+    internal void ReuseStatsInThisWork(GameSession session)
+    {
+        if (WorkSerial?.Invoke() is { } serial) session.StatsReuseSerial = serial;
+    }
+
+    /// <summary>
+    /// The character's full stat sheet. A cast reads it five to seven times while nothing it depends on changes, and it
+    /// was half of the loop's work with players on auto battle (LoadTest S9). Within a work item a combat path allowed
+    /// (<see cref="ReuseStatsInThisWork"/>) the build part is memoized, dropped when the buff list (its records are
+    /// immutable, so the references say it all), the progress, the level, the ridden mount or the GM speed changes, and
+    /// on every <see cref="Refresh"/>. HP, SP and the dynamic properties are applied on every call.
+    /// </summary>
     public StatSheet Stats(GameSession session)
     {
         var p = session.Progress!;
+        long serial = WorkSerial?.Invoke() ?? -1;
+        if (serial != session.StatsReuseSerial) serial = -1; // not in a combat path's work: always fresh
+        StatSheet sheet;
+        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo && memo.Serial == serial && Unchanged(memo, session, p))
+            sheet = memo.Sheet.Clone();
+        else
+        {
+            sheet = BuildStats(session, p);
+            if (serial >= 0)
+                session.StatsMemo = new StatsMemoEntry(serial, p, p.Level, session.SpeedBonus, MountService.Rider(session), [.. session.Buffs],
+                    sheet.Clone());
+        }
+        long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
+        sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
+        sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
+        foreach (var provider in DynamicProperties)
+            foreach (var (id, value) in provider(session))
+            {
+                // Independent active shield owners (totems and timed buffs) contribute to property 2003.
+                if (id == 2003) sheet[id] = (long)Math.Clamp((decimal)sheet[id] + value, 0, long.MaxValue);
+                else sheet[id] = value;
+            }
+        sheet[Lv] = p.Level;
+        return sheet;
+    }
+
+    private static bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p)
+    {
+        if (!ReferenceEquals(memo.Progress, p) || memo.Level != p.Level || memo.SpeedBonus != session.SpeedBonus
+            || memo.Mount != MountService.Rider(session) || memo.Buffs.Length != session.Buffs.Count) return false;
+        for (int i = 0; i < memo.Buffs.Length; i++)
+            if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
+        return true;
+    }
+
+    private StatSheet BuildStats(GameSession session, RoleProgress p)
+    {
         var raw = new Dictionary<int, double>();
         void Add(long id, double v) => raw[(int)id] = raw.GetValueOrDefault((int)id) + v;
 
@@ -91,19 +151,7 @@ public sealed partial class CharacterService
 
         var sheet = EquipmentStunts.ApplyConversions(session, raw, data);
         if (matchAttributes == null) sheet = EmblemService.ApplyResonanceConversions(session, raw, sheet, data);
-        sheet = ApplySpeedOverflow(raw, sheet);
-        long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
-        sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
-        sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
-        foreach (var provider in DynamicProperties)
-            foreach (var (id, value) in provider(session))
-            {
-                // Independent active shield owners (totems and timed buffs) contribute to property 2003.
-                if (id == 2003) sheet[id] = (long)Math.Clamp((decimal)sheet[id] + value, 0, long.MaxValue);
-                else sheet[id] = value;
-            }
-        sheet[Lv] = p.Level;
-        return sheet;
+        return ApplySpeedOverflow(raw, sheet);
     }
 
     /// <summary>AttributeConfig 30 "Other Elemental Damage Reduction%" and 31 "Crowd Control Resistance". Rows 20-24 of the

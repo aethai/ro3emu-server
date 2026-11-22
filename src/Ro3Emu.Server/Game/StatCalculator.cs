@@ -13,6 +13,15 @@ public sealed class StatSheet
         get => Data.GetValueOrDefault(id);
         set => Data[id] = value;
     }
+
+    /// <summary>An independent copy: callers may change what <see cref="CharacterService.Stats"/> hands them.</summary>
+    public StatSheet Clone()
+    {
+        var copy = new StatSheet();
+        foreach (var (id, value) in Data) copy.Data[id] = value;
+        foreach (var (id, value) in Base) copy.Base[id] = value;
+        return copy;
+    }
 }
 
 /// <summary>

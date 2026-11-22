@@ -192,6 +192,10 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     /// <summary>GM override added to the speed attribute (113), not saved (!speed).</summary>
     public long SpeedBonus { get; set; }
 
+    /// <summary>CharacterService.Stats' memo and the loop work item a combat path allowed it in (see there).</summary>
+    internal object? StatsMemo { get; set; }
+    internal long StatsReuseSerial { get; set; } = -1;
+
     /// <summary>GM panel combat switches (GmNoCD, GmDamageFix, GmUnlimit), not saved; combat reads the field per cast or hit.</summary>
     public GmCombatSwitches GmCombat { get; set; }
     /// <summary>GM panel attribute changes (GmSetEntityAttr / GmChangeEntityAttr) as raw contributions, not saved.</summary>

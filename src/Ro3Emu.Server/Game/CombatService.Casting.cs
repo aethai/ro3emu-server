@@ -86,6 +86,7 @@ public sealed partial class CombatService
 
     private async Task CastCoreAsync(GameSession s, CastSkillReq request, long arrivedMs, bool lineup = false)
     {
+        _character.ReuseStatsInThisWork(s);
         var req = request.Clone();
         var row = EffectiveSkillRow(s, req.SkillId);
         var owned = req.OpUnitId == 0 || req.OpUnitId == s.Role?.Id ? null
@@ -125,7 +126,9 @@ public sealed partial class CombatService
         }
         // GmUnlimit's "no consumption" (inferred): no HP, SP, item, buff pile or energy cost.
         bool unlimited = (s.GmCombat & GmCombatSwitches.Unlimited) != 0;
-        var costs = row is { } value && !unlimited ? ResolveCosts(s, value) : new CastCosts();
+        // A refused cast pays nothing, so its costs are never resolved: they read the character's stats, and on auto
+        // battle most requests are refused (cooldown, busy). S9 at 50 players: a third of the loop's work.
+        var costs = error == 0 && row is { } value && !unlimited ? ResolveCosts(s, value) : new CastCosts();
         long errorParam = 0;
         if (error == 0) (error, errorParam) = ValidateCosts(s, costs);
         if (error == 0 && !unlimited && !_buffs.CanSpendEnergy(s, row!.Value)) error = ErrorCodes.SkillEnergyShort;
@@ -579,7 +582,7 @@ public sealed partial class CombatService
                 default: result.Invalid = true; break; // reject an unsupported cost rather than grant a free cast.
             }
         }
-        if (result.Attrs.TryGetValue(AttributeId.Sp, out long sp)) result.Attrs[AttributeId.Sp] = ModifiedSpCost(_character.Stats(s), sp);
+        if (result.Attrs.TryGetValue(AttributeId.Sp, out long sp)) result.Attrs[AttributeId.Sp] = ModifiedSpCost(stats, sp);
         return result;
     }
 
@@ -700,6 +703,7 @@ public sealed partial class CombatService
     {
         if (s.Role == null || s.Progress == null) return;
         using var held = await CharacterService.Lock(s);
+        _character.ReuseStatsInThisWork(s);
         if (target != null && !CanHitMonster(s, target)) return;
         if (EffectiveSkillRow(s, skillId) is not { } row || !Learned(s, row) || !SkillModeAllowed(s, row)
             || _buffs.HasForbidden(s, ForbiddenState.NormalAttack) || !SwingPlayedOut(s.SkillCast, Now)) return;

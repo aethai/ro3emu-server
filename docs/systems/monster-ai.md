@@ -149,3 +149,7 @@ memory: the configuration is not written, so the next start uses `Ro3Emu:FieldEx
   of every loop tick (`MapInstance.Tick`). A unit still walking or fighting keeps it on every tick; a player arriving
   or a unit added wakes it at once. On 20 empty field maps (about 19 000 monsters) this took the map tick from
   73 ms/s to 2 ms/s and its allocation from 16 MB/s to 0.
+- *(inferred)* An aggressive monster a player shows looks for a target every fourth loop tick (200 ms), staggered by
+  uid, not on every tick. The look reads every player that shows the monster, so on a crowded line (200 players, a
+  thousand monsters) it grew with the square of the crowd: LoadTest S3 with 1,000 bots spent 113 ms/s on map ticks,
+  25 ms/s with the stagger. A player walking into range is noticed within 200 ms.

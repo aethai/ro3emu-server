@@ -33,6 +33,9 @@ public sealed partial class BuffService : IGameTicker
     private readonly ILogger<BuffService> _log;
     private long _guids = 900000;
     private readonly Dictionary<long, List<ActiveBuff>> _unitBuffs = [];
+    // The unit of each _unitBuffs entry (kept with it: added together, removed together), so an expiry finds it
+    // without walking the world; Tick built a map of every unit of every map on each due tick.
+    private readonly Dictionary<long, WorldUnit> _unitOwners = [];
     private const long ExpiryRetryMs = 10_000;
     private readonly Dictionary<long, long> _expiring = [];
 
@@ -60,7 +63,7 @@ public sealed partial class BuffService : IGameTicker
         character.IsItemUseForbidden = p => HasForbidden(p, ForbiddenState.UseItem);
         character.DynamicProperties.Add(SupportShieldProperties);
         character.DynamicProperties.Add(BlindProperties);
-        world.UnitRemoved.Add(unit => { _unitBuffs.Remove(unit.Uid); return Task.CompletedTask; });
+        world.UnitRemoved.Add(unit => { ForgetUnit(unit.Uid); return Task.CompletedTask; });
     }
 
     // BuffConfig._iBuffID of the control groups; StateFor names the SpecialStatusConfig row each one shows.
@@ -287,7 +290,7 @@ public sealed partial class BuffService : IGameTicker
         if (durationMs <= 0) durationMs = (int)GameData.Int(row, "_iTime");
         if (durationMs <= 0) durationMs = 60000;
         if (sourceId != unit.Uid && !ApplyDecay(unit.Uid, unit.SceneEntry, configId, ref durationMs)) return;
-        if (!_unitBuffs.TryGetValue(unit.Uid, out var list)) _unitBuffs[unit.Uid] = list = [];
+        var list = UnitBuffList(unit);
         int group = (int)GameData.Int(row, "_iBuffID");
         bool multiSource = GameData.Int(row, "_iMultiSource") != 0;
         var existing = list.FirstOrDefault(b => _data.Row("BuffConfig", b.ConfigId) is { } old
@@ -567,20 +570,19 @@ public sealed partial class BuffService : IGameTicker
             TickEnergy(s, now);
             TickImmuneDeath(s, now);
         }
-        bool unitDue = false;
-        foreach (var list in _unitBuffs.Values) if (list.Count == 0 || AnyExpired(list, now)) { unitDue = true; break; }
-        // One walk of the world per due tick finds the units, not one walk per expired buff.
-        var units = unitDue ? _world.AllUnits().GroupBy(u => u.Uid).ToDictionary(g => g.Key, g => g.First()) : null;
-        if (units != null) foreach (var (uid, list) in _unitBuffs.ToList())
+        List<long>? due = null;
+        foreach (var (uid, list) in _unitBuffs) if (list.Count == 0 || AnyExpired(list, now)) (due ??= []).Add(uid);
+        if (due != null) foreach (long uid in due)
         {
+            var list = _unitBuffs[uid];
             foreach (var buff in list.Where(b => b.ExpireMs <= now).ToList())
             {
                 // A unit's buff lives only in memory (RemoveUnitBuffAsync writes nothing): no role or realm reservation.
-                if (units.GetValueOrDefault(uid) is { } unit)
+                if (_unitOwners.GetValueOrDefault(uid) is { } unit)
                     ExpireOnce(buff, "unit buff expiration", () => RemoveUnitBuffAsync(unit, buff), runtime: true);
                 else list.Remove(buff);
             }
-            if (list.Count == 0) _unitBuffs.Remove(uid);
+            if (list.Count == 0) ForgetUnit(uid);
         }
     }
 

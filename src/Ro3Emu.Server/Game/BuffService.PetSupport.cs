@@ -165,7 +165,7 @@ public sealed partial class BuffService
     private async Task RemoveUnitBuffAsync(WorldUnit unit, ActiveBuff buff)
     {
         if (!_unitBuffs.TryGetValue(unit.Uid, out var buffs) || !buffs.Remove(buff)) return;
-        if (buffs.Count == 0) _unitBuffs.Remove(unit.Uid);
+        if (buffs.Count == 0) ForgetUnit(unit.Uid);
         await _world.ToUnitViewersAsync(unit, BuffRemove,
             new BuffRemoveNotify { UnitId = unit.Uid, BuffGuids = { buff.Guid } });
         var changed = new AOIAttrChange

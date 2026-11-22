@@ -500,7 +500,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             return;
         }
         if (_companionTargets.Count > 0 && FightsCompanion(m, map, now)) return; // MonsterService.Companions
-        if (m.Viewers.Count > 0 && !m.Returning && AttacksOnSight(m))
+        if (m.Viewers.Count > 0 && !m.Returning && LooksAround(m) && AttacksOnSight(m))
         {
             var near = NearestTarget(m);
             if (near != null)
@@ -534,6 +534,13 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         || !monster.Moving && monster.Target == null && monster.PetTarget == null && monster.March == null
             && !monster.Returning && monster.SlowMovementExpireMs == 0
             && (_companionTargets.Count == 0 || !_companionTargets.ContainsKey(monster));
+
+    /// <summary>Ticks between two looks of an aggressive monster for a player in sight (inferred: the client gives no AI
+    /// think rate). The look reads every player that shows the monster, so on a crowded line it was the map tick's main
+    /// cost; staggered by uid, a quarter of the monsters look on each tick and a player is noticed within 200 ms.</summary>
+    private const int LookEveryTicks = 4;
+
+    private bool LooksAround(MonsterUnit m) => (_tickNowMs / 50 + m.Uid) % LookEveryTicks == 0;
 
     /// <summary>Moves the roam clock on when it is due; true when the monster may roam now.</summary>
     private bool ScheduleRoam(MonsterUnit m, long now)
