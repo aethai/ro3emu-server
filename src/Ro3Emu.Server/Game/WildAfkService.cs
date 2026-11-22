@@ -74,6 +74,7 @@ public sealed class WildAfkService : IGameTicker
         scene.Loaded.Add(s => ReconcileAsync(s));
         combat.PlayerDied.Add(s => SuspendAsync(s));
         rewards.QualifiesForBonus = BeforeKillAsync;
+        rewards.IsFieldAutoBattle = IsFieldAutoBattle;
         rewards.StageAfkKill = StageAfkKill;
         rewards.KillDropsGranted.Add(DropsGrantedAsync);
         daily.BeforeReset = BeforeDailyResetAsync;
@@ -119,8 +120,8 @@ public sealed class WildAfkService : IGameTicker
     /// <summary>Where 43409 may turn it back on: those and the towns (scene type 0). Localization_en 10960000077 refuses only "Dungeons and similar Locations", and the
     /// switch already stays on, suspended, when a player walks from a field into town, so refusing a town left a stopped switch off (inferred). It runs only on a <see cref="Field"/>.</summary>
     private bool Startable(GameSession s) => Field(s) || s.InstanceId == 0 && _data.Row("MapConfig", s.SceneEntry) is { } map && GameData.Int(map, "_iSceneType") == 0;
-    // The Movement rules name AFK hunting. Bonus Time changes the ordinary loot table independently.
-    internal bool IsExplorationHunt(GameSession s, MonsterUnit monster) =>
+    // Shared by exploration note drops and the Valhalla statue. Bonus Time selects the loot table independently.
+    internal bool IsFieldAutoBattle(GameSession s, MonsterUnit monster) =>
         s.WildAfk != null && s.AutoBattle && !s.Dead && !s.SceneLoading && s.WorldScene == monster.WorldScene
         && Unlocked(s) && Field(s) && Ordinary(monster);
 

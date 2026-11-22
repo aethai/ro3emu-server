@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Ro3Emu.Server;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Tests;
@@ -12,6 +15,15 @@ public sealed class FieldExpRatesTests
     private const int Fabre = 5000003, AntEggOfTheStory = 5300036;
 
     private static FieldExpRule Rule(int min, int max, int percent) => new() { MinLevel = min, MaxLevel = max, Percent = percent };
+
+    [Fact]
+    public void StatueAccumulatesOnlyItsFieldExpAttributeInLevelOrder()
+    {
+        var data = new GameData(Options.Create(new ServerOptions { GameDataDir = SyntheticData.Dir }), NullLogger<GameData>.Instance);
+        var rates = ValhallaService.FieldExpBonuses(data);
+        Assert.Equal(375, rates[1]);
+        Assert.Equal(1000, rates[2]);
+    }
 
     [Fact]
     public void WithoutARuleTheExpIsWhatTheClientsTablesPay() =>
