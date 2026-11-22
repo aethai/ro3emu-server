@@ -20,6 +20,11 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     // SkillTemplate by script show: a cast asks for its template on every hit moment and target (#484), and the lookup built
     // its table key and an enumerator each time. Templates never change once loaded.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement?> _skillTemplates = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> _derived = new();
+
+    /// <summary>A value computed from the tables once per host (the tables never change after loading), for readers on
+    /// hot paths that would otherwise parse the same rows on every call.</summary>
+    internal T Derived<T>(string key, Func<T> build) where T : class => (T)_derived.GetOrAdd(key, _ => build());
     private volatile Dictionary<long, string>? _texts;
     private volatile FrozenDictionary<string, Dictionary<string, JsonElement>>? _frozen;
 

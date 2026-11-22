@@ -15,15 +15,36 @@ public sealed partial class EmblemService
 {
     private const int OpAttr = 1, OpSkillInUse = 6, OpAttrForJob = 15;
 
-    /// <summary>The EmblemMarkConfig rows reached by the given echoes, every stage up to the highest (cumulative).</summary>
-    private static IEnumerable<JsonElement> ReachedStages(IEnumerable<InvItem> worn, GameData data)
+    /// <summary>An EmblemMarkConfig stage row as the resonance reads it: its mark and the lit count it needs, its season
+    /// power, its _kBasicAttribute pairs and the operations of its _kSpecialAttribute SpecialEffectConfig rows.</summary>
+    private sealed record MarkStage(long Mark, long Needed, long Power, (long Id, double Value)[] Basic, long[][] Ops);
+
+    /// <summary>Every stage row in table order, parsed once: the stat sheet reads the resonance several times per build,
+    /// and walking and parsing the whole table each time was a fifth of building it.</summary>
+    private static MarkStage[] Stages(GameData data) => data.Derived("EmblemMarkStages", () =>
+    {
+        var stages = new List<MarkStage>();
+        foreach (var row in data.Table("EmblemMarkConfig").Values)
+        {
+            if (GameData.Int(row, "_iMarkStage") <= 0 || GameData.Int(row, "_iEmblemMarkID") is not (> 0 and var mark)) continue;
+            var ops = new List<long[]>();
+            if (row.TryGetProperty("_kSpecialAttribute", out var ids) && ids.ValueKind == JsonValueKind.Array)
+                foreach (var id in ids.EnumerateArray())
+                    if (data.Row("SpecialEffectConfig", (long)(GameData.Number(id) ?? 0)) is { } effect)
+                        ops.AddRange(EquipmentAffixes.Rows(effect, "_kSpecialEffect"));
+            stages.Add(new MarkStage(mark, GameData.Int(row, "_iMarkNum"), GameData.Int(row, "_iSeasonPower"),
+                [.. GameData.Pairs(row, "_kBasicAttribute")], [.. ops]));
+        }
+        return stages.ToArray();
+    });
+
+    /// <summary>The stages reached by the given echoes, every stage up to the highest (cumulative).</summary>
+    private static IEnumerable<MarkStage> ReachedStages(IEnumerable<InvItem> worn, GameData data)
     {
         var marks = MarkCounts(worn, data);
         if (marks.Count == 0) yield break;
-        foreach (var row in data.Table("EmblemMarkConfig").Values)
-            if (GameData.Int(row, "_iMarkStage") > 0 && GameData.Int(row, "_iEmblemMarkID") is var mark and > 0
-                && marks.TryGetValue(mark, out int lit) && lit >= GameData.Int(row, "_iMarkNum"))
-                yield return row;
+        foreach (var stage in Stages(data))
+            if (marks.TryGetValue(stage.Mark, out int lit) && lit >= stage.Needed) yield return stage;
     }
 
     /// <summary>
@@ -33,17 +54,12 @@ public sealed partial class EmblemService
     /// as the plan's stage bonus (inferred).
     /// </summary>
     private static long StagePower(IEnumerable<InvItem> worn, GameData data) =>
-        ReachedStages(worn, data).Sum(row => GameData.Int(row, "_iSeasonPower"));
+        ReachedStages(worn, data).Sum(stage => stage.Power);
 
     private static IEnumerable<long[]> ResonanceOps(GameSession session, GameData data)
     {
         foreach (var stage in ReachedStages(Worn(session), data))
-        {
-            if (!stage.TryGetProperty("_kSpecialAttribute", out var ids) || ids.ValueKind != JsonValueKind.Array) continue;
-            foreach (var id in ids.EnumerateArray())
-                if (data.Row("SpecialEffectConfig", (long)(GameData.Number(id) ?? 0)) is { } effect)
-                    foreach (var op in EquipmentAffixes.Rows(effect, "_kSpecialEffect")) yield return op;
-        }
+            foreach (var op in stage.Ops) yield return op;
     }
 
     /// <summary>
@@ -69,7 +85,7 @@ public sealed partial class EmblemService
     private IEnumerable<(long Id, double Value)> ResonanceAttributes(GameSession session)
     {
         foreach (var stage in ReachedStages(Worn(session), _data))
-            foreach (var attr in GameData.Pairs(stage, "_kBasicAttribute")) yield return attr;
+            foreach (var attr in stage.Basic) yield return attr;
         foreach (var op in ResonanceOps(session, _data))
             if (op.Length == 3 && op[0] == OpAttr) yield return (op[1], op[2]);
         foreach (int skill in ResonanceSkills(session))
