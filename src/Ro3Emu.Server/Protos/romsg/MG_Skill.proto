@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 enum DamageType {
   DamageType_Damage = 0;
@@ -468,4 +467,3 @@ message PlayerConfirmImmuneDeadReq {
 message PlayerConfirmImmuneDeadRsp {
   int32 result = 1;
 }
-

@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 enum ETradeItemSpecialType {
   ETradeItemSpecialType_None = 0;
@@ -824,4 +823,3 @@ service ProductService {
   rpc QueryPenaltyOrders (romsg.CQueryPenaltyOrdersRequest) returns (romsg.CQueryPenaltyOrdersResponse);
   rpc TtTradeGetAllPreTradeTop (romsg.CPreTradeTopQueryRequest) returns (romsg.CPreTradeTopQueryResponse);
 }
-

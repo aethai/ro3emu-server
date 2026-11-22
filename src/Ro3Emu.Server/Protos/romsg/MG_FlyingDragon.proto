@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum FlyingDragonProductStatus {
   FlyingDragonProductStatusIdle = 0;
@@ -107,4 +106,3 @@ message DBFlyingDragonProduceInfo {
   int64 OwnerRoleId = 4;
   map<int64, int64> StartRoles = 5;
 }
-

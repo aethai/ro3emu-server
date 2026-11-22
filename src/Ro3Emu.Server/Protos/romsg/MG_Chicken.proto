@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 enum ChickenItemType {
   ChickenItemType_None = 0;
@@ -318,4 +317,3 @@ message ChickenStartReviveReq {
 message ChickenStartReviveResp {
   int32 result = 1;
 }
-

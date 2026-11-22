@@ -18,8 +18,14 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class AuctionService(AuctionStore store, RoleStore roles, GuildStore guilds, CharacterService character,
     MailService mail, RewardService rewards, GameData data, SeasonService seasons, FunctionService functions,
     SessionRegistry sessions, GameLoop loop, TimeProvider clock, TimedEventService timedEvents,
-    ILogger<AuctionService> log) : IHostedService
+    ILogger<AuctionService> log, IConfiguration configuration) : IHostedService
 {
+    /// <summary>Ro3Emu:PartyAuction:Enabled (inferred, an operator's knob): false finalises a dungeon run without
+    /// minting Party Auction lots, so the panel never opens. The tier award is minted for the auction only, so no
+    /// player loses an item; unset keeps the auction as it was.</summary>
+    private readonly bool _partyAuction =
+        configuration.GetSection("Ro3Emu:PartyAuction:Enabled").Get<bool?>() ?? true;
+
     public const uint Sync = 5063, Query = 82000, Bid = 82001, Changed = 82002, History = 82004, Self = 82005,
         QueryBonus = 82006, GetBonus = 82007, Get = 82009, Cancel = 82010, Quit = 82011, DungeonDone = 82012,
         DungeonChanged = 82013, BatchBid = 82014, HasAuto = 82015, Resume = 82016, PreStack = 82017,
@@ -183,6 +189,12 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
             if (run == null || run.Finalized || !run.Ready) return;
             int count = run.Eligible.Count;
             long group = run.TierGroups.Where(t => t.Key <= count).OrderBy(t => t.Key).LastOrDefault().Value;
+            if (!_partyAuction)
+            {
+                group = 0;
+                log.LogInformation("Party auction disabled (Ro3Emu:PartyAuction:Enabled=false): run {Run} finalises " +
+                    "without lots.", runId);
+            }
             var goods = new List<(int Entry, int Count, int Bind)>();
             long? rewardProgressRevision = null;
             int rewardOpenDay = Math.Max(1, (clock.GetLocalNow().Date - seasons.Start.Date).Days + 1);

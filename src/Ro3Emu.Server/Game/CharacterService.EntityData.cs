@@ -42,7 +42,8 @@ public sealed partial class CharacterService
             Rolebase = new RolePublicBaseInfo
             {
                 Roleid = role.Id, Name = role.Name, Career = p.Career, BaseLevel = p.Level,
-                JobLevel = p.JobLevel, Gender = role.Sex, Title = TitleOf?.Invoke(session) ?? 0
+                JobLevel = p.JobLevel, Gender = role.Sex, Title = TitleOf?.Invoke(session) ?? 0,
+                Headtitle = HeadTitleOf?.Invoke(session) ?? 0
             },
             EquipInfo = BuildEquip(session),
             Selfproperty = new AllProperty { EntityID = role.Id },
@@ -321,6 +322,9 @@ public sealed partial class CharacterService
 
     /// <summary>The role's title rank (TitleService) for RolePublicBaseInfo.title.</summary>
     public Func<GameSession, long>? TitleOf { get; set; }
+
+    /// <summary>The role's earned Growth Manual title (TitleService) for RolePublicBaseInfo.headtitle.</summary>
+    public Func<GameSession, long>? HeadTitleOf { get; set; }
 
     /// <summary>Configured contributions from other owned systems (pet lineup/collection).</summary>
     public List<Func<GameSession, IEnumerable<(long Id, double Value)>>> ExtraAttributes { get; } = [];

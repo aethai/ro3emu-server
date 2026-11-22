@@ -9,7 +9,7 @@ namespace Ro3Emu.Server.Game;
 /// they are admitted: role creation under its account, the session's own continuations as runtime, the few that
 /// change only the sender's role under that role.
 /// </summary>
-public sealed class CoreMessages(RoleSessionService roleSessions, ChatService chat, BuffService buffs, GmCommands gm, SceneService scene, TaskService tasks, DailyActivityService daily, TeamService teams, GuildService guilds, DungeonService dungeons, Ownership.RoleHandover handover, Micro.RankService ranks) : Messaging.IMessageModule
+public sealed class CoreMessages(RoleSessionService roleSessions, ChatService chat, BuffService buffs, GmCommands gm, SceneService scene, TaskService tasks, DailyActivityService daily, TeamService teams, GuildService guilds, DungeonService dungeons, Ownership.RoleHandover handover, Micro.RankService ranks, PopupImageService popups) : Messaging.IMessageModule
 {
     private const uint EquipGetRank = 31470;
 
@@ -19,9 +19,10 @@ public sealed class CoreMessages(RoleSessionService roleSessions, ChatService ch
         // NW_NetworkManager pings with HEARTBEAT from the moment it connects, before the account signs in.
         routes.AllowFrom(Messaging.SessionStage.Connected, id => id == MsgId.Heartbeat);
         // LC_LoginManager on the role screen: LOGIN_ROLE_CREATE, LOGIN_ROLE_SELECT, and UPLOAD_CLIENT_SDK_INFO in
-        // OnChooseRoleLoginCallback, the answer to the selection.
+        // OnChooseRoleLoginCallback, the answer to the selection. The tower's first-pass range (32807) arrives there too,
+        // before any role exists: the login UI asks for it while it loads (refused unread 113 times in one live log).
         routes.AllowFrom(Messaging.SessionStage.RoleScreen,
-            id => id is MsgId.LoginRoleCreate or MsgId.LoginRoleSelect or MsgId.UploadClientSdkInfo);
+            id => id is MsgId.LoginRoleCreate or MsgId.LoginRoleSelect or MsgId.UploadClientSdkInfo or TowerService.FirstPassRange);
         routes.AdmitRuntime(id => id is MsgId.SceneLoaded or MsgId.PreSwitchRole or MsgId.LoginRoleSelect or MsgId.Logout
             or MsgId.Heartbeat, "dispatcher/owned continuation");
         // Role creation writes only its new role (the unique name index decides between accounts).
@@ -29,6 +30,8 @@ public sealed class CoreMessages(RoleSessionService roleSessions, ChatService ch
         routes.AdmitRole(id => id is MsgId.Walk or MsgId.SaveSetting or MsgId.ClientEnterMainUi);
         // The SDK info report is not kept: its empty handler reserves nothing, also on the role screen.
         routes.AdmitRuntime(id => id == MsgId.UploadClientSdkInfo, "dispatcher/ignored report");
+        // Read-only answers that reserve nothing: the login popup's banners and the tower range asked on the role screen.
+        routes.AdmitEconomic(id => id is MsgId.PopupImage or TowerService.FirstPassRange);
         routes.AdmitRole(id => id is FeedbackService.SubmitMsg); // reads the sender, appends to its own report file
 
         routes.Map(GuildChallengeService.Notify, "handler", async (session, msgId, body) =>
@@ -71,11 +74,14 @@ public sealed class CoreMessages(RoleSessionService roleSessions, ChatService ch
             // msgtable supplies romsg.null, not a collection-id request; no mutation or cast is inferred.
             await session.SendGameAsync(LifeJobService.CheckCollect, new CheckCanCollectNtf { Result = ErrorCodes.Parameter });
         });
+        routes.Map(MsgId.PopupImage, "handler", async (session, msgId, body) =>
+        {
+            await session.SendGameAsync(MsgId.PopupImage, popups.Images(PopupImageReq.Parser.ParseFrom(body.Span)));
+        });
         routes.Map(MsgId.LoginRoleCreate, "handler", async (session, msgId, body) =>
         {
             await roleSessions.CreateRoleAsync(session, AccountLoginCreateRoleReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(MsgId.LoginRoleSelect, "handler", async (session, msgId, body) =>
+        });        routes.Map(MsgId.LoginRoleSelect, "handler", async (session, msgId, body) =>
         {
             await roleSessions.SelectRoleAsync(session, AccountLoginSelectRoleReq.Parser.ParseFrom(body.Span));
         });
@@ -267,7 +273,12 @@ public sealed class CoreMessages(RoleSessionService roleSessions, ChatService ch
                     [Ownership.ReservationKey.Role(role.Id), Ownership.ReservationKey.Lifecycle(role.Id)], session, OwnAsync);
             else await OwnAsync();
             await guilds.ReconcileOnHeartbeatAsync();
-            await session.SendGameAsync(MsgId.Heartbeat, new Pong { ServerTimeMs = roleSessions.NowMs() });
+            // Ping.strDebugTag is the client's own tag for the round trip; Pong echoes it, and both clocks are this
+            // server's: the HUD reads sceneServerTimeMs for the scene-server leg, and a 0 there showed as "0 ms".
+            string tag = body.Length > 0 ? Ping.Parser.ParseFrom(body.ToArray()).StrDebugTag : "";
+            ulong nowMs = roleSessions.NowMs();
+            await session.SendGameAsync(MsgId.Heartbeat,
+                new Pong { ServerTimeMs = nowMs, SceneServerTimeMs = nowMs, StrDebugTag = tag });
         });
     }
 }

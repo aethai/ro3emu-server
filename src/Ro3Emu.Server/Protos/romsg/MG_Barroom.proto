@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum SpeakAuthorityType {
   Free = 0;
@@ -322,4 +321,3 @@ message MuteBarRoomPlayerResp {
   bool isMute = 3;
   int64 targetPlayerUid = 4;
 }
-

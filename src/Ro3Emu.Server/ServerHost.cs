@@ -55,6 +55,7 @@ public static partial class ServerHost
         // Starts before the loop: by then the host has built every hosted service and, through them, every ticker.
         builder.Services.AddHostedService<GameLoopTickers>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<GameLoop>());
+        builder.Services.AddHostedService<RateBoostService>();
         builder.Services.AddSingleton<AccountStore>();
         builder.Services.AddSingleton<RoleStore>();
         builder.Services.AddSingleton<Game.Ownership.OwnerRegistry>();
@@ -172,6 +173,8 @@ public static partial class ServerHost
         builder.Services.AddSingleton<ChatService>();
         builder.Services.AddSingleton<ChatFloodGuard>();
         builder.Services.AddSingleton<FeedbackService>();
+        builder.Services.AddSingleton<PopupImageService>();
+        builder.Services.AddSingleton<PlayerTradeService>();
         builder.Services.AddSingleton<GmCommands>();
         builder.Services.AddSingleton<Ro3Emu.Server.Data.GameData>();
         builder.Services.AddSingleton<SessionRegistry>();
@@ -301,6 +304,7 @@ public static partial class ServerHost
         app.Services.GetRequiredService<TaskService>(); // hooks kills / level / job changes
         app.Services.GetRequiredService<DailyActivityService>(); // quest settlement and online rollover
         app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
+        app.Services.GetRequiredService<PlayerTradeService>().Start(); // the /trade chat command
         app.Services.GetRequiredService<TimedEventService>();
         app.Services.GetRequiredService<PronteraDefenseService>();
         var timedBattles = app.Services.GetRequiredService<TimedBattleService>();
@@ -355,6 +359,7 @@ public static partial class ServerHost
         territory.CampChanged.Add(questTasks.OnFactionCampChanged);
         territory.CrystalCollected.Add(questTasks.OnFactionCrystalCollected); // 107102
         questTasks.FactionGuildAward = app.Services.GetRequiredService<GuildCaravanService>().PayFactionAward;
+        questTasks.DailyQuests = options.DailyQuests; // the daily side quests (TaskService.DailyQuest.cs)
         territory.SiegeSettled.Add((role, _, _) => questTasks.OnGuildEventJoined(role, TaskService.GuildEvent.RoyalCity)); // 106010
         territory.BattleSettled.Add(questTasks.OnTerritoryBattleSettled); // 106010 Stronghold / Regional Capital War
         territory.BattleSettled.Add((role, _) => questTasks.OnGuildWarScored(role)); // 106609

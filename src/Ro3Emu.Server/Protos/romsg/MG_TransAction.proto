@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 message ResourceOperate {
   repeated romsg.ItemBaseInfo item = 1;
@@ -32,4 +31,3 @@ message TransAction {
   repeated romsg.ActionOneStep steps = 3;
   int64 ownerRoleID = 4;
 }
-

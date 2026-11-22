@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "MG_DB.proto";
 
 message WildAFKInfoReq {
 }
@@ -88,4 +87,3 @@ message GenerateAFKDropSnapshotRsp {
 message SuspendReasonRes {
   string reason = 1;
 }
-

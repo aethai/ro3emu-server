@@ -291,7 +291,10 @@ public sealed partial class TerritoryEscortService : IGameTicker
     private static int MarketPermission(GuildStore.State? g, long role) => g == null ? ErrorCodes.NotInGuild
         : Right(g, role, 16) ? 0 : ErrorCodes.GuildPermission;
     private int Round => _clock.Current.Round;
-    private bool Trading => _clock.Current.Type == 1;
+    // (inferred) A realm that opens the war window by hand (the !siege test aid) never runs a separate trade stage:
+    // the window's own play stage has to serve as one, so the convoy can be scheduled and the supply transport is
+    // available while the window is open instead of reading "Supply Transport - Not Available" all the time.
+    private bool Trading => _clock.Current.Type is 1 or 2;
     private bool Playing => _clock.Current.Type == 2;
 
     private void Save(RoleItemPlanBuilder transaction) => transaction.Add(

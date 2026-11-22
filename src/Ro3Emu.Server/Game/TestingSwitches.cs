@@ -14,9 +14,14 @@ namespace Ro3Emu.Server.Game;
 /// <item><see cref="UnlimitedRewards"/>: reward allowances and attempt counters are neither checked nor spent.</item>
 /// </list>
 /// </summary>
-public sealed class TestingSwitches(IOptions<ServerOptions> options)
+public sealed class TestingSwitches(IOptions<ServerOptions> options, IConfiguration? configuration = null)
 {
     private readonly TestingOptions _configured = options.Value.Testing;
+
+    /// <summary>The To-Do activities named by "--Ro3Emu:Testing:AlwaysOpenActivities:0=116": open at any hour now, for
+    /// those rows only (the Bonfire Party runs this way when its weekly window does not suit the realm).</summary>
+    private readonly int[] _alwaysOpenActivities =
+        configuration?.GetSection("Ro3Emu:Testing:AlwaysOpenActivities").Get<int[]>() ?? [];
 
     public bool AlwaysOpen { get; set; } = options.Value.Testing.AlwaysOpen;
 
@@ -49,7 +54,8 @@ public sealed class TestingSwitches(IOptions<ServerOptions> options)
     ];
 
     /// <summary>The To-Do row <paramref name="activityId"/> is open at any hour now.</summary>
-    public bool Opens(int activityId) => AlwaysOpen && !OwnCalendar.Contains(activityId);
+    public bool Opens(int activityId) => (AlwaysOpen || _alwaysOpenActivities.Contains(activityId))
+        && !OwnCalendar.Contains(activityId);
 
     /// <summary>Lua_TimeHelper.GetDayRefreshTime: the game day turns at 05:00.</summary>
     private const int DayBreakHour = 5;

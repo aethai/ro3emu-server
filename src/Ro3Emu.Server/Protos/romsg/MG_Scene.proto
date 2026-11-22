@@ -2,7 +2,6 @@ syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
 import "MG_Define.proto";
-import "MG_DB.proto";
 import "MG_Skill.proto";
 
 enum MovementType {
@@ -696,4 +695,3 @@ message SceneEventNotify {
 message ScenePerformaceWatchReq {
   bool startWatch = 1;
 }
-

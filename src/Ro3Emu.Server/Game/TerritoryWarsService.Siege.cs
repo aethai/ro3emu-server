@@ -59,11 +59,34 @@ public sealed partial class TerritoryWarsService
         int round = ZoneType(zone) == 1 ? 3 : 2;
         var battle = state.Battles.GetValueOrDefault(BattleKey(round, zone));
         // (inferred) A live, recorded Territory challenger with the highest observed score attacks;
-        // a tie resolves by stable guild id. No test aid creates guild qualifications.
         long attack = QualifiedFor(zone, round).Concat(battle?.Guilds ?? [])
             .Distinct().Where(id => id != defense && _guildStore.Get(id) != null)
+            // Tier chain: a guild may only challenge the tier it has reached (SiegeTiers.ChainSatisfied).
+            .Where(id => TierAllows(id, city))
             .OrderByDescending(id => battle?.Scores.GetValueOrDefault(id) ?? 0).ThenBy(id => id).FirstOrDefault();
         return (attack, defense);
+    }
+
+    /// <summary>
+    /// Whether the guild may challenge this city under the tier chain: it must hold a prefecture to attack a main city,
+    /// and a tier N-1 prefecture to attack tier N. Off (Ro3Emu:Siege:ChainTiers=false) opens every tier. (inferred)
+    /// </summary>
+    private bool TierAllows(long guildId, int city)
+    {
+        var options = _options.Value.Siege;
+        if (!options.ChainTiers) return true;
+        int tier = SiegeTiers.TierOf(city, options.TierSize);
+        if (tier < 0) return false;
+        if (!SiegeTiers.ChainApplies(tier)) return true;
+        var owned = new List<int>();
+        foreach (var row in _data.Table("SiegeConfig").Values)
+        {
+            int other = (int)GameData.Int(row, "_iID");
+            int otherZone = SiegeZone(other);
+            if (other == city || otherZone == 0 || OwnerOf(otherZone) != guildId) continue;
+            owned.Add(SiegeTiers.TierOf(other, options.TierSize));
+        }
+        return SiegeTiers.ChainSatisfied(tier, owned);
     }
 
     // No exported 44401 exists. 44402's nested SiegeBaseInfoNtf is the registered DAL update payload.
@@ -179,10 +202,10 @@ public sealed partial class TerritoryWarsService
     /// <summary>GM-only session clock override (inferred test aid); no ownership or rewards change.</summary>
     public async Task<string> SiegeGmAsync(string[] args)
     {
-        bool seed = args.Length == 4 && args[0].Equals("seed", StringComparison.OrdinalIgnoreCase);
+        bool seed = args.Length is 3 or 4 && args[0].Equals("seed", StringComparison.OrdinalIgnoreCase);
         if (!seed && (args.Length != 1 || args[0].ToLowerInvariant() is not ("open" or "close" or "state" or "prepare" or "objects")))
-            throw new ArgumentException("open|close|state|prepare|objects|seed <city> <attackGuild> <defenseGuild>");
-        long[] gmGuilds = seed ? [long.Parse(args[2]), long.Parse(args[3])] : [];
+            throw new ArgumentException("open|close|state|prepare|objects|seed <city> <attackGuild> <defenseGuild>, seed <city> <defenseGuild>");
+        long[] gmGuilds = seed ? [.. args.Skip(2).Select(long.Parse)] : [];
         using var reservation = await EnterGateAsync("territory/siege gm", additionalGuilds: gmGuilds,
             includeParticipants: true);
         using var stagedTerritoryState = StageState();
@@ -191,21 +214,32 @@ public sealed partial class TerritoryWarsService
             switch (args[0].ToLowerInvariant())
             {
                 case "seed":
-                    // Load-test aid (not original): the city's zone is owned by the defender and the attacker is the
-                    // recorded challenger of the zone's final round, the two facts SiegeGuilds reads. Persisted like
-                    // a real outcome; only before an occurrence froze its guilds.
+                    // Load-test aid (not original): the city's zone is owned by the defender and, when one is named, the
+                    // attacker is the recorded challenger of the zone's final round - the two facts SiegeGuilds reads.
+                    // Four arguments keep upstream's order (<city> <attackGuild> <defenseGuild>); three name only the
+                    // holder, which is all a ladder needs to start from one guild.
+                    // Persisted like a real outcome; only before an occurrence froze its guilds.
                     int city = int.Parse(args[1]), zone = SiegeZone(city);
-                    long attack = long.Parse(args[2]), defense = long.Parse(args[3]);
+                    bool held = args.Length == 3;
+                    long defense = long.Parse(args[held ? 2 : 3]), attack = held ? 0 : long.Parse(args[2]);
                     if (zone == 0) throw new ArgumentException($"no siege zone for city {city}");
-                    if (attack == defense || _guildStore.Get(attack) == null || _guildStore.Get(defense) == null)
-                        throw new ArgumentException("two different existing guilds");
-                    int round = ZoneType(zone) == 1 ? 3 : 2;
+                    if (_guildStore.Get(defense) == null) throw new ArgumentException($"no guild {defense}");
+                    if (attack == defense) throw new ArgumentException("two different existing guilds");
+                    if (attack != 0 && _guildStore.Get(attack) == null) throw new ArgumentException($"no guild {attack}");
                     state.Owners[zone] = defense;
-                    state.Battles[BattleKey(round, zone)] = new BattleState
+                    // A prefecture's connected lands follow their capital, exactly as settlement assigns them.
+                    if (ZoneType(zone) == 2)
+                        foreach (var flag in Zones.Where(z => GameData.Int(z, "_iType") == 4 && Parent((int)Id(z)) == zone))
+                            state.Owners[(int)Id(flag)] = defense;
+                    if (attack != 0)
                     {
-                        Zone = zone, Round = round, Settled = true,
-                        Winner = defense, Guilds = [attack, defense], Scores = new() { [attack] = 1 }
-                    };
+                        int round = ZoneType(zone) == 1 ? 3 : 2;
+                        state.Battles[BattleKey(round, zone)] = new BattleState
+                        {
+                            Zone = zone, Round = round, Settled = true,
+                            Winner = defense, Guilds = [attack, defense], Scores = new() { [attack] = 1 }
+                        };
+                    }
                     await SaveAsync(state);
                     break;
                 case "open":

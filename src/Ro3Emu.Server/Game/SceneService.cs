@@ -71,10 +71,19 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     /// Sends the player to <paramref name="scene"/> at <paramref name="at"/> (default: the map's born point). Walks are
     /// dropped until the client reports the map loaded.
     /// </summary>
+    /// <summary>An event dungeon's scene (the Ilmata guild challenge) is entered through its own instance instead of the
+    /// public map, so its wave spawns; returning true means the move was already handled.</summary>
+    internal Func<GameSession, long, Task<bool>>? DungeonSceneEntry { get; set; }
+
     public async Task<bool> EnterSceneAsync(GameSession s, long scene, MapPoint? at = null, int reason = 0,
         long instanceId = 0, TransferStart? transfer = null, int lineNumber = 0,
         SwitchSceneSourceType source = SwitchSceneSourceType.SwitchSceneSourceNone, bool createLine = false)
     {
+        // A season panel's "Enter Dungeon" is a plain scene move: hand it to the challenge owner first (before the
+        // transition gate, because that owner re-enters this method for the instance). Instance entries (instanceId set)
+        // and players already inside an instance never take this path.
+        if (instanceId == 0 && s.InstanceId == 0 && DungeonSceneEntry is { } dungeonEntry
+            && await dungeonEntry(s, scene)) return true;
         var role = s.Role;
         var lease = s.Attachment;
         long generation = s.SceneGeneration, sourceScene = s.SceneEntry, sourceInstance = s.InstanceId;

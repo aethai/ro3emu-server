@@ -279,16 +279,41 @@ public sealed class ServerOptions
     public List<FieldExpRule> FieldExpRates { get; set; } = [];
 
     /// <summary>
+    /// The daily side quests (Ro3Emu:DailyQuests, inferred: the client has no board for them): the first quests a role
+    /// turns in each game day pay extra base EXP on top of the quest's own reward, so a new character can level by
+    /// questing. See <see cref="DailyQuestOptions"/>; <see cref="DailyQuestOptions.PerDay"/> 0 pays nothing.
+    /// </summary>
+    public DailyQuestOptions DailyQuests { get; set; } = new();
+
+    /// <summary>
     /// Kill EXP shared with the killer's party (Ro3Emu:PartyExpShare). Off by default: the killer alone gets a kill's EXP, as
     /// on the original server. (inferred: the original had no such knob; the client's own party bonus is TeamExpBuffNum.)
     /// </summary>
     public PartyExpShareOptions PartyExpShare { get; set; } = new();
+
+    /// <summary>Stronghold tiers (Ro3Emu:Siege): the chain rule that keeps a guild on its tier.</summary>
+    public SiegeOptions Siege { get; set; } = new();
+
+    /// <summary>
+    /// Rift Crisis (Ro3Emu:Rift): a stone's party size. The export asks for 3-5 (PublicParamConfig
+    /// OnePieceMapMembersNum); a small realm can lower the floor so solo or duo clears are possible.
+    /// </summary>
+    public RiftOptions Rift { get; set; } = new();
 
     /// <summary>
     /// (inferred) Star Cores drop for roles with the Astral Level open (ParagonService.StarCoreDrops). The client data gives
     /// them no source; false turns the reconstructed drop off.
     /// </summary>
     public bool StarCoreDrops { get; set; } = true;
+
+    /// <summary>
+    /// Star Cores per kill of a normal monster (1 in N, for roles with the Astral Level open). 1/2000 shipped first and no
+    /// core ever reached a player, so a 46-star Astral Level sat with nothing to install.
+    /// </summary>
+    public int StarCoreFieldOneIn { get; set; } = 250;
+
+    /// <summary>Star Cores per kill of a boss (NPCConfig _iNPCSubType 3, 4 or 6), 1 in N.</summary>
+    public int StarCoreBossOneIn { get; set; } = 2;
 
     /// <summary>
     /// (inferred) Chance in percent that an MVP kill drops a Lord's Mane, the Starshatter Dragon's unseal material, to one
@@ -300,7 +325,23 @@ public sealed class ServerOptions
     /// (inferred) Chance in percent that a boss kill drops a title Crest of the boss level's tier (TitleService). The
     /// client data gives the Crests no source; 0 turns it off.
     /// </summary>
-    public int TitleCrestPercent { get; set; } = 25;
+    public int TitleCrestPercent { get; set; } = 100;
+
+    /// <summary>
+    /// (inferred) Flat HP a title rank grants per point of its TitleConfig _iPowerAdd (TitleService.Attributes). The export
+    /// zeroes every rank's _kAttr, so the client's rank panel would print +0 HP/PATK/MATK with no effect at all.
+    /// </summary>
+    public double TitleHpScale { get; set; } = 2;
+
+    /// <summary>(inferred) Flat PATK and MATK a title rank grants per point of its _iPowerAdd.</summary>
+    public double TitleAttackScale { get; set; } = 0.05;
+
+    /// <summary>
+    /// Crest chance in percent for a normal monster's kill, the same tier from its level. Bosses were the only source
+    /// while the ranks above 4 spend low-tier Crests (Journey 1250801 drops below level 50), so a capped player farming
+    /// level 90 bosses could never pay rank 5. 0 keeps the drop boss-only.
+    /// </summary>
+    public int TitleCrestFieldPercent { get; set; } = 2;
 
     /// <summary>
     /// (inferred) Every Tavern active day (20 minutes in a room) also brings one higher drink: Grape Wine every 7th
@@ -325,12 +366,32 @@ public sealed class ServerOptions
     /// "!testing" changes them in memory.
     /// </summary>
     public TestingOptions Testing { get; set; } = new();
+
+    /// <summary>The automatic rate boosts, see <see cref="BoostOptions"/>.</summary>
+    public BoostOptions Boost { get; set; } = new();
 }
 
 /// <summary>
 /// Switches for test realms (Game/TestingSwitches.cs). None of them is the original game's behaviour; the server logs a
 /// warning at startup while one is on.
 /// </summary>
+/// <summary>
+/// The automatic rate boosts (Ro3Emu:Boost), off unless an operator turns them on: a window of the local day raises the
+/// EXP and the drop counts of every kill and is announced in Discord when it opens and closes, so the realm has a reason
+/// to keep farming. See <see cref="Game.RateBoost"/>.
+/// </summary>
+public sealed class BoostOptions
+{
+    /// <summary>The feature is on: a window in force raises the kill EXP and drops.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>The windows of the local day, each "HHMM-HHMM:expPercent:dropPercent" ("2000-2200:100:50").</summary>
+    public List<string> Windows { get; set; } = [];
+
+    /// <summary>A Discord channel webhook the open and close alerts go to; unset keeps them in the log.</summary>
+    public string? DiscordWebhookUrl { get; set; }
+}
+
 public sealed class TestingOptions
 {
     /// <summary>Every To-Do activity (DailyActivityConfig) counts as open now, any weekday and hour: its occurrence repeats
@@ -584,6 +645,12 @@ public sealed class PassOptions
     /// <summary>Every role gets the premium track and its privileges without the premium item 703.</summary>
     public bool FreePremium { get; set; }
 
+    /// <summary>
+    /// These passes (BattlePassConfig ids, e.g. 9201 the novice pass) open their premium track and its privileges
+    /// without the premium item, while the other passes still need it. Ignored when <see cref="FreePremium"/> is on.
+    /// </summary>
+    public List<long> FreePremiumActivityIds { get; set; } = [];
+
     /// <summary>Pass EXP from play: challenges, daily activity, monsters, dungeons, MVPs and story (NewActivityService.PassPlay).</summary>
     public bool Play { get; set; }
 }
@@ -628,6 +695,16 @@ public sealed class OpenContentOptions
     public bool IgnoreServerDay { get; set; } = true;
 
     /// <summary>
+    /// Owner schedules for activities whose exported week leaves them out on this realm, as
+    /// "activityId,weekday,HHMM,HHMM" (weekday 1 = Monday .. 7 = Sunday, 0 = every day; HHMM as in the export, e.g.
+    /// 2030-2200). Ilmata (125) is the case that needs it: its window lives in DailyActivityCustomConfig, which is
+    /// picked by the realm's opening weekday and week number - a realm opened on a Friday has no 125 in week 1 and
+    /// the client shows "The event has not started yet" with an undefined period. An entry here replaces the
+    /// exported week for that activity (Ro3Emu:OpenContent:WeeklyWindows:0=125,7,2030,2200).
+    /// </summary>
+    public string[] WeeklyWindows { get; set; } = [];
+
+    /// <summary>
     /// TimeLimitConfig windows bounded by the server opening or by season stages open at the server opening and never
     /// close (every such id has a single state row: card pools, passes, Novice Challenge, Battle for Prontera, tower
     /// races...). Windows of activities given by absolute dates that already passed repeat with their own length.
@@ -668,6 +745,29 @@ public sealed class SpawnLimitRule
     public int Max { get; set; }
 }
 
+/// <summary>Stronghold (siege) tiers: see <see cref="Game.SiegeTiers"/> for the rule and why it is inferred.</summary>
+public sealed class SiegeOptions
+{
+    /// <summary>A guild may only challenge a city whose tier it has reached (own a prefecture before a main city, tier N-1
+    /// before tier N). Off by default: the rule is inferred, and on a realm whose cities are owned by one guild it leaves
+    /// the recorded challenger without a pairing, so the siege could never start (TerritoryNotQualified on entry).
+    /// Ro3Emu:Siege:ChainTiers=true turns the ladder on.</summary>
+    public bool ChainTiers { get; set; }
+
+    /// <summary>Prefectures per tier when tiers are derived from the SiegeConfig ids.</summary>
+    public int TierSize { get; set; } = Game.SiegeTiers.TierSize;
+}
+
+/// <summary>Rift Crisis stones (Ro3Emu:Rift): who may fight one.</summary>
+public sealed class RiftOptions
+{
+    /// <summary>Smallest party a stone admits; 0 keeps the export's PublicParamConfig OnePieceMapMembersNum floor (3).</summary>
+    public int MinParty { get; set; }
+
+    /// <summary>Largest party a stone admits; 0 keeps the export's OnePieceMapMembersNum ceiling (5).</summary>
+    public int MaxParty { get; set; }
+}
+
 /// <summary>
 /// <see cref="ServerOptions.PartyExpShare"/>: with <see cref="Enabled"/>, a kill's Base EXP (after the level gap, the party
 /// bonus and FieldExpRates) is shared with the killer's party members who are alive on the same map line.
@@ -688,4 +788,24 @@ public sealed class FieldExpRule
     public int MinLevel { get; set; }
     public int MaxLevel { get; set; }
     public int Percent { get; set; } = 100;
+}
+
+/// <summary>
+/// The daily side quests: the EXP bonus the first quest deliveries of a game day pay.
+/// </summary>
+/// <remarks>
+/// (inferred: the original has no such board and the client has no daily quest window). The game's own daily content —
+/// the To-Do list (DailyActivityConfig) and the Faction Quest — starts at level 20-30 and pays items or activity
+/// points, so a new character has no daily EXP source. This pays extra base EXP for any quest the role turns in, the
+/// first <see cref="PerDay"/> of a game day (DailyActivityService's 05:00 epoch), and stops until the next day.
+/// </remarks>
+public sealed class DailyQuestOptions
+{
+    /// <summary>Quest deliveries per game day that pay the bonus; 0 turns the daily quests off.</summary>
+    public int PerDay { get; set; }
+
+    /// <summary>Percent of the EXP the role's base level needs (BaseLvConfig._iBaseExp of that level): 50 pays half a
+    /// level a quest, so <see cref="PerDay"/> 10 pays five levels a day. A level past the table takes the last row
+    /// that needs EXP.</summary>
+    public int ExpPercent { get; set; } = 50;
 }

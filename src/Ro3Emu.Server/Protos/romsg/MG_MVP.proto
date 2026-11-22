@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 import "MG_Common.proto";
 
 enum MVP_STATE {
@@ -228,4 +227,3 @@ message MVPResultNtf {
 message MVPDeadNotify {
   int64 cfg_id = 1;
 }
-

@@ -68,7 +68,9 @@ public sealed partial class PanelBackend
     {
         var row = SiegeConfig.Get(data, c.City);
         string name = row is { } r && data.TextOf(r.CityName) is { Length: > 0 } text ? text : "City " + c.City.ToString(CultureInfo.InvariantCulture);
-        string kind = row?.CityType == 1 ? "Main city" : "Prefecture";
+        string kind = row?.CityType == 1
+            ? "Main city"
+            : $"Prefecture tier {Game.SiegeTiers.TierOf(c.City)}";
         // SiegeBase: Fighting while the window is open, End once the city's run settled, else not open.
         string state = c.Settled ? "Over" : window?.Running == true ? "Fighting" : "Not open";
         string stage = c.Stage >= 0 && c.Stage < SiegeStages.Length ? SiegeStages[c.Stage] : "";

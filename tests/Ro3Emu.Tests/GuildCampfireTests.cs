@@ -217,11 +217,13 @@ public sealed class GuildCampfireTests : IAsyncLifetime
         await alice.SendGameAsync(SceneService.NpcInteraction, transform);
         Assert.Equal(ErrorCodes.NpcMissing, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
 
-        // 20:04:30, 240 s into stage 2: the Third Prize draw (action 5). One member is below the 10-player band: no winner.
+        // 20:04:30, 240 s into stage 2: the Third Prize draw (action 5). The bands start at one player on this realm,
+        // so the member present takes the stage's prize.
         _clock.Advance(240);
         var lucky = await Next(alice, GuildCampfireService.Lucky, GuildCampFireLuckyPlayerNotify.Parser);
         Assert.Equal(3, lucky.AwardLevel);
-        Assert.Empty(lucky.PlayerList);
+        Assert.Single(lucky.PlayerList);
+        Assert.Equal(Session(alice).Role!.Id, lucky.PlayerList[0].PlayerId);
 
         _clock.Advance(620); // 20:15, configured client boss stage 4
         Assert.Equal(4, (await Next(alice, GuildCampfireService.Stage, GuildCampFireStageInfo.Parser,
@@ -341,5 +343,37 @@ public sealed class GuildCampfireTests : IAsyncLifetime
             if (fuelTask != null) await fuelTask.WaitAsync(Wait);
             if (gmTask != null) await gmTask.WaitAsync(Wait);
         }
+    }
+
+    [ClientDataFact]
+    public async Task PartyBlessingPaysBubblesAtTheBonfire()
+    {
+        var bob = await InWorld("Bobby");
+        await Gm(bob, "!lvl 40");
+        await bob.SendGameAsync(GuildService.Create, new GuildCreateReq
+        {
+            Name = "Blessed", Icon = new GuildHeadIcon { BackgroundType = 100101, IconType = 200101 },
+        });
+        Assert.Equal(0, (await Next(bob, GuildService.Create, GuildCreateResp.Parser)).Result);
+        await Task.Delay(300); // the guild home opens just after the guild
+        await bob.SendGameAsync(DungeonService.Enter, new EnterDungeonReq { SceneEntry = GuildCampfireService.Dungeon });
+        Assert.Equal(0, (await Next(bob, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
+        await Next(bob, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser,
+            r => r.SceneEntry == GuildCampfireService.Dungeon);
+        await bob.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = GuildCampfireService.Dungeon });
+        Assert.Equal(0, (await Next(bob, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
+        await Next(bob, MsgId.EntitySelf, EntitySelf.Parser);
+        // 20:00: stage 1 starts with the member already inside, and the party blessing begins to pay.
+        _clock.Advance(20);
+        Assert.Equal(1, (await Next(bob, GuildCampfireService.Stage, GuildCampFireStageInfo.Parser)).NowStage);
+        var first = await Next(bob, GuildCampfireService.PlayerInfo, CampFirePlayerInfo.Parser,
+            r => r.BubblesRewardCount > 0);
+        Assert.True(first.BubblesRewardCount >= 1);
+        Assert.True(first.FireBlessingEndTime > 0);
+        // One more round raises the count: CampfireBlessTime (600 s) over CampfireBubbleRewardLimit (20) is 30 s.
+        _clock.Advance(31);
+        var next = await Next(bob, GuildCampfireService.PlayerInfo, CampFirePlayerInfo.Parser,
+            r => r.BubblesRewardCount > first.BubblesRewardCount);
+        Assert.True(next.BubblesRewardCount > first.BubblesRewardCount);
     }
 }

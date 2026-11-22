@@ -71,6 +71,14 @@ public sealed class TitleTests : IAsyncLifetime
         return (await Next(bot, TitleService.Level, TitleLevelRsp.Parser)).Result;
     }
 
+    /// <summary>The profile Base another player reads: RoleAdditionBaseInfo carries the head title and the rank.</summary>
+    private static async Task<RoleAdditionBaseInfo> PublicBase(BotClient viewer, BotClient target)
+    {
+        var card = await viewer.GetRoleFieldsAsync([(long)target.Self!.Uuid], ["Base"]);
+        var data = (Dictionary<object, object?>)((Dictionary<object, object?>)((object?[])card["Results"]!).Single()!)["Data"]!;
+        return RoleAdditionBaseInfo.Parser.ParseFrom((byte[])data["Base"]!);
+    }
+
     /// <summary>The best power ever reached, as PowerService keeps it.</summary>
     private Task SetBestPower(BotClient bot, long power) => Service<GameLoop>().InvokeAsync(() =>
     {
@@ -108,5 +116,28 @@ public sealed class TitleTests : IAsyncLifetime
         Assert.DoesNotContain(Session(alice).Items, i => i.Entry == CrestOfJourney);
         // The rank is the role's public title and adds its _iPowerAdd to titleScore.
         Assert.Equal(4, Service<CharacterService>().TitleOf!(Session(alice)));
+        // And it grants flat HP/PATK/MATK: TitleConfig._kAttr is zero in every row, so TitleService derives it from
+        // _iPowerAdd (HP x2, PATK/MATK x0.05). Rank 4 is 1200, so +2400 HP and +60 attack over the rank-less role.
+        var withRank = Service<CharacterService>().Stats(Session(alice));
+        await Gm(alice, "!title set 0");
+        var withoutRank = Service<CharacterService>().Stats(Session(alice));
+        Assert.InRange(withRank[101] - withoutRank[101], 2400, 2410); // the conversion rounds up a few points
+        Assert.InRange(withRank[103] - withoutRank[103], 60, 62);
+        Assert.InRange(withRank[104] - withoutRank[104], 60, 62);
+        // The profile card's "Title" block prints RolePublicBaseInfo.headtitle, a NewbieTitlesConfig row ("Titleless" at
+        // 0). The rank takes that slot, capped at the export's seven growth rows that the client hook renames, and it
+        // travels in the Base the card reads.
+        await Gm(alice, "!title set 4");
+        Assert.Equal(4, Service<CharacterService>().HeadTitleOf!(Session(alice)));
+        await using var bob = await InWorld("Bob");
+        var card = await PublicBase(bob, alice);
+        Assert.Equal(4, card.Headtitle);
+        Assert.Equal(4, card.Title);
+        await Gm(alice, "!title set 1");
+        Assert.Equal(1, Service<CharacterService>().HeadTitleOf!(Session(alice)));
+        await Gm(alice, "!title set 21");
+        Assert.Equal(7, Service<CharacterService>().HeadTitleOf!(Session(alice)));
+        await Gm(alice, "!title set 0");
+        Assert.Equal(0, Service<CharacterService>().HeadTitleOf!(Session(alice)));
     }
 }

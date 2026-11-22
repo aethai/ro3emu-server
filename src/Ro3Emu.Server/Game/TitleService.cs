@@ -36,15 +36,19 @@ public sealed class TitleService
     private readonly FunctionService _functions;
     private readonly RoleStore _roles;
     private readonly ServerOptions _options;
+    private readonly ILogger<TitleService> _log;
     private List<TitleConfig>? _ranks;
 
     public TitleService(GameData data, CharacterService character, FunctionService functions, RoleStore roles,
-        PowerService power, RewardService rewards, GmCommands gm, Microsoft.Extensions.Options.IOptions<ServerOptions> options)
+        PowerService power, RewardService rewards, GmCommands gm,
+        Microsoft.Extensions.Options.IOptions<ServerOptions> options, ILogger<TitleService> log)
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
-        this._options = options.Value;
+        this._options = options.Value; this._log = log;
         power.TitleId = s => s.TitleInfo?.TitleId ?? 0;
         character.TitleOf = s => s.TitleInfo?.TitleId ?? 0;
+        character.HeadTitleOf = HeadTitle;
+        character.ExtraAttributes.Add(Attributes);
         rewards.ExtraKillDrops.Add(CrestDrops);
         gm.Register("title", "set <rank> | info (title rank test aid)", GmAsync);
     }
@@ -52,6 +56,60 @@ public sealed class TitleService
     /// <summary>TitleConfig rows in _kIndex order.</summary>
     private List<TitleConfig> Ranks() => _ranks ??=
         [.. _data.Table("TitleConfig").Values.Select(r => new TitleConfig(r)).Where(r => r.Id > 0).OrderBy(r => r.Index)];
+
+    /// <summary>
+    /// The role's title on the profile card (RolePublicBaseInfo.headtitle), which the card prints in its "Title" block
+    /// (UI_Sys_Personal_InfoWidget Pan_Designation/HeadTitle), "Titleless" when it is 0. It is a NewbieTitlesConfig row,
+    /// and the export's ids 1-7 are the Growth Manual titles. Our Title rank is what a player earns here, so the rank takes
+    /// the slot: the client hook Ro3Emu.ClientHooks.ProfileTitle renames the seven rows' texts with the names of ranks 1-7
+    /// (the same TitleConfig _iTitleName texts the Title panel shows), and a rank above seven shows the seventh. With no
+    /// rank the highest Growth Manual title stands, as before.
+    /// </summary>
+    private long HeadTitle(GameSession s)
+    {
+        long rank = s.TitleInfo?.TitleId ?? 0;
+        if (rank > 0 && _data.Row("TitleConfig", rank) != null)
+            return Math.Min(rank, _data.Table("NewbieTitlesConfig").Count);
+        if (s.Tasks == null) return 0; // unloaded tasks read as "everything delivered" in TaskService.IsDelivered
+        long best = 0, lev = -1;
+        foreach (var row in _data.Table("NewbieTitlesConfig").Values)
+        {
+            var title = new NewbieTitlesConfig(row);
+            if (title.Lev <= lev || !TaskService.IsDelivered(s, title.TaskId)) continue;
+            (best, lev) = (title.Id, title.Lev);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// (inferred) The rank's flat HP (101), PATK (103) and MATK (104). TitleConfig._kAttr is [[101,0],[103,0],[104,0]] in
+    /// all 21 rows of this export, so the client's rank panel prints +0 for the three and the rank changes nothing at all;
+    /// the rank's _iPowerAdd is the only real number in the row, so the bonus is derived from it
+    /// (Ro3Emu:Title:HpScale, Ro3Emu:Title:AttackScale). A row whose _kAttr carries a non-zero value wins untouched.
+    /// Read straight from the row: constructing a TitleConfig needs every field, and the export's placeholder rows do not
+    /// all carry them (a stats pass runs for every login).
+    /// </summary>
+    private IEnumerable<(long Id, double Value)> Attributes(GameSession s)
+    {
+        if (s.TitleInfo is not { } info || s.Progress == null || info.TitleId == 0) yield break;
+        if (_data.Row("TitleConfig", info.TitleId) is not { } row) yield break;
+        var configured = new List<(long Id, double Value)>();
+        if (row.TryGetProperty("_kAttr", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array)
+            foreach (var pair in list.EnumerateArray())
+                if (pair.ValueKind == System.Text.Json.JsonValueKind.Array && pair.GetArrayLength() >= 2
+                    && GameData.Number(pair[1]) is { } value && value != 0)
+                    configured.Add(((long)(GameData.Number(pair[0]) ?? 0), value));
+        if (configured.Count > 0)
+        {
+            foreach (var entry in configured) yield return entry;
+            yield break;
+        }
+        long power = GameData.Int(row, "_iPowerAdd");
+        if (power == 0) yield break;
+        yield return (101, Math.Round(power * _options.TitleHpScale));
+        yield return (103, Math.Round(power * _options.TitleAttackScale));
+        yield return (104, Math.Round(power * _options.TitleAttackScale));
+    }
 
     /// <summary>The rank after <paramref name="current"/> (the first one from 0).</summary>
     private TitleConfig? Next(long current)
@@ -114,9 +172,11 @@ public sealed class TitleService
     /// </summary>
     private IEnumerable<(int Entry, int Count)> CrestDrops(GameSession s, MonsterUnit monster)
     {
-        if (_options.TitleCrestPercent <= 0 || s.Progress == null || !_functions.IsOpen(s, Function)) yield break;
-        if (_data.Row("NPCConfig", monster.Template.NpcId) is not { } row || new NPCConfig(row).NPCSubType is not (3 or 4 or 6)) yield break;
-        if (Random.Shared.Next(100) >= _options.TitleCrestPercent) yield break;
+        if (s.Progress == null || !_functions.IsOpen(s, Function)) yield break;
+        if (_data.Row("NPCConfig", monster.Template.NpcId) is not { } row) yield break;
+        bool boss = new NPCConfig(row).NPCSubType is 3 or 4 or 6;
+        int chance = boss ? _options.TitleCrestPercent : _options.TitleCrestFieldPercent;
+        if (chance <= 0 || Random.Shared.Next(100) >= chance) yield break;
         int level = monster.Template.Level;
         int crest = level switch
         {
@@ -129,7 +189,10 @@ public sealed class TitleService
             < 100 => 1250807,
             _ => 1250808,
         };
-        if (_data.Row("ItemConfig", crest) != null) yield return (crest, 1);
+        if (_data.Row("ItemConfig", crest) == null) yield break;
+        _log.LogInformation("Title Crest {Item} dropped for role {Role} from npc {Npc} level {Level} (boss {Boss}, {Chance} %)",
+            crest, s.Role!.Id, monster.Template.NpcId, level, boss, chance);
+        yield return (crest, 1);
     }
 
     private async Task GmAsync(GameSession s, string[] a)

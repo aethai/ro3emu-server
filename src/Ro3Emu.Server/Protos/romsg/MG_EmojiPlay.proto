@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 message SetIdleEmojiReq {
   int32 emojiId = 1;
@@ -87,4 +86,3 @@ message DelEmojiCollectionRsp {
   int32 result = 1;
   int32 emojiId = 2;
 }
-

@@ -10,7 +10,8 @@ namespace Ro3Emu.Server.Game;
 /// admission and the outer 5004 startTime/endTime; activity owners retain gameplay and named phase state.
 /// Civil timezone follows ActivityClock (inferred realm timezone, matching the client's os.date('*t')).
 /// </summary>
-public sealed class TimedTodoSchedule(GameData data, ActivityClock clock, TimeProvider time, TestingSwitches? testing = null)
+public sealed class TimedTodoSchedule(GameData data, ActivityClock clock, TimeProvider time, TestingSwitches? testing = null,
+    Microsoft.Extensions.Options.IOptions<Ro3Emu.Server.ServerOptions>? options = null)
 {
     /// <summary>GM test aid only, process-local. Production scheduling never populates this map.</summary>
     internal Dictionary<int, Occurrence> TestWindows { get; } = [];
@@ -77,6 +78,7 @@ public sealed class TimedTodoSchedule(GameData data, ActivityClock clock, TimePr
         int customWeeks = (int)customRows.Select(r => GameData.Int(r, "_iOpenedWeek")).DefaultIfEmpty(0).Max();
         var opening = Local(clock.ServerOpen).Date;
         var firstMonday = Monday(opening);
+        var ownerWindows = OwnerWindows(id);
         // All exported schedules repeat weekly after the custom prefix. Search through that prefix and
         // a complete fallback week; seed later absolute TimeLimit bounds too (inferred future lookup).
         var seeds = new HashSet<DateTime> { today };
@@ -94,7 +96,12 @@ public sealed class TimedTodoSchedule(GameData data, ActivityClock clock, TimePr
             {
                 var custom = CustomWeek(row, day, opening, firstMonday, customRows);
                 IEnumerable<Occurrence> candidates;
-                if (custom is { } selected)
+                if (ownerWindows.Count > 0)
+                {
+                    // Ro3Emu:OpenContent:WeeklyWindows replaces the exported week for this activity.
+                    candidates = ownerWindows.Where(w => w.Day == 0 || w.Day == Weekday(day)).Select(w => At(day, w.From, w.Until));
+                }
+                else if (custom is { } selected)
                 {
                     candidates = CustomWindows(selected, id, day);
                 }
@@ -162,6 +169,26 @@ public sealed class TimedTodoSchedule(GameData data, ActivityClock clock, TimePr
         foreach (var entry in days.EnumerateArray())
             if (GameData.Number(entry) is { } n && (((int)n - 1) % 7 + 7) % 7 + 1 == Weekday(day))
                 yield return At(day, startTime, endTime);
+    }
+
+    /// <summary>
+    /// Ro3Emu:OpenContent:WeeklyWindows entries for one activity: "activityId,weekday,HHMM,HHMM" (weekday 0 = every day).
+    /// </summary>
+    private IReadOnlyList<(int Day, int From, int Until)> OwnerWindows(int id)
+    {
+        var configured = options?.Value.OpenContent.WeeklyWindows;
+        if (configured is not { Length: > 0 }) return [];
+        var windows = new List<(int, int, int)>();
+        foreach (string entry in configured)
+        {
+            if (entry.Length == 0) continue;
+            var parts = entry.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 4 || !int.TryParse(parts[0], out int activity) || activity != id) continue;
+            if (!int.TryParse(parts[1], out int day) || !int.TryParse(parts[2], out int from)
+                || !int.TryParse(parts[3], out int until)) continue;
+            windows.Add((day, from, until));
+        }
+        return windows;
     }
 
     private Occurrence At(DateTime day, int start, int end)

@@ -24,9 +24,13 @@ public static class OpsEndpoints
             return await loop.InvokeAsync(async () =>
             {
                 var session = sessions.All().FirstOrDefault(s => string.Equals(s.Account, account, StringComparison.OrdinalIgnoreCase));
-                if (session?.Role == null) return Results.BadRequest("not in game");
-                await gm.RunAsync(session, line, loopbackTool: true);
-                return Results.Ok("done");
+                if (session?.Role == null) return (IResult)Results.BadRequest("not in game");
+                // Collect the replies like the panel console does, so a tool sees the outcome, not just "done".
+                List<string> replies = [];
+                session.GmReplies = replies;
+                try { await gm.RunForOperatorAsync(session, line); }
+                finally { session.GmReplies = null; }
+                return (IResult)Results.Text(replies.Count > 0 ? string.Join('\n', replies) : "done");
             });
         }).RequireOperator();
         // In-game bug reports (docs/guide/feedback.md): GET /ro3emu/reports?since=<id or ISO time>&limit=&format=text

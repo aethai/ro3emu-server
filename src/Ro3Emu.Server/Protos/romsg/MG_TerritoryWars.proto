@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 import "MG_Guild.proto";
 import "MG_Common.proto";
 import "MG_Season.proto";
@@ -836,4 +835,3 @@ message TerritoryWarsWarHallGetInfoResp {
   romsg.TerritoryWarsWarHallDonateRankGroup monthRank = 3;
   romsg.TerritoryWarsWarHallDonateRankGroup seasonRank = 4;
 }
-

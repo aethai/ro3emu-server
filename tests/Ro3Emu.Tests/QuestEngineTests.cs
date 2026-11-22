@@ -102,6 +102,17 @@ public sealed class QuestEngineTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task TheMainStoryBranchMarkerDoesNotHoldAdventurerAdvancement()
+    {
+        // 102030 "Adventurer Advancement" ends in _kEXECAction [410,1,2]: ActionConfig 410 CheckMainQuestBranch, the only
+        // row of the export that carries it. It cost nothing, but the unhandled action held delivery on the live server
+        // ("server action 410,1,2: resource semantics not implemented"), which stopped the main story there.
+        await using var bot = await InWorld();
+        await Gm("!quest done 102030");
+        Assert.True(await Read(s => TaskService.IsDelivered(s, 102030)));
+    }
+
+    [ClientDataFact]
     public async Task TheCaravanQuestMarksItsGuildActivityJoinAndIsDelivered()
     {
         // 1601000's _kEXECAction [115,3000]: ActionConfig 115 MarkGuildActivityJoin with DailyActivityConfig 3000 (#166).

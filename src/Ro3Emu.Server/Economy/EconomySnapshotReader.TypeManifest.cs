@@ -98,6 +98,9 @@ public static partial class EconomySnapshotReader
     // mail/deliver receipt (ActivityReward), delivered once by its daily-compensation delivery key, which also removes the day.
     // Faction Quest: role.task_runtime FactionDay/FactionPoints (TaskRuntimeState) are the game day and the Faction Quest
     // points counted that day against TerritoryWarzoneTaskPointsLimit. A counter, no balance and no asset.
+    // Daily side quests: role.task_runtime DailyQuestDay/DailyQuestCount (TaskRuntimeState) are the game day and the
+    // quest deliveries that day that paid the operator's extra base EXP (Ro3Emu:DailyQuests, TaskService.DailyQuest.cs).
+    // Counters, no balance: the EXP itself is progress, paid by the quest delivery it describes.
     // Free cash shop: role.activity_runtime Purchases (NewActivityService.Purchases) counts each top-up or product a role
     // took, in total and on its game day. Counters, no balance and no asset: the goods come with the order's own
     // newactivity receipt that also saves them.
@@ -106,7 +109,7 @@ public static partial class EconomySnapshotReader
     // First-clear rewards: role.dungeons DungeonService.State.FirstPassPaid names the bosses whose _iPartAward was paid;
     // once-only markers, no balance and no asset (the goods are paid by the dungeon/first-pass-award receipt that writes
     // the marker).
-    public const string ExpectedFormatManifestHash = "A3ECEE99900F588A769DC553C1304940B58C85BF888C0D950462F6D4C3F95227";
+    public const string ExpectedFormatManifestHash = "FCB3138CB7BF10FC938CCA24564EDF0026479218F7B6D580A3D671AF39132D38";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State

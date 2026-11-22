@@ -1,8 +1,6 @@
 syntax = "proto3";
 package romsg;
-import "MG_Common.proto";
 import "MG_Season.proto";
-import "FieldOption.proto";
 
 enum DeclarationType {
   NoneType = 0;
@@ -428,4 +426,3 @@ message AdventureGroupCreateNotify {
 message SyncSaplingData {
   repeated romsg.SaplingData saplingDataList = 1;
 }
-

@@ -348,6 +348,11 @@ public sealed partial class NewActivityService
     private long EveChapterOpenTime(GameSession session, long activityId, JsonElement chapter)
     {
         long start = session.NewActivities!.ActivityInfo[activityId].CurStartTime;
+        // Season Eve (NewActivityConfig 117) names TimeLimitConfig 1011, which this export does not ship, so the
+        // activity has no window and CurStartTime stays 0: every movement then shows "Awaiting Performance" and waits
+        // for a start that never comes. Without a window the cycle starts now - movement 1 opens at once, the rest on
+        // the following days (their offsets are what the condition rows carry).
+        if (start <= 0) start = Now;
         if (_data.Row("LC_ConditionList", GameData.Int(chapter, "_iCondition")) is not { } condition
             || !condition.TryGetProperty("m_kSubConditionList", out var clauses)) return start;
         foreach (var clause in clauses.EnumerateArray())

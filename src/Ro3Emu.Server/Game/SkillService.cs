@@ -726,8 +726,17 @@ public sealed partial class SkillService
             var progress = CharacterService.GenreCloneProgress(session.Progress!);
             int result = req.Plan is < 0 or >= PlanCount || !next.SkillAssignPlans[req.Plan].IsUnlock
                 ? ErrorCodes.Parameter : PlanSwitchCooldownError(session);
+            // A build slot the player has not filled takes the career's recommendation, which is what a new player's
+            // first "Switch Build" is for; a build the role cannot afford is dropped and the slot switches empty.
+            long recommended = result == 0 ? RecommendedBuildFor(session, next, progress, req.Plan) : 0;
             if (result == 0) result = StageSkillPlan(session, next, progress, req.Plan);
-            if (result == 0 && req.Plan != session.SkillPlans!.CurrentPlanIndex)
+            if (result != 0 && recommended != 0)
+            {
+                next = Build(session);
+                progress = CharacterService.GenreCloneProgress(session.Progress!);
+                result = StageSkillPlan(session, next, progress, req.Plan);
+            }
+            if (result == 0 && (req.Plan != session.SkillPlans!.CurrentPlanIndex || recommended != 0))
             {
                 await CommitAsync(session, next, progress, "cd13c/skill-switch",
                     () => session.SkillPlanSwitchUtc = DateTime.UtcNow);

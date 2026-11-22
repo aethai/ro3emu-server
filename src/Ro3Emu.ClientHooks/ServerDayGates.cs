@@ -52,6 +52,12 @@ namespace Ro3Emu.ClientHooks
         private const long ServerDay = 3031, PlayBookSeconds = 3030, BaseLevel = 1002;
         /// <summary>A base-level gate no character reaches: the original never opened such a function.</summary>
         private const long NeverLevel = 999;
+        /// <summary>
+        /// Functions whose own level gate no character reaches (FunctionConfig conditions [1002,9999]), so only a server
+        /// that opens content reports them open: 7201 Realm War map, 41 Feedback, 1000000 Adv. Guild, 96 Valhalla Trials,
+        /// 69 Season page, 14 Title.
+        /// </summary>
+        private static readonly long[] NeverLevelFunctions = { 7201, 41, 1000000, 96, 69, 14 };
         private const float ProbeSeconds = 5f;
 
         /// <summary>LC_FunctionHelper.GetFunctionProgressByDefine(functionId, conditionType) (called with '.').</summary>
@@ -284,6 +290,19 @@ namespace Ro3Emu.ClientHooks
                             content = true;
                         }
                         if (open && content) break;
+                    }
+                }
+                if (!content)
+                {
+                    // AllOpenFunctionInfo only holds the functions this client build keeps, and an open function's
+                    // progress can read 0, so the loop above can miss the policy. Ask the helper for the functions whose
+                    // gate no character reaches: any of them open means the server opens content.
+                    foreach (long id in NeverLevelFunctions)
+                    {
+                        if (!ServerSaysOpen(id)) continue;
+                        Note("server opens content: function " + id + " is open (a level gate no character reaches)");
+                        content = true;
+                        break;
                     }
                 }
             }

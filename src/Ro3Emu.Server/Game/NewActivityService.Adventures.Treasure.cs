@@ -73,17 +73,24 @@ public sealed partial class NewActivityService
         {
             PointId = GameData.Int(chosen, "_iId"), GroupId = 1, ItemId = item.Entry, Began = Now,
         };
+        // The map is the dig attempt: the season counter the Lost Treasure milestones read moves in the same
+        // commit that spends it, so a hunt interrupted before the dig (relogin, map change, the 10800s expiry)
+        // still counts. Crediting it only on the dig lost every hunt that never finished.
+        int counterItem = TreasureCounterItem(session);
+        List<(int Entry, int Count)> counter = counterItem > 0 ? [(counterItem, 1)] : [];
         // Use the canonical bag transaction and the selected GUID; publish the hunt and cooldown
         // together before any StateChanged observer can see the consumed map.
         var consumed = await _character.ExchangeLockedAsync(session, [], [],
-            instances: new Dictionary<long, int> { [item.Guid] = 1 }, popup: false, sync: false,
+            instances: new Dictionary<long, int> { [item.Guid] = 1 }, popup: false, sync: true,
+            currencyGoods: counterItem > 0 ? new Dictionary<int, long> { [counterItem] = 1 } : null,
             persist: tx =>
             {
                 tx.RoleBlob(session.Role!.Id, "activity_runtime", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(runtime));
                 persistCooldown(tx);
-                // E05a owns map consumption and the resolved hunt source; later hunt rewards stay in the activity family.
+                // E05a owns map consumption, the dig-attempt counter and the resolved hunt source; later hunt
+                // rewards stay in the activity family.
                 tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/character-treasure-use",
-                    [(item.Entry, 1L)], [], new { ItemGuid = item.Guid, Hunt = runtime.AdventureTreasure }));
+                    [(item.Entry, 1L)], counter, new { ItemGuid = item.Guid, Hunt = runtime.AdventureTreasure }));
             },
             committed: () => { session.ActivityRuntime = runtime; publishCooldown(); });
         if (consumed == null) return ErrorCodes.ItemsShort;
@@ -179,8 +186,7 @@ public sealed partial class NewActivityService
                 PendingMonsterId = monsterId,
             };
             if (monster != null && assistGroup > 0) TrackTreasureHelpers(monster.Uid);
-            AwardGrant[] counted = TreasureCounterItem(session) is var counter and > 0 ? [.. grants, new(counter, 1)] : grants;
-            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(), extra: counted, runtime: runtime);
+            int result = await CommitAdventureAsync(session, session.NewActivities!.Clone(), extra: grants, runtime: runtime);
             if (result != 0)
             {
                 if (monster != null)
@@ -219,8 +225,9 @@ public sealed partial class NewActivityService
     /// The Total Treasure Hunts counter: the season panel counts the item its treasure milestones are bound to
     /// (GenericStageRewardsConfig._iType 8 rows' _iItem, 130401 enum_CurrencyType.SeasonTreasure;
     /// UI_Sys_Season_TreasureWidgetCtrl.lua:704-710 GetBindItemID, :845-883 GetItemCount as iCurrentNum) and
-    /// DailyActivityService.StageError claims against that count. No table grants it. (inferred) One per committed dig,
-    /// whether it paid loot or spawned an elite or boss. Zero when the playbook names no single such item.
+    /// DailyActivityService.StageError claims against that count. No table grants it. (inferred) One per map spent on
+    /// a hunt - StartTreasureMapAsync credits it in the commit that consumes the map, so a hunt that never reaches its
+    /// dig still counts. Zero when the playbook names no single such item.
     /// </summary>
     private int TreasureCounterItem(GameSession session)
     {

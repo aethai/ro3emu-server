@@ -91,6 +91,10 @@ public sealed partial class TimedBattleService
             : stone.Challenger != null ? ErrorCodes.RiftStoneTaken : 0;
         // The dialog's Challenge option shows RestrictInfo1020 as "x/10" (_buildOnePieceExtraParams' caller).
         if (result == 0) await SyncRiftRestrictAsync(session);
+        else
+            _log.LogInformation("Rift stone {Stone} interaction refused for {Role}: error {Error} (interaction {Interaction}, distance {Distance:0.0})",
+                req.NpcUid, session.Role?.Id, result, req.InteractionId,
+                stone == null ? -1 : MonsterService.Distance(session.Position.X, session.Position.Z, stone.Point.X, stone.Point.Z));
         await session.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = result, Req = req });
         return true;
     }
@@ -223,6 +227,9 @@ public sealed partial class TimedBattleService
         if (_data.Table("PublicParamConfig").TryGetValue("OnePieceMapMembersNum", out var range)
             && range.ValueKind == JsonValueKind.Array && range.GetArrayLength() == 2)
         { min = (int)(GameData.Number(range[0]) ?? 3); max = Math.Max(min, (int)(GameData.Number(range[1]) ?? 5)); }
+        // Ro3Emu:Rift lowers the floor for a small realm: the export asks for 3-5, which two players can never meet.
+        if (_options.Rift.MinParty > 0) min = _options.Rift.MinParty;
+        if (_options.Rift.MaxParty >= min) max = _options.Rift.MaxParty;
         if (RiftTestMinParty is { } test) min = Math.Min(test, max);
         return (min, max);
     }
@@ -259,6 +266,9 @@ public sealed partial class TimedBattleService
         if (error == 0) (error, members, teamId) = RiftParty(session, stone!);
         if (error == 0 && req.InitData?.HiddenTreasureInitData is { PlayerIds.Count: > 0 } init
             && !init.PlayerIds.Order().SequenceEqual(members.Select(m => m.Role!.Id).Order())) error = ErrorCodes.Parameter;
+        if (error != 0)
+            _log.LogInformation("Rift entry refused for {Role} at stone {Stone} ({Map}): error {Error}",
+                session.Role?.Id, stone?.Uid ?? named, session.SceneEntry, error);
         await session.SendGameAsync(DungeonService.Enter, new EnterDungeonRsp { Result = error });
         if (error != 0) return true;
         stone!.Challenger = session;
@@ -276,6 +286,15 @@ public sealed partial class TimedBattleService
     }
 
     private (int Error, GameSession[] Members, long TeamId) RiftParty(GameSession leader, RiftStone stone)
+    {
+        var (error, members, teamId) = RiftPartyCore(leader, stone);
+        if (error != 0)
+            _log.LogInformation("Rift party refused for {Role} at stone {Stone}: error {Error} (party {Min}-{Max})",
+                leader.Role?.Id, stone.Uid, error, RiftPartySize().Min, RiftPartySize().Max);
+        return (error, members, teamId);
+    }
+
+    private (int Error, GameSession[] Members, long TeamId) RiftPartyCore(GameSession leader, RiftStone stone)
     {
         long roleId = leader.Role!.Id;
         var (teamId, head) = _teams.TeamOf(roleId);
@@ -470,12 +489,25 @@ public sealed partial class TimedBattleService
         // The first member in raises the boss; later ones join the fight.
         if (a.Boss != null || a.Spawning) return;
         var map = _worldData.Map(a.Room.SceneEntry);
+        // The spawn spot: the map's authored dungeon points, its born point, or the rift stone itself (the stone stands
+        // on the map, so it is always usable) — a missing point used to leave the run without any boss.
         MapPoint? point = map?.DungeonGroups.Values.SelectMany(x => x).FirstOrDefault() is { } spawn && spawn.Id != 0
-            ? new MapPoint(spawn.X, spawn.Y, spawn.Z, spawn.Face) : map?.Born;
-        if (point == null || a.Monster <= 0) return;
+            ? new MapPoint(spawn.X, spawn.Y, spawn.Z, spawn.Face)
+            : map?.Born ?? new MapPoint(a.Stone.Point.X, a.Stone.Point.Y, a.Stone.Point.Z, a.Stone.Point.Face);
+        if (point == null || a.Monster <= 0)
+        {
+            _log.LogWarning("Rift run {Room}: no boss raised (monster {Npc}, point {Point}) for stone {Stone} ({Map})",
+                a.Room.Id, a.Monster, point != null, a.Stone.Uid, a.Room.SceneEntry);
+            return;
+        }
         a.Spawning = true;
         try { a.Boss = await _instances.SpawnAsync(a.Room, a.Monster, point.Value); }
         finally { a.Spawning = false; }
+        if (a.Boss == null)
+            _log.LogWarning("Rift run {Room}: boss {Npc} did not spawn for stone {Stone} ({Map})",
+                a.Room.Id, a.Monster, a.Stone.Uid, a.Room.SceneEntry);
+        _log.LogInformation("Rift run {Room} raised boss {Npc}#{Uid} for stone {Stone} ({Map})",
+            a.Room.Id, a.Monster, a.Boss?.Uid ?? 0, a.Stone.Uid, a.Room.SceneEntry);
         _loop.ScheduleRuntime(TimeSpan.FromMilliseconds(RiftFightMilliseconds), async () =>
         { if (!a.Settled) await SettleTreasureAsync(a, false); });
     }
@@ -516,8 +548,10 @@ public sealed partial class TimedBattleService
 
     private async Task OnePieceKilledAsync(GameSession killer, MonsterUnit monster)
     {
-        if (_treasure.GetValueOrDefault(killer) is { } a && !a.Settled && a.Room.Id == monster.InstanceId
-            && a.Boss?.Uid == monster.Uid) await SettleTreasureAsync(a, true);
+        if (_treasure.GetValueOrDefault(killer) is not { } a || a.Settled || a.Room.Id != monster.InstanceId) return;
+        if (a.Boss?.Uid == monster.Uid) { await SettleTreasureAsync(a, true); return; }
+        _log.LogInformation("Rift run {Room}: killed {Npc}#{Uid} is not the run boss (#{Boss})",
+            a.Room.Id, monster.Template.NpcId, monster.Uid, a.Boss?.Uid ?? 0);
     }
 
     private static string TreasureSource(Treasure a, long roleId) =>
@@ -728,5 +762,14 @@ public sealed partial class TimedBattleService
         return result;
     }
 
-    private void TickOnePiece(long now) => TickRift();
+    private void TickOnePiece(long now)
+    {
+        TickRift();
+        // A boss that died without its kill event (a summon's last hit, a member disconnecting mid-cast) leaves the
+        // party standing in a cleared room - the reported "killed the boss but stuck". The run settles as soon as the
+        // run's own boss is down.
+        foreach (var a in _treasure.Values.Distinct().ToArray())
+            if (!a.Settled && a.Boss is { Dead: true })
+                _loop.PostRuntime(() => a.Settled ? Task.CompletedTask : SettleTreasureAsync(a, true));
+    }
 }

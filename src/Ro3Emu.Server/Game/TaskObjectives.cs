@@ -447,6 +447,13 @@ public sealed partial class TaskService
                         TKill => ReferenceEquals(session, killer) && target.Length >= 3 && target.AsSpan(1, target.Length - 2).Contains(monster.Template.NpcId),
                         TKillInvolved => target.Length >= 3 && target.AsSpan(1, target.Length - 2).Contains(monster.Template.NpcId),
                         TMapKill => target.Length == 3 && target[1] == monster.SceneEntry,
+                        // 106602 TenBossWin [count, boss, boss...]: the Ten boss a dungeon lists. DungeonService settles the
+                        // clear (MultiBossCleared -> OnTenBossClearedAsync), but a listed boss killed in the world never
+                        // reached that path, which left TaskConfig 703030 "Clear Wildlands dungeons" at 0/1 forever.
+                        // Killing the listed boss in the world is the defeat, so it counts here too (inferred); inside a
+                        // dungeon the settle above owns the count, so a solo clear cannot satisfy the guild co-op quest
+                        // 1601010 that carries the same boss list.
+                        TTenBossWin => session.DungeonAttempt == null && target.Length >= 3 && target.AsSpan(2).Contains(monster.Template.NpcId),
                         TKillOnMap => ReferenceEquals(session, killer) && target.Length == 3 && target[2] == monster.SceneEntry,
                         _ => false
                     };
@@ -611,4 +618,8 @@ public sealed class TaskRuntimeState
     public long FactionDay { get; set; }
     /// <summary>The Faction Quest points counted that day, the exceed past 1101000's 1000 included.</summary>
     public long FactionPoints { get; set; }
+    /// <summary>The game day of <see cref="DailyQuestCount"/>; 0 until a delivery counted (TaskService.DailyQuest.cs).</summary>
+    public long DailyQuestDay { get; set; }
+    /// <summary>The quest deliveries that paid the day's EXP bonus.</summary>
+    public int DailyQuestCount { get; set; }
 }

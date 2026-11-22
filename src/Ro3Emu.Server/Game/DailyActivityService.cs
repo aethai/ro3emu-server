@@ -343,6 +343,9 @@ public sealed partial class DailyActivityService : IGameTicker
                 if (result == 0) await SyncClaimsAsync(session);
             }
         }
+        // The reply is ignored by the client, so a stage it still shows as claimable (a stale StageRewardReceiveMap
+        // after a relogin or an aborted sync) would stay "click does nothing" forever: resend the list and it heals.
+        if (result == ErrorCodes.RewardClaimed) await SyncClaimsAsync(session);
         await session.SendGameAsync(StageGain, new StageRewardGainResp { Result = result, StageId = req.StageId });
     }
 
@@ -381,6 +384,7 @@ public sealed partial class DailyActivityService : IGameTicker
             result = await _character.GrantDailyStageAsync(session, grant, before, after) ? 0 : ErrorCodes.Unknown;
             if (result == 0) await SyncClaimsAsync(session);
         }
+        if (result == ErrorCodes.RewardClaimed) await SyncClaimsAsync(session);
         await session.SendGameAsync(StageBatchGain, new StageRewardBatchGainResp { Result = result, Req = req });
     }
 

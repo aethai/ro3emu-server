@@ -43,15 +43,17 @@ public sealed class ParagonService
     private readonly FunctionService _functions;
     private readonly RoleStore _roles;
     private readonly ServerOptions _options;
+    private readonly ILogger<ParagonService> _log;
     private Dictionary<int, Node>? _nodes;
     private Dictionary<int, int[]>? _predecessors;
     private int[]? _groups;
 
     public ParagonService(GameData data, CharacterService character, FunctionService functions, RoleStore roles,
-        PowerService power, RewardService rewards, GmCommands gm, Microsoft.Extensions.Options.IOptions<ServerOptions> options)
+        PowerService power, RewardService rewards, GmCommands gm, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
+        ILogger<ParagonService> log)
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
-        this._options = options.Value;
+        this._options = options.Value; this._log = log;
         character.ExtraAttributes.Add(Attributes);
         character.StateChanged.Add(s => _ = SyncIfOpenAsync(s));
         power.ParagonPower = s => s.Paragon == null || s.Progress == null ? 0 : Power(s, s.Paragon);
@@ -344,7 +346,8 @@ public sealed class ParagonService
     {
         if (!_options.StarCoreDrops || s.Progress == null || !_functions.IsOpen(s, Function)) yield break;
         bool boss = _data.Row("NPCConfig", monster.Template.NpcId) is { } npc && new NPCConfig(npc).NPCSubType is 3 or 4 or 6;
-        if (Random.Shared.Next(boss ? 5 : 2000) != 0) yield break;
+        int oneIn = Math.Max(1, boss ? _options.StarCoreBossOneIn : _options.StarCoreFieldOneIn);
+        if (Random.Shared.Next(oneIn) != 0) yield break;
         int[] weights = [50, 25, 13, 7, 4, 1];
         int roll = Random.Shared.Next(weights.Sum()), quality = 1;
         for (int i = 0; i < weights.Length; i++) { if (roll < weights[i]) { quality = i + 1; break; } roll -= weights[i]; }
@@ -352,7 +355,13 @@ public sealed class ParagonService
             .Select(r => (int)new PatronRuneConfig(r).Id)
             .Where(id => _data.Row("ItemConfig", id) is { } item && new ItemConfig(item) is { SubType: >= 920 and <= 923 } config
                 && config.Quality == quality).ToArray();
-        if (candidates.Length > 0) yield return (candidates[Random.Shared.Next(candidates.Length)], 1);
+        if (candidates.Length > 0)
+        {
+            int entry = candidates[Random.Shared.Next(candidates.Length)];
+            _log.LogInformation("Astral Star Core {Item} dropped for role {Role} from npc {Npc} (1 in {OneIn})",
+                entry, s.Role!.Id, monster.Template.NpcId, oneIn);
+            yield return (entry, 1);
+        }
     }
 
     // --- test aid ---------------------------------------------------------------------------------------------------

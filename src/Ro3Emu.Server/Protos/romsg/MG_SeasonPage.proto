@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 message FunctionList {
   repeated int32 functions = 1;
@@ -53,4 +52,3 @@ message BattleGloryRankRewardResp {
   int32 result = 1;
   map<int32, int32> receiveResult = 2;
 }
-

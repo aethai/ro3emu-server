@@ -633,6 +633,7 @@ public sealed partial class DungeonService
             }
             // A step with a fight spawns it below; it advances once its event and its kills are both in.
         }
+        int failed = 0;
         foreach (var spawn in a.Plan.Waves[a.Wave].Spawns)
         {
             if (a.Settled || a.Room.Closed) { a.Spawning = false; return; }
@@ -643,7 +644,15 @@ public sealed partial class DungeonService
                 await _instances.ClearMonstersAsync(a.Room);
                 return;
             }
-            if (monster == null) { a.Spawning = false; await SettleAsync(a, false); return; }
+            // One bad row must not end the run (a missing template used to settle the whole dungeon, leaving an empty
+            // room): the other monsters of the wave still spawn, and a wave where nothing spawned still settles.
+            if (monster == null)
+            {
+                failed++;
+                _log.LogWarning("Dungeon {Entry} wave {Wave}: NPC {Npc} did not spawn at {Point}", a.Plan.SceneEntry,
+                    a.Wave + 1, spawn.NpcId, spawn.Point);
+                continue;
+            }
             a.Spawned++;
             if (spawn.Route is { } route)
             {
@@ -660,6 +669,14 @@ public sealed partial class DungeonService
                 _monsters.Engage(monster, target);
         }
         a.Spawning = false;
+        if (failed > 0 && a.Spawned == 0)
+        {
+            _log.LogWarning("Dungeon {Entry} wave {Wave}: every spawn failed, the run settles", a.Plan.SceneEntry, a.Wave + 1);
+            await SettleAsync(a, false);
+            return;
+        }
+        _log.LogInformation("Dungeon {Entry} wave {Wave}: {Spawned} monster(s) spawned, {Failed} failed", a.Plan.SceneEntry,
+            a.Wave + 1, a.Spawned, failed);
         await AdvanceAsync(a);
     }
 

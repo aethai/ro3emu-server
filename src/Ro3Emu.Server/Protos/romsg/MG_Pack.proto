@@ -1,7 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "MG_Common.proto";
-import "FieldOption.proto";
 import "MG_Chat.proto";
 
 enum ItemQualityType {
@@ -407,4 +405,3 @@ message ItemAutoDecomposeTipsNtf {
   map<int32, int32> decomposeItemInfo = 1;
   map<int32, romsg.ItemAutoDecomposeGainItems> decomposeGainItemInfo = 2;
 }
-

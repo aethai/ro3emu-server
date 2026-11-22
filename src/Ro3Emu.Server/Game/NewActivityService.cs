@@ -48,6 +48,7 @@ public sealed partial class NewActivityService
     private readonly PronteraDefenseService _defense;
     private readonly TeamService _teams;
     private readonly bool _freePremiumPass, _passPlay, _freeProducts;
+    private readonly HashSet<long> _freePremiumPassIds;
     private readonly int _freeTopUpsPerDay;
     private readonly ILogger<NewActivityService> _log;
     private readonly HashSet<(GameSession Session, long Attachment)> _queued = [];
@@ -75,6 +76,9 @@ public sealed partial class NewActivityService
         this._dungeons = dungeons;
         this._teams = teams;
         _freePremiumPass = options.Value.Pass.FreePremium;
+        _freePremiumPassIds = [.. options.Value.Pass.FreePremiumActivityIds];
+        if (_freePremiumPass || _freePremiumPassIds.Count > 0)
+            log.LogInformation("Pass premium free: {Passes}", _freePremiumPass ? "every pass" : string.Join(",", _freePremiumPassIds));
         _passPlay = options.Value.Pass.Play;
         _freeProducts = options.Value.Shop.FreeProducts;
         _freeTopUpsPerDay = options.Value.Shop.FreeTopUpsPerDay;

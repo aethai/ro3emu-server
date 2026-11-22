@@ -169,17 +169,17 @@ public sealed partial class GuildCampfireService
     private bool PrizeDue(int stage, long second) => PrizeDraw(stage) is { } draw
         && CampFireTimeLine.Get(_data, stage) is { } line && second >= StartTime() + (line.TimeLine + draw.DelayTime) / 1000;
 
-    /// <summary>Tick: each live room's due draw, posted once per room, day and stage.</summary>
-    private void RunDueDraws(IEnumerable<(long Guild, InstanceService.Room Room)> live, int stage, long day, long second)
+    /// <summary>Tick: each live room's due draw, posted once per room, round and stage.</summary>
+    private void RunDueDraws(IEnumerable<(long Guild, InstanceService.Room Room)> live, int stage, long round, long second)
     {
         if (stage is < 2 or > 4 || !PrizeDue(stage, second)) return;
         foreach (var (guild, room) in live)
-            if (_prizePosted.Add((room.Id, day, stage)))
-                _loop.TrackLegacyDetached("campfire prize draw", () => PrizeDrawAsync(guild, room, stage));
+            if (_prizePosted.Add((room.Id, round, stage)))
+                _loop.TrackLegacyDetached("campfire prize draw", () => PrizeDrawAsync(guild, room, stage, round));
     }
 
     /// <summary>CampFireAffixNewConfig action 5 of the stage: once per guild and event day.</summary>
-    private async Task PrizeDrawAsync(long guild, InstanceService.Room room, int stage)
+    private async Task PrizeDrawAsync(long guild, InstanceService.Room room, int stage, long round)
     {
         if (room.Closed || PrizeDraw(stage) is not { ActionParams: [_, [var level, ..], [var group, ..], .. var bands] }) return;
         using var scope = await EnterWithGuildGateAsync("campfire/prize draw", guild,
@@ -195,30 +195,107 @@ public sealed partial class GuildCampfireService
                 is [_, _, var n] ? (int)n : 0;
             long type = HenshinType(guild, stage) is var t and > 0 ? TransformBuffs().Select(b => CampFireBonus.Get(_data, b)!.Value.TypeId)
                 .ElementAt(t - 1) : 0;
-            winners = [.. present.Where(s => TransformOf(s)?.TypeId == type).OrderBy(_ => Random.Shared.Next()).Take(count)];
+            var eligiblePlayers = present.Where(s => TransformOf(s)?.TypeId == type).ToList();
+            // Small realms: the stage's transformation is one of five handed out at random, a transformation lasts
+            // 20 minutes and the re-roll manual's skill (5701601) is not built, so often nobody holds the stage's
+            // type. Fall back to every transformed member present instead of posting an empty draw (the prize bands
+            // start at one player here, see tools/README.md).
+            if (eligiblePlayers.Count == 0) eligiblePlayers = [.. present.Where(s => TransformOf(s) != null)];
+            // A small realm is often left with nobody transformed when a draw comes round (a transformation is one of
+            // five handed out at random, and the re-roll skill 5701601 is not built), so the last fallback is every
+            // member present: the stage still has a winner and still pays its prize.
+            if (eligiblePlayers.Count == 0) eligiblePlayers = [.. present];
+            winners = [.. eligiblePlayers.OrderBy(_ => Random.Shared.Next()).Take(count)];
             if (present.FirstOrDefault() is { } actor) await SaveAsync(guild, state, actor);
+            _log.LogInformation("Campfire prize draw: guild {Guild} stage {Stage}, prize level {Level} group {Group}, " +
+                "{Present} present, {Winners} winner(s).", guild, stage, level, group, present.Count, winners.Count);
         }
         finally { Gate(guild).Release(); }
         var notice = new GuildCampFireLuckyPlayerNotify { AwardLevel = level };
         foreach (var winner in winners)
-            if (await PayPrizeAsync(winner, guild, stage, level, group) is { } info) notice.PlayerList.Add(info);
+            if (await PayPrizeAsync(winner, guild, stage, level, group, round) is { } info) notice.PlayerList.Add(info);
         await ToRoomAsync(room, Lucky, notice);
     }
 
-    private async Task<GuildCampFireLuckyPlayerInfo?> PayPrizeAsync(GameSession s, long guild, int stage, long level, long group)
+    private async Task<GuildCampFireLuckyPlayerInfo?> PayPrizeAsync(GameSession s, long guild, int stage, long level,
+        long group, long round)
     {
-        if (TransformOf(s) is not { } bonus || s.Role is not { } role) return null;
-        var (own, show) = bonus.Prize(level);
+        if (s.Role is not { } role) return null;
+        // The stage's own award group pays every winner; a transformed winner also takes its transformation's prize.
+        var bonus = TransformOf(s);
+        var (own, show) = bonus?.Prize(level) ?? (0, 0);
         long[] groups = [.. new[] { group, own }.Where(g => g > 0)];
         var grants = groups.SelectMany(g => _awards.Resolve(s, g).Grants).ToArray();
         bool paid = await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, grants), persist: tx =>
         {
             if (grants.Any(g => g.Entry is not (100 or 101)))
                 tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "guild-campfire-prize",
-                    $"guild-campfire/prize/{guild}/{Today()}/{stage}/{role.Id}", [], grants,
+                    $"guild-campfire/prize/{guild}/{round}/{stage}/{role.Id}", [], grants,
                     new { Guild = guild, Stage = stage, Level = level, Groups = groups }));
         });
         if (!paid) return null;
-        return new GuildCampFireLuckyPlayerInfo { PlayerId = role.Id, BuffId = bonus.BuffId, BonusShow = show, AwardList = { groups } };
+        return new GuildCampFireLuckyPlayerInfo { PlayerId = role.Id, BuffId = bonus?.BuffId ?? 0, BonusShow = show, AwardList = { groups } };
+    }
+
+    // ---- the party blessing ----
+
+    private long _blessSecond;
+
+    /// <summary>Seconds between two bubble rewards: CampfireBlessTime (600 s) split into CampfireBubbleRewardLimit (20).</summary>
+    private long BlessInterval() =>
+        Math.Max(5, PublicParam("CampfireBlessTime", 600) / Math.Max(1, PublicParam("CampfireBubbleRewardLimit", 20)));
+
+    /// <summary>The EXP one bubble pays (inferred): CampfireBlessExp when an operator sets it, else the fire's own level
+    /// EXP (CampFireLevel 25/43/73/159/300) times 20, so a better fed fire blesses the party more.</summary>
+    private long BlessExp(StateData state) => PublicParam("CampfireBlessExp", 0) is var configured && configured > 0
+        ? configured
+        : _data.Table("CampFireLevel").Values
+            .Where(r => GameData.Int(r, "_iExp") <= Math.Max(1, state.Exp))
+            .Select(r => GameData.Int(r, "_iExp")).DefaultIfEmpty(25).Max() * 20;
+
+    /// <summary>Tick: every <see cref="BlessInterval"/> seconds each live room's party blessing pays the members inside.</summary>
+    private void RunBlessing(IEnumerable<(long Guild, InstanceService.Room Room)> live, long second)
+    {
+        if (second - _blessSecond < BlessInterval()) return;
+        _blessSecond = second;
+        foreach (var (guild, room) in live)
+            _loop.TrackLegacyDetached("campfire blessing", () => BlessAsync(guild, room, second));
+    }
+
+    /// <summary>One blessing round: every eligible member inside takes the next bubble (up to the limit) and its EXP.</summary>
+    private async Task BlessAsync(long guild, InstanceService.Room room, long second)
+    {
+        if (room.Closed) return;
+        int limit = (int)Math.Clamp(PublicParam("CampfireBubbleRewardLimit", 20), 1, 1000);
+        long end = second + Math.Max(60, PublicParam("CampfireBlessTime", 600));
+        var paid = new List<(GameSession Session, int Count, long Exp)>();
+        using (await EnterWithGuildGateAsync("campfire blessing", guild, room.ActiveMembers.Select(m => m.Session.Role?.Id ?? 0)))
+        {
+            try
+            {
+                var state = Read(guild);
+                long exp = BlessExp(state);
+                foreach (var member in room.ActiveMembers)
+                {
+                    var session = member.Session;
+                    if (session.Role is not { } role || session.InstanceId != room.Id || session.SceneLoading
+                        || session.SceneEntry != Dungeon || !Eligible(session)) continue;
+                    int count = state.BlessCount.GetValueOrDefault(role.Id);
+                    if (count >= limit) continue;
+                    state.BlessCount[role.Id] = count + 1;
+                    state.BlessEnd[role.Id] = end;
+                    paid.Add((session, count + 1, exp));
+                }
+                if (paid.Count > 0) await SaveAsync(guild, state, paid[0].Session);
+            }
+            finally { Gate(guild).Release(); }
+        }
+        foreach (var (session, count, exp) in paid)
+        {
+            _log.LogInformation("Campfire blessing: role {Role} bubble {Count}/{Limit}, {Exp} EXP.",
+                session.Role!.Id, count, limit, exp);
+            await _character.AddExpAsync(session, exp, 0);
+            await PlayerInfoAsync(session);
+        }
     }
 }

@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 message TotemInfoNotify {
   int64 totemTotalExp = 1;
@@ -102,4 +101,3 @@ message TotemAppraiseResp {
   int32 Result = 1;
   repeated romsg.ItemBaseInfo AppraiseResult = 2;
 }
-

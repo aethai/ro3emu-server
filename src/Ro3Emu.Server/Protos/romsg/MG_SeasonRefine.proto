@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 message SeasonRefineRecastReq {
   int32 equipType = 1;
@@ -31,4 +30,3 @@ message SeasonRefineGiveUpReq {
 message SeasonRefineGiveUpResp {
   int32 result = 1;
 }
-

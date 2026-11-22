@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "FieldOption.proto";
 
 enum MailCategoryTypeEnum {
   Invalid = 0;
@@ -71,4 +70,3 @@ message SendGuildMailRsp {
   int32 result = 1;
   string mail_uid = 3;
 }
-

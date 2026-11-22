@@ -96,6 +96,7 @@ public static class ClientPatcher
         }
         File.Copy(locDll, Path.Combine(managed, LocFile), overwrite: true);
         Console.WriteLine($"installed {LocFile}");
+        InstallContentPacks(clientDir, hooksDll);
 
         ReplaceManaged(clientDir, (file, source, destination) =>
             RewriteStrings(clientDir, file, source, destination, rules, Extra(file, hooksDll, locDll)));
@@ -105,6 +106,37 @@ public static class ClientPatcher
             + "(a client build this patcher does not know; open an issue with .ro3-update/installed-release.txt)");
         Console.WriteLine($"client hosts replaced: {string.Join(", ", rules.SelectMany(r => r.Hosts).Distinct())}");
         Console.WriteLine($"client now talks to {serverBaseUrl}; do not run RO3Launcher.exe on this copy (its repair restores the originals)");
+    }
+
+    /// <summary>
+    /// Content packs travel with the hooks DLL (`client\content\*.json` next to it) and land in
+    /// `<game>\ro3emu\content\`, where the hooks read them at startup and write the named fields onto the client's own
+    /// config rows (Ro3Emu.ClientHooks.ContentPacks). Nothing to do when the launcher ships no packs.
+    /// </summary>
+    internal static void InstallContentPacks(string clientDir, string hooksDll, Action<string>? step = null)
+    {
+        try
+        {
+            string source = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(hooksDll))!, "content");
+            if (!Directory.Exists(source)) return;
+            string[] files = Directory.GetFiles(source, "*.json");
+            string target = Path.Combine(clientDir, "ro3emu", "content");
+            if (files.Length > 0) Directory.CreateDirectory(target);
+            foreach (string file in files)
+            {
+                File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+                step?.Invoke(Path.GetFileName(file));
+            }
+            if (files.Length > 0) Console.WriteLine($"installed {files.Length} content pack(s) into {target}");
+        }
+        catch (IOException e)
+        {
+            Console.WriteLine($"content packs not installed: {e.Message}");
+        }
+        catch (UnauthorizedAccessException e)
+        {
+            Console.WriteLine($"content packs not installed: {e.Message}");
+        }
     }
 
     /// <summary>

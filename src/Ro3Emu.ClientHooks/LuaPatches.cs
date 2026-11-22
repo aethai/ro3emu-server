@@ -100,11 +100,15 @@ namespace Ro3Emu.ClientHooks
                 var functionHelper = Module(manager, global, "lc_functionhelper");
                 FeedbackButton.Install(global, functionHelper);
                 PassChallenges.Install(global);
+                TitleStats.Install(manager, global);
+                ProfileTitle.Install(manager, global);
                 TitleButton.Install(manager, global);
                 ServerDayGates.Install(global, functionHelper, Module(manager, global, "lc_conditiondefine"),
                     global.Obf_RuA<Obf_R.Obf_ff>("LC_SeasonHelper") ?? Module(manager, global, "lc_seasonhelper"),
                     global.Obf_RuA<Obf_R.Obf_ff>("LC_SeasonExplorationHelper") ?? Module(manager, global, "lc_seasonexplorationhelper"));
                 LevelCapTip.Install(Module(manager, global, "lua_cfg_baselvlimitconfig"));
+                SeasonRefineAttrs.Install(Module(manager, global, "lua_cfg_refiningseasonattrconfig"));
+                ContentPacks.Install(env, global);
                 PersonalCards.Install((Obf_R.Obf_Cf)env, Module(manager, global, "lc_dal_personal"));
                 LuaLogs.Install(global);
                 EmoteWidget.Install(Module(manager, global, "ui_sys_main_actionwidgetbasectrl"));

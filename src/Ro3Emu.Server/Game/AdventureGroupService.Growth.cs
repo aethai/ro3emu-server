@@ -206,13 +206,21 @@ public sealed partial class AdventureGroupService
         {
             case "create" when args.Length > 1:
                 {
-                    string name = string.Join(' ', args.Skip(1));
+                    // "!advguild create <name> [auto]": with "auto" the aid's group admits applicants at once, so a
+                    // player pressing Join in the list is admitted without the GM watching the applicant panel. The
+                    // default keeps the original approval flow.
+                    var words = args.Skip(1).ToList();
+                    bool auto = words.Count > 1 && words[^1].Equals("auto", StringComparison.OrdinalIgnoreCase);
+                    if (auto) words.RemoveAt(words.Count - 1);
+                    string name = string.Join(' ', words);
+                    if (name.Length == 0) { reply = "Usage: !advguild create <name> [auto]"; break; }
                     if (Own(s) != null) { reply = "Already in an adventure group."; break; }
                     if (_store.NameExists(name)) { reply = "Name taken."; break; }
                     var g = new AdventureGroupStore.State
                     {
                         Name = name, Status = StatusNormal, CreateType = 2, CreateTime = Now, Owner = self, Level = 1,
                         SaplingId = SaplingNpcs[0], DayResetTime = DayStart, WeekResetTime = WeekStart,
+                        AutoAgreeApply = auto, AutoAgreeHelperApply = auto,
                     };
                     g.Members[self] = NewMember(self);
                     AddEvent(g, AdventureGroupEventType.EventTypeCreate, self, 0, name);
@@ -220,7 +228,7 @@ public sealed partial class AdventureGroupService
                     await SendFullAsync(s, g, joined: true);
                     await SyncRelationAsync(s, g);
                     await RefreshGroupQuestsAsync(s);
-                    reply = $"Adventure group {g.Id} '{name}' founded (normal, sapling {g.SaplingId}).";
+                    reply = $"Adventure group {g.Id} '{name}' founded (normal, {(auto ? "auto-join" : "manual approval")}, sapling {g.SaplingId}).";
                     break;
                 }
             case "add" when args.Length > 1:

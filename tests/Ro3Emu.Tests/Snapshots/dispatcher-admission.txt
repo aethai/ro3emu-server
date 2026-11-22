@@ -537,7 +537,7 @@
 32803	session role:WholeRole dispatcher/32803	refused
 32804	session role:WholeRole dispatcher/32804	refused
 32805	session role:WholeRole dispatcher/32805	refused
-32807	session role:WholeRole dispatcher/32807	refused
+32807	economic dispatcher/economic request	economic dispatcher/economic request
 32808	session role:WholeRole dispatcher/32808	refused
 32809	session Realm:legacy: dispatcher/unrouted	refused
 32820	session Realm:legacy: dispatcher/unrouted	refused
@@ -992,7 +992,7 @@
 83251	session Realm:legacy: dispatcher/unrouted	refused
 83260	session Realm:legacy: dispatcher/unrouted	refused
 83270	session Realm:legacy: dispatcher/unrouted	refused
-83271	session Realm:legacy: dispatcher/unrouted	refused
+83271	economic dispatcher/economic request	refused
 83272	session Realm:legacy: dispatcher/unrouted	refused
 83300	session Realm:legacy: dispatcher/83300	refused
 83301	economic dispatcher/economic request	refused

@@ -70,6 +70,11 @@ public sealed partial class TaskService
                     if ((questMount ?? session.MountState.QuestMount) == recycle) questMount = 0;
                     break;
                 case 621 when action.Length == 1: cutScene = true; break;
+                // 410 CheckMainQuestBranch [line, branch]: the original server noted which main story branch the player
+                // entered. TaskConfig 102030 "Adventurer Advancement" is the only row of the export that carries it, and
+                // no other task, target or condition reads a branch back, so delivery only marks it (inferred). It held
+                // delivery on the live server, which stopped the main story there.
+                case MainQuestBranch when action.Length == 3: break;
                 case MarkGuildActivityJoin when action.Length == 2
                     && long.TryParse(action[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long activity)
                     && DailyActivityConfig.Get(_data, activity) != null:
@@ -102,6 +107,9 @@ public sealed partial class TaskService
 
     /// <summary>ActionConfig 115 MarkGuildActivityJoin (_iEXECHost 1).</summary>
     internal const int MarkGuildActivityJoin = 115;
+
+    /// <summary>ActionConfig 410 CheckMainQuestBranch (_iEXECHost 1): the branch a story task leads into.</summary>
+    internal const int MainQuestBranch = 410;
 
     /// <summary>A delivered task's 115 MarkGuildActivityJoin: the role and the DailyActivityConfig id.</summary>
     public List<Action<GameSession, long>> GuildActivityJoined { get; } = [];

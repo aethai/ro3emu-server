@@ -83,6 +83,13 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
     internal Task RunForPanelAdminAsync(GameSession session, string line) =>
         RunAdmittedAsync(session, line, loopbackTool: false, panelAdmin: true);
 
+    /// <summary>
+    /// The loopback HTTP /ro3emu/gm (OpsEndpoints): awaited instead of detached, so the route can hold onto the replies
+    /// the command sends and return them to the caller.
+    /// </summary>
+    internal Task RunForOperatorAsync(GameSession session, string line) =>
+        RunAdmittedAsync(session, line, loopbackTool: true, panelAdmin: false);
+
     private Task RunAdmittedAsync(GameSession session, string line, bool loopbackTool, bool panelAdmin)
         => session.Owners is { } owners
             ? IsEventOwnerCommand(line)
@@ -314,6 +321,36 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
         // Ro3Emu:Testing (TEST AIDS, not original): To-Do activities open at any hour, rewards that never run out.
         ["testing"] = ("[alwaysopen on|off | unlimited on|off | reset] (test aids, in memory until the next start)", TestingAsync),
         ["speed"] = ("<speed, 0 = normal>", async (s, a) => await ReplyAsync(s, await character.SetSpeedAsync(s, L(a[0])))),
+        ["mon"] = ("<npcId> [count] - spawn monsters in your dungeon instance (GM test aid)", async (s, a) =>
+        {
+            var instances = services.GetRequiredService<InstanceService>();
+            var loop = services.GetRequiredService<GameLoop>();
+            int npc = (int)L(a[0]);
+            var here = s.Position;
+            // "!mon <npc> <x> <z> [count]" places the monsters at a map coordinate; "!mon <npc> [count]" next to you.
+            float px = 0, pz = 0;
+            bool placed = a.Length >= 3
+                && float.TryParse(a[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out px)
+                && float.TryParse(a[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out pz);
+            int count = (int)Math.Clamp(placed ? (a.Length > 3 ? L(a[3]) : 1) : (a.Length > 1 ? L(a[1]) : 1), 1, 20);
+            if (s.InstanceId == 0 || instances.Find(s.InstanceId) is not { } room)
+            {
+                await ReplyAsync(s, "!mon: enter a dungeon instance first.");
+                return;
+            }
+            var spawned = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                float angle = i * 0.7f;
+                var at = placed
+                    ? new MapPoint(px + 1f * MathF.Cos(angle), here.Y, pz + 1f * MathF.Sin(angle), 0)
+                    : new MapPoint(here.X + 1f * MathF.Cos(angle), here.Y, here.Z + 1f * MathF.Sin(angle), 0);
+                var mob = await loop.InvokeAsync(() => instances.SpawnAsync(room, npc, at));
+                spawned.Add(mob == null ? $"{npc} did not spawn" : $"{npc}#{mob.Uid}@{mob.Pos.X:F1},{mob.Pos.Y:F1},{mob.Pos.Z:F1}");
+            }
+            await ReplyAsync(s, $"mon: {string.Join(", ", spawned)} | you {here.X:F1},{here.Y:F1},{here.Z:F1} | " +
+                $"instance {s.InstanceId} scene {s.SceneEntry} members {room.ActiveMembers.Count}");
+        }),
         ["quest"] = ("[accept|finish|done <taskId> | reset]", async (s, a) => await ReplyAsync(s, a.Length == 0
             ? "Quests: " + tasks.Describe(s)
             : await tasks.GmAsync(s, a[0].ToLowerInvariant(), a.Length > 1 ? L(a[1]) : 0))),
@@ -347,10 +384,14 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
                 : await seasons.SetPlayBookAsync(I(a[0])));
         }
         ),
-        ["siege"] = ("open|close|state|prepare|objects|seed <city> <attackGuild> <defenseGuild> (test aid)", async (s, a) =>
+        ["siege"] = ("open|close|state|prepare|objects|seed <city> <attackGuild> <defenseGuild>|seed <city> <defenseGuild> (test aid)", async (s, a) =>
             await ReplyAsync(s, await services.GetRequiredService<TerritoryWarsService>().SiegeGmAsync(a))),
         ["twpoint"] = ("<point> unready|ready|complete [readySeconds] [owner|self] (test aid: 30129 stronghold gameplay point)", async (s, a) =>
             await ReplyAsync(s, await services.GetRequiredService<TerritoryWarsService>().ScenePointGmAsync(s, a))),
+        // Test aid: the create half of the client's GM panel guild button (GmOpEnum.Guild, op 94), which has no chat
+        // form upstream. It creates the guild on the calling role, free and instant (GuildService.CreateInstantAsync).
+        ["guild"] = ("create <name> (test aid: the client's 32210 create, free and instant)", async (s, a) =>
+            await ReplyAsync(s, await GuildAsync(s, a))),
         // Test aids, not original behaviour. Window override lives only in memory and affects activity 125.
         ["guildchallenge"] = ("open|close (test aid)", async (s, a) =>
         {

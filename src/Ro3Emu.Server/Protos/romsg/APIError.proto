@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "MG_Common.proto";
 
 enum ErrorParamType {
   ErrorParamUnknown = 0;
@@ -29,4 +28,3 @@ message ErrorParam {
   romsg.ErrorParamType param_type = 1;
   repeated string param_value = 2;
 }
-

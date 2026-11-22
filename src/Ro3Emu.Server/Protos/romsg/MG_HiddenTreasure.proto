@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum EHiddenTreasureNpcState {
   EHiddenTreasureNpcState_None = 0;
@@ -62,4 +61,3 @@ message HiddenTreasureRoundInfo {
   int64 startTime = 2;
   int64 endTime = 3;
 }
-

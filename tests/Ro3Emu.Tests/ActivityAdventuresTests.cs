@@ -785,6 +785,9 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
         var cursor = await Next(alice, 5064, DBTreasureInfoIncrement.Parser, i => i.PointId > 0);
         Assert.True(cursor.PointId > 0);
+        // The map is the dig attempt: the Lost Treasure milestone counter moves when the hunt is paid for, before any
+        // dig, so a hunt the player never finishes still counts.
+        Assert.Equal(1, _app.Services.GetRequiredService<CharacterService>().CountOf(session, 130401));
 
         var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(cursor.PointId);
         Assert.NotNull(target);

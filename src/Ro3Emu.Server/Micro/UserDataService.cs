@@ -14,8 +14,8 @@ namespace Ro3Emu.Server.Micro;
 /// including itself.
 /// </summary>
 public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners, GameLoop loop, SessionRegistry sessions, GuildService guilds,
-    TeamService teams, PersonalService personalCards, GuildStore guildStore, GameData data, TimeProvider clock, IOptions<ServerOptions> options,
-    ILogger<UserDataService> log) : IMicroService
+    TeamService teams, PersonalService personalCards, GuildStore guildStore, GameData data, CharacterService character,
+    TimeProvider clock, IOptions<ServerOptions> options, ILogger<UserDataService> log) : IMicroService
 {
     // (inferred) Full profile replies use increasing versions, so a previous guild/online snapshot is replaceable.
     // The original per-field version allocation is not exported; this service already returns all requested roles.
@@ -139,6 +139,13 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
         additional.AvatarId = card.AvatarId;
         additional.AvatarFrameId = card.AvatarFrameId;
         additional.PersonalTitleId = card.PersonalTitleId;
+        // The title rank travels in Base.title (LC_DAL_RolePublic reads it for the profile card); an offline role sends 0
+        // because the title blob is not part of this snapshot read.
+        additional.Title = session?.TitleInfo?.TitleId ?? 0;
+        // And the head title in Base.headtitle: the profile card's "Title" block prints it and shows "Titleless" when it is
+        // 0 (UI_Sys_Personal_InfoWidget Pan_Designation/HeadTitle). TitleService.HeadTitle puts the rank there, named by
+        // the client hook Ro3Emu.ClientHooks.ProfileTitle; an offline role sends 0 like title.
+        additional.Headtitle = session == null ? 0 : character.HeadTitleOf?.Invoke(session) ?? 0;
         // The worn chat cosmetics (slot type to outfit): other players' chat bubble, honor, overhead title and profile card
         // index them unguarded (UI_Sys_Chat_BgWidgetCtrl, UI_Sys_Personal_InfoWidgetCtrl), so the defaults are sent too.
         additional.SocialOutfitData = SocialOutfitService.Worn(data, role.Sex, live?.Career ?? role.Career, session?.SocialOutfit

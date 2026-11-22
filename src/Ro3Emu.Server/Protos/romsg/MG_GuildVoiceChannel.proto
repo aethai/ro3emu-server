@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum GuildSpeakAuthorityType {
   GuildSpeakAuthorityType_Free = 0;
@@ -263,4 +262,3 @@ message ChannelMemberCount {
   int32 channelIndex = 1;
   int32 memberCount = 2;
 }
-

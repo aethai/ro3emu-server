@@ -77,6 +77,8 @@ public sealed class LoginGateTests : IAsyncLifetime
             [MsgId.LoginRoleCreate] = SessionStage.RoleScreen,
             [MsgId.LoginRoleSelect] = SessionStage.RoleScreen,
             [MsgId.UploadClientSdkInfo] = SessionStage.RoleScreen,
+            // The tower's first-pass range: the client asks it while its role screen loads (see CoreMessages).
+            [TowerService.FirstPassRange] = SessionStage.RoleScreen,
         }, early);
     }
 

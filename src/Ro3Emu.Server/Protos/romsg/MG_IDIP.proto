@@ -1,7 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_DB.proto";
-import "FieldOption.proto";
 
 message PopupImageReq {
   string language = 1;
@@ -19,4 +18,3 @@ message PopupImageResInfo {
 message PopupImageRes {
   repeated romsg.PopupImageResInfo images = 1;
 }
-

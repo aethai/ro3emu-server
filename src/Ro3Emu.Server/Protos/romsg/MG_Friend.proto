@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum ChatGroupTitle {
   ChatGroupTitle_None = 0;
@@ -207,4 +206,3 @@ message PopularityStarData {
   int64 updateTime = 4;
   int32 barStar = 5;
 }
-

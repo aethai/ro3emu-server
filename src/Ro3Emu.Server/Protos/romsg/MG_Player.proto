@@ -1,8 +1,6 @@
 syntax = "proto3";
 package romsg;
 import "MG_Common.proto";
-import "MG_DB.proto";
-import "FieldOption.proto";
 
 enum EFightStatus {
   Idle = 0;
@@ -158,4 +156,3 @@ message StuckEscapeReq {
 message StuckEscapeRsp {
   int32 result = 1;
 }
-

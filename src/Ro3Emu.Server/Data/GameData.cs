@@ -22,6 +22,7 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement?> _skillTemplates = new();
     private volatile Dictionary<long, string>? _texts;
     private volatile FrozenDictionary<string, Dictionary<string, JsonElement>>? _frozen;
+    private readonly List<JsonDocument> _packDocuments = [];
 
     private string Root => options.Value.GameDataDir ?? options.Value.DataDir;
 
@@ -83,6 +84,13 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
         lock (_sync)
         {
             foreach (var (key, table) in loaded) _tables.TryAdd(key, table);
+            // Operator content packs (data/content/*.json) land before the snapshot is frozen, so they are part of every
+            // lookup and of the validation below. Their documents stay referenced here: rows point into them.
+            var packs = ContentPacks.Apply(Root, _tables, log);
+            _packDocuments.AddRange(packs.Documents);
+            if (packs.Packs > 0 || packs.Problems.Count > 0)
+                log.LogInformation("Content packs: {Packs} applied, {Rows} row(s) set, {Removed} removed, {Problems} problem(s)",
+                    packs.Packs, packs.Rows, packs.Removed, packs.Problems.Count);
             _frozen = _tables.ToFrozenDictionary();
         }
         Text(0); // builds the text index

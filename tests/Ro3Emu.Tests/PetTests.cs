@@ -422,6 +422,42 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(2, Count(again, 1250701));
     }
 
+    /// <summary>
+    /// The Respawn dialog lists the return in the largest books that fit the pet's experience (a Lv. 20 pet: 1x 10000
+    /// and 11x 500), because the client computes it from PetExpConfig. The server used to refund the ledger's
+    /// denominations - a pet leveled with the smallest books first got 31x 500 back - so the list shown and the items
+    /// granted disagreed. The total experience is the same; only the grouping follows the dialog now.
+    /// </summary>
+    [ClientDataFact]
+    public async Task RespawnReturnsTheBooksItsDialogListsNotTheLedgerDenominations()
+    {
+        await using var bot = await InWorld();
+        await Unlock();
+        await CombinePet(bot);
+        await Gm("!lvl 40");
+        // Lv. 1 -> 20 with the smallest books only, topped up along the way (the bag keeps one stack per slot): the
+        // ledger holds 500-EXP books in bulk, while the dialog groups the same experience into one 10000 and 500s.
+        await Gm("!item 1250701 20");
+        await bot.SendGameAsync(PetService.LevelUp, new PetLvUpReq { PetId = 10001, EType = (EPetLvUpType)2 });
+        Assert.Equal(0, (await Next(bot, PetService.LevelUp, PetLvUpResp.Parser)).Result);
+        foreach (var _ in Enumerable.Range(1, 9))
+        {
+            await Gm("!item 1250701 20");
+            await bot.SendGameAsync(PetService.LevelUp, new PetLvUpReq { PetId = 10001, EType = (EPetLvUpType)1 });
+            Assert.Equal(0, (await Next(bot, PetService.LevelUp, PetLvUpResp.Parser)).Result);
+        }
+        Assert.Equal(20, Saved(bot).ListPet[10001].Level);
+        await Gm("!delitem 1250701");
+        Assert.Equal(0, Count(bot, 1250701));
+
+        await bot.SendGameAsync(PetService.Rebirth, new PetRebirthReq { PetId = 10001 });
+        Assert.Equal(0, (await Next(bot, PetService.Rebirth, PetRebirthResp.Parser)).Result);
+        Assert.Equal(1, Saved(bot).ListPet[10001].Level);
+        // Lv. 20 is 15500 EXP, which the dialog lists as 1x 10000-EXP book and 11x 500-EXP books.
+        Assert.Equal(1, Count(bot, 1250702));
+        Assert.Equal(11, Count(bot, 1250701));
+    }
+
     [ClientDataFact]
     public async Task PermanentAndLimitedTimePoolsEachKeepTheirOwnEggInASlot()
     {

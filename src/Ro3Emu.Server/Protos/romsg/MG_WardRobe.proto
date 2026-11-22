@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum EAppearance_Type {
   EAppearance_None = 0;
@@ -102,4 +101,3 @@ message WardRobeRedeemUnlockAppearanceResp {
 message WardRobeUnLockNtf {
   int32 appearanceId = 1;
 }
-

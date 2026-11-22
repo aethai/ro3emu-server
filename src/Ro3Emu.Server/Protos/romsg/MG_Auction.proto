@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum AuctionType {
   TNONE = 0;
@@ -443,4 +442,3 @@ message AuctionReddotNtf {
   int64 preBuyNum = 7;
   int64 itemPrice = 8;
 }
-

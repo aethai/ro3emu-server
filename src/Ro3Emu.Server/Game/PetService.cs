@@ -167,8 +167,16 @@ public sealed partial class PetService
     private Dictionary<int, Dictionary<int, long>> BookLedger(GameSession s) => _roles.LoadPetBooks(s.Role!.Id) is { Length: > 0 } bytes
         ? JsonSerializer.Deserialize<Dictionary<int, Dictionary<int, long>>>(bytes) ?? [] : [];
 
-    /// <summary>Pre-ledger migration: configured progression plus carried surplus, in whole smallest books.</summary>
-    private Dictionary<int, long>? LegacyBooks(PetData pet)
+    /// <summary>
+    /// The books a Respawn returns, in the denominations the client's own "Confirm Pet Respawn? ... Return list" dialog
+    /// shows: the pet's whole experience (the level rows up to its level plus the carried surplus) broken into the
+    /// largest books that fit - 100000, 10000, then 500 (PetExpConfig _iExp; items 1250703/1250702/1250701). The dialog
+    /// derives the list from the configuration, not from what the player happened to spend, so refunding the spend
+    /// ledger printed one list and granted another (a Lv. 20 pet showed 1x 10000 + 11x 500 while the ledger - 31 small
+    /// books bought with the small ones first - returned 31x 500). The total experience is identical either way, so the
+    /// refund is only regrouped; null when a level row is missing so the caller keeps the ledger.
+    /// </summary>
+    private Dictionary<int, long>? CanonicalBooks(PetData pet)
     {
         long experience = pet.LevelExp;
         var prior = pet.Clone();
@@ -178,7 +186,14 @@ public sealed partial class PetService
             if (LevelRow(prior) is not { } row || GameData.Int(row, "_iExp") <= 0) return null;
             experience = checked(experience + GameData.Int(row, "_iExp"));
         }
-        return experience >= 500 ? new Dictionary<int, long> { [1250701] = experience / 500 } : [];
+        var books = new Dictionary<int, long>();
+        foreach (var (entry, exp) in new[] { (1250703, 100000L), (1250702, 10000L), (1250701, 500L) })
+        {
+            if (experience < exp) continue;
+            books[entry] = experience / exp;
+            experience %= exp;
+        }
+        return books;
     }
 
     /// <summary>Pet state, spend ledger, items and currency commit in one CharacterService exchange transaction.</summary>
@@ -267,7 +282,7 @@ public sealed partial class PetService
             {
                 target.LevelExp = -need;
                 var books = BookLedger(s);
-                if (!books.TryGetValue(req.PetId, out var spent)) books[req.PetId] = spent = LegacyBooks(pet!) ?? [];
+                if (!books.TryGetValue(req.PetId, out var spent)) books[req.PetId] = spent = CanonicalBooks(pet!) ?? [];
                 foreach (var (id, amount) in cost) spent[id] = checked(spent.GetValueOrDefault(id) + amount);
                 if (!await ExchangeBooksAsync(s, "level", next, cost, [], books)) code = ErrorCodes.PetLevelMaterials;
                 else pet = target;
@@ -278,8 +293,10 @@ public sealed partial class PetService
     }
 
     /// <summary>
-    /// 33310: refund exact book denominations recorded by new level-ups. For pre-ledger pets,
-    /// convert earned progression plus surplus to whole 500-EXP books (inferred conservative migration).
+    /// 33310: refund the books the client's Respawn dialog promises - the pet's experience in the largest
+    /// denominations (see <see cref="CanonicalBooks"/>), not the ledger's mix, so the list shown is the list granted.
+    /// The ledger still records the spend and its entry is dropped; when a level row is missing the recorded spend
+    /// stands in, and a ledger that a corrupt write left unreadable still refuses.
     /// The client response locally resets only level/EXP; stars and deployment are retained.
     /// </summary>
     public async Task RebirthAsync(GameSession s, PetRebirthReq req)
@@ -291,11 +308,9 @@ public sealed partial class PetService
         if (code == 0)
         {
             var books = BookLedger(s);
-            if (!books.TryGetValue(req.PetId, out var spent))
-            {
-                spent = LegacyBooks(pet!) ?? [];
-            }
-            if (code == 0 && spent.Any(x => x.Value < 0 || x.Value > int.MaxValue
+            var ledger = books.TryGetValue(req.PetId, out var recorded) ? recorded : null;
+            var refund = CanonicalBooks(pet!) ?? ledger ?? [];
+            if (code == 0 && refund.Any(x => x.Value < 0 || x.Value > int.MaxValue
                 || x.Key is not (1250701 or 1250702 or 1250703))) code = ErrorCodes.PetNoConfig;
             if (code == 0)
             {
@@ -303,7 +318,7 @@ public sealed partial class PetService
                 next.ListPet[req.PetId].Level = 1;
                 next.ListPet[req.PetId].LevelExp = 0;
                 books.Remove(req.PetId);
-                var goods = spent.Where(x => x.Value > 0).Select(x => (x.Key, (int)x.Value)).ToList();
+                var goods = refund.Where(x => x.Value > 0).Select(x => (x.Key, (int)x.Value)).ToList();
                 if (!await ExchangeBooksAsync(s, "rebirth", next, [], goods, books)) code = ErrorCodes.ItemNoConfig;
                 else await ChangedAsync(s, items: goods.Count > 0, stats: true);
             }

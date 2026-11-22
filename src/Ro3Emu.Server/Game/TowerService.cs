@@ -633,6 +633,10 @@ public sealed partial class TowerService
     /// <summary>Inclusive bounded range of actual catalog floor numbers, including genuine uncleared records.</summary>
     public Task FirstPassRangeAsync(GameSession s, QueryClimbTowerFirstPassRangeReq req)
     {
+        // The client also asks this before its role is in the world (it arrives on the role screen, 113 times in one
+        // live server log, and the dispatcher dropped it unanswered). There is no role to read records for, so the
+        // answer is an empty range: any error result would surface in the login UI instead (inferred).
+        if (s.Role == null) return s.SendGameAsync(FirstPassRange, new QueryClimbTowerFirstPassRangeResp());
         var floors = Floors();
         int error = !Open(s) ? ErrorCodes.FeatureUnavailable : floors.Count == 0 || req.MinLayer < 1
             || req.MaxLayer < req.MinLayer || req.MaxLayer > GameData.Int(floors[^1], "_iFloor") ? ErrorCodes.Parameter : 0;

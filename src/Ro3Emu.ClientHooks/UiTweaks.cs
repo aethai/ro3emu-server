@@ -47,6 +47,8 @@ namespace Ro3Emu.ClientHooks
                 PassChallenges.Tick();
                 PassButton.Tick();
                 TitleButton.Tick();
+                TitleStats.Tick();
+                ProfileTitle.Tick();
             }
             catch (Exception e)
             {

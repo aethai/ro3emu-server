@@ -76,7 +76,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         CharacterService character, FunctionService functions, SeasonService seasons, TimedTodoSchedule schedule,
         DailyActivityService daily, DungeonCatalog catalog, DungeonService dungeons, InstanceService instances,
         RewardService rewards, AuctionService auctions, AuctionStore auctionStore, SessionRegistry sessions,
-        TimeProvider clock, GameLoop loop, ILogger<GuildChallengeService> log)
+        TimeProvider clock, GameLoop loop, SceneService scene, ILogger<GuildChallengeService> log)
     {
         this._data = data; this._guilds = guilds; this._store = store; this._roles = roles; this._character = character;
         this._functions = functions; this._seasons = seasons; this._schedule = schedule; this._daily = daily;
@@ -84,6 +84,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         this._auctions = auctions; this._auctionStore = auctionStore; this._sessions = sessions;
         this._clock = clock; this._loop = loop; this._log = log;
         dungeons.GuildChallengeEnter = TryEnterAsync;
+        scene.DungeonSceneEntry = TryEnterSceneAsync;
     }
 
     public sealed class GuildState
@@ -423,6 +424,56 @@ public sealed partial class GuildChallengeService : IGameTicker
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Guild Challenge call failed for {Role}")]
     private static partial void LogCallFailed(ILogger logger, Exception error, long? role);
+
+    /// <summary>
+    /// The season panel's "Enter Dungeon" moves the player to the challenge scene with a plain scene switch (no 30400),
+    /// so that move is taken as the stage entry: the stage the scene belongs to is selected when needed, then the
+    /// dungeon's own instance starts (its wave spawns). True means the move was handled here; false lets the ordinary
+    /// scene path continue (no guild, no open activity, or the stage was already cleared).
+    /// </summary>
+    internal async Task<bool> TryEnterSceneAsync(GameSession s, long scene)
+    {
+        if (s.Role == null || s.Progress == null || s.InstanceId != 0 || s.DungeonAttempt != null) return false;
+        if (Guild(s) is not { } g) return false;
+        int stage = 0, difficulty = 0;
+        foreach (var c in Configs)
+        {
+            var scenes = Values(c, "_kDungeonId");
+            int index = Array.IndexOf(scenes, (int)scene);
+            if (index < 0) continue;
+            stage = index + 1;
+            difficulty = (int)GameData.Int(c, "_iLevel");
+            break;
+        }
+        if (stage == 0) return false;
+        if (!_schedule.IsOpen(Activity))
+        {
+            _log.LogInformation("Guild challenge auto-enter: {Name} -> scene {Scene} refused, the activity is closed",
+                s.Role.Name, scene);
+            return false;
+        }
+        // Selecting the stage is shared guild state; do it in its own gate scope (the entry below takes the gate again).
+        bool reselect;
+        using (await EnterWithGateAsync("guild-challenge/auto-enter", g.Id, s.Role.Id))
+        {
+            var state = await EnsureStateAsync(g.Id, s.Role.Id);
+            reselect = !state.Selected || state.Difficulty != difficulty || state.Stage != stage;
+            if (reselect && !state.Complete)
+            {
+                state.Difficulty = difficulty; state.Stage = stage; state.Selected = true;
+                await SaveStateAsync(g.Id, state, s.Role.Id, "guild-challenge-auto-enter");
+                await BroadcastAsync(g.Id);
+            }
+        }
+        if (reselect)
+            _log.LogInformation("Guild challenge auto-enter: {Name} -> scene {Scene}: stage {Difficulty}-{Stage} selected",
+                s.Role.Name, scene, difficulty, stage);
+        await TryEnterAsync(s, new EnterDungeonReq { SceneEntry = scene });
+        bool entered = s.InstanceId != 0;
+        _log.LogInformation("Guild challenge auto-enter: {Name} -> scene {Scene}: {Result}", s.Role.Name, scene,
+            entered ? "instance started" : "entry refused, plain scene move");
+        return entered;
+    }
 
     internal async Task<bool> TryEnterAsync(GameSession s, EnterDungeonReq req)
     {

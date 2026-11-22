@@ -23,4 +23,6 @@ public static class MsgId
     public const uint Walk = 31082;
     public const uint SwitchSceneLine = 70010;
     public const uint ImSdkUserSig = 77001;
+    /// <summary>POPUPIMAGE: the login notice popup's images (PopupImageReq -> PopupImageRes).</summary>
+    public const uint PopupImage = 83271;
 }

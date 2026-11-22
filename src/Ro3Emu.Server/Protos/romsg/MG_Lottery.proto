@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 import "MG_DB.proto";
 
 enum ELotteryPoolType {
@@ -30,4 +29,3 @@ message LotteryResp {
   romsg.LotteryPoolData poolData = 5;
   map<int32, romsg.LotteryPityRecord> pityRecords = 6;
 }
-

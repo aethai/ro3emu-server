@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum MatchReadyStatus {
   MatchReadyStatus_None = 0;
@@ -144,4 +143,3 @@ message MatchReadyReminderNotify {
   int32 matchEntryId = 1;
   int64 reminderPlayerId = 2;
 }
-

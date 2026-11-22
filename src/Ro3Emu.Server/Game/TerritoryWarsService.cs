@@ -33,6 +33,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
     private readonly FunctionService _functions;
     private readonly TerritoryWarsClock _clock;
     private readonly TimedTodoSchedule _siegeSchedule;
+    private readonly Microsoft.Extensions.Options.IOptions<ServerOptions> _options;
     private readonly SessionRegistry _sessions;
     private readonly InstanceService _instances;
     private readonly SceneService _scene;
@@ -172,11 +173,12 @@ public sealed partial class TerritoryWarsService : IGameTicker
         GuildService guilds, CharacterService character, FunctionService functions, TerritoryWarsClock clock, TimedTodoSchedule siegeSchedule,
         SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData maps, World world,
         MonsterService monsters, CombatService combat, BuffService buffs, RewardService rewards, MailService mail, NewActivityService activities,
-        TeamService teams, AwardService awards, GameLoop loop, ILogger<TerritoryWarsService> log)
+        TeamService teams, AwardService awards, GameLoop loop, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
+        ILogger<TerritoryWarsService> log)
     {
         this._data = data; this._accounts = accounts; this._roles = roles; this._guildStore = guildStore;
         this._guilds = guilds; this._character = character; this._functions = functions; this._clock = clock;
-        this._siegeSchedule = siegeSchedule;
+        this._siegeSchedule = siegeSchedule; this._options = options;
         this._sessions = sessions; this._instances = instances; this._scene = scene; this._maps = maps;
         this._world = world; this._monsters = monsters; this._buffs = buffs; this._combat = combat; this._awards = awards; this._rewards = rewards; this._mail = mail;
         this._activities = activities; this._teams = teams;

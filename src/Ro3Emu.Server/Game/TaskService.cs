@@ -101,6 +101,7 @@ public sealed partial class TaskService
         cards.RequiredCollectionRefresh = RefreshCollectionRequiredAsync;
         character.GetKillTaskParticipantKeys = GetKillTaskParticipantKeys;
         character.StageKillTaskObligations = StageKillTaskObligations;
+        _loop.Add(new PlotRegionTicker(this)); // TaskService.PlotRegions.cs
         ExtraTasks.Add(DungeonRunTasks); // TaskService.DungeonTasks.cs
         QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
         combat.PlayerKilled.Add(OnFactionPlayerKilledAsync); // 101023
@@ -634,10 +635,14 @@ public sealed partial class TaskService
             {
                 CompletedGuides = [.. session.TaskRuntime.CompletedGuides], InCutScene = session.InCutScene || cutScene,
                 FactionDay = session.TaskRuntime.FactionDay, FactionPoints = session.TaskRuntime.FactionPoints,
+                DailyQuestDay = session.TaskRuntime.DailyQuestDay, DailyQuestCount = session.TaskRuntime.DailyQuestCount,
             };
+            long questExp = def.Exp;
+            long dailyExp = TakeDailyQuestExp(session, runtime);
+            if (dailyExp > 0) questExp = checked(questExp + dailyExp);
             string awardSource = $"task/{session.Role!.Id}/{id}/{next.CompleteTaskNum[id]}/" +
                 $"{session.Daily?.DailyEpoch ?? 0}/{session.Daily?.WeeklyEpoch ?? 0}";
-            if (!await _character.ApplyAwardAsync(session, plan, def.Exp, costs, next.ToByteArray(),
+            if (!await _character.ApplyAwardAsync(session, plan, questExp, costs, next.ToByteArray(),
                 JsonSerializer.SerializeToUtf8Bytes(runtime), expectedDaily: daily?.Before, nextDaily: daily?.After,
                 expectedTasks: expectedTasks, persist: questMount is { } ride ? tx => _mounts.PersistQuestRide(session, ride, tx) : null,
                 committed: questMount is { } appliedRide ? () => _mounts.ApplyQuestRideCore(session, context, appliedRide) : null,

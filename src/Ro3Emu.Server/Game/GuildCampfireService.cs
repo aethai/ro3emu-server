@@ -41,6 +41,7 @@ public sealed partial class GuildCampfireService : IGameTicker
     private readonly WorldData _maps;
     private readonly GameLoop _loop;
     private readonly GuildHomeService _home;
+    private readonly ILogger<GuildCampfireService> _log;
     // Transient per-room event state. A home room outlives one event day, so these are reset when a room first sees
     // a day's event and when the event finishes.
     private readonly Dictionary<long, MonsterUnit> _bosses = [];
@@ -49,6 +50,7 @@ public sealed partial class GuildCampfireService : IGameTicker
     private readonly Dictionary<(long Room, int Stage), int> _fruitInitialKills = [];
     private readonly Dictionary<long, SemaphoreSlim> _guildGates = [];
     private long _lastSecond = -1;
+    private bool _fireLogged;
     /// <summary>Room id: the event day and the last stage pushed to it.</summary>
     private readonly Dictionary<long, (long Day, int Stage)> _sentStage = [];
     /// <summary>Room id: the event day whose fruit/boss state the transient maps hold (set after its reset).</summary>
@@ -69,9 +71,10 @@ public sealed partial class GuildCampfireService : IGameTicker
     public GuildCampfireService(GameData data, AccountStore accounts, CharacterService character, BuffService buffs,
         FunctionService functions, TimedTodoSchedule schedule, ActivityClock clock, TimeProvider time,
         InstanceService instances, SceneService scene, WorldData maps, CombatService combat, GameLoop loop,
-        GuildHomeService home, AwardService awards)
+        GuildHomeService home, AwardService awards, ILogger<GuildCampfireService> log)
     {
         this._awards = awards;
+        this._log = log;
         this._data = data; this._accounts = accounts; this._character = character; this._buffs = buffs;
         this._functions = functions; this._schedule = schedule; this._clock = clock; this._time = time;
         this._instances = instances; this._maps = maps; this._combat = combat;
@@ -83,6 +86,8 @@ public sealed partial class GuildCampfireService : IGameTicker
     private sealed class StateData
     {
         public long Day { get; set; }
+        /// <summary>The round's start second: the party repeats on this realm, so each round is its own party.</summary>
+        public long Round { get; set; }
         public long Exp { get; set; }
         public Dictionary<long, HashSet<int>> Seeds { get; set; } = [];
         public Dictionary<long, int> FuelCount { get; set; } = [];
@@ -91,14 +96,22 @@ public sealed partial class GuildCampfireService : IGameTicker
         public Dictionary<int, int> FruitKills { get; set; } = [];
         /// <summary>The stages whose prize draw ran (GuildCampfireService.Bonus.cs).</summary>
         public HashSet<int> PrizeStages { get; set; } = [];
+        /// <summary>Bubble rewards each member took from the party blessing today (CampfireBubbleRewardLimit).</summary>
+        public Dictionary<long, int> BlessCount { get; set; } = [];
+        /// <summary>The second each member's blessing ends (CampfireBlessTime).</summary>
+        public Dictionary<long, long> BlessEnd { get; set; } = [];
     }
 
     private StateData Read(long guildId)
     {
         var blob = _accounts.ReadSync<byte[]?>(new CampfireReadPlan(guildId));
         var state = blob is null ? null : JsonSerializer.Deserialize<StateData>(blob);
-        return state is { } current && current.Day == _clock.Day(_time.GetUtcNow().ToUnixTimeSeconds())
-            ? current : new StateData { Day = _clock.Day(_time.GetUtcNow().ToUnixTimeSeconds()) };
+        long day = _clock.Day(_time.GetUtcNow().ToUnixTimeSeconds());
+        // The party runs back to back on this realm, so a round is its own party: the fruit quota, the boss, the prize
+        // draws and the blessing bubbles all start again when the round's start moves (StartTime).
+        long round = StartTime();
+        return state is { } current && current.Day == day && current.Round == round
+            ? current : new StateData { Day = day, Round = round };
     }
 
     private SemaphoreSlim Gate(long guildId) => _guildGates.TryGetValue(guildId, out var gate)
@@ -272,13 +285,15 @@ public sealed partial class GuildCampfireService : IGameTicker
             result.NowShowInfo = new GuildCampFireShowInfo
             {
                 Type = (GuildCampFireShowType)1, Param = show,
+                // The show counts down to the stage's prize draw (CampFireAffixNewConfig action 5, 240 s into the stage),
+                // so the client's banner runs down to the draw instead of sitting at 0:00.
                 StartTimeStamp = StartTime() + (stage switch
                 {
                     2 => 30,
                     3 => 300,
                     4 => 900,
                     _ => 0,
-                }),
+                }) + (PrizeDraw(stage)?.DelayTime ?? 0) / 1000,
             };
         return result;
     }
@@ -288,19 +303,27 @@ public sealed partial class GuildCampfireService : IGameTicker
     /// <summary>Outside the event (or without its map data) a visitor gets an empty home.</summary>
     private async Task LoadedAsync(GameSession session)
     {
-        if (RoomFor(session) is not { } room || !Open(session) || FirePoint() is not { } fire) return;
+        if (RoomFor(session) is not { } room || !Open(session)) return;
+        if (FirePoint() is not { } fire)
+        {
+            _log.LogWarning("Campfire: map 4000101 has no fire at point 413 in dungeon group 414 (visitor role {Role}).",
+                session.Role?.Id ?? 0);
+            return;
+        }
         int stage = CurrentStage();
         if (stage is < 1 or > 4) return;
         MarkJoined(session);
         var view = new AoIViewChangeData();
         AddNpc(view, room, 413, 7020004, fire);
+        AddNpc(view, room, 415, 7020006, fire);
+        AddNpc(view, room, 414, 7020007, fire);
         if (stage == 1) AddSeeds(view, room);
         AddManuals(view, room);
         await session.SendGameAsync(GameAoiSink.SyncAoiView, view);
         await session.SendGameAsync(Stage, StageInfo(GuildId(session)!.Value));
         await PlayerInfoAsync(session);
-        // Until the room's Tick has reset it for today's event, its stage push spawns the actors instead.
-        if (_eventDay.GetValueOrDefault(room.Id) != Today()) return;
+        // Until the room's Tick has reset it for this round's event, its stage push spawns the actors instead.
+        if (_eventDay.GetValueOrDefault(room.Id) != StartTime()) return;
         if (stage is >= 2 and <= 4)
             await SpawnFruitCohortAsync(GuildId(session)!.Value, room, stage);
         if (stage == 4) await SpawnBossAsync(GuildId(session)!.Value, room);
@@ -398,10 +421,12 @@ public sealed partial class GuildCampfireService : IGameTicker
     public async Task PlayerInfoAsync(GameSession session)
     {
         var state = GuildId(session) is { } guildId ? Read(guildId) : null;
+        long role = session.Role?.Id ?? 0;
         await session.SendGameAsync(PlayerInfo, new CampFirePlayerInfo
         {
-            AddSeedCount = state?.Seeds.GetValueOrDefault(session.Role?.Id ?? 0)?.Count ?? 0,
-            BubblesRewardCount = 0, FireBlessingEndTime = 0,
+            AddSeedCount = state?.Seeds.GetValueOrDefault(role)?.Count ?? 0,
+            BubblesRewardCount = state?.BlessCount.GetValueOrDefault(role) ?? 0,
+            FireBlessingEndTime = state?.BlessEnd.GetValueOrDefault(role) ?? 0,
         });
     }
 
@@ -462,6 +487,12 @@ public sealed partial class GuildCampfireService : IGameTicker
         long second = _time.GetUtcNow().ToUnixTimeSeconds();
         if (_lastSecond == second) return;
         _lastSecond = second;
+        if (!_fireLogged)
+        {
+            _fireLogged = true;
+            _log.LogInformation("Campfire: map 4000101 fire {Fire}, round start {Round}, stage {Stage}.",
+                FirePoint() != null, StartTime(), CurrentStage());
+        }
         var live = _home.Rooms;
         var liveIds = live.Select(r => r.Room.Id).ToHashSet();
         foreach (long closed in _sentStage.Keys.Concat(_eventDay.Keys).Where(id => !liveIds.Contains(id)).Distinct().ToArray())
@@ -472,21 +503,28 @@ public sealed partial class GuildCampfireService : IGameTicker
         FinishPerformances();
         ExpireManuals(second);
         if (live.Count == 0) return;
-        long day = Today();
+        long round = StartTime();
         // Pitfall 1: home rooms exist at any hour. Outside the event window nothing is pushed, except the Finish of
         // an event this room actually saw today (stages 1-4).
         int stage = _schedule.IsOpen(116) ? CurrentStage() : 5;
         if (stage is < 1 or > 5) return;
         foreach (var (guild, room) in live)
         {
-            var (seenDay, seen) = _sentStage.GetValueOrDefault(room.Id);
-            if (seenDay != day) seen = 0;
+            var (seenRound, seen) = _sentStage.GetValueOrDefault(room.Id);
+            // A new round is a new party: drop the previous round's transient fruit, boss and actors even when the
+            // stage number happens to be the same (a late round boundary).
+            if (seenRound != round)
+            {
+                seen = 0;
+                Forget(room.Id);
+            }
             if (stage == seen || stage == 5 && seen == 0) continue;
-            _sentStage[room.Id] = (day, stage);
+            _sentStage[room.Id] = (round, stage);
             bool fresh = seen == 0;
-            _loop.TrackLegacyDetached("campfire stage", () => AdvanceAsync(guild, room, stage, day, fresh));
+            _loop.TrackLegacyDetached("campfire stage", () => AdvanceAsync(guild, room, stage, round, fresh));
         }
-        RunDueDraws(live.Select(r => (r.Guild, r.Room)), stage, day, second);
+        RunDueDraws(live.Select(r => (r.Guild, r.Room)), stage, round, second);
+        if (stage is >= 1 and <= 4) RunBlessing(live.Select(r => (r.Guild, r.Room)), second);
     }
 
     /// <summary>Drop a room's transient fruit/boss bookkeeping (its actors are cleared separately).</summary>
@@ -509,20 +547,38 @@ public sealed partial class GuildCampfireService : IGameTicker
         if (day is { } current && !room.Closed) _eventDay[room.Id] = current;
     }
 
-    private async Task AdvanceAsync(long guild, InstanceService.Room room, int stage, long day, bool fresh)
+    private async Task AdvanceAsync(long guild, InstanceService.Room room, int stage, long round, bool fresh)
     {
         if (room.Closed) return;
         if (stage == 5) await ResetAsync(room, null);
-        else if (fresh) await ResetAsync(room, day);
+        else if (fresh) await ResetAsync(room, round);
         var info = StageInfo(guild);
         var seeds = new AoIViewChangeData();
-        // Members already inside when the event starts get the fire with its first stage.
-        if (fresh && stage < 5 && FirePoint() is { } fire) AddNpc(seeds, room, 413, 7020004, fire);
+        // The fire belongs to every party stage: added again on each push (and to a new visitor in LoadedAsync), so a
+        // lost or late AOI add cannot leave the plaza without it.
+        var fire = FirePoint();
+        if (fire == null) _log.LogWarning("Campfire: map 4000101 has no fire at point 413 in dungeon group 414.");
+        else if (stage is >= 1 and <= 4)
+        {
+            // Phase 1 of CampFireAffixNewConfig spawns the fire's interaction NPC (7020004, interaction 41002101), the
+            // bonfire itself (7020007, a ratio-2.5 prop with no name) and the campfire NPC (7020006): all at point 413.
+            // Without 7020007 the plaza shows the coals but no fire (that is the prop the client draws as the bonfire).
+            AddNpc(seeds, room, 413, 7020004, fire.Value);
+            AddNpc(seeds, room, 415, 7020006, fire.Value);
+            AddNpc(seeds, room, 414, 7020007, fire.Value);
+        }
         if (stage == 1) AddSeeds(seeds, room);
         else if (stage is 2 or 5)
             for (int i = 0; i < MaxSeeds(); i++) seeds.LeaveAoi.Add((ulong)Uid(room, 1001 + i));
         // (inferred) The fire belongs to the event: after Finish the home is empty again, as for a later visitor.
-        if (stage == 5) seeds.LeaveAoi.Add((ulong)Uid(room, 413));
+        if (stage == 5)
+        {
+            seeds.LeaveAoi.Add((ulong)Uid(room, 413));
+            seeds.LeaveAoi.Add((ulong)Uid(room, 414));
+            seeds.LeaveAoi.Add((ulong)Uid(room, 415));
+        }
+        _log.LogInformation("Campfire stage {Stage} round {Round} fresh {Fresh}: fire {Fire}, fruits {Fruits}, members {Members}.",
+            stage, round, fresh, fire != null, Read(guild).FruitKills.GetValueOrDefault(Math.Min(stage, 4)), room.ActiveMembers.Count);
         foreach (var member in room.ActiveMembers)
         {
             var session = member.Session;

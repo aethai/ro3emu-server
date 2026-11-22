@@ -1,6 +1,5 @@
 syntax = "proto3";
 package romsg;
-import "FieldOption.proto";
 
 enum TaskReceiveType {
   TaskReciveType_Other = 0;
@@ -159,4 +158,3 @@ message LuckyTurnResp {
   int32 result = 1;
   int32 version = 2;
 }
-
