@@ -20,7 +20,8 @@ public sealed class PronteraDefenseInvaderTests : IAsyncLifetime
     private const long Prontera = 10100;
     private const long MaxDefense = 100000;
     /// <summary>sc_prontera_001 born point 9, the heart the invaders walk to.</summary>
-    private const float HeartX = 156.0406f, HeartZ = 181.9116f;
+    // Scene group 832 on the central plaza (#499: the born point beside the resurrection point was the heart).
+    private const float HeartX = 156.4f, HeartZ = 203f;
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-defense-" + Guid.NewGuid().ToString("N"));
     private readonly TestClock _clock = new();
@@ -91,7 +92,10 @@ public sealed class PronteraDefenseInvaderTests : IAsyncLifetime
                 var march = m.March!;
                 Assert.True(MonsterService.Distance(m.X, m.Z, march.GoalX, march.GoalZ) <= march.ArriveRadius + 0.3f,
                     $"{m.Uid} stopped at {m.X:0.0},{m.Z:0.0}, goal {march.GoalX:0.0},{march.GoalZ:0.0}");
-                Assert.True(ToHeart(m) <= PronteraDefenseService.HeartSpread + PronteraDefenseService.HeartRadius + 1.5f);
+                // The group stands on the plaza's unwalkable centre; Standable takes the nearest cell a unit can stand on (~6 m).
+                Assert.True(ToHeart(m) <= PronteraDefenseService.HeartSpread + PronteraDefenseService.HeartRadius + 8f, $"{m.Uid} holds {m.X:0.0},{m.Z:0.0}, goal {march.GoalX:0.0},{march.GoalZ:0.0}");
+                // Held well outside a 5 m view of the resurrection point (10, at 156.43,180.94), so a revive is not killed again.
+                Assert.True(MonsterService.Distance(m.X, m.Z, 156.43f, 180.94f) > 12f, $"{m.Uid} holds {m.X:0.0},{m.Z:0.0}");
                 Assert.Equal(0, march.Failures);
             }
             return true;
