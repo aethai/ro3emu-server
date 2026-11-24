@@ -1149,6 +1149,7 @@ public sealed partial class CombatService : IGameTicker
                 }
                 else if (SwingPlayedOut(s.SkillCast, now) && EffectiveSkillRow(s, a.SkillId) is { } row && MonsterService.Distance(a.Target, s) <= Range(row) + a.Target.Template.DamageRadius + 1.5f)
                 {
+                    _character.ReuseStatsInThisWork(s);
                     a.NextSwingMs = NextSwing(a.NextSwingMs, now, SkillMs(s, row));
                     _loop.TrackRuntimeDetached("combat swing", () => SwingAsync(s, a.Target, a.SkillId, ++_sessionIds));
                 }
@@ -1207,10 +1208,10 @@ public sealed partial class CombatService : IGameTicker
 
     private async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, IMessage body)
     {
-        await p.SendGameAsync(msgId, body);
         var viewers = _world.Viewers(p);
-        if (viewers.Count == 0) return;
+        if (viewers.Count == 0) { await p.SendGameAsync(msgId, body); return; }
         var prepared = new PreparedMessage(msgId, body);
+        await p.SendPreparedAsync(prepared);
         foreach (var viewer in viewers) await viewer.SendPreparedAsync(prepared);
     }
 }

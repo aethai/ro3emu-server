@@ -238,7 +238,15 @@ public sealed class RoleItemPlanBuilder
         var key = (role, column);
         if (!_blobs.TryGetValue(key, out var value))
         {
-            var original = accounts.ReadSync<RoleBlobSnapshot>(new RoleBlobSnapshotRead(role, column));
+            RoleBlobSnapshot original;
+            if (accounts.Snapshots.TryBlob(role, column, out var cached))
+                original = new RoleBlobSnapshot(true, cached, _expected[role]);
+            else
+            {
+                long seq = accounts.Snapshots.Sequence;
+                original = accounts.ReadSync<RoleBlobSnapshot>(new RoleBlobSnapshotRead(role, column));
+                if (original.Exists) accounts.Snapshots.CacheBlob(role, column, original.Value, seq);
+            }
             Guard(new RoleBlobGuardPlan(role, column, original));
             _blobs.Add(key, value = original.Value);
         }
@@ -450,97 +458,124 @@ public sealed class RoleItemPlanBuilder
             _economy.CommandKind != "npc-shop-buy" && !_economy.CommandKind.StartsWith("cd13e/", StringComparison.Ordinal))
             throw new NotSupportedException("The economic command has no asynchronous owner adapter.");
         _asyncSubmitted = true;
+        var blobSaves = BeginBlobSaves(accounts);
+        bool committed = false;
         DbPlan submitted;
         object?[] receipts;
-        if (_escrowEconomy is not null)
+        try
         {
-            var plan = Build(accounts, label, expect: false);
-            submitted = new EscrowEconomyTransactionPlan(plan, _escrowEconomy, accounts.EscrowCatalog,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest());
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            receipts = await accounts.WriteEscrowEconomyAsync(submitted, _escrowEconomy, plan);
-        }
-        else if (_economyEnvelope is { } envelope)
-        {
-            // E05d semantic envelope on the owned path; an ambiguous outcome resolves from its receipt.
-            submitted = new EconomyEnvelopePlan(Build(accounts, label, expect: false), envelope, accounts.EconomyCatalog,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest());
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            try { receipts = await accounts.WriteOwnedAsync<object?[]>(submitted); }
-            catch (Exception original) when (original is not (EconomyOperationConflictException or DbQueueFullException))
+            if (_escrowEconomy is not null)
             {
-                object?[]? resolved;
-                try
-                {
-                    if (accounts.ConsumeEconomyResolutionFaultForTest())
-                        throw new IOException("Test-only economy receipt resolution failure.");
-                    resolved = await accounts.ReadAsync<object?[]?>(new EconomyEnvelopeResolveReadPlan(envelope, _parts.Count));
-                }
-                catch (Exception readError)
-                {
-                    accounts.RequireOwnerRecovery(submitted);
-                    throw new EconomyOutcomeUnknownException(envelope.OperationId, original, readError);
-                }
-                if (resolved is null) throw;
-                receipts = resolved;
-                accounts.RecordResolvedCommit(submitted, receipts);
+                var plan = Build(accounts, label, expect: false);
+                submitted = new EscrowEconomyTransactionPlan(plan, _escrowEconomy, accounts.EscrowCatalog,
+                    accounts.ConsumeEconomyAcknowledgementFaultForTest());
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                receipts = await accounts.WriteEscrowEconomyAsync(submitted, _escrowEconomy, plan);
             }
+            else if (_economyEnvelope is { } envelope)
+            {
+                // E05d semantic envelope on the owned path; an ambiguous outcome resolves from its receipt.
+                submitted = new EconomyEnvelopePlan(Build(accounts, label, expect: false), envelope, accounts.EconomyCatalog,
+                    accounts.ConsumeEconomyAcknowledgementFaultForTest());
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                try { receipts = await accounts.WriteOwnedAsync<object?[]>(submitted); }
+                catch (Exception original) when (original is not (EconomyOperationConflictException or DbQueueFullException))
+                {
+                    object?[]? resolved;
+                    try
+                    {
+                        if (accounts.ConsumeEconomyResolutionFaultForTest())
+                            throw new IOException("Test-only economy receipt resolution failure.");
+                        resolved = await accounts.ReadAsync<object?[]?>(new EconomyEnvelopeResolveReadPlan(envelope, _parts.Count));
+                    }
+                    catch (Exception readError)
+                    {
+                        accounts.RequireOwnerRecovery(submitted);
+                        throw new EconomyOutcomeUnknownException(envelope.OperationId, original, readError);
+                    }
+                    if (resolved is null) throw;
+                    receipts = resolved;
+                    accounts.RecordResolvedCommit(submitted, receipts);
+                }
+            }
+            else if (_eventEconomy is not null)
+            {
+                // E05e is a further envelope; it retains its own typed replay and source validation.
+                submitted = new EventEconomyTransactionPlan(Build(accounts, label, expect: false), _eventEconomy,
+                    accounts.ConsumeEconomyAcknowledgementFaultForTest());
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                receipts = await accounts.WriteOwnedAsync<object?[]>(submitted);
+            }
+            else if (_economy is null)
+            {
+                submitted = Build(accounts, label, Guid.NewGuid().ToString("N"));
+                receipts = await accounts.WriteOwnedAsync<object?[]>(submitted);
+            }
+            else if (_economy.IsProgression)
+            {
+                var plan = Build(accounts, label, expect: false);
+                _economy = _economy.BindProgressionPlan(EventPlanFingerprint.Capture(plan));
+                submitted = new ProgressionEconomyTransactionPlan(plan, _economy,
+                    accounts.ConsumeEconomyAcknowledgementFaultForTest());
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                receipts = await accounts.WriteFamilyEconomyAsync(submitted, _economy,
+                    ((ItemDeltaWritePlan)_parts[0]).ExpectedReceiptCount, _parts.Count);
+            }
+            else if (_economy.IsFamily || _economy.CommandKind == "npc-shop-buy")
+            {
+                // E05a/b and E01 keep their original receipt shapes and resolve ambiguous acknowledgements.
+                var child = Build(accounts, label, expect: false);
+                bool fault = accounts.ConsumeEconomyAcknowledgementFaultForTest();
+                submitted = _economy.IsFamily
+                    ? new FamilyEconomyTransactionPlan(child, _economy, fault)
+                    : new EconomyTransactionPlan(child, _economy, fault);
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                receipts = await accounts.WriteFamilyEconomyAsync(submitted, _economy,
+                    ((ItemDeltaWritePlan)_parts[0]).ExpectedReceiptCount, _economy.IsFamily ? _parts.Count : 0);
+            }
+            else
+            {
+                // E04 reward envelope on the owned asynchronous path.
+                submitted = new EconomyTransactionPlan(Build(accounts, label, expect: false), _economy,
+                    accounts.ConsumeEconomyAcknowledgementFaultForTest(), owned: true);
+                if (_expected.Count != 0) submitted.Expect(_expected.Values);
+                if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
+                receipts = _economy.CommandKind.StartsWith("cd13e/", StringComparison.Ordinal)
+                    ? await accounts.WriteFamilyEconomyAsync(submitted, _economy,
+                        _parts[0] is ItemDeltaWritePlan ownedDelta ? ownedDelta.ExpectedReceiptCount : -1, _parts.Count)
+                    : await accounts.WriteOwnedAsync<object?[]>(submitted);
+            }
+            committed = true;
         }
-        else if (_eventEconomy is not null)
-        {
-            // E05e is a further envelope; it retains its own typed replay and source validation.
-            submitted = new EventEconomyTransactionPlan(Build(accounts, label, expect: false), _eventEconomy,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest());
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            receipts = await accounts.WriteOwnedAsync<object?[]>(submitted);
-        }
-        else if (_economy is null)
-        {
-            submitted = Build(accounts, label, Guid.NewGuid().ToString("N"));
-            receipts = await accounts.WriteOwnedAsync<object?[]>(submitted);
-        }
-        else if (_economy.IsProgression)
-        {
-            var plan = Build(accounts, label, expect: false);
-            _economy = _economy.BindProgressionPlan(EventPlanFingerprint.Capture(plan));
-            submitted = new ProgressionEconomyTransactionPlan(plan, _economy,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest());
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            receipts = await accounts.WriteFamilyEconomyAsync(submitted, _economy,
-                ((ItemDeltaWritePlan)_parts[0]).ExpectedReceiptCount, _parts.Count);
-        }
-        else if (_economy.IsFamily || _economy.CommandKind == "npc-shop-buy")
-        {
-            // E05a/b and E01 keep their original receipt shapes and resolve ambiguous acknowledgements.
-            var child = Build(accounts, label, expect: false);
-            bool fault = accounts.ConsumeEconomyAcknowledgementFaultForTest();
-            submitted = _economy.IsFamily
-                ? new FamilyEconomyTransactionPlan(child, _economy, fault)
-                : new EconomyTransactionPlan(child, _economy, fault);
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            receipts = await accounts.WriteFamilyEconomyAsync(submitted, _economy,
-                ((ItemDeltaWritePlan)_parts[0]).ExpectedReceiptCount, _economy.IsFamily ? _parts.Count : 0);
-        }
-        else
-        {
-            // E04 reward envelope on the owned asynchronous path.
-            submitted = new EconomyTransactionPlan(Build(accounts, label, expect: false), _economy,
-                accounts.ConsumeEconomyAcknowledgementFaultForTest(), owned: true);
-            if (_expected.Count != 0) submitted.Expect(_expected.Values);
-            if (_entities.Count != 0) submitted.ExpectEntities(_entities.Values);
-            receipts = _economy.CommandKind.StartsWith("cd13e/", StringComparison.Ordinal)
-                ? await accounts.WriteFamilyEconomyAsync(submitted, _economy,
-                    _parts[0] is ItemDeltaWritePlan ownedDelta ? ownedDelta.ExpectedReceiptCount : -1, _parts.Count)
-                : await accounts.WriteOwnedAsync<object?[]>(submitted);
-        }
+        finally { EndBlobSaves(accounts, blobSaves, committed); }
         try { Apply(receipts); publish?.Invoke(receipts); }
         catch { accounts.RequireOwnerRecovery(submitted, _economy?.OperationId ?? _economyEnvelope?.OperationId ?? _eventEconomy?.OperationId ?? _escrowEconomy?.OperationId); throw; }
         return receipts;
+    }
+
+    private List<(long Role, string Column, byte[] Value, object Token)>? BeginBlobSaves(AccountStore accounts)
+    {
+        Dictionary<(long, string), byte[]>? latest = null;
+        foreach (var part in _parts)
+            if (part is RoleBlobWritePlan blob)
+                (latest ??= [])[(blob.RoleId, blob.Column)] = blob.Value;
+        if (latest == null) return null;
+        var saves = new List<(long, string, byte[], object)>(latest.Count);
+        foreach (var ((role, column), value) in latest)
+            saves.Add((role, column, value, accounts.Snapshots.BeginSave(role, column)));
+        return saves;
+    }
+
+    private static void EndBlobSaves(AccountStore accounts, List<(long Role, string Column, byte[] Value, object Token)>? saves, bool committed)
+    {
+        if (saves == null) return;
+        foreach (var (role, column, value, token) in saves)
+            accounts.Snapshots.EndSave(role, column, token, value, committed);
     }
 
     private void Apply(object?[] receipts)
@@ -610,7 +645,9 @@ internal sealed class RoleBlobWritePlan : DbPlan
     private readonly long _role;
     private readonly string _column;
     private readonly byte[] _value;
+    internal long RoleId => _role;
     internal string Column => _column;
+    internal byte[] Value => _value;
 
     internal RoleBlobWritePlan(long role, string column, byte[] value)
     {
@@ -708,16 +745,28 @@ internal sealed class ItemSnapshotWritePlan : DbPlan
     internal override IReadOnlyList<RoleRevisionKey> RoleWrites => [RevisionStore.Role(_role, RevisionStore.Inventory)];
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
-        var old = new HashSet<long>();
-        using (var query = DbSql.Command(db, tx, "SELECT guid FROM item WHERE role_id=$r"))
+        var existing = new Dictionary<long, ItemValue>();
+        using (var query = DbSql.Command(db, tx, "SELECT guid,entry,stack,pack,sort,grid,attrs,is_locked,enchantments,str_attrs,bind_type,bind_expire FROM item WHERE role_id=$r"))
         {
             query.Parameters.AddWithValue("$r", _role);
             using var reader = query.ExecuteReader();
-            while (reader.Read()) old.Add(reader.GetInt64(0));
+            while (reader.Read())
+            {
+                long g = reader.GetInt64(0);
+                existing[g] = new ItemValue(g, reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3),
+                    reader.GetInt64(4), reader.GetInt32(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.GetBoolean(7),
+                    reader.IsDBNull(8) ? null : reader.GetString(8),
+                    reader.IsDBNull(9) ? null : reader.GetString(9),
+                    reader.GetInt32(10), reader.GetInt64(11));
+            }
         }
-        foreach (var item in _items) if (item.Guid > 0) old.Remove(item.Guid);
-        foreach (long guid in old)
+        var kept = new HashSet<long>();
+        foreach (var item in _items) if (item.Guid > 0) kept.Add(item.Guid);
+        foreach (long guid in existing.Keys)
         {
+            if (kept.Contains(guid)) continue;
             using var delete = DbSql.Command(db, tx, "DELETE FROM item WHERE guid=$id AND role_id=$r");
             delete.Parameters.AddWithValue("$id", guid); delete.Parameters.AddWithValue("$r", _role);
             delete.ExecuteNonQuery();
@@ -726,6 +775,11 @@ internal sealed class ItemSnapshotWritePlan : DbPlan
         for (int i = 0; i < _items.Length; i++)
         {
             var item = _items[i];
+            if (item.Guid > 0 && existing.TryGetValue(item.Guid, out var current) && current == item)
+            {
+                guids[i] = item.Guid;
+                continue;
+            }
             using var cmd = DbSql.Command(db, tx, item.Guid > 0
                 ? "UPDATE item SET entry=$e,stack=$s,pack=$p,sort=$o,grid=$g,attrs=$a,is_locked=$l,enchantments=$n,str_attrs=$sa,bind_type=$bt,bind_expire=$be WHERE guid=$id AND role_id=$r"
                 : "INSERT INTO item(role_id,entry,stack,pack,sort,grid,attrs,is_locked,enchantments,str_attrs,bind_type,bind_expire) VALUES($r,$e,$s,$p,$o,$g,$a,$l,$n,$sa,$bt,$be) RETURNING guid");
@@ -758,8 +812,20 @@ internal sealed class ItemDeltaWritePlan : DbPlan
     internal ItemDeltaWritePlan(long role, IReadOnlyList<InvItem> before, IReadOnlyList<InvItem> after)
     {
         _role = role;
-        _before = [.. before.Select(ItemValue.Capture)];
-        _after = [.. after.Select(ItemValue.Capture)];
+        var beforeByGuid = new Dictionary<long, int>(before.Count);
+        for (int i = 0; i < before.Count; i++) beforeByGuid[before[i].Guid] = i;
+        _before = new ItemValue[before.Count];
+        _after = new ItemValue[after.Count];
+        for (int i = 0; i < after.Count; i++)
+        {
+            var item = after[i];
+            var captured = ItemValue.Capture(item);
+            _after[i] = captured;
+            if (item.Guid != 0 && beforeByGuid.TryGetValue(item.Guid, out int bi) && InvItem.SamePersistedValue(before[bi], item))
+                _before[bi] = captured;
+        }
+        for (int i = 0; i < before.Count; i++)
+            _before[i] ??= ItemValue.Capture(before[i]);
     }
     internal override int Bytes => 128 + _before.Concat(_after).Sum(i => 160 + (i.Attrs?.Length ?? 0) * 2 +
         (i.Enchantments?.Length ?? 0) * 2 + (i.StringAttrs?.Length ?? 0) * 2);

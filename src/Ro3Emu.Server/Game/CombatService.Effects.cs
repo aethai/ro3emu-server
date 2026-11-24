@@ -392,7 +392,11 @@ public sealed partial class CombatService
                 var sourceViewers = CurrentCaster() ? _world.Viewers(s).Append(s) : [];
                 var hitViewers = processed.SelectMany(t => t.Viewers).Concat(sourceViewers).Distinct().ToArray();
                 await SendHitBulletsAsync(hitViewers, row, hit, castingRole.Id);
-                foreach (var viewer in hitViewers) await viewer.SendGameAsync(SkillHit, hit);
+                if (hitViewers.Length > 0)
+                {
+                    var preparedHit = new PreparedMessage(SkillHit, hit);
+                    foreach (var viewer in hitViewers) await viewer.SendPreparedAsync(preparedHit);
+                }
                 if (CurrentCaster() && field?.Trap == true)
                     await ToPlayerAndViewersAsync(s, TrapDamage, new TrapDamageNtf { SkillConfigId = action.Request.SkillId, DamageValue = hit.Dsts.Sum(d => d.Damage), Pos = center.Clone() });
             }

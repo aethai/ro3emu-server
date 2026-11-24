@@ -14,6 +14,7 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
 
     private readonly object _sync = new();
     private readonly Dictionary<string, GameSession> _byAccount = new(StringComparer.Ordinal);
+    private readonly Dictionary<long, GameSession> _byRole = [];
     private readonly Dictionary<string, long> _generations = new(StringComparer.Ordinal);
     /// <summary>Copy-on-write snapshot for <see cref="All"/>: tickers enumerate it many times a second; it changes
     /// only on (un)registration.</summary>
@@ -51,6 +52,8 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
             session.AccountGeneration = checked(generation + 1);
             _generations[session.Account!] = session.AccountGeneration;
             _byAccount[session.Account!] = session;
+            session.Registry = this;
+            if (session.Role is { } role) _byRole[role.Id] = session;
             Publish();
         }
         if (previous == null || previous == session) return;
@@ -84,10 +87,32 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
             if (session.Account != null && _byAccount.TryGetValue(session.Account, out var current) && current == session)
             {
                 _byAccount.Remove(session.Account);
+                if (session.Role is { } role && _byRole.TryGetValue(role.Id, out var byRole) && ReferenceEquals(byRole, session))
+                    _byRole.Remove(role.Id);
+                session.Registry = null;
                 Publish();
                 UnregisteredForTest?.Invoke(session);
             }
         }
+    }
+
+    internal void RoleBound(GameSession session, long oldRoleId, long newRoleId)
+    {
+        lock (_sync)
+        {
+            if (oldRoleId != 0 && _byRole.TryGetValue(oldRoleId, out var prev) && ReferenceEquals(prev, session))
+                _byRole.Remove(oldRoleId);
+            if (newRoleId != 0 && ReferenceEquals(session.Registry, this))
+                _byRole[newRoleId] = session;
+        }
+    }
+
+    /// <summary>O(1) lookup of an online session by its currently selected role id.</summary>
+    public GameSession? ByRole(long roleId)
+    {
+        if (roleId == 0) return null;
+        lock (_sync)
+            return _byRole.TryGetValue(roleId, out var s) && s.Role?.Id == roleId ? s : null;
     }
 
     /// <summary>The registered sessions; an immutable snapshot (callers must not cast and mutate it).</summary>

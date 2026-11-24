@@ -70,39 +70,52 @@ public sealed partial class CharacterService
     /// </summary>
     /// <summary>Set by ServerHost: the loop's <see cref="GameLoop.WorkSerial"/>. Unset, nothing is memoized.</summary>
     internal Func<long>? WorkSerial { get; set; }
+    /// <summary>Set by ServerHost: the loop's 50 ms <see cref="GameLoop.TickSerial"/>.</summary>
+    internal Func<long>? TickSerial { get; set; }
+
+    /// <summary>Max ticks (4 * 50 ms = 200 ms) a hot-path memoized build sheet may be reused while all tracked inputs match.</summary>
+    private const long StatsMemoMaxTickAge = 4;
 
     /// <summary>The build part of a sheet (before HP, SP and the dynamic properties) and what it was computed from.</summary>
-    private sealed record StatsMemoEntry(long Serial, RoleProgress Progress, long Level, long SpeedBonus, long Mount, ActiveBuff[] Buffs,
+    private sealed record StatsMemoEntry(long Tick, RoleProgress Progress, int Career, long Level,
+        int S0, int S1, int S2, int S3, int S4, int S5, int ItemCount,
+        long SpeedBonus, long Mount, long? CurrentHp, long StatusBits, bool Dead, ActiveBuff[] Buffs,
         StatSheet Sheet);
 
-    /// <summary>A combat path (cast, hit, swing) allows <see cref="Stats"/> to reuse the build part for the rest of the
-    /// current loop work item: until its next real await, nothing it does changes the character's build except buffs,
-    /// HP and the ridden mount, which the memo checks. Everywhere else (GM ops, trades, equipment) the sheet is fresh.</summary>
+    /// <summary>A combat/ticker path (cast, hit, swing, guardian pulse, team/power tick) allows <see cref="Stats"/> to reuse
+    /// the build part while tracked inputs are unchanged and no <see cref="Refresh"/> ran. Everywhere else (GM ops, trades,
+    /// equipment) the sheet is fresh.</summary>
     internal void ReuseStatsInThisWork(GameSession session)
     {
         if (WorkSerial?.Invoke() is { } serial) session.StatsReuseSerial = serial;
     }
 
     /// <summary>
-    /// The character's full stat sheet. A cast reads it five to seven times while nothing it depends on changes, and it
-    /// was half of the loop's work with players on auto battle (LoadTest S9). Within a work item a combat path allowed
-    /// (<see cref="ReuseStatsInThisWork"/>) the build part is memoized, dropped when the buff list (its records are
-    /// immutable, so the references say it all), the progress, the level, the ridden mount or the GM speed changes, and
-    /// on every <see cref="Refresh"/>. HP, SP and the dynamic properties are applied on every call.
+    /// The character's full stat sheet. A cast, guardian pet pulse, team refresh and power probe read it repeatedly while
+    /// nothing it depends on changes. Within an allowed work item (<see cref="ReuseStatsInThisWork"/>) the build part is
+    /// memoized across up to <see cref="StatsMemoMaxTickAge"/> ticks (200 ms) while progress, career, level, base stats,
+    /// item count, buff list, HP, combat status, dead flag, mount and GM speed are unchanged, and dropped on every
+    /// <see cref="Refresh"/>. HP, SP and the dynamic properties are applied on every call.
     /// </summary>
     public StatSheet Stats(GameSession session)
     {
         var p = session.Progress!;
         long serial = WorkSerial?.Invoke() ?? -1;
-        if (serial != session.StatsReuseSerial) serial = -1; // not in a combat path's work: always fresh
+        if (serial != session.StatsReuseSerial) serial = -1; // not in a hot path's work: always fresh
+        long tick = TickSerial?.Invoke() ?? serial;
         StatSheet sheet;
-        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo && memo.Serial == serial && Unchanged(memo, session, p))
+        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo
+            && tick >= memo.Tick && tick - memo.Tick <= StatsMemoMaxTickAge
+            && Unchanged(memo, session, p))
             sheet = memo.Sheet.Clone();
         else
         {
             sheet = BuildStats(session, p);
             if (serial >= 0)
-                session.StatsMemo = new StatsMemoEntry(serial, p, p.Level, session.SpeedBonus, MountService.Rider(session), [.. session.Buffs],
+                session.StatsMemo = new StatsMemoEntry(tick, p, p.Career, p.Level,
+                    p.Stats[0], p.Stats[1], p.Stats[2], p.Stats[3], p.Stats[4], p.Stats[5],
+                    session.Items.Count, session.SpeedBonus, MountService.Rider(session),
+                    session.CurrentHp, session.StatusBits, session.Dead, [.. session.Buffs],
                     sheet.Clone());
         }
         long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
@@ -121,8 +134,13 @@ public sealed partial class CharacterService
 
     private static bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p)
     {
-        if (!ReferenceEquals(memo.Progress, p) || memo.Level != p.Level || memo.SpeedBonus != session.SpeedBonus
-            || memo.Mount != MountService.Rider(session) || memo.Buffs.Length != session.Buffs.Count) return false;
+        if (!ReferenceEquals(memo.Progress, p) || memo.Career != p.Career || memo.Level != p.Level
+            || memo.S0 != p.Stats[0] || memo.S1 != p.Stats[1] || memo.S2 != p.Stats[2]
+            || memo.S3 != p.Stats[3] || memo.S4 != p.Stats[4] || memo.S5 != p.Stats[5]
+            || memo.ItemCount != session.Items.Count
+            || memo.SpeedBonus != session.SpeedBonus || memo.Mount != MountService.Rider(session)
+            || memo.CurrentHp != session.CurrentHp || memo.StatusBits != session.StatusBits
+            || memo.Dead != session.Dead || memo.Buffs.Length != session.Buffs.Count) return false;
         for (int i = 0; i < memo.Buffs.Length; i++)
             if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
         return true;

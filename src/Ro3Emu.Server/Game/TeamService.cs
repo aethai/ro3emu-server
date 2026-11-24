@@ -446,6 +446,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         var battle = new TeamMemberBattleInfo { Pos = new Vec3(), MaxHpValue = 1, MaxMpValue = 1 };
         if (s?.Progress != null)
         {
+            _character.ReuseStatsInThisWork(s);
             var stats = _character.Stats(s);
             battle.MaxHpValue = Math.Max(1, stats[MaxHp]);
             battle.MaxMpValue = Math.Max(1, stats[MaxSp]);
@@ -468,7 +469,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
 
     private static int Capacity(Team team) => team.Type == TeamType.Forty ? 40 : 5;
 
-    private GameSession? Session(long role) => _sessions.All().FirstOrDefault(s => s.Role?.Id == role);
+    private GameSession? Session(long role) => _sessions.ByRole(role);
 
     private async Task ToOthersAsync(Team team, long except, uint msgId, IMessage body)
     {

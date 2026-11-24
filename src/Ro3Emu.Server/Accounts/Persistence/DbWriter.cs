@@ -113,7 +113,9 @@ public sealed class DbWriter : IDisposable
             using (var measurement = _serverMetrics?.MeasureDatabaseOpen()) db.Open();
             SqliteMetrics.Attach(db, _serverMetrics);
             DbWriteGuard.AttachWriter(db, _metrics);
-            using (var full = db.CreateCommand()) { full.CommandText = "PRAGMA synchronous=FULL"; full.ExecuteNonQuery(); }
+            string syncMode = string.Equals(Environment.GetEnvironmentVariable("RO3EMU_DB_SYNCHRONOUS"), "NORMAL", StringComparison.OrdinalIgnoreCase)
+                ? "NORMAL" : "FULL";
+            using (var full = db.CreateCommand()) { full.CommandText = $"PRAGMA synchronous={syncMode}; PRAGMA cache_size=-32000; PRAGMA temp_store=MEMORY;"; full.ExecuteNonQuery(); }
             _metrics.WriterThread(Environment.CurrentManagedThreadId);
             while (true)
             {

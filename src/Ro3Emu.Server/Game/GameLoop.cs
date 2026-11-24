@@ -40,6 +40,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     private readonly AutoResetEvent _workAvailable = new(false);
     private readonly ServerMetrics? _metrics;
     private readonly List<IGameTicker> _tickers = [];
+    private IGameTicker[] _tickersSnapshot = [];
     private readonly PriorityQueue<Func<Task>, TimeSpan> _timers = new();
     private readonly Stopwatch _clock = new();
     private readonly ILogger<GameLoop> _log;
@@ -106,8 +107,8 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     /// <summary>Registers a ticker (from the loop or before start).</summary>
     public void Add(IGameTicker ticker)
     {
-        if (_thread.IsAlive && !IsOnLoop) Post(() => { _tickers.Add(ticker); return Task.CompletedTask; });
-        else _tickers.Add(ticker);
+        if (_thread.IsAlive && !IsOnLoop) Post(() => { _tickers.Add(ticker); _tickersSnapshot = [.. _tickers]; return Task.CompletedTask; });
+        else { _tickers.Add(ticker); _tickersSnapshot = [.. _tickers]; }
     }
 
     public void Remove(IGameTicker ticker) => TryRemove(ticker, null);
@@ -123,11 +124,12 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                 // A stopped loop never ticks this list again. Test phase and ordinary admission
                 // together so shutdown cannot begin between them.
                 if (_phase != GameLoopPhase.Accepting) return false;
-                Post(() => { _tickers.Remove(ticker); onRemoved?.Invoke(); return Task.CompletedTask; });
+                Post(() => { _tickers.Remove(ticker); _tickersSnapshot = [.. _tickers]; onRemoved?.Invoke(); return Task.CompletedTask; });
                 return true;
             }
         }
         _tickers.Remove(ticker);
+        _tickersSnapshot = [.. _tickers];
         onRemoved?.Invoke();
         return true;
     }
@@ -320,7 +322,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     {
         var previous = SynchronizationContext.Current;
         var priorPermit = _currentPermit.Value;
-        SynchronizationContext.SetSynchronizationContext(new LoopContext(this, permit));
+        SynchronizationContext.SetSynchronizationContext(permit.Context);
         _currentPermit.Value = permit;
         try { return FinishTracked(work, permit); }
         finally { _currentPermit.Value = priorPermit; SynchronizationContext.SetSynchronizationContext(previous); }
@@ -477,7 +479,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                         double lateness = (Now - due).TotalMilliseconds;
                         var prior = SynchronizationContext.Current;
                         var priorPermit = _currentPermit.Value;
-                        SynchronizationContext.SetSynchronizationContext(new LoopContext(this, permit));
+                        SynchronizationContext.SetSynchronizationContext(permit.Context);
                         _currentPermit.Value = permit;
                         WorkSerial++;
                         try { _ = RunGuarded(timer, permit); }
@@ -491,13 +493,14 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     if (Owners?.Reservations.Pulse() == true)
                         LogRealmPriorityStoodAside(_log, Ownership.ReservationCoordinator.StallGrace.TotalSeconds, Owners.LongHeld(TimeSpan.Zero));
                     long tickerStart = Stopwatch.GetTimestamp();
-                    foreach (var ticker in Phase == GameLoopPhase.Accepting ? _tickers.ToArray() : [])
+                    TickSerial++;
+                    foreach (var ticker in Phase == GameLoopPhase.Accepting ? _tickersSnapshot : [])
                     {
                         if (!TryAdmit("ticker " + ticker.GetType().Name, cleanup: false, out var tickerPermit)) break;
                         long one = Stopwatch.GetTimestamp();
                         var prior = SynchronizationContext.Current;
                         var priorPermit = _currentPermit.Value;
-                        SynchronizationContext.SetSynchronizationContext(new LoopContext(this, tickerPermit));
+                        SynchronizationContext.SetSynchronizationContext(tickerPermit.Context);
                         _currentPermit.Value = tickerPermit;
                         WorkSerial++;
                         try { TickOwned(ticker, time); }
@@ -593,12 +596,15 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     /// (CharacterService.Stats) can never outlive the work it was made in.</summary>
     public long WorkSerial { get; private set; }
 
+    /// <summary>Counts 50 ms game loop ticks.</summary>
+    public long TickSerial { get; private set; }
+
     private void Execute((SendOrPostCallback Callback, object? State, long EnqueuedAt, WorkPermit Permit) item)
     {
         WorkSerial++;
         var previous = SynchronizationContext.Current;
         var priorPermit = _currentPermit.Value;
-        SynchronizationContext.SetSynchronizationContext(new LoopContext(this, item.Permit));
+        SynchronizationContext.SetSynchronizationContext(item.Permit.Context);
         _currentPermit.Value = item.Permit;
         try { item.Callback(item.State); }
         catch (Exception e)
@@ -683,6 +689,8 @@ public sealed partial class GameLoop : IHostedService, IDisposable
         public readonly string Name = name;
         public readonly bool Cleanup = cleanup;
         public readonly long StartedAt = startedAt;
+        private LoopContext? _context;
+        internal LoopContext Context => _context ??= new LoopContext(Owner, this);
         public bool OrdinarySlot;
         public bool LongLived, StuckReported;
         public WorkPermit? Parent;
@@ -708,7 +716,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
         }
     }
 
-    private sealed class LoopContext(GameLoop loop, WorkPermit? permit = null) : SynchronizationContext
+    internal sealed class LoopContext(GameLoop loop, WorkPermit? permit = null) : SynchronizationContext
     {
         internal WorkPermit? Permit => permit;
         public override void Post(SendOrPostCallback d, object? state)

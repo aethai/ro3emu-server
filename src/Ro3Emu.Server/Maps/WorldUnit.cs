@@ -141,24 +141,29 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
     internal const int RestingTickEvery = 20;
     private bool _resting;
     private int _skipped;
+    private int _dormantPhase;
 
     /// <summary>
     /// A field map keeps its monsters after its players leave, so a server ends up ticking every map anyone visited.
     /// While no player is on the map and every unit rested after the last pass, the map wakes once a second; that
-    /// pass only moves the monsters' roam clocks (MonsterService.Dormant). A unit added or a player arriving makes it
-    /// tick every time again. (inferred: no client shows such a map, the original server's schedule is unknown)
+    /// pass only moves the monsters' roam clocks (MonsterService.Dormant). Even when players are on the map, unseen
+    /// resting monsters (no viewers, not walking/fighting/returning/marching) only advance their roam clock once a
+    /// second instead of 20 times a second. A unit added or a player arriving wakes it straight away.
     /// </summary>
     public void Tick(GameTime time)
     {
         bool unseen = !world.HasPlayers(sceneEntry);
         if (unseen && _resting && ++_skipped < RestingTickEvery) return;
         _skipped = 0;
+        bool tickDormant = unseen || _dormantPhase == 0;
+        _dormantPhase = (_dormantPhase + 1) % RestingTickEvery;
         bool resting = unseen;
         _ticking.AddRange(_units);
         try
         {
             foreach (var unit in _ticking)
             {
+                if (!tickDormant && unit.Resting) continue;
                 unit.Tick(this, time);
                 if (resting) resting = unit.Resting;
             }

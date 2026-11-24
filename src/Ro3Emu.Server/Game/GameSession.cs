@@ -52,7 +52,19 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
     internal long AccountGeneration { get; set; }
     internal Task PredecessorFence { get; set; } = Task.CompletedTask;
 
-    public Role? Role { get; set; }
+    private Role? _role;
+    internal SessionRegistry? Registry { get; set; }
+    public Role? Role
+    {
+        get => _role;
+        set
+        {
+            long oldId = _role?.Id ?? 0;
+            _role = value;
+            long newId = value?.Id ?? 0;
+            if (oldId != newId) Registry?.RoleBound(this, oldId, newId);
+        }
+    }
     public Ownership.OwnerRegistry? Owners { get; internal set; }
     public Ownership.RoleOwner? Owner { get; internal set; }
     public Ownership.AttachmentLease? Attachment { get; internal set; }

@@ -44,6 +44,32 @@ public sealed class InvItem
         StringAttrs = StringAttrs == null ? null : new(StringAttrs), BindType = BindType, BindExpire = BindExpire, IsLocked = IsLocked,
         Enchantments = Enchantments.ToDictionary(p => p.Key, p => new ItemEnchantment { Attr = new(p.Value.Attr), GetTime = p.Value.GetTime }),
     };
+
+    /// <summary>True when two snapshots have identical persisted values, without JSON serialization.</summary>
+    internal static bool SamePersistedValue(InvItem a, InvItem b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a.Guid != b.Guid || a.Entry != b.Entry || a.Stack != b.Stack || a.Pack != b.Pack
+            || a.Sort != b.Sort || a.Grid != b.Grid || a.IsLocked != b.IsLocked
+            || a.BindType != b.BindType || a.BindExpire != b.BindExpire) return false;
+        if (!SameDict(a.Attrs, b.Attrs) || !SameDict(a.StringAttrs, b.StringAttrs)) return false;
+        if (a.Enchantments.Count != b.Enchantments.Count) return false;
+        foreach (var (k, v) in a.Enchantments)
+            if (!b.Enchantments.TryGetValue(k, out var ov) || v.GetTime != ov.GetTime || !SameDict(v.Attr, ov.Attr))
+                return false;
+        return true;
+    }
+
+    private static bool SameDict<TValue>(Dictionary<int, TValue>? a, Dictionary<int, TValue>? b)
+    {
+        int ac = a?.Count ?? 0, bc = b?.Count ?? 0;
+        if (ac != bc) return false;
+        if (ac == 0) return true;
+        var cmp = EqualityComparer<TValue>.Default;
+        foreach (var (k, v) in a!)
+            if (!b!.TryGetValue(k, out var ov) || !cmp.Equals(v, ov)) return false;
+        return true;
+    }
 }
 
 /// <summary>One persisted EnchantAttr: actual rolled stats and acquisition time, separate from itemInfos.</summary>

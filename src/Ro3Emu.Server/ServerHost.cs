@@ -262,9 +262,11 @@ public static partial class ServerHost
         // Mount energy meters (EnergyConfig._iBelongMount): BuffService cannot take MountService (MountService -> SceneService -> BuffService).
         app.Services.GetRequiredService<MountService>().Changed.Add(app.Services.GetRequiredService<BuffService>().MountsChangedAsync);
         app.Services.GetRequiredService<CharacterService>().ExpCredited.Add(app.Services.GetRequiredService<CheatMonitor>().ExpGained);
-        // Stats memoize per loop work item (CharacterService.Stats).
+        // Stats memoize across short tick windows on hot combat/ticker paths (CharacterService.Stats).
         var statsLoop = app.Services.GetRequiredService<GameLoop>();
-        app.Services.GetRequiredService<CharacterService>().WorkSerial = () => statsLoop.WorkSerial;
+        var statsCharacter = app.Services.GetRequiredService<CharacterService>();
+        statsCharacter.WorkSerial = () => statsLoop.WorkSerial;
+        statsCharacter.TickSerial = () => statsLoop.TickSerial;
         // Team chat channels (ChatService cannot take TeamService: TeamService -> ChatService).
         app.Services.GetRequiredService<ChatService>().TeamChannelAllowed = app.Services.GetRequiredService<TeamService>().ChannelAllowed;
         app.Use(async (context, next) =>

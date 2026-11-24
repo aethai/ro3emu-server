@@ -222,6 +222,17 @@ public sealed class RoleSnapshots
         return true;
     }
 
+    internal void CacheBlob(long role, string column, byte[]? value, long readStartedAt)
+    {
+        lock (_gate)
+        {
+            if (readStartedAt < _prunedThrough || !_installed.TryGetValue(role, out var entry)) return;
+            if (_writtenAt.TryGetValue((role, column), out long at) && at > readStartedAt) return;
+            if (_writtenAt.TryGetValue((role, RevisionStore.Identity), out long idAt) && idAt > readStartedAt) return;
+            entry.Blobs[column] = value == null ? null : (byte[])value.Clone();
+        }
+    }
+
     /// <summary>
     /// True when <paramref name="value"/> equals the stored bytes of a still-valid snapshot column: the database
     /// already holds exactly this value (any later write would have invalidated it), so writing it is a no-op.
