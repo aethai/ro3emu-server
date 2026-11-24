@@ -239,11 +239,12 @@ public sealed class GuildStore(AccountStore accounts)
     private long _cachedGeneration = -1;
     private readonly Dictionary<long, (byte[] Json, OwnerRevisionValue? Revision)?> _byId = [];
     private readonly Dictionary<long, long> _guildOfRole = [];
+    private (long Generation, (byte[] Json, OwnerRevisionValue? Revision)[] Rows)? _listCache;
 
     private long Current()
     {
         long generation = _accounts.Caches.Current(WrittenCache.Guild);
-        if (_cachedGeneration != generation) { _byId.Clear(); _guildOfRole.Clear(); _cachedGeneration = generation; }
+        if (_cachedGeneration != generation) { _byId.Clear(); _guildOfRole.Clear(); _listCache = null; _cachedGeneration = generation; }
         return generation;
     }
 
@@ -258,6 +259,13 @@ public sealed class GuildStore(AccountStore accounts)
     }
 
     internal bool HasRecovery(long id) => _accounts.ReadSync<bool>(new GuildRecoveryExistsPlan(id));
+
+    /// <summary>Cached guild id of <paramref name="roleId"/> (0 when none), without deserializing the guild JSON.</summary>
+    public long GuildIdOf(long roleId)
+    {
+        lock (_cacheLock) { Current(); if (_guildOfRole.TryGetValue(roleId, out long guildId)) return guildId; }
+        return ForRole(roleId)?.Id ?? 0;
+    }
 
     public State? ForRole(long roleId)
     {
@@ -288,7 +296,21 @@ public sealed class GuildStore(AccountStore accounts)
         if (events.Length > 0) transaction.Add(new GuildEventAppendPlan(guildId, "", events, JournalCap));
     }
 
-    public IReadOnlyList<State> List() => _accounts.ReadSync<List<State>>(new GuildReadPlan(GuildReadKind.List));
+    public IReadOnlyList<State> List()
+    {
+        lock (_cacheLock)
+        {
+            Current();
+            if (_listCache is { } hit && hit.Generation == _cachedGeneration)
+                return [.. hit.Rows.Select(Copy)];
+        }
+        long generation = _accounts.Caches.Current(WrittenCache.Guild);
+        var rows = _accounts.ReadSync<List<State>>(new GuildReadPlan(GuildReadKind.List));
+        var cached = rows.Select(Cache).ToArray();
+        lock (_cacheLock)
+            if (Current() == generation) _listCache = (generation, cached);
+        return rows;
+    }
 
     public bool NameExists(string name, long exceptId = 0) =>
         _accounts.ReadSync<bool>(new GuildReadPlan(GuildReadKind.NameExists, exceptId, name));

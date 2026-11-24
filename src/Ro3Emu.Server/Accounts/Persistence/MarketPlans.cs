@@ -92,7 +92,9 @@ internal sealed class MarketRecordWritePlan(string kind, string key, string? dat
             : "INSERT INTO market_record(kind,id,data) VALUES($k,$i,$d) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data");
         cmd.Parameters.AddWithValue("$k", kind); cmd.Parameters.AddWithValue("$i", key);
         if (data is not null) cmd.Parameters.AddWithValue("$d", data);
-        return cmd.ExecuteNonQuery();
+        int changed = cmd.ExecuteNonQuery();
+        DbWriter.AfterJob(WrittenCache.Market);
+        return changed;
     }
 }
 

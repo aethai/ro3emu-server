@@ -160,6 +160,7 @@ public sealed class DbAccessMetrics
         legacyWriterBlockedMs = Interlocked.Read(ref _legacyWriterBlockedTicks) * 1000d / Stopwatch.Frequency,
         legacyWriterLoopBlockedMs = Interlocked.Read(ref _legacyWriterLoopBlockedTicks) * 1000d / Stopwatch.Frequency,
         loopWaitLabels = _loopWaits.Count,
+        loopWaits = LoopWaits(20),
         lazyPromoted = Interlocked.Read(ref _lazyPromoted), postCommitFailures = Interlocked.Read(ref _postCommitFailures),
         writerCommits = Interlocked.Read(ref _writerCommits), writerCommittedJobs = Interlocked.Read(ref _writerGroupedJobs),
         writerTerminal = Interlocked.Read(ref _writerTerminal) != 0,

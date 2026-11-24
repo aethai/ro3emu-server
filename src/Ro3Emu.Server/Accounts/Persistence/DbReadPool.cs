@@ -3,10 +3,10 @@ using Ro3Emu.Server.Diagnostics;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>Two bounded read-only workers. Each result is detached before its short snapshot ends.</summary>
+/// <summary>Bounded read-only workers. Each result is detached before its short snapshot ends.</summary>
 public sealed class DbReadPool : IDisposable
 {
-    public const int WorkerCount = 2, MaxWaitingJobs = 64;
+    public const int WorkerCount = 4, MaxWaitingJobs = 256;
     private readonly object _gate = new();
     private readonly Queue<Job> _queue = new();
     private readonly Thread[] _threads = new Thread[WorkerCount];
@@ -78,7 +78,7 @@ public sealed class DbReadPool : IDisposable
             using var db = new SqliteConnection(_connectionString);
             using (var measurement = _serverMetrics?.MeasureDatabaseOpen()) db.Open();
             SqliteMetrics.Attach(db, _serverMetrics);
-            using (var queryOnly = db.CreateCommand()) { queryOnly.CommandText = "PRAGMA query_only=ON"; queryOnly.ExecuteNonQuery(); }
+            using (var queryOnly = db.CreateCommand()) { queryOnly.CommandText = "PRAGMA query_only=ON; PRAGMA cache_size=-16000; PRAGMA temp_store=MEMORY;"; queryOnly.ExecuteNonQuery(); }
             DbWriteGuard.AttachRead(db, _metrics, "reader/snapshot");
             while (true)
             {

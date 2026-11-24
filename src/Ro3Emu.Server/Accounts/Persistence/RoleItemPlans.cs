@@ -238,7 +238,15 @@ public sealed class RoleItemPlanBuilder
         var key = (role, column);
         if (!_blobs.TryGetValue(key, out var value))
         {
-            var original = accounts.ReadSync<RoleBlobSnapshot>(new RoleBlobSnapshotRead(role, column));
+            RoleBlobSnapshot original;
+            if (accounts.Snapshots.TryBlob(role, column, out var cached))
+                original = new RoleBlobSnapshot(true, cached, _expected[role]);
+            else
+            {
+                long seq = accounts.Snapshots.Sequence;
+                original = accounts.ReadSync<RoleBlobSnapshot>(new RoleBlobSnapshotRead(role, column));
+                if (original.Exists) accounts.Snapshots.CacheBlob(role, column, original.Value, seq);
+            }
             Guard(new RoleBlobGuardPlan(role, column, original));
             _blobs.Add(key, value = original.Value);
         }
@@ -450,9 +458,13 @@ public sealed class RoleItemPlanBuilder
             _economy.CommandKind != "npc-shop-buy" && !_economy.CommandKind.StartsWith("cd13e/", StringComparison.Ordinal))
             throw new NotSupportedException("The economic command has no asynchronous owner adapter.");
         _asyncSubmitted = true;
+        var blobSaves = BeginBlobSaves(accounts);
+        bool committed = false;
         DbPlan submitted;
         object?[] receipts;
-        if (_escrowEconomy is not null)
+        try
+        {
+            if (_escrowEconomy is not null)
         {
             var plan = Build(accounts, label, expect: false);
             submitted = new EscrowEconomyTransactionPlan(plan, _escrowEconomy, accounts.EscrowCatalog,
@@ -537,10 +549,33 @@ public sealed class RoleItemPlanBuilder
                 ? await accounts.WriteFamilyEconomyAsync(submitted, _economy,
                     _parts[0] is ItemDeltaWritePlan ownedDelta ? ownedDelta.ExpectedReceiptCount : -1, _parts.Count)
                 : await accounts.WriteOwnedAsync<object?[]>(submitted);
+            }
+            committed = true;
         }
+        finally { EndBlobSaves(accounts, blobSaves, committed); }
         try { Apply(receipts); publish?.Invoke(receipts); }
         catch { accounts.RequireOwnerRecovery(submitted, _economy?.OperationId ?? _economyEnvelope?.OperationId ?? _eventEconomy?.OperationId ?? _escrowEconomy?.OperationId); throw; }
         return receipts;
+    }
+
+    private List<(long Role, string Column, byte[] Value, object Token)>? BeginBlobSaves(AccountStore accounts)
+    {
+        Dictionary<(long, string), byte[]>? latest = null;
+        foreach (var part in _parts)
+            if (part is RoleBlobWritePlan blob)
+                (latest ??= [])[(blob.RoleId, blob.Column)] = blob.Value;
+        if (latest == null) return null;
+        var saves = new List<(long, string, byte[], object)>(latest.Count);
+        foreach (var ((role, column), value) in latest)
+            saves.Add((role, column, value, accounts.Snapshots.BeginSave(role, column)));
+        return saves;
+    }
+
+    private static void EndBlobSaves(AccountStore accounts, List<(long Role, string Column, byte[] Value, object Token)>? saves, bool committed)
+    {
+        if (saves == null) return;
+        foreach (var (role, column, value, token) in saves)
+            accounts.Snapshots.EndSave(role, column, token, value, committed);
     }
 
     private void Apply(object?[] receipts)
@@ -610,7 +645,9 @@ internal sealed class RoleBlobWritePlan : DbPlan
     private readonly long _role;
     private readonly string _column;
     private readonly byte[] _value;
+    internal long RoleId => _role;
     internal string Column => _column;
+    internal byte[] Value => _value;
 
     internal RoleBlobWritePlan(long role, string column, byte[] value)
     {
@@ -708,16 +745,28 @@ internal sealed class ItemSnapshotWritePlan : DbPlan
     internal override IReadOnlyList<RoleRevisionKey> RoleWrites => [RevisionStore.Role(_role, RevisionStore.Inventory)];
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
-        var old = new HashSet<long>();
-        using (var query = DbSql.Command(db, tx, "SELECT guid FROM item WHERE role_id=$r"))
+        var existing = new Dictionary<long, ItemValue>();
+        using (var query = DbSql.Command(db, tx, "SELECT guid,entry,stack,pack,sort,grid,attrs,is_locked,enchantments,str_attrs,bind_type,bind_expire FROM item WHERE role_id=$r"))
         {
             query.Parameters.AddWithValue("$r", _role);
             using var reader = query.ExecuteReader();
-            while (reader.Read()) old.Add(reader.GetInt64(0));
+            while (reader.Read())
+            {
+                long g = reader.GetInt64(0);
+                existing[g] = new ItemValue(g, reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3),
+                    reader.GetInt64(4), reader.GetInt32(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.GetBoolean(7),
+                    reader.IsDBNull(8) ? null : reader.GetString(8),
+                    reader.IsDBNull(9) ? null : reader.GetString(9),
+                    reader.GetInt32(10), reader.GetInt64(11));
+            }
         }
-        foreach (var item in _items) if (item.Guid > 0) old.Remove(item.Guid);
-        foreach (long guid in old)
+        var kept = new HashSet<long>();
+        foreach (var item in _items) if (item.Guid > 0) kept.Add(item.Guid);
+        foreach (long guid in existing.Keys)
         {
+            if (kept.Contains(guid)) continue;
             using var delete = DbSql.Command(db, tx, "DELETE FROM item WHERE guid=$id AND role_id=$r");
             delete.Parameters.AddWithValue("$id", guid); delete.Parameters.AddWithValue("$r", _role);
             delete.ExecuteNonQuery();
@@ -726,6 +775,11 @@ internal sealed class ItemSnapshotWritePlan : DbPlan
         for (int i = 0; i < _items.Length; i++)
         {
             var item = _items[i];
+            if (item.Guid > 0 && existing.TryGetValue(item.Guid, out var current) && current == item)
+            {
+                guids[i] = item.Guid;
+                continue;
+            }
             using var cmd = DbSql.Command(db, tx, item.Guid > 0
                 ? "UPDATE item SET entry=$e,stack=$s,pack=$p,sort=$o,grid=$g,attrs=$a,is_locked=$l,enchantments=$n,str_attrs=$sa,bind_type=$bt,bind_expire=$be WHERE guid=$id AND role_id=$r"
                 : "INSERT INTO item(role_id,entry,stack,pack,sort,grid,attrs,is_locked,enchantments,str_attrs,bind_type,bind_expire) VALUES($r,$e,$s,$p,$o,$g,$a,$l,$n,$sa,$bt,$be) RETURNING guid");
@@ -753,46 +807,64 @@ internal sealed class ItemSnapshotWritePlan : DbPlan
 internal sealed class ItemDeltaWritePlan : DbPlan
 {
     private readonly long _role;
-    private readonly ItemValue[] _before, _after;
-    internal int ExpectedReceiptCount => _after.Length;
+    private readonly long[] _templateGuids;
+    private readonly long[] _deletedGuids;
+    private readonly (int Index, ItemValue Value)[] _changed;
+    private readonly int _bytes;
+    internal int ExpectedReceiptCount => _templateGuids.Length;
     internal ItemDeltaWritePlan(long role, IReadOnlyList<InvItem> before, IReadOnlyList<InvItem> after)
     {
         _role = role;
-        _before = [.. before.Select(ItemValue.Capture)];
-        _after = [.. after.Select(ItemValue.Capture)];
+        var beforeByGuid = new Dictionary<long, InvItem>(before.Count);
+        foreach (var item in before) beforeByGuid[item.Guid] = item;
+        var kept = new HashSet<long>(after.Count);
+        _templateGuids = new long[after.Count];
+        var changed = new List<(int Index, ItemValue Value)>();
+        int bytes = 128 + after.Count * sizeof(long);
+        for (int i = 0; i < after.Count; i++)
+        {
+            var item = after[i];
+            if (item.Guid != 0)
+            {
+                kept.Add(item.Guid);
+                _templateGuids[i] = item.Guid;
+                if (beforeByGuid.TryGetValue(item.Guid, out var prev) && InvItem.SamePersistedValue(prev, item))
+                    continue;
+            }
+            var captured = ItemValue.Capture(item);
+            changed.Add((i, captured));
+            bytes += 160 + (captured.Attrs?.Length ?? 0) * 2 + (captured.Enchantments?.Length ?? 0) * 2 + (captured.StringAttrs?.Length ?? 0) * 2;
+        }
+        var deleted = new List<long>();
+        foreach (var old in before)
+            if (!kept.Contains(old.Guid)) deleted.Add(old.Guid);
+        _deletedGuids = deleted.Count == 0 ? [] : [.. deleted];
+        _changed = changed.Count == 0 ? [] : [.. changed];
+        _bytes = bytes + _deletedGuids.Length * sizeof(long);
     }
-    internal override int Bytes => 128 + _before.Concat(_after).Sum(i => 160 + (i.Attrs?.Length ?? 0) * 2 +
-        (i.Enchantments?.Length ?? 0) * 2 + (i.StringAttrs?.Length ?? 0) * 2);
+    internal override int Bytes => _bytes;
     internal override string Label => "item/write-delta";
     internal override IReadOnlyList<RoleRevisionKey> RoleWrites => [RevisionStore.Role(_role, RevisionStore.Inventory)];
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
-        var before = _before.ToDictionary(i => i.Guid);
-        var kept = _after.Where(i => i.Guid != 0).Select(i => i.Guid).ToHashSet();
-        foreach (var old in _before.Where(i => !kept.Contains(i.Guid)))
+        foreach (long deletedGuid in _deletedGuids)
         {
             using var delete = DbSql.Command(db, tx, "DELETE FROM item WHERE guid=$id AND role_id=$r");
-            delete.Parameters.AddWithValue("$id", old.Guid);
+            delete.Parameters.AddWithValue("$id", deletedGuid);
             delete.Parameters.AddWithValue("$r", _role);
             if (delete.ExecuteNonQuery() != 1) throw new RolePlanConflictException();
         }
-        var guids = new long[_after.Length];
-        for (int i = 0; i < _after.Length; i++)
+        var guids = (long[])_templateGuids.Clone();
+        foreach (var (index, item) in _changed)
         {
-            var item = _after[i];
-            if (item.Guid != 0 && before.TryGetValue(item.Guid, out var previous) && previous == item)
-            {
-                guids[i] = item.Guid;
-                continue;
-            }
             using var cmd = DbSql.Command(db, tx, item.Guid == 0
                 ? "INSERT INTO item(role_id,entry,stack,pack,sort,grid,attrs,is_locked,enchantments,str_attrs,bind_type,bind_expire) VALUES($r,$e,$s,$p,$o,$g,$a,$l,$n,$sa,$bt,$be) RETURNING guid"
                 : "UPDATE item SET entry=$e,stack=$s,pack=$p,sort=$o,grid=$g,attrs=$a,is_locked=$l,enchantments=$n,str_attrs=$sa,bind_type=$bt,bind_expire=$be WHERE guid=$id AND role_id=$r");
             cmd.Parameters.AddWithValue("$r", _role);
             if (item.Guid != 0) cmd.Parameters.AddWithValue("$id", item.Guid);
             item.Bind(cmd);
-            if (item.Guid == 0) guids[i] = (long)cmd.ExecuteScalar()!;
-            else { if (cmd.ExecuteNonQuery() != 1) throw new RolePlanConflictException(); guids[i] = item.Guid; }
+            if (item.Guid == 0) guids[index] = (long)cmd.ExecuteScalar()!;
+            else { if (cmd.ExecuteNonQuery() != 1) throw new RolePlanConflictException(); guids[index] = item.Guid; }
         }
         return guids;
     }

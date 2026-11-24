@@ -188,11 +188,11 @@ public sealed class PersistenceRoutingTests : IDisposable
         Assert.All(reads, r => { Assert.NotEqual(caller, r.Thread); Assert.Equal(1L, r.QueryOnly); });
         await Assert.ThrowsAsync<SqliteException>(() => readers.ExecuteAsync<bool>(new ForbiddenReadWritePlan()));
 
-        using (var bothEntered = new CountdownEvent(2))
+        using (var bothEntered = new CountdownEvent(DbReadPool.WorkerCount))
         using (var readRelease = new ManualResetEventSlim())
         {
-            var active = new[] { readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)),
-                readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)) };
+            var active = Enumerable.Range(0, DbReadPool.WorkerCount)
+                .Select(_ => readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease))).ToArray();
             Assert.True(bothEntered.Wait(TimeSpan.FromSeconds(5)));
             try
             {
@@ -201,7 +201,7 @@ public sealed class PersistenceRoutingTests : IDisposable
                 await Assert.ThrowsAsync<DbQueueFullException>(() => readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)));
                 readRelease.Set();
                 var actual = await Task.WhenAll(active);
-                Assert.Equal(2, actual.Distinct().Count());
+                Assert.Equal(DbReadPool.WorkerCount, actual.Distinct().Count());
                 await Task.WhenAll(waiting);
             }
             finally { readRelease.Set(); }
