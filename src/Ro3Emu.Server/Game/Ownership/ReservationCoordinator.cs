@@ -60,6 +60,9 @@ public sealed class ReservationCoordinator(TimeProvider? clock = null)
     // blocked by anything else marks nothing: it would hold readers back behind an unrelated wait.
     private readonly Dictionary<long, string[]> _waitingWriters = [];
     private TaskCompletionSource _changed = NewSignal();
+    // Per-domain wakeup signals: releasing a role or entity wakes only waiters blocked on that domain instead of
+    // every waiting operation across the entire realm (eliminates O(N^2) thundering herd at 500-2000+ CCU).
+    private readonly Dictionary<(int Domain, string Id), TaskCompletionSource> _domainSignals = [];
     public long Conflicts { get; private set; }
     public int Active => _held.Count;
     internal IReadOnlyDictionary<long, ReservationKey[]> Held => _held;
@@ -223,9 +226,48 @@ public sealed class ReservationCoordinator(TimeProvider? clock = null)
         Index(operation, released, add: false);
         if (released.Length != 0) _lastRelease = _clock.GetTimestamp();
         // A runtime operation holds no keys: its release cannot unblock anyone, so it wakes no waiter.
-        if (released.Length != 0) Signal();
+        if (released.Length != 0) SignalReleased(released);
     }
-    private void Signal() { var changed = _changed; _changed = NewSignal(); changed.TrySetResult(); }
+    /// <summary>The task a waiter for <paramref name="keys"/> should await: single-domain waits subscribe only to
+    /// their own domain when no realm hold/waiter is active; multi-key or realm waits use the global signal.</summary>
+    internal Task SignalFor(ReservationKey[] keys)
+    {
+        if (keys.Length == 1 && keys[0].Kind != ReservationKind.Realm && _realmHolds == 0 && _realmWaiting.Count == 0)
+        {
+            var domain = Domain(keys[0]);
+            if (!_domainSignals.TryGetValue(domain, out var tcs)) _domainSignals[domain] = tcs = NewSignal();
+            return tcs.Task;
+        }
+        return _changed.Task;
+    }
+    private void SignalReleased(ReservationKey[] released)
+    {
+        bool anyRealm = false;
+        foreach (var key in released)
+        {
+            if (key.Kind == ReservationKind.Realm) { anyRealm = true; break; }
+            if (_domainSignals.Remove(Domain(key), out var domainTcs)) domainTcs.TrySetResult();
+        }
+        if (anyRealm) Signal();
+        else
+        {
+            var changed = _changed;
+            _changed = NewSignal();
+            changed.TrySetResult();
+        }
+    }
+    private void Signal()
+    {
+        var changed = _changed;
+        _changed = NewSignal();
+        changed.TrySetResult();
+        if (_domainSignals.Count > 0)
+        {
+            var pending = _domainSignals.Values.ToArray();
+            _domainSignals.Clear();
+            foreach (var tcs in pending) tcs.TrySetResult();
+        }
+    }
     /// <summary>An operation holding a key that overlaps <paramref name="keys"/>, and that key (diagnostics), or null.</summary>
     internal (long Operation, ReservationKey Key)? Blocker(IEnumerable<ReservationKey> keys)
     {

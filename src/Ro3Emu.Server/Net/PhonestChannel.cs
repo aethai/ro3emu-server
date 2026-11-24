@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -99,19 +100,22 @@ public sealed class PhonestChannel : IAsyncDisposable
 
     public async Task RunAsync(FrameHandler handler, CancellationToken ct)
     {
-        // Clients send small requests; a larger frame collects in _pending over several reads. Two connections per player
-        // held 64 KB each for the whole session (pinned while a receive waits).
-        var buf = new byte[16 * 1024];
+        // Zero-byte receive pins 0 bytes while the socket is idle; a 16 KB buffer is rented from ArrayPool
+        // only when bytes are ready to read, eliminating 32-64 KB pinned heap per idle player at 2000+ CCU.
         while (!ct.IsCancellationRequested)
         {
-            int n = await _socket.ReceiveAsync(buf, SocketFlags.None, ct);
-            Metrics?.ReceivedBytes(n);
-            if (n == 0) { Volatile.Write(ref _closing, 1); return; }
-            if (_inboundConverted) BeginConverted(buf.AsSpan(0, n));
-            else
+            await _socket.ReceiveAsync(Memory<byte>.Empty, SocketFlags.None, ct);
+            var buf = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            int n;
+            try
             {
-                _pending.Write(buf, 0, n);
+                n = await _socket.ReceiveAsync(buf.AsMemory(0, 16 * 1024), SocketFlags.None, ct);
+                Metrics?.ReceivedBytes(n);
+                if (n == 0) { Volatile.Write(ref _closing, 1); return; }
+                if (_inboundConverted) BeginConverted(buf.AsSpan(0, n));
+                else _pending.Write(buf, 0, n);
             }
+            finally { ArrayPool<byte>.Shared.Return(buf); }
             await DrainFramesAsync(handler);
         }
     }
@@ -320,6 +324,8 @@ public sealed class PhonestChannel : IAsyncDisposable
                     sent += n; // partial sends continue with the converted bytes, never converting again
                 }
                 Metrics?.SentBatch(frames, bytes.Length, calls, partial);
+                // Reclaim oversized high-water buffers after a large burst (e.g. login sync) so idle connections stay small.
+                if (batch.Capacity > 32 * 1024) batch = new MemoryStream();
             }
         }
         catch (Exception e) when (e is SocketException or ObjectDisposedException)

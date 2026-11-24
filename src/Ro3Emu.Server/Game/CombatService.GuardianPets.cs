@@ -177,6 +177,7 @@ public sealed partial class CombatService
 
     private async Task ResolveGuardianPulseAsync(GameSession s, GuardianPetRules.Skill skill, ActiveSkillCast action, GuardianPetRules.Pulse pulse, bool first, bool last)
     {
+        _character.ReuseStatsInThisWork(s);
         if (!CurrentCastMap(s, action)) return;
         var pulseRow = GuardianPetRules.PulseRow(action.Row, pulse, skill.Active);
         var request = action.Request.Clone();

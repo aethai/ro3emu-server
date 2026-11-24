@@ -318,7 +318,7 @@ public sealed partial class OwnerRegistry
                     Deferred++; deferred = true; DeferredForTest?.Invoke(origin);
                     blockedBy = BlockerLabel(keys);
                 }
-                await Reservations.Changed.WaitAsync(cancellation);
+                await Reservations.SignalFor(keys).WaitAsync(cancellation);
                 cancellation.ThrowIfCancellationRequested();
                 if (request?.RuntimeOnly == true) request.AssertRequest();
             }
