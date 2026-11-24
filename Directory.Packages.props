@@ -17,7 +17,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4370.26" />
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
     <!-- The QR code of the panel's two-factor setup (MIT, no dependencies). -->
     <PackageVersion Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
