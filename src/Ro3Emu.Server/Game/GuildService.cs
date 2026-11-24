@@ -29,6 +29,9 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     /// <summary>An online member's committed guild view changed guild or position (create, join, leave, appoint;
     /// achievements 104007/107003). Runs inside the commit's apply: listeners post their work.</summary>
     public List<Action<GameSession>> MembershipChanged { get; } = [];
+    /// <summary>An online member's committed guild id changed (create, join, leave, kick, disband, merge).
+    /// Runs inside the commit's apply: listeners post their work.</summary>
+    public List<Action<GameSession>> GuildIdChanged { get; } = [];
     /// <summary>Rank rights were saved for this guild. Listeners post work without changing membership.</summary>
     public List<Action<long>> RightsChanged { get; } = [];
     public const uint Apply = 32223, ApplyOpe = 32224, ApplyChange = 32225, Edit = 32230, BaseChange = 32231;
@@ -786,6 +789,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                     if (view.Session == null) continue;
                     view.Session.Guild = view.Personal;
                     chat.GuildMembershipChanged(view.Session, g.Id);
+                    foreach (var handler in GuildIdChanged) handler(view.Session);
                 }
             }
         }

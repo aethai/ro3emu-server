@@ -381,6 +381,8 @@ public static partial class ServerHost
         app.Services.GetRequiredService<ChatService>().TextSent.Add(questTasks.OnChatSent); // 103020
         app.Services.GetRequiredService<MountService>().RideChanged.Add(s => { questTasks.OnStateChanged(s); return Task.CompletedTask; }); // 101021
         app.Services.GetRequiredService<GuildService>().MembershipChanged.Add(app.Services.GetRequiredService<GuildVoiceService>().OnMembershipChanged);
+        app.Services.GetRequiredService<GuildService>().GuildIdChanged.Add(s =>
+            app.Services.GetRequiredService<GameLoop>().Post(() => app.Services.GetRequiredService<Maps.World>().ReshowPlayerAsync(s)));
         app.Services.GetRequiredService<GuildService>().RightsChanged.Add(app.Services.GetRequiredService<GuildVoiceService>().OnRightsChanged);
         // The Tavern's achievements: 106007 counts the daily quest's deliveries, 106008 reads the Star Power.
         var achievements = app.Services.GetRequiredService<AchievementService>();

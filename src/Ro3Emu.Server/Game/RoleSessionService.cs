@@ -536,6 +536,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             Name = role.Name,
             EntityCamp = session.EventFaction > 0 ? session.EventFaction : 1,
             TeamId = session.UnitTeamId,
+            GuildId = session.Guild?.GuildId ?? 0,
             Face = face,
             MovementInfo = new MovementInfo
             {

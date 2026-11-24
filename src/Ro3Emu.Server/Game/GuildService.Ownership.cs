@@ -155,7 +155,11 @@ public sealed partial class GuildService
                 {
                     long previous = online.Guild?.GuildId ?? 0, previousOfficial = online.Guild?.Official ?? 0;
                     online.Guild = view;
-                    if (previous != view.GuildId) chat.GuildMembershipChanged(online, previous);
+                    if (previous != view.GuildId)
+                    {
+                        chat.GuildMembershipChanged(online, previous);
+                        foreach (var handler in GuildIdChanged) handler(online);
+                    }
                     if (previous != view.GuildId || previousOfficial != view.Official)
                         foreach (var handler in MembershipChanged) handler(online);
                 }
