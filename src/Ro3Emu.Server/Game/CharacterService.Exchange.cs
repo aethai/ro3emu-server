@@ -178,7 +178,7 @@ public sealed partial class CharacterService
         var attachment = session.Attachment;
         var lifeUse = LifeItemExchange.Value;
         if (lifeUse is null || !lifeUse.Active || !ReferenceEquals(lifeUse.Session, session) || lifeUse.Committed) lifeUse = null;
-        if (baseExp < 0 || jobExp < 0) throw new ArgumentOutOfRangeException(nameof(baseExp));
+        if (baseExp < 0 || jobExp < 0) throw new ArgumentOutOfRangeException(nameof(request));
         var nextProgress = CloneProgress(session.Progress!);
         if (baseExp > 0 || jobExp > 0) ApplyExp(nextProgress, baseExp, jobExp);
         var need = cost.GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => c.Count))).ToList();
