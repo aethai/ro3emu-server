@@ -60,7 +60,7 @@ public sealed partial class BuffService
         // (inferred) Spend one charge per incoming control application; ordinary immunity spends none.
         if (charge.PileCount <= 1) await RemoveAsync(player, charge);
         else await AddCoreAsync(player, charge.ConfigId, (int)Math.Clamp(charge.ExpireMs - MonsterService.NowMs, 1, int.MaxValue),
-            charge.SourceId, charge.PileCount - 1, guardianOwned: true);
+            charge.SourceId, charge.PileCount - 1, new BuffAddOptions { GuardianOwned = true });
         return true;
     }
 

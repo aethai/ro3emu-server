@@ -157,13 +157,20 @@ public sealed partial class CharacterService
         object outcome, string kind = CharacterFamilyEconomy.ItemActionKind)
     {
         var s = use.Session;
-        return await ExchangeLockedAsync(s, [], [], new Dictionary<long, int> { [use.Item.Guid] = use.Count }, popup: false,
-            sync: false, persist: tx =>
+        return await ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Instances = new Dictionary<long, int> { [use.Item.Guid] = use.Count },
+            Popup = false,
+            Sync = false,
+            Persist = tx =>
             {
                 persist?.Invoke(tx);
                 tx.WithEconomy(FamilyEconomy(s, kind, [(use.Item.Entry, use.Count)], [],
                     new { Item = use.Item.Entry, use.Count, use.Effects, Outcome = outcome }));
-            }, committed: committed, asyncCommit: true) != null;
+            },
+            Committed = committed,
+            AsyncCommit = true,
+        }) != null;
     }
 
     /// <summary>
@@ -189,13 +196,19 @@ public sealed partial class CharacterService
         if (scope != null) scope.Active = false;
         try
         {
-            return await ExchangeLockedAsync(s, [], [], new Dictionary<long, int> { [use.Item.Guid] = use.Count }, popup: false,
-                sync: false, persist: tx => { persist(tx); scope?.Persist(tx); tx.WithEconomy(envelope); },
-                committed: () =>
+            return await ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Instances = new Dictionary<long, int> { [use.Item.Guid] = use.Count },
+                Popup = false,
+                Sync = false,
+                Persist = tx => { persist(tx); scope?.Persist(tx); tx.WithEconomy(envelope); },
+                Committed = () =>
                 {
                     if (scope != null) { scope.Committed = true; scope.Publish(); }
                     committed?.Invoke();
-                }, asyncCommit: true) != null;
+                },
+                AsyncCommit = true,
+            }) != null;
         }
         finally { if (scope != null) scope.Active = true; }
     }

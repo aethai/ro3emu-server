@@ -127,6 +127,18 @@ public sealed partial class BuffService : IGameTicker
         _ => 0,
     };
 
+    private sealed record BuffAddOptions
+    {
+        public static readonly BuffAddOptions Default = new();
+        public long ShieldAmount { get; init; }
+        public bool GuardianOwned { get; init; }
+        public bool ShieldDebuffImmunity { get; init; }
+        public int HpFloorBasisPoints { get; init; }
+        public double AttributeMultiplier { get; init; } = 1;
+        public bool StackShield { get; init; }
+        public bool UntilSpent { get; init; }
+    }
+
     /// <summary>Place or refresh a validated buff. Zero-time source rows retain the previous 60s fallback (inferred).</summary>
     public Task AddAsync(GameSession p, int configId, int durationMs, long sourceId) =>
         AddCoreAsync(p, configId, durationMs, sourceId, null);
@@ -139,24 +151,31 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>Apply a timed buff with an optional finite shield. The caller evaluates any shield formula;
     /// BuffConfig._kChangeAttri is a verified data source, while shield stacking and rounding are inferred.</summary>
     public Task AddSupportAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0) =>
-        AddCoreAsync(p, configId, durationMs, sourceId, null, shieldAmount);
+        AddCoreAsync(p, configId, durationMs, sourceId, null, new BuffAddOptions { ShieldAmount = shieldAmount });
 
     /// <summary>Apply a player skill's shield buff (<see cref="SkillShieldRules"/>): each pile adds one
     /// <paramref name="shieldPerPile"/> to the live shield, up to one per pile (inferred).</summary>
     internal Task AddSkillShieldAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldPerPile) =>
-        AddCoreAsync(p, configId, durationMs, sourceId, null, shieldPerPile, stackShield: true);
+        AddCoreAsync(p, configId, durationMs, sourceId, null,
+            new BuffAddOptions { ShieldAmount = shieldPerPile, StackShield = true });
 
     internal Task AddGuardianAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0,
         bool shieldDebuffImmunity = false, int hpFloorBasisPoints = 0, double attributeMultiplier = 1) =>
-        AddCoreAsync(p, configId, durationMs, sourceId, null, shieldAmount, guardianOwned: true,
-            shieldDebuffImmunity, hpFloorBasisPoints, attributeMultiplier);
+        AddCoreAsync(p, configId, durationMs, sourceId, null, new BuffAddOptions
+        {
+            ShieldAmount = shieldAmount,
+            GuardianOwned = true,
+            ShieldDebuffImmunity = shieldDebuffImmunity,
+            HpFloorBasisPoints = hpFloorBasisPoints,
+            AttributeMultiplier = attributeMultiplier,
+        });
 
     private async Task AddCoreAsync(GameSession p, int configId, int durationMs, long sourceId, int? explicitPileCount,
-        long shieldAmount = 0, bool guardianOwned = false, bool shieldDebuffImmunity = false, int hpFloorBasisPoints = 0,
-        double attributeMultiplier = 1, bool stackShield = false, bool untilSpent = false)
+        BuffAddOptions? options = null)
     {
+        options ??= BuffAddOptions.Default;
         if (p.Role == null || _data.Row("BuffConfig", configId) is not { } row || GameData.Int(row, "_iBuffID") <= 0) return;
-        if (await RejectIncomingAsync(p, row, guardianOwned, sourceId)) return;
+        if (await RejectIncomingAsync(p, row, options.GuardianOwned, sourceId)) return;
         if (durationMs <= 0) durationMs = (int)GameData.Int(row, "_iTime");
         if (durationMs <= 0) durationMs = 60000;
         if (sourceId != p.Role.Id && !ApplyDecay(p.Role.Id, p.SceneEntry, configId, ref durationMs)) return;
@@ -174,12 +193,12 @@ public sealed partial class BuffService : IGameTicker
         if (existing != null && existing.ConfigId != configId) { await RemoveAsync(p, existing); existing = null; }
         IEnumerable<(long Id, double Value)> pairs = GameData.Pairs(row, "_kChangeAttri");
         if (SourceAttributes != null) pairs = SourceAttributes(sourceId, row, [.. pairs]);
-        var changes = pairs.Select(c => (c.Id, c.Value * pile * attributeMultiplier)).ToList();
+        var changes = pairs.Select(c => (c.Id, c.Value * pile * options.AttributeMultiplier)).ToList();
         var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
-            now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(configId, group, guardianOwned),
-            ShieldRemaining: stackShield ? SkillShieldRules.Stacked(LiveShield(existing), shieldAmount, pile) : Math.Max(0, shieldAmount),
-            IsGuardianOwned: guardianOwned, ShieldDebuffImmunity: shieldDebuffImmunity, HpFloorBasisPoints: hpFloorBasisPoints,
-            UntilSpent: untilSpent);
+            now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(configId, group, options.GuardianOwned),
+            ShieldRemaining: options.StackShield ? SkillShieldRules.Stacked(LiveShield(existing), options.ShieldAmount, pile) : Math.Max(0, options.ShieldAmount),
+            IsGuardianOwned: options.GuardianOwned, ShieldDebuffImmunity: options.ShieldDebuffImmunity, HpFloorBasisPoints: options.HpFloorBasisPoints,
+            UntilSpent: options.UntilSpent);
         if (existing != null) p.Buffs.Remove(existing);
         p.Buffs.Add(buff);
         TrackPeriodic(p, null, buff);
@@ -192,7 +211,7 @@ public sealed partial class BuffService : IGameTicker
             EntityUuid = (ulong)p.Role.Id, BuffInfo = new AoIBuffInfo { AddBuffs = { info } },
         });
         if (existing?.StateOrdinal != buff.StateOrdinal || buff.StateOrdinal != 0) await RefreshControlAsync(p);
-        if (guardianOwned && group == BlindGroup) await PublishBlindAsync(p);
+        if (options.GuardianOwned && group == BlindGroup) await PublishBlindAsync(p);
         if (buff.Changes.Count > 0 || existing?.Changes.Count > 0 || buff.ShieldRemaining > 0 || existing?.ShieldRemaining > 0)
             await _character.RefreshStatsAsync(p);
         foreach (var handler in Changed) await handler(p);
@@ -371,7 +390,7 @@ public sealed partial class BuffService : IGameTicker
     /// with no time, as a permanent buff does (<see cref="Wire"/>); the server drops it after <see cref="UntilSpentBoundMs"/>.
     /// </summary>
     internal Task AddUntilSpentAsync(GameSession p, int configId, long sourceId, int? piles = null) =>
-        AddCoreAsync(p, configId, UntilSpentBoundMs, sourceId, piles, untilSpent: true);
+        AddCoreAsync(p, configId, UntilSpentBoundMs, sourceId, piles, new BuffAddOptions { UntilSpent = true });
 
     /// <summary>How many piles of a buff group a monster holds.</summary>
     internal int UnitPiles(WorldUnit unit, int buffGroup) => _unitBuffs.TryGetValue(unit.Uid, out var list)

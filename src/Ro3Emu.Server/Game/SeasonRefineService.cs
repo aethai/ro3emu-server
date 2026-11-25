@@ -148,9 +148,15 @@ public sealed class SeasonRefineService
             foreach (int group in offered) slot.CanSelectedAttr[group] = 0;
             var economy = _character.ProgressionEconomy(session, "cd13c/season-refine-recast", cost!, [],
                 new { req.EquipType, req.RefineId, Offers = offered.ToArray() });
-            var paid = await _character.ExchangeLockedAsync(session, cost!, [], popup: false, sync: false,
-                persist: tx => { tx.RoleBlob(session.Role!.Id, "season_refine", next.ToByteArray()); tx.WithEconomy(economy); },
-                committed: () => session.SeasonRefine = next, asyncCommit: true);
+            var paid = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+            {
+                Cost = cost!,
+                Popup = false,
+                Sync = false,
+                Persist = tx => { tx.RoleBlob(session.Role!.Id, "season_refine", next.ToByteArray()); tx.WithEconomy(economy); },
+                Committed = () => session.SeasonRefine = next,
+                AsyncCommit = true,
+            });
             if (paid == null) result = _character.ShortageOf(session, cost!); // (inferred) ordinary item/currency shortage codes.
             else
             {

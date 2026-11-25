@@ -174,12 +174,18 @@ public sealed class ValhallaService
         if (error == 0)
         {
             var saved = next!;
-            if (await _character.ExchangeLockedAsync(s, cost, [], popup: false, persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = cost,
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role!.Id, "heroic_spirit", saved.ToByteArray());
                     tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/valhalla-pray", cost, [],
                         new { saved.CurLv, saved.CurExp }));
-                }, committed: () => s.OdinStatue = saved) == null)
+                },
+                Committed = () => s.OdinStatue = saved,
+            }) == null)
                 error = ErrCoins;
         }
         await s.SendGameAsync(Pray, new HeroicSpiritPrayRes { Err = error });

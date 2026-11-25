@@ -78,8 +78,11 @@ public sealed partial class PronteraDefenseService
         if (round > 0) next.RoundContribution[round] = next.RoundContribution.GetValueOrDefault(round) + count;
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(next);
         long open = Opening();
-        var committed = await _character.ExchangeAsync(session, [(SupplyItem, count)], [], popup: false,
-            persist: tx =>
+        var committed = await _character.ExchangeAsync(session, new ExchangeRequest
+        {
+            Cost = [(SupplyItem, count)],
+            Popup = false,
+            Persist = tx =>
             {
                 tx.RoleBlob(session.Role.Id, "timed_activity", bytes);
                 tx.Add(new PronteraDefenseGuildPrepPlan(open, guild.Id, count));
@@ -87,7 +90,8 @@ public sealed partial class PronteraDefenseService
                     $"prontera/donate/{open}/{session.Role.Id}/{Guid.NewGuid():N}",
                     [(SupplyItem, count)], [], new { Count = count, next.ContributionPoint, Guild = guild.Id }));
             },
-            committed: () => session.Defense = next);
+            Committed = () => session.Defense = next,
+        });
         response.Result = committed == null ? ErrorCodes.Unknown : 0;
         if (committed == null) return;
         await NotifyAsync(session);

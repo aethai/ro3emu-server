@@ -22,9 +22,12 @@ public sealed partial class CharacterService
         using var _ = await LockAsync(session);
         count = Math.Clamp(count, 1, GameData.Int(row, "_iType") == ItemTypeCurrency ? int.MaxValue : 999);
         // C/D 13a: an exchange keeps the live InvItem instances (the award path would replace them).
-        await ExchangeLockedAsync(session, [], [(entry, count)],
-            persist: tx => tx.WithEconomy(FamilyEconomy(session, "cd13a/character-gm-grant", [], [(entry, count)],
-                new { Entry = entry, Count = count })));
+        await ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Goods = [(entry, count)],
+            Persist = tx => tx.WithEconomy(FamilyEconomy(session, "cd13a/character-gm-grant", [], [(entry, count)],
+                new { Entry = entry, Count = count })),
+        });
         return $"+{count} {data.ItemName(entry)} ({entry})";
     }
 

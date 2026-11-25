@@ -312,15 +312,19 @@ public sealed class ParagonService
     {
         long role = s.Role!.Id;
         byte[] bytes = next.ToByteArray();
-        var result = await _character.ExchangeLockedAsync(s, [], [], paid, popup: false,
-            boundGoods: [.. returned.Select(c => (c.ItemEntry, 1, (int)(c.ItemBindInfo?.ItemBindType ?? 0)))],
-            persist: tx =>
+        var result = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Instances = paid,
+            Popup = false,
+            BoundGoods = [.. returned.Select(c => (c.ItemEntry, 1, (int)(c.ItemBindInfo?.ItemBindType ?? 0)))],
+            Persist = tx =>
             {
                 tx.RoleBlob(role, "paragon", bytes);
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/paragon-" + action, [.. costEntries.Select(e => (e, 1L))],
                     [.. returned.Select(c => (c.ItemEntry, 1))], new { Action = action, State = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)) }));
             },
-            committed: () => s.Paragon = next);
+            Committed = () => s.Paragon = next,
+        });
         if (result == null) return returned.Count > 0 ? ErrorCodes.BagFull : ErrorCodes.ItemsShort;
         await PublishAsync(s);
         return 0;

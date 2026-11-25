@@ -81,12 +81,16 @@ public sealed partial class GuildService
             g.ImpeachEndMs = now + Setting("ActiveImpeachTime", 60)[0] * 60_000;
             g.ImpeachNeed = ImpeachNeed(g);
             g.ImpeachResponders = [s.Role.Id];
-            bool paid = cost.Length < 2 || cost[1] <= 0 || await character.ExchangeLockedAsync(s, [((int)cost[0], cost[1])], [],
-                persist: tx =>
+            bool paid = cost.Length < 2 || cost[1] <= 0 || await character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = [((int)cost[0], cost[1])],
+                Persist = tx =>
                 {
                     store.EnlistSave(g, tx, "guild disappeared during impeachment"); EnlistViews(g, tx);
                     tx.WithEconomy(GuildPayment(s, "guild-impeach", (int)cost[0], cost[1]));
-                }, asyncCommit: true) != null;
+                },
+                AsyncCommit = true,
+            }) != null;
             if (paid && (cost.Length < 2 || cost[1] <= 0)) await SaveGuildAsync(g);
             if (!paid)
             {

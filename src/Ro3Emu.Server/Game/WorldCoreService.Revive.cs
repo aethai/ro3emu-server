@@ -135,14 +135,20 @@ public sealed partial class WorldCoreService
             {
                 try
                 {
-                    var paid = await _character.ExchangeAsync(s, [(item, count)], [], popup: false, sync: false,
-                        rewardSettlement: new RewardSettlement(source, "world-revive"), committed: () =>
+                    var paid = await _character.ExchangeAsync(s, new ExchangeRequest
+                    {
+                        Cost = [(item, count)],
+                        Popup = false,
+                        Sync = false,
+                        RewardSettlement = new RewardSettlement(source, "world-revive"),
+                        Committed = () =>
                         {
                             if (!_combat.CommitReviveClaim(s))
                                 throw new InvalidOperationException("Paid revive lost its exclusive claim after commit.");
                             committed = true;
                             _dungeons.RecordExternalRevive(s);
-                        });
+                        },
+                    });
                     if (paid == null) error = ErrorCodes.ItemsShort;
                 }
                 catch

@@ -48,11 +48,16 @@ public sealed partial class GuildCaravanService
         using (await CharacterService.Lock(s, keys))
         {
             if (!ReferenceEquals(s.Role, role) || Guild(s)?.Id != guild.Id) return;
-            committed = await _character.ExchangeLockedAsync(s, [], [], popup: false, persist: tx =>
+            committed = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Popup = false,
+                Persist = tx =>
             {
                 _guilds.EnlistCaravanReward(guild.Id, role.Id, funds, 0, tx);
                 tx.WithEconomy(economy);
-            }, asyncCommit: true);
+            },
+                AsyncCommit = true,
+            });
         }
         if (committed == null) return;
         await _guildService.RefreshCaravanResourcesAsync(guild.Id);

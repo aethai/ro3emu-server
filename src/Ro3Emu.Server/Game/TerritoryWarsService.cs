@@ -687,8 +687,9 @@ public sealed partial class TerritoryWarsService : IGameTicker
             var next = Copy(current);
             next.Pending.Remove(key);
             next.Paid.Add(key);
-            if (await _character.ExchangeLockedAsync(s, [], [],
-                persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role.Id, "territory_wars", JsonSerializer.SerializeToUtf8Bytes(next));
                     if (goods.Any(g => g.Count > 0 && g.Entry is not (100 or 101)))
@@ -697,7 +698,9 @@ public sealed partial class TerritoryWarsService : IGameTicker
                             $"territory-pending-deliver:{s.Role.Id}:{key}", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                             [], [], [], JsonSerializer.SerializeToUtf8Bytes(new { Role = s.Role.Id, Key = key })));
                 },
-                boundGoods: [.. goods.Select(g => (g.Entry, g.Count, g.Bind))], asyncCommit: true) == null) continue;
+                BoundGoods = [.. goods.Select(g => (g.Entry, g.Count, g.Bind))],
+                AsyncCommit = true,
+            }) == null) continue;
             current = next;
         }
         s.TerritoryWars = LoadRole(s.Role.Id);

@@ -547,12 +547,17 @@ public sealed partial class CardService
         if (error == 0 && payment.Error != 0) error = payment.Error;
         if (error == 0 && !LedgerFits(card!, payment.Ledger, 510, 513)) error = ErrorCodes.Parameter;
         List<(int Entry, long Count)> economyCosts = error == 0 ? CardPaymentCosts(session, payment.Currency, payment.Instances) : [];
-        if (error == 0 && await _character.ExchangeLockedAsync(session, payment.Currency, [], payment.Instances,
-            popup: false, sync: false, reservedGuid: card!.Guid,
-            persist: builder => builder.WithEconomy(_character.FamilyEconomy(session, "cd13a/card-level",
+        if (error == 0 && await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = payment.Currency,
+            Instances = payment.Instances,
+            Popup = false,
+            Sync = false,
+            ReservedGuid = card!.Guid,
+            Persist = builder => builder.WithEconomy(_character.FamilyEconomy(session, "cd13a/card-level",
                 economyCosts, [],
                 new { Card = card!.Entry, Guid = card!.Guid, NewLevel = level + 1 })),
-            stageItems: staged =>
+            StageItems = staged =>
             {
                 var target = staged.Single(i => i.Guid == card!.Guid);
                 StageSingleTarget(staged, target);
@@ -560,7 +565,9 @@ public sealed partial class CardService
                 target.Attrs[501] = level + 1;
                 if (RecordCost(target, payment.Ledger, 510, 513) != 0)
                     throw new InvalidOperationException("Validated card level ledger changed during staging.");
-            }, asyncCommit: true) == null) error = ErrorCodes.ItemsShort;
+            },
+            AsyncCommit = true,
+        }) == null) error = ErrorCodes.ItemsShort;
         if (error == 0 && card != null)
         {
             level++;
@@ -605,9 +612,11 @@ public sealed partial class CardService
             int points = unlocked ? TierPoints(card.Entry, reached, library.Cards[card.Entry].CardStar) : 0;
             if (points > 0 && Param("LibraryOverviewPointID") is var pointItem and > 0) tierGains.Add((pointItem, points));
         }
-        if (error == 0 && await _character.ExchangeLockedAsync(session, payment.Currency, tierGains, payment.Instances,
-            popup: false, sync: false, reservedGuid: card!.Guid,
-            persist: builder =>
+        if (error == 0 && await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = payment.Currency, Goods = tierGains, Instances = payment.Instances,
+            Popup = false, Sync = false, AsyncCommit = true, ReservedGuid = card!.Guid,
+            Persist = builder =>
             {
                 if (nextPlans != null) builder.RoleBlob(session.Role!.Id, "card_plans", nextPlans.ToByteArray());
                 if (nextLibrary != null) builder.RoleBlob(session.Role!.Id, "library", nextLibrary.ToByteArray());
@@ -615,7 +624,7 @@ public sealed partial class CardService
                     economyCosts, [.. tierGains],
                     new { Card = card!.Entry, Guid = card!.Guid, NewStar = tier + 1 }));
             },
-            stageItems: staged =>
+            StageItems = staged =>
             {
                 var target = staged.Single(i => i.Guid == card!.Guid);
                 StageSingleTarget(staged, target);
@@ -629,12 +638,8 @@ public sealed partial class CardService
                     CaptureActive(session, nextPlans);
                 }
             },
-            committed: () =>
-            {
-                if (nextPlans != null) session.CardPlans = nextPlans;
-                if (nextLibrary != null) session.Library = nextLibrary;
-            },
-            asyncCommit: true) == null) error = ErrorCodes.ItemsShort;
+            Committed = () => { if (nextPlans != null) session.CardPlans = nextPlans; if (nextLibrary != null) session.Library = nextLibrary; },
+        }) == null) error = ErrorCodes.ItemsShort;
         var response = new CardStarUpResp
         {
             Result = error, SourceType = req.SourceType, Guid = req.Guid,
@@ -702,12 +707,13 @@ public sealed partial class CardService
         if (error == 0 && goods.Any(g => _data.Row("ItemConfig", g.Entry) == null || g.CardType != 0 && !_character.IsCard(g.Entry)))
             error = ErrorCodes.Parameter;
         List<InvItem>? granted = null;
-        if (error == 0 && (granted = await _character.ExchangeLockedAsync(session, fee, [], popup: false, sync: false,
-            reservedGuid: card!.Guid, attributedGoods: goods,
-            persist: builder => builder.WithEconomy(_character.FamilyEconomy(session, "cd13a/card-revert",
+        if (error == 0 && (granted = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = fee, Popup = false, Sync = false, ReservedGuid = card!.Guid, AttributedGoods = goods,
+            Persist = builder => builder.WithEconomy(_character.FamilyEconomy(session, "cd13a/card-revert",
                 fee, [.. goods.Select(g => (g.Entry, g.Count))],
                 new { Card = card!.Entry, Guid = card!.Guid, Refunded = goods.Select(g => new { g.Entry, g.Count, g.BindType, g.BindExpire, g.CardType }).ToArray() })),
-            stageAfterGoods: staged =>
+            StageAfterGoods = staged =>
             {
                 var target = staged.Single(i => i.Guid == card!.Guid);
                 StageSingleTarget(staged, target);
@@ -717,7 +723,9 @@ public sealed partial class CardService
                 if (target.StringAttrs != null)
                     foreach (var key in target.StringAttrs.Keys.Where(k => k is >= 510 and <= 513 or >= 520 and <= 529).ToList())
                         target.StringAttrs.Remove(key);
-            }, asyncCommit: true)) == null)
+            },
+            AsyncCommit = true,
+        })) == null)
             error = _character.ShortageOf(session, fee);
         if (error == 0 && card != null)
         {

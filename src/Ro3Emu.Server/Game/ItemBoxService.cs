@@ -100,12 +100,18 @@ public sealed class ItemBoxService : IGameTicker
         var plain = goods.Where(g => g.Bind == 0).Select(g => (g.Entry, g.Count)).ToList();
         var bound = goods.Where(g => g.Bind != 0).ToList();
         if (_character.PlainGrantError(s, plain, boundGoods: bound) is var full and not 0) return full;
-        var granted = await _character.ExchangeLockedAsync(s, [], plain, new Dictionary<long, int> { [item.Guid] = count },
-            popup: false, sync: false, boundGoods: bound,
-            persist: tx => tx.WithEconomy(_character.FamilyEconomy(s, BoxKind, [(item.Entry, (long)count)],
+        var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Goods = plain,
+            Instances = new Dictionary<long, int> { [item.Guid] = count },
+            Popup = false,
+            Sync = false,
+            BoundGoods = bound,
+            Persist = tx => tx.WithEconomy(_character.FamilyEconomy(s, BoxKind, [(item.Entry, (long)count)],
                 [.. goods.Select(g => (g.Entry, g.Count))],
                 new { Item = item.Entry, ItemGuid = item.Guid, Count = count, Award = group, Goods = goods })),
-            asyncCommit: true);
+            AsyncCommit = true,
+        });
         if (granted == null) return ErrorCodes.ItemsShort;
         var performance = row.TryGetProperty("_kAwardperformance", out var shown) && shown.ValueKind == JsonValueKind.Array
             && shown.GetArrayLength() > 0 && GameData.Number(shown[0]) is { } manifest and > 0 ? (int)manifest : ManifestCommon;

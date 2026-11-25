@@ -67,9 +67,13 @@ public sealed partial class TavernService
     {
         if (_character.CountOf(s, req.GiftId) < req.GiftNum) return false;
         string source = $"tavern/gift/{s.Role!.Id}/{Guid.NewGuid():N}";
-        var paid = await _character.ExchangeAsync(s, [(req.GiftId, (long)req.GiftNum)], [], popup: false,
-            persist: tx => tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "tavern-gift", source, [(req.GiftId, (long)req.GiftNum)], [],
-                new { req.BarRoomGuid, req.TargetGuid, req.GiftId, req.GiftNum })));
+        var paid = await _character.ExchangeAsync(s, new ExchangeRequest
+        {
+            Cost = [(req.GiftId, (long)req.GiftNum)],
+            Popup = false,
+            Persist = tx => tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "tavern-gift", source, [(req.GiftId, (long)req.GiftNum)], [],
+                new { req.BarRoomGuid, req.TargetGuid, req.GiftId, req.GiftNum })),
+        });
         return paid != null;
     }
 

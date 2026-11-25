@@ -102,16 +102,20 @@ public sealed partial class CardService
             long bindExpire = bindType == 2 ? inputs.Where(item => item.BindType == 2).Max(item => item.BindExpire) : 0;
             try
             {
-                var result = await _character.ExchangeLockedAsync(session, [], [], selected,
-                    popup: false, sync: false,
-                    persist: builder =>
+                var result = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+                {
+                    Instances = selected,
+                    Popup = false,
+                    Sync = false,
+                    Persist = builder =>
                     {
                         builder.WithEconomy(_character.FamilyEconomy(session, "cd13a/card-flash",
                             [.. inputs.Select(item => (item.Entry, (long)selected[item.Guid]))],
                             [(output, 1)], new { Output = output, bindType, bindExpire }));
                     },
-                    attributedGoods: [new CharacterService.AttributedGood(output, 1, bindType, bindExpire, 1)],
-                    asyncCommit: true);
+                    AttributedGoods = [new CharacterService.AttributedGood(output, 1, bindType, bindExpire, 1)],
+                    AsyncCommit = true,
+                });
                 if (result == null || result.Count != 1) error = ErrorCodes.ItemsShort;
                 else granted = result[0];
             }
