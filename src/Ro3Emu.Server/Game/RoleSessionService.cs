@@ -375,7 +375,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         // round trip later, well after a charge of 80-160 ms. Taken, it put the server back where the move began: viewers
         // saw the player go back, and the next 31112 (startPos) or walk-check correction took the client there too.
         // (inferred) Such a walk is dropped, without a correction (SkillCarry.Predates).
-        if (session.Carry is { } carry && carry.Predates(walk.Pos, MonsterService.NowMs)) return;
+        if (session.Carry is { } carry && carry.Predates(walk.Pos, (long)NowMs())) return;
         if (!await scene.AcceptWalkAsync(session, walk)) return;
         session.PreviousPosition = session.Position;
         session.Position = walk.Pos;

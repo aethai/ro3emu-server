@@ -21,7 +21,7 @@ public sealed partial class DungeonService
         if (ShelterBoss(a, shelter) is not { } boss) return;
         await BroadcastAsync(a, SystemBroadcast, new SystemBoardCastMsgNtf { Source = MsgSource.System, ChatId = shelter.Tip });
         // The boss holds its ground while it gathers the light, as during any special cast.
-        boss.BusyUntilMs = Math.Max(boss.BusyUntilMs, MonsterService.NowMs + shelter.WarnMs);
+        boss.BusyUntilMs = Math.Max(boss.BusyUntilMs, _loop.NowMs + shelter.WarnMs);
         StepLater(a, generation, shelter.WarnMs, () => ShelterStrikeAsync(a, generation, shelter), whileFighting: true);
     }
 

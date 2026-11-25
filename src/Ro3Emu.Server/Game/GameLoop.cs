@@ -42,7 +42,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     private readonly List<IGameTicker> _tickers = [];
     private IGameTicker[] _tickersSnapshot = [];
     private readonly PriorityQueue<Func<Task>, TimeSpan> _timers = new();
-    private readonly Stopwatch _clock = new();
+    private readonly TimeProvider _time;
     private readonly ILogger<GameLoop> _log;
     private readonly Thread _thread;
     private readonly LoopContext _context;
@@ -61,23 +61,34 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     private readonly HashSet<string> _orphanSites = [];
     /// <summary>Never closes and is never counted as outstanding work.</summary>
     private WorkPermit _orphan = null!;
-    private bool _started;
+    private long _startedAt;
+    private volatile bool _started;
     private bool _disposeRequested;
     private bool _queueDisposed;
     private TimeSpan _lastTick;
     private TimeSpan _nextStuckScan;
 
-    public GameLoop(ILogger<GameLoop> log, ServerMetrics? metrics = null)
+    public GameLoop(ILogger<GameLoop> log, ServerMetrics? metrics = null, TimeProvider? time = null)
     {
         _log = log;
         _metrics = metrics;
+        _time = time ?? TimeProvider.System;
         _orphan = new WorkPermit(this, 0, "orphan continuation", false, 0) { RefCount = int.MaxValue / 2 };
         _context = new LoopContext(this);
         _thread = new Thread(Run) { IsBackground = true, Name = "game-loop" };
     }
 
+    /// <summary>The realm's unified clock.</summary>
+    public TimeProvider Time => _time;
+
     /// <summary>Monotonic game time.</summary>
-    public TimeSpan Now => _clock.Elapsed;
+    public TimeSpan Now => _started ? _time.GetElapsedTime(_startedAt) : TimeSpan.Zero;
+
+    /// <summary>Current realm UTC wall clock in Unix milliseconds.</summary>
+    public long NowMs => _time.GetUtcNow().ToUnixTimeMilliseconds();
+
+    /// <summary>Current realm UTC wall clock in Unix seconds.</summary>
+    public long NowSec => _time.GetUtcNow().ToUnixTimeSeconds();
 
     internal Ownership.OwnerRegistry? Owners { get; set; }
     /// <summary>Admitted work older than this is reported once as stuck, connections excepted (inferred; server tuning).</summary>
@@ -400,9 +411,9 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             ObjectDisposedException.ThrowIf(_disposeRequested, this);
             if (_phase != GameLoopPhase.Accepting) throw new InvalidOperationException("The game loop has stopped.");
             if (_started) throw new InvalidOperationException("The game loop has already started.");
-            _clock.Start();
-            _thread.Start();
+            _startedAt = _time.GetTimestamp();
             _started = true;
+            _thread.Start();
         }
         return Task.CompletedTask;
     }
@@ -463,7 +474,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             int items = 0;
             while (!_queue.IsCompleted)
             {
-                var now = _clock.Elapsed;
+                var now = Now;
                 if (now >= nextTick)
                 {
                     long tickStart = Stopwatch.GetTimestamp();
@@ -523,8 +534,9 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     items = 0; itemTicks = 0;
                     // Keep the 50 ms phase; skip missed deadlines rather than running a catch-up ticker storm.
                     nextTick += TickInterval;
-                    if (nextTick <= _clock.Elapsed)
-                        nextTick += TimeSpan.FromTicks(((_clock.Elapsed - nextTick).Ticks / TickInterval.Ticks + 1) * TickInterval.Ticks);
+                    var after = Now;
+                    if (nextTick <= after)
+                        nextTick += TimeSpan.FromTicks(((after - nextTick).Ticks / TickInterval.Ticks + 1) * TickInterval.Ticks);
                 }
                 // Always give queued work one turn after a timer/ticker batch, even if that batch overran.
                 if (_queue.TryTake(out var item))
@@ -537,7 +549,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     if (_metrics != null && Stopwatch.GetElapsedTime(started, finished).TotalMilliseconds >= SlowItemMs)
                         _metrics.RecordSlowItem(Describe(item.Callback, item.State), Stopwatch.GetElapsedTime(started, finished).TotalMilliseconds);
                 }
-                else if (!_queue.IsCompleted) waiter.Wait(nextTick - _clock.Elapsed);
+                else if (!_queue.IsCompleted) waiter.Wait(nextTick - Now);
             }
         }
         finally

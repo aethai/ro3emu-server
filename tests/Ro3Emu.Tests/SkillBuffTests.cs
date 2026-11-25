@@ -186,7 +186,7 @@ public sealed class SkillBuffTests : IAsyncLifetime
         await Next(alice, BuffService.ImmuneDeathNotify, PlayerOnEnterImmuneDeadNotify.Parser);
         await Run(() =>
         {
-            session.ImmuneDeathOffer = session.ImmuneDeathOffer! with { ExpiresMs = MonsterService.NowMs + 30000 };
+            session.ImmuneDeathOffer = session.ImmuneDeathOffer! with { ExpiresMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 30000 };
             return Task.CompletedTask;
         });
         var pending = session.ImmuneDeathOffer;

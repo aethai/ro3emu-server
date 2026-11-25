@@ -10,12 +10,12 @@ public sealed partial class DungeonService
         StatisticsCurrent = 30117, PlayerStatistics = 30123, TaskScore = 30126, QueryResult = 30128, ResultNotify = 30132;
 
     /// <summary>Real shared combat counters; zero task score until a recovered task-scoring rule exists.</summary>
-    private static DungeonStatisticsInfoWithDungeon StatisticsOf(Attempt a)
+    private DungeonStatisticsInfoWithDungeon StatisticsOf(Attempt a)
     {
         var result = new DungeonStatisticsInfoWithDungeon
         {
             StatisticsId = a.Room.Id,
-            DungeonId = (int)a.Plan.SceneEntry, StatisticsTime = MonsterService.NowMs
+            DungeonId = (int)a.Plan.SceneEntry, StatisticsTime = _loop.NowMs
         };
         var scene = new SceneStatisticsInfo { SceneId = a.Room.Id, DungeonId = (int)a.Plan.SceneEntry };
         foreach (var (id, stats) in a.Stats) scene.RoleStatistics[id] = stats.Clone();
@@ -114,13 +114,13 @@ public sealed partial class DungeonService
 
     private static string ResultId(Attempt a) => a.Room.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    private static void StoreHistory(State state, Attempt a)
+    private void StoreHistory(State state, Attempt a)
     {
         state.Statistics[a.Room.Id] = StatisticsOf(a).ToByteArray();
         var result = new DBDungeonResultData
         {
             ResultId = ResultId(a), ServerId = 1, DungeonId = a.Room.Id,
-            DungeonEntryId = (int)a.Plan.SceneEntry, CreateTime = MonsterService.NowMs
+            DungeonEntryId = (int)a.Plan.SceneEntry, CreateTime = _loop.NowMs
         };
         // Mode-specific SecondResultType/ResultParam have no recovered ordinary-dungeon mapping.
         state.Results[result.ResultId] = result.ToByteArray();
@@ -145,7 +145,7 @@ public sealed partial class DungeonService
         var result = new DBDungeonResultData
         {
             ResultId = notice.ResultId, ServerId = 1, DungeonId = info.StatisticsId, DungeonEntryId = info.DungeonId,
-            CreateTime = MonsterService.NowMs, WinCamp = info.WinCamp,
+            CreateTime = _loop.NowMs, WinCamp = info.WinCamp,
         };
         result.MetaData.Add(info.MetaData);
         var snapshot = new DungeonSnapshotData

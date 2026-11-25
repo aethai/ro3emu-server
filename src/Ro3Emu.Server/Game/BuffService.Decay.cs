@@ -25,7 +25,7 @@ public sealed partial class BuffService
     {
         if (!Rules.DecaysByBuff.TryGetValue(configId, out var rows)) return false;
         int type = Rules.DecayTypeOf(sceneEntry);
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         return rows.Any(rule => rule.DecayType == type && _decay.TryGetValue((targetUid, rule.Id), out var track)
             && BuffRuleTables.WouldRefuse(rule, track, now));
     }
@@ -34,7 +34,7 @@ public sealed partial class BuffService
     {
         if (!Rules.DecaysByBuff.TryGetValue(configId, out var rows)) return true;
         int type = Rules.DecayTypeOf(sceneEntry);
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         double factor = 1;
         foreach (var rule in rows)
         {

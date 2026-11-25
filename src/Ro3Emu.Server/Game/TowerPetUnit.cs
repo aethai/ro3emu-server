@@ -73,7 +73,7 @@ public sealed class TowerPetUnit : WorldUnit
             Element = t.Value.Element, Camp = t.Value.Camp, AttackSkills = t.Value.Skills, SupportSkills = t.Value.Support,
             AttackRange = t.Value.Range, SearchIntervalMs = t.Value.SearchMs, BaseAttributes = t.Value.Attributes,
             Hp = Math.Max(1, StatCalculator.Compute(t.Value.Attributes, data)[101]),
-            BornTimeMs = MonsterService.NowMs,
+            BornTimeMs = world.NowMs,
         };
     }
 
@@ -135,7 +135,7 @@ public sealed class TowerPetUnit : WorldUnit
     {
         if (Dead || Hp <= 0 || _owner.Dead || _owner.SceneLoading || _owner.TowerAttempt is not { Loaded: true, Settled: false } a
             || a.InstanceId != InstanceId || _owner.WorldScene != WorldScene) return;
-        long now = MonsterService.NowMs;
+        long now = _world.NowMs;
         if (now < _nextAttackMs) return;
         // (inferred) Support takes priority when ready and does not require an enemy in melee range.
         var support = SupportSkills.LastOrDefault(s => now >= _skillReadyMs.GetValueOrDefault(s.Id));
@@ -197,7 +197,7 @@ public sealed class TowerPetUnit : WorldUnit
             Uid = Uid, TransType = MovementTransitionType.MoveTransNormal,
             MovementInfo = new MovementInfo
             {
-                Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs,
+                Pos = Pos, Face = Face, ServerTime = _world.NowMs,
                 MoveType = MovementType.MoveTypeNone
             },
         }));
@@ -210,7 +210,7 @@ public sealed class TowerPetUnit : WorldUnit
             Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcTemplateId, Owner = OwnerId, EntityType = 7,
             EntityCamp = Camp, ElementType = Element, State = Dead ? EntityState.Dead : EntityState.Alive,
             Name = "", Face = Face, BornTimeMs = BornTimeMs, NotifyType = EntityBase.Types.NotifyType.All,
-            MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs },
+            MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = _world.NowMs },
         };
         // (verified) EntityBase.property is the shared attribute carrier. ATK/DEF are not required for
         // client damage calculation (31101 is authoritative); including them is an inferred complete snapshot.

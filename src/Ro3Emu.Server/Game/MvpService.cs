@@ -155,7 +155,7 @@ public sealed partial class MvpService : IGameTicker
         this._combat = combat;
         // No tick retry (as before the shared component): an undelivered award waits for the next kill's delivery
         // pass or the next login, and a refused delivery stops that pass.
-        _awardObligations = new RoleObligations<MvpObligationRow>("MVP award", accounts, loop, TimeProvider.System,
+        _awardObligations = new RoleObligations<MvpObligationRow>("MVP award", accounts, loop, loop.Time,
             role => sessions.All().FirstOrDefault(s => s.Role?.Id == role), s => s.Progress != null, PayAsync,
             ObligationRetry.NextRecovery, log);
         combat.EventDamageRecorded.Add((s, m, damage) => { OnDealt(s, m, damage); return Task.CompletedTask; });
@@ -247,7 +247,7 @@ public sealed partial class MvpService : IGameTicker
             {
                 case "spawn":
                     if (st.Unit is { Dead: false }) return $"MVP {cfg} is alive on {st.Def.MapId}.";
-                    await SaveStateAsync(st, MVP_STATE.Born, MonsterService.NowMs);
+                    await SaveStateAsync(st, MVP_STATE.Born, _loop.NowMs);
                     return $"MVP {cfg} {NpcName(st.Def.NpcId)} respawns on {st.Def.MapId} {_data.MapName(st.Def.MapId)}.";
                 case "weaken":
                     if (st.Unit is not { Dead: false } w) return $"MVP {cfg} is not alive.";
@@ -260,7 +260,7 @@ public sealed partial class MvpService : IGameTicker
             }
         }
         return string.Join("; ", states.Values.OrderBy(x => x.Def.CfgId).Select(x =>
-            $"{x.Def.CfgId} {NpcName(x.Def.NpcId)} @{x.Def.MapId} {x.Phase}{(x.Phase == MVP_STATE.Reborn ? $" in {(x.StateTimeMs + x.Def.RefreshMs - MonsterService.NowMs) / 60000} min" : "")}"));
+            $"{x.Def.CfgId} {NpcName(x.Def.NpcId)} @{x.Def.MapId} {x.Phase}{(x.Phase == MVP_STATE.Reborn ? $" in {(x.StateTimeMs + x.Def.RefreshMs - _loop.NowMs) / 60000} min" : "")}"));
     }
 
     // ---- life cycle ----
@@ -270,7 +270,7 @@ public sealed partial class MvpService : IGameTicker
     {
         if (runtime.Kind != RuntimeMapKind.PublicLine || runtime.Id == 1 || _lineStates.ContainsKey(runtime)) return;
         var states = new Dictionary<int, State>();
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var basis in States().Values.Where(s => s.Def.MapId == runtime.SceneEntry))
         {
             long death = Math.Max(_lastDeath.GetValueOrDefault(basis.Def.CfgId),
@@ -342,7 +342,7 @@ public sealed partial class MvpService : IGameTicker
         _sinceCheck += time.Delta;
         if (_sinceCheck < TimeSpan.FromSeconds(1)) return;
         _sinceCheck = TimeSpan.Zero;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var (monster, prepared) in _preparedKills.ToArray())
             if (monster.Dead && !prepared.State.Retired && !prepared.Finalizing)
                 _loop.TrackRuntimeDetached("MVP finalize committed death", () => FinalizePreparedAsync(monster));
@@ -374,7 +374,7 @@ public sealed partial class MvpService : IGameTicker
                     st.Transitioning = true;
                     _loop.TrackRuntimeDetached("MVP respawn", async () =>
                     {
-                        try { await SaveStateAsync(st, MVP_STATE.Born, MonsterService.NowMs, onlyIfReborn: true); }
+                        try { await SaveStateAsync(st, MVP_STATE.Born, _loop.NowMs, onlyIfReborn: true); }
                         finally { st.Transitioning = false; }
                     });
                 }
@@ -469,7 +469,7 @@ public sealed partial class MvpService : IGameTicker
         if (_preparedKills.ContainsKey(m)) return;
         if (_unknownKills.ContainsKey(m)) throw new EventSettlementOutcomeUnknownException(
             "MVP settlement source is awaiting resolution.", new InvalidOperationException("Frozen source is unresolved."));
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         string parentSource = $"mvp/kill/{st.Def.CfgId}/{st.Runtime.LineNumber}/{m.Uid}/{now}";
         string killerName = killerRole?.Name ?? "";
         st.Pending++;
@@ -900,7 +900,7 @@ public sealed partial class MvpService : IGameTicker
             var def = new Def(cfg, npc, GameData.Int(row, "_iMapID"), (int)(GameData.Int(npcRow, "_iLevel") + GameData.Int(row, "_iLevelDiff")),
                 Math.Max(60, GameData.Int(row, "_iRefreshTime")) * 1000, GameData.Int(row, "_iFirstDamageAward"), GameData.Int(row, "_iLastDamageAward"),
                 GameData.Int(row, "_iTeamAward"), GameData.Int(row, "_iPartAward"), GameData.Int(row, "_iRareAward"), (int)GameData.Int(row, "_iRareRewardProbability"));
-            states[cfg] = new State { Def = def, Runtime = RuntimeMapKey.Public(def.MapId), StateTimeMs = MonsterService.NowMs };
+            states[cfg] = new State { Def = def, Runtime = RuntimeMapKey.Public(def.MapId), StateTimeMs = _loop.NowMs };
         }
         foreach (var row in _accounts.ReadSync<List<MvpStateRow>>(new MvpReadPlan(MvpReadKind.States)))
         {

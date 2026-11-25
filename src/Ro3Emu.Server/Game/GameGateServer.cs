@@ -44,7 +44,7 @@ public sealed class GameGateServer(
     private GameSession NewSession(PhonestChannel channel)
     {
         if (options.Value.DebugSendDelayMs > 0) channel.SendDelay = TimeSpan.FromMilliseconds(options.Value.DebugSendDelayMs);
-        return new GameSession(channel, traffic);
+        return new GameSession(channel, traffic, loop.Time);
     }
 
     protected override async ValueTask OnFrameAsync(PhonestChannel channel, ushort index, ReadOnlyMemory<byte> body)

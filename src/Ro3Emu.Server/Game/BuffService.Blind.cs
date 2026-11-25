@@ -12,7 +12,7 @@ public sealed partial class BuffService
     // (inferred scope) Only a guardian's blind limits sight: the same group from ordinary skills keeps its previous,
     // display-only behaviour until the radius policy is established for every source.
     internal const int BlindRadiusCm = 500;
-    internal bool Blinded(GameSession player) => player.Buffs.Any(b => b.IsGuardianOwned && b.ExpireMs > MonsterService.NowMs
+    internal bool Blinded(GameSession player) => player.Buffs.Any(b => b.IsGuardianOwned && b.ExpireMs > _loop.NowMs
         && _data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") == BlindGroup);
     internal bool CanSeePosition(GameSession player, Vec3 position) => !Blinded(player)
         || MonsterService.Distance(player.Position.X, player.Position.Z, position.X, position.Z) <= BlindRadiusCm / 100f;
@@ -20,7 +20,7 @@ public sealed partial class BuffService
     // (inferred) Apply the same selection radius to a blinded monster's acquisition and locked target, from any source: "Reduces
     // field of view" is the row's text, and a card's or a skill's Blind on a monster has nothing else to show but the icon.
     internal bool CanSeePosition(WorldUnit unit, Vec3 position) => !_unitBuffs.TryGetValue(unit.Uid, out var buffs)
-        || !buffs.Any(b => b.ExpireMs > MonsterService.NowMs && b.ConfigId / 100 == BlindGroup)
+        || !buffs.Any(b => b.ExpireMs > _loop.NowMs && b.ConfigId / 100 == BlindGroup)
         || MonsterService.Distance(unit.X, unit.Z, position.X, position.Z) <= BlindRadiusCm / 100f;
 
     private IEnumerable<(int Id, long Value)> BlindProperties(GameSession player)

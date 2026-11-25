@@ -116,7 +116,7 @@ public sealed class RidingEffects : IGameTicker
     {
         if (s.Role is not { } role || s.Dead) return;
         var wanted = Wanted(s);
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var stale in s.Buffs.Where(b => _ridingBuffs.Contains(b.ConfigId) && !wanted.Contains(b.ConfigId)).ToList())
             await _buffs.RemoveAsync(s, stale);
         foreach (int id in wanted)
@@ -128,7 +128,7 @@ public sealed class RidingEffects : IGameTicker
     {
         if (time.Now - _lastTick < TimeSpan.FromSeconds(1)) return;
         _lastTick = time.Now;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var s in _sessions.All())
         {
             if (s.Role is not { } role || s.Dead || s.SceneLoading || !CareerSpecialService.IsLeasedMount(s, WolfMount)

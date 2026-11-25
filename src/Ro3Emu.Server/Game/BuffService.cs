@@ -179,7 +179,7 @@ public sealed partial class BuffService : IGameTicker
         if (durationMs <= 0) durationMs = (int)GameData.Int(row, "_iTime");
         if (durationMs <= 0) durationMs = 60000;
         if (sourceId != p.Role.Id && !ApplyDecay(p.Role.Id, p.SceneEntry, configId, ref durationMs)) return;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         int group = (int)GameData.Int(row, "_iBuffID");
         bool multiSource = GameData.Int(row, "_iMultiSource") != 0;
         var existing = p.Buffs.FirstOrDefault(b => !b.IsPassive && !b.IsTotemOwned && _data.Row("BuffConfig", b.ConfigId) is { } old
@@ -247,7 +247,7 @@ public sealed partial class BuffService : IGameTicker
         int count = Math.Min(maximum, (existing?.PileCount ?? 0) + 1);
         var changes = GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)
             .Select(c => (c.Id, c.Value * count)).ToArray();
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         var buff = new ActiveBuff(existing?.Guid ?? ++_guids, configId, now + durationMs, durationMs, changes, sourceId, count,
             IsTotemOwned: true);
         if (existing != null) p.Buffs.Remove(existing);
@@ -267,7 +267,7 @@ public sealed partial class BuffService : IGameTicker
     {
         if (_data.Row("BuffConfig", configId) is not { } row || durationMs <= 0) return;
         var existing = p.Buffs.FirstOrDefault(b => b.IsTotemOwned && !b.IsPassive && b.ConfigId == configId && b.SourceId == sourceId);
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         var buff = new ActiveBuff(existing?.Guid ?? ++_guids, configId, now + durationMs, durationMs,
             [.. GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)], sourceId, IsTotemOwned: true);
         if (existing != null) p.Buffs.Remove(existing);
@@ -317,11 +317,11 @@ public sealed partial class BuffService : IGameTicker
         int stackType = (int)GameData.Int(row, "_iStackType");
         int maxStack = (int)Math.Max(1, GameData.Int(row, "_iMaxStack"));
         // (inferred) Match the player path: named layer types increase piles; other types refresh.
-        int pile = existing != null && existing.ExpireMs > MonsterService.NowMs && stackType is 1 or 2 or 3 or 7
+        int pile = existing != null && existing.ExpireMs > _loop.NowMs && stackType is 1 or 2 or 3 or 7
             ? Math.Min(maxStack, existing.PileCount + 1) : 1;
         if (existing != null && existing.ConfigId != configId) { await RemoveUnitBuffAsync(unit, existing); existing = null; }
         var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
-            MonsterService.NowMs + durationMs, durationMs,
+            _loop.NowMs + durationMs, durationMs,
             [.. GameData.Pairs(row, "_kChangeAttri").Select(c => (c.Id, c.Value * pile * attributeMultiplier))], sourceId, pile,
             ShieldRemaining: Math.Max(0, shieldAmount), IsGuardianOwned: guardianOwned,
             StateOrdinal: StateFor(configId, group, guardianOwned));
@@ -362,7 +362,7 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>31332: only a current own GUID with BuffConfig._iHandRemove may be removed (inferred server rule).</summary>
     public async Task RemoveByRequestAsync(GameSession p, ClientRemoveBuffReq req)
     {
-        var buff = p.Buffs.FirstOrDefault(b => b.Guid == req.BuffGuid && b.ExpireMs > MonsterService.NowMs);
+        var buff = p.Buffs.FirstOrDefault(b => b.Guid == req.BuffGuid && b.ExpireMs > _loop.NowMs);
         int result = buff != null && _data.Row("BuffConfig", buff.ConfigId) is { } row
             && GameData.Int(row, "_iHandRemove") != 0 ? 0 : ErrorCodes.Parameter;
         await p.SendGameAsync(ClientRemoveBuff, new ClientRemoveBuffRsp { Result = result, BuffGuid = req.BuffGuid });
@@ -394,10 +394,10 @@ public sealed partial class BuffService : IGameTicker
 
     /// <summary>How many piles of a buff group a monster holds.</summary>
     internal int UnitPiles(WorldUnit unit, int buffGroup) => _unitBuffs.TryGetValue(unit.Uid, out var list)
-        ? list.Where(b => b.ExpireMs > MonsterService.NowMs && b.ConfigId / 100 == buffGroup).Sum(b => b.PileCount) : 0;
+        ? list.Where(b => b.ExpireMs > _loop.NowMs && b.ConfigId / 100 == buffGroup).Sum(b => b.PileCount) : 0;
 
     public bool HasBuffPiles(GameSession p, int buffGroup, int count) => count > 0
-        && p.Buffs.Where(b => b.ExpireMs > MonsterService.NowMs && _data.Row("BuffConfig", b.ConfigId) is { } row
+        && p.Buffs.Where(b => b.ExpireMs > _loop.NowMs && _data.Row("BuffConfig", b.ConfigId) is { } row
             && GameData.Int(row, "_iBuffID") == buffGroup).Sum(b => b.PileCount) >= count;
 
     /// <summary>Call after the cast succeeds; each partial reduction emits 31104 with its original instance GUID.</summary>
@@ -454,7 +454,7 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>Resend only a nonempty list: LC_Buff_Component.lua takes # of the decoded list without a nil guard.</summary>
     public async Task ResendAsync(GameSession p)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var buff in p.Buffs.Where(b => b.ExpireMs <= now).ToList()) await RemoveAsync(p, buff);
         if (p.Role == null || p.Buffs.Count == 0) return;
         var all = new BuffUpdateNotify { UnitId = p.Role.Id, IsViewSync = true };
@@ -466,7 +466,7 @@ public sealed partial class BuffService : IGameTicker
     /// <summary>Called by entity creation for 31037/ENTITYSELF snapshot; buff array only when nonempty.</summary>
     public static void PopulateEntity(GameSession p, EntityBase entity)
     {
-        var live = p.Buffs.Where(b => b.ExpireMs > MonsterService.NowMs && (!b.IsPassive || b.ShowIcon)).ToList();
+        var live = p.Buffs.Where(b => b.ExpireMs > p.NowMs && (!b.IsPassive || b.ShowIcon)).ToList();
         if (live.Count > 0)
         {
             entity.BuffData = new AoIBuffInfo();
@@ -479,7 +479,7 @@ public sealed partial class BuffService : IGameTicker
 
     public bool HasForbidden(GameSession p, int ordinal) => p.ForbiddenOrdinals.Contains(ordinal)
         || (p.ImmuneDeathOffer != null && ordinal == ForbiddenState.Damage)
-        || (p.ImmuneRecoveryUntilMs > MonsterService.NowMs
+        || (p.ImmuneRecoveryUntilMs > _loop.NowMs
             && ordinal is ForbiddenState.Walk or ForbiddenState.CastSkill or ForbiddenState.NormalAttack or ForbiddenState.Damage);
 
     private async Task RefreshControlAsync(GameSession p)
@@ -502,7 +502,7 @@ public sealed partial class BuffService : IGameTicker
     {
         ulong status = 0, forbidden = 0, stagger = 0;
         p.ForbiddenOrdinals.Clear();
-        foreach (var buff in p.Buffs.Where(b => b.StateOrdinal is > 0 and < 33 && b.ExpireMs > MonsterService.NowMs))
+        foreach (var buff in p.Buffs.Where(b => b.StateOrdinal is > 0 and < 33 && b.ExpireMs > _loop.NowMs))
         {
             status |= 1UL << (buff.StateOrdinal - 1); // inferred beyond the directly observed Battling(16) bit.
             if (_data.Row("SpecialStatusConfig", buff.StateOrdinal) is not { } row) continue;
@@ -522,7 +522,7 @@ public sealed partial class BuffService : IGameTicker
             status |= 1UL << 24; // Invincible(25) while the 31134 choice is pending (inferred).
             forbidden |= ForbiddenMask(9);
         }
-        if (p.ImmuneRecoveryUntilMs > MonsterService.NowMs)
+        if (p.ImmuneRecoveryUntilMs > _loop.NowMs)
         {
             status |= (1UL << 24) | (1UL << 8) | (1UL << 9); // Invincible/CanNotMove/CanNotSkill.
             forbidden |= ForbiddenMask(3) | ForbiddenMask(4) | ForbiddenMask(5) | ForbiddenMask(9);
@@ -576,7 +576,7 @@ public sealed partial class BuffService : IGameTicker
 
     public void Tick(GameTime time)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         // Ticks first: a periodic tick due at the expiry moment still lands before the expiry removal below.
         TickPeriodic(now);
         TickHalos(now);
@@ -618,7 +618,7 @@ public sealed partial class BuffService : IGameTicker
     /// does. As a realm job every expiry stopped the whole loop (#484: 7 334 holds in 2.5 h with six players).</param>
     private void ExpireOnce(ActiveBuff buff, string name, Func<Task> remove, bool runtime = false, GameSession? owner = null)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         // A loop at its work limit drops the job without running it, so one that never finished is queued again.
         if (_expiring.TryGetValue(buff.Guid, out long queued) && now - queued < ExpiryRetryMs) return;
         _expiring[buff.Guid] = now;

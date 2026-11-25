@@ -114,7 +114,7 @@ public sealed partial class TerritoryWarsService
     {
         if (amount > 0 && source.Role is { } attacker && target.Role is { } victim && GloryMap(source) != null)
         {
-            long now = MonsterService.NowMs;
+            long now = _loop.NowMs;
             if (!_gloryHits.TryGetValue(victim.Id, out var hits)) _gloryHits[victim.Id] = hits = [];
             foreach (long stale in hits.Where(h => now - h.Value > GloryAssistWindowMs).Select(h => h.Key).ToArray()) hits.Remove(stale);
             hits[attacker.Id] = now;
@@ -139,7 +139,7 @@ public sealed partial class TerritoryWarsService
         _gloryHits.Remove(v.Id, out var hits);
         if (GloryMap(killer) is not { } map || !WorldHostile(killer, victim)) return;
         // Everything the awards need is taken before the first await: the earners may move meanwhile.
-        long now = MonsterService.NowMs, victimPower = GloryPower(victim);
+        long now = _loop.NowMs, victimPower = GloryPower(victim);
         var players = _world.PlayersIn(killer.WorldScene).Where(p => p.Role != null).ToDictionary(p => p.Role!.Id);
         var helpers = (hits ?? []).Where(h => h.Key != k.Id && now - h.Value <= GloryAssistWindowMs)
             .Select(h => players.GetValueOrDefault(h.Key)).OfType<GameSession>().Where(p => WorldHostile(p, victim))

@@ -620,7 +620,7 @@ public sealed partial class CombatService
     /// <summary>Ends a skill group's running cooldowns now, each under the mode it was shown (a talent's reset).</summary>
     internal static async Task ResetCooldownAsync(GameSession s, int group)
     {
-        long now = Now;
+        long now = s.NowMs;
         var notice = new SkillCdNotify { Uuid = s.Role!.Id };
         foreach (var (key, end) in s.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
         {
@@ -635,7 +635,7 @@ public sealed partial class CombatService
     /// <summary>Takes this long off a skill group's running cooldowns (Crescent Wheel on Axe Tornado), each under the mode it was shown; past its end it ends.</summary>
     internal static async Task CutCooldownAsync(GameSession s, int group, long ms)
     {
-        long now = Now;
+        long now = s.NowMs;
         var notice = new SkillCdNotify { Uuid = s.Role!.Id };
         foreach (var (key, end) in s.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
         {
@@ -808,7 +808,7 @@ public sealed partial class CombatService
 
     private static bool Live(GameSession s, ActiveSkillCast action) => !action.Cancelled && ReferenceEquals(s.SkillCast, action)
         && !s.Dead && !s.SceneLoading && s.Role?.Id == action.OwnerId && s.WorldScene == action.WorldScene
-        && (action.Operator == null || !action.Operator.Removing && action.Operator.ExpiresMs > Now);
+        && (action.Operator == null || !action.Operator.Removing && action.Operator.ExpiresMs > s.NowMs);
 
     private int SkillMs(GameSession s, JsonElement row)
     {

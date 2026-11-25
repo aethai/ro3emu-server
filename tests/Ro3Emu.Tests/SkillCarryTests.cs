@@ -36,7 +36,7 @@ public sealed class SkillCarryTests
         var end = new Vec3 { X = start.X + 6, Y = start.Y, Z = start.Z };
         await host.Service<GameLoop>().InvokeAsync(() =>
         {
-            Session(host, bot).CarryBySkill(start, end, MonsterService.NowMs, 100); // Heavy Axe Smash's 100 ms charge
+            Session(host, bot).CarryBySkill(start, end, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 100); // Heavy Axe Smash's 100 ms charge
             return Task.CompletedTask;
         });
         // A round trip of 250 ms: the step along the old walk and the stop from the move's start come after its 100 ms.
@@ -77,7 +77,7 @@ public sealed class SkillCarryTests
         var end = new Vec3 { X = start.X + 6, Y = start.Y, Z = start.Z };
         await host.Service<GameLoop>().InvokeAsync(() =>
         {
-            Session(host, bot).CarryBySkill(start, end, MonsterService.NowMs, 100);
+            Session(host, bot).CarryBySkill(start, end, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 100);
             return Task.CompletedTask;
         });
         await Task.Delay(250);

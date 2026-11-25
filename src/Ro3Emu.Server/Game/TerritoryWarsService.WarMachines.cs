@@ -62,7 +62,7 @@ public sealed partial class TerritoryWarsService
                 NotifyType = EntityBase.Types.NotifyType.All,
                 MovementInfo = new MovementInfo
                 {
-                    Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone
+                    Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone
                 },
             };
             AddMachineHealth(entity, this);
@@ -122,7 +122,7 @@ public sealed partial class TerritoryWarsService
                 Uid = CannonUidBase | Interlocked.Increment(ref owner._cannonSerial), SceneEntry = builder.SceneEntry,
                 InstanceId = battle.Room.Id, X = at.X, Y = at.Y, Z = at.Z, Face = face, NpcId = npcId, Builder = role.Id,
                 Camp = camp, CampOverride = (int)camp, Guild = battle.Guild, Name = role.Name,
-                Template = template, Group = group, Home = home, Hp = template.MaxHp, BornTimeMs = MonsterService.NowMs,
+                Template = template, Group = group, Home = home, Hp = template.MaxHp, BornTimeMs = owner._loop.NowMs,
                 ConfigId = new GVGCannonConfig(cannon).Id, Bullets = new GVGCannonConfig(cannon).BulletNumLimit,
                 // Its HP is only its own: no lock on whoever hits it, no heal to full when the fight moves away; the repair
                 // zone mends it (TerritoryWarsService.WarRepair.cs).

@@ -18,11 +18,11 @@ public sealed partial class SkillCombatTests
         {
             target.Template = target.Template with { Def = 1000 };
             long def = combat.MonsterStats(target)[AttributeId.Def];
-            int speed = target.SpeedCm(MonsterService.NowMs);
+            int speed = target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             await buffs.AddSupportAsync(target, 902101, 60_000, 7);
             long lowered = combat.MonsterStats(target)[AttributeId.Def];
             await buffs.AddSupportAsync(target, 902601, 60_000, 7);
-            int slowed = target.SpeedCm(MonsterService.NowMs);
+            int slowed = target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             await buffs.ClearUnitAsync(target);
             return (def, lowered, speed, slowed, combat.MonsterStats(target)[AttributeId.Def]);
         });

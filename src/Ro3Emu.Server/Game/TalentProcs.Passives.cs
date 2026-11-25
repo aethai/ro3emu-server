@@ -117,7 +117,7 @@ public sealed partial class TalentProcs
     private async Task VenomAsync(GameSession s, MonsterUnit target)
     {
         if (target.Hp <= 0) return;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var buff in s.Buffs)
         {
             if (buff.ExpireMs <= now || BuffConfig.Get(_data, buff.ConfigId) is not { BuffId: DeadlyPoison } row

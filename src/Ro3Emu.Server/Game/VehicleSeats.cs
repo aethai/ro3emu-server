@@ -55,7 +55,7 @@ internal abstract class SeatedVehicle : MonsterUnit
             NotifyType = EntityBase.Types.NotifyType.All,
             MovementInfo = new MovementInfo
             {
-                Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone
+                Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone
             },
         };
         if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
@@ -166,9 +166,9 @@ internal sealed class VehicleSeats(GameData data, World world, Func<GameSession,
     private List<GameSession> CarryAudience(GameSession s, SeatedVehicle unit) =>
         [.. new[] { s }.Concat(world.Viewers(s)).Concat(unit.Viewers).Distinct()];
 
-    private static AoIInfoTotal CarryChange(GameSession s, AoICarry beCarried, SeatedVehicle unit, AoICarryInfo vehicleCarries)
+    private AoIInfoTotal CarryChange(GameSession s, AoICarry beCarried, SeatedVehicle unit, AoICarryInfo vehicleCarries)
     {
-        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)world.NowMs };
         total.AoiData.Add(new AoIInfoSingle { EntityUuid = (ulong)s.Role!.Id, CarryInfo = new AoICarryInfo { BeCarried = beCarried } });
         total.AoiData.Add(new AoIInfoSingle { EntityUuid = (ulong)unit.Uid, CarryInfo = vehicleCarries });
         return total;
@@ -218,7 +218,7 @@ internal sealed class VehicleSeats(GameData data, World world, Func<GameSession,
         var gone = new AoICarry { Id = 0, CarrySlot = rider.Seat, CarryOffset = new Vec3(), CarryType = carry.CarryType };
         if (s.Role == null || s.SceneLoading)
         {
-            var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+            var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)world.NowMs };
             total.AoiData.Add(new AoIInfoSingle { EntityUuid = (ulong)unit.Uid, CarryInfo = new AoICarryInfo { RemoveCarries = { carry } } });
             foreach (var viewer in unit.Viewers.ToList()) await send(viewer, WorldCoreService.AoiInfo, total);
             return;
@@ -232,7 +232,7 @@ internal sealed class VehicleSeats(GameData data, World world, Func<GameSession,
     public async Task RiderSeenAsync(GameSession viewer, GameSession subject)
     {
         if (!_riders.TryGetValue(subject, out var rider) || subject.Role == null) return;
-        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)world.NowMs };
         total.AoiData.Add(new AoIInfoSingle
         {
             EntityUuid = (ulong)subject.Role.Id, CarryInfo = new AoICarryInfo { BeCarried = rider.Unit.Carrier(rider.Seat) },
@@ -319,13 +319,13 @@ internal sealed class VehicleSeats(GameData data, World world, Func<GameSession,
             var stop = new MovementChangeNtf
             {
                 Uid = unit.Uid, TransType = MovementTransitionType.MoveTransNormal,
-                MovementInfo = new MovementInfo { Pos = unit.Pos, Face = unit.Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone },
+                MovementInfo = new MovementInfo { Pos = unit.Pos, Face = unit.Face, ServerTime = world.NowMs, MoveType = MovementType.MoveTypeNone },
             };
             await world.MoveUnitAsync(unit, stop, except: s);
             return;
         }
         unit.FireDirs[rider.Seat] = req.Face;
-        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)world.NowMs };
         total.AoiData.Add(new AoIInfoSingle { EntityUuid = (ulong)unit.Uid, VehicleDetail = unit.Detail() });
         foreach (var viewer in unit.Viewers.ToList())
             if (viewer != s) await send(viewer, WorldCoreService.AoiInfo, total);

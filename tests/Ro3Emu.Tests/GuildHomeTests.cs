@@ -265,7 +265,7 @@ public sealed class GuildHomeTests : IAsyncLifetime
         // (OutOfCombatMs), which under a loaded suite could land before the request.
         await OnLoop(() =>
         {
-            session.Dead = false; session.StatusBits |= 1L << 15; session.LastCombatMs = MonsterService.NowMs;
+            session.Dead = false; session.StatusBits |= 1L << 15; session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Task.CompletedTask;
         });

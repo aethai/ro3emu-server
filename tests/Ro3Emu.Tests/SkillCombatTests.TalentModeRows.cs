@@ -201,7 +201,7 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Cast(bot, me, 1100200 + level, mark)).Result);
         await Eventually(() => me.Buffs.Any(b => b.ConfigId == 1100200 + level));
         var buff = Assert.Single(me.Buffs, b => b.ConfigId == 1100200 + level);
-        Assert.InRange(buff.ExpireMs - MonsterService.NowMs, 110_000, 120_000);
+        Assert.InRange(buff.ExpireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 110_000, 120_000);
     }
 
     // Critical Attack (10102106 for the Knight line) selects BowlingBashBD01, [ratio, 5000] / [flat, 400]: "When [Bowling
@@ -272,7 +272,7 @@ public sealed partial class SkillCombatTests
         await Eventually(() => buffs.UnitBuffs(mark).Count > 0);
         var live = buffs.UnitBuffs(mark);
         foreach (int row in new[] { 1122201, 1122301, 1122401, 1122501 })
-            Assert.InRange(Assert.Single(live, b => b.ConfigId == row).ExpireMs - MonsterService.NowMs, 5000, 8000);
+            Assert.InRange(Assert.Single(live, b => b.ConfigId == row).ExpireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 5000, 8000);
         Assert.Equal(4, Assert.Single(live, b => b.ConfigId == 1122101).PileCount);
         var attributes = buffs.UnitCombatAttributes(mark).ToList();
         Assert.Contains((1052L, -500d), attributes); // "reduces PDEF by 5%"

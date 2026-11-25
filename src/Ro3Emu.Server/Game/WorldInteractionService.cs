@@ -289,7 +289,7 @@ public sealed class WorldInteractionService
     private async Task SceneActorCarryAsync(GameSession s, Active state, bool seated)
     {
         long type = VehicleSeatConfig.Get(_data, VehicleSeats(state)[state.SeatIndex])?.Type ?? 0;
-        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)MonsterService.NowMs };
+        var total = new AoIInfoTotal { AoITickMs = 50, TickNowMs = (ulong)_world.NowMs };
         var rider = new AoICarry { Id = (ulong)s.Role!.Id, CarrySlot = state.SeatIndex, CarryOffset = new Vec3(), CarryType = (int)type };
         total.AoiData.Add(new AoIInfoSingle
         {

@@ -360,9 +360,9 @@ public sealed partial class TerritoryWarsService
             if (lethal)
             {
                 attacker.Kills++; attacker.Score++; // (inferred) one point per player kill.
-                helpers = SiegeAssists(battle, attacker.Id, defender.Id, MonsterService.NowMs);
+                helpers = SiegeAssists(battle, attacker.Id, defender.Id, _loop.NowMs);
             }
-            else if (amount > 0) SiegeHit(battle, attacker.Id, defender.Id, MonsterService.NowMs);
+            else if (amount > 0) SiegeHit(battle, attacker.Id, defender.Id, _loop.NowMs);
             await SaveAsync(state);
             if (lethal) SiegeTrack(battle, helpers.Append(attacker.Id));
             if (lethal) await SiegePlayerStatisticsAsync(battle, helpers.Append(attacker.Id));

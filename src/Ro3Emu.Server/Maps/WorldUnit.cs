@@ -28,6 +28,10 @@ public abstract class WorldUnit
     public float Z { get; set; }
     public float Face { get; set; }
 
+    /// <summary>The realm's clock, assigned when the unit is added to a map.</summary>
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
+    protected long NowMs => Clock.GetUtcNow().ToUnixTimeMilliseconds();
+
     /// <summary>The grid cell the unit is filed under (MapInstance).</summary>
     internal (int X, int Z) Cell { get; set; }
 
@@ -80,6 +84,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
 
     internal void Add(WorldUnit unit)
     {
+        unit.Clock = world.Clock;
         _resting = false;
         _units.Add(unit);
         _members.Add(unit);

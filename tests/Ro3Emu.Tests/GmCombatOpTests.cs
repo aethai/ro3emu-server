@@ -205,7 +205,7 @@ public sealed class GmCombatOpTests : IAsyncLifetime
         var s = Session("alice");
         Assert.Equal(0, s.GmCastSkill);
         Assert.Empty(s.SkillCds);
-        Assert.DoesNotContain(s.SkillModeCds.Values, end => end > MonsterService.NowMs);
+        Assert.DoesNotContain(s.SkillModeCds.Values, end => end > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         // Without the switch the ordinary refusal stands: the skill is not learned.
         await Panel(alice, 52, "0");
         await Task.Delay(1500); // the first cast's action ends

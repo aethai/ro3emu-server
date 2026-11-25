@@ -9,7 +9,7 @@ public sealed partial class BuffService
     // (inferred); misses never spend the effect. Removal uses normal icon/stat/control publication.
     internal async Task ConsumeGuardianGroupAsync(GameSession target, int group)
     {
-        foreach (var buff in target.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > MonsterService.NowMs
+        foreach (var buff in target.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > _loop.NowMs
             && _data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") == group).ToArray())
             await RemoveAsync(target, buff);
     }
@@ -17,7 +17,7 @@ public sealed partial class BuffService
     internal async Task ConsumeGuardianGroupAsync(WorldUnit target, int group)
     {
         if (!_unitBuffs.TryGetValue(target.Uid, out var active)) return;
-        foreach (var buff in active.Where(b => b.ExpireMs > MonsterService.NowMs
+        foreach (var buff in active.Where(b => b.ExpireMs > _loop.NowMs
             && _data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") == group).ToArray())
             await RemoveUnitBuffAsync(target, buff);
     }

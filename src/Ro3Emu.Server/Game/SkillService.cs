@@ -27,6 +27,7 @@ public sealed partial class SkillService
     private readonly GameData _data;
     private readonly CharacterService _character;
     private readonly RoleStore _roles;
+    private readonly TimeProvider _clock;
     private readonly ILogger<SkillService> _log;
     private Dictionary<(int Group, int Level), int>? _rowIds;
     private Dictionary<int, int>? _upgradedGroupByBase;
@@ -39,11 +40,12 @@ public sealed partial class SkillService
     /// whellSkills[SkillWheelMount1/2] only, so without this the HUD never offers the buttons.</summary>
     internal Func<GameSession, (SkillWheelSlot Up, SkillWheelSlot Down)?>? MountFlyWheel { get; set; }
 
-    public SkillService(GameData data, CharacterService character, RoleStore roles, ILogger<SkillService> log)
+    public SkillService(GameData data, CharacterService character, RoleStore roles, TimeProvider clock, ILogger<SkillService> log)
     {
         this._data = data;
         this._character = character;
         this._roles = roles;
+        this._clock = clock;
         this._log = log;
         character.ProgressHandlers.Add(SyncAsync);
     }

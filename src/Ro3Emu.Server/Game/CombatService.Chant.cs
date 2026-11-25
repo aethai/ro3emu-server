@@ -11,7 +11,7 @@ public sealed partial class CombatService
     private const int PhenGroup = 20240;
 
     /// <summary>Card: Phen, 2024001..4: "Control effects cannot interrupt casting." See <see cref="BreakForbiddenCastAsync"/>.</summary>
-    private static bool ControlCannotInterrupt(GameSession s) => s.Buffs.Any(b => b.ConfigId / 100 == PhenGroup && b.ExpireMs > Now);
+    private static bool ControlCannotInterrupt(GameSession s) => s.Buffs.Any(b => b.ConfigId / 100 == PhenGroup && b.ExpireMs > s.NowMs);
 
     /// <summary>A*cspd/(B+C*cspd) from PublicParamConfig, cast speed clamped to FinalAtkSpdThdAndCastSpdThd[1].</summary>
     private static double VariableChantReduction(GameData data, double castSpeed)

@@ -907,7 +907,7 @@ public sealed partial class CardRulesTests
             {
                 await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().AddAsync(session, poison, 800, striker.Uid));
                 var tick = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == striker.Uid && h.SkillId == 0);
-                await Eventually(() => !session.Buffs.Any(b => b.ConfigId == poison && b.ExpireMs > MonsterService.NowMs), "the poison over");
+                await Eventually(() => !session.Buffs.Any(b => b.ConfigId == poison && b.ExpireMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), "the poison over");
                 await Task.Delay(100);
                 return Assert.Single(tick.Dsts).Damage;
             }

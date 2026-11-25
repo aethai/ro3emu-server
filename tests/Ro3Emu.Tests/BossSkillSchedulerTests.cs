@@ -137,7 +137,7 @@ public sealed class BossSkillSchedulerTests : IAsyncLifetime
         await Task.Delay(TimeSpan.FromSeconds(8)); // past its action: only the cooldown holds it back
         Assert.Single(Casts(alice, rocker.Uid), c => c.SkillID == 5101201);
         // The cooldown ends: it casts again (a new cast session).
-        await Loop.InvokeAsync(() => { rocker.BossSkills!.ReadyMs[0] = MonsterService.NowMs; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { rocker.BossSkills!.ReadyMs[0] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); return Task.CompletedTask; });
         var again = await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == rocker.Uid && u.SessionId != cast.SessionId);
         Assert.Equal(5101201, again.SkillID);
     }

@@ -47,7 +47,7 @@ public sealed partial class BuffService
         foreach (int id in p.Energy.Keys.Where(id => !ids.Contains(id)).ToList()) p.Energy.Remove(id);
         p.EnergyCareer = career;
         p.EnergyMounts = mounts;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var (id, row) in applicable)
         {
             if (p.Energy.ContainsKey(id)) continue;

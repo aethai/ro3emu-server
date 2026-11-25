@@ -237,13 +237,13 @@ public sealed class TotemEffects : IGameTicker
     {
         var state = _runtime.GetOrCreateValue(s);
         long total;
-        lock (state) total = state.Shields.Values.Where(x => x.ExpireMs > MonsterService.NowMs).Sum(x => x.Amount);
+        lock (state) total = state.Shields.Values.Where(x => x.ExpireMs > _loop.NowMs).Sum(x => x.Amount);
         yield return (2003, total);
     }
 
     public void Tick(GameTime time)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (now < _nextShieldSweepMs) return;
         _nextShieldSweepMs = now + 500;
         foreach (var s in _sessions.All().Where(s => s.Role != null))
@@ -282,7 +282,7 @@ public sealed class TotemEffects : IGameTicker
         var state = _runtime.GetOrCreateValue(s);
         lock (state)
         {
-            long now = MonsterService.NowMs;
+            long now = _loop.NowMs;
             if (state.Cooldowns.GetValueOrDefault((source, effect)) > now || Random.Shared.Next(10000) >= chanceBp) return false;
             state.Cooldowns[(source, effect)] = now + cooldownMs;
             return true;
@@ -387,10 +387,10 @@ public sealed class TotemEffects : IGameTicker
         if (damage <= 0) return 0;
         var state = _runtime.GetOrCreateValue(s);
         long oldShield;
-        lock (state) oldShield = state.Shields.Values.Where(x => x.ExpireMs > MonsterService.NowMs).Sum(x => x.Amount);
+        lock (state) oldShield = state.Shields.Values.Where(x => x.ExpireMs > _loop.NowMs).Sum(x => x.Amount);
         lock (state)
         {
-            long now = MonsterService.NowMs;
+            long now = _loop.NowMs;
             foreach (var (source, shield) in state.Shields.ToArray()) if (shield.ExpireMs <= now) state.Shields.Remove(source);
             foreach (var passive in Passives(s).Where(p => p.Id == 2509901).DistinctBy(p => (p.Item.Guid, p.Id)))
             {
@@ -419,7 +419,7 @@ public sealed class TotemEffects : IGameTicker
             }
         }
         long newShield;
-        lock (state) newShield = state.Shields.Values.Where(x => x.ExpireMs > MonsterService.NowMs).Sum(x => x.Amount);
+        lock (state) newShield = state.Shields.Values.Where(x => x.ExpireMs > _loop.NowMs).Sum(x => x.Amount);
         if (newShield != oldShield) await _character.RefreshStatsAsync(s);
         return damage;
     }

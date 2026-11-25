@@ -12,8 +12,11 @@ namespace Ro3Emu.Server.Game;
 /// named RPCs (methodName + msgpack values concatenated without an array header) or raw game messages
 /// (no methodName, parameters = uint32 LE msgId ‖ romsg protobuf).
 /// </summary>
-public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
+public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, TimeProvider? clock = null)
 {
+    internal TimeProvider Clock { get; } = clock ?? TimeProvider.System;
+    internal long NowMs => Clock.GetUtcNow().ToUnixTimeMilliseconds();
+
     /// <summary>The current game transport. A silent reconnect (ReconnectService) swaps it on the loop; frames and
     /// closes of a swapped-out channel are ignored by the gate.</summary>
     public PhonestChannel Channel { get; internal set; } = channel;
@@ -265,7 +268,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic)
         get => TaskRuntime.InCutScene;
         set
         {
-            if (value && !TaskRuntime.InCutScene) CutSceneSinceMs = MonsterService.NowMs;
+            if (value && !TaskRuntime.InCutScene) CutSceneSinceMs = NowMs;
             TaskRuntime.InCutScene = value;
         }
     }

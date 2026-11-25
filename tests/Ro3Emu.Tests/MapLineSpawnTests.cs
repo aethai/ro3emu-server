@@ -27,7 +27,7 @@ public sealed class MapLineSpawnTests : IAsyncLifetime
         // Seed before the game ticker can load MVP states, so cooldown behavior is deterministic.
         FixtureSql.Execute(_app.Services.GetRequiredService<AccountStore>(),
             "INSERT INTO mvp_line_cooldown(cfg_id, death_ms) VALUES (1, $death)",
-            ("$death", MonsterService.NowMs));
+            ("$death", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         await _app.StartAsync();
     }
 

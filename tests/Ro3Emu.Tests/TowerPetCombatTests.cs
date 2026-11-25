@@ -128,7 +128,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
                     s.Position.Y, s.Position.Z)!;
                 added.Add(pet); a.Pets.Add(pet); await Service<World>().AddUnitAsync(pet);
                 // Only the caster may auto-cast; reserve other actors' cooldown before the controlled cast.
-                if (i > 0) Assert.True(pet.TryBeginCast(pet.SupportSkills.Single(), MonsterService.NowMs));
+                if (i > 0) Assert.True(pet.TryBeginCast(pet.SupportSkills.Single(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
             }
             var source = a.Monsters[0];
             attacker = new MonsterUnit

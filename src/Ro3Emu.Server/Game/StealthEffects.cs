@@ -112,7 +112,7 @@ public sealed class StealthEffects : IGameTicker
     /// <summary>The player's live buffs that end on damage: hiding (category 31) and Thief's Hiding, with their numbers.</summary>
     private List<(ActiveBuff Buff, BuffConfig Row)> Breakable(GameSession s)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         return [.. s.Buffs.Where(b => b.ExpireMs > now).Select(b => (Buff: b, Row: BuffConfig.Get(_data, b.ConfigId)))
             .Where(x => x.Row is { LogicData.Length: >= 3 } row && (CombatService.StealthBuff(row) || row.BuffId == HidingSpeedGroup))
             .Select(x => (x.Buff, x.Row!.Value))];
@@ -173,7 +173,7 @@ public sealed class StealthEffects : IGameTicker
     {
         if (time.Now - _lastTick < TimeSpan.FromMilliseconds(200)) return;
         _lastTick = time.Now;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var s in _sessions.All())
         {
             if (s.Role == null || s.Dead || s.SceneLoading
@@ -195,7 +195,7 @@ public sealed class StealthEffects : IGameTicker
     {
         if (s.Dead || !s.Buffs.Any(b => b.Guid == ruwach.Guid) || RuwachTarget(s, hit) is not { } target) return;
         long category = hit.LogicData.FirstOrDefault();
-        foreach (var buff in target.Buffs.Where(b => b.ExpireMs > MonsterService.NowMs).ToArray())
+        foreach (var buff in target.Buffs.Where(b => b.ExpireMs > _loop.NowMs).ToArray())
             if (BuffConfig.Get(_data, buff.ConfigId) is { } row && row.BuffCategory.Contains(category)
                 && target.Buffs.Any(b => b.Guid == buff.Guid))
             {

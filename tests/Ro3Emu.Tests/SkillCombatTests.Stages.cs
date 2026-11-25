@@ -31,7 +31,7 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var takeOff = a.SkillCast!;
         await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
-        long landed = MonsterService.NowMs - takeOff.StartMs;
+        long landed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - takeOff.StartMs;
         int expected = (int)Math.Round(3.2 / 5.016667 * takeOff.ActionMs);
         Assert.InRange(landed, expected - 50, expected + 250);
     }

@@ -56,7 +56,7 @@ public sealed partial class TerritoryWarsService
             State = EntityState.Alive, NotifyType = EntityBase.Types.NotifyType.All,
             MovementInfo = new MovementInfo
             {
-                Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs,
+                Pos = Pos, Face = Face, ServerTime = NowMs,
                 MoveType = MovementType.MoveTypeNone
             },
         };

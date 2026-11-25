@@ -147,7 +147,7 @@ public sealed partial class CombatService
         var told = session.SkillProtocol.GroupModes;
         var started = new SkillCdNotify { Uuid = update.Uuid };
         var ended = new SkillCdNotify { Uuid = update.Uuid };
-        long now = Now;
+        long now = session.NowMs;
         foreach (var (group, mode) in modes)
             if (mode > 0 && told.GetValueOrDefault(group) != mode) started.Infos.Add(ModeCooldown(session, group, mode, now));
         foreach (var (group, mode) in told)
@@ -210,7 +210,7 @@ public sealed partial class CombatService
     /// <summary>One authoritative cast timeline. High-level routes share the same Lua handler, not another cast.</summary>
     private static bool OwnsActiveSkillSource(GameSession owner, long uid) => owner.Role != null
         && owner.SkillObjects.Any(o => o.Uid == uid && o.OwnerSession == owner && o.OwnerId == owner.Role.Id
-            && o.WorldScene == owner.WorldScene && o.ExpiresMs > Now && !o.Removing);
+            && o.WorldScene == owner.WorldScene && o.ExpiresMs > owner.NowMs && !o.Removing);
 
     public Task SendCastTimelineAsync(GameSession caster, UseInSkillInfo info, bool highLevel = false, bool extra = false)
     {

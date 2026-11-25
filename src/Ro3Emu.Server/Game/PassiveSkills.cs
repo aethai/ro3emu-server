@@ -100,7 +100,7 @@ public sealed class PassiveSkills : IGameTicker
     private bool Ready(GameSession s, int group, long cooldownMs)
     {
         var ready = _states.GetOrCreateValue(s).ReadyAt;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (ready.GetValueOrDefault(group) > now) return false;
         ready[group] = now + cooldownMs;
         return true;
@@ -117,7 +117,7 @@ public sealed class PassiveSkills : IGameTicker
         if (cast.SkillId == Judex && Learned(s, DoubleHolyLight) is { Own: { LogicData: [var magicChance, var magic, var physicalChance, var physical, ..] } })
             foreach (var (chance, id) in new[] { (magicChance, magic), (physicalChance, physical) })
                 // Holy Spirit Surge: "During this time, the Chance to trigger [Duple Light] becomes ${3}%".
-                if (target.Hp > 0 && (s.Buffs.Any(b => b.ConfigId / 100 == HolySpiritSurgeGroup && b.ExpireMs > MonsterService.NowMs) || Roll(10000) < chance) && SkillConfig.Get(_data, id) is { } row)
+                if (target.Hp > 0 && (s.Buffs.Any(b => b.ConfigId / 100 == HolySpiritSurgeGroup && b.ExpireMs > _loop.NowMs) || Roll(10000) < chance) && SkillConfig.Get(_data, id) is { } row)
                     await _combat.CastExtraAsync(s, row.Row, [target]);
         // Enchant Blade: "After dealing damage, increases your DEF by ${2}% for @{1} seconds." _kLogicData [the DEF buff,
         // whose _iTime is those seconds].
@@ -128,7 +128,7 @@ public sealed class PassiveSkills : IGameTicker
         // enemy." Each casts the row the bodies' buff's _kLogicData[0] names (12345 Singularity of its level), in the
         // caster's mode.
         if (cast.SkillId == SoulExpansion && hit.Dsts.Any(d => d.Damage > 0) && AstralBodies(s) is { } bodies
-            && s.Buffs.FirstOrDefault(b => b.ConfigId == bodies.Buff && b.ExpireMs > MonsterService.NowMs) is { } live
+            && s.Buffs.FirstOrDefault(b => b.ConfigId == bodies.Buff && b.ExpireMs > _loop.NowMs) is { } live
             && live.PileCount >= bodies.Launch && BuffConfig.Get(_data, bodies.Buff) is { LogicData: [var launch, ..] }
             && (_combat.EffectiveSkillRow(s, (int)launch) ?? SkillConfig.Get(_data, launch)?.Row) is { } body)
         {
@@ -166,7 +166,7 @@ public sealed class PassiveSkills : IGameTicker
     {
         if (time.Now - _lastTick < TimeSpan.FromMilliseconds(100)) return;
         _lastTick = time.Now;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var s in _sessions.All())
         {
             if (s.Role is not { } role || s.Dead || s.SceneLoading || AstralBodies(s) is not { EveryMs: > 0 } bodies) continue;
@@ -177,7 +177,7 @@ public sealed class PassiveSkills : IGameTicker
             state.NextAstralMs = (now - state.NextAstralMs < 100 ? state.NextAstralMs : now) + bodies.EveryMs;
             _loop.PostOwned(s, async () =>
             {
-                int held = s.Buffs.FirstOrDefault(b => b.ConfigId == bodies.Buff && b.ExpireMs > MonsterService.NowMs)?.PileCount ?? 0;
+                int held = s.Buffs.FirstOrDefault(b => b.ConfigId == bodies.Buff && b.ExpireMs > _loop.NowMs)?.PileCount ?? 0;
                 if (held < bodies.Max && !s.Dead)
                     await _buffs.SetPileCountAsync(s, bodies.Buff, PermanentMs, role.Id, Math.Min(bodies.Max, held + bodies.Count));
             }, "astral bodies");
@@ -187,7 +187,7 @@ public sealed class PassiveSkills : IGameTicker
     private async Task OnTakenAsync(MonsterUnit attacker, GameSession s, long damage)
     {
         if (damage <= 0 || s.Role == null || s.Dead) return;
-        _states.GetOrCreateValue(s).LastHitMs = MonsterService.NowMs;
+        _states.GetOrCreateValue(s).LastHitMs = _loop.NowMs;
         // Energy Coat: "When you take damage, gain [Energy Coat] for ${1} sec., increasing your damage reduction by ${2}%.
         // Cooldown: ${3} sec." _kLogicData [the reduction buff, ms, piles].
         if (Learned(s, EnergyCoat) is { Skill: var coat, Own: { LogicData: [var buff, var ms, ..] } }
@@ -213,7 +213,7 @@ public sealed class PassiveSkills : IGameTicker
             long quiet = (long)(Value(prayer.DescData, 4) * 1000);
             _loop.ScheduleRuntime(TimeSpan.FromMilliseconds(quiet + 50), async () =>
             {
-                if (ReferenceEquals(s.Role, role) && !s.Dead && MonsterService.NowMs - _states.GetOrCreateValue(s).LastHitMs >= quiet)
+                if (ReferenceEquals(s.Role, role) && !s.Dead && _loop.NowMs - _states.GetOrCreateValue(s).LastHitMs >= quiet)
                     await PrayerShieldAsync(s);
             });
         }
@@ -237,7 +237,7 @@ public sealed class PassiveSkills : IGameTicker
         if (Learned(s, Union) is { Skill: var union })
             stacks = Math.Min((int)Value(union.DescData, 1), _teams.MembersOf(role.Id).Count(id => id != role.Id
                 && _sessions.All().FirstOrDefault(p => p.Role?.Id == id) is { Progress: { } progress } && IsCrusader(progress.Career)));
-        var live = s.Buffs.FirstOrDefault(b => b.ConfigId == UnionBuff && b.ExpireMs > MonsterService.NowMs);
+        var live = s.Buffs.FirstOrDefault(b => b.ConfigId == UnionBuff && b.ExpireMs > _loop.NowMs);
         if (stacks > 0 && live?.PileCount != stacks) await _buffs.SetPileCountAsync(s, UnionBuff, PermanentMs, role.Id, stacks);
         else if (stacks == 0 && live != null) await _buffs.RemoveAsync(s, live);
     }
@@ -265,7 +265,7 @@ public sealed class PassiveSkills : IGameTicker
             return;
         }
         long amount = (long)(_character.Stats(s)[AttrMaxHp] * Value(prayer.DescData, 3) / 100);
-        if (s.Buffs.Any(b => b.ConfigId == own.Id && b.ShieldRemaining >= amount && b.ExpireMs > MonsterService.NowMs)) return;
+        if (s.Buffs.Any(b => b.ConfigId == own.Id && b.ShieldRemaining >= amount && b.ExpireMs > _loop.NowMs)) return;
         await _buffs.AddSupportAsync(s, (int)own.Id, PermanentMs, s.Role.Id, amount);
     }
 

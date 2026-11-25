@@ -105,7 +105,7 @@ public sealed partial class CasualBattleService
                 State = EntityState.Alive, NotifyType = EntityBase.Types.NotifyType.All,
                 MovementInfo = new MovementInfo
                 {
-                    Pos = new Vec3 { X = X, Y = Y, Z = Z }, Face = Face, ServerTime = MonsterService.NowMs,
+                    Pos = new Vec3 { X = X, Y = Y, Z = Z }, Face = Face, ServerTime = NowMs,
                     MoveType = MovementType.MoveTypeNone,
                 },
             };

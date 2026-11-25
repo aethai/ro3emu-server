@@ -39,7 +39,7 @@ public sealed partial class TalentProcs
 
     private static ActiveBuff? Holding(GameSession s, int group)
     {
-        long now = MonsterService.NowMs;
+        long now = s.NowMs;
         foreach (var buff in s.Buffs) if (buff.ExpireMs > now && buff.ConfigId / 100 == group) return buff;
         return null;
     }

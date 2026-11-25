@@ -71,7 +71,7 @@ public sealed partial class GuildLeagueService
             MovementInfo = new MovementInfo
             {
                 Pos = new Vec3 { X = p.At.X, Y = p.At.Y, Z = p.At.Z },
-                ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone
+                ServerTime = _loop.NowMs, MoveType = MovementType.MoveTypeNone
             },
         };
         entity.CustomDatas.Add(CircleData(m, p, now, stay));
