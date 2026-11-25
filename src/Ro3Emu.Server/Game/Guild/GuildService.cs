@@ -959,152 +959,23 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         if (code == 0 && req.GuildId != 0 && req.GuildId != g!.Id) code = ErrorCodes.GuildMissing;
         if (code == 0 && g != null)
         {
-            switch (tp)
+            if (tp == 2)
             {
-                case 1:
-                    if (Sensitive(req.Announce)) code = ErrorCodes.TextSensitive;
-                    else if (AllNumeric(req.Announce)) code = ErrorCodes.GuildTextNumbers;
-                    else if (req.Announce.Length > (Data.Config.GuildSettings.Of(data).GuildNoticeContentNumNew ?? [0, 80])[1]) code = ErrorCodes.GuildTextLength;
-                    else if (!req.IsCheck) g.Announce = req.Announce; break;
-                case 2:
-                    if (req.IsCheck)
-                    {
-                        code = CheckName(req.Name, g.Id);
-                        if (code == 0 && g.LastChangeNameTime > 0 &&
-                            NowSec() < g.LastChangeNameTime + (Data.Config.GuildSettings.Of(data).GuildChangeNameTimeLimit ?? 7) * 86400)
-                            code = ErrorCodes.Cooldown;
-                    }
-                    else
-                    {
-                        // RunGuildAsync admitted the character gate and complete owner set together.
-                        {
-                            // Re-read under the payment lock: the guild may have dissolved while the request waited.
-                            g = Own(s);
-                            code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.EditInfo)
-                                ? ErrorCodes.GuildPermission : req.GuildId != 0 && req.GuildId != g.Id
-                                ? ErrorCodes.GuildMissing : CheckName(req.Name, g.Id);
-                            if (code == 0 && g!.LastChangeNameTime > 0 &&
-                                NowSec() < g.LastChangeNameTime + (Data.Config.GuildSettings.Of(data).GuildChangeNameTimeLimit ?? 7) * 86400)
-                                code = ErrorCodes.Cooldown;
-                            if (code == 0)
-                            {
-                                // Stage the rename on a detached copy so live references never observe an uncommitted name.
-                                var staged = JsonSerializer.Deserialize<GuildStore.State>(JsonSerializer.SerializeToUtf8Bytes(g!))!;
-                                staged.CapturedRevision = g!.CapturedRevision;
-                                staged.HistoryNames.Add(staged.Name);
-                                staged.Name = req.Name;
-                                staged.LastChangeNameTime = NowSec();
-                                var cost = (Data.Config.GuildSettings.Of(data).GuildChangeNameCost ?? [0, 0]);
-                                try
-                                {
-                                    if (cost.Length >= 2 && cost[0] > 0 && cost[1] > 0)
-                                    {
-                                        if (await character.ExchangeLockedAsync(s, new ExchangeRequest
-                                        {
-                                            Cost = [((int)cost[0], cost[1])],
-                                            Persist = tx =>
-                                            {
-                                                store.EnlistSave(staged, tx, "guild disappeared during rename"); EnlistViews(staged, tx);
-                                                tx.WithEconomy(GuildPayment(s, "guild-rename", (int)cost[0], cost[1]));
-                                            },
-                                            AsyncCommit = true,
-                                        }) == null)
-                                            code = ErrorCodes.ItemsShort;
-                                        else { g = staged; storedWithPayment = true; }
-                                    }
-                                    else if (!await SaveGuildAsync(staged)) code = ErrorCodes.GuildMissing;
-                                    else { g = staged; storedWithPayment = true; }
-                                }
-                                catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
-                                {
-                                    code = ErrorCodes.GuildNameTaken;
-                                }
-                                catch (RowMissingException ex) when (ex.Is(GuildStore.Table, staged.Id))
-                                {
-                                    code = ErrorCodes.GuildMissing;
-                                }
-                            }
-                        }
-                    }
-                    break;
-                case 3:
-                    code = CheckIcon(req.Icon, g);
-                    if (code == 0 && !req.IsCheck) { g.Background = req.Icon.BackgroundType; g.Icon = req.Icon.IconType; }
-                    break;
-                case 4:
-                    code = CheckRights(req.Right);
-                    if (code == 0 && !req.IsCheck)
-                        foreach (var setting in req.Right.Data)
-                            g.Rights[(int)setting.RightType] = [.. setting.AbledOfficial.Select(x => (int)x)];
-                    break;
-                case 5:
-                    if (Sensitive(req.Notice)) code = ErrorCodes.TextSensitive;
-                    else if (AllNumeric(req.Notice)) code = ErrorCodes.GuildTextNumbers;
-                    else if (req.Notice.Length > (Data.Config.GuildSettings.Of(data).GuildNoticeContentNumNew ?? [0, 80])[1]) code = ErrorCodes.GuildTextLength;
-                    else if (!req.IsCheck) { g.Notice = req.Notice; g.LastChangeNoticeTime = NowSec(); }
-                    break;
-                case 6: if (!req.IsCheck) g.AutoAccept = req.AutoAcceptApply; break;
-                case 7: if (!req.IsCheck) g.AutoCreateHelper = req.AutoCreateHelper; break;
-                case 8:
-                    if (req.JoinLevelLimit < 0 || req.JoinLevelLimit > 200) code = ErrorCodes.Parameter;
-                    else if (!req.IsCheck) g.JoinLevelLimit = req.JoinLevelLimit; break;
-                case 9: if (!req.IsCheck) { var personal = (s.Guild ?? new DBRoleGuildInfo()).Clone(); personal.CantBeInvited = req.CantBeInvited; await SavePersonalAsync(s, personal); } break;
-                case 10:
-                    if (req.IsOpeRecruit && g.LastRecruitMs + (Data.Config.GuildSettings.Of(data).GuildRecruitButtonCD ?? 300) * 1000 > NowMs())
-                        code = ErrorCodes.Cooldown;
-                    else if (req.IsOpeRecruit && string.IsNullOrWhiteSpace(req.Announce)) code = ErrorCodes.GuildTextLength;
-                    else if (Sensitive(req.Announce)) code = ErrorCodes.TextSensitive;
-                    else if (AllNumeric(req.Announce)) code = ErrorCodes.GuildTextNumbers;
-                    else if (req.Announce.Length > (Data.Config.GuildSettings.Of(data).GuildNoticeContentNumNew ?? [0, 80])[1]) code = ErrorCodes.GuildTextLength;
-                    else if (req.JoinLevelLimit < 0 || req.JoinLevelLimit > 200) code = ErrorCodes.Parameter;
-                    else if (!req.IsCheck)
-                    {
-                        g.Announce = req.Announce;
-                        g.JoinLevelLimit = req.JoinLevelLimit;
-                        g.AutoAccept = req.AutoAcceptApply;
-                        publishRecruit = req.IsOpeRecruit;
-                        if (publishRecruit) g.LastRecruitMs = NowMs();
-                    }
-                    break;
-                default: code = ErrorCodes.FeatureUnavailable; break;
+                var renamed = await EditRenameCoreAsync(s, g, req);
+                (code, g, storedWithPayment) = renamed;
             }
+            else if (tp == 9)
+            {
+                if (!req.IsCheck) { var personal = (s.Guild ?? new DBRoleGuildInfo()).Clone(); personal.CantBeInvited = req.CantBeInvited; await SavePersonalAsync(s, personal); }
+            }
+            else
+                (code, publishRecruit) = ApplyGuildFieldEdit(g, tp, req);
+
             if (code == 0 && g != null && !req.IsCheck)
             {
                 bool saved = tp == 9 || storedWithPayment || await SaveGuildAsync(g);
-                if (!saved)
-                {
-                    code = ErrorCodes.GuildMissing;
-                    g = Own(s);
-                }
-                else
-                {
-                    if (tp == 4)
-                        foreach (var handler in RightsChanged.Handlers) handler(g.Id);
-                    await RefreshMembers(g);
-                    if (tp is 1 or 2 or 5 or 10)
-                    {
-                        var change = BaseChangeOf(g);
-                        foreach (var m in g.Members.Values) if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);
-                    }
-                    if (tp == 10)
-                    {
-                        await PushBase(g, new GuildBaseInfoChangeNtf
-                        {
-                            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeAutoAcceptApply,
-                            AutoAcceptApply = g.AutoAccept
-                        });
-                        await PushBase(g, new GuildBaseInfoChangeNtf
-                        {
-                            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeJoinLevelLimit,
-                            JoinLevelLimit = g.JoinLevelLimit
-                        });
-                        if (publishRecruit)
-                        {
-                            await chat.PublishRecruitmentAsync(s, g.Announce, g.Id,
-                                g.Status == (int)GuildStatus.PreCreate, g.Members.Count - 1);
-                        }
-                    }
-                }
+                if (!saved) { code = ErrorCodes.GuildMissing; g = Own(s); }
+                else await BroadcastGuildEditAsync(s, g, tp, publishRecruit);
             }
         }
         await s.SendGameAsync(Edit, new GuildEditResp
@@ -1116,6 +987,136 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             JoinLevelLimit = g?.JoinLevelLimit ?? 0, CantBeInvited = s.Guild?.CantBeInvited ?? false,
             IsOpeRecruit = req.IsOpeRecruit
         });
+    }
+
+    private async Task<(int Code, GuildStore.State? Guild, bool StoredWithPayment)> EditRenameCoreAsync(
+        GameSession s, GuildStore.State g, GuildEditReq req)
+    {
+        if (req.IsCheck)
+        {
+            int checkCode = CheckName(req.Name, g.Id);
+            if (checkCode == 0 && g.LastChangeNameTime > 0 &&
+                NowSec() < g.LastChangeNameTime + (Data.Config.GuildSettings.Of(data).GuildChangeNameTimeLimit ?? 7) * 86400)
+                checkCode = ErrorCodes.Cooldown;
+            return (checkCode, g, false);
+        }
+        // Re-read under the payment lock: the guild may have dissolved while the request waited.
+        var current = Own(s);
+        int code = current == null ? ErrorCodes.NotInGuild : !HasRight(current, s.Role!.Id, GuildRight.EditInfo)
+            ? ErrorCodes.GuildPermission : req.GuildId != 0 && req.GuildId != current.Id
+            ? ErrorCodes.GuildMissing : CheckName(req.Name, current.Id);
+        if (code == 0 && current!.LastChangeNameTime > 0 &&
+            NowSec() < current.LastChangeNameTime + (Data.Config.GuildSettings.Of(data).GuildChangeNameTimeLimit ?? 7) * 86400)
+            code = ErrorCodes.Cooldown;
+        if (code != 0) return (code, current, false);
+
+        // Stage the rename on a detached copy so live references never observe an uncommitted name.
+        var staged = JsonSerializer.Deserialize<GuildStore.State>(JsonSerializer.SerializeToUtf8Bytes(current!))!;
+        staged.CapturedRevision = current!.CapturedRevision;
+        staged.HistoryNames.Add(staged.Name);
+        staged.Name = req.Name;
+        staged.LastChangeNameTime = NowSec();
+        var cost = Data.Config.GuildSettings.Of(data).GuildChangeNameCost ?? [0, 0];
+        try
+        {
+            if (cost.Length >= 2 && cost[0] > 0 && cost[1] > 0)
+            {
+                if (await character.ExchangeLockedAsync(s, new ExchangeRequest
+                {
+                    Cost = [((int)cost[0], cost[1])],
+                    Persist = tx =>
+                    {
+                        store.EnlistSave(staged, tx, "guild disappeared during rename"); EnlistViews(staged, tx);
+                        tx.WithEconomy(GuildPayment(s, "guild-rename", (int)cost[0], cost[1]));
+                    },
+                    AsyncCommit = true,
+                }) == null) return (ErrorCodes.ItemsShort, current, false);
+                return (0, staged, true);
+            }
+            if (!await SaveGuildAsync(staged)) return (ErrorCodes.GuildMissing, current, false);
+            return (0, staged, true);
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19) { return (ErrorCodes.GuildNameTaken, current, false); }
+        catch (RowMissingException ex) when (ex.Is(GuildStore.Table, staged.Id)) { return (ErrorCodes.GuildMissing, current, false); }
+    }
+
+    private (int Code, bool PublishRecruit) ApplyGuildFieldEdit(GuildStore.State g, int tp, GuildEditReq req)
+    {
+        int maxText = (int)(Data.Config.GuildSettings.Of(data).GuildNoticeContentNumNew ?? [0, 80])[1];
+        switch (tp)
+        {
+            case 1:
+                if (Sensitive(req.Announce)) return (ErrorCodes.TextSensitive, false);
+                if (AllNumeric(req.Announce)) return (ErrorCodes.GuildTextNumbers, false);
+                if (req.Announce.Length > maxText) return (ErrorCodes.GuildTextLength, false);
+                if (!req.IsCheck) g.Announce = req.Announce;
+                return (0, false);
+            case 3:
+                int iconCode = CheckIcon(req.Icon, g);
+                if (iconCode == 0 && !req.IsCheck) { g.Background = req.Icon.BackgroundType; g.Icon = req.Icon.IconType; }
+                return (iconCode, false);
+            case 4:
+                int rightCode = CheckRights(req.Right);
+                if (rightCode == 0 && !req.IsCheck)
+                    foreach (var setting in req.Right.Data)
+                        g.Rights[(int)setting.RightType] = [.. setting.AbledOfficial.Select(x => (int)x)];
+                return (rightCode, false);
+            case 5:
+                if (Sensitive(req.Notice)) return (ErrorCodes.TextSensitive, false);
+                if (AllNumeric(req.Notice)) return (ErrorCodes.GuildTextNumbers, false);
+                if (req.Notice.Length > maxText) return (ErrorCodes.GuildTextLength, false);
+                if (!req.IsCheck) { g.Notice = req.Notice; g.LastChangeNoticeTime = NowSec(); }
+                return (0, false);
+            case 6: if (!req.IsCheck) g.AutoAccept = req.AutoAcceptApply; return (0, false);
+            case 7: if (!req.IsCheck) g.AutoCreateHelper = req.AutoCreateHelper; return (0, false);
+            case 8:
+                if (req.JoinLevelLimit < 0 || req.JoinLevelLimit > 200) return (ErrorCodes.Parameter, false);
+                if (!req.IsCheck) g.JoinLevelLimit = req.JoinLevelLimit;
+                return (0, false);
+            case 10:
+                if (req.IsOpeRecruit && g.LastRecruitMs + (Data.Config.GuildSettings.Of(data).GuildRecruitButtonCD ?? 300) * 1000 > NowMs())
+                    return (ErrorCodes.Cooldown, false);
+                if (req.IsOpeRecruit && string.IsNullOrWhiteSpace(req.Announce)) return (ErrorCodes.GuildTextLength, false);
+                if (Sensitive(req.Announce)) return (ErrorCodes.TextSensitive, false);
+                if (AllNumeric(req.Announce)) return (ErrorCodes.GuildTextNumbers, false);
+                if (req.Announce.Length > maxText) return (ErrorCodes.GuildTextLength, false);
+                if (req.JoinLevelLimit < 0 || req.JoinLevelLimit > 200) return (ErrorCodes.Parameter, false);
+                if (req.IsCheck) return (0, false);
+                g.Announce = req.Announce;
+                g.JoinLevelLimit = req.JoinLevelLimit;
+                g.AutoAccept = req.AutoAcceptApply;
+                if (req.IsOpeRecruit) g.LastRecruitMs = NowMs();
+                return (0, req.IsOpeRecruit);
+            default: return (ErrorCodes.FeatureUnavailable, false);
+        }
+    }
+
+    private async Task BroadcastGuildEditAsync(GameSession s, GuildStore.State g, int tp, bool publishRecruit)
+    {
+        if (tp == 4)
+            foreach (var handler in RightsChanged.Handlers) handler(g.Id);
+        await RefreshMembers(g);
+        if (tp is 1 or 2 or 5 or 10)
+        {
+            var change = BaseChangeOf(g);
+            foreach (var m in g.Members.Values) if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);
+        }
+        if (tp != 10) return;
+        await PushBase(g, new GuildBaseInfoChangeNtf
+        {
+            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeAutoAcceptApply,
+            AutoAcceptApply = g.AutoAccept
+        });
+        await PushBase(g, new GuildBaseInfoChangeNtf
+        {
+            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeJoinLevelLimit,
+            JoinLevelLimit = g.JoinLevelLimit
+        });
+        if (publishRecruit)
+        {
+            await chat.PublishRecruitmentAsync(s, g.Announce, g.Id,
+                g.Status == (int)GuildStatus.PreCreate, g.Members.Count - 1);
+        }
     }
 
     /// <summary>The Guild League's handlers for 30410/30411/30412 (GuildLeagueService), run inside this family's guild scope.</summary>
