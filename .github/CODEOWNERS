@@ -1,0 +1,4 @@
+# Security-sensitive release, workflow, and prebuilt client binary paths.
+/prebuilt/ @aethai
+/.github/ @aethai
+/tools/release/ @aethai

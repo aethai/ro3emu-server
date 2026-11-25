@@ -4,4 +4,4 @@
 # Linux and Windows both have to meet it; the patcher runs one more test on Windows.
 server 1211
 patcher 31
-setup 148
+setup 155

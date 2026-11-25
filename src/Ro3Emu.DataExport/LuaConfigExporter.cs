@@ -92,18 +92,35 @@ public sealed class LuaConfigExporter : IDisposable
     }
 
     private const string Driver = """
+        local rawAssert = assert
+        local rawLoadfile = loadfile
+
         -- configdefine only supplies metatable helpers for the rows; stub them.
         package.preload["configdefine"] = function()
           return { newIndexFunc = function(t, k, v) rawset(t, k, v) end,
                    pairsFunc = function(t) return next, t, nil end }
         end
-        table.insert(package.searchers, 2, function(name)
-          local path = MODULES[string.lower(name)]
-          if not path then return "\n\tno client module " .. name end
-          local chunk, err = loadfile(path, "b")
-          if not chunk then error(err) end
-          return chunk, path
-        end)
+
+        -- Sandbox: keep only preload + our MODULES bytecode loader; strip filesystem/process/C-library escapes.
+        local preloadSearcher = package.searchers[1]
+        package.searchers = {
+          preloadSearcher,
+          function(name)
+            local path = MODULES[string.lower(name)]
+            if not path then return "\n\tno client module " .. name end
+            local chunk, err = rawLoadfile(path, "b")
+            if not chunk then error(err) end
+            return chunk, path
+          end,
+        }
+        package.loadlib = nil
+        package.path = ""
+        package.cpath = ""
+        os = nil
+        io = nil
+        debug = nil
+        dofile = nil
+        loadfile = nil
 
         local function isArray(t)
           local n = 0
@@ -178,7 +195,7 @@ public sealed class LuaConfigExporter : IDisposable
         end
 
         function export(path)
-          local chunk = assert(loadfile(path, "b"))
+          local chunk = rawAssert(rawLoadfile(path, "b"))
           local t = chunk()
           local data = t
           if type(t) == "table" and type(rawget(t, "m_kValues")) == "table" then

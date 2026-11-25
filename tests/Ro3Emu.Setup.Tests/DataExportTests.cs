@@ -66,6 +66,38 @@ public class DataExportTests
         finally { dir.Delete(true); }
     }
 
+    [Theory]
+    [InlineData("return { x = os.execute('echo hi') }")]
+    [InlineData("return { x = io.open('nope', 'r') }")]
+    [InlineData("return { x = io.popen('echo hi') }")]
+    [InlineData("return { x = dofile('nope.lua') }")]
+    [InlineData("return { x = loadfile('nope.lua') }")]
+    [InlineData("return { x = package.loadlib('kernel32.dll', 'Beep') }")]
+    [InlineData("return { x = debug.getinfo(1) }")]
+    public void LuaSandboxBlocksDangerousGlobalsDuringConfigExport(string maliciousLua)
+    {
+        var dir = Directory.CreateTempSubdirectory("ro3emu-sandbox-");
+        try
+        {
+            string chunkPath = Path.Combine(dir.FullName, "Evil.luac");
+            using (var lua = new KeraLua.Lua())
+            {
+                lua.OpenLibs();
+                lua.PushString(maliciousLua);
+                lua.SetGlobal("SOURCE");
+                lua.PushString(chunkPath);
+                lua.SetGlobal("OUT");
+                Assert.False(lua.DoString("local f = assert(io.open(OUT, 'wb')); f:write(string.dump(assert(load(SOURCE)))); f:close()"));
+            }
+
+            using var exporter = new LuaConfigExporter(dir.FullName);
+            bool ok = exporter.TryExport(chunkPath, out _, out string error);
+            Assert.False(ok, "Malicious Lua chunk should have been blocked by the sandbox.");
+            Assert.NotEmpty(error);
+        }
+        finally { dir.Delete(true); }
+    }
+
     [Fact]
     public void NavNamesAreDistinctInTableOrder()
     {
