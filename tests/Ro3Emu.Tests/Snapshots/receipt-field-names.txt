@@ -185,6 +185,10 @@ Ro3Emu.Server.Accounts.Persistence.EconomyEnvelopePlan/<child>P
 Ro3Emu.Server.Accounts.Persistence.EconomyEnvelopePlan/<envelope>P
 Ro3Emu.Server.Accounts.Persistence.EconomyEnvelopePlan/pendingAcknowledgementFault
 Ro3Emu.Server.Accounts.Persistence.EconomyEnvelopePlan/replay
+Ro3Emu.Server.Accounts.Persistence.EconomyRetentionPlan/<batch>P
+Ro3Emu.Server.Accounts.Persistence.EconomyRetentionPlan/<futureUtcMs>P
+Ro3Emu.Server.Accounts.Persistence.EconomyRetentionPlan/<ledgerCutoffUtcMs>P
+Ro3Emu.Server.Accounts.Persistence.EconomyRetentionPlan/<mailCutoffUtcMs>P
 Ro3Emu.Server.Accounts.Persistence.EconomyTransactionPlan/<child>P
 Ro3Emu.Server.Accounts.Persistence.EconomyTransactionPlan/<mutation>P
 Ro3Emu.Server.Accounts.Persistence.EconomyTransactionPlan/<owned>P

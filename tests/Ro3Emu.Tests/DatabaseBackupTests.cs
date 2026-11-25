@@ -556,6 +556,21 @@ public sealed class DatabaseBackupTests : IDisposable
         Assert.Equal(["Before"], RoleNames(Live));
     }
 
+    [Fact]
+    public void BackupSizeCapPrunesOldestCopiesWhileKeepingNewestTwo()
+    {
+        using var accounts = Store();
+        var backup = Backup(accounts);
+        backup.MaxTotalBytesOverride = 1; // force pruning down to the protected newest-2 floor
+        backup.Backup();
+        backup.Backup();
+        backup.Backup();
+        backup.Backup();
+
+        var remaining = DatabaseBackup.Completed(backup.Directory).ToList();
+        Assert.Equal(2, remaining.Count);
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

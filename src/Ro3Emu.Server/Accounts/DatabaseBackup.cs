@@ -73,6 +73,9 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
     /// <summary>Test-only: runs on the empty destination before the copy starts.</summary>
     internal Action<SqliteConnection>? BeforeCopyForTest { get; set; }
 
+    /// <summary>Test-only override for total backup directory size limit in bytes.</summary>
+    internal long? MaxTotalBytesOverride { get; set; }
+
     /// <summary>A copy of the live file and its WAL (the most a copy can take) plus the room the live database keeps to grow.</summary>
     internal long RequiredFreeBytes()
     {
@@ -160,8 +163,28 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
         int keep = Math.Max(1, Settings.Keep);
         foreach (var old in Completed(dir).Skip(keep)) File.Delete(old);
         CompressOlder(dir, Math.Clamp(Settings.Uncompressed, 1, keep));
+        EnforceMaxTotalBytes(dir, keep);
         return target;
     }
+
+    private void EnforceMaxTotalBytes(string dir, int keep)
+    {
+        long maxBytes = MaxTotalBytesOverride ?? (Settings.MaxTotalMegabytes > 0 ? Settings.MaxTotalMegabytes * 1024L * 1024 : 0);
+        if (maxBytes <= 0) return;
+        int floor = Math.Min(keep, KeepWhenShort);
+        var files = Completed(dir).ToList();
+        long total = files.Sum(f => new FileInfo(f).Length);
+        for (int i = files.Count - 1; i >= floor && total > maxBytes; i--)
+        {
+            long length = new FileInfo(files[i]).Length;
+            LogRemovedForCap(log, files[i], total, maxBytes);
+            File.Delete(files[i]);
+            total -= length;
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Removing old backup {Backup} to stay under backup size cap ({Total} > {Max} bytes)")]
+    private static partial void LogRemovedForCap(ILogger logger, string backup, long total, long max);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not record the backup integrity check")]
     private static partial void LogMarkerFailed(ILogger logger, Exception exception);
