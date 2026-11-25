@@ -157,15 +157,15 @@ public sealed partial class MvpService : IGameTicker
         _awardObligations = new RoleObligations<MvpObligationRow>("MVP award", accounts, loop, loop.Time,
             role => sessions.All().FirstOrDefault(s => s.Role?.Id == role), s => s.Progress != null, PayAsync,
             ObligationRetry.NextRecovery, log);
-        combat.EventDamageRecorded.Add((s, m, damage) => { OnDealt(s, m, damage); return Task.CompletedTask; });
-        combat.Taken.Add(OnTaken);
-        combat.BeforeLethalPublication.Add(PrepareKilledAsync);
-        combat.AfterLethalPublication.Add(FinalizePreparedAsync);
-        combat.LethalHitRolledBack.Add(RollbackUnpublishedLethal);
-        combat.Killed.Add(OnKilledAsync);
-        combat.IncomingDamageAdjusters.Add((m, _, _, damage) => Task.FromResult(FrenzyDealt(m, damage)));
-        combat.DamageAdjusters.Add((_, m, _, _, damage) => FrenzyTaken(m, damage));
-        scene.PublicLineOpened.Add(ActivateLine);
+        combat.EventDamageRecorded.Subscribe((s, m, damage) => { OnDealt(s, m, damage); return Task.CompletedTask; });
+        combat.Taken.Subscribe(OnTaken);
+        combat.BeforeLethalPublication.Subscribe(PrepareKilledAsync);
+        combat.AfterLethalPublication.Subscribe(FinalizePreparedAsync);
+        combat.LethalHitRolledBack.Subscribe(RollbackUnpublishedLethal);
+        combat.Killed.Subscribe(OnKilledAsync);
+        combat.IncomingDamageAdjusters.Subscribe((m, _, _, damage) => Task.FromResult(FrenzyDealt(m, damage)));
+        combat.DamageAdjusters.Subscribe((_, m, _, _, damage) => FrenzyTaken(m, damage));
+        scene.PublicLineOpened.Subscribe(ActivateLine);
         lines.HasPendingWork.Add(HasPendingWork);
         lines.Retiring.Insert(0, RetireLineAsync);
     }

@@ -310,14 +310,14 @@ public sealed partial class TalentProcs
         _loop = loop;
         buffs.SourceAttributes = BuffAttributes;
         combat.SkillBuffAllowed = SkillBuffAllowed;
-        combat.CastResolved.Add(OnCastResolvedAsync);
-        combat.DealtAsync.Add(RowProcsOnDealtAsync);
+        combat.CastResolved.Subscribe(OnCastResolvedAsync);
+        combat.DealtAsync.Subscribe(RowProcsOnDealtAsync);
         buffs.Changed.Add(OnBuffsChangedAsync);
         combat.TargetCountRow = TargetCountRow;
-        combat.TakenAsync.Add(OnTakenAsync);
-        combat.Killed.Add(OnKilledAsync);
-        combat.PlayerDied.Add(OnDiedAsync);
-        combat.PlayerKilled.Add(OnPlayerKilledAsync);
+        combat.TakenAsync.Subscribe(OnTakenAsync);
+        combat.Killed.Subscribe(OnKilledAsync);
+        combat.PlayerDied.Subscribe(OnDiedAsync);
+        combat.PlayerKilled.Subscribe(OnPlayerKilledAsync);
         character.ExtraAttributes.Add(SoulReaperAttributes);
     }
 

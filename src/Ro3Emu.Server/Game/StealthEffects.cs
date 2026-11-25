@@ -67,10 +67,10 @@ public sealed class StealthEffects : IGameTicker
         scenes.AddOwnedAfterLoaded(PublishAsync);
         skills.Learned.Add(PublishAsync);
         character.JobChanged.Add(PublishAsync);
-        combat.CastLanded.Add(BackSlideCamouflageAsync);
-        combat.DealtAsync.Add((s, _, _, damage) => damage > 0 ? DealtAsync(s) : Task.CompletedTask);
-        combat.TakenAsync.Add((_, s, damage) => damage > 0 ? TakenAsync(s) : Task.CompletedTask);
-        combat.PvpDealtAsync.Add(async (source, target, damage, _) =>
+        combat.CastLanded.Subscribe(BackSlideCamouflageAsync);
+        combat.DealtAsync.Subscribe((s, _, _, damage) => damage > 0 ? DealtAsync(s) : Task.CompletedTask);
+        combat.TakenAsync.Subscribe((_, s, damage) => damage > 0 ? TakenAsync(s) : Task.CompletedTask);
+        combat.PvpDealtAsync.Subscribe(async (source, target, damage, _) =>
         {
             if (damage <= 0) return;
             await TakenAsync(target);

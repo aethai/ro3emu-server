@@ -102,7 +102,7 @@ public sealed partial class CombatService
             own = owned == null ? OwnSkillAdmit?.Invoke(s, req.SkillId) : null;
             if (own is { } ownError && ownError != 0) error = ownError;
             else if (own == null && (owned != null ? !owned.Skills.Contains(req.SkillId)
-                : !Learned(s, row!.Value) && s.GmCastSkill != request.SkillId && !GrantedSkill.Exists(granted => granted(s, req.SkillId))))
+                : !Learned(s, row!.Value) && s.GmCastSkill != request.SkillId && !GrantedSkill.Handlers.Any(granted => granted(s, req.SkillId))))
                 error = ErrorCodes.SkillNotLearned;
             else if (!SkillModeAllowed(s, row!.Value)) error = ErrorCodes.SkillRequirements;
             else if (own == null && owned == null && s.GmCastSkill != request.SkillId && !SkillConditionMet(s, row.Value)) error = ErrorCodes.SkillRequirements;
@@ -158,7 +158,7 @@ public sealed partial class CombatService
         await PayCostsAsync(s, costs);
         if (!unlimited) await _buffs.SpendEnergyAsync(s, row!.Value);
         int lead = turn;
-        if (owned == null) foreach (var before in BeforeCast) lead += await before(s, req.SkillId);
+        if (owned == null) foreach (var before in BeforeCast.Handlers) lead += await before(s, req.SkillId);
         if (!lineup) await s.SendGameAsync(UseSkill, new CastSkillRsp { SessionId = id, IsAutoCast = req.IsAutoCast });
         var target = FindMonster(s.WorldScene, req.TargetId);
         var playerTarget = EventTarget(s, req.TargetId);

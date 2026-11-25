@@ -99,7 +99,7 @@ public sealed partial class NewActivityService
     private void InitializePassPlay(CombatService combat, DungeonService dungeons, MvpService mvps, TaskService tasks,
         ChatService chat)
     {
-        combat.Killed.Add((s, _) =>
+        combat.Killed.Subscribe((s, _) =>
         {
             bool party = _teams.MembersOf(s.Role!.Id).Count > 1;
             PassEvent(s, party ? [(PassGoal.Kills, 1), (PassGoal.PartyKills, 1)] : [(PassGoal.Kills, 1)], kills: 1);

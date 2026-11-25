@@ -73,7 +73,7 @@ public sealed partial class CombatService
             var targetRole = target.Role!;
             long sceneId = source.WorldScene;
             var (damage, result) = PlayerHitDamage(source, target, row);
-            if (damage > 0) foreach (var adjust in PvpDamageAdjusters) damage = Math.Max(0, adjust(source, row, result, damage));
+            if (damage > 0) foreach (var adjust in PvpDamageAdjusters.Handlers) damage = Math.Max(0, adjust(source, row, result, damage));
             var committed = await CommitPlayerDamageAsync(target, damage, row,
                 () => currentSource() && CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)
                     && CanPlayerHit(source, target), directHit: !new Data.Config.SkillConfig(row).IsFixedHit);
@@ -85,9 +85,9 @@ public sealed partial class CombatService
             {
                 if (effective > 0 && CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId))
                 {
-                    foreach (var handler in PvpDealt) handler(source, target, effective, hp == 0);
-                    foreach (var handler in PvpDealtAsync) await handler(source, target, effective, hp == 0);
-                    foreach (var handler in PvpHitLanded) await handler(source, target, row, effective, hp == 0);
+                    PvpDealt.Invoke(source, target, effective, hp == 0);
+                    await PvpDealtAsync.InvokeAsync(source, target, effective, hp == 0);
+                    await PvpHitLanded.InvokeAsync(source, target, row, effective, hp == 0);
                     await ReactToHitAsync(target, null, source, row, effective);
                     await HolyLightBreaksKyrieAsync(target, row);
                 }
@@ -119,7 +119,7 @@ public sealed partial class CombatService
                     await PlayerDiesAsync(target);
                     if (effective <= 0 || !CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)) continue;
                     if (eventFight && _eventPlayerKilled != null) await _eventPlayerKilled(source, target);
-                    foreach (var handler in PlayerKilled)
+                    foreach (var handler in PlayerKilled.Handlers)
                     {
                         if (!CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)) break;
                         await handler(source, target);

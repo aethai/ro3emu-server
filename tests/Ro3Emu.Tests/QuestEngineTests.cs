@@ -224,7 +224,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await Accept(10104080, 301010);
         await Gm("!quest accept 10104080", "questbob");
         var combat = Service<CombatService>();
-        var callback = combat.Killed.Single(h => h.Target is TaskService);
+        var callback = combat.Killed.Handlers.Single(h => h.Target is TaskService);
         for (int i = 0; i < 15; i++)
         {
             int npc = i % 2 == 0 ? 5000055 : 5000056;
@@ -236,7 +236,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
                     Template = Service<MonsterService>().Template(npc)!,
                     Home = new SpawnPoint(0, 0, 0, 0, 0, npc), Group = new SpawnGroup(0, false, 1, 0, [], []),
                 };
-                foreach (var handler in combat.Dealt) handler(s, monster, 1);
+                combat.Dealt.Invoke(s, monster, 1);
                 var killer = Service<SessionRegistry>().All().Single(x => x.Role?.Name == "QuestBob");
                 await callback(killer, monster);
             });

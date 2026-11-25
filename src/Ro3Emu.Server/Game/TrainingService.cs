@@ -69,9 +69,9 @@ public sealed class TrainingService : IGameTicker
                     break;
                 }
             }
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(s => { _attempts.Remove(s); return Task.CompletedTask; });
-        combat.EventDamageRecorded.Add((s, m, amount) =>
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(s => { _attempts.Remove(s); return Task.CompletedTask; });
+        combat.EventDamageRecorded.Subscribe((s, m, amount) =>
         {
             if (!_attempts.TryGetValue(s, out var a) || a.Dummy != m || s.InstanceId != a.Room.Id || s.SceneLoading)
                 return Task.CompletedTask;

@@ -71,9 +71,9 @@ public sealed class WildAfkService : IGameTicker
         this._sessions = sessions;
         this._world = world;
         this._loop = loop;
-        scene.Leaving.Add(s => SuspendAsync(s));
-        scene.Loaded.Add(s => ReconcileAsync(s));
-        combat.PlayerDied.Add(s => SuspendAsync(s));
+        scene.Leaving.Subscribe(s => SuspendAsync(s));
+        scene.Loaded.Subscribe(s => ReconcileAsync(s));
+        combat.PlayerDied.Subscribe(s => SuspendAsync(s));
         rewards.QualifiesForBonus = BeforeKillAsync;
         rewards.IsFieldAutoBattle = IsFieldAutoBattle;
         rewards.StageAfkKill = StageAfkKill;

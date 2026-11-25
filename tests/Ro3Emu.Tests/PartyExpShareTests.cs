@@ -58,7 +58,7 @@ public sealed class PartyExpShareTests
         await loop.InvokeAsync(async () =>
         {
             rewards.ResolveKillForTest = (_, _) => ([], KillExp, KillExp);
-            await host.Service<CombatService>().Killed.Single(h => h.Target == rewards)(killer, Monster(killer));
+            await host.Service<CombatService>().Killed.Handlers.Single(h => h.Target == rewards)(killer, Monster(killer));
         });
         if (share.Enabled)
             await bob.Inbox.WaitAsync(e => e.IsGame(CharacterService.GetRewardNotify), Wait); // the member's own grant

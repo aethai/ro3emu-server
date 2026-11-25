@@ -46,8 +46,8 @@ public sealed partial class TerritoryWorldTests
         Task Kill(bool assisted) => OnLoop(async () =>
         {
             if (assisted)
-                foreach (var hit in combat.PvpDealtAsync) await hit(Session(helper), Session(victim), 100, false);
-            foreach (var killed in combat.PlayerKilled) await killed(Session(killer), Session(victim));
+                await combat.PvpDealtAsync.InvokeAsync(Session(helper), Session(victim), 100, false);
+            await combat.PlayerKilled.InvokeAsync(Session(killer), Session(victim));
         });
         // The purse applies after the receipt commits: wait for the expected balance.
         async Task Merit(BotClient bot, long expected)

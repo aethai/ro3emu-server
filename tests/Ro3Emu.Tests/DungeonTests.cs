@@ -277,7 +277,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(bob);
             dead.Dead = true; // controlled death fixture through the same registered owner callbacks
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var noRevive = await Next(bob, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => info.BDead);
         Assert.Equal(0, noRevive.ReviveTime);
@@ -470,7 +470,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(alice);
             dead.Dead = true;
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var autoRevive = await Next(alice, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => info.BDead);
@@ -521,7 +521,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(alice);
             dead.Dead = true;
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var revive = await Next(alice, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => info.BDead);
@@ -696,7 +696,8 @@ public sealed partial class DungeonTests : IAsyncLifetime
                 if (ReferenceEquals(monster, fourthBoss)) settled.TrySetResult();
                 return Task.CompletedTask;
             };
-            await OnLoop(() => { Service<CombatService>().Killed.Add(observeSettlement); return Task.CompletedTask; });
+            IDisposable? sub = null;
+            await OnLoop(() => { sub = Service<CombatService>().Killed.Subscribe(observeSettlement); return Task.CompletedTask; });
             try
             {
                 await Kill(alice, fourthBoss);
@@ -706,7 +707,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
             }
             finally
             {
-                await OnLoop(() => { Service<CombatService>().Killed.Remove(observeSettlement); return Task.CompletedTask; });
+                sub?.Dispose();
             }
             // A repeated failed delivery must keep the same entitlement and publish no result.
             await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() =>

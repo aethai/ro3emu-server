@@ -32,7 +32,7 @@ public sealed partial class SkillCombatTests
         var combat = _app.Services.GetRequiredService<CombatService>();
         combat.Rolls = new CritRolls(1);
         var strikes = new List<Strike>();
-        combat.DealtAsync.Add((source, monster, row, amount) =>
+        combat.DealtAsync.Subscribe((source, monster, row, amount) =>
         {
             var skill = new SkillConfig(row);
             if (source == me) strikes.Add(new Strike(skill.Id, monster.Uid, amount, skill.DamageParam1, skill.DamageParam2));

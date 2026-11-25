@@ -15,7 +15,7 @@ public sealed partial class SkillCombatTests
         var target = await Target(name, stationary: true);
         var p = Session(name);
         int strikes = 0;
-        combat.DealtAsync.Add((_, m, _, _) => { if (m == target) strikes++; return Task.CompletedTask; });
+        combat.DealtAsync.Subscribe((_, m, _, _) => { if (m == target) strikes++; return Task.CompletedTask; });
         await Loop.InvokeAsync(async () =>
         {
             target.Template = target.Template with { MaxHp = 100_000_000 };
@@ -67,7 +67,7 @@ public sealed partial class SkillCombatTests
         var a = Session("alice");
         a.GmCombat |= GmCombatSwitches.Unlimited;
         var seen = new List<long>();
-        combat.DealtAsync.Add((_, m, _, amount) => { if (m == target) seen.Add(amount); return Task.CompletedTask; });
+        combat.DealtAsync.Subscribe((_, m, _, amount) => { if (m == target) seen.Add(amount); return Task.CompletedTask; });
         await Loop.InvokeAsync(() =>
         {
             target.Template = target.Template with { MaxHp = 100_000_000 };

@@ -405,7 +405,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
         var barrels = drake.Template.Skills!.Skills.Single(k => k.Id == 4323101);
         await OnLoop(async () =>
         {
-            foreach (var landed in Service<CombatService>().BossAreaLanded) await landed(drake, barrels, ships[1].Pos, ships[1].Pos, 0);
+            await Service<CombatService>().BossAreaLanded.InvokeAsync(drake, barrels, ships[1].Pos, ships[1].Pos, 0);
         });
         Assert.Single(await InRoom<DungeonService.SceneActorUnit>(instance, u => u.NpcId == 43200007));
         // 20 m ahead of the other ship, in its lane.

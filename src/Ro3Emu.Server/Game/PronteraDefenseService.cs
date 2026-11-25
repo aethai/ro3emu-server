@@ -79,10 +79,10 @@ public sealed partial class PronteraDefenseService : IGameTicker
         this._character = character; this._awards = awards; this._functions = functions; this._monsters = monsters; this._worldData = worldData; this._world = world;
         this._sessions = sessions; this._loop = loop; this._log = log; this._buffs = buffs;
         LoadWorld();
-        combat.Killed.Add(OnKilledAsync);
-        combat.PlayerRevived.Add(OnRevivedAsync);
+        combat.Killed.Subscribe(OnKilledAsync);
+        combat.PlayerRevived.Subscribe(OnRevivedAsync);
         _ignoresRevived = RecentlyRevived;
-        scene.Loaded.Add(ApplyPrepBuffAsync);
+        scene.Loaded.Subscribe(ApplyPrepBuffAsync);
         gm.Register("defense", "round <1-4> | end | status (Battle for Prontera test aid: TimeLimit 1012 opens so that round n starts now, "
             + "or back to the real schedule; status lists City Defense and the invaders)", GmAsync);
     }

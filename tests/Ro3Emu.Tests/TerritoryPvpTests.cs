@@ -112,8 +112,8 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             source.Position = victim.Position.Clone();
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => a == source && b == victim;
-            combat.PvpDealt.Add((a, b, amount, lethal) => { if (a == source && b == victim) dealt.Add((amount, lethal)); });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PvpDealt.Subscribe((a, b, amount, lethal) => { if (a == source && b == victim) dealt.Add((amount, lethal)); });
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == victim) { killed++; killNotified.TrySetResult(); }
                 return Task.CompletedTask;
@@ -182,11 +182,11 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => a == source && b == target;
-            combat.PvpDealt.Add((a, b, amount, dead) =>
+            combat.PvpDealt.Subscribe((a, b, amount, dead) =>
             {
                 if (a == source && b == target) dealt.Add((amount, dead));
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) { kills++; killed.TrySetResult(); }
                 return Task.CompletedTask;
@@ -248,8 +248,8 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
-            combat.PvpDealt.Add((a, b, _, _) => { if (a == source && b == target) scoredHits++; });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PvpDealt.Subscribe((a, b, _, _) => { if (a == source && b == target) scoredHits++; });
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) kills++;
                 return Task.CompletedTask;
@@ -316,16 +316,16 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => a == source && b == target;
-            combat.PvpDealt.Add((a, b, _, lethal) =>
+            combat.PvpDealt.Subscribe((a, b, _, lethal) =>
             {
                 if (a == source && b == target && lethal) source.SceneLoading = true; // departure during hit publication
             });
-            combat.PlayerDied.Add(p =>
+            combat.PlayerDied.Subscribe(p =>
             {
                 if (p == target) { deaths++; deathPublished.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) attributedKills++;
                 return Task.CompletedTask;
@@ -371,13 +371,13 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
-            combat.CastLanded.Add((a, _) =>
+            combat.CastLanded.Subscribe((a, _) =>
             {
                 if (a == source) landed.TrySetResult();
                 return Task.CompletedTask;
             });
-            combat.PvpDealt.Add((a, b, _, _) => { if (a == source && b == target) hits++; });
-            combat.PlayerDied.Add(p =>
+            combat.PvpDealt.Subscribe((a, b, _, _) => { if (a == source && b == target) hits++; });
+            combat.PlayerDied.Subscribe(p =>
             {
                 if (p == target) deaths++;
                 return Task.CompletedTask;
@@ -445,26 +445,26 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             probe.Hp = 1;
             var combat = Service<CombatService>();
             combat.PlayerHostile = (a, b) => (a == firstSession || a == secondSession) && b == victimSession;
-            combat.PvpDealt.Add((a, b, amount, lethal) =>
+            combat.PvpDealt.Subscribe((a, b, amount, lethal) =>
             {
                 if (b == victimSession) dealt.Add((a, amount, lethal));
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (b == victimSession) { deaths++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.MonsterDamageApplied.Add((a, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((a, m, _) =>
             {
                 if (a != firstSession || m != probe) return Task.CompletedTask;
                 held.TrySetResult();
                 return release.Task;
             });
-            combat.Killed.Insert(0, (a, m) =>
+            combat.Killed.Subscribe((a, m) =>
             {
                 if (a == firstSession && m == probe) probeKilled.TrySetResult();
                 return Task.CompletedTask;
-            });
+            }, order: -1000);
         });
 
         try
@@ -513,14 +513,14 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             Assert.NotNull(first);
             first.Hp = 1;
             var combat = Service<CombatService>();
-            combat.MonsterDamageApplied.Add((_, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((_, m, _) =>
                 m == first ? Task.FromException(new InvalidOperationException("test callback failure")) : Task.CompletedTask);
-            combat.Killed.Insert(0, (_, m) =>
+            combat.Killed.Subscribe((_, m) =>
             {
                 if (m == first) { firstKills++; firstKilled.TrySetResult(); }
                 return Task.CompletedTask;
-            });
-            combat.Dealt.Add((_, m, amount) =>
+            }, order: -1000);
+            combat.Dealt.Subscribe((_, m, amount) =>
             {
                 if (m == second && amount > 0) secondDamaged.TrySetResult();
             });
@@ -583,13 +583,13 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             untouchedCombat = untouched.LastCombatMs;
             untouchedStatus = untouched.StatusBits;
             var combat = Service<CombatService>();
-            combat.MonsterDamageApplied.Add((a, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((a, m, _) =>
             {
                 if (a != source || m != target) return Task.CompletedTask;
                 held.TrySetResult();
                 return release.Task;
             });
-            combat.Killed.Add((a, m) =>
+            combat.Killed.Subscribe((a, m) =>
             {
                 if (a == source && m == target) attributedKills++;
                 return Task.CompletedTask;

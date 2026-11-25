@@ -126,7 +126,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             first.Hp = second.Hp = 100000;
             _app.Services.GetRequiredService<RoleHandover>().BeforeCleanupForTest = session =>
                 session == player ? releaseCleanup.Task : Task.CompletedTask;
-            _app.Services.GetRequiredService<CombatService>().DealtAsync.Add(async (source, target, _, _) =>
+            _app.Services.GetRequiredService<CombatService>().DealtAsync.Subscribe(async (source, target, _, _) =>
             {
                 if (source != player || target != first && target != second) return;
                 dealt++;
@@ -178,17 +178,17 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             first.Hp = 1;
             second.Hp = 100000;
             var combat = _app.Services.GetRequiredService<CombatService>();
-            combat.MonsterDamageApplied.Add((source, target, _) =>
+            combat.MonsterDamageApplied.Subscribe((source, target, _) =>
             {
                 if (source == player && target == first) applied++;
                 return Task.CompletedTask;
             });
-            combat.Killed.Add((source, target) =>
+            combat.Killed.Subscribe((source, target) =>
             {
                 if (source == player && target == first) { killCount++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.DealtAsync.Add(async (source, target, _, _) =>
+            combat.DealtAsync.Subscribe(async (source, target, _, _) =>
             {
                 if (source != player) return;
                 dealt++;
@@ -346,12 +346,12 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         {
             player.NoRegenUntilMs = long.MaxValue; // a recovery tick would lift this 1 HP out of one lethal hit
             await Character.SetHpSpAsync(player, 1, null);
-            combat.TakenAsync.Add(async (_, target, _) =>
+            combat.TakenAsync.Subscribe(async (_, target, _) =>
             {
                 if (target != player || !target.Dead) return;
                 entered.TrySetResult(); await release.Task;
             });
-            combat.PlayerDied.Add(target =>
+            combat.PlayerDied.Subscribe(target =>
             {
                 if (target == player) settled.TrySetResult();
                 return Task.CompletedTask;
@@ -394,13 +394,13 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         await Loop.InvokeAsync(() =>
         {
             target.Hp = 1;
-            combat.DealtAsync.Add(async (source, monster, _, _) =>
+            combat.DealtAsync.Subscribe(async (source, monster, _, _) =>
             {
                 if (monster != target) return;
                 dealtCount++;
                 if (source == Session("alice")) { entered.TrySetResult(); await release.Task; }
             });
-            combat.Killed.Add((_, monster) =>
+            combat.Killed.Subscribe((_, monster) =>
             {
                 if (monster == target) { killCount++; killed.TrySetResult(); }
                 return Task.CompletedTask;
@@ -510,11 +510,11 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         long delivered = 0;
         await Loop.InvokeAsync(() =>
         {
-            combat.CastLanded.Add((_, _) => { landed++; return Task.CompletedTask; });
-            combat.DamageAdjusters.Add((_, _, _, _, _) => { adjusted++; return 17; });
-            combat.ExtraHitDamage.Add((_, _, _, _) => { extra++; return 3; });
-            combat.DealtAsync.Add((_, _, _, amount) => { dealt++; delivered = amount; return Task.CompletedTask; });
-            combat.ExtraHeal.Add((_, _) => { healed++; return 23; });
+            combat.CastLanded.Subscribe((_, _) => { landed++; return Task.CompletedTask; });
+            combat.DamageAdjusters.Subscribe((_, _, _, _, _) => { adjusted++; return 17; });
+            combat.ExtraHitDamage.Subscribe((_, _, _, _) => { extra++; return 3; });
+            combat.DealtAsync.Subscribe((_, _, _, amount) => { dealt++; delivered = amount; return Task.CompletedTask; });
+            combat.ExtraHeal.Subscribe((_, _) => { healed++; return 23; });
             return Task.CompletedTask;
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1100101, TargetId = target.Uid });

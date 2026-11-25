@@ -79,11 +79,11 @@ public sealed class TotemEffectsTests : IAsyncLifetime
 
         // The registered op-2 passive grants a timed active floor when a normal attack or skill lands.
         var normal = data.Row("SkillConfig", 1000001)!.Value;
-        foreach (var handler in combat.CastLanded) await handler(session, normal);
+        await combat.CastLanded.InvokeAsync(session, normal);
         var stack = Assert.Single(session.Buffs, b => b.ConfigId == 2500401 && b.SourceId == item.Guid);
         Assert.Equal(1, stack.PileCount);
         Assert.Equal(1, session.Buffs.Count(b => b.ConfigId == 2500401));
-        for (int n = 0; n < 3; n++) foreach (var handler in combat.CastLanded) await handler(session, normal);
+        for (int n = 0; n < 3; n++) await combat.CastLanded.InvokeAsync(session, normal);
         stack = Assert.Single(session.Buffs, b => b.ConfigId == 2500401 && b.SourceId == item.Guid);
         Assert.Equal(3, stack.PileCount); // op18 raises this instance's category cap 2 -> 3.
         Assert.Equal(250, effects.Attributes(session, item, 10053005).Where(a => a.Id == 213).Sum(a => a.Value));

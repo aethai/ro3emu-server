@@ -55,14 +55,14 @@ public sealed class TotemEffects : IGameTicker
         this._monsters = monsters; this._sessions = sessions;
         this._loop = loop;
         character.DynamicProperties.Add(ShieldProperties);
-        combat.CastLanded.Add(OnCastAsync);
-        combat.DamageAdjusters.Add(AdjustDamage);
-        combat.ExtraHitDamage.Add(ExtraDamage);
-        combat.DealtAsync.Add(OnDealtAsync);
-        combat.ExtraHeal.Add(ExtraHealing);
-        combat.IncomingDamageAdjusters.Add(AdjustIncomingDamageAsync);
-        combat.TakenAsync.Add(OnTakenAsync);
-        combat.PlayerRevived.Add(RefreshAsync);
+        combat.CastLanded.Subscribe(OnCastAsync);
+        combat.DamageAdjusters.Subscribe(AdjustDamage);
+        combat.ExtraHitDamage.Subscribe(ExtraDamage);
+        combat.DealtAsync.Subscribe(OnDealtAsync);
+        combat.ExtraHeal.Subscribe(ExtraHealing);
+        combat.IncomingDamageAdjusters.Subscribe(AdjustIncomingDamageAsync);
+        combat.TakenAsync.Subscribe(OnTakenAsync);
+        combat.PlayerRevived.Subscribe(RefreshAsync);
     }
 
     private static long[] Numbers(JsonElement array) => array.ValueKind == JsonValueKind.Array

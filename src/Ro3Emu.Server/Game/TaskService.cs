@@ -86,8 +86,8 @@ public sealed partial class TaskService
         this._mounts = mounts;
         this._scene = scene;
         this._clock = clock;
-        combat.Killed.Add(OnKillAsync);
-        combat.Dealt.Add((s, m, damage) => { if (damage > 0 && s.Role != null) _participants.GetOrCreateValue(m).Add(s.Role.Id); });
+        combat.Killed.Subscribe(OnKillAsync);
+        combat.Dealt.Subscribe((s, m, damage) => { if (damage > 0 && s.Role != null) _participants.GetOrCreateValue(m).Add(s.Role.Id); });
         character.JobChanged.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
         // Level, stat and skill point targets are checked after the change settles (the handlers run inside
         // CharacterService's lock; a delivery grants exp, which takes it again).
@@ -104,7 +104,7 @@ public sealed partial class TaskService
         _loop.Add(new PlotRegionTicker(this)); // TaskService.PlotRegions.cs
         ExtraTasks.Add(DungeonRunTasks); // TaskService.DungeonTasks.cs
         QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
-        combat.PlayerKilled.Add(OnFactionPlayerKilledAsync); // 101023
+        combat.PlayerKilled.Subscribe(OnFactionPlayerKilledAsync); // 101023
     }
 
     /// <summary>Delivered = completeTaskNum &gt; 0 or status 4 (the client's CheckTaskDeliveryed). Without quest state: true.</summary>

@@ -275,13 +275,13 @@ public sealed partial class TerritoryEscortService : IGameTicker
                 rounds[play.Round] = play.Score;
             }
         PublishSnapshots();
-        scene.Loaded.Add(SceneLoadedAsync);
-        scene.LoadedKeys.Add(SceneKeys);
-        scene.Leaving.Add(SceneLeavingAsync);
-        combat.Killed.Add(CartKilledAsync);
-        combat.MonsterDamageApplied.Add(CartDamagedAsync);
-        combat.PvpDealt.Add(PvpRecorded);
-        combat.PlayerKilled.Add(PlayerKilledAsync);
+        scene.Loaded.Subscribe(SceneLoadedAsync);
+        scene.LoadedKeys.Subscribe(SceneKeys);
+        scene.Leaving.Subscribe(SceneLeavingAsync);
+        combat.Killed.Subscribe(CartKilledAsync);
+        combat.MonsterDamageApplied.Subscribe(CartDamagedAsync);
+        combat.PvpDealt.Subscribe(PvpRecorded);
+        combat.PlayerKilled.Subscribe(PlayerKilledAsync);
     }
 
     private static long RoleId(GameSession s) => s.Role?.Id ?? 0;

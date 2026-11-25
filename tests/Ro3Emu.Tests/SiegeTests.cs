@@ -364,10 +364,11 @@ public sealed partial class SiegeTests : IAsyncLifetime
                 cancelled.TrySetResult((cast, target.Dead));
                 return Task.CompletedTask;
             };
+            IDisposable? captureSub = null, cancelSub = null;
             await OnLoop(() =>
             {
-                combat.BeforeLethalPublication.Insert(0, captureLethalCast);
-                combat.Killed.Insert(0, cancelAfterLethal);
+                captureSub = combat.BeforeLethalPublication.Subscribe(captureLethalCast, order: -1000);
+                cancelSub = combat.Killed.Subscribe(cancelAfterLethal, order: -1000);
                 return Task.CompletedTask;
             });
             SiegeDungeonResultNtf result;
@@ -381,12 +382,8 @@ public sealed partial class SiegeTests : IAsyncLifetime
             }
             finally
             {
-                await OnLoop(() =>
-            {
-                combat.Killed.Remove(cancelAfterLethal);
-                combat.BeforeLethalPublication.Remove(captureLethalCast);
-                return Task.CompletedTask;
-            });
+                cancelSub?.Dispose();
+                captureSub?.Dispose();
             }
             var (cancelledCast, crystalWasDead) = await cancelled.Task.WaitAsync(Wait);
             Assert.NotNull(cancelledCast);

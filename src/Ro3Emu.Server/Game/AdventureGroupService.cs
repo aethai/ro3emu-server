@@ -100,7 +100,7 @@ public sealed partial class AdventureGroupService : IGameTicker
         // Group quests (TaskConfig type 23, conditions 88000081-85 = level 999 in this export): a normal group's members.
         functions.ConditionOverride = GroupQuestCondition;
         tasks.QuestDelivered.Add(OnTaskDelivered);
-        scene.Loaded.Add(OnSceneLoadedAsync);
+        scene.Loaded.Subscribe(OnSceneLoadedAsync);
         gm.Register("advguild", "create <name> | add <role name> | exp <n> | water | info | disband (Adventure Group test aid)", GmAsync);
     }
 

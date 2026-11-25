@@ -55,9 +55,9 @@ public sealed partial class StallsService
         // C/D 15: the realm-wide stall maintenance (stall collection, owner roles, AOI actors) no longer runs inside the
         // scene's hook scope, nor delays the scene handoff. A scene's first visit starts its system stall population
         // as its own operation; later loads of a visited scene leave it to the one-second maintenance.
-        scenes.Loaded.Add(s => { PopulateFirstVisit(s); return Task.CompletedTask; });
-        scenes.Leaving.Add(s => { s.ViewedStall = s.ViewedSystemStall = 0; return Task.CompletedTask; });
-        scenes.PublicLineOpened.Add(ActivateLine);
+        scenes.Loaded.Subscribe(s => { PopulateFirstVisit(s); return Task.CompletedTask; });
+        scenes.Leaving.Subscribe(s => { s.ViewedStall = s.ViewedSystemStall = 0; return Task.CompletedTask; });
+        scenes.PublicLineOpened.Subscribe(ActivateLine);
         lines.HasPendingWork.Add(HasPendingWork);
         lines.Retiring.Insert(0, RetireLineAsync);
         loop.ScheduleRuntime(TimeSpan.FromSeconds(1), MaintainAsync);

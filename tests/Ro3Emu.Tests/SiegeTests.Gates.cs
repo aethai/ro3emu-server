@@ -323,7 +323,7 @@ public sealed partial class SiegeTests
         var run = Run(attack);
         var a = Session(attack);
         var data = Service<Ro3Emu.Server.Data.GameData>();
-        long Hit(MonsterUnit m, int skill, long damage) => Service<CombatService>().DamageAdjusters.Aggregate(damage,
+        long Hit(MonsterUnit m, int skill, long damage) => Service<CombatService>().DamageAdjusters.Handlers.Aggregate(damage,
             (d, adjust) => adjust(a, m, Ro3Emu.Server.Data.Config.SkillConfig.Get(data, skill)!.Value.Row,
                 DamageHitResult.Normal, d));
 

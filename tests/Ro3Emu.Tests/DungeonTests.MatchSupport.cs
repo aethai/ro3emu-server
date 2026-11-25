@@ -120,9 +120,9 @@ public sealed partial class DungeonTests
             Assert.DoesNotContain(Session(carol).Buffs, b => b.ConfigId == 990301);
             var combat = Service<CombatService>();
             var skill = Service<GameData>().Row("SkillConfig", 1100001)!.Value;
-            long dealt = combat.DamageAdjusters.Aggregate(10000L, (n, f) => f(Session(alice), boss, skill, DamageHitResult.Normal, n));
+            long dealt = combat.DamageAdjusters.Handlers.Aggregate(10000L, (n, f) => f(Session(alice), boss, skill, DamageHitResult.Normal, n));
             long taken = 10000;
-            foreach (var f in combat.IncomingDamageAdjusters) taken = await f(boss, Session(alice), DamageHitResult.Normal, taken);
+            foreach (var f in combat.IncomingDamageAdjusters.Handlers) taken = await f(boss, Session(alice), DamageHitResult.Normal, taken);
             Assert.Equal(10500, dealt);
             Assert.Equal(9500, taken);
             Assert.Empty(Session(alice).Dungeons!.Records); // buffs do not mint completion rewards
@@ -134,7 +134,7 @@ public sealed partial class DungeonTests
         {
             var combat = Service<CombatService>();
             var skill = Service<GameData>().Row("SkillConfig", 1100001)!.Value;
-            Assert.Equal(10200, combat.DamageAdjusters.Aggregate(10000L,
+            Assert.Equal(10200, combat.DamageAdjusters.Handlers.Aggregate(10000L,
                 (n, f) => f(Session(alice), boss, skill, DamageHitResult.Normal, n)));
             await Service<DungeonService>().ReconcileAsync(Session(alice));
             Assert.DoesNotContain(Session(alice).Buffs, b => b.ConfigId == 990101);

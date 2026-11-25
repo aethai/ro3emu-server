@@ -363,7 +363,7 @@ public sealed partial class DungeonTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<CombatService>().PlayerDied.Add(async player =>
+            Service<CombatService>().PlayerDied.Subscribe(async player =>
             {
                 if (player != session) return;
                 entered.TrySetResult();
@@ -642,7 +642,7 @@ public sealed partial class DungeonTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<SceneService>().Leaving.Add(async s =>
+            Service<SceneService>().Leaving.Subscribe(async s =>
             {
                 if (s != Session(alice)) return;
                 entered.TrySetResult();

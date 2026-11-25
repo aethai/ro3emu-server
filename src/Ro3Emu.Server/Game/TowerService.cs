@@ -60,14 +60,14 @@ public sealed partial class TowerService
         this._clock = clock;
         this._log = log;
         // Owner-bound pets must leave before InstanceService removes their owner (LC_Unit_Pet.Destroy).
-        scene.Leaving.Insert(scene.Leaving.IndexOf(instances.AbandonAsync), AbandonAsync);
-        scene.Loaded.Add(followers.RefreshAsync); // suppress the passive projection in tower; restore it on return
-        scene.Loaded.Add(LoadedAsync);
+        scene.Leaving.Subscribe(AbandonAsync, order: SceneService.LeaveOrderTowerPets);
+        scene.Loaded.Subscribe(followers.RefreshAsync); // suppress the passive projection in tower; restore it on return
+        scene.Loaded.Subscribe(LoadedAsync);
         RegisterSuppression();
-        combat.Killed.Add(KilledAsync);
-        combat.BeforeKilled.Insert(0, BeforeTerminalKillAsync);
-        combat.PlayerDied.Add(PlayerDiedAsync);
-        combat.TowerPetDied.Add(PetDiedAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.BeforeKilled.Subscribe(BeforeTerminalKillAsync, order: CombatService.BeforeKilledOrderTower);
+        combat.PlayerDied.Subscribe(PlayerDiedAsync);
+        combat.TowerPetDied.Subscribe(PetDiedAsync);
     }
 
     public sealed record Spawn(int NpcId, MapPoint Point, int DelayMs);

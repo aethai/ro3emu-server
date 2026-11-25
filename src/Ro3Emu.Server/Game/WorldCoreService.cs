@@ -98,7 +98,7 @@ public sealed partial class WorldCoreService : IGameTicker
         this._personal = personal;
         _serverOpenSeconds = (ulong)seasons.StartTime;
         scene.AddOwnedAfterLoaded(LoadedAsync);
-        scene.Leaving.Add(LeavingAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
         monsters.TargetChanged.Add(TargetChangedAsync);
         combat.ReviveOffer = OfferReviveAsync;
         combat.ReviveCheck = dungeons.ExternalReviveError;

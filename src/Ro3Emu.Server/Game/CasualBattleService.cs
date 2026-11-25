@@ -159,10 +159,10 @@ public sealed partial class CasualBattleService : IGameTicker
         this._buffs = buffs; this._monsters = monsters; this._world = world;
         _obligations = new RoleObligations<CasualBattleObligationRow>("Mock Battle payout", accounts, loop, time, Online,
             s => s.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(LeavingAsync);
-        combat.PvpDealt.Add(Dealt);
-        combat.Healed.Add((s, n) => { if (Live(s) is { } m) m.Players[s].Healing += n; });
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
+        combat.PvpDealt.Subscribe(Dealt);
+        combat.Healed.Subscribe((s, n) => { if (Live(s) is { } m) m.Players[s].Healing += n; });
         dungeons.CurrentStatisticsOwner = s => Live(s) is { } m ? Statistics(m) : null;
         HookArena(combat);
         gm.Register("casual", "open|close|start|at <s> (Mock Battle test aid: sign-ups outside the window, start the battle now"

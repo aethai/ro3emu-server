@@ -54,8 +54,8 @@ public sealed class MountService : IGameTicker
         WardrobeService wardrobe, CombatService combat)
     {
         this._wardrobe = wardrobe;
-        combat.BeforeCast.Add(DismountForCastAsync);
-        combat.GrantedSkill.Add((s, id) => FlySkills(data, s) is { } fly && id == (s.WorldState.Flying ? fly.Down : fly.Up));
+        combat.BeforeCast.Subscribe(DismountForCastAsync);
+        combat.GrantedSkill.Subscribe((s, id) => FlySkills(data, s) is { } fly && id == (s.WorldState.Flying ? fly.Down : fly.Up));
         this._data = data; this._character = character; this._roles = roles; this._functions = functions;
         this._world = world; this._loop = loop; this._sessions = sessions; this._deadlines = deadlines; this._clock = clock;
         character.ExtraAttributes.Add(Attributes);
@@ -63,7 +63,7 @@ public sealed class MountService : IGameTicker
         character.ItemsAwarded.Add((s, items) => { if (items.Any(i => IsAutoUsedVoucher(i.Entry))) UseHeldVouchers(s); });
         wardrobe.MountGrant = PlanShopGrant;
         character.JobChanged.Add(ReconcileAsync);
-        scenes.BeforeSelf.Add(ReconcileAsync);
+        scenes.BeforeSelf.Subscribe(ReconcileAsync);
     }
 
     public void Load(GameSession s)

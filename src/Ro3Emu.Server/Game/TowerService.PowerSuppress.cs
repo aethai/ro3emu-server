@@ -27,8 +27,8 @@ public sealed partial class TowerService
 
     private void RegisterSuppression()
     {
-        _combat.DamageAdjusters.Add((_, monster, _, _, damage) => SuppressTaken(monster, damage));
-        _combat.MonsterDamageAdjusters.Add((monster, damage, monsterAttacks) =>
+        _combat.DamageAdjusters.Subscribe((_, monster, _, _, damage) => SuppressTaken(monster, damage));
+        _combat.MonsterDamageAdjusters.Subscribe((monster, damage, monsterAttacks) =>
             monsterAttacks ? SuppressDealt(monster, damage) : SuppressTaken(monster, damage));
     }
 

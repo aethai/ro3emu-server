@@ -77,8 +77,8 @@ public sealed partial class GuildCampfireService : IGameTicker
         this._functions = functions; this._schedule = schedule; this._clock = clock; this._time = time;
         this._instances = instances; this._maps = maps; this._combat = combat;
         this._loop = loop; this._home = home;
-        scene.Loaded.Add(LoadedAsync);
-        combat.Killed.Add(KilledAsync);
+        scene.Loaded.Subscribe(LoadedAsync);
+        combat.Killed.Subscribe(KilledAsync);
     }
 
     private sealed class StateData

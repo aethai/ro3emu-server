@@ -18,7 +18,7 @@ public sealed partial class SkillCombatTests
         s.GmCombat |= GmCombatSwitches.Unlimited; // the costs are not what this measures
         int strikes = 0;
         Func<GameSession, MonsterUnit, System.Text.Json.JsonElement, long, Task> count = (_, m, _, _) => { if (m == target) strikes++; return Task.CompletedTask; };
-        combat.DealtAsync.Add(count);
+        using var countSub = combat.DealtAsync.Subscribe(count);
         await Loop.InvokeAsync(() =>
         {
             target.Template = target.Template with { Race = race, Element = element, MaxHp = 100_000_000 };
@@ -30,7 +30,6 @@ public sealed partial class SkillCombatTests
         await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face });
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         await Task.Delay(waitMs);
-        combat.DealtAsync.Remove(count);
         return strikes;
     }
 

@@ -255,7 +255,7 @@ public sealed class WorldCoreTests : IAsyncLifetime
             var row = System.Text.Json.Nodes.JsonNode.Parse(rows["10100"].GetRawText())!;
             row["_iRoleCntLimit"] = 1; row["_iAllowCreateLine"] = 0;
             rows["10100"] = System.Text.Json.JsonSerializer.SerializeToElement(row);
-            Service<SceneService>().Leaving.Add(async s => { if (s == a) { left.TrySetResult(); await release.Task; } });
+            Service<SceneService>().Leaving.Subscribe(async s => { if (s == a) { left.TrySetResult(); await release.Task; } });
             return Task.CompletedTask;
         });
         var first = Service<GameLoop>().InvokeAsync(() => Service<SceneService>().EnterSceneAsync(a, 10100));

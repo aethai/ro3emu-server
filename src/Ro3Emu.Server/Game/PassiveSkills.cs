@@ -66,11 +66,11 @@ public sealed class PassiveSkills : IGameTicker
         _buffs = buffs;
         _character = character;
         _loop = loop;
-        combat.CastResolved.Add(OnCastResolvedAsync);
+        combat.CastResolved.Subscribe(OnCastResolvedAsync);
         buffs.ControlResisted.Add(OnControlResistedAsync);
-        combat.TakenAsync.Add(OnTakenAsync);
-        combat.Killed.Add(OnKilledAsync);
-        combat.DamageAdjusters.Add(PreyOnTheWeakDamage);
+        combat.TakenAsync.Subscribe(OnTakenAsync);
+        combat.Killed.Subscribe(OnKilledAsync);
+        combat.DamageAdjusters.Subscribe(PreyOnTheWeakDamage);
         buffs.PassiveLethalSave = WoodSpiritsBlessingAsync;
         // It touches only the loaded session's own buffs, inside the scene load's scope: no hook scope of its own.
         scenes.AddOwnedAfterLoaded(StandingBuffsAsync);

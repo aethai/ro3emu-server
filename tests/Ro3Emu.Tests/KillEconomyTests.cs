@@ -64,7 +64,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
             false, 0, 1000, 5, 10, 0, 1000, .1f, 1000, 1, 500),
         Group = new SpawnGroup(-1, false, 1, 0, [], []), Home = new SpawnPoint(-1, 0, 0, 0, 0, 10001), Hp = 0
     };
-    private Task Reward(GameSession player, MonsterUnit monster) => Service<CombatService>().Killed
+    private Task Reward(GameSession player, MonsterUnit monster) => Service<CombatService>().Killed.Handlers
         .Single(h => h.Target == Service<RewardService>())(player, monster);
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);
     private long ReceiptCount()
@@ -135,9 +135,9 @@ public sealed class KillEconomyTests : IAsyncLifetime
         });
         var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int observerCalls = 0;
-        Service<CombatService>().DealtAsync.Add((_, target, _, _) => target == monster
+        Service<CombatService>().DealtAsync.Subscribe((_, target, _, _) => target == monster
             ? throw new IOException("postcommit effect failure") : Task.CompletedTask);
-        Service<CombatService>().Killed.Add((_, target) =>
+        Service<CombatService>().Killed.Subscribe((_, target) =>
         {
             if (target == monster) { observerCalls++; observed.TrySetResult(); }
             return Task.CompletedTask;

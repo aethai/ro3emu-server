@@ -96,23 +96,23 @@ public sealed partial class DungeonService
         // A rider's client reports the carrier's walk; a sliding client moves faster than it walks (DungeonService.Slide).
         scene.WalkOnRide = s => vehicles.IsSeatedOnSceneActor(s) || Sliding(s);
         vehicles.ExitHeld = RideHolds;
-        combat.GrantedSkill.Add(FiresCannon);
+        combat.GrantedSkill.Subscribe(FiresCannon);
         combat.AimsFromSeat = FiresCannon;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
         WireRaidTrials(combat, gm);
         teams.MultiDungeonInfo = TeamDungeonInfo;
-        combat.DamageAdjusters.Add((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
-        combat.IncomingDamageAdjusters.Add((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(AbandonAsync);
-        scene.Leaving.Add(StopSlideAsync);
-        combat.Killed.Add(KilledAsync);
-        combat.BeforeKilled.Insert(0, FreezeTerminalKillAsync);
-        combat.PlayerDied.Add(PlayerDiedAsync);
-        combat.ReviveInfoOwners.Add(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
-        combat.Dealt.Add((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
-        combat.Taken.Add((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
-        combat.Healed.Add((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
+        combat.DamageAdjusters.Subscribe((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
+        combat.IncomingDamageAdjusters.Subscribe((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(AbandonAsync);
+        scene.Leaving.Subscribe(StopSlideAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.BeforeKilled.Subscribe(FreezeTerminalKillAsync, order: CombatService.BeforeKilledOrderDungeon);
+        combat.PlayerDied.Subscribe(PlayerDiedAsync);
+        combat.ReviveInfoOwners.Subscribe(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
+        combat.Dealt.Subscribe((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
+        combat.Taken.Subscribe((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
+        combat.Healed.Subscribe((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
         character.ProgressHandlers.Add(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
     }
 

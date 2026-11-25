@@ -85,8 +85,8 @@ public sealed partial class EmojiService : IGameTicker
         _sceneEditorDir = Path.Combine(options.Value.GameDataDir ?? options.Value.DataDir, "sceneeditor");
         character.ProgressHandlers.Add(RefreshUnlocksAsync);
         character.RegisterItemAction(EmoticonCollectionAction, UseEmoticonItemAsync);
-        combat.PlayerDied.Add(s => EndAsync(s));
-        scene.Leaving.Add(LeavingAsync);
+        combat.PlayerDied.Subscribe(s => EndAsync(s));
+        scene.Leaving.Subscribe(LeavingAsync);
     }
 
     private long NowMs => _clock.GetUtcNow().ToUnixTimeMilliseconds();

@@ -445,7 +445,7 @@ public sealed class GuardianPetTests
             var target = await f.SpawnMonsterAsync();
             // Exercise the shared positive-hit callback used by ordinary guardian damage.
             var row = JsonSerializer.SerializeToElement(new { _iID = SecondChild, _iSystemType = 41, _kSkillCategory = DamageCategory });
-            foreach (var handler in f.Combat.DealtAsync) await handler(f.Session, target, row, 19);
+            await f.Combat.DealtAsync.InvokeAsync(f.Session, target, row, 19);
             Assert.Equal(1200, target.SlowMovementBp);
             Assert.InRange(target.SlowMovementExpireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 2000, 3000);
             Assert.Equal(220, target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));

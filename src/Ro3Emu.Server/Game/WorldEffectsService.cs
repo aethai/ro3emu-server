@@ -38,8 +38,8 @@ public sealed class WorldEffectsService
         this._world = world;
         this._data = data;
         this._loop = loop;
-        scene.AfterLoaded.Add(ReplayAsync);
-        scene.Resync.Add(ReplayAsync); // presentation only: the reconnected client lost the scene's latency/force fields
+        scene.AfterLoaded.Subscribe(ReplayAsync);
+        scene.Resync.Subscribe(ReplayAsync); // presentation only: the reconnected client lost the scene's latency/force fields
         world.UnitEntered.Add(UnitEnteredAsync);
         world.UnitRemoved.Add(RemovedAsync);
         monsters.TargetChanged.Add(TargetChangedAsync);

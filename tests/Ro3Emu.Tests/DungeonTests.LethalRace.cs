@@ -88,7 +88,7 @@ public sealed partial class DungeonTests
             holding.TrySetResult();
             return release.Task; // Alice holds the room's death gate, her reward not yet committed
         };
-        combat.BeforeKilled.Insert(0, hold);
+        using var holdSub = combat.BeforeKilled.Subscribe(hold, order: -1000);
         try
         {
             await using (alice)
@@ -107,7 +107,6 @@ public sealed partial class DungeonTests
         finally
         {
             release.TrySetResult();
-            combat.BeforeKilled.Remove(hold);
         }
     }
 }

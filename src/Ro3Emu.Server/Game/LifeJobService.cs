@@ -52,7 +52,7 @@ public sealed partial class LifeJobService
         character.StateChanged.Add(SyncVigorChange);
         character.ExtraAttributes.Add(FoodAttributes);
         character.ProgressHandlers.Add(OnLevelChangedAsync);
-        scene.Leaving.Add(CancelAsync);
+        scene.Leaving.Subscribe(CancelAsync);
     }
 
     /// <summary>

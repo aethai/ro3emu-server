@@ -39,7 +39,7 @@ public sealed partial class WardrobeService
         this._deadlines = deadlines;
         this._clock = clock;
         character.SpecialItemUse.Add(TryUseAppearanceItemAsync);
-        scene.BeforeSelf.Add(ReconcileAsync);
+        scene.BeforeSelf.Subscribe(ReconcileAsync);
     }
 
     public const uint WardrobeSync = 5034, Use = 31183, UseAttr = 31184, SavePlan = 31185,

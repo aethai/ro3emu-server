@@ -46,8 +46,8 @@ public sealed class GatheringService : IGameTicker
         this._character = character;
         this._functions = functions;
         this._log = log;
-        scene.Loaded.Add(s => s.InstanceId == 0 ? EnsureSpawnedAsync(s.RuntimeMap) : Task.CompletedTask);
-        scene.Leaving.Add(s => InterruptAsync(s));
+        scene.Loaded.Subscribe(s => s.InstanceId == 0 ? EnsureSpawnedAsync(s.RuntimeMap) : Task.CompletedTask);
+        scene.Leaving.Subscribe(s => InterruptAsync(s));
         lines.HasPendingWork.Add(HasPendingWork);
         lines.Retiring.Insert(0, RetireRuntimeAsync);
     }

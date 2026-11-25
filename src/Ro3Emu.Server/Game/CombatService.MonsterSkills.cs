@@ -50,16 +50,16 @@ public sealed partial class CombatService
                 damage = ScaleMonsterDamage(damage, caster.DamageRatio);
                 damage = MonsterBuffDamage(caster, row, damage);
                 if (damagePercent != 100) damage = damagePercent <= 0 ? 0 : ScaleMonsterDamage(damage, damagePercent * 100);
-                foreach (var adjust in MonsterDamageAdjusters) damage = adjust(caster, damage, true);
+                foreach (var adjust in MonsterDamageAdjusters.Handlers) damage = adjust(caster, damage, true);
             }
-            if (damage > 0) foreach (var modifier in IncomingDamageAdjusters) damage = Math.Max(0, await modifier(caster, p, result, damage));
+            if (damage > 0) foreach (var modifier in IncomingDamageAdjusters.Handlers) damage = Math.Max(0, await modifier(caster, p, result, damage));
             var committed = await CommitPlayerDamageAsync(p, damage, row, Current, sourceElement: element, directHit: maxHpBasisPoints <= 0);
             if (committed == null) continue;
             (damage, long hp, _, long shieldDamage) = committed.Value;
             hits++;
             try
             {
-                foreach (var handler in Taken) handler(caster, p, damage, hp == 0);
+                Taken.Invoke(caster, p, damage, hp == 0);
                 var hit = new SkillHitInfo
                 {
                     SrcID = sourceId, SkillId = skillId, ShowPoint = show, SessionId = session, SrcElement = element,
@@ -70,7 +70,7 @@ public sealed partial class CombatService
                 await SendHitBulletsAsync(hitViewers, row, hit, caster.Uid);
                 foreach (var viewer in hitViewers) await viewer.SendGameAsync(SkillHit, hit);
                 await _character.SetHpSpAsync(p, null, null);
-                foreach (var handler in TakenAsync) await handler(caster, p, damage);
+                await TakenAsync.InvokeAsync(caster, p, damage);
                 await FightingAsync(p);
                 if (hp == 0)
                 {

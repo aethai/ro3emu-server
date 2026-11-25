@@ -71,7 +71,7 @@ public sealed class DraculaWeddingService : IGameTicker
         this._data = data; this._home = home; this._dungeons = dungeons; this._catalog = catalog; this._schedule = schedule;
         this._functions = functions; this._tasks = tasks; this._buffs = buffs; this._mail = mail; this._sessions = sessions;
         this._clock = clock; this._loop = loop; this._log = log;
-        scene.Loaded.Add(LoadedAsync);
+        scene.Loaded.Subscribe(LoadedAsync);
         gm.Register("dracula", "open|close (test aid: Wedding Crashers opens now for 30 minutes, or closes)", TestWindowAsync);
     }
 

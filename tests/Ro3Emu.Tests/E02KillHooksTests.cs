@@ -82,7 +82,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
     };
     private Task Credit(GameSession participant, MonsterUnit monster) => OnLoop(() =>
     {
-        foreach (var handler in Service<CombatService>().Dealt) handler(participant, monster, 1);
+        Service<CombatService>().Dealt.Invoke(participant, monster, 1);
         return Task.CompletedTask;
     });
     private Task Commit(GameSession killer, MonsterUnit monster) => OnLoop(() => Service<RewardService>().PrepareKilledAsync(killer, monster));

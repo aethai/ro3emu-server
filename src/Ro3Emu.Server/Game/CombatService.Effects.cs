@@ -49,7 +49,7 @@ public sealed partial class CombatService
     {
         var row = action.Row;
         if (!CurrentCastMap(s, action)) return;
-        foreach (var handler in CastLanded)
+        foreach (var handler in CastLanded.Handlers)
         {
             await handler(s, row);
             if (!CurrentCastMap(s, action)) return;
@@ -81,7 +81,7 @@ public sealed partial class CombatService
         {
             // A field resolves its effects later; "After using [Meteor Storm] ..." talent procs centre on its target point.
             if (!action.Request.IsExtraSkill)
-                foreach (var handler in CastResolved)
+                foreach (var handler in CastResolved.Handlers)
                 {
                     if (!CurrentCastMap(s, action)) break;
                     await handler(s, action, [], new SkillHitInfo());
@@ -298,7 +298,7 @@ public sealed partial class CombatService
                     if (effective > 0 && target.Hp > 0) await _buffs.BreakHitControlsAsync(target);
                     await SettleMonsterHitAsync(s, target, beforeHp, amount);
                     if (CanApplyMoreEffects())
-                        foreach (var handler in DealtAsync)
+                        foreach (var handler in DealtAsync.Handlers)
                         {
                             if (!CanApplyMoreEffects()) break;
                             await handler(s, target, row, amount);
@@ -306,7 +306,7 @@ public sealed partial class CombatService
                     // The hit is already committed; an unchanged (even cancelled) lease
                     // still owns its damage callback, while a replacement lease does not.
                     if (effective > 0 && CurrentKillRecipient())
-                        foreach (var handler in MonsterDamageApplied)
+                        foreach (var handler in MonsterDamageApplied.Handlers)
                         {
                             if (!CurrentKillRecipient()) break;
                             try { await handler(s, target, effective); }
@@ -354,7 +354,7 @@ public sealed partial class CombatService
                     // Heal's friendly branch is P1[0]/P2[0]; its enemy branch is [1] (description + select race mask).
                     double formula = DamageFormula.HealFactor(new SkillConfig(row), id => stats[id], s.Progress!.Level);
                     long amount = (long)Math.Max(0, Math.Round(stats[AttributeId.Matk] * multiplier * formula / 10000 + flat));
-                    foreach (var modifier in ExtraHeal) amount = modifier(s, amount);
+                    foreach (var modifier in ExtraHeal.Handlers) amount = modifier(s, amount);
                     var healResult = DamageHitResult.Normal;
                     if (Rolls.Crit() < HealCritRate(stats[AttributeId.Cri], stats[DamageAttributes.CritChance], new SkillConfig(row).SkillCri))
                     {
@@ -366,8 +366,8 @@ public sealed partial class CombatService
                     long actual = Math.Min(amount, Math.Max(0, before[101] - before[2000]));
                     await _character.SetHpSpAsync(recipient, before[2000] + amount, null);
                     hit.Dsts.Add(new DamageInfo { DstID = recipient.Role!.Id, Damage = actual, DamageType = DamageType.Heal, HitResult = healResult, DstElement = 1 });
-                    foreach (var handler in Healed) handler(s, actual);
-                    foreach (var handler in HealedAsync) await handler(s, actual);
+                    Healed.Invoke(s, actual);
+                    await HealedAsync.InvokeAsync(s, actual);
                 }
                 await CleanseByTextAsync(recipient, row, script);
                 if (CleanseKinds(row) is { Length: > 0 } kinds)
@@ -442,7 +442,7 @@ public sealed partial class CombatService
         }
         // A player's own cast: not a field, not an extra cast such as a talent proc, so procs never chain.
         if (field == null && !action.Request.IsExtraSkill)
-            foreach (var handler in CastResolved)
+            foreach (var handler in CastResolved.Handlers)
             {
                 if (!CanApplyMoreEffects()) break;
                 await handler(s, action, processed, hit);
@@ -1031,8 +1031,8 @@ public sealed partial class CombatService
         amount = GuardianPetRules.DirectDamage(row, amount);
         if (amount > 0)
         {
-            foreach (var modifier in DamageAdjusters) amount = Math.Max(0, modifier(s, target, row, result, amount));
-            foreach (var extra in ExtraHitDamage) amount += Math.Max(0, extra(s, target, row, amount));
+            foreach (var modifier in DamageAdjusters.Handlers) amount = Math.Max(0, modifier(s, target, row, result, amount));
+            foreach (var extra in ExtraHitDamage.Handlers) amount += Math.Max(0, extra(s, target, row, amount));
         }
         return (ApplyPetSupportResistance(amount, _buffs.UnitCombatAttributes(target), row, attacker.Element), result);
     }

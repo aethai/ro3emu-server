@@ -137,7 +137,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             // A recovery tick before the first hit (+1002 per 5 s) outlasts this floor's monsters (180 per second): no death.
             Session.NoRegenUntilMs = long.MaxValue;
             await Service<CharacterService>().SetHpSpAsync(Session, 1, 1);
-            Service<CombatService>().PlayerDied.Add(async player =>
+            Service<CombatService>().PlayerDied.Subscribe(async player =>
             {
                 if (player != Session) return;
                 entered.TrySetResult();
@@ -325,7 +325,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<CombatService>().IncomingDamageAdjusters.Add(async (monster, target, _, damage) =>
+            Service<CombatService>().IncomingDamageAdjusters.Subscribe(async (monster, target, _, damage) =>
             {
                 if (monster.InstanceId != floor.Instance || target != Session) return damage;
                 entered.TrySetResult();

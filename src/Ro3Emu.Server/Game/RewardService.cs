@@ -61,8 +61,8 @@ public sealed class RewardService
         this._data = data;
         this._log = log;
         _attenuation = new DropAttenuation(data);
-        combat.BeforeKilled.Add(PrepareKilledAsync);
-        combat.Killed.Add(KilledAsync);
+        combat.BeforeKilled.Subscribe(PrepareKilledAsync);
+        combat.Killed.Subscribe(KilledAsync);
     }
 
     private sealed class KillOutcome
