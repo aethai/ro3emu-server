@@ -132,12 +132,12 @@ public sealed partial class PanelBackend
     private async Task<MarketSnapshot> ReadMarketAsync(long nowMs) => new(
         await MarketRecordsAsync<TradeService.Listing>(TradeService.Listings), await MarketRecordsAsync<TradeService.Sale>(TradeService.History),
         await MarketRecordsAsync<StallsService.StallRow>(StallsService.Kind),
-        await accounts.ReadAsync<List<AuctionStore.Item>>(new AuctionReadPlan(AuctionReadKind.All)),
-        await accounts.ReadAsync<GuildStore.MarketState?>(new GuildReadPlan(GuildReadKind.Market)) ?? new GuildStore.MarketState(), nowMs);
+        await accounts.ReadPanelAsync<List<AuctionStore.Item>>(new AuctionReadPlan(AuctionReadKind.All)),
+        await accounts.ReadPanelAsync<GuildStore.MarketState?>(new GuildReadPlan(GuildReadKind.Market)) ?? new GuildStore.MarketState(), nowMs);
 
     /// <summary>A kind of market_record, decoded with its service's own type; a row that does not decode is left out.</summary>
     private async Task<List<T>> MarketRecordsAsync<T>(string kind) where T : class =>
-        [.. (await accounts.ReadAsync<List<(string Id, string Data)>>(new MarketRecordReadPlan(kind))).Select(r => Decode<T>(r.Data)).OfType<T>()];
+        [.. (await accounts.ReadPanelAsync<List<(string Id, string Data)>>(new MarketRecordReadPlan(kind))).Select(r => Decode<T>(r.Data)).OfType<T>()];
 
     private static T? Decode<T>(string json) where T : class
     {

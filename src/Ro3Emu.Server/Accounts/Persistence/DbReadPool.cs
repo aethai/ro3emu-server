@@ -9,14 +9,14 @@ public sealed class DbReadPool : IDisposable
     public const int WorkerCount = 4, MaxWaitingJobs = 256;
     private readonly object _gate = new();
     private readonly Queue<Job> _queue = new();
-    private readonly Thread[] _threads = new Thread[WorkerCount];
-    private readonly TaskCompletionSource[] _exited = new TaskCompletionSource[WorkerCount];
+    private readonly Thread[] _threads;
+    private readonly TaskCompletionSource[] _exited;
     private readonly string _connectionString;
     private readonly DbAccessMetrics _metrics;
     private readonly ServerMetrics? _serverMetrics;
     private readonly ILogger? _log;
     private readonly TimeSpan _stopTimeout;
-    private readonly DbReadPlan?[] _active = new DbReadPlan?[WorkerCount];
+    private readonly DbReadPlan?[] _active;
     private int _waiting;
     private bool _stopping;
     private Exception? _terminalError;
@@ -24,15 +24,19 @@ public sealed class DbReadPool : IDisposable
     private sealed record Job(DbReadPlan Plan, TaskCompletionSource<object?> Done);
 
     public DbReadPool(string databasePath, DbAccessMetrics metrics, ServerMetrics? serverMetrics = null, ILogger? log = null,
-        TimeSpan? stopTimeout = null)
+        TimeSpan? stopTimeout = null, int workerCount = WorkerCount, string threadPrefix = "ro3-db-read")
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
         _metrics = metrics; _serverMetrics = serverMetrics; _log = log; _stopTimeout = stopTimeout ?? TimeSpan.FromSeconds(5);
-        for (int i = 0; i < WorkerCount; i++)
+        _threads = new Thread[workerCount];
+        _exited = new TaskCompletionSource[workerCount];
+        _active = new DbReadPlan?[workerCount];
+        for (int i = 0; i < workerCount; i++)
         {
             int worker = i;
             _exited[i] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            _threads[i] = new Thread(() => Run(worker)) { IsBackground = true, Name = $"ro3-db-read-{i}" };
+            _threads[i] = new Thread(() => Run(worker)) { IsBackground = true, Name = $"{threadPrefix}-{i}" };
             using (ExecutionContext.SuppressFlow()) _threads[i].Start();
         }
     }

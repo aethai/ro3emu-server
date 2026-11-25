@@ -29,7 +29,7 @@ public sealed partial class PanelBackend
         var catalog = await CatalogAsync();
         if (catalog.ItemSummary(id) is not { } item) return null;
         var kits = await UnrecordedKitsAsync();
-        var ledger = Ledger(await accounts.ReadAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(id)), id, kits);
+        var ledger = Ledger(await accounts.ReadPanelAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(id)), id, kits);
         var recent = (await EconomyAsync(new PanelEconomyQuery("", "", id, "", null, null, 1, TraceEntries))).Entries;
         if (ItemConfig.Get(data, id)?.Type == (long)ItemTypeEnum.ItemTypeCurrency)
             return new PanelItemTrace(item, true, [], 0, ledger, recent, []);
@@ -45,7 +45,7 @@ public sealed partial class PanelBackend
     public async Task<PanelDupeReport> DupeCheckAsync()
     {
         var catalog = await CatalogAsync();
-        var ledgerRows = await accounts.ReadAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(null));
+        var ledgerRows = await accounts.ReadPanelAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(null));
         var kits = await UnrecordedKitsAsync();
         var byAsset = ledgerRows.GroupBy(r => r.Asset).ToDictionary(g => g.Key, g => Ledger(g, g.Key, kits));
         var stacks = await HeldStacksAsync(null);
@@ -99,7 +99,7 @@ public sealed partial class PanelBackend
     /// CharacterService.StarterKitEconomyKind receipt): their kits are explained, though the ledger never saw them.
     /// </summary>
     private async Task<long> UnrecordedKitsAsync() =>
-        await accounts.ReadAsync<long>(new PanelUnrecordedStarterKitsRead(CharacterService.StarterKitEconomyKind));
+        await accounts.ReadPanelAsync<long>(new PanelUnrecordedStarterKitsRead(CharacterService.StarterKitEconomyKind));
 
     /// <summary>An asset's source and sink legs (EconomyLegKind) added up, with what <paramref name="kits"/> unrecorded
     /// starter kits hold of it; transfers only move what is already held.</summary>
@@ -116,7 +116,7 @@ public sealed partial class PanelBackend
     /// <summary>Every stack of the item (or of every item) where the server keeps it.</summary>
     private async Task<List<HeldStack>> HeldStacksAsync(long? entry)
     {
-        var rows = await accounts.ReadAsync<PanelHoldingsRows>(new PanelHoldingsRead(entry, HoldingKinds));
+        var rows = await accounts.ReadPanelAsync<PanelHoldingsRows>(new PanelHoldingsRead(entry, HoldingKinds));
         bool Wanted(long e) => entry == null || e == entry;
         var stacks = rows.Items.Select(i => new HeldStack(i.Entry, i.Grid > 0 ? "Worn" : i.Pack == CartPack ? "Cart" : "Bag", i.Name, i.RoleId,
             i.Account, i.Stack, i.Guid)).ToList();
@@ -129,7 +129,7 @@ public sealed partial class PanelBackend
                     .Select(i => new HeldStack(i.Entry, "Mail", box.Name, box.RoleId, box.Account, i.Stack, i.Guid)));
             }
         var market = MarketStacks(rows.Market, Wanted);
-        var names = await accounts.ReadAsync<Dictionary<long, (string Name, int Career, int Level)>>(
+        var names = await accounts.ReadPanelAsync<Dictionary<long, (string Name, int Career, int Level)>>(
             new PanelRoleNamesRead([.. market.Select(s => s.RoleId).Where(r => r > 0).Distinct()]));
         stacks.AddRange(market.Select(s => s.RoleId > 0 && names.TryGetValue(s.RoleId, out var who) ? s with { Owner = who.Name } : s));
         stacks.AddRange(rows.Auctions.Where(a => Wanted(a.Entry)).Select(a => new HeldStack(a.Entry, "Auction", "System", 0, "", 1, 0)));

@@ -21,8 +21,8 @@ public sealed partial class PanelBackend
         int hours = Math.Clamp(windowHours ?? alerts.WindowHours, 1, 24 * 30);
         await cheats.FlushAsync();
         long fromMs = clock.GetUtcNow().ToUnixTimeMilliseconds() - hours * HourMs;
-        var refusals = await accounts.ReadAsync<List<AntiCheatRefusalRow>>(new AntiCheatRefusalsRead(fromMs / HourMs));
-        var gains = await accounts.ReadAsync<List<AntiCheatGainRow>>(new AntiCheatGainsRead(fromMs, fromMs / HourMs, CharacterService.ZenyId));
+        var refusals = await accounts.ReadPanelAsync<List<AntiCheatRefusalRow>>(new AntiCheatRefusalsRead(fromMs / HourMs));
+        var gains = await accounts.ReadPanelAsync<List<AntiCheatGainRow>>(new AntiCheatGainsRead(fromMs, fromMs / HourMs, CharacterService.ZenyId));
         var rows = RefusalRows(refusals, alerts.Refusals);
         long zeny = Median(gains.Select(g => g.Zeny)), items = Median(gains.Select(g => g.Items)), exp = Median(gains.Select(g => g.BaseExp));
         rows.AddRange(GainRows(gains, "Zeny gain", g => g.Zeny, Threshold(zeny, alerts.GainFactor, alerts.ZenyFloor), "Zeny"));

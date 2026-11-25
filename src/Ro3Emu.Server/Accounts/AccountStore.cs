@@ -24,8 +24,10 @@ public sealed partial class AccountStore : IDisposable
     /// <summary>Generations of the stores' caches over this database, bumped by its writer.</summary>
     internal CacheGenerations Caches { get; } = new();
     private readonly Lazy<DbReadPool> _readers;
+    private readonly Lazy<DbReadPool> _panelReaders;
     private readonly Game.GameLoop? _loop;
     private readonly ILogger<AccountStore>? _log;
+    private readonly IHostApplicationLifetime? _lifetime;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _standingEconomyIssues = new();
 
     /// <summary>Stored rows the economy decoder could not read, each logged once: operations go on without them, so this is
@@ -50,12 +52,13 @@ public sealed partial class AccountStore : IDisposable
     private readonly Diagnostics.ServerMetrics? _metrics;
 
     public AccountStore(IOptions<ServerOptions> options, Diagnostics.ServerMetrics? metrics = null, Game.GameLoop? loop = null,
-        ILogger<AccountStore>? log = null)
+        ILogger<AccountStore>? log = null, IHostApplicationLifetime? lifetime = null)
     {
         _metrics = metrics;
         if (metrics != null) metrics.DbAccess = AccessMetrics;
         _loop = loop;
         _log = log;
+        _lifetime = lifetime;
         // A half-done restore may have moved the live file away; opening now would create an empty realm (C/D 19).
         DatabaseRestore.ThrowIfUnfinished(options.Value.DataDir);
         PrivateFiles.Directory(options.Value.DataDir);
@@ -82,11 +85,42 @@ public sealed partial class AccountStore : IDisposable
         }
         // SQLite gives the WAL and shared-memory files the database file's mode, so they follow it.
         PrivateFiles.Files(_databasePath, _databasePath + "-wal", _databasePath + "-shm");
+        if (options.Value.StartupIntegrityCheck) VerifyStartupIntegrity(db);
         AppliedMigrations = DatabaseMigrations.Migrate(db, _log);
         _writer = new(() => new DbWriter(_connectionString, AccessMetrics, _metrics, _log)
-        { RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue });
+        {
+            RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue,
+            TerminalFault = HandleWriterTerminalFault,
+        });
         _readers = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log));
+        _panelReaders = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log, workerCount: 2, threadPrefix: "ro3-db-panel"));
     }
+
+    private void VerifyStartupIntegrity(SqliteConnection db)
+    {
+        using var check = db.CreateCommand();
+        check.CommandText = "PRAGMA integrity_check(5)";
+        using var reader = check.ExecuteReader();
+        var rows = new List<string>();
+        while (reader.Read()) rows.Add(reader.GetString(0));
+        if (rows is ["ok"]) return;
+        string problem = string.Join("; ", rows);
+        if (_log != null) LogStartupIntegrityFailed(_log, _databasePath, problem);
+        throw new InvalidDataException($"Database startup integrity check failed: {problem}");
+    }
+
+    private void HandleWriterTerminalFault(Exception error)
+    {
+        if (_lifetime == null) return;
+        if (_log != null) LogStoppingOnWriterFault(_log, error);
+        _lifetime.StopApplication();
+    }
+
+    [LoggerMessage(Level = LogLevel.Critical, Message = "SQLite startup integrity check failed for {DatabasePath}: {Problem}")]
+    private static partial void LogStartupIntegrityFailed(ILogger logger, string databasePath, string problem);
+
+    [LoggerMessage(Level = LogLevel.Critical, Message = "Stopping host after terminal database writer failure")]
+    private static partial void LogStoppingOnWriterFault(ILogger logger, Exception exception);
 
     internal int AppliedMigrations { get; }
 
@@ -144,7 +178,9 @@ public sealed partial class AccountStore : IDisposable
     private bool OnLoop => _loop?.IsOnLoop == true || _metrics != null && ReferenceEquals(ServerMetrics.LoopOwner, _metrics);
     private DbWriter Writer { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _writer.Value; } } }
     internal Action<string>? BeforeCommitForTest { get => Writer.BeforeCommitForTest; set => Writer.BeforeCommitForTest = value; }
+    internal Action? BeforeGroupCommitForTest { get => Writer.BeforeGroupCommitForTest; set => Writer.BeforeGroupCommitForTest = value; }
     private DbReadPool Readers { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _readers.Value; } } }
+    private DbReadPool PanelReaders { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _panelReaders.Value; } } }
     internal async Task<T> WriteAsync<T>(DbPlan plan)
     {
         plan = Prepare(plan);
@@ -298,6 +334,8 @@ public sealed partial class AccountStore : IDisposable
         _log?.LogError("Owner operation {Operation} quarantined its participants for recovery", operationId ?? plan.OperationId);
     }
     internal Task<T> ReadAsync<T>(DbReadPlan plan) => Readers.ExecuteAsync<T>(plan);
+    /// <summary>Dedicated read pool for web panel queries so admin/analytics reads cannot starve gameplay reads.</summary>
+    internal Task<T> ReadPanelAsync<T>(DbReadPlan plan) => PanelReaders.ExecuteAsync<T>(plan);
     /// <summary>Test/diagnostic observer of synchronous writes (plan label, on loop).</summary>
     internal Action<string, bool>? WriteSyncObserved { get; set; }
     internal Action<DbPlan, bool>? WriteSyncPlanObserved { get; set; }
@@ -619,7 +657,11 @@ public sealed partial class AccountStore : IDisposable
                 if (_disposed) return;
                 _disposed = true;
                 try { if (_writer.IsValueCreated) _writer.Value.Dispose(); }
-                finally { if (_readers.IsValueCreated) _readers.Value.Dispose(); }
+                finally
+                {
+                    try { if (_readers.IsValueCreated) _readers.Value.Dispose(); }
+                    finally { if (_panelReaders.IsValueCreated) _panelReaders.Value.Dispose(); }
+                }
             }
         }
         if (_loop?.IsWorkerActive == true)
@@ -638,7 +680,8 @@ public sealed partial class AccountStore : IDisposable
         {
             lock (_runtimeGate)
                 return Task.WhenAll(_writer.IsValueCreated ? _writer.Value.WorkerExited : Task.CompletedTask,
-                    _readers.IsValueCreated ? _readers.Value.WorkersExited : Task.CompletedTask);
+                    _readers.IsValueCreated ? _readers.Value.WorkersExited : Task.CompletedTask,
+                    _panelReaders.IsValueCreated ? _panelReaders.Value.WorkersExited : Task.CompletedTask);
         }
     }
 }

@@ -30,10 +30,10 @@ public sealed partial class PanelBackend
     public async Task<PanelAccount?> AccountAsync(string account)
     {
         long now = Now;
-        if (await accounts.ReadAsync<PanelAccountRow?>(new PanelAccountRead(account, now)) is not { } row) return null;
-        var roles = await accounts.ReadAsync<List<PanelRoleRow>>(new PanelRolesRead(row.Name, 100));
+        if (await accounts.ReadPanelAsync<PanelAccountRow?>(new PanelAccountRead(account, now)) is not { } row) return null;
+        var roles = await accounts.ReadPanelAsync<List<PanelRoleRow>>(new PanelRolesRead(row.Name, 100));
         var online = (await OnlineRowsAsync()).Select(r => r.RoleId).ToHashSet();
-        var ban = await accounts.ReadAsync<AccountBanRow?>(new AccountBanRowRead(row.Name, now));
+        var ban = await accounts.ReadPanelAsync<AccountBanRow?>(new AccountBanRowRead(row.Name, now));
         return new PanelAccount(row.Name, Created(row.CreatedUtc), Unix(row.LastLogin),
             [.. roles.Select(r => new PanelCharacter(r.Id, r.Name, ClassName(r.Career), r.Level, r.JobLevel, MapName(r.SceneEntry), r.Guild,
                 DateTimeOffset.FromUnixTimeSeconds(r.CreateTime), Unix(r.LastLoginTime), online.Contains(r.Id), ClassIcon(r.Career)))],
@@ -48,7 +48,7 @@ public sealed partial class PanelBackend
 
     public async Task<PanelAccountPage> FindAccountsAsync(string query, int page, int pageSize)
     {
-        var (total, rows) = await accounts.ReadAsync<(int, List<PanelAccountRow>)>(
+        var (total, rows) = await accounts.ReadPanelAsync<(int, List<PanelAccountRow>)>(
             new PanelAccountSearch(query, (page - 1) * pageSize, pageSize, Now));
         return new PanelAccountPage([.. rows.Select(r => new PanelAccountSummary(r.Name, Created(r.CreatedUtc), r.Characters, Unix(r.LastLogin), r.Banned))],
             total, page, pageSize);
@@ -82,14 +82,14 @@ public sealed partial class PanelBackend
 
     public async Task<PanelAuditPage> AuditAsync(int page, int pageSize)
     {
-        var (total, rows) = await accounts.ReadAsync<(int, List<AdminAuditRow>)>(new AdminAuditRead((page - 1) * pageSize, pageSize));
+        var (total, rows) = await accounts.ReadPanelAsync<(int, List<AdminAuditRow>)>(new AdminAuditRead((page - 1) * pageSize, pageSize));
         return new PanelAuditPage([.. rows.Select(r => new PanelAuditEntry(r.Id, DateTimeOffset.FromUnixTimeSeconds(r.Utc), r.Admin, r.Action, r.Target, r.Detail))],
             total, page, pageSize);
     }
 
     public async Task<PanelDashboard> DashboardAsync()
     {
-        var (accountCount, characterCount) = await accounts.ReadAsync<(int, int)>(new PanelCountsRead());
+        var (accountCount, characterCount) = await accounts.ReadPanelAsync<(int, int)>(new PanelCountsRead());
         var m = metrics.Headline();
         var current = census.Current;
         var maps = current.Roles.GroupBy(r => r.Map.SceneEntry).OrderByDescending(g => g.Count()).Take(10)

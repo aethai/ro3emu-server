@@ -59,9 +59,9 @@ public sealed partial class PanelAdminTools(AccountStore accounts, RoleStore rol
         List<(long Id, string Name)> found = target.Kind switch
         {
             "character" => await roles.FindByNameAsync(target.Name) is { } role ? [(role.Id, role.Name)] : [],
-            "account" => await accounts.ReadAsync<PanelAccountRow?>(new PanelAccountRead(target.Name, Now)) is { } account
-                ? [.. (await accounts.ReadAsync<List<PanelRoleRow>>(new PanelRolesRead(account.Name, 100))).Select(r => (r.Id, r.Name))] : [],
-            _ => [.. (await accounts.ReadAsync<List<(long Id, string Name, string Account)>>(new PanelRecipientsRead(target.MinLevel)))
+            "account" => await accounts.ReadPanelAsync<PanelAccountRow?>(new PanelAccountRead(target.Name, Now)) is { } account
+                ? [.. (await accounts.ReadPanelAsync<List<PanelRoleRow>>(new PanelRolesRead(account.Name, 100))).Select(r => (r.Id, r.Name))] : [],
+            _ => [.. (await accounts.ReadPanelAsync<List<(long Id, string Name, string Account)>>(new PanelRecipientsRead(target.MinLevel)))
                 .Select(r => (r.Id, r.Name))],
         };
         if (!target.OnlineOnly) return found;
@@ -110,7 +110,7 @@ public sealed partial class PanelAdminTools(AccountStore accounts, RoleStore rol
     public async Task<IReadOnlyList<PanelGiftCode>> GiftCodesAsync()
     {
         long now = Now;
-        return [.. (await accounts.ReadAsync<List<GiftCodeRow>>(new GiftCodeListRead(500))).Select(row =>
+        return [.. (await accounts.ReadPanelAsync<List<GiftCodeRow>>(new GiftCodeListRead(500))).Select(row =>
         {
             var rewards = ParseRewards(row.Items);
             string text = string.Join(", ", rewards.Select(RewardLine));
@@ -187,7 +187,7 @@ public sealed partial class PanelAdminTools(AccountStore accounts, RoleStore rol
 
     public async Task<PanelAuditPage> GmHistoryAsync(string admin, int page, int pageSize)
     {
-        var (total, rows) = await accounts.ReadAsync<(int, List<AdminAuditRow>)>(
+        var (total, rows) = await accounts.ReadPanelAsync<(int, List<AdminAuditRow>)>(
             new AdminAuditRead((page - 1) * pageSize, pageSize, AdminAudit.Gm, admin));
         return new PanelAuditPage([.. rows.Select(r => new PanelAuditEntry(r.Id, DateTimeOffset.FromUnixTimeSeconds(r.Utc), r.Admin, r.Action, r.Target, r.Detail))],
             total, page, pageSize);
@@ -196,7 +196,7 @@ public sealed partial class PanelAdminTools(AccountStore accounts, RoleStore rol
     // ---------------------------------------------------------------- news
 
     public async Task<IReadOnlyList<PanelNewsItem>> AllNewsAsync() =>
-        [.. (await accounts.ReadAsync<List<PanelNewsRow>>(new PanelNewsRead(200, Now, scheduled: true)))
+        [.. (await accounts.ReadPanelAsync<List<PanelNewsRow>>(new PanelNewsRead(200, Now, scheduled: true)))
             .Select(n => new PanelNewsItem(n.Id, n.Title, n.Body, n.Tag, DateTimeOffset.FromUnixTimeSeconds(n.PublishedUtc), n.Author, n.Pinned))];
 
     public Task<long> SaveNewsAsync(string admin, PanelNewsDraft draft) =>

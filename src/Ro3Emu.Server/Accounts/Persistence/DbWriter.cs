@@ -44,7 +44,10 @@ public sealed class DbWriter : IDisposable
     public Task WorkerExited => _exited.Task;
     // Test-only deterministic barrier after SQL/revision work and before FULL commit.
     internal Action<string>? BeforeCommitForTest { get; set; }
+    internal Action? BeforeGroupCommitForTest { get; set; }
     internal Action<string>? AfterCommitForTest { get; set; }
+    /// <summary>Invoked when the writer enters terminal failure so the host can initiate clean shutdown.</summary>
+    internal Action<Exception>? TerminalFault { get; init; }
     /// <summary>Runs on this thread right after COMMIT with the role parts the plan declares (snapshot invalidation).</summary>
     internal Action<IReadOnlyList<RoleRevisionKey>>? RoleWritesCommitted { get; set; }
     internal bool StopRequested { get { lock (_gate) return _stopping; } }
@@ -145,6 +148,11 @@ public sealed class DbWriter : IDisposable
                 _durable.Clear(); _lazy.Clear();
                 _durableJobs = _durableBytes = _lazyJobs = _lazyBytes = 0;
             }
+            if (TerminalFault is { } onTerminal)
+            {
+                try { onTerminal(error); }
+                catch (Exception callbackError) { _log?.LogError(callbackError, "Terminal writer fault callback failed"); }
+            }
         }
         finally { _exited.TrySetResult(); }
     }
@@ -171,6 +179,7 @@ public sealed class DbWriter : IDisposable
     {
         var group = new List<Pending>();
         Exception? groupError = null;
+        bool commitFailed = false;
         long groupStarted = Stopwatch.GetTimestamp();
         SqliteTransaction? tx = null;
         try
@@ -195,7 +204,20 @@ public sealed class DbWriter : IDisposable
             {
                 int executed = group.Count(p => p.Executed);
                 if (executed == 0) tx.Rollback();
-                else { tx.Commit(); _metrics.WriterCommitted(executed); }
+                else
+                {
+                    try
+                    {
+                        BeforeGroupCommitForTest?.Invoke();
+                        tx.Commit();
+                    }
+                    catch (Exception commitError)
+                    {
+                        commitFailed = true;
+                        groupError = commitError;
+                    }
+                    if (groupError == null) _metrics.WriterCommitted(executed);
+                }
             }
         }
         catch (Exception e)
@@ -205,7 +227,12 @@ public sealed class DbWriter : IDisposable
         }
         finally { tx?.Dispose(); }
         foreach (var pending in group) Finish(db, pending, groupError);
+        if (groupError != null && (commitFailed || IsTerminalStorageError(groupError)))
+            throw groupError;
     }
+
+    private static bool IsTerminalStorageError(Exception error) =>
+        error is SqliteException { SqliteErrorCode: 8 or 10 or 11 or 13 or 14 or 26 } or IOException;
 
     /// <summary>One job inside the group's transaction. False when the transaction itself is lost (a failed
     /// savepoint rollback): the group then fails as a whole.</summary>

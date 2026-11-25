@@ -190,7 +190,7 @@ public sealed partial class PanelOperations
     }
 
     public async Task<IReadOnlyList<PanelDeletedCharacter>> DeletedCharactersAsync(string account) =>
-        [.. (await accounts.ReadAsync<List<DeletedRoleRow>>(new DeletedRolesRead(account))).Select(r => new PanelDeletedCharacter(
+        [.. (await accounts.ReadPanelAsync<List<DeletedRoleRow>>(new DeletedRolesRead(account))).Select(r => new PanelDeletedCharacter(
             r.Id, r.Name, ClassName(r.Career), r.Level, DateTimeOffset.FromUnixTimeSeconds(r.DeletedTime), r.NameFree))];
 
     /// <summary>The class's English name (JobConfig._iName), as the panel's other pages show it.</summary>

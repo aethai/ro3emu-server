@@ -72,7 +72,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
             var now = clock.GetUtcNow();
             if (_counts == null || _counts.IsFaulted || _counts.IsCompleted && now - _countsAt >= LevelBoardTtl)
             {
-                _counts = accounts.ReadAsync<(int, int)>(new PanelCountsRead());
+                _counts = accounts.ReadPanelAsync<(int, int)>(new PanelCountsRead());
                 _countsAt = now;
             }
             task = _counts;
@@ -92,7 +92,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
     }
 
     public async Task<IReadOnlyList<PanelNewsItem>> NewsAsync(int limit) =>
-        [.. (await accounts.ReadAsync<List<PanelNewsRow>>(new PanelNewsRead(limit, Now)))
+        [.. (await accounts.ReadPanelAsync<List<PanelNewsRow>>(new PanelNewsRead(limit, Now)))
             .Select(n => new PanelNewsItem(n.Id, n.Title, n.Body, n.Tag, DateTimeOffset.FromUnixTimeSeconds(n.PublishedUtc), n.Author, n.Pinned))];
 
     // ---------------------------------------------------------------- who is online
@@ -144,9 +144,9 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
 
     private async Task<HashSet<long>> HiddenCharactersAsync()
     {
-        if (await accounts.ReadAsync<string?>(new PanelSettingRead(PanelSettingKeys.HideStaffRankings)) != "1") return [];
+        if (await accounts.ReadPanelAsync<string?>(new PanelSettingRead(PanelSettingKeys.HideStaffRankings)) != "1") return [];
         var listed = staff.All();
-        return listed.Count == 0 ? [] : await accounts.ReadAsync<HashSet<long>>(new PanelStaffCharactersRead([.. listed.Select(s => s.Account)]));
+        return listed.Count == 0 ? [] : await accounts.ReadPanelAsync<HashSet<long>>(new PanelStaffCharactersRead([.. listed.Select(s => s.Account)]));
     }
 
     private Task<IEnumerable<PanelBoardRow>> CharacterRowsAsync(int board, long rootClass, HashSet<long> hidden) =>
@@ -164,7 +164,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
             if (_levels == null || _levelsLimit < limit || _levels.IsFaulted || _levels.IsCompleted && now - _levelsAt >= LevelBoardTtl)
             {
                 // Enough rows that a class filter still fills its board on a realm of a few thousand characters.
-                _levels = accounts.ReadAsync<List<PanelRoleRow>>(new PanelRolesRead(null, limit));
+                _levels = accounts.ReadPanelAsync<List<PanelRoleRow>>(new PanelRolesRead(null, limit));
                 _levelsLimit = limit;
                 _levelsAt = now;
             }
@@ -180,7 +180,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
         int limit = rootClass == 0 ? BoardSize : 3000;
         var ranked = await ranks.TopAsync(board, limit + hidden.Count);
         var top = ranked.Where(t => !hidden.Contains(t.Id)).Take(limit).ToList();
-        var names = await accounts.ReadAsync<Dictionary<long, (string Name, int Career, int Level)>>(new PanelRoleNamesRead([.. top.Select(t => t.Id)]));
+        var names = await accounts.ReadPanelAsync<Dictionary<long, (string Name, int Career, int Level)>>(new PanelRoleNamesRead([.. top.Select(t => t.Id)]));
         return top.Where(t => names.ContainsKey(t.Id) && InClass(names[t.Id].Career, rootClass))
             .Select(t => new PanelBoardRow(0, names[t.Id].Name, ClassName(names[t.Id].Career), names[t.Id].Level, t.Score, ClassIcon(names[t.Id].Career)));
     }
@@ -188,7 +188,7 @@ public sealed partial class PanelBackend(IOptions<ServerOptions> options, Accoun
     private async Task<IEnumerable<PanelBoardRow>> GuildRowsAsync(int board)
     {
         var top = await ranks.TopAsync(board, BoardSize);
-        var guilds = (await accounts.ReadAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List))).ToDictionary(g => g.Id);
+        var guilds = (await accounts.ReadPanelAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List))).ToDictionary(g => g.Id);
         return top.Where(t => guilds.ContainsKey(t.Id)).Select(t => new PanelBoardRow(0, guilds[t.Id].Name, "", guilds[t.Id].Level, t.Score));
     }
 

@@ -279,6 +279,37 @@ public sealed class DbWriterFaultTests : IDisposable
         Assert.Equal(1, await opener);
     }
 
+    [Fact]
+    public async Task TerminalDiskFullAtCommitStopsApplicationAndRejectsSubsequentWrites()
+    {
+        var lifetime = new FakeApplicationLifetime();
+        using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
+            Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
+            lifetime: lifetime);
+        accounts.BeforeGroupCommitForTest = () => throw new SqliteException("database or disk is full", 13);
+
+        var error = await Assert.ThrowsAsync<SqliteException>(() => accounts.WriteAsync<int>(new Plan("full-disk", _executed)));
+        Assert.Equal(13, error.SqliteErrorCode);
+        Assert.True(lifetime.Stopped.Wait(TimeSpan.FromSeconds(5)));
+
+        var snapshot = JsonSerializer.SerializeToElement(accounts.AccessMetrics.Snapshot());
+        Assert.True(snapshot.GetProperty("writerTerminal").GetBoolean());
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => accounts.WriteAsync<int>(new Plan("after-full", _executed)));
+        Assert.IsType<SqliteException>(refused.InnerException);
+        await accounts.PersistenceWorkersExited.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private sealed class FakeApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    {
+        private readonly CancellationTokenSource _stopping = new();
+        public ManualResetEventSlim Stopped { get; } = new();
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+        public CancellationToken ApplicationStopping => _stopping.Token;
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+        public void StopApplication() { Stopped.Set(); _stopping.Cancel(); }
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
