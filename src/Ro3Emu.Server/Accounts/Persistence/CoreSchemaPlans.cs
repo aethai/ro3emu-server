@@ -48,19 +48,6 @@ internal sealed class RoleSchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "role", "paragon_exp", "INTEGER NOT NULL DEFAULT 0");
         // The five Build-window skill selections; progress keeps the selected effective values.
         SchemaSql.AddColumn(db, tx, "role", "skill_plans", "BLOB");
-        // Progression (stage 3): see RoleProgress.
-        SchemaSql.AddColumn(db, tx, "role", "job_level", "INTEGER NOT NULL DEFAULT 1");
-        SchemaSql.AddColumn(db, tx, "role", "exp", "INTEGER NOT NULL DEFAULT 0");
-        SchemaSql.AddColumn(db, tx, "role", "job_exp", "INTEGER NOT NULL DEFAULT 0");
-        SchemaSql.AddColumn(db, tx, "role", "stats", "TEXT NOT NULL DEFAULT '1,1,1,1,1,1'");
-        SchemaSql.AddColumn(db, tx, "role", "bonus_points", "INTEGER NOT NULL DEFAULT 0");
-        SchemaSql.AddColumn(db, tx, "role", "currency", "TEXT NOT NULL DEFAULT ''");
-        SchemaSql.AddColumn(db, tx, "role", "starter_kit", "INTEGER NOT NULL DEFAULT 0");
-        SchemaSql.AddColumn(db, tx, "role", "skills", "TEXT NOT NULL DEFAULT ''");
-        SchemaSql.AddColumn(db, tx, "role", "skill_bar", "TEXT NOT NULL DEFAULT ''");
-        // Astral Level (Paragon): RoleProgress.ParagonLevel / ParagonExp, staged with the EXP that feeds them.
-        SchemaSql.AddColumn(db, tx, "role", "paragon_level", "INTEGER NOT NULL DEFAULT 0");
-        SchemaSql.AddColumn(db, tx, "role", "paragon_exp", "INTEGER NOT NULL DEFAULT 0");
         // Serialized romsg.DBTaskInfo (quests, AUTO_SYNC 5027); NULL = the role predates quests.
         SchemaSql.AddColumn(db, tx, "role", "tasks", "BLOB");
         // Server-owned quest action/guide completion boundary, separate from client DBTaskInfo.
