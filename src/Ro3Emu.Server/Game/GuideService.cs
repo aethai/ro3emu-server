@@ -9,7 +9,7 @@ namespace Ro3Emu.Server.Game;
 /// CLIENT_COMPLETE_GUIDE {guildId (sic)}; the server keeps the finished set in DBGuideInfo (AUTO_SYNC 5055), which the
 /// client reads at login so a finished guide does not run again. Without it every login replays the guides.
 /// </summary>
-public sealed class GuideService(RoleStore roles, Data.GameData data, ILogger<GuideService> log)
+public sealed partial class GuideService(RoleStore roles, Data.GameData data, ILogger<GuideService> log)
 {
     public const uint GuideInfoSync = 5055;
     public const uint UpdateGuide = 84000;

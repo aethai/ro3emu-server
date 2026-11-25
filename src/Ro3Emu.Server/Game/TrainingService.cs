@@ -17,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// (inferred), never client damage reports. A normal dummy uses the requested race/element/size; challenge
 /// stats stay fixed, so changing practice settings cannot qualify rewards.
 /// </summary>
-public sealed class TrainingService : IGameTicker
+public sealed partial class TrainingService : IGameTicker
 {
     public const uint Sync = 5069, ChallengeMode = 84061, AimAward = 84062, ExitChallengeMode = 84063, UpdateWoodNpc = 84064,
         Reconnect = 84065, ChallengeReconnect = 84066, ChallengeReset = 84067;

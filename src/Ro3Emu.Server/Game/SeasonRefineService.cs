@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// 83220 pays RefiningSeasonTable._kDeplete and rolls _kAttrsId, 83221 activates one offered group,
 /// and 83222 discards the offer. The group effects come from RefiningSeasonAttrConfig._kAttrs.
 /// </summary>
-public sealed class SeasonRefineService
+public sealed partial class SeasonRefineService
 {
     public const uint SeasonRefineSync = 5023, Recast = 83220, SelectAttr = 83221, GiveUp = 83222;
 

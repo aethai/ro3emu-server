@@ -21,7 +21,7 @@ namespace Ro3Emu.Server.Game;
 /// <para>Other players read the worn outfits as RoleAdditionBaseInfo.socialOutfitData (UserDataService "Base",
 /// LC_DAL_RolePublic.ParseRolePublicBaseInfo), which the chat bubble, honor and the profile card index unguarded.</para>
 /// </summary>
-public sealed class SocialOutfitService
+public sealed partial class SocialOutfitService
 {
     public const uint Sync = 5044, Equip = 83480, Refresh = 83481;
     internal const int UnlockAction = 349;

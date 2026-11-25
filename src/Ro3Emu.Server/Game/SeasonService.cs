@@ -22,7 +22,7 @@ namespace Ro3Emu.Server.Game;
 /// Area 1 is inferred. "!season &lt;playbook&gt;" switches the current cycle's playbook on next login.
 /// </para>
 /// </summary>
-public sealed class SeasonService : IGameTicker
+public sealed partial class SeasonService : IGameTicker
 {
     public const uint SeasonSync = 5021, TimeInfoNotify = 82707, StateChangeNotify = 82708;
 

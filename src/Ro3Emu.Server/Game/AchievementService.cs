@@ -23,7 +23,7 @@ namespace Ro3Emu.Server.Game;
 /// Nine rows whose source does not exist or whose meaning is unresolved stay at status 0 (§5, "Blocked").
 /// 76004 (share) has no sender in the client and stays unrouted.
 /// </summary>
-public sealed class AchievementService : IGameTicker
+public sealed partial class AchievementService : IGameTicker
 {
     public const uint Sync = 5019, GetReward = 76002, GetPointReward = 76003, UpdateHintLevel = 76009, GetAllReward = 76010;
 

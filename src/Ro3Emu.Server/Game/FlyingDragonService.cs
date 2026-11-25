@@ -32,7 +32,7 @@ namespace Ro3Emu.Server.Game;
 /// ends; the red packet's unclaimed part returns by mail 1116; a thumbs-up pays nothing (DragonLikeReward and
 /// DragonLikeTrigger have no reader); the start distance is 15 m and the thumbs-up one DragonCeremonyAround.
 /// </summary>
-public sealed class FlyingDragonService : IGameTicker
+public sealed partial class FlyingDragonService : IGameTicker
 {
     public const uint Start = 82968, Assist = 82969, Query = 82970, Accelerate = 82971, Complete = 82972, ThumbsUp = 82973,
         Notify = 82974;

@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// _iNormalDrop remains additive under its own configured conditions.
 /// No offline reward formula is present in the current schema; 43405 refuses without granting phantom loot.
 /// </summary>
-public sealed class WildAfkService : IGameTicker
+public sealed partial class WildAfkService : IGameTicker
 {
     public const uint Sync = 5035, Info = 43401, Notify = 43402, SaveCharge = 43403, Collection = 43404,
         OfflineReward = 43405, Magnification = 43406, DungeonStart = 43408, Start = 43409, Pause = 43410,

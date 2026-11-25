@@ -17,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// cd13e/monsterhunt-award receipts. 5053 DBAreaConcurInfo shows it all; the role blob is "area_concur".
 /// (inferred) The killer alone gets credit, as for the kill's loot; area and map scores have no reset.
 /// </summary>
-public sealed class MonsterHuntService
+public sealed partial class MonsterHuntService
 {
     public const uint Sync = 5053, GainAreaAward = 83622, GainMonsterAward = 83623;
     public const int Function = 92;

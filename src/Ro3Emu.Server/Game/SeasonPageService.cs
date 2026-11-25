@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// MultiverseConfig[101]._iDanSystem; LC_SeasonHelper.CalFunctionRank consumes successive _iExpLimit values.
 /// Claims are limited per dan level across functions, not per function (GetSeasonDanRewardState:562-633).
 /// </summary>
-public sealed class SeasonPageService(GameData data, CharacterService character, FunctionService functions,
+public sealed partial class SeasonPageService(GameData data, CharacterService character, FunctionService functions,
     SeasonService seasons, RoleStore roles, RewardService rewards, MailService mail, TimeProvider clock)
 {
     public const uint PageSync = 5022, GetData = 82901, ReceiveRankReward = 82902, PutOnHonorBadge = 82903;

@@ -26,7 +26,7 @@ namespace Ro3Emu.Server.Game;
 /// ServerOptions.TitleCrestPercent, of the tier its level reaches (see CrestDrops). The PvP damage counter by title
 /// level (TitleBuffConfig, Formula_ATitleDamageAdd) is CombatService's TitleDamage.
 /// </summary>
-public sealed class TitleService
+public sealed partial class TitleService
 {
     public const uint Sync = 5031, Level = 43102;
     public const int Function = 14;

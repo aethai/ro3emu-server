@@ -31,7 +31,7 @@ namespace Ro3Emu.Server.Game;
 /// Refusals: function closed 2057, unknown node, inactive group, locked node, no points or capped 82, core missing 154,
 /// bag full 159.
 /// </summary>
-public sealed class ParagonService
+public sealed partial class ParagonService
 {
     public const uint Sync = 5015, Allocate = 83101, Install = 83102, Remove = 83103, ResetAll = 83104, ResetSingle = 83105;
     public const int Function = 71;

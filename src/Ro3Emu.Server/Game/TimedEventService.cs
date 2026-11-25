@@ -15,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// _KTypeParam, and UI_Sys_AuctionWidgetCtrl.CheckSubTab (lines 699-743) lists a tab only while
 /// LC_ActManager holds that activity (LC_ActivityHelper.CheckActivityIsOpen, lines 154-173).
 /// </summary>
-public sealed class TimedEventService(GameData data, TimeProvider time, SessionRegistry sessions, GameLoop loop, SeasonService seasons) : IGameTicker
+public sealed partial class TimedEventService(GameData data, TimeProvider time, SessionRegistry sessions, GameLoop loop, SeasonService seasons) : IGameTicker
 {
     public const uint StatusNotify = 43501, Common = 43502, Upload = 43503;
     internal bool IsOwnerRequest(uint message) => message is Common or Upload;

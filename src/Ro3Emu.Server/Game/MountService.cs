@@ -14,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// LC_MountServer omits tp on 32743; zero therefore selects the system slot, not an invalid enum.
 /// Mount attributes use the normal StatCalculator pipeline, including per_speed 1131.
 /// </summary>
-public sealed class MountService : IGameTicker
+public sealed partial class MountService : IGameTicker
 {
     public const uint Sync = 5012, SetConfig = 32743, ScoreAward = 32744, Ride = 32745, Unlock = 32747;
     public const uint EtchantRefresh = 32748, EtchantSave = 32749, EtchantPlan = 32750;

@@ -25,7 +25,7 @@ namespace Ro3Emu.Server.Game;
 /// Refusals (inferred mapping): function closed 2057, unknown rank 2061, already claimed 2062, not reached 3900.
 /// Only rankReward is stored (role blob "growth_class"); the rest is derived from the quests.
 /// </summary>
-public sealed class GrowthClassService
+public sealed partial class GrowthClassService
 {
     public const uint Sync = 5045, GetRankReward = 33830;
 

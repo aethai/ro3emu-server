@@ -19,7 +19,7 @@ namespace Ro3Emu.Server.Game;
 /// day N of _kStage [30, N] opens N-1 local 05:00 days later; a task's _iPoint is scored when its reward is claimed;
 /// isAllTaskComplete = every listed task claimed; the configured window (TimeLimit 1010) is permanent, so days never close.
 /// </summary>
-public sealed class FirstHeartService : IGameTicker
+public sealed partial class FirstHeartService : IGameTicker
 {
     public const uint Sync = 5049, GetTaskReward = 83500, GetScoreReward = 83501;
     public const long Activity = 114;

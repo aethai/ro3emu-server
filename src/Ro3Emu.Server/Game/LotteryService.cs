@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// 83410/5011 appearance lottery: DrawConfig, DrawPoolConfig and LC_DAL_AppearanceLottery.
 /// Ticket-only settlement is one award transaction with the lottery counters and pet roster.
 /// </summary>
-public sealed class LotteryService
+public sealed partial class LotteryService
 {
     public const uint DrawRequest = 83410, LotterySync = 5011;
     private readonly GameData _data;
