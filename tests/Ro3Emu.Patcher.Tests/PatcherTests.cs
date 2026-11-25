@@ -446,7 +446,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task SignedChannel_VerifiesAndUpdatesWithPinnedPublicKey()
+    public async Task SignedChannelVerifiesAndUpdatesWithPinnedPublicKey()
     {
         var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
         WriteBuild("Game.exe", Random(4096, 201));
@@ -473,7 +473,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task SignedChannel_RejectsTamperedChannelJson()
+    public async Task SignedChannelRejectsTamperedChannelJson()
     {
         var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
         WriteBuild("Game.exe", Random(2048, 202));
@@ -498,7 +498,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task SignedChannel_RejectsMissingSignature()
+    public async Task SignedChannelRejectsMissingSignature()
     {
         var (_, publicPem) = ChannelSignature.GenerateKeyPair();
         WriteBuild("Game.exe", Random(2048, 203));
@@ -510,7 +510,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task SignedChannel_RejectsWrongKeyAndWeakKey()
+    public async Task SignedChannelRejectsWrongKeyAndWeakKey()
     {
         var (privatePem, _) = ChannelSignature.GenerateKeyPair();
         var (_, otherPublicPem) = ChannelSignature.GenerateKeyPair();
@@ -539,7 +539,7 @@ public sealed class PatcherTests : IDisposable
     }
 
     [Fact]
-    public async Task SignedChannel_RejectsChannelSwapReplay()
+    public async Task SignedChannelRejectsChannelSwapReplay()
     {
         var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
         WriteBuild("Game.exe", Random(2048, 205));
