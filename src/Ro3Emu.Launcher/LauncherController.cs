@@ -54,13 +54,17 @@ public sealed partial class LauncherController : ILauncherController
                 await OnPageReadyAsync();
                 break;
             case "primary":
-                if (_work != null) return;
-                if (_phase == "ready") await PlayAsync();
-                else if (_phase is "install" or "update" or "repair") await UpdateAsync(verifyAll: _phase == "repair");
-                else if (_phase is "offline" or "error") await CheckAsync();
+                switch (LauncherStateMachine.ResolvePrimary(_phase, _work != null))
+                {
+                    case LauncherPrimaryAction.Play: await PlayAsync(); break;
+                    case LauncherPrimaryAction.Install:
+                    case LauncherPrimaryAction.Update: await UpdateAsync(verifyAll: false); break;
+                    case LauncherPrimaryAction.Repair: await UpdateAsync(verifyAll: true); break;
+                    case LauncherPrimaryAction.RetryCheck: await CheckAsync(); break;
+                }
                 break;
             case "repair":
-                if (_work == null && _phase != "running") await UpdateAsync(verifyAll: true);
+                if (LauncherStateMachine.CanRepair(_phase, _work != null)) await UpdateAsync(verifyAll: true);
                 break;
             case "pause":
                 _work?.Cancel();
@@ -138,12 +142,17 @@ public sealed partial class LauncherController : ILauncherController
             if (await SelfUpdateAsync()) return;
             RememberInstalledVersion();
             if (check.Installed is null) await PostInstallAsync();
-            else if (check.UpdateRequired) PostState("update", $"Version {_channel.Version} is available.");
-            else if (updater.QuickVerify(check.Installed) is { Count: > 0 } changed) PostState("repair", $"{changed.Count} game files differ from the release.");
             else
             {
-                PostState("ready");
-                await ShowNotesIfNewAsync();
+                int changedCount = check.UpdateRequired ? 0 : updater.QuickVerify(check.Installed).Count;
+                string nextPhase = LauncherStateMachine.PhaseAfterCheck(hasInstalled: true, check.UpdateRequired, changedCount);
+                if (nextPhase == LauncherStateMachine.Update) PostState(nextPhase, $"Version {_channel.Version} is available.");
+                else if (nextPhase == LauncherStateMachine.Repair) PostState(nextPhase, $"{changedCount} game files differ from the release.");
+                else
+                {
+                    PostState(nextPhase);
+                    await ShowNotesIfNewAsync();
+                }
             }
         }
         catch (Exception e) when (e is PatcherException or HttpRequestException or TaskCanceledException or IOException or JsonException)
@@ -152,8 +161,9 @@ public sealed partial class LauncherController : ILauncherController
             // The patcher's own words say why (a repository that is not https, a missing channel); a network error has none.
             string? reason = e is PatcherException ? e.Message : null;
             // Offline but installed: the game can still start (the update server and the game server are separate).
-            if (_installed is not null) PostState("ready", (reason ?? "Can't reach the update server.") + " Playing the installed version.");
-            else PostState("offline", reason);
+            string fallback = LauncherStateMachine.PhaseAfterCheckFailure(_installed is not null);
+            if (fallback == LauncherStateMachine.Ready) PostState(fallback, (reason ?? "Can't reach the update server.") + " Playing the installed version.");
+            else PostState(fallback, reason);
         }
         PostSettings();
     }
@@ -217,7 +227,7 @@ public sealed partial class LauncherController : ILauncherController
         catch (OperationCanceledException)
         {
             EndWork();
-            PostState(_installed is null ? "install" : "update", "Paused. Downloaded parts are kept; continue any time.");
+            PostState(LauncherStateMachine.PhaseAfterCancel(_installed is not null), "Paused. Downloaded parts are kept; continue any time.");
         }
         catch (Exception e)
         {
@@ -232,10 +242,10 @@ public sealed partial class LauncherController : ILauncherController
         _work = null;
     }
 
-    ThrottledProgress ProgressReporter()
+    ThrottledUpdateProgress ProgressReporter()
     {
-        var meter = new SpeedMeter();
-        return new ThrottledProgress(p =>
+        var meter = new TransferSpeedMeter();
+        return new ThrottledUpdateProgress(p =>
         {
             var (rate, eta) = p.Stage == UpdateStage.Downloading ? meter.Sample(p.BytesDone, p.BytesTotal) : (0, 0);
             _post(new { type = "progress", stage = p.Stage.ToString().ToLowerInvariant(), done = p.BytesDone, total = p.BytesTotal, rate, eta, file = p.File });
@@ -244,19 +254,19 @@ public sealed partial class LauncherController : ILauncherController
 
     async Task PlayAsync()
     {
-        PostState("launching");
+        PostState(LauncherStateMachine.Launching);
         try
         {
             var start = await GameStarter.StartAsync(_layout.GameDirectory);
             if (start.Game is not { } game)
             {
-                PostState("repair", $"The game did not start: {start.Failure}.");
+                PostState(LauncherStateMachine.PhaseAfterLaunch(started: false), $"The game did not start: {start.Failure}.");
                 return;
             }
             _game = game;
             game.EnableRaisingEvents = true;
             game.Exited += (_, _) => System.Windows.Application.Current.Dispatcher.InvokeAsync(() => OnGameExitedAsync(game));
-            PostState("running");
+            PostState(LauncherStateMachine.PhaseAfterLaunch(started: true));
             _gameRunningChanged(true);
         }
         catch (Exception e)

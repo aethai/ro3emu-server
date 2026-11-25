@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
+using Ro3Emu.Patcher;
 using Ro3Emu.Setup;
 using SetupSettings = Ro3Emu.Setup.Settings;
 
@@ -54,7 +55,7 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
     Process? _game;
     string _unit = "bytes";
     string _stage = "";
-    readonly SpeedMeter _meter = new();
+    readonly TransferSpeedMeter _meter = new();
     readonly Stopwatch _sinceProgress = Stopwatch.StartNew();
 
     public Ro3EmuController(string exePath, Action<object> post, Func<string, string?> pickFolder, Action<bool> gameRunningChanged, string? panelUrl = null)
@@ -653,7 +654,7 @@ public sealed class Ro3EmuController : ILauncherController, IUiSink
         PostState("updating", null, $"Downloading RO3Emu {release.Version!.ToString(3)}");
         try
         {
-            var meter = new SpeedMeter();
+            var meter = new TransferSpeedMeter();
             var progress = new Progress<(long Done, long Total)>(p =>
             {
                 if (_sinceProgress.ElapsedMilliseconds < 150 && p.Done < p.Total) return;
