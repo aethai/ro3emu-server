@@ -270,8 +270,8 @@ public sealed class SeasonRefineTests : IAsyncLifetime
                 && slot.Inc.CanSelectedAttr.Count == 3);
         int groupId = pending.EquipParts[1].Inc.RefineSlots[1].Inc.CanSelectedAttr.Keys.First();
         using var groups = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoRoot(), "data", "config", "RefiningSeasonAttrConfig.json")));
-        var effects = groups.RootElement.GetProperty(groupId.ToString()).GetProperty("_kAttrs").EnumerateArray()
-            .Select(e => (Property: e[0].GetInt32(), Bonus: e[1].GetInt32())).ToArray();
+        var effects = SeasonRefineService.GroupAttributes(groups.RootElement.GetProperty(groupId.ToString()))
+            .Select(e => (Property: (int)e.Id, Bonus: (int)e.Value)).ToArray();
         await alice.SendGameAsync(SeasonRefineService.SelectAttr,
             new SeasonRefineSelectAttrReq { EquipType = 1, RefineId = 1, GroupId = groupId });
         var after = await Next(alice, CharacterService.OnePropertyChange, OnePropertyChange.Parser,
@@ -368,6 +368,30 @@ public sealed class SeasonRefineTests : IAsyncLifetime
         await relog.SendGameAsync(SeasonRefineService.SelectAttr,
             new SeasonRefineSelectAttrReq { EquipType = 1, RefineId = 1, GroupId = offered[0] });
         Assert.Equal(0, (await Next(relog, SeasonRefineService.SelectAttr, SeasonRefineSelectAttrResp.Parser)).Result);
+    }
+
+    [Fact]
+    public void BasicDefenseGivesDefAndAdvancedAttackGivesAtk()
+    {
+        static (long Id, double Value)[] Parse(string json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            return [.. SeasonRefineService.GroupAttributes(doc.RootElement)];
+        }
+
+        // Row 1 ("Basic Attack") and row 13 ("Ultimate Defense") stay unchanged.
+        Assert.Equal([(103L, 10.0), (104L, 10.0)],
+            Parse("""{"_iID":1,"_kAttrs":[[103,10],[104,10]]}"""));
+        Assert.Equal([(105L, 150.0), (106L, 150.0)],
+            Parse("""{"_iID":13,"_kAttrs":[[105,150],[106,150]]}"""));
+
+        // Row 2 ("Basic Defense") had 103/104 in client data -> remapped to 105/106 (PDEF/MDEF).
+        Assert.Equal([(105L, 20.0), (106L, 20.0)],
+            Parse("""{"_iID":2,"_kAttrs":[[103,20],[104,20]]}"""));
+
+        // Row 12 ("Advanced Attack") had 105/106 in client data -> remapped to 103/104 (PATK/MATK).
+        Assert.Equal([(103L, 80.0), (104L, 80.0)],
+            Parse("""{"_iID":12,"_kAttrs":[[105,80],[106,80]]}"""));
     }
 
     private static string RepoRoot()
