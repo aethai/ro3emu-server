@@ -275,8 +275,8 @@ public sealed class DungeonMatchTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, TimedBattleService.CancelMatch, CancelMatchResp.Parser, r => r.MatchEntryId == 2)).Result);
         Assert.Equal(0, (await Next(alice, DungeonMatchService.StartMatch, StartMatchResp.Parser,
             r => r.MatchEntryId == Entry)).Result);
-        Assert.True(Service<DungeonMatchService>().Owns(Session(alice)));
-        Assert.False(Service<TimedBattleService>().IsMatching(Session(alice)));
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<DungeonMatchService>().Owns(Session(alice)))));
+        Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<TimedBattleService>().IsMatching(Session(alice)))));
         await alice.SendGameAsync(TimedBattleService.StartMatch, new StartMatchReq { MatchEntryId = 2 });
         Assert.Equal(ErrorCodes.DungeonBusy,
             (await Next(alice, TimedBattleService.StartMatch, StartMatchResp.Parser, r => r.MatchEntryId == 2)).Result);
@@ -287,26 +287,26 @@ public sealed class DungeonMatchTests : IAsyncLifetime
             r => r.MatchEntryId == 2);
         Assert.Equal(0, switchedTimed.Result);
         Assert.Equal(_clock.GetUtcNow().ToUnixTimeSeconds(), switchedTimed.MatchStartTime);
-        Assert.False(Service<DungeonMatchService>().Owns(Session(alice)));
+        Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<DungeonMatchService>().Owns(Session(alice)))));
         await Until(() => Service<TimedBattleService>().IsMatching(Session(alice)), "the timed queue after the switch");
         await alice.SendGameAsync(TimedBattleService.CancelMatch, new CancelMatchReq { MatchEntryId = 2 });
         Assert.Equal(0, (await Next(alice, TimedBattleService.CancelMatch, CancelMatchResp.Parser, r => r.MatchEntryId == 2)).Result);
 
         await Start(alice);
         var role = (long)alice.Self!.Uuid;
-        var original = Session(alice);
+        var original = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice)));
         await alice.SwitchRoleAsync();
-        Assert.False(Service<DungeonMatchService>().Owns(original));
+        await Until(() => !Service<DungeonMatchService>().Owns(original), "match ownership cleared after role switch");
         await alice.EnterWorldAsync(role);
-        Assert.False(Session(alice).DungeonSoloMatch);
+        Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonSoloMatch)));
         await Start(alice);
-        Assert.True(Service<DungeonMatchService>().Owns(Session(alice)));
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<DungeonMatchService>().Owns(Session(alice)))));
         await alice.SendGameAsync(DungeonMatchService.CancelMatch, new CancelMatchReq
         { MatchEntryId = Entry, NextMatchEntry = Entry, NextMatchData = Request().MatchData });
         Assert.Equal(0, (await Next(alice, DungeonMatchService.CancelMatch, CancelMatchResp.Parser)).Result);
         Assert.Equal(0, (await Next(alice, DungeonMatchService.StartMatch, StartMatchResp.Parser,
             r => r.MatchEntryId == Entry)).Result);
-        Assert.True(Service<DungeonMatchService>().Owns(Session(alice)));
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<DungeonMatchService>().Owns(Session(alice)))));
     }
 
     private sealed class ManualClock(DateTimeOffset now) : TimeProvider
