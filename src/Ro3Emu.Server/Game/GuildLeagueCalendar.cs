@@ -31,8 +31,19 @@ public sealed class GuildLeagueCalendar(GameData data, ActivityClock clock, Time
     public int RegistrationActivity => Activity(0, 129);
     public int[] RoundActivities => [Activity(1, 109), Activity(2, 110), Activity(3, 111)];
 
-    private int Activity(int slot, int fallback) => data.Table("GuildSettingConfig").TryGetValue($"GuildLeagueActivityID{slot}", out var row)
-        && row.TryGetProperty("_kValue", out var value) && GameData.Number(value) is { } n ? (int)n : fallback;
+    private int Activity(int slot, int fallback)
+    {
+        var g = Data.Config.GuildSettings.Of(data);
+        long? configured = slot switch
+        {
+            0 => g.GuildLeagueActivityID0,
+            1 => g.GuildLeagueActivityID1,
+            2 => g.GuildLeagueActivityID2,
+            3 => g.GuildLeagueActivityID3,
+            _ => null,
+        };
+        return (int)(configured ?? fallback);
+    }
 
     private (long Opened, int Count, Tournament[] Prefix, DateTime Anchor)? _memo;
 

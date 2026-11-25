@@ -105,8 +105,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     {
         if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return 10000;
         int sameMap = team.Members.Count(m => Session(m) is { } s && s.WorldScene == killer.WorldScene);
-        long perMember = _data.Table("PublicParamConfig").TryGetValue("TeamDropBuffWeights", out var weight)
-            ? (long)(GameData.Number(weight) ?? 0) : 0;
+        long perMember = Data.Config.PublicParams.Of(_data).TeamDropBuffWeights ?? 0;
         return (int)Math.Clamp(10000 + perMember * (Math.Clamp(sameMap, 1, ExpBuff.Length) - 1), 10000, 100000);
     }
 

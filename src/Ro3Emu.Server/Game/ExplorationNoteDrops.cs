@@ -12,9 +12,6 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
     internal sealed record Roll(int Item, long DayStart);
     internal Func<int, int> Draw { get; set; } = Random.Shared.Next;
 
-    private int Value(string key) => data.Table("ActivityConstant").TryGetValue(key, out var value)
-        ? (int)(GameData.Number(value) ?? 0) : 0;
-
     // RestrictConfig recover type 1: use the same 05:00 realm day as the other life restrictions (inferred).
     internal (long Start, long End) Day()
     {
@@ -25,7 +22,7 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
     internal RestrictInfo? Remaining(GameSession s)
     {
         if (s.Restrictions == null || !open(s)) return null;
-        int id = Value("ExploreNoteDropRestrict");
+        int id = (int)(ActivityConstants.Of(data).ExploreNoteDropRestrict ?? 0);
         if (RestrictConfig.Get(data, id) is not { RecoverType: 1, MaxRestrictNum: > 0 } rule) return null;
         var (start, end) = Day();
         var saved = s.Restrictions.RestrictCount.GetValueOrDefault(id);
@@ -40,15 +37,15 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
     internal Roll? Choose(GameSession s)
     {
         if (Remaining(s) is not { Count: > 0 } left) return null;
-        int catchUp = Value("ExploreCatchUpDays");
+        var c = ActivityConstants.Of(data);
+        int catchUp = (int)(c.ExploreCatchUpDays ?? 0);
         // (inferred) Options are basis points per successful action, catch-up begins on the numbered season day.
         int day = (TimeZoneInfo.ConvertTime(clock.GetUtcNow(), seasons.Zone).Date - seasons.Start.Date).Days + 1;
-        int chance = Value(catchUp > 0 && day >= catchUp ? "ExploreCatchUpOptions" : "ExploreBaseOptions");
+        int chance = (int)((catchUp > 0 && day >= catchUp ? c.ExploreCatchUpOptions : c.ExploreBaseOptions) ?? 0);
         if (chance is <= 0 or > 10000 || Draw(10000) >= chance) return null;
-        if (!data.Table("ActivityConstant").TryGetValue("ExploreNotes", out var notes)
-            || notes.ValueKind != JsonValueKind.Array || notes.GetArrayLength() == 0) return null;
+        if (c.ExploreNotes is not { Length: > 0 } notes) return null;
         // (inferred) No per-note weights are supplied in ExploreNotes.
-        int item = (int)(GameData.Number(notes[Draw(notes.GetArrayLength())]) ?? 0);
+        int item = (int)notes[Draw(notes.Length)];
         return item > 0 && ItemConfig.Get(data, item) != null ? new(item, left.LastRecoverTime) : null;
     }
 

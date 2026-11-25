@@ -148,8 +148,8 @@ public sealed partial class AuctionService
                         next.LastBid = Now;
                         next.Revision++;
                         if (!next.Joined.Contains(role)) next.Joined.Add(role);
-                        long countdown = Math.Max(0, Param("AuctionCountdown", 5));
-                        if (next.End - Now <= countdown) next.End = checked(next.End + Math.Max(0, Param("AuctionExtendTime", 3)));
+                        long countdown = Math.Max(0, (Data.Config.PublicParams.Of(data).AuctionCountdown ?? 5));
+                        if (next.End - Now <= countdown) next.End = checked(next.End + Math.Max(0, (Data.Config.PublicParams.Of(data).AuctionExtendTime ?? 3)));
                         if (op == BiddingType.Fixed) { next.State = AuctionState.Settled; next.Winner = role; next.End = Now; }
                         var paid = await character.ExchangeLockedAsync(s, new ExchangeRequest
                         {

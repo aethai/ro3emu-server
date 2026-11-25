@@ -39,11 +39,11 @@ public sealed partial class GuildService
         string content = req.Req?.Content ?? "";
         long now = NowMs();
         int code = g == null ? ErrorCodes.NotInGuild
-            : !HasRight(g, s.Role!.Id, (int)Setting("GuildSendEmailPermission", SendMailRight)[0]) ? ErrorCodes.GuildPermission
+            : !HasRight(g, s.Role!.Id, (int)(Data.Config.GuildSettings.Of(data).GuildSendEmailPermission ?? SendMailRight)) ? ErrorCodes.GuildPermission
             : string.IsNullOrWhiteSpace(content) ? ErrorCodes.GuildMailContent
-            : content.Length > Setting("GuildEmailContentNumNew", 0, 80)[^1] ? ErrorCodes.GuildTextLength
+            : content.Length > (Data.Config.GuildSettings.Of(data).GuildEmailContentNumNew ?? [0, 80])[^1] ? ErrorCodes.GuildTextLength
             : Sensitive(content) ? ErrorCodes.TextSensitive
-            : BroadEmailsToday(g) >= Setting("GuildMassEmailNum", 10)[0] ? ErrorCodes.GuildMailDaily
+            : BroadEmailsToday(g) >= (Data.Config.GuildSettings.Of(data).GuildMassEmailNum ?? 10) ? ErrorCodes.GuildMailDaily
             : now < g.NextBroadEmailMs ? ErrorCodes.Cooldown : 0;
         if (code != 0 || g == null)
         {
@@ -55,7 +55,7 @@ public sealed partial class GuildService
         }
         g.BroadEmailCount = BroadEmailsToday(g) + 1;
         g.BroadEmailDay = DayStart;
-        g.NextBroadEmailMs = now + Setting("GuildMassEmailCD", 3600)[0] * 1000;
+        g.NextBroadEmailMs = now + (Data.Config.GuildSettings.Of(data).GuildMassEmailCD ?? 3600) * 1000;
         await SaveGuildAsync(g);
         await s.SendGameAsync(BroadEmail, new GuildBroadEmailResp
         { Result = 0, NextBroadEmailTime = g.NextBroadEmailMs, BroadEmailLimit = g.BroadEmailCount });

@@ -468,8 +468,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             }
             waves.Add(new Wave(waves.Count + 1, spawns));
         }
-        int dracula = data.Table("PublicParamConfig").TryGetValue("DraculaNpcConfigId", out var id)
-            ? (int)(GameData.Number(id) ?? 0) : 0;
+        int dracula = (int)(Data.Config.PublicParams.Of(data).DraculaNpcConfigId ?? 0);
         if (!map.Regions.TryGetValue(DraculaRegion, out var lair) || monsters.Template(dracula) == null) return null;
         waves.Add(new Wave(waves.Count + 1, [], 0, Chase(DraculaRegion)));
         waves.Add(new Wave(waves.Count + 1, [new Spawn(dracula, map.Grounded(new MapPoint(lair.X, lair.Y, lair.Z, lair.Direction)))]));

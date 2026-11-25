@@ -31,7 +31,7 @@ public sealed partial class TradeService
                 || req.TotalQuantity > GameData.Int(row, "_iBuyLimit"))
                 return ErrorCodes.TradeQuantity;
             if (tx.All<PreorderRow>(Orders).Count(o => o.BuyerId == s.Role!.Id && o.Status == 0)
-                >= Public("TradePreMaxNum", 30)) return ErrorCodes.TradeQuantity;
+                >= (Data.Config.PublicParams.Of(data).TradePreMaxNum ?? 30)) return ErrorCodes.TradeQuantity;
             var buyer = tx.Role(s.Role!.Id);
             if (buyer.Currency.GetValueOrDefault(listing.Currency) < req.TotalPrice) return ErrorCodes.CurrencyShort;
             buyer.Currency[listing.Currency] -= req.TotalPrice;

@@ -152,8 +152,8 @@ public sealed class DraculaWeddingService : IGameTicker
     };
 
     /// <summary>PublicParamConfig.DraculaWeddingDynamicStoryIdArr {3001, 3003, 3004}: home, lair start, rescue.</summary>
-    private long StoryId(int index) => _data.Table("PublicParamConfig").TryGetValue("DraculaWeddingDynamicStoryIdArr", out var ids)
-        && ids.ValueKind == JsonValueKind.Array && ids.GetArrayLength() > index ? (long)(GameData.Number(ids[index]) ?? 0) : 0;
+    private long StoryId(int index) =>
+        Data.Config.PublicParams.Of(_data).DraculaWeddingDynamicStoryIdArr is { } ids && index < ids.Length ? ids[index] : 0;
 
     private async Task SendQuietAsync(GameSession s, uint id, Google.Protobuf.IMessage msg)
     {

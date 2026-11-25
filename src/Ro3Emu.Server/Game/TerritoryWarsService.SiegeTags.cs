@@ -15,7 +15,6 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class TerritoryWarsService
 {
-    private static readonly string[] SiegeTagDamageParams = ["ArtilleryAttackCityGateReduceDamage", "GuardAttackOtherReduceDamage"];
     private const long BulletNpcType = 10;
     /// <summary>Skill id -> the NPC tags its casts carry (the cannons of that skill and its bullet NPC); read once.</summary>
     private Dictionary<long, long[]>? _skillTags;
@@ -38,10 +37,14 @@ public sealed partial class TerritoryWarsService
     /// <summary>The change of [attacker tag, target tag, change] rows that match, applied one after the other.</summary>
     private long TagDamage(long[] source, long[] target, long damage)
     {
-        foreach (string name in SiegeTagDamageParams)
-            if (ParamArray(name) is [var from, var to, var change] && source.Contains(from) && target.Contains(to))
-                damage = damage * (10000 + change) / 10000;
+        var pp = PublicParams.Of(_data);
+        damage = ApplyRule(pp.ArtilleryAttackCityGateReduceDamage, damage);
+        damage = ApplyRule(pp.GuardAttackOtherReduceDamage, damage);
         return damage;
+
+        long ApplyRule(long[]? rule, long current) =>
+            rule is [var from, var to, var change] && source.Contains(from) && target.Contains(to)
+                ? current * (10000 + change) / 10000 : current;
     }
 
     /// <summary>CombatService.DamageAdjusters: a player's cast on a monster with the NPC tags of its source.</summary>

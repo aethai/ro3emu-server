@@ -113,12 +113,12 @@ public sealed partial class TavernService
             room.Tags.Remove(RoomTagType.Spark);
             room.Tags.Remove(RoomTagType.Boom);
         }
-        long minimum = Param("BarroomHeatTagsMiniIncrease", DefaultHeatMiniIncrease);
+        long minimum = (Data.Config.PublicParams.Of(_data).BarroomHeatTagsMiniIncrease ?? DefaultHeatMiniIncrease);
         foreach (var room in _rooms.Values.Where(r => r.LastHotAdd >= minimum).OrderByDescending(r => r.LastHotAdd)
-                     .ThenBy(r => r.Guid).Take((int)Param("BarroomHeatTagsNum", DefaultHeatTagsNum)))
+                     .ThenBy(r => r.Guid).Take((int)(Data.Config.PublicParams.Of(_data).BarroomHeatTagsNum ?? DefaultHeatTagsNum)))
             room.Tags[RoomTagType.Spark] = ends;
         foreach (var room in _rooms.Values.Where(r => r.Hot > 0).OrderByDescending(r => r.Hot)
-                     .ThenBy(r => r.Guid).Take((int)Param("BarroomHotTagsNum", DefaultHotTagsNum)))
+                     .ThenBy(r => r.Guid).Take((int)(Data.Config.PublicParams.Of(_data).BarroomHotTagsNum ?? DefaultHotTagsNum)))
             room.Tags[RoomTagType.Boom] = ends;
     }
 
@@ -133,7 +133,7 @@ public sealed partial class TavernService
     /// </summary>
     public object[] Directory(IReadOnlyList<(string Key, long Min, long Max)> conditions, int offset, int limit)
     {
-        long[] weights = ParamList("BarroomSortParam");
+        long[] weights = (Data.Config.PublicParams.Of(_data).BarroomSortParam ?? []);
         long heatWeight = weights.Length > 0 ? weights[0] : 6000, headWeight = weights.Length > 1 ? weights[1] : 4000;
         lock (_sync)
             return [.. _rooms.Values.Where(r => conditions.All(c => Matches(r, c)))

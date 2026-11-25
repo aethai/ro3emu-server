@@ -307,7 +307,7 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
                 if (code == 0)
                 {
                     Unseat(req.TargetPlayerId);
-                    channel!.Blocked[req.TargetPlayerId] = NowMs() + Setting("GuildVoiceChannelBlacklistDuration", DefaultBlockMs);
+                    channel!.Blocked[req.TargetPlayerId] = NowMs() + (Data.Config.GuildSettings.Of(data).GuildVoiceChannelBlacklistDuration ?? DefaultBlockMs);
                 }
             }
         await s.SendGameAsync(KickMsg, new GuildVoiceChannelKickPlayerRsp { ErrorCode = code });
@@ -419,7 +419,7 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
         if (req.RejectAll)
             lock (_sync)
                 _inviteStates[self] = (_inviteStates.GetValueOrDefault(self).InvitedMs,
-                    NowMs() + Setting("GuildVoiceChannelInviteRejectDuration", DefaultInviteRejectMs));
+                    NowMs() + (Data.Config.GuildSettings.Of(data).GuildVoiceChannelInviteRejectDuration ?? DefaultInviteRejectMs));
         if (!req.IsAccept) return;
         await SeatAsync(s, req.ChannelIndex, (code, info) =>
             s.SendGameAsync(InviteResponseMsg, new GuildVoiceChannelInviteResponseRsp { ErrorCode = code, ChannelInfo = info }));
@@ -442,7 +442,7 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
             if (state.InvitedMs + cooldown <= now && state.RejectUntilMs <= now) _inviteStates.Remove(role);
     }
 
-    private long InviteCooldownMs() => Setting("GuildVoiceChannelInviteCooldown", DefaultInviteCooldownMs);
+    private long InviteCooldownMs() => (Data.Config.GuildSettings.Of(data).GuildVoiceChannelInviteCooldown ?? DefaultInviteCooldownMs);
 
     /// <summary>The sessions of those of <paramref name="roles"/> who are in the game.</summary>
     private Dictionary<long, GameSession> OnlineRoles(IEnumerable<long> roles)
@@ -614,12 +614,5 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
 
     private long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
 
-    private int ChannelCount() => (int)Math.Clamp(Setting("GuildVoiceChannelCount", DefaultChannelCount), 1, 16);
-
-    private long Setting(string key, long fallback)
-    {
-        if (!data.Table("GuildSettingConfig").TryGetValue(key, out var row)
-            || !row.TryGetProperty("_kValue", out var value)) return fallback;
-        return value.ValueKind == JsonValueKind.Number ? (long)(GameData.Number(value) ?? fallback) : fallback;
-    }
+    private int ChannelCount() => (int)Math.Clamp((Data.Config.GuildSettings.Of(data).GuildVoiceChannelCount ?? DefaultChannelCount), 1, 16);
 }

@@ -68,7 +68,7 @@ public sealed partial class CombatService
                 || s.WorldState.ResurrectionCastId != action.Id
                 || Distance(s.Position, target.Position) > Range(row) + 1.5f) return;
             s.WorldState.ResurrectionCastId = 0;
-            if (action.Request.SkillId == PublicSkill("WorldTreeSkillId"))
+            if (action.Request.SkillId == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0))
             {
                 if (ReviveItemSkill != null && await ReviveItemSkill(s, target, row))
                     await _buffs.NotifyWorldTreeReviveAsync(s, target.Role!.Name);

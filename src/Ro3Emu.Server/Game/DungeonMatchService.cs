@@ -223,8 +223,8 @@ public sealed class DungeonMatchService : IGameTicker
             match.DeadlineMs - _time.GetUtcNow().ToUnixTimeMilliseconds())), () => ExpireAsync(match));
     }
 
-    private int ReadySeconds() => _data.Table("PublicParamConfig").TryGetValue("GamePlayAssembleMaxTime", out var row)
-        ? (int)Math.Clamp(GameData.Number(row) ?? 30, 1, 300) : 30;
+    private int ReadySeconds() =>
+        (int)Math.Clamp(Data.Config.PublicParams.Of(_data).GamePlayAssembleMaxTime ?? 30, 1, 300);
 
     private async Task BroadcastReadyAsync(Match match)
     {

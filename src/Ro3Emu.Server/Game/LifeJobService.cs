@@ -68,7 +68,7 @@ public sealed partial class LifeJobService
         var restriction = savedRestriction is { } restrictionBytes ? DBRestrictInfo.Parser.ParseFrom(restrictionBytes) : new DBRestrictInfo();
         var runtime = savedRuntime is { } runtimeBytes ? JsonSerializer.Deserialize<RuntimeState>(runtimeBytes) ?? new() : new();
         if (!restriction.RestrictCount.ContainsKey(VigorId)) restriction.RestrictCount[VigorId] = new RestrictInfo
-        { Id = VigorId, Count = Param("VitalityInitCount", 500), LimitCount = RestrictMax(VigorId), LastRecoverTime = NowSeconds };
+        { Id = VigorId, Count = (Data.Config.PublicParams.Of(_data).VitalityInitCount ?? 500), LimitCount = RestrictMax(VigorId), LastRecoverTime = NowSeconds };
         if (!restriction.RestrictCount.ContainsKey(VigorUsesId)) restriction.RestrictCount[VigorUsesId] = new RestrictInfo
         { Id = VigorUsesId, Count = RestrictMax(VigorUsesId), LimitCount = RestrictMax(VigorUsesId) };
         Reconcile(life, restriction, runtime);
@@ -117,8 +117,6 @@ public sealed partial class LifeJobService
     private static long Day(DateTime now) => DateOnly.FromDateTime(now.AddHours(-5)).DayNumber;
     public static long DailyEnergyUsed(GameSession s, long restriction) => restriction == VigorId
         && s.LifeRuntime.EnergyDay == Day(DateTime.Now) ? s.LifeRuntime.EnergySpent : 0;
-    private long Param(string name, long fallback) => _data.Table("PublicParamConfig").TryGetValue(name, out var v)
-        ? (long)(GameData.Number(v) ?? fallback) : fallback;
     private long RestrictMax(int id) => _data.Row("RestrictConfig", id) is { } r ? GameData.Int(r, "_iMaxRestrictNum") : 0;
     private static RuntimeState Copy(RuntimeState r) => new()
     { EnergyDay = r.EnergyDay, EnergySpent = r.EnergySpent, PotionDay = r.PotionDay, FoodBook = r.FoodBook };
@@ -370,7 +368,7 @@ public sealed partial class LifeJobService
     {
         long held = s.Restrictions?.RestrictCount.GetValueOrDefault(VigorId)?.Count ?? 0;
         long currency = s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) ?? 0;
-        return Math.Max(held, Math.Min(Param("VitalityExtraLimit", 5000), checked(held + currency)));
+        return Math.Max(held, Math.Min((Data.Config.PublicParams.Of(_data).VitalityExtraLimit ?? 5000), checked(held + currency)));
     }
 
     /// <summary>

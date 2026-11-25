@@ -63,11 +63,8 @@ public sealed partial class TaskService
     private Dictionary<long, long>? _factionPoints;
     private Dictionary<long, int>? _factionTiers;
 
-    private long FactionQuest => FactionParam("TerritoryWorldTaskID", 1101000);
-    private long FactionClaim => FactionParam("TerritoryWarDailyRewardTask", 1101001);
-
-    private long FactionParam(string key, long fallback) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var v) ? (long)(GameData.Number(v) ?? fallback) : fallback;
+    private long FactionQuest => (Data.Config.PublicParams.Of(_data).TerritoryWorldTaskID ?? 1101000);
+    private long FactionClaim => (Data.Config.PublicParams.Of(_data).TerritoryWarDailyRewardTask ?? 1101001);
 
     // ---- events ----
 
@@ -105,7 +102,7 @@ public sealed partial class TaskService
         if (s.Tasks == null || !FactionPoints().TryGetValue(taskId, out long points)) return;
         TakeFactionDay(s);
         var runtime = s.TaskRuntime;
-        points = Math.Min(points, Math.Max(0, FactionParam("TerritoryWarzoneTaskPointsLimit", 3000) - runtime.FactionPoints));
+        points = Math.Min(points, Math.Max(0, (Data.Config.PublicParams.Of(_data).TerritoryWarzoneTaskPointsLimit ?? 3000) - runtime.FactionPoints));
         if (points <= 0) return;
         runtime.FactionPoints += points;
         foreach (var info in s.Tasks.Infos.Values.Where(i => i.Status == Running))
@@ -157,7 +154,7 @@ public sealed partial class TaskService
             Accept(session, FactionQuest);
             moved++;
         }
-        bool open = session.TaskRuntime.FactionPoints < FactionParam("TerritoryWarzoneTaskPointsLimit", 3000);
+        bool open = session.TaskRuntime.FactionPoints < (Data.Config.PublicParams.Of(_data).TerritoryWarzoneTaskPointsLimit ?? 3000);
         int tier = FactionTier(session);
         foreach (var (id, subTier) in FactionTiers())
         {

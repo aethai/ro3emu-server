@@ -170,7 +170,7 @@ public sealed partial class TerritoryWarsService
             string key = $"{(int)kind}:{other}";
             int count = glory.Counts[key] = glory.Counts.GetValueOrDefault(key) + 1;
             long points = BattleGloryRules.Cap(GloryRules.Points(kind, basePoints, count, powerDifference), glory.DayGain,
-                Param("BattleGloryDailyLimit"));
+                (Data.Config.PublicParams.Of(_data).BattleGloryDailyLimit ?? 0));
             if (points == 0)
             {
                 s.TerritoryWars = next;

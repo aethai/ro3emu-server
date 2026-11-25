@@ -92,9 +92,9 @@ internal sealed partial class BuffRuleTables
     private BuffRuleTables(GameData data)
     {
         this._data = data;
-        var parameters = data.Table("PublicParamConfig");
-        _stateRate = parameters.TryGetValue("FormulaParamState1", out var state1) ? state1.GetDouble() : 10;
-        _stateDuration = parameters.TryGetValue("FormulaParamState2", out var state2) ? state2.GetDouble() : 1000;
+        var parameters = Data.Config.PublicParams.Of(data);
+        _stateRate = parameters.FormulaParamState1 ?? 10;
+        _stateDuration = parameters.FormulaParamState2 ?? 1000;
         var tags = new Dictionary<int, TagRule>();
         foreach (var row in data.Table("BuffTagConfig").Values)
         {

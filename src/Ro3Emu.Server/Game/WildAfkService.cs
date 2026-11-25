@@ -80,12 +80,9 @@ public sealed class WildAfkService : IGameTicker
         daily.BeforeReset = BeforeDailyResetAsync;
         daily.PlanAfkRollover = PlanDailyRollover;
     }
-
-    private long Param(string key, long fallback) => _data.Table("PublicParamConfig").TryGetValue(key, out var value)
-        ? (long)(GameData.Number(value) ?? fallback) : fallback;
-    private long DailySeconds => Param("OnHookDailyFightTime", 60) * 60;
-    private long CapSeconds => Param("OnHookFightTimeLimit", 180) * 60;
-    private long MonitorMs => Param("OnHookConditionMonito", 10) * 1000;
+    private long DailySeconds => (Data.Config.PublicParams.Of(_data).OnHookDailyFightTime ?? 60) * 60;
+    private long CapSeconds => (Data.Config.PublicParams.Of(_data).OnHookFightTimeLimit ?? 180) * 60;
+    private long MonitorMs => (Data.Config.PublicParams.Of(_data).OnHookConditionMonito ?? 10) * 1000;
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     // A queued operation may acquire the old role's gate after logout or a role switch replaced this state.
     private static bool Owns(GameSession s, State state) => s.Role != null && ReferenceEquals(s.WildAfk, state);
@@ -135,7 +132,7 @@ public sealed class WildAfkService : IGameTicker
     private long Epoch(long nowMs)
     {
         var local = DateTimeOffset.FromUnixTimeMilliseconds(nowMs).LocalDateTime;
-        var day = local.AddHours(-Param("OnHookDailyRefreshTime", 5)).Date.AddHours(Param("OnHookDailyRefreshTime", 5));
+        var day = local.AddHours(-(Data.Config.PublicParams.Of(_data).OnHookDailyRefreshTime ?? 5)).Date.AddHours((Data.Config.PublicParams.Of(_data).OnHookDailyRefreshTime ?? 5));
         return new DateTimeOffset(day).ToUnixTimeSeconds();
     }
 
@@ -217,7 +214,7 @@ public sealed class WildAfkService : IGameTicker
         state.Info.IsSuspended = true;
         state.DailyEpoch = epoch;
         // Cumulative snapshots must not go backwards when old dated records are pruned (IncomeWidget subtracts them).
-        int keep = (int)Math.Max(1, Param("OnHookRecordLimit", 8));
+        int keep = (int)Math.Max(1, (Data.Config.PublicParams.Of(_data).OnHookRecordLimit ?? 8));
         foreach (long key in state.Info.DailyDropRecords.Keys.OrderDescending().Skip(keep).ToArray()) state.Info.DailyDropRecords.Remove(key);
         return true;
     }
@@ -489,7 +486,7 @@ public sealed class WildAfkService : IGameTicker
                 : enabled && !Startable(s) ? ErrorCodes.AfkDungeon
                 : enabled && info.HighMultiplierTimeSeconds <= 0 ? ErrorCodes.AfkTimeEmpty
                 : enabled == info.IsHighMagnification ? (enabled ? ErrorCodes.AfkAlreadyActive : ErrorCodes.AfkNotActive)
-                : now - state.LastToggleMs < Param("OnHookPauseButtonCD", 1) * 1000 ? ErrorCodes.AfkToggleCooldown : 0;
+                : now - state.LastToggleMs < (Data.Config.PublicParams.Of(_data).OnHookPauseButtonCD ?? 1) * 1000 ? ErrorCodes.AfkToggleCooldown : 0;
             if (error == 0)
             {
                 state.LastToggleMs = now;
@@ -529,7 +526,7 @@ public sealed class WildAfkService : IGameTicker
                 : _data.Row("NPCConfig", req.MonsterId) is not { } npc || GameData.Int(npc, "_iWildMonsters") != 1 ? ErrorCodes.AfkCollectionInvalid
                 : req.IsAdd && exists ? ErrorCodes.AfkCollectionExists
                 : !req.IsAdd && !exists ? ErrorCodes.AfkCollectionMissing
-                : req.IsAdd && list.Count >= Param("OnHookMonsterNum", 7) ? ErrorCodes.AfkCollectionFull : 0;
+                : req.IsAdd && list.Count >= (Data.Config.PublicParams.Of(_data).OnHookMonsterNum ?? 7) ? ErrorCodes.AfkCollectionFull : 0;
             if (error == 0)
             {
                 if (req.IsAdd) list.Add(req.MonsterId); else list.Remove(req.MonsterId);
@@ -557,7 +554,7 @@ public sealed class WildAfkService : IGameTicker
             var info = state.Info;
             long now = Now / 1000;
             int error = !Unlocked(s) ? ErrorCodes.FeatureUnavailable
-                : info.CurrentSnapshot is { Timestamp: > 0 } snap && now - snap.Timestamp < Param("OnHookAwardSnapshotCD", 5)
+                : info.CurrentSnapshot is { Timestamp: > 0 } snap && now - snap.Timestamp < (Data.Config.PublicParams.Of(_data).OnHookAwardSnapshotCD ?? 5)
                     ? ErrorCodes.Cooldown : 0;
             if (error == 0)
             {
@@ -614,7 +611,7 @@ public sealed class WildAfkService : IGameTicker
         if (!next.Info.DailyDropRecords.TryGetValue(day, out var record))
             next.Info.DailyDropRecords[day] = record = new DailyAFKDropRecord();
         foreach (long key in next.Info.DailyDropRecords.Keys.OrderDescending()
-            .Skip((int)Math.Max(1, Param("OnHookRecordLimit", 8))).ToArray())
+            .Skip((int)Math.Max(1, (Data.Config.PublicParams.Of(_data).OnHookRecordLimit ?? 8))).ToArray())
             next.Info.DailyDropRecords.Remove(key);
         record.MonsterKillCount[monster.Template.NpcId] = record.MonsterKillCount.GetValueOrDefault(monster.Template.NpcId) + 1;
         next.Info.CurrentSnapshot ??= new AFKDropSnapshot { Timestamp = at / 1000 };
@@ -684,7 +681,7 @@ public sealed class WildAfkService : IGameTicker
             info.TodayKillCount++;
             long day = state.DailyEpoch;
             if (!info.DailyDropRecords.TryGetValue(day, out var record)) info.DailyDropRecords[day] = record = new DailyAFKDropRecord();
-            foreach (long key in info.DailyDropRecords.Keys.OrderDescending().Skip((int)Math.Max(1, Param("OnHookRecordLimit", 8))).ToArray())
+            foreach (long key in info.DailyDropRecords.Keys.OrderDescending().Skip((int)Math.Max(1, (Data.Config.PublicParams.Of(_data).OnHookRecordLimit ?? 8))).ToArray())
                 info.DailyDropRecords.Remove(key);
             record.MonsterKillCount[monster.Template.NpcId] = record.MonsterKillCount.GetValueOrDefault(monster.Template.NpcId) + 1;
             // Snapshot baseline is created before the first drop. Current totals grow; 43411 captures the next baseline.

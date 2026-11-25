@@ -75,9 +75,8 @@ public sealed partial class NewActivityService
         };
         // PublicParamConfig.JourneyAttrInitial supplies the attributes used by the
         // Journey condition and event selectors.
-        foreach (var initial in JourneyPublicArray("JourneyAttrInitial"))
-            if (initial.ValueKind == JsonValueKind.Array && initial.GetArrayLength() >= 2)
-                state.Attributes[(long)(GameData.Number(initial[0]) ?? 0)] = (long)(GameData.Number(initial[1]) ?? 0);
+        foreach (var initial in Data.Config.PublicParams.Of(_data).JourneyAttrInitial ?? [])
+            if (initial.Length >= 2) state.Attributes[initial[0]] = initial[1];
         if (first.ValueKind == JsonValueKind.Object && GameData.Int(first, "_iFirstAct") is var act and > 0)
             state.CurActIds[act] = true;
         return state;
@@ -216,7 +215,7 @@ public sealed partial class NewActivityService
     {
         if (ActivityError(session, activityId, 19) is var error and not 0) return error;
         if (_data.Row("SeasonEveWishConfig", req.WishId) is not { } wish || GameData.Int(wish, "_iId") != req.WishId) return ErrorCodes.Parameter;
-        if (ReadEveGlobal(session, activityId).Progress < EveConstant("SeasonEveTotalProgress")) return ErrorCodes.TaskRequirements;
+        if (ReadEveGlobal(session, activityId).Progress < (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveTotalProgress ?? 0)) return ErrorCodes.TaskRequirements;
         var next = session.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.SeasonEve;
         if (state.SelectWish != 0) return ErrorCodes.MailAlreadyClaimed;
@@ -267,7 +266,7 @@ public sealed partial class NewActivityService
         if (_data.Row("SeasonEveChapterConfig", req.ChapterId) is not { } chapter
             || GameData.Int(chapter, "_iId") != req.ChapterId) return ErrorCodes.Parameter;
         if (Now < EveChapterOpenTime(session, activityId, chapter)) return ErrorCodes.TaskRequirements;
-        int count = EveConstant("SeasonEveChapterNoteCount");
+        int count = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveChapterNoteCount ?? 0);
         int noteTypes = checked((int)GameData.Int(chapter, "_iNoteTypeCount"));
         if (req.NoteIds.Count != count || noteTypes < 1
             || Enumerable.Range(1, count).Any(index => !req.NoteIds.TryGetValue(index, out long selected)
@@ -284,11 +283,11 @@ public sealed partial class NewActivityService
         try
         {
             var global = ReadEveGlobal(session, activityId);
-            global.Progress = Math.Min(EveConstant("SeasonEveTotalProgress"),
-                global.Progress + EveConstant("SeasonEveCompleteChapterProgress"));
+            global.Progress = Math.Min((int)(Data.Config.ActivityConstants.Of(_data).SeasonEveTotalProgress ?? 0),
+                global.Progress + (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveCompleteChapterProgress ?? 0));
             global.PlayerBullet.Add(new SeasonEveBulletInfo
             { PlayerId = session.Role!.Id, ChapterId = req.ChapterId, TimeMs = Now * 1000 });
-            int limit = EveConstant("SeasonEveBarrageCacheCount");
+            int limit = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveBarrageCacheCount ?? 0);
             while (global.PlayerBullet.Count > limit) global.PlayerBullet.RemoveAt(0);
             return await CommitAdventureAsync(session, next, [GameData.Int(chapter, "_iAward")],
                 persist: tx => SaveEveGlobal(session, activityId, global, tx));
@@ -330,16 +329,10 @@ public sealed partial class NewActivityService
         return result;
     }
 
-    private int EveConstant(string key) => _data.Table("ActivityConstant").TryGetValue(key, out var value)
-        ? (int)(GameData.Number(value) ?? 0) : 0;
-
     private IEnumerable<(long Id, long Threshold, long Award)> EveProgressAwards()
     {
-        if (!_data.Table("ActivityConstant").TryGetValue("SeasonEveProgressAward", out var awards)) yield break;
-        foreach (var tuple in awards.EnumerateArray())
-            if (tuple.ValueKind == JsonValueKind.Array && tuple.GetArrayLength() == 3)
-                yield return ((long)(GameData.Number(tuple[0]) ?? 0),
-                    (long)(GameData.Number(tuple[1]) ?? 0), (long)(GameData.Number(tuple[2]) ?? 0));
+        foreach (var tuple in Data.Config.ActivityConstants.Of(_data).SeasonEveProgressAward ?? [])
+            if (tuple.Length == 3) yield return (tuple[0], tuple[1], tuple[2]);
     }
 
     // (inferred) The clue's authored position has one stable icon among the four chapter note types.
@@ -400,14 +393,14 @@ public sealed partial class NewActivityService
         var activity = session.NewActivities!.ActivityInfo[activityId];
         long start = activity.CycleStartTime, end = activity.CycleEndTime;
         long beforeTime = global.LastCalcTime, beforeProgress = global.Progress;
-        int interval = EveConstant("SeasonEveProgressCheckInterval");
-        int cap = EveConstant("SeasonEveProgressCheckAddMax");
-        long total = EveConstant("SeasonEveTotalProgress");
+        int interval = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveProgressCheckInterval ?? 0);
+        int cap = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveProgressCheckAddMax ?? 0);
+        long total = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveTotalProgress ?? 0);
         if (interval <= 0 || cap <= 0 || total <= 0) return false;
         if (global.LastCalcTime < start) global.LastCalcTime = start;
         // (inferred) The named full-time window makes the wish and final milestone
         // available during the last hour of the active activity, once per cycle.
-        if (Now >= end - EveConstant("SeasonEveProgressFullTime"))
+        if (Now >= end - (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveProgressFullTime ?? 0))
         {
             global.Progress = total;
             global.LastCalcTime = Math.Max(global.LastCalcTime, Now);
@@ -430,13 +423,12 @@ public sealed partial class NewActivityService
 
     private long EveCheckpointTarget(long elapsed)
     {
-        if (!_data.Table("ActivityConstant").TryGetValue("SeasonEveProgressCheckPoint", out var configured)) return 0;
+        if (Data.Config.ActivityConstants.Of(_data).SeasonEveProgressCheckPoint is not { } configured) return 0;
         long previousTime = 0, previousTarget = 0;
-        foreach (var point in configured.EnumerateArray())
+        foreach (var point in configured)
         {
-            if (point.ValueKind != JsonValueKind.Array || point.GetArrayLength() < 2) continue;
-            long time = (long)(GameData.Number(point[0]) ?? 0);
-            long target = (long)(GameData.Number(point[1]) ?? 0);
+            if (point.Length < 2) continue;
+            long time = point[0], target = point[1];
             if (time <= previousTime) continue;
             if (elapsed <= time)
                 return previousTarget + (target - previousTarget) * Math.Max(0, elapsed - previousTime) / (time - previousTime);
@@ -448,11 +440,8 @@ public sealed partial class NewActivityService
 
     private long EveCoefficient(int population)
     {
-        if (!_data.Table("ActivityConstant").TryGetValue("SeasonEveProgressCheckCoefficient", out var configured)) return 10000;
-        foreach (var band in configured.EnumerateArray())
-            if (band.ValueKind == JsonValueKind.Array && band.GetArrayLength() >= 2
-                && GameData.Number(band[0]) is { } ceiling && population <= ceiling)
-                return (long)(GameData.Number(band[1]) ?? 10000);
+        foreach (var band in Data.Config.ActivityConstants.Of(_data).SeasonEveProgressCheckCoefficient ?? [])
+            if (band.Length >= 2 && population <= band[0]) return band[1];
         return 10000;
     }
 
@@ -631,13 +620,6 @@ public sealed partial class NewActivityService
             beforeSync: change.AttrChange.Count == 0 ? null : () => session.SendGameAsync(Notify,
                 new CommonActivityNotify { ActivityId = activityId, JourneyAttrChange = change }),
             persist: persist, committed: committed, journeySource: journeySource);
-    }
-
-    private IEnumerable<JsonElement> JourneyPublicArray(string key)
-    {
-        if (_data.Table("PublicParamConfig").TryGetValue(key, out var value)
-            && value.ValueKind == JsonValueKind.Array) return [.. value.EnumerateArray()];
-        return [];
     }
 
     private bool JourneyTravelOpen(DBJourneyInfo journey) => journey.CurActIds.Keys.Any(id =>

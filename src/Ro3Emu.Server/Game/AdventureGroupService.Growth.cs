@@ -133,7 +133,7 @@ public sealed partial class AdventureGroupService
             Roll(g!);
             int cap = Levels().TryGetValue(g!.Level, out var row) && row.Convene > 0 ? row.Convene : 3;
             code = g.ConveneUseTime >= cap ? ErrNoRally
-                : g.LastConveneTime + Number("AdventureGroupConveneCD", 10) > Now ? ErrRallyCooldown
+                : g.LastConveneTime + (Data.Config.PublicParams.Of(_data).AdventureGroupConveneCD ?? 10) > Now ? ErrRallyCooldown
                 : !Whitelisted(s, 0) ? ErrRallyStartArea
                 : (s.StatusBits & (1L << 15)) != 0 ? ErrRallyBattle : 0;
         }
@@ -147,7 +147,7 @@ public sealed partial class AdventureGroupService
         if (code != 0) return;
         long token = NewToken();
         _rallies[token] = (g!.Id, self, s.SceneEntry, new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, s.Face),
-            Now + Number("AdventureGroupConveneTime", 30));
+            Now + (Data.Config.PublicParams.Of(_data).AdventureGroupConveneTime ?? 30));
         await BroadcastBaseAsync(g);
         foreach (var member in OnlineMembers(g).Where(m => m.Role!.Id != self))
             await member.SendGameAsync(ConveneNotify, new AdventureGroupConveneNtf { PlayerId = self, Token = token });

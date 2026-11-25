@@ -266,7 +266,7 @@ public sealed partial class TradeService
             UserRoleId = roleId.ToString(CultureInfo.InvariantCulture),
             UserCreditScore = state.CreditPoint, CreditScoreRatio = state.CreditScoreRatio,
             UserCreditScoreRate = state.CreditScoreRatio,
-            LowCreditScoreThreshold = (int)Public("TradeCreditMin", 0),
+            LowCreditScoreThreshold = (int)(Data.Config.PublicParams.Of(data).TradeCreditMin ?? 0),
         };
         await s.SendGameAsync(Credit, new CFindUserCreditScoreResponse { Data = info, QueryReason = req.QueryReason });
     }

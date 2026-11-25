@@ -103,7 +103,7 @@ public sealed partial class SkillService
         var plans = Build(session);
         var queue = plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillQueue;
         queue.Clear();
-        int capacity = Parameter("QueueNum", 12);
+        int capacity = (int)(Data.Config.PublicParams.Of(_data).QueueNum ?? 12);
         var skipped = new List<int>();
         foreach (int group in groups)
         {

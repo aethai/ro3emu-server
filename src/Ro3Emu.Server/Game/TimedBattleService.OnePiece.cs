@@ -141,12 +141,10 @@ public sealed partial class TimedBattleService
     /// </summary>
     private IEnumerable<(int Item, long Restrict)> RiftVaultItems()
     {
-        var table = _data.Table("PublicParamConfig");
-        foreach (var key in new[] { "OnePieceRewardPreview1", "OnePieceRewardPreview2" })
-            if (table.TryGetValue(key, out var pair) && pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() == 2
-                && GameData.Number(pair[0]) is { } item && GameData.Number(pair[1]) is { } restrict)
-                yield return ((int)item, (long)restrict);
-        if (PublicValue("OnePieceMapBoxId") is > 0 and var box) yield return ((int)box, PublicValue("OnePieceMapBoxReId"));
+        var p = Data.Config.PublicParams.Of(_data);
+        if (p.OnePieceRewardPreview1 is { Length: 2 } first) yield return ((int)first[0], first[1]);
+        if (p.OnePieceRewardPreview2 is { Length: 2 } second) yield return ((int)second[0], second[1]);
+        if (p.OnePieceMapBoxId is > 0 and var box) yield return ((int)box, p.OnePieceMapBoxReId ?? 0);
     }
 
     private long RiftRestrictMax(long id) => _data.Row("RestrictConfig", id) is { } row ? GameData.Int(row, "_iMaxRestrictNum") : 0;
@@ -220,9 +218,8 @@ public sealed partial class TimedBattleService
     private (int Min, int Max) RiftPartySize()
     {
         int min = 3, max = 5;
-        if (_data.Table("PublicParamConfig").TryGetValue("OnePieceMapMembersNum", out var range)
-            && range.ValueKind == JsonValueKind.Array && range.GetArrayLength() == 2)
-        { min = (int)(GameData.Number(range[0]) ?? 3); max = Math.Max(min, (int)(GameData.Number(range[1]) ?? 5)); }
+        if (Data.Config.PublicParams.Of(_data).OnePieceMapMembersNum is { Length: 2 } range)
+        { min = (int)range[0]; max = Math.Max(min, (int)range[1]); }
         if (RiftTestMinParty is { } test) min = Math.Min(test, max);
         return (min, max);
     }
@@ -269,7 +266,7 @@ public sealed partial class TimedBattleService
         foreach (var member in members) _riftVotes[member] = vote;
         await BroadcastRiftVoteAsync(vote);
         // The prepare panel counts down GetInPositionMaxTime from the first 42033 (LC_DAL_Team).
-        long seconds = PublicValue("GetInPositionMaxTime") is > 0 and var configured ? configured : 30;
+        long seconds = (Data.Config.PublicParams.Of(_data).GetInPositionMaxTime ?? 0) is > 0 and var configured ? configured : 30;
         _loop.ScheduleRuntime(TimeSpan.FromSeconds(seconds),
             () => vote.Closed ? Task.CompletedTask : CancelRiftVoteAsync(vote, ErrorCodes.Parameter, 0));
         return true;

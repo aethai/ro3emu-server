@@ -66,7 +66,7 @@ public sealed partial class GuildLeagueService
     /// <summary>Keep each report while it is among the latest GuildLeagueHistoryReportNum of one of its guilds.</summary>
     private void Prune(LeagueState next)
     {
-        int keep = (int)Setting("GuildLeagueHistoryReportNum", 10);
+        int keep = (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueHistoryReportNum ?? 10);
         var kept = new HashSet<Report>();
         foreach (long guild in next.Reports.SelectMany(r => r.Guilds).Distinct())
             foreach (var r in next.Reports.Where(r => r.Guilds.Contains(guild)).OrderByDescending(r => r.Time).Take(keep)) kept.Add(r);
@@ -134,7 +134,7 @@ public sealed partial class GuildLeagueService
     private async Task RewardAsync(int index, Group group, Outcome outcome)
     {
         string key = OutcomeKey(index, group, outcome);
-        long need = Setting("GuildLeaguePersonAwardNeedScore", 20);
+        long need = (Data.Config.GuildSettings.Of(_data).GuildLeaguePersonAwardNeedScore ?? 20);
         var awards = new Dictionary<long, List<MailService.Attachment>>();
         if (Rank(group.Tier) is { } rank)
             foreach (var (role, row) in outcome.Players)
@@ -146,7 +146,7 @@ public sealed partial class GuildLeagueService
             }
         var next = Copy(_state);
         Find(next, group, outcome).Rewarded = true;
-        int template = (int)Setting("GuildLeagueJoinAwardMailID", 1038);
+        int template = (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueJoinAwardMailID ?? 1038);
         using (await _mail.LockRecipientsAsync(awards.Keys))
             await CommitAsync(next, "rewards", tx =>
             {
@@ -162,8 +162,8 @@ public sealed partial class GuildLeagueService
     private async Task AuctionAsync(int index, Group group, Outcome outcome)
     {
         string key = OutcomeKey(index, group, outcome);
-        long guildNeed = Setting("GuildLeagueAuctionAwardNeedScore", 1000), personalNeed = Setting("GuildLeagueAuctionNeedScore", 20);
-        long countNeed = Setting("GuildLeagueAuctionNeedNum", 20);
+        long guildNeed = (Data.Config.GuildSettings.Of(_data).GuildLeagueAuctionAwardNeedScore ?? 1000), personalNeed = (Data.Config.GuildSettings.Of(_data).GuildLeagueAuctionNeedScore ?? 20);
+        long countNeed = (Data.Config.GuildSettings.Of(_data).GuildLeagueAuctionNeedNum ?? 20);
         var refused = new List<long>();
         foreach (long guild in new[] { outcome.Blue, outcome.Red }.Where(g => g > 0))
         {
@@ -178,7 +178,7 @@ public sealed partial class GuildLeagueService
         }
         var next = Copy(_state);
         Find(next, group, outcome).AuctionDone = true;
-        int template = (int)Setting("GuildLeagueJoinAwardFailedMailID", 1124);
+        int template = (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueJoinAwardFailedMailID ?? 1124);
         using (await _mail.LockRecipientsAsync(refused))
             await CommitAsync(next, "auctions", tx =>
             {
@@ -263,7 +263,7 @@ public sealed partial class GuildLeagueService
                 letters.Add((leader.RoleId, _data.TextOf(row, "_iName"), 1));
         }
         cup.Settled = true;
-        int template = (int)Setting("GuildLeagueGuildIconNoticeMailID", 1039);
+        int template = (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueGuildIconNoticeMailID ?? 1039);
         using (await _mail.LockRecipientsAsync(letters.Select(l => l.Leader)))
             await CommitAsync(next, "settle", tx =>
             {

@@ -206,8 +206,7 @@ public sealed partial class GuildCampfireService : IGameTicker
     private IReadOnlyList<SpawnPoint> SeedPoints() => _maps.Map(Dungeon)?.SpawnGroups
         .FirstOrDefault(g => g.Id == 22)?.Points.OrderBy(p => p.Id).ToArray() ?? [];
 
-    private int MaxSeeds() => _data.Table("PublicParamConfig").TryGetValue("CampfireMaxSeedNum", out var value)
-        ? Math.Clamp((int)(GameData.Number(value) ?? 20), 1, 20) : 20;
+    private int MaxSeeds() => Math.Clamp((int)(Data.Config.PublicParams.Of(_data).CampfireMaxSeedNum ?? 20), 1, 20);
 
     private (int Template, MapPoint Position)? SeedAt(int pointId)
     {
@@ -559,8 +558,7 @@ public sealed partial class GuildCampfireService : IGameTicker
         var points = SeedPoints();
         if (points.Count == 0) return;
         int killed = Read(guild).FruitKills.GetValueOrDefault(stage);
-        int cap = _data.Table("PublicParamConfig").TryGetValue("CampfireMonsterLimit", out var limit)
-            ? Math.Clamp((int)(GameData.Number(limit) ?? 10), 1, plan.Count) : Math.Min(10, plan.Count);
+        int cap = Math.Clamp((int)(Data.Config.PublicParams.Of(_data).CampfireMonsterLimit ?? 10), 1, plan.Count);
         _fruitCreated[(room.Id, stage)] = 0;
         _fruitInitialKills[(room.Id, stage)] = killed;
         for (int i = 0; i < Math.Min(cap, plan.Count - killed); i++)

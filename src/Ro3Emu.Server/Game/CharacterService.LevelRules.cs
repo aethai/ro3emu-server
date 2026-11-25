@@ -109,7 +109,7 @@ public sealed partial class CharacterService
     /// </summary>
     public long JobExpFromBase(long baseExp)
     {
-        if (baseExp <= 0 || !data.Table("PublicParamConfig").TryGetValue("BaseToJobConversionPercent", out var value)) return 0;
-        return checked(baseExp * (long)(GameData.Number(value) ?? 0) / 10000);
+        if (baseExp <= 0 || Data.Config.PublicParams.Of(data).BaseToJobConversionPercent is not { } percent) return 0;
+        return checked(baseExp * percent / 10000);
     }
 }

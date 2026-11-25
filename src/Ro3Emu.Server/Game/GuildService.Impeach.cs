@@ -31,7 +31,7 @@ public sealed partial class GuildService
         var master = g.Members.Values.FirstOrDefault(m => m.Official == 1);
         if (master == null) return false;
         long offline = master.RoleId is var id && Online(id) != null ? -1 : master.OfflineTime;
-        return offline > 0 && NowSec() - offline >= Setting("ActiveImpeachChairmanOffineTimeLimit", 7)[0] * 86400;
+        return offline > 0 && NowSec() - offline >= (Data.Config.GuildSettings.Of(data).ActiveImpeachChairmanOffineTimeLimit ?? 7) * 86400;
     }
 
     private GuildPeachInfo PeachInfo(GuildStore.State g)
@@ -51,13 +51,13 @@ public sealed partial class GuildService
     /// <summary>25083: ceil(scale % of the members online now or within the last days), at least one.</summary>
     private int ImpeachNeed(GuildStore.State g)
     {
-        long since = NowSec() - Setting("ActiveImpeachOnlineDayNum", 1)[0] * 86400;
+        long since = NowSec() - (Data.Config.GuildSettings.Of(data).ActiveImpeachOnlineDayNum ?? 1) * 86400;
         int recent = g.Members.Values.Count(m => Online(m.RoleId) != null || m.OfflineTime < 0 || m.OfflineTime >= since);
-        long scale = Setting("ActiveImpeachOnlineScale", 50)[0];
+        long scale = (Data.Config.GuildSettings.Of(data).ActiveImpeachOnlineScale ?? 50);
         return (int)Math.Max(1, (recent * scale + 99) / 100);
     }
 
-    private long ImpeachHours => Math.Max(1, (Setting("ActiveImpeachTime", 60)[0] + 59) / 60);
+    private long ImpeachHours => Math.Max(1, ((Data.Config.GuildSettings.Of(data).ActiveImpeachTime ?? 60) + 59) / 60);
 
     public Task PeachAsync(GameSession s, GuildPeachReq req) =>
         RunGuildAsync(s, [], [], () => req.IsCancle ? CancelPeachCoreAsync(s) : StartPeachCoreAsync(s), characterGate: !req.IsCancle);
@@ -68,17 +68,17 @@ public sealed partial class GuildService
     {
         var g = Own(s);
         long now = NowMs();
-        var cost = Setting("ActiveImpeachMoney", ImpeachItem, 30);
+        var cost = (Data.Config.GuildSettings.Of(data).ActiveImpeachMoney ?? [ImpeachItem, 30]);
         var self = g?.Members.GetValueOrDefault(s.Role!.Id);
         int code = g == null || self == null ? ErrorCodes.NotInGuild : Impeaching(g) ? ErrorCodes.ImpeachInProgress
             : self.Official == 1 ? ErrorCodes.ImpeachSelf
-            : now - self.EnterTime < Setting("ActiveImpeachJoinDay", 10080)[0] * 60_000 ? ErrorCodes.ImpeachRequirements
+            : now - self.EnterTime < (Data.Config.GuildSettings.Of(data).ActiveImpeachJoinDay ?? 10080) * 60_000 ? ErrorCodes.ImpeachRequirements
             : now < g.NextImpeachMs ? ErrorCodes.ImpeachCooldown
             : !CanImpeach(g) ? ErrorCodes.ImpeachNoGrounds : 0;
         if (code == 0)
         {
             g!.ImpeachOwner = s.Role!.Id;
-            g.ImpeachEndMs = now + Setting("ActiveImpeachTime", 60)[0] * 60_000;
+            g.ImpeachEndMs = now + (Data.Config.GuildSettings.Of(data).ActiveImpeachTime ?? 60) * 60_000;
             g.ImpeachNeed = ImpeachNeed(g);
             g.ImpeachResponders = [s.Role.Id];
             bool paid = cost.Length < 2 || cost[1] <= 0 || await character.ExchangeLockedAsync(s, new ExchangeRequest
@@ -184,7 +184,7 @@ public sealed partial class GuildService
     private void EndImpeach(GuildStore.State g)
     {
         g.ImpeachOwner = 0; g.ImpeachEndMs = 0; g.ImpeachNeed = 0; g.ImpeachResponders = [];
-        g.NextImpeachMs = NowMs() + Setting("ActiveImpeachCD", 24)[0] * 3_600_000;
+        g.NextImpeachMs = NowMs() + (Data.Config.GuildSettings.Of(data).ActiveImpeachCD ?? 24) * 3_600_000;
     }
 
     /// <summary>
@@ -211,7 +211,21 @@ public sealed partial class GuildService
     private static string MasterName(GuildStore.State g) => g.Members.Values.FirstOrDefault(m => m.Official == 1)?.Name ?? "";
 
     /// <summary>GuildMail01..06 (MailConfig 1001-1006).</summary>
-    private int ImpeachMail(int n) => (int)Setting($"GuildMail0{n}", 1000 + n)[0];
+    private int ImpeachMail(int n)
+    {
+        var g = Data.Config.GuildSettings.Of(data);
+        long? configured = n switch
+        {
+            1 => g.GuildMail01,
+            2 => g.GuildMail02,
+            3 => g.GuildMail03,
+            4 => g.GuildMail04,
+            5 => g.GuildMail05,
+            6 => g.GuildMail06,
+            _ => null,
+        };
+        return (int)(configured ?? 1000 + n);
+    }
 
     private async Task GuildMailAsync(IEnumerable<long> recipients, int template, string key, params object[] args)
     {

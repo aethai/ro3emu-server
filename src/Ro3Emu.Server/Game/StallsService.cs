@@ -139,8 +139,6 @@ public sealed partial class StallsService
     }
 
     private long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
-    private long Param(string key, long fallback = 0) => _data.Table("PublicParamConfig").TryGetValue(key, out var x) ? (long)(GameData.Number(x) ?? fallback) : fallback;
-    private long[] ParamList(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var x) ? Numbers(x) : [];
     private static long[] Numbers(JsonElement x) => x.ValueKind == JsonValueKind.Array ? [.. x.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))] : [];
     private static long[] Field(JsonElement row, string name) => row.TryGetProperty(name, out var x) ? Numbers(x) : [];
     private static string PlayerKey(long id) => "p:" + id.ToString(CultureInfo.InvariantCulture);
@@ -171,7 +169,7 @@ public sealed partial class StallsService
 
     private bool ValidPrice(JsonElement row, int price, int currency)
     {
-        if (price <= 0 || price > Param("TradeLimitPrice", 999999999) || currency != GameData.Int(row, "_iMoney")) return false;
+        if (price <= 0 || price > (Data.Config.PublicParams.Of(_data).TradeLimitPrice ?? 999999999) || currency != GameData.Int(row, "_iMoney")) return false;
         var (min, max) = Range(row);
         long basis = GameData.Int(row, "_iBasePrice");
         return Enumerable.Range(min, max - min + 1).Any(step => (basis * step + 5) / 10 == price);
@@ -350,7 +348,7 @@ public sealed partial class StallsService
                 }
                 else if (!_actors.TryGetValue(key, out var actor))
                 {
-                    actor = new StallActor(row, runtime, Param("StallsModelId", 25000002),
+                    actor = new StallActor(row, runtime, (Data.Config.PublicParams.Of(_data).StallsModelId ?? 25000002),
                         () => Interlocked.Increment(ref _nextProjectionId));
                     _actors.Add(key, actor);
                     await _world.AddUnitAsync(actor);

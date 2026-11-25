@@ -71,8 +71,8 @@ public sealed partial class AuctionService
     /// <summary>Exhibit start and the next WorldAuctionEnd o'clock strictly after it, in the realm's civil time.</summary>
     private (long Start, long End) WorldWindow(bool startNow)
     {
-        long start = startNow ? Now : checked(Now + Math.Max(0, Param("WorldAuctionExhibit", 5)) * 60);
-        int hour = (int)Math.Clamp(Param("WorldAuctionEnd", 18), 0, 23);
+        long start = startNow ? Now : checked(Now + Math.Max(0, (Data.Config.PublicParams.Of(data).WorldAuctionExhibit ?? 5)) * 60);
+        int hour = (int)Math.Clamp((Data.Config.PublicParams.Of(data).WorldAuctionEnd ?? 18), 0, 23);
         var local = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(start), clock.LocalTimeZone);
         var day = local.Date;
         for (int i = 0; i < 3; i++, day = day.AddDays(1))
@@ -152,8 +152,8 @@ public sealed partial class AuctionService
         if (string.IsNullOrWhiteSpace(completionKey) || goods.Count == 0 || !EventTabs().TryGetValue(srcType, out int activity))
             return ErrorCodes.Parameter;
         if (activity <= 0 || !timedEvents.IsActive(activity)) return ErrorCodes.ActivityClosed;
-        long start = startNow ? Now : checked(Now + Math.Max(0, Param("GuildAuctionExhibit", 5)) * 60);
-        long end = checked(start + Math.Max(1, Param("GuildAuctionTime", 30)) * 60);
+        long start = startNow ? Now : checked(Now + Math.Max(0, (Data.Config.PublicParams.Of(data).GuildAuctionExhibit ?? 5)) * 60);
+        long end = checked(start + Math.Max(1, (Data.Config.PublicParams.Of(data).GuildAuctionTime ?? 30)) * 60);
         if (timedEvents.WindowEnd(activity) is { } windowEnd) end = Math.Min(end, windowEnd.ToUnixTimeSeconds());
         if (end <= start) return ErrorCodes.ActivityPeriod;
         long[] members = [.. participants.Distinct().Order()];

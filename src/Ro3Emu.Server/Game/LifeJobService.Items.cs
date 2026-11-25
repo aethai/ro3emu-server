@@ -39,7 +39,7 @@ public sealed partial class LifeJobService
             long amount = checked(PotionAmount(s, Arg(2)) * count);
             if (amount <= 0) return ErrorCodes.LifeConfig;
             // Extra consumable energy uses VitalityExtraLimit, distinct from RestrictConfig's ordinary limitCount.
-            if (amount > Param("VitalityExtraLimit", 5000) - Energy(s)) return ErrorCodes.LifeVigorOverflow;
+            if (amount > (Data.Config.PublicParams.Of(_data).VitalityExtraLimit ?? 5000) - Energy(s)) return ErrorCodes.LifeVigorOverflow;
             // The limit is the item's own _kUseTimes, which the tooltip counts. The client never reads restriction 1005
             // (LifeEnergyLimitNum), so a second limit there refused uses the tooltip still offered (inferred: the row is left over).
             energy.Count += amount;

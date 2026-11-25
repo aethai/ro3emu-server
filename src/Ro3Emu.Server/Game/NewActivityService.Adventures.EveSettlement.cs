@@ -55,16 +55,16 @@ public sealed partial class NewActivityService
                 long wishAward = eve.SelectWish > 0
                     ? _data.Row("SeasonEveWishConfig", eve.SelectWish) is { } row
                         ? GameData.Int(row, "_iRewardId") : 0
-                    : EveConstant("SeasonEveNoWishAward");
+                    : (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveNoWishAward ?? 0);
                 if (wishAward <= 0) throw new InvalidOperationException("Invalid Season Eve wish award.");
                 deliveries.Add(new MailService.ActivityTemplateDelivery(
-                    EveConstant("SeasonEveWishMailId"), ResolveEveMailAttachments(session, [wishAward])));
+                    (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveWishMailId ?? 0), ResolveEveMailAttachments(session, [wishAward])));
                 var unclaimed = EveProgressAwards()
                     .Where(award => global.Progress >= award.Threshold && !eve.ClaimedReward.ContainsKey(award.Id))
                     .Select(award => award.Award).ToArray();
                 if (unclaimed.Length > 0)
                     deliveries.Add(new MailService.ActivityTemplateDelivery(
-                        EveConstant("SeasonEveProgressMailId"), ResolveEveMailAttachments(session, unclaimed)));
+                        (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveProgressMailId ?? 0), ResolveEveMailAttachments(session, unclaimed)));
             }
 
             next.ActivityInfo[activityId].ActivityParam.SeasonEve = CreateSeasonEve();

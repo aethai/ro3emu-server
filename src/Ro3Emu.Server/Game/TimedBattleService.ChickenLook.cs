@@ -85,7 +85,7 @@ public sealed partial class TimedBattleService
             {
                 if (emojiId == 0 || !onWheel(emojiId)) return;
                 if (me.State != RoundRoleStatus.InWar || session.Dead) { result = ErrorCodes.FeatureUnavailable; return; }
-                long now = NowMs() / 1000, bubble = PublicValue("BubbleTime") is var b and > 0 ? b : DefaultBubbleSeconds;
+                long now = NowMs() / 1000, bubble = (Data.Config.PublicParams.Of(_data).BubbleTime ?? 0) is var b and > 0 ? b : DefaultBubbleSeconds;
                 if (now < me.EmojiAtSec + bubble) { result = ErrTooFrequent; return; }
                 me.EmojiAtSec = now;
                 var value = new CustomData

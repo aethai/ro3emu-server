@@ -478,8 +478,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     /// movement included (LC_Movement_AStarAgentNew -> LC_Movement_Smooth_Local -> LC_Movement_Smooth -> LC_Movement_Base).
     /// </summary>
     public bool MovesOnSurface(long sceneEntry) =>
-        sceneEntry != 0 && data.Table("PublicParamConfig").TryGetValue("NoviceDungeonReverseDungeonID", out var id)
-        && Data.GameData.Number(id) == sceneEntry;
+        sceneEntry != 0 && Data.Config.PublicParams.Of(data).NoviceDungeonReverseDungeonID == sceneEntry;
 
     internal Func<GameSession, Task>? AfterTeleport { get; set; }
 

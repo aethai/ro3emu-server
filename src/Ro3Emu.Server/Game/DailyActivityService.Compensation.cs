@@ -21,8 +21,8 @@ public sealed partial class DailyActivityService
     public sealed record CompensationGood(int Entry, int Count, int Bind);
 
     /// <summary>PublicParamConfig.DailyTaskCompensationMail (1058); 0 without it: nothing is owed then.</summary>
-    private int CompensationMail => _data.Table("PublicParamConfig").TryGetValue("DailyTaskCompensationMail", out var value)
-        && GameData.Number(value) is { } id and > 0 ? (int)id : 0;
+    private int CompensationMail => Data.Config.PublicParams.Of(_data).DailyTaskCompensationMail is > 0 and var id
+        ? (int)id : 0;
 
     /// <summary>Before the ending day's To-Do claims are cleared: what its reached, unclaimed boxes owe.</summary>
     private void OweCompensation(GameSession session, DailyState state, long endedEpoch)

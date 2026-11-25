@@ -46,11 +46,8 @@ public sealed partial class GuildCampfireService
 
     private long NowMs() => _time.GetUtcNow().ToUnixTimeMilliseconds();
 
-    private long PublicParam(string key, long fallback) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var value) ? (long)(GameData.Number(value) ?? fallback) : fallback;
-
     /// <summary>The size-1 transform buffs MonsterFruit grants, in CampFireBonus order: index + 1 is the henshin type.</summary>
-    private long[] TransformBuffs() => SkillConfig.Get(_data, PublicParam("CampFireHenshinSkill", 5701501)) is { } skill
+    private long[] TransformBuffs() => SkillConfig.Get(_data, (Data.Config.PublicParams.Of(_data).CampFireHenshinSkill ?? 5701501)) is { } skill
         ? [.. skill.Buff1.Select(b => b.Length > 0 ? b[0] : 0).Where(id => CampFireBonus.Get(_data, id) != null).Order()]
         : [];
 
@@ -154,7 +151,7 @@ public sealed partial class GuildCampfireService
         var buffs = TransformBuffs();
         if (buffs.Length == 0) return ErrorCodes.RewardMissing;
         await RemoveManualAsync(room, req.NpcUid);
-        int ms = (int)Math.Clamp(PublicParam("CampFireHenshinTimeout", 1200) * 1000, 1000, int.MaxValue);
+        int ms = (int)Math.Clamp((Data.Config.PublicParams.Of(_data).CampFireHenshinTimeout ?? 1200) * 1000, 1000, int.MaxValue);
         await _buffs.AddAsync(s, (int)buffs[Random.Shared.Next(buffs.Length)], ms, s.Role!.Id);
         return 0;
     }

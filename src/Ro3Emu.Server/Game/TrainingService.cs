@@ -46,8 +46,7 @@ public sealed class TrainingService : IGameTicker
     /// <summary>After a challenge's result is committed (quest target 210006, TaskService.OnDummyChallengeSettled).</summary>
     public List<Action<GameSession>> ChallengeSettled { get; } = [];
     private long Now => _clock.UtcNow.ToUnixTimeMilliseconds();
-    private int Duration => _data.Table("PublicParamConfig").TryGetValue("TrainingChallengeTimeLimit", out var v)
-        ? checked((int)(GameData.Number(v) ?? 60)) : 60;
+    private int Duration => checked((int)(Data.Config.PublicParams.Of(_data).TrainingChallengeTimeLimit ?? 60));
 
     public TrainingService(GameData data, RoleStore roles, CharacterService character, FunctionService functions,
         ActivityClock clock, InstanceService instances, SceneService scene, MonsterService monsters,

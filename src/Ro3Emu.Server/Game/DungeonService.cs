@@ -278,8 +278,7 @@ public sealed partial class DungeonService
         p.Ready.Add(s); // Initiating the request is the leader's affirmative answer (inferred).
         foreach (var member in members) _pending[member] = p;
         await BroadcastReadyAsync(p);
-        int seconds = _data.Table("PublicParamConfig").TryGetValue("GetInPositionMaxTime", out var timeout)
-            ? (int)(GameData.Number(timeout) ?? 30) : 30;
+        int seconds = (int)(Data.Config.PublicParams.Of(_data).GetInPositionMaxTime ?? 30);
         _loop.ScheduleLegacy(TimeSpan.FromSeconds(seconds), () => p.Closed ? Task.CompletedTask : CancelAsync(p, ErrorCodes.Parameter, 0));
     }
 

@@ -25,8 +25,8 @@ public sealed partial class GuildService
         MergeAsk = 32319;
     private const int MergeRight = 21;
 
-    private long MergeLapseSec => Setting("GuildMergeLapseTimeLimit", 24)[0] * 3600;
-    private long MergeListLimit => Setting("GuildMergeListNumLimit", 5)[0];
+    private long MergeLapseSec => (Data.Config.GuildSettings.Of(data).GuildMergeLapseTimeLimit ?? 24) * 3600;
+    private long MergeListLimit => (Data.Config.GuildSettings.Of(data).GuildMergeListNumLimit ?? 5);
 
     private bool MergeCooling(GuildStore.State g) => NowSec() < g.MergeCooldownSec;
     private List<GuildStore.MergeInvite> LiveInvites(GuildStore.State g) =>
@@ -149,7 +149,7 @@ public sealed partial class GuildService
     {
         var g = Own(s);
         var target = req.Guildid == 0 || req.Guildid == g?.Id ? null : store.Get(req.Guildid);
-        var limit = Setting("GuildMergeNoticeLimitNew", 0, 50);
+        var limit = (Data.Config.GuildSettings.Of(data).GuildMergeNoticeLimitNew ?? [0, 50]);
         int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, MergeRight) ? ErrorCodes.GuildPermission
             : target == null || target.Status != (int)GuildStatus.Normal ? ErrorCodes.GuildMissing : 0;
         if (code == 0 && req.IsAgree)
@@ -289,7 +289,7 @@ public sealed partial class GuildService
             Journal(absorber, EvJoined, [m.RoleId], Str(m.Name));
         }
         ClearMerge(absorber);
-        absorber.MergeCooldownSec = NowSec() + Setting("GuildMergeTimeCD", 604800)[0];
+        absorber.MergeCooldownSec = NowSec() + (Data.Config.GuildSettings.Of(data).GuildMergeTimeCD ?? 604800);
         absorber.MergeInvites = [.. LiveInvites(absorber).Where(i => i.From != absorbed.Id)];
         store.EnlistSave(absorber, transaction, "Guild merge roster write failed");
         EnlistViews(absorber, transaction);
@@ -299,7 +299,7 @@ public sealed partial class GuildService
         await RefreshMembers(absorber);
         foreach (long id in staying)
             if (Online(id) is { } s) await ClearMember(s, absorbed);
-        await GuildMailAsync(absorber.Members.Keys, (int)Setting("GuildMail21", 1121)[0], $"guild-merge:{absorber.Id}:{absorbed.Id}",
+        await GuildMailAsync(absorber.Members.Keys, (int)(Data.Config.GuildSettings.Of(data).GuildMail21 ?? 1121), $"guild-merge:{absorber.Id}:{absorbed.Id}",
             absorbed.Name);
     }
 }

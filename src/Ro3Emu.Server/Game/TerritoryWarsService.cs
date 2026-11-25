@@ -352,10 +352,6 @@ public sealed partial class TerritoryWarsService : IGameTicker
     private long OwnId(GameSession s) => s.Role == null ? 0 : s.Guild is { } g ? g.GuildId : Own(s)?.Id ?? 0;
     private static bool Right(GuildStore.State g, long role, int right) => g.Members.TryGetValue(role, out var m)
         && (m.Official == 1 || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
-    private long Param(string name, long fallback = 0) => _data.Table("PublicParamConfig").TryGetValue(name, out var v) ? (long)(GameData.Number(v) ?? fallback) : fallback;
-    private long Gvg(string name, long fallback) => _data.Table("GVGConfig").TryGetValue(name, out var v) ? (long)(GameData.Number(v) ?? fallback) : fallback;
-    private long[] ParamArray(string name) => _data.Table("PublicParamConfig").TryGetValue(name, out var v) && v.ValueKind == JsonValueKind.Array
-        ? [.. v.EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0))] : [];
     private IEnumerable<JsonElement> Zones => _data.Table("GVGWarZoneConfig").Values;
     private JsonElement? Zone(int id) => _data.Row("GVGWarZoneConfig", id);
     private int Parent(int id) => Zone(id) is { } row ? (int)GameData.Int(row, "_iBelongID") : 0;
@@ -649,10 +645,10 @@ public sealed partial class TerritoryWarsService : IGameTicker
     private async Task SetCampAsync(GameSession s, PvpSetRoleCampReq req)
     {
         var role = LoadRole(s.Role!.Id);
-        long remain = Math.Max(0, Param("TerritoryAttackClearCD", 120) - (_clock.Now - s.LastCombatMs / 1000));
+        long remain = Math.Max(0, (Data.Config.PublicParams.Of(_data).TerritoryAttackClearCD ?? 120) - (_clock.Now - s.LastCombatMs / 1000));
         int error = (int)req.Type is < 1 or > 3 ? ErrorCodes.Parameter : s.TerritoryBattle != null ? ErrorCodes.TerritoryCampFixed
             : req.Type == EPvpRoleCampNum.Guild && Own(s) == null ? ErrorCodes.TerritoryCampGuild
-            : _clock.Now < role.LastCampChange + Param("TerritoryChangeCampCD", 10) ? ErrorCodes.TerritoryCampCooldown
+            : _clock.Now < role.LastCampChange + (Data.Config.PublicParams.Of(_data).TerritoryChangeCampCD ?? 10) ? ErrorCodes.TerritoryCampCooldown
             : remain > 0 ? ErrorCodes.TerritoryCampCombat : 0;
         if (error == 0) { role.Camp = (int)req.Type; role.LastCampChange = _clock.Now; await SaveRoleAsync(s.Role!.Id, role); s.TerritoryWars = role; }
         await Send(s, Camp, new PvpSetRoleCampResp { Result = error, Type = (EPvpRoleCampNum)role.Camp, PeaceTimeInterval = remain });

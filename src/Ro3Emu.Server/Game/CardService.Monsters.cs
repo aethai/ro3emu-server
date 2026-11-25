@@ -56,7 +56,7 @@ public sealed partial class CardService
         long role = session.Role!.Id;
         var next = session.Library!.Clone();
         next.Monsters[monster].Unlock = true;
-        int points = Param("LibraryMonsterUnlockReward"), item = Param("LibraryOverviewPointID");
+        int points = (int)(Data.Config.PublicParams.Of(_data).LibraryMonsterUnlockReward ?? 0), item = (int)(Data.Config.PublicParams.Of(_data).LibraryOverviewPointID ?? 0);
         var plan = new AwardPlan(0, 0, points > 0 && item > 0 ? [new AwardGrant(item, points)] : []);
         byte[] bytes = next.ToByteArray();
         try
@@ -74,7 +74,4 @@ public sealed partial class CardService
             return ErrorCodes.Unknown;
         }
     }
-
-    private int Param(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var value)
-        && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number) ? number : 0;
 }

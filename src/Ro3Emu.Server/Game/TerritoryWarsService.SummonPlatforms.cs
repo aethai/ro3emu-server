@@ -149,7 +149,7 @@ public sealed partial class TerritoryWarsService
             Uid = ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial), SceneEntry = b.Room.SceneEntry,
             InstanceId = b.Room.Id, X = spot?.X ?? at.X, Y = spot?.Y ?? at.Y, Z = spot?.Z ?? at.Z, Face = at.Face,
             PointId = pointId, NpcId = npc, Template = _monsters.Template(npc), BornMs = MonsterService.NowMs,
-            Guild = PlatformHolder(b, pointId), Total = Gvg("GVGFieldOccupyAmount", 30),
+            Guild = PlatformHolder(b, pointId), Total = (Data.Config.GvgConstants.Of(_data).GVGFieldOccupyAmount ?? 30),
         };
         if (!await _instances.AddPropAsync(b.Room, ring)) return null;
         b.PlatformRings[pointId] = ring;
@@ -175,7 +175,7 @@ public sealed partial class TerritoryWarsService
         long holder = PlatformHolder(b, ring.PointId);
         if (ring.NpcId == GuildRingNpc && ring.Guild != holder)
             foreach (var s in ring.Activators.ToList()) await StopActivatingAsync(s, interrupt: true);
-        long rate = Math.Min(Gvg("GVGFieldOccupyMaxSpeed", 3), ring.Activators.Count * Gvg("GVGFieldOccupySpeed", 1));
+        long rate = Math.Min((Data.Config.GvgConstants.Of(_data).GVGFieldOccupyMaxSpeed ?? 3), ring.Activators.Count * (Data.Config.GvgConstants.Of(_data).GVGFieldOccupySpeed ?? 1));
         long progress = ring.Activators.Count == 0 ? 0 : Math.Min(ring.Total, ring.Progress + elapsed * rate);
         long guild = ring.NpcId == GuildRingNpc ? holder : ring.Activators.Count == 0 ? 0 : ring.Guild;
         if ((progress, rate, guild) == (ring.Progress, ring.Rate, ring.Guild) && progress < ring.Total) return;

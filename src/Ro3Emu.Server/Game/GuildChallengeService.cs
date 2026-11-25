@@ -199,8 +199,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     }
     private GuildStore.State? Guild(GameSession s) => s.Role == null ? null : _guilds.ForRole(s.Role.Id);
     private bool IsManager(GameSession s, GuildStore.State g) => g.Members.TryGetValue(s.Role!.Id, out var m)
-        && _data.Table("PublicParamConfig").TryGetValue("GuildChallengeSet", out var ranks)
-        && ranks.ValueKind == JsonValueKind.Array && ranks.EnumerateArray().Any(v => GameData.Number(v) == m.Official);
+        && Data.Config.PublicParams.Of(_data).GuildChallengeSet is { } ranks && ranks.Contains(m.Official);
     private bool Available(GameSession s) => s.Progress != null && s.ActivitiesReady
         && s.SeasonState?.SeasonId == _seasons.SeasonId && s.SeasonState.PlayBookId == _seasons.PlayBook
         && _data.Row("DailyActivityConfig", Activity) is { } row && s.Progress.Level >= GameData.Int(row, "_iiLv")

@@ -16,9 +16,9 @@ public sealed partial class GuildLeagueService
     /// <summary>GuildSettingConfig GuildLeagueSceneID [2210101, 2220101] (LC_GuildLeagueHelper.lua:318-349).</summary>
     public long MainScene => SceneOf(0, 2210101);
     public long SubScene => SceneOf(1, 2220101);
-    private long SceneOf(int index, long fallback) => _data.Table("GuildSettingConfig").TryGetValue("GuildLeagueSceneID", out var row)
-        && row.TryGetProperty("_kValue", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array && v.GetArrayLength() > index
-        && GameData.Number(v[index]) is { } n ? (long)n : fallback;
+    private long SceneOf(int index, long fallback) =>
+        Data.Config.GuildSettings.Of(_data).GuildLeagueSceneID is { } scenes && index < scenes.Length
+            ? scenes[index] : fallback;
 
     // DungeonLua_2210101.lua: MaxGuildPoint / System_BatteData_GuildScore_Limit 3000, GuildLeagueEndTime 60
     // (GuildLeagueAssistantEndTime 60 in DungeonLua_2220101.lua).
@@ -255,10 +255,10 @@ public sealed partial class GuildLeagueService
         if (match.Ended) return ErrorCodes.LeagueClosed;
         if (sceneEntry == match.Main.Scene)
         {
-            long[] positions = SettingArray("GuildLeagueMainSceneNeedPosition");
+            long[] positions = (Data.Config.GuildSettings.Of(_data).GuildLeagueMainSceneNeedPosition ?? []);
             if (!GuildService.IsLeagueElite(guild, s.Role.Id) || positions.Length > 0 && !positions.Contains(member.Official))
                 return ErrorCodes.LeagueElite;
-            long[] limits = Param("GuildLeagueMaxPlayerNumber");
+            long[] limits = (Data.Config.PublicParams.Of(_data).GuildLeagueMaxPlayerNumber ?? []);
             long limit = limits.Length > match.Camp(guild.Id) - 1 && match.Camp(guild.Id) > 0 ? limits[match.Camp(guild.Id) - 1] : 40;
             int inside = match.Main.Room?.ActiveMembers.Count(m => m.Session != s && GuildOf(m.Session) == guild.Id) ?? 0;
             if (inside >= limit) return ErrorCodes.LeagueMainFull;
@@ -270,11 +270,7 @@ public sealed partial class GuildLeagueService
     /// <summary>A member who joined less than GuildTemporaryRegularTime seconds ago is temporary (LC_GuildLeagueHelper
     /// CheckEnterTimeInGuild). Officers were appointed, which a temporary member cannot be (10960000029).</summary>
     private bool Temporary(GuildStore.Member member) => member.Official == 20
-        && Now - member.EnterTime / 1000 < Setting("GuildTemporaryRegularTime", 3600);
-
-    private long[] SettingArray(string name) => _data.Table("GuildSettingConfig").TryGetValue(name, out var row)
-        && row.TryGetProperty("_kValue", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array
-        ? [.. v.EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0))] : [];
+        && Now - member.EnterTime / 1000 < (Data.Config.GuildSettings.Of(_data).GuildTemporaryRegularTime ?? 3600);
 
     private Match MatchFor(Cup cup, Group group, int round, int pair, GuildLeagueBracket.Pair guildsOf, GuildLeagueCalendar.Window window)
     {
@@ -672,7 +668,7 @@ public sealed partial class GuildLeagueService
     private async Task PointsAsync(Match m, long now)
     {
         if (!m.Main.Live || now < m.Start) return;
-        long stay = Setting("GuildLeagueTriggerStayAreaTime", 6);
+        long stay = (Data.Config.GuildSettings.Of(_data).GuildLeagueTriggerStayAreaTime ?? 6);
         var alive = Present(m.Main).Where(s => !s.Dead && Fights(s, m, m.Main)).ToArray();
         var where = new Dictionary<long, long>();
         foreach (var (id, p) in m.Main.Points)

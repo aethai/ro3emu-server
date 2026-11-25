@@ -312,7 +312,7 @@ public sealed partial class TerritoryWarsService
                 // An attacker may leave while an awaited damage hook runs. The dead objective still
                 // recovers, but that abandoned hit cannot award capture to the session's next role.
                 if (b.Actors.GetValueOrDefault(p.Id) is { Dead: true } && p.RespawnAt == 0)
-                { p.Hp = 0; p.RespawnAt = _clock.Now + Gvg("GVGEmperiumReviveTime", 30); continue; }
+                { p.Hp = 0; p.RespawnAt = _clock.Now + (Data.Config.GvgConstants.Of(_data).GVGEmperiumReviveTime ?? 30); continue; }
                 var actor = await _instances.SpawnAsync(b.Room, p.Npc, p.Position);
                 if (actor == null) throw new InvalidOperationException($"Configured territory objective {p.Npc} could not spawn");
                 if (p.Hp > 0) actor.Hp = Math.Min(actor.Hp, p.Hp);
@@ -407,7 +407,7 @@ public sealed partial class TerritoryWarsService
                     s.TerritoryWars = r;
                 }
             }
-            await RemoveBuffAsync(s, (int)Gvg("GVGFieldBuff", 10301));
+            await RemoveBuffAsync(s, (int)(Data.Config.GvgConstants.Of(_data).GVGFieldBuff ?? 10301));
             await SendCountsAsync(b);
         }
         // A full queue wrote nothing: the battle stays for a retry, which would otherwise find nothing to do.
@@ -465,7 +465,7 @@ public sealed partial class TerritoryWarsService
             {
                 GlobalObjId = id, ConfigId = p.Npc,
                 Pos = new Vec3 { X = p.X, Y = p.Y, Z = p.Z }, BelongGuild = p.Owner,
-                Hp = actor?.Hp ?? p.Progress, MaxHp = actor?.Template.MaxHp ?? Gvg("GVGFieldOccupyAmount", 30),
+                Hp = actor?.Hp ?? p.Progress, MaxHp = actor?.Template.MaxHp ?? (Data.Config.GvgConstants.Of(_data).GVGFieldOccupyAmount ?? 30),
                 DungeonPointId = p.EditorPoint, PointData = new GlobalPointData
                 {
                     GvgWarzoneId = b.State.Zone,
@@ -521,10 +521,9 @@ public sealed partial class TerritoryWarsService
             {
                 attacker.Kills++; attacker.Score += 1; b.State.Scores[attacker.Guild] += 1;
                 var role = LoadRole(s.Role.Id); role.FatigueKills++;
-                if (_data.Table("PublicParamConfig").TryGetValue("TerritoryFatigueBuffPileAddFromKill", out var tiers))
-                    foreach (var tier in tiers.EnumerateArray())
-                        if (role.FatigueKills >= GameData.Number(tier[0]) && role.FatigueKills <= GameData.Number(tier[1]))
-                            role.Fatigue = (int)Math.Min(20, role.Fatigue + (GameData.Number(tier[2]) ?? 0));
+                foreach (var tier in Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffPileAddFromKill ?? [])
+                    if (tier.Length >= 3 && role.FatigueKills >= tier[0] && role.FatigueKills <= tier[1])
+                        role.Fatigue = (int)Math.Min(20, role.Fatigue + tier[2]);
                 nextRole = role;
             }
             var transaction = _roles.NewTransaction();
@@ -554,7 +553,7 @@ public sealed partial class TerritoryWarsService
             long guild = Own(s)!.Id;
             await CaptureAsync(b, p, guild, async () =>
             {
-                p.Hp = 0; p.RespawnAt = _clock.Now + Gvg("GVGEmperiumReviveTime", 30);
+                p.Hp = 0; p.RespawnAt = _clock.Now + (Data.Config.GvgConstants.Of(_data).GVGEmperiumReviveTime ?? 30);
                 // WarzoneTaskConfig type 1 (50); last-hit attribution inferred.
                 b.State.Players[role!.Id].Score += WarzoneTaskConfig.ScoreOf(_data, WarzoneTaskConfig.CaptureLastHit, 0);
                 await SaveAsync(state);
@@ -577,7 +576,7 @@ public sealed partial class TerritoryWarsService
         if (changed)
         {
             p.Owner = guild; p.Challenger = 0; p.Progress = 0; p.Captures++;
-            p.GuardUntil = _clock.Now + Gvg("GVGFieldGuardTime", 15);
+            p.GuardUntil = _clock.Now + (Data.Config.GvgConstants.Of(_data).GVGFieldGuardTime ?? 15);
             b.State.Scores[guild] = b.State.Scores.GetValueOrDefault(guild) + 50;
             await SaveAsync(state);
         }
@@ -600,7 +599,7 @@ public sealed partial class TerritoryWarsService
             {
                 if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment)
                     || !b.State.Players.TryGetValue(role.Id, out var p)) return;
-                p.Deaths++; p.DeadUntil = _clock.Now + Gvg("GVGReviveCountDown", 15);
+                p.Deaths++; p.DeadUntil = _clock.Now + (Data.Config.GvgConstants.Of(_data).GVGReviveCountDown ?? 15);
                 await SaveAsync(state);
             }
             finally { stagedTerritoryState.Dispose(); _gate.Release(); reservation?.Dispose(); }
@@ -630,7 +629,7 @@ public sealed partial class TerritoryWarsService
             _battles.TryGetValue(key, out var b);
             if (r.Settled)
             {
-                if (b != null && _clock.Now >= r.End + Gvg("GVGEndAutoLeaveTime", 5))
+                if (b != null && _clock.Now >= r.End + (Data.Config.GvgConstants.Of(_data).GVGEndAutoLeaveTime ?? 5))
                     await RoleFanout.EachAsync(b.Room.ActiveMembers.Select(m => m.Session), async s =>
                     { if (s.TerritoryBattle == b && !s.SceneLoading) await _instances.LeaveAsync(s); });
                 continue;
@@ -653,16 +652,16 @@ public sealed partial class TerritoryWarsService
                 var top = groups[0];
                 if (top.Guild == p.Owner) { p.Progress = 0; p.Challenger = 0; continue; }
                 if (p.Challenger != top.Guild) { p.Challenger = top.Guild; p.Progress = 0; }
-                p.Progress += elapsed * Math.Min(Gvg("GVGFieldOccupyMaxSpeed", 3), top.Count * Gvg("GVGFieldOccupySpeed", 1));
-                if (p.Progress >= Gvg("GVGFieldOccupyAmount", 30)) await CaptureAsync(b, p, top.Guild);
+                p.Progress += elapsed * Math.Min((Data.Config.GvgConstants.Of(_data).GVGFieldOccupyMaxSpeed ?? 3), top.Count * (Data.Config.GvgConstants.Of(_data).GVGFieldOccupySpeed ?? 1));
+                if (p.Progress >= (Data.Config.GvgConstants.Of(_data).GVGFieldOccupyAmount ?? 30)) await CaptureAsync(b, p, top.Guild);
             }
             foreach (long guild in r.Guilds)
             {
                 int count = r.Points.Values.Count(p => p.Owner == guild);
                 if (count > 0) r.Scores[guild] += elapsed * count;
-                long growth = (count * Gvg("GVGFieldResourceGrowNum", 14) + Gvg("GVGGuildResourceAutoGrowNum", 4))
-                    * elapsed / Math.Max(1, Gvg("GVGFieldResourceGrowInterval", 1));
-                r.Resources[guild] = Math.Min(Gvg("GVGResourceLimit", 48000), r.Resources[guild] + growth);
+                long growth = (count * (Data.Config.GvgConstants.Of(_data).GVGFieldResourceGrowNum ?? 14) + (Data.Config.GvgConstants.Of(_data).GVGGuildResourceAutoGrowNum ?? 4))
+                    * elapsed / Math.Max(1, (Data.Config.GvgConstants.Of(_data).GVGFieldResourceGrowInterval ?? 1));
+                r.Resources[guild] = Math.Min((Data.Config.GvgConstants.Of(_data).GVGResourceLimit ?? 48000), r.Resources[guild] + growth);
             }
             await RoleFanout.EachAsync(b.Room.ActiveMembers.Select(m => m.Session), async s =>
             { await SendObjectsAsync(s, b); await FatigueAsync(s, b); });
@@ -671,7 +670,7 @@ public sealed partial class TerritoryWarsService
     }
     private async Task UpdateFieldBuffsAsync(Battle b)
     {
-        int buff = (int)Gvg("GVGFieldBuff", 10301);
+        int buff = (int)(Data.Config.GvgConstants.Of(_data).GVGFieldBuff ?? 10301);
         await RoleFanout.EachAsync(b.Room.ActiveMembers.Select(m => m.Session), async s =>
         {
             int count = b.State.Points.Values.Count(p => !p.Crystal && p.Owner == Own(s)?.Id);
@@ -708,8 +707,8 @@ public sealed partial class TerritoryWarsService
         var r = LoadRole(s.Role!.Id);
         if (r.Fatigue >= 20)
         { await FatigueReturnAsync(s); return; }
-        long period = Math.Max(1, Param("TerritoryFatigueBuffPileAddTime", 60000000) / 1000);
-        int buffId = (int)Param("TerritoryFatigueBuffId", 4920001);
+        long period = Math.Max(1, (Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffPileAddTime ?? 60000000) / 1000);
+        int buffId = (int)(Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffId ?? 4920001);
         bool changed = _clock.Now >= r.LastFatigue + period;
         if (changed)
         {
@@ -727,7 +726,7 @@ public sealed partial class TerritoryWarsService
     private async Task FatigueReturnAsync(GameSession s)
     {
         await Send(s, FatigueNotify, new TerritoryWarsFatigueTeleportNtf());
-        await _scene.EnterSceneAsync(s, Param("TerritoryFatigueBuffReturnMapId", 10100));
+        await _scene.EnterSceneAsync(s, (Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffReturnMapId ?? 10100));
     }
     private async Task ClearFatigueAsync()
     {
@@ -737,10 +736,10 @@ public sealed partial class TerritoryWarsService
             // Every fatigue write also replaces s.TerritoryWars, so a zero copy needs no per-second DB read.
             if (s.TerritoryWars!.Fatigue == 0) return;
             var r = LoadRole(s.Role!.Id);
-            if (r.Fatigue == 0 || _clock.Now < r.LastFatigue + Math.Max(1, Param("TerritoryFatigueBuffPileDelTime", 1000) / 1000)) return;
-            r.Fatigue = Math.Max(0, r.Fatigue - (int)Param("TerritoryFatigueBuffPileDelStacks", 20));
+            if (r.Fatigue == 0 || _clock.Now < r.LastFatigue + Math.Max(1, (Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffPileDelTime ?? 1000) / 1000)) return;
+            r.Fatigue = Math.Max(0, r.Fatigue - (int)(Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffPileDelStacks ?? 20));
             r.LastFatigue = _clock.Now; await SaveRoleAsync(s.Role.Id, r); s.TerritoryWars = r;
-            await RemoveBuffAsync(s, (int)Param("TerritoryFatigueBuffId", 4920001)); await SyncSiegeAsync(s);
+            await RemoveBuffAsync(s, (int)(Data.Config.PublicParams.Of(_data).TerritoryFatigueBuffId ?? 4920001)); await SyncSiegeAsync(s);
         });
     }
 

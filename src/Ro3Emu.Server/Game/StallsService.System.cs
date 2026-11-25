@@ -46,11 +46,11 @@ public sealed partial class StallsService
                             EconomyCompartment.Stall, new(EconomyOwnerKind.System, id.ToString(CultureInfo.InvariantCulture)));
                 row = new StallRow
                 {
-                    Key = SystemKey(id), SystemId = id, Scene = location[2], Title = _data.Text(Param("StallsSystemDefaultName", 181000)),
-                    OwnerName = _data.Text(Param("StallsSystemDefaultRoleName", 182000)), Career = (int)Field(trigger, "_kJob").FirstOrDefault(1000),
+                    Key = SystemKey(id), SystemId = id, Scene = location[2], Title = _data.Text((Data.Config.PublicParams.Of(_data).StallsSystemDefaultName ?? 181000)),
+                    OwnerName = _data.Text((Data.Config.PublicParams.Of(_data).StallsSystemDefaultRoleName ?? 182000)), Career = (int)Field(trigger, "_kJob").FirstOrDefault(1000),
                     Level = (int)Field(trigger, "_kLevel").FirstOrDefault(1), Sex = 1,
-                    X = location[3], Z = location[4], OpenTime = Now, Timeout = Now + Param("StallsSystemTime", 259200),
-                    MaxGrid = goods.Length, RestockTime = Now + Param("StallsSystemRestockCD", 600),
+                    X = location[3], Z = location[4], OpenTime = Now, Timeout = Now + (Data.Config.PublicParams.Of(_data).StallsSystemTime ?? 259200),
+                    MaxGrid = goods.Length, RestockTime = Now + (Data.Config.PublicParams.Of(_data).StallsSystemRestockCD ?? 600),
                 };
             }
             bool restock = fresh || row!.RestockTime <= Now;
@@ -96,7 +96,7 @@ public sealed partial class StallsService
                 }
             }
             if (!touched) continue;
-            row!.RestockTime = Now + Param("StallsSystemRestockCD", 600);
+            row!.RestockTime = Now + (Data.Config.PublicParams.Of(_data).StallsSystemRestockCD ?? 600);
             Save(tx, row); changed.Add(row);
         }
     }
@@ -137,7 +137,8 @@ public sealed partial class StallsService
                 // unexplained StallsSafeFirstTime=3 is (inferred); its original unit remains unresolved.
                 if (timeout || (row.Stock.Count == 0 && Now - row.OpenTime >= 360))
                 {
-                    Close(tx, row, (int)Param(timeout ? "StallsCloseTimeMailId" : "StallsCloseNullMailId", timeout ? 1031 : 1032));
+                    var p = Data.Config.PublicParams.Of(_data);
+                    Close(tx, row, (int)(timeout ? p.StallsCloseTimeMailId ?? 1031 : p.StallsCloseNullMailId ?? 1032));
                     changed.Add(row);
                 }
                 else
