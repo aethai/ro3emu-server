@@ -60,7 +60,7 @@ public sealed partial class AuctionService
     }
 
     /// <summary>After an accepted bid on a guild lot (quest target 103003, TaskService.MiscTargets.cs).</summary>
-    public List<Action<GameSession>> GuildBid { get; } = [];
+    public SyncHook<GameSession> GuildBid { get; } = new("AuctionService.GuildBid");
 
     public async Task BidAsync(GameSession s, BiddingAuctionReq req)
     {
@@ -69,7 +69,7 @@ public sealed partial class AuctionService
         bool guildLot = store.Get(req.AuctionId)?.Type == AuctionType.Guild;
         var result = await BidCoreAsync(s, req.AuctionId, req.Price, req.OpType, req.GuildId, req.CheckOnly, req.ExtraPrice);
         await SendSessionAuctionAsync(s, requestRole, requestLease, Bid, result);
-        if (guildLot && !req.CheckOnly && result.Result == 0) foreach (var handler in GuildBid) handler(s);
+        if (guildLot && !req.CheckOnly && result.Result == 0) foreach (var handler in GuildBid.Handlers) handler(s);
     }
 
     private async Task<BiddingAuctionRes> BidCoreAsync(GameSession s, long id, int price, BiddingType op, long guildId,

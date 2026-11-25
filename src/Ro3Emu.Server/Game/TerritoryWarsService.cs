@@ -212,7 +212,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
         combat.GrantedSkill.Subscribe(SeatSkill);
         combat.AfterLethalPublication.Subscribe(MachineDestroyedAsync);
         combat.Killed.Subscribe(MachineKilledAsync);
-        SiegeSettled.Add(SiegeMachinesSettled);
+        SiegeSettled.Subscribe(SiegeMachinesSettled);
         world.PlayerEntered.Add(VehicleRiderSeenAsync);
         combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
         combat.EventDamageRecorded.Subscribe(SiegeDamageRecordedAsync);
@@ -230,7 +230,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
         combat.OwnSkillLanded = CommandSkillLandedAsync;
         combat.PlayerKilled.Subscribe(GloryKilledAsync);
         combat.PvpDealtAsync.Subscribe(GloryHitAsync);
-        character.StateChanged.Add(s => _ = SyncGloryAsync(s));
+        character.StateChanged.Subscribe(s => _ = SyncGloryAsync(s));
         guilds.WarSideOf = WarSide;
         guilds.WarMachines = new MachineSite(this);
     }
@@ -487,7 +487,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
             s.TerritoryWars = aligned;
             _seasonRoleProjectionPending.Remove(roleId);
         }
-        foreach (var handler in CampChanged) handler(s); // the quests settled at login before this state was loaded
+        foreach (var handler in CampChanged.Handlers) handler(s); // the quests settled at login before this state was loaded
         // Epoch alignment just committed this role projection. An empty outbox needs no reload
         // after that write invalidates the login snapshot; nonempty delivery still checks its source.
         if (s.TerritoryWars!.Pending.Count != 0) await DeliverAsync(s);
@@ -653,7 +653,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
             : remain > 0 ? ErrorCodes.TerritoryCampCombat : 0;
         if (error == 0) { role.Camp = (int)req.Type; role.LastCampChange = _clock.Now; await SaveRoleAsync(s.Role!.Id, role); s.TerritoryWars = role; }
         await Send(s, Camp, new PvpSetRoleCampResp { Result = error, Type = (EPvpRoleCampNum)role.Camp, PeaceTimeInterval = remain });
-        if (error == 0) foreach (var handler in CampChanged) handler(s);
+        if (error == 0) foreach (var handler in CampChanged.Handlers) handler(s);
     }
 
     private Task HistoryAsync(GameSession s, GetTerritoryWarsHistoryStatisticsReq req)

@@ -179,17 +179,13 @@ public sealed class CardProgressTests : IAsyncLifetime
             Interlocked.Increment(ref callbacks);
             return Task.FromException(new InvalidOperationException("injected collection failure"));
         };
-        cards.CollectionChanged.Add(failing);
-        try
-        {
-            await alice.SendGameAsync(CardService.LibraryCardUnlock, new LibraryCardUnlockReq { CardId = Lunatic, IsTreasure = true });
-            Assert.Equal(0, (await Next(alice, CardService.LibraryCardUnlock, LibraryCardUnlockResp.Parser)).Result);
-            Assert.Equal(1, Volatile.Read(ref callbacks));
-            var bytes = _app.Services.GetRequiredService<RoleStore>().LoadLibrary((long)alice.Self!.Uuid);
-            Assert.NotNull(bytes);
-            Assert.True(DBLibraryInfo.Parser.ParseFrom(bytes).Cards[Lunatic].TreasureUnlock);
-        }
-        finally { cards.CollectionChanged.Remove(failing); }
+        using var failSub = cards.CollectionChanged.Subscribe(failing);
+        await alice.SendGameAsync(CardService.LibraryCardUnlock, new LibraryCardUnlockReq { CardId = Lunatic, IsTreasure = true });
+        Assert.Equal(0, (await Next(alice, CardService.LibraryCardUnlock, LibraryCardUnlockResp.Parser)).Result);
+        Assert.Equal(1, Volatile.Read(ref callbacks));
+        var bytes = _app.Services.GetRequiredService<RoleStore>().LoadLibrary((long)alice.Self!.Uuid);
+        Assert.NotNull(bytes);
+        Assert.True(DBLibraryInfo.Parser.ParseFrom(bytes).Cards[Lunatic].TreasureUnlock);
     }
 
     [ClientDataFact]

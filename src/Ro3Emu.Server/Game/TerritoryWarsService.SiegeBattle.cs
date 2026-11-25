@@ -15,10 +15,10 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>After a committed siege settlement, per loaded participant: role, personal score, whether its guild
     /// won (quest target 106611). Listeners post their work.</summary>
-    public List<Action<long, long, bool>> SiegeSettled { get; } = [];
+    public SyncHook<long, long, bool> SiegeSettled { get; } = new("TerritoryWarsService.SiegeSettled");
     /// <summary>After a committed territory battle settlement, per loaded participant: role and round (1 Stronghold,
     /// 2 and later Regional Capital). Listeners post their work.</summary>
-    public List<Action<long, int>> BattleSettled { get; } = [];
+    public SyncHook<long, int> BattleSettled { get; } = new("TerritoryWarsService.BattleSettled");
 
     public sealed class SiegeRunState
     {
@@ -499,7 +499,7 @@ public sealed partial class TerritoryWarsService
         }
         PublishCommitted(next);
         foreach (var p in recipients)
-            foreach (var handler in SiegeSettled)
+            foreach (var handler in SiegeSettled.Handlers)
                 try { handler(p.Id, p.Score, p.Guild == winner); }
                 catch (Exception e) { _log.LogError(e, "Siege settlement hook failed for role {Role}", p.Id); }
         foreach (var p in recipients)

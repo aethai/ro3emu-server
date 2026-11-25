@@ -210,7 +210,7 @@ public sealed partial class TimedBattleService : IGameTicker
         gm.Register("rift", "| new | party [min] | <star 1-6> [boss name] (Rift Crisis test aid: status, new round, "
             + "smallest party, or a stone next to you)", RiftGmAsync);
         this._teams = teams; this._life = life;
-        life.ProjectedRestrictions.Add(RiftRestriction);
+        life.ProjectedRestrictions.Subscribe(RiftRestriction);
         this._data = data; this._schedule = schedule; this._time = time; this._roles = roles; this._accounts = accounts;
         this._character = character;
         this._functions = functions; this._awards = awards; this._tasks = tasks; this._instances = instances; this._scene = scene; this._worldData = worldData; this._monsters = monsters;

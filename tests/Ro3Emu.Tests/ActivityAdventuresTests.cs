@@ -942,6 +942,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
                 && session.ItemCds.GetValueOrDefault(1112001) > 0
                 && session.ItemCds[1112001] == session.BagState.Info.ItemCds?.Data.GetValueOrDefault(1112001);
         }
+        IDisposable? observeSub = null;
         await FixtureOwned("treasure shortcut active fixture", () =>
         {
             var item = session.Items.Single(i => i.Guid == guid);
@@ -952,7 +953,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             var row = System.Text.Json.Nodes.JsonNode.Parse(table["1112001"].GetRawText())!;
             row["_iCD"] = 60000;
             table["1112001"] = System.Text.Json.JsonSerializer.SerializeToElement(row);
-            character.StateChanged.Add(Observe);
+            observeSub = character.StateChanged.Subscribe(Observe);
             return Task.CompletedTask;
         });
         try
@@ -978,7 +979,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         }
         finally
         {
-            await loop.InvokeAsync(() => { character.StateChanged.Remove(Observe); return Task.CompletedTask; });
+            await loop.InvokeAsync(() => { observeSub?.Dispose(); return Task.CompletedTask; });
         }
     }
 

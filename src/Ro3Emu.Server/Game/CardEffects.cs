@@ -102,8 +102,8 @@ public sealed class CardEffects
         this._character = character;
         this._buffs = buffs;
         this._combat = combat;
-        cards.SocketsChanged.Add(RefreshAsync);
-        character.WornGearChanged.Add(RefreshAsync);
+        cards.SocketsChanged.Subscribe(RefreshAsync);
+        character.WornGearChanged.Subscribe(RefreshAsync);
         scenes.Loaded.Subscribe(RefreshAsync);
         combat.DamageAdjusters.Subscribe(AdjustDamage);
         combat.DealtAsync.Subscribe(OnDealtAsync);

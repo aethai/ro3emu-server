@@ -25,12 +25,12 @@ public sealed class SeasonRefineService
     public SeasonRefineService(GameData data, CharacterService character, RoleStore roles, EquipmentService equipment,
         ILogger<SeasonRefineService> log)
     {
-        equipment.Refined.Add(OnRefinedAsync);
+        equipment.Refined.Subscribe(OnRefinedAsync);
         this._data = data;
         this._character = character;
         this._roles = roles;
         this._log = log;
-        character.ExtraAttributes.Add(ActiveAttributes);
+        character.ExtraAttributes.Subscribe(ActiveAttributes);
     }
 
     /// <summary>Load before the first character stat snapshot; the active groups are part of that snapshot.</summary>

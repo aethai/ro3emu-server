@@ -255,13 +255,11 @@ public sealed class EconomyShopTests : IAsyncLifetime
         var opening = Cut();
         Action<GameSession> fail = _ => throw new IOException("E01 post-commit notification fault");
         var character = Service<CharacterService>();
-        character.StateChanged.Add(fail);
-        try
+        using (character.StateChanged.Subscribe(fail))
         {
             await Assert.ThrowsAsync<IOException>(() => Service<GameLoop>().InvokeAsync(() =>
                 Service<ShopService>().BuyAsync(session, new BuyCommodityReq { CommodityId = 114, Count = 10 })));
         }
-        finally { character.StateChanged.Remove(fail); }
         var closing = Cut();
         Assert.Single(Window(opening, closing).Receipts);
         Assert.Equal(10, session.Shop!.Bought[114].Count);

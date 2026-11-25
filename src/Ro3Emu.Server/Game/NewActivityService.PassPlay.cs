@@ -105,10 +105,10 @@ public sealed partial class NewActivityService
             PassEvent(s, party ? [(PassGoal.Kills, 1), (PassGoal.PartyKills, 1)] : [(PassGoal.Kills, 1)], kills: 1);
             return Task.CompletedTask;
         });
-        dungeons.Completed.Add((s, _, _) => { PassEvent(s, [(PassGoal.Dungeons, 1)], dungeons: 1); return Task.CompletedTask; });
-        mvps.ParticipantSettled.Add(s => PassEvent(s, [(PassGoal.Mvps, 1)], mvps: 1));
-        tasks.QuestDelivered.Add((s, task, _) => PassEvent(s, [(PassGoal.Quests, 1)], quest: task));
-        _character.StateChanged.Add(s =>
+        dungeons.Completed.Subscribe((s, _, _) => { PassEvent(s, [(PassGoal.Dungeons, 1)], dungeons: 1); return Task.CompletedTask; });
+        mvps.ParticipantSettled.Subscribe(s => PassEvent(s, [(PassGoal.Mvps, 1)], mvps: 1));
+        tasks.QuestDelivered.Subscribe((s, task, _) => PassEvent(s, [(PassGoal.Quests, 1)], quest: task));
+        _character.StateChanged.Subscribe(s =>
         {
             // Daily activity points are a currency: watch the balance after every award instead of the grants.
             if (s.Progress is { } progress && s.ActivityRuntime?.PassPlay is { } play
@@ -116,7 +116,7 @@ public sealed partial class NewActivityService
                 PassEvent(s, []);
         });
         chat.PlayerCommands["/pass"] = PassCommandAsync;
-        tasks.ExtraTasks.Add(PassTasks);
+        tasks.ExtraTasks.Subscribe(PassTasks);
     }
 
     /// <summary>The pass whose EXP currency 132 is earned now: the latest open one (Pass II once Pass I is done).</summary>

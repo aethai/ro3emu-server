@@ -110,6 +110,15 @@ public class OrderedHook<TDelegate>(
         return list;
     }
 
+    internal void ClearForTest()
+    {
+        lock (_gate)
+        {
+            _entries = [];
+            _handlers = [];
+        }
+    }
+
     internal IDisposable WrapForTest(Func<TDelegate, bool> match, Func<TDelegate, TDelegate> wrap)
     {
         ArgumentNullException.ThrowIfNull(match);

@@ -38,7 +38,7 @@ public sealed partial class WardrobeService
         this._loop = loop;
         this._deadlines = deadlines;
         this._clock = clock;
-        character.SpecialItemUse.Add(TryUseAppearanceItemAsync);
+        character.SpecialItemUse.Subscribe(TryUseAppearanceItemAsync);
         scene.BeforeSelf.Subscribe(ReconcileAsync);
     }
 

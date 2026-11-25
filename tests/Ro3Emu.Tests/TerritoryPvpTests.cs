@@ -191,7 +191,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
                 if (a == source && b == target) { kills++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            Service<CharacterService>().ExtraAttributes.Add(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
+            Service<CharacterService>().ExtraAttributes.Subscribe(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
             target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
@@ -255,7 +255,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
                 return Task.CompletedTask;
             });
             var character = Service<CharacterService>();
-            character.ExtraAttributes.Add(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
+            character.ExtraAttributes.Subscribe(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
             maximum = character.Stats(target)[101];
             await character.SetHpSpAsync(target, maximum, null);
             target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -265,7 +265,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await buffs.AddAsync(target, 1430501, 30000, target.Role!.Id);
             if (revokeDuringShield) await buffs.AddSupportAsync(target, 2354401, 30000, 1L << 51, 1);
             int removedConfig = revokeDuringShield ? 2354401 : 1430501;
-            buffs.Changed.Add(p =>
+            buffs.Changed.Subscribe(p =>
             {
                 if (p == target && !p.Buffs.Any(b => b.ConfigId == removedConfig))
                 {

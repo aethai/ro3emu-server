@@ -34,8 +34,8 @@ public sealed class LotteryService
         this._data = data; this._character = character; this._pets = pets; this._roles = roles;
         this._functions = functions; this._seasons = seasons; this._activityClock = activityClock; this._clock = clock;
         this._deadlines = deadlines; this._loop = loop;
-        character.StateChanged.Add(QueueRefresh);
-        activities.ProjectionChanged.Add(QueueRefresh);
+        character.StateChanged.Subscribe(QueueRefresh);
+        activities.ProjectionChanged.Subscribe(QueueRefresh);
     }
 
     private sealed class LotterySave

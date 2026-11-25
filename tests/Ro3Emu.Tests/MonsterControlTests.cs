@@ -189,7 +189,7 @@ public sealed class MonsterControlTests
                 f.Session.Position.Z = PlayerZ;
                 // The fixture role has no HP (no attribute rows) and would fall at the first hit; the fight must last.
                 var character = f._host.Service<CharacterService>();
-                character.DynamicProperties.Add(_ => [(MaxHpAttribute, LastingHp), (HpAttribute, LastingHp)]);
+                character.DynamicProperties.Subscribe(_ => [(MaxHpAttribute, LastingHp), (HpAttribute, LastingHp)]);
                 await character.RefreshStatsAsync(f.Session);
             });
             return f;

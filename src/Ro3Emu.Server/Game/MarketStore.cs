@@ -181,7 +181,7 @@ public sealed partial class MarketStore
             var notices = new List<Func<Task>>();
             foreach (var p in tx.Participants.Where(p => p.Session != null))
                 foreach (var entry in p.Items.Where(i => p.Before.All(b => b.Guid != i.Guid)).Select(i => i.Entry).Distinct())
-                    foreach (var gained in _character.ItemGained)
+                    foreach (var gained in _character.ItemGained.Handlers)
                     {
                         int count = (int)Math.Clamp(p.Items.Where(i => i.Entry == entry).Sum(i => (long)i.Stack)
                             - p.Before.Where(i => i.Entry == entry).Sum(i => (long)i.Stack), 1, int.MaxValue);

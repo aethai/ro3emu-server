@@ -46,7 +46,7 @@ public sealed partial class EmblemService
     private readonly ILogger<EmblemService> _log;
 
     /// <summary>After a committed 82424 upgrade: the levels it gained (quest target 317002). Listeners post their work.</summary>
-    public List<Action<GameSession, int>> Upgraded { get; } = [];
+    public SyncHook<GameSession, int> Upgraded { get; } = new("EmblemService.Upgraded");
 
     public EmblemService(GameData data, CharacterService character, FunctionService functions, SeasonService seasons,
         RoleStore roles, ILogger<EmblemService> log)
@@ -58,7 +58,7 @@ public sealed partial class EmblemService
         this._roles = roles;
         this._log = log;
         character.EmblemAttrFactory = GenerateAttrs;
-        character.ExtraAttributes.Add(ResonanceAttributes);
+        character.ExtraAttributes.Subscribe(ResonanceAttributes);
     }
 
     /// <summary>Set by PowerService: publish 31502/31503/5066 after a Soul Echo change (the caller holds the lock).</summary>
@@ -537,7 +537,7 @@ public sealed partial class EmblemService
                     });
                 await ChangedAsync(session, previous, inventory: true);
                 int gained = (int)upgradedAttrs!.GetValueOrDefault(Level) - level;
-                foreach (var handler in Upgraded)
+                foreach (var handler in Upgraded.Handlers)
                     try { handler(session, gained); }
                     catch (Exception e) { _log.LogError(e, "Soul Echo upgrade hook failed for {Role}", session.Role?.Id); }
             }

@@ -28,7 +28,7 @@ public sealed partial class CharacterService
                 costs: previous > next ? [(entry, previous - next)] : [],
                 goods: next > previous ? [(entry, checked((int)(next - previous)))] : []);
             await SyncItemsAsync(session);
-            if (next != previous) foreach (var handler in StateChanged) handler(session);
+            if (next != previous) foreach (var handler in StateChanged.Handlers) handler(session);
             return previous > next
                 ? $"Removed {(previous - next).ToString("N0", CultureInfo.InvariantCulture)} {data.ItemName(entry)}; {next.ToString("N0", CultureInfo.InvariantCulture)} left."
                 : $"{data.ItemName(entry)}: {next}";
@@ -49,7 +49,7 @@ public sealed partial class CharacterService
         await CommitCharacterAsync(session, "gm-remove", nextItems: staged,
             costs: consumed > 0 ? [(entry, consumed)] : []);
         await SyncItemsAsync(session);
-        if (stacks > 0) foreach (var handler in StateChanged) handler(session);
+        if (stacks > 0) foreach (var handler in StateChanged.Handlers) handler(session);
         return consumed > 0 ? $"Removed {consumed.ToString("N0", CultureInfo.InvariantCulture)} {data.ItemName(entry)}." : $"No {data.ItemName(entry)} to remove.";
     }
 
@@ -336,7 +336,7 @@ public sealed partial class CharacterService
                 }
                 for (int i = 0; i < granted.Count; i++) granted[i] = mapped[granted[i]];
                 CopyProgress(p, stagedProgress);
-                if (baseExp > 0 || jobExp > 0) foreach (var credited in ExpCredited) credited(session, baseExp, jobExp);
+                if (baseExp > 0 || jobExp > 0) foreach (var credited in ExpCredited.Handlers) credited(session, baseExp, jobExp);
                 if (rewardSettlement != null) rewardSettlement.Committed = true;
                 foreach (var item in granted) session.NewItems.Add(item.Guid);
                 cardSight?.Apply();
@@ -405,7 +405,7 @@ public sealed partial class CharacterService
             if (attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)) return;
             // A hook may persist auxiliary state on another connection. A hook failure cannot undo the committed grant.
             foreach (var (entry, count) in postCommitHooks)
-                foreach (var handler in ItemGained)
+                foreach (var handler in ItemGained.Handlers)
                     try { handler(session, entry, count); }
                     catch (Exception e) { log.LogError(e, "ItemGained hook failed after committed exchange for item {Entry}", entry); }
             if (sync) await SyncItemsAsync(session); // else the caller sends 5009 (ItemsChangedAsync) when it fits
@@ -433,8 +433,8 @@ public sealed partial class CharacterService
             if (popup && reward.Rewards.Count > 0) await session.SendGameAsync(GetRewardNotify, reward);
             // LifeJob publishes its committed life/restriction state after Exchange returns. Its ItemsChangedAsync
             // runs this first notification once those fields agree with the already committed bag and cooldown.
-            if (lifeUse != null) lifeUse.PendingStateChanged = [.. StateChanged];
-            else foreach (var handler in StateChanged) handler(session);
+            if (lifeUse != null) lifeUse.PendingStateChanged = [.. StateChanged.Handlers];
+            else foreach (var handler in StateChanged.Handlers) handler(session);
         }
         if (rewardSettlement?.DeferPresentation == true) rewardSettlement.Presentation = PresentExchangeAsync;
         else await PresentExchangeAsync();
@@ -624,7 +624,7 @@ public sealed partial class CharacterService
         session.Pets = nextPets;
         foreach (var item in granted) session.NewItems.Add(item.Guid);
         foreach (var (entry, count) in goods)
-            foreach (var handler in ItemGained) handler(session, entry, count);
+            foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
         return Task.FromResult<List<InvItem>?>(granted);
     }
 }

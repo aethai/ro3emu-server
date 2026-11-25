@@ -35,7 +35,7 @@ public sealed class FunctionService
         this._skills = skills;
         this._seasons = seasons;
         this._clock = clock;
-        character.ProgressHandlers.Add(SyncAsync);
+        character.ProgressHandlers.Subscribe(SyncAsync);
         // LC_DAL_ServerInfo.PackServerBasicInfo: iOpenDayCount (the server level and EXP catch-up read it).
         character.ServerDay = ServerDay;
     }

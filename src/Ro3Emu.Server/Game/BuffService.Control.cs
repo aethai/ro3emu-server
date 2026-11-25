@@ -108,7 +108,7 @@ public sealed partial class BuffService
 
     /// <summary>A unit resisted a control a player applied: the unit, the player's role id and the control's BuffConfig
     /// row (PassiveSkills: Element Control).</summary>
-    internal List<Func<WorldUnit, long, JsonElement, Task>> ControlResisted { get; } = [];
+    internal AsyncHook<WorldUnit, long, JsonElement> ControlResisted { get; } = new("BuffService.ControlResisted");
 
     internal async Task DispelControlsAsync(GameSession player, bool allDebuffs = false)
     {

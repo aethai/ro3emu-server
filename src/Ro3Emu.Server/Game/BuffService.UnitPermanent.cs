@@ -23,7 +23,7 @@ public sealed partial class BuffService
             EntityUuid = (ulong)unit.Uid, BuffInfo = new AoIBuffInfo { AddBuffs = { info } },
         });
         if (buff.Changes.Count > 0)
-            foreach (var handler in UnitChanged) await handler(unit);
+            foreach (var handler in UnitChanged.Handlers) await handler(unit);
     }
 
     /// <summary>A unit's live buffs (GmShowBuff).</summary>

@@ -106,7 +106,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         // 1601000's _kEXECAction [115,3000]: ActionConfig 115 MarkGuildActivityJoin with DailyActivityConfig 3000 (#166).
         await using var bot = await InWorld();
         var joined = new List<long>();
-        Service<TaskService>().GuildActivityJoined.Add((_, activity) => joined.Add(activity));
+        Service<TaskService>().GuildActivityJoined.Subscribe((_, activity) => joined.Add(activity));
         await Gm("!quest done 1601000");
         Assert.True(await Read(s => TaskService.IsDelivered(s, 1601000)));
         Assert.Equal([3000L], joined);

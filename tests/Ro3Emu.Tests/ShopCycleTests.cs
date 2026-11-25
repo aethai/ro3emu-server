@@ -132,13 +132,11 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var character = Service<CharacterService>();
         long money = character.CountOf(session, 1), tokens = character.CountOf(session, 1250709);
         Action<GameSession> failAfterCommit = _ => throw new IOException("injected post-commit notification failure");
-        character.StateChanged.Add(failAfterCommit);
-        try
+        using (character.StateChanged.Subscribe(failAfterCommit))
         {
             await Assert.ThrowsAsync<IOException>(() => Service<GameLoop>().InvokeAsync(() => Service<ShopService>().BuyAsync(session,
                 new BuyCommodityReq { CommodityId = Offer, Count = 1 })));
         }
-        finally { character.StateChanged.Remove(failAfterCommit); }
         Assert.Equal(money - 7500, character.CountOf(session, 1));
         Assert.Equal(tokens + 5, character.CountOf(session, 1250709)); // "Pet Egg x5" (_iIsShowCount 5)
         Assert.Equal(1, session.Shop!.Bought[Offer].Count);

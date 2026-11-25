@@ -80,8 +80,8 @@ public sealed class MapLineAdmissionTests
         Assert.Equal(2, extra.Map.LineNumber);
         await _lines.RetireEmptyAsync(); Assert.Equal(2, _lines.Snapshot(10100).Count);
         bool pending = true; bool retired = false;
-        _lines.HasPendingWork.Add(k => pending);
-        _lines.Retiring.Add(k => { Assert.Equal(extra.Map, k); retired = true; return Task.CompletedTask; });
+        _lines.HasPendingWork.Subscribe(k => pending);
+        _lines.Retiring.Subscribe(k => { Assert.Equal(extra.Map, k); retired = true; return Task.CompletedTask; });
         _lines.Release(b, extra);
         await _lines.RetireEmptyAsync(); Assert.False(retired);
         pending = false;

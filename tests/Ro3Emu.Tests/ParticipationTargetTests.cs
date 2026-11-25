@@ -260,12 +260,12 @@ public sealed class ParticipationTargetTests : IAsyncLifetime
         await Accept(120011); // [106605,1]
         await Accept(120013); // [106606,1]
         var siege = Service<TerritoryWarsService>();
-        await Service<GameLoop>().InvokeAsync(() => { foreach (var h in siege.SiegeSettled) h(role, 19, false); return Task.CompletedTask; });
+        await Service<GameLoop>().InvokeAsync(() => { siege.SiegeSettled.Invoke(role, 19, false); return Task.CompletedTask; });
         await Task.Delay(300);
         Assert.Equal(0, (await QuestProbe.ReadAsync(_app, "alice", 1602040))!.CompleteNum[0]);
         await Done(120011);
         Assert.Equal(0, (await QuestProbe.ReadAsync(_app, "alice", 120013))!.CompleteNum[0]); // lost
-        await Service<GameLoop>().InvokeAsync(() => { foreach (var h in siege.SiegeSettled) h(role, 20, true); return Task.CompletedTask; });
+        await Service<GameLoop>().InvokeAsync(() => { siege.SiegeSettled.Invoke(role, 20, true); return Task.CompletedTask; });
         await QuestProbe.DoneAsync(_app, "alice", 1602040); // delivery waits on its action 115
         await Done(120013);
         bot = await Relog(bot);

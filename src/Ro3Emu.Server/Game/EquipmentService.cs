@@ -22,8 +22,8 @@ public sealed partial class EquipmentService
     private const int ItemTypeEquip = 5;
 
     /// <summary>Committed crafts and paid refinement attempts, for task targets 103024/103006/103005.</summary>
-    public List<Func<GameSession, int, int, int, Task>> Crafted { get; } = [];
-    public List<Func<GameSession, Task>> Refined { get; } = [];
+    public AsyncHook<GameSession, int, int, int> Crafted { get; } = new("EquipmentService.Crafted");
+    public AsyncHook<GameSession> Refined { get; } = new("EquipmentService.Refined");
 
     private readonly GameData _data;
     private readonly CharacterService _character;
@@ -191,7 +191,7 @@ public sealed partial class EquipmentService
         }
         // A paid failed roll counts as an operation (inferred); refused/unpaid requests never do.
         // Refined handlers may reenter CharacterService.Lock (for example season refinement).
-        if (paid) foreach (var handler in Refined) await handler(session);
+        if (paid) foreach (var handler in Refined.Handlers) await handler(session);
     }
 
     /// <summary>
@@ -323,7 +323,7 @@ public sealed partial class EquipmentService
             await session.SendGameAsync(Craft, resp);
             if (made != null) await _character.SyncEquipmentAsync(session);
         }
-        if (made != null) foreach (var handler in Crafted) await handler(session, made.Entry, req.Rank, req.Subtype);
+        if (made != null) foreach (var handler in Crafted.Handlers) await handler(session, made.Entry, req.Rank, req.Subtype);
     }
 
     private static void ApplyCraftCounter(DBEquipInfo info, int recipeId, DBEquipCraftInfo counter)

@@ -58,8 +58,8 @@ public sealed partial class StallsService
         scenes.Loaded.Subscribe(s => { PopulateFirstVisit(s); return Task.CompletedTask; });
         scenes.Leaving.Subscribe(s => { s.ViewedStall = s.ViewedSystemStall = 0; return Task.CompletedTask; });
         scenes.PublicLineOpened.Subscribe(ActivateLine);
-        lines.HasPendingWork.Add(HasPendingWork);
-        lines.Retiring.Insert(0, RetireLineAsync);
+        lines.HasPendingWork.Subscribe(HasPendingWork);
+        lines.Retiring.Subscribe(RetireLineAsync, order: PublicLineManager.RetireOrderStalls);
         loop.ScheduleRuntime(TimeSpan.FromSeconds(1), MaintainAsync);
     }
 

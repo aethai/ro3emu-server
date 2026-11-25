@@ -17,7 +17,7 @@ public sealed partial class CharacterService
             roles.SaveEquipPlans(session.Role!.Id, session.EquipmentPlans.ToByteArray());
             notices.Add(CaptureEconomicSync(session, EquipSync, BuildEquip(session)));
         }
-        if (publishStateChanged) foreach (var handler in StateChanged) handler(session);
+        if (publishStateChanged) foreach (var handler in StateChanged.Handlers) handler(session);
         return () => Task.WhenAll(notices.Select(notice => notice()));
     }
 

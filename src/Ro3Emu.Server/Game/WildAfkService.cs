@@ -77,7 +77,7 @@ public sealed class WildAfkService : IGameTicker
         rewards.QualifiesForBonus = BeforeKillAsync;
         rewards.IsFieldAutoBattle = IsFieldAutoBattle;
         rewards.StageAfkKill = StageAfkKill;
-        rewards.KillDropsGranted.Add(DropsGrantedAsync);
+        rewards.KillDropsGranted.Subscribe(DropsGrantedAsync);
         daily.BeforeReset = BeforeDailyResetAsync;
         daily.PlanAfkRollover = PlanDailyRollover;
     }

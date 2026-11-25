@@ -44,7 +44,7 @@ public sealed class TrainingService : IGameTicker
         public bool Settling;
     }
     /// <summary>After a challenge's result is committed (quest target 210006, TaskService.OnDummyChallengeSettled).</summary>
-    public List<Action<GameSession>> ChallengeSettled { get; } = [];
+    public SyncHook<GameSession> ChallengeSettled { get; } = new("TrainingService.ChallengeSettled");
     private long Now => _clock.UtcNow.ToUnixTimeMilliseconds();
     private int Duration => checked((int)(Data.Config.PublicParams.Of(_data).TrainingChallengeTimeLimit ?? 60));
 
@@ -315,7 +315,7 @@ public sealed class TrainingService : IGameTicker
             });
             await CharacterService.SyncAsync(s, Sync, next.Clone()); await SnapshotAsync(s, a);
             if (a.Challenge)
-                foreach (var handler in ChallengeSettled) handler(s);
+                foreach (var handler in ChallengeSettled.Handlers) handler(s);
         }
         finally { a.Settling = false; }
     }

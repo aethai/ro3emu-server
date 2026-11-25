@@ -83,7 +83,7 @@ public sealed partial class CharacterService
         p.ParagonLevel = Math.Clamp(level, 1, max);
         p.ParagonExp = 0;
         await CommitCharacterAsync(session, "gm-paragon", progress: p);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
         return $"Astral Level {p.ParagonLevel}.";
     }
 }

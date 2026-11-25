@@ -22,7 +22,7 @@ public sealed partial class NewActivityService
 
     /// <summary>Territory owns type-22 war state; this service retains the complete 5013 catalogue and calendar.</summary>
     public Func<GameSession, PlayerActivityTerritoryWar>? TerritoryWarState { get; set; }
-    public List<Action<GameSession>> ProjectionChanged { get; } = [];
+    public SyncHook<GameSession> ProjectionChanged { get; } = new("NewActivityService.ProjectionChanged");
 
     private readonly GameData _data;
     private readonly CharacterService _character;
@@ -69,7 +69,7 @@ public sealed partial class NewActivityService
         _life = life;
         NoteDrops = new(data, seasons, clock, s => ActivityError(s, ExplorationActivity, WorldExplorationType) == 0);
         life.ExplorationNotes = NoteDrops;
-        life.ProjectedRestrictions.Add(NoteDrops.Remaining);
+        life.ProjectedRestrictions.Subscribe(NoteDrops.Remaining);
         rewards.ExplorationNotes = NoteDrops;
         rewards.SyncExplorationRestriction = life.SyncRestrictionsAsync;
         this._dungeons = dungeons;
@@ -92,12 +92,12 @@ public sealed partial class NewActivityService
         scene.Loaded.Subscribe(ReloadConchesAsync);
         scene.Resync.Subscribe(ReloadConchesAsync);
         scene.Leaving.Subscribe(LeaveConchesAsync);
-        character.StateChanged.Add(QueueRefresh);
-        character.ProgressHandlers.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
+        character.StateChanged.Subscribe(QueueRefresh);
+        character.ProgressHandlers.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
-        seasons.ScheduleChanged.Add(InvalidateAllSchedules);
+        seasons.ScheduleChanged.Subscribe(InvalidateAllSchedules);
         tasks.OpenActivityTaskGroups = OpenTaskGroups;
-        tasks.QuestDelivered.Add(OnExplorationQuestDelivered);
+        tasks.QuestDelivered.Subscribe(OnExplorationQuestDelivered);
     }
 
     /// <summary>TimeLimitConfig 18 "refreshTaskDaily" (_iTimeLimitId 1013): a _kTaskRenew group renewed every game day.</summary>
@@ -559,7 +559,7 @@ public sealed partial class NewActivityService
             if (exploration != null) await _life.SyncRestrictionsAsync(session);
             ScheduleDeadline(session);
         }
-        foreach (var changed in ProjectionChanged) changed(session);
+        foreach (var changed in ProjectionChanged.Handlers) changed(session);
     }
 
     public Task ReconcileAsync(GameSession session) => ReconcileAsync(session, null);

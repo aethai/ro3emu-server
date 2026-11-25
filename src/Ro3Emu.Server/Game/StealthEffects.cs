@@ -62,11 +62,11 @@ public sealed class StealthEffects : IGameTicker
         _world = world;
         _sessions = sessions;
         _loop = loop;
-        character.DynamicProperties.Add(Properties);
-        buffs.Changed.Add(PublishAsync);
+        character.DynamicProperties.Subscribe(Properties);
+        buffs.Changed.Subscribe(PublishAsync);
         scenes.AddOwnedAfterLoaded(PublishAsync);
-        skills.Learned.Add(PublishAsync);
-        character.JobChanged.Add(PublishAsync);
+        skills.Learned.Subscribe(PublishAsync);
+        character.JobChanged.Subscribe(PublishAsync);
         combat.CastLanded.Subscribe(BackSlideCamouflageAsync);
         combat.DealtAsync.Subscribe((s, _, _, damage) => damage > 0 ? DealtAsync(s) : Task.CompletedTask);
         combat.TakenAsync.Subscribe((_, s, damage) => damage > 0 ? TakenAsync(s) : Task.CompletedTask);

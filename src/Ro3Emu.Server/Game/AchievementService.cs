@@ -120,17 +120,17 @@ public sealed class AchievementService : IGameTicker
         this._social = social; this._sessions = sessions; this._loop = loop; this._clock = clock; this._log = log;
         // Snapshot sources: every hook only queues a re-read on the owner loop, so the firing service's locks are
         // released first (several fire inside the character lock or a commit's apply).
-        character.StateChanged.Add(QueueRecheck);
-        character.JobChanged.Add(s => { QueueRecheck(s); return Task.CompletedTask; });
-        character.ProgressHandlers.Add(s => { QueueRecheck(s); return Task.CompletedTask; });
-        equipment.Refined.Add(s => { QueueRecheck(s); return Task.CompletedTask; });
-        cards.CollectionChanged.Add(s => { QueueRecheck(s); return Task.CompletedTask; });
-        dungeons.Completed.Add((s, _, _) => { QueueRecheck(s); return Task.CompletedTask; });
-        tower.FloorCleared.Add(QueueRecheck);
-        guilds.MembershipChanged.Add(QueueRecheck);
+        character.StateChanged.Subscribe(QueueRecheck);
+        character.JobChanged.Subscribe(s => { QueueRecheck(s); return Task.CompletedTask; });
+        character.ProgressHandlers.Subscribe(s => { QueueRecheck(s); return Task.CompletedTask; });
+        equipment.Refined.Subscribe(s => { QueueRecheck(s); return Task.CompletedTask; });
+        cards.CollectionChanged.Subscribe(s => { QueueRecheck(s); return Task.CompletedTask; });
+        dungeons.Completed.Subscribe((s, _, _) => { QueueRecheck(s); return Task.CompletedTask; });
+        tower.FloorCleared.Subscribe(QueueRecheck);
+        guilds.MembershipChanged.Subscribe(QueueRecheck);
         friends.RelationChanged.Add(QueueFriendRecheck);
         // Event counters: the payload is captured now, applied on the owner loop.
-        equipment.Crafted.Add((s, entry, _, _) =>
+        equipment.Crafted.Subscribe((s, entry, _, _) =>
         {
             long quality = Quality(entry);
             PostEvent(s, (t) => t[0] switch
@@ -141,7 +141,7 @@ public sealed class AchievementService : IGameTicker
             });
             return Task.CompletedTask;
         });
-        appraisal.Appraised.Add((s, items) =>
+        appraisal.Appraised.Subscribe((s, items) =>
         {
             int count = items.Count;
             bool stunt = items.Any(i => i.Attrs != null
@@ -153,7 +153,7 @@ public sealed class AchievementService : IGameTicker
                 _ => 0,
             });
         });
-        character.ItemGained.Add((s, entry, count) =>
+        character.ItemGained.Subscribe((s, entry, count) =>
         {
             if (count <= 0) return;
             var (type, subtype, _) = Item(entry);
@@ -163,7 +163,7 @@ public sealed class AchievementService : IGameTicker
                 QueueRecheck(s); // 301002 reads the first-sight collection and the bag
             }
         });
-        mvps.ParticipantSettled.Add(s => PostEvent(s, t => t[0] == CMvp ? 1 : 0));
+        mvps.ParticipantSettled.Subscribe(s => PostEvent(s, t => t[0] == CMvp ? 1 : 0));
         gm.Register("ach", "<id> done|reset | fill <type> <count> (achievements test aid)", GmAsync);
     }
 

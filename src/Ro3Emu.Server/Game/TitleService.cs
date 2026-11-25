@@ -45,7 +45,7 @@ public sealed class TitleService
         this._options = options.Value;
         power.TitleId = s => s.TitleInfo?.TitleId ?? 0;
         character.TitleOf = s => s.TitleInfo?.TitleId ?? 0;
-        rewards.ExtraKillDrops.Add(CrestDrops);
+        rewards.ExtraKillDrops.Subscribe(CrestDrops);
         gm.Register("title", "set <rank> | info (title rank test aid)", GmAsync);
     }
 

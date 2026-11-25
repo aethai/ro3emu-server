@@ -469,7 +469,7 @@ public sealed class MountTests : IAsyncLifetime
         int originalStack = voucher.Stack;
         var character = _app.Services.GetRequiredService<CharacterService>();
         int uses = 0;
-        character.ItemUsed.Add((s, item, count) => { if (s == session && item == entry) uses += count; });
+        character.ItemUsed.Subscribe((s, item, count) => { if (s == session && item == entry) uses += count; });
 
         await player.SendGameAsync(CharacterService.ShortcutBarSave, new ShortcutBarSaveReq { SlotIndex = 0, ItemGuid = guid });
         Assert.Equal(0, (await Next(player, CharacterService.ShortcutBarSave, ShortcutBarSaveRes.Parser)).Result);

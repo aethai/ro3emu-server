@@ -850,7 +850,7 @@ public sealed partial class MapTests : IAsyncLifetime
                 return Task.CompletedTask;
             };
             using var killedSub = combat.Killed.Subscribe(genericObserver, order: -1000); // before loot and quest callbacks
-            rewards.KillDropsGranted.Add(dropObserver);
+            using var dropSub = rewards.KillDropsGranted.Subscribe(dropObserver);
             using var afterSub = combat.AfterLethalPublication.Subscribe(afterLethal);
             mvp.AfterSettlementCommitForTest = _ => Task.FromException(new IOException("Injected committed MVP acknowledgement fault."));
             mvp.BeforeSettlementProbeForTest = _ =>
@@ -920,7 +920,6 @@ public sealed partial class MapTests : IAsyncLifetime
                 mvp.AfterSettlementCommitForTest = null;
                 mvp.BeforeSettlementProbeForTest = null;
                 mvp.BeforeRetainedPublicationForTest = null;
-                rewards.KillDropsGranted.Remove(dropObserver);
             }
         }
     }

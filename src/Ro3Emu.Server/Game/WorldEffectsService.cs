@@ -42,7 +42,7 @@ public sealed class WorldEffectsService
         scene.Resync.Subscribe(ReplayAsync); // presentation only: the reconnected client lost the scene's latency/force fields
         world.UnitEntered.Add(UnitEnteredAsync);
         world.UnitRemoved.Add(RemovedAsync);
-        monsters.TargetChanged.Add(TargetChangedAsync);
+        monsters.TargetChanged.Subscribe(TargetChangedAsync);
         gm.Register("worldlatency", "<0..2000 ms>", SetLatencyCommandAsync);
         gm.Register("worldface", "<0..360 degrees>", FaceCommandAsync);
         gm.Register("bossshout", "<visible boss uid> <ChatConfig id>", BossShoutCommandAsync);

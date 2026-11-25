@@ -352,7 +352,7 @@ public sealed partial class CharacterService
             {
                 await SendStatPlanAsync(session);
                 await SendStatsAsync(session);
-                foreach (var handler in ProgressHandlers) await handler(session);
+                foreach (var handler in ProgressHandlers.Handlers) await handler(session);
             }
         }
         // A wheel (rewardIndexes) waits for its notice to stop and unlock, even when nothing showable was granted.
@@ -366,9 +366,9 @@ public sealed partial class CharacterService
         }
         if (decomposed.DecomposeItemInfo.Count > 0)
             await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, decomposed);
-        foreach (var (entry, count) in gained) foreach (var handler in ItemGained) handler(session, entry, count);
-        foreach (var handler in ItemsAwarded) handler(session, gained);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var (entry, count) in gained) foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
+        foreach (var handler in ItemsAwarded.Handlers) handler(session, gained);
+        foreach (var handler in StateChanged.Handlers) handler(session);
         return true;
     }
 
@@ -492,7 +492,7 @@ public sealed partial class CharacterService
         }
         // The durable item row must precede legacy observers. If a process dies before a card
         // observer saves 5057, CardService reconciles first sight from the committed bag on login.
-        if (firstSightCandidate) foreach (var handler in ItemGained) handler(session, entry, gainedCount);
+        if (firstSightCandidate) foreach (var handler in ItemGained.Handlers) handler(session, entry, gainedCount);
         return changed;
     }
 

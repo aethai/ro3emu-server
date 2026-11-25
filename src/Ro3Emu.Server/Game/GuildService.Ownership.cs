@@ -158,10 +158,10 @@ public sealed partial class GuildService
                     if (previous != view.GuildId)
                     {
                         chat.GuildMembershipChanged(online, previous);
-                        foreach (var handler in GuildIdChanged) handler(online);
+                        foreach (var handler in GuildIdChanged.Handlers) handler(online);
                     }
                     if (previous != view.GuildId || previousOfficial != view.Official)
-                        foreach (var handler in MembershipChanged) handler(online);
+                        foreach (var handler in MembershipChanged.Handlers) handler(online);
                 }
             });
         }

@@ -49,7 +49,7 @@ public sealed partial class CharacterService
     internal void RegisterItemAction(int action, Func<ItemActionUse, Task<int>> handler, bool takesParam = false,
         Func<GameSession, Ownership.ReservationKey[]>? keys = null)
     {
-        if (_itemActions.Count == 0) SpecialItemUse.Add(UseItemActionAsync);
+        if (_itemActions.Count == 0) SpecialItemUse.Subscribe(UseItemActionAsync);
         _itemActions.Add(action, new ItemAction(handler, takesParam, keys));
     }
 

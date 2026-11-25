@@ -50,7 +50,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
         await OnLoop(() =>
         {
             Service<RewardService>().QualifiesForBonus = null;
-            Service<RewardService>().KillDropsGranted.Clear();
+            Service<RewardService>().KillDropsGranted.ClearForTest();
             Service<RewardService>().ResolveKillForTest = (_, _) => ([(1000000, 3), (1, 7), (2010121, 1)], 3, 4);
             Service<CharacterService>().AutoDecomposeReturns = (_, item) => item.Entry == 2010121 ? [(1, 11L)] : [];
             return Task.CompletedTask;
@@ -237,7 +237,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
     {
         await using var bot = await Enter(); var player = Session; var monster = Monster();
         Service<AccountStore>().FailNextEconomyAcknowledgementForTest();
-        Service<RewardService>().KillDropsGranted.Add((_, _, _) => throw new IOException("postcommit observer"));
+        Service<RewardService>().KillDropsGranted.Subscribe((_, _, _) => throw new IOException("postcommit observer"));
         await Assert.ThrowsAsync<IOException>(() => OnLoop(() => Reward(player, monster)));
         Assert.True(monster.RewardSettlement!.Committed); Assert.Equal(1, ReceiptCount());
         var committed = Service<RoleStore>().LoadProgress(player.Role!.Id);

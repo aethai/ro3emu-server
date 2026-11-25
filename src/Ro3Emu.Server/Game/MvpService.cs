@@ -31,7 +31,7 @@ public sealed partial class MvpService : IGameTicker
 
     /// <summary>After a committed kill settlement, once per online participant (achievement 103011). Runs under the
     /// settlement's owner scope: listeners post their own work.</summary>
-    public List<Action<GameSession>> ParticipantSettled { get; } = [];
+    public SyncHook<GameSession> ParticipantSettled { get; } = new("MvpService.ParticipantSettled");
     private const int RefreshMessage = 603, DieMessage = 604; // PublicParamConfig.MVPRefreshMessage / MVPDieMessage
     private const int TeamCap = 3, JoinCap = 5, FirstCap = 3, EndCap = 3; // TeamAwardNum / PartAwardNum / FirstDamageAward / LastDamage
     private const int RankedTeams = 10;                                     // TeamAwardLeaderboardLimit
@@ -141,7 +141,7 @@ public sealed partial class MvpService : IGameTicker
         this._monsters = monsters;
         // Every monster carries its NPCConfig _kBornEventBuff from birth, not only the field MVPs (the MVPs' 900801 /
         // 900901 control immunity also stands on dungeon and story bosses).
-        monsters.Born.Add(ApplyBornBuffsAsync);
+        monsters.Born.Subscribe(ApplyBornBuffsAsync);
         this._worldData = worldData;
         this._character = character;
         this._rewards = rewards;
@@ -166,8 +166,8 @@ public sealed partial class MvpService : IGameTicker
         combat.IncomingDamageAdjusters.Subscribe((m, _, _, damage) => Task.FromResult(FrenzyDealt(m, damage)));
         combat.DamageAdjusters.Subscribe((_, m, _, _, damage) => FrenzyTaken(m, damage));
         scene.PublicLineOpened.Subscribe(ActivateLine);
-        lines.HasPendingWork.Add(HasPendingWork);
-        lines.Retiring.Insert(0, RetireLineAsync);
+        lines.HasPendingWork.Subscribe(HasPendingWork);
+        lines.Retiring.Subscribe(RetireLineAsync, order: PublicLineManager.RetireOrderMvp);
     }
 
     // ---- client requests ----
@@ -762,7 +762,7 @@ public sealed partial class MvpService : IGameTicker
         });
         StoreReports(st, killer, deadMs, rarePlayer, rareTeam, scores, teamsRanked, awards);
         foreach (var participant in online.Values)
-            foreach (var handler in ParticipantSettled)
+            foreach (var handler in ParticipantSettled.Handlers)
                 try { handler(participant); }
                 catch (Exception e) { _log.LogError(e, "MVP participant hook failed for {Role}", participant.Role?.Id); }
         return [.. obligations];

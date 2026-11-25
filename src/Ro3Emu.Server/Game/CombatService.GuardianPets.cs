@@ -12,7 +12,7 @@ public sealed partial class CombatService
     private void WireGuardians()
     {
         _skills.PetWheel = _pets.GuardianWheel;
-        _pets.Changed.Add(SyncGuardianWheelAsync);
+        _pets.Changed.Subscribe(SyncGuardianWheelAsync);
         _scene.Loaded.Subscribe(SyncGuardianWheelAsync);
         DealtAsync.Subscribe(GuardianDamageReactionAsync);
         DealtAsync.Subscribe(GuardianWindowMonsterHitAsync);
@@ -22,7 +22,7 @@ public sealed partial class CombatService
         CastResolved.Subscribe(AutoCounterOnCastAsync);
         CastResolved.Subscribe(SupportSkillOnCastAsync);
         DamageAdjusters.Subscribe((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
-        _buffs.UnitChanged.Add(PublishMonsterAttributesAsync);
+        _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;
         _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
     }

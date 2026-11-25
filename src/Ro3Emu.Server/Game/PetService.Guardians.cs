@@ -7,7 +7,7 @@ public sealed partial class PetService
 {
     private const int LineUpSlots = 1; // SlotOpen source: 1 the lineup (PetSetLimitConfig._iCondition1), 2 support
     /// <summary>Observers of a committed pet state (including plan and star changes).</summary>
-    internal List<Func<GameSession, Task>> Changed { get; } = [];
+    internal AsyncHook<GameSession> Changed { get; } = new("PetService.Changed");
 
     internal IEnumerable<GuardianPetRules.Skill> Guardians(GameSession s)
     {
@@ -50,6 +50,6 @@ public sealed partial class PetService
 
     private async Task PublishGuardianChangeAsync(GameSession session)
     {
-        foreach (var handler in Changed) await handler(session);
+        foreach (var handler in Changed.Handlers) await handler(session);
     }
 }

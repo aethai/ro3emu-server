@@ -335,23 +335,23 @@ public sealed partial class CombatService : IGameTicker
         buffs.ImmuneDeathDeclined = PlayerDiesAsync;
         scene.Leaving.Subscribe(ClearSkillsAsync, order: SceneService.LeaveOrderCombat);
         scene.Leaving.Subscribe(buffs.ClearOnSceneAsync, order: SceneService.LeaveOrderCombat);
-        character.ExtraAttributes.Add(PassiveAttributes);
-        character.ExtraAttributes.Add(ResonanceAttributes); // Job Resonance stats (CombatService.Restraint)
+        character.ExtraAttributes.Subscribe(PassiveAttributes);
+        character.ExtraAttributes.Subscribe(ResonanceAttributes); // Job Resonance stats (CombatService.Restraint)
         world.UnitRemoved.Add(unit => { if (unit is MonsterUnit m) _fightingMonsters.Remove(m); return Task.CompletedTask; });
-        skills.Learned.Add(RefreshSkillParametersAsync);
-        skills.Learned.Add(character.RefreshStatsAsync);
-        buffs.Changed.Add(RefreshSkillParametersAsync);
-        buffs.Changed.Add(skills.RefreshFollowUpsAsync);
+        skills.Learned.Subscribe(RefreshSkillParametersAsync);
+        skills.Learned.Subscribe(character.RefreshStatsAsync);
+        buffs.Changed.Subscribe(RefreshSkillParametersAsync);
+        buffs.Changed.Subscribe(skills.RefreshFollowUpsAsync);
         GrantedSkill.Subscribe((s, id) => SkillConfig.Get(_data, id) is { } row && skills.FollowUpStatus(s, row) != null);
-        talents.EffectsChanged.Add(RefreshSkillParametersAsync);
+        talents.EffectsChanged.Subscribe(RefreshSkillParametersAsync);
         scene.Loaded.Subscribe(RefreshSkillParametersAsync);
         scene.Leaving.Subscribe(ClearSceneSkillProtocolAsync, order: SceneService.LeaveOrderCombat);
         skills.QueueEligibility = CanQueueSkill;
-        character.ProgressHandlers.Add(buffs.ReconcileEnergyAsync);
+        character.ProgressHandlers.Subscribe(buffs.ReconcileEnergyAsync);
         CastResolved.Subscribe(ReadingExtraCastAsync);
         CastResolved.Subscribe(ClassLoopsOnCastAsync);
         monsters.AttackPet = MonsterAttackPetAsync;
-        buffs.UnitChanged.Add(PublishTowerPetStatsAsync);
+        buffs.UnitChanged.Subscribe(PublishTowerPetStatsAsync);
         WireBuffRules();
         WireBossSkills();
         WireCompanions();

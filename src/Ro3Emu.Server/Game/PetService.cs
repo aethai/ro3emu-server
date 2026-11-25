@@ -45,8 +45,8 @@ public sealed partial class PetService
         this._seasons = seasons;
         _stars = data.Table("PetStarConfig").Values.ToDictionary(r => ((int)GameData.Int(r, "_iPetID"), (int)GameData.Int(r, "_iStar"), (int)GameData.Int(r, "_iStage")));
         _levels = data.Table("PetExpConfig").Values.ToDictionary(r => ((int)GameData.Int(r, "_iQuality"), (int)GameData.Int(r, "_iLv")));
-        character.ExtraAttributes.Add(Attributes);
-        character.SpecialItemUse.Add(TryUseSelfChooseAsync);
+        character.ExtraAttributes.Subscribe(Attributes);
+        character.SpecialItemUse.Subscribe(TryUseSelfChooseAsync);
         character.RegisterItemAction(AddIncubateRoomExpAction, UseRoomExpItemAsync);
     }
 
@@ -128,7 +128,7 @@ public sealed partial class PetService
             await _character.RefreshStatsAsync(s);
             await _follower.RefreshAsync(s);
             // A committed lineup change: quest targets read it (growth-manual 103034 CheckSetUpPetCount).
-            if (!items) foreach (var handler in _character.StateChanged) handler(s);
+            if (!items) foreach (var handler in _character.StateChanged.Handlers) handler(s);
         }
     }
 

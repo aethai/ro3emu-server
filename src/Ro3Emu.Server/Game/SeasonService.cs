@@ -27,7 +27,7 @@ public sealed class SeasonService : IGameTicker
     public const uint SeasonSync = 5021, TimeInfoNotify = 82707, StateChangeNotify = 82708;
 
     /// <summary>Activity owners invalidate their deadlines after a committed administrative clock change.</summary>
-    public List<Action> ScheduleChanged { get; } = [];
+    public SyncHook ScheduleChanged { get; } = new("SeasonService.ScheduleChanged");
 
     /// <summary>Legacy identity-only fallback when this playbook has no supported stage clock.</summary>
     private const long SeasonLengthSeconds = 999_999_999;
@@ -140,7 +140,7 @@ public sealed class SeasonService : IGameTicker
         _playBook = value;
         _timing = null; lock (_clocks) _clocks.Clear();
         Set("playbook", value.ToString(CultureInfo.InvariantCulture));
-        foreach (var changed in ScheduleChanged) changed();
+        foreach (var changed in ScheduleChanged.Handlers) changed();
         return $"Playbook {value} from the next login.";
     }
 
@@ -157,7 +157,7 @@ public sealed class SeasonService : IGameTicker
         {
             _playBook = value;
             _timing = null; lock (_clocks) _clocks.Clear();
-            foreach (var changed in ScheduleChanged) changed();
+            foreach (var changed in ScheduleChanged.Handlers) changed();
         });
         return $"Playbook {value} from the next login.";
     }
@@ -195,7 +195,7 @@ public sealed class SeasonService : IGameTicker
         _playBook = book;
         Start = start;
         _timing = null; lock (_clocks) _clocks.Clear();
-        foreach (var changed in ScheduleChanged) changed();
+        foreach (var changed in ScheduleChanged.Handlers) changed();
         return $"Season {_seasonId}, playbook {book}, from next login.";
     }
 
@@ -231,7 +231,7 @@ public sealed class SeasonService : IGameTicker
             _playBook = book;
             Start = start;
             _timing = null; lock (_clocks) _clocks.Clear();
-            foreach (var changed in ScheduleChanged) changed();
+            foreach (var changed in ScheduleChanged.Handlers) changed();
         });
         return $"Season {_seasonId}, playbook {book}, from next login.";
     }

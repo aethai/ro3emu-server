@@ -68,7 +68,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>EXP just committed to a character: base and job (CheatMonitor.ExpGained keeps it per hour).</summary>
-    public List<Action<GameSession, long, long>> ExpCredited { get; } = [];
+    public SyncHook<GameSession, long, long> ExpCredited { get; } = new("CharacterService.ExpCredited");
 
     /// <summary>Adds exp, levelling up through BaseLvConfig / JobLvConfig as needed.
     /// A kill reward may pass its role-owner check so a queued StateLock cannot credit a later role.</summary>
@@ -92,7 +92,7 @@ public sealed partial class CharacterService
         builder.WithEconomy(RewardMutation(session, expSource, p, staged, [], [],
             Math.Max(0, baseExp), jobExp, new ItemAutoDecomposeTipsNtf()));
         await roles.CommitAsync(builder, "character/exp", _ => CopyProgress(p, staged));
-        foreach (var credited in ExpCredited) credited(session, baseExp, jobExp);
+        foreach (var credited in ExpCredited.Handlers) credited(session, baseExp, jobExp);
         if (stillOwner?.Invoke() == false || session.Attachment?.Cancelled == true) return string.Empty;
         var rewards = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
         if (baseExp > 0) rewards.Rewards.Add(ItemInfo(new InvItem { Entry = BaseExpItem, Stack = (int)Math.Min(baseExp, int.MaxValue) }));
@@ -109,7 +109,7 @@ public sealed partial class CharacterService
         {
             await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
             if (stillOwner?.Invoke() == false) return string.Empty;
-            foreach (var handler in StateChanged) handler(session);
+            foreach (var handler in StateChanged.Handlers) handler(session);
         }
         return $"Base {p.Level} ({p.Exp}/{BaseExpNeed(p.Level)}), job {p.JobLevel} ({p.JobExp}/{JobExpNeed(p.Career, p.JobLevel)}).";
     }
@@ -137,12 +137,12 @@ public sealed partial class CharacterService
         if (stillOwner?.Invoke() == false) return;
         await SendStatsAsync(session);
         if (stillOwner?.Invoke() == false) return;
-        foreach (var handler in ProgressHandlers)
+        foreach (var handler in ProgressHandlers.Handlers)
         {
             await handler(session);
             if (stillOwner?.Invoke() == false) return;
         }
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     public async Task<string> AddStatPointsAsync(GameSession session, int points)
@@ -152,7 +152,7 @@ public sealed partial class CharacterService
         p.BonusPoints = Math.Max(-StartingStatPoints, p.BonusPoints + points);
         await CommitCharacterAsync(session, "gm-stat-points", progress: p);
         await SendStatPlanAsync(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
         return $"{TotalPoints(p) - UsedPoints(p)} free stat points.";
     }
 
@@ -192,8 +192,8 @@ public sealed partial class CharacterService
         if (!ok) return;
         await SendStatPlanAsync(session);
         if (req.PlanIndex == plans.CurPlanIndex) await SendStatsAsync(session, showChange: true);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     /// <summary>31501: reset the addressed plan; if selected, also refresh the role's effective stats.</summary>
@@ -217,8 +217,8 @@ public sealed partial class CharacterService
         await session.SendGameAsync(ResetAttrPoints, new ResetAttrPointResp { Result = 0, PlanIndex = index, PlanBaseProperty = plan.Clone() });
         await SendStatPlanAsync(session);
         if (index == plans.CurPlanIndex) await SendStatsAsync(session, showChange: true);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     /// <summary>
@@ -251,12 +251,12 @@ public sealed partial class CharacterService
             await PublishJobAsync(session);
         }
         await PayJobExpCatchUpAsync(session);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in JobChanged) await handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in JobChanged.Handlers) await handler(session);
     }
 
     /// <summary>Called after a job change (quests: CheckJobChange / CheckJobRank targets).</summary>
-    public List<Func<GameSession, Task>> JobChanged { get; } = [];
+    public AsyncHook<GameSession> JobChanged { get; } = new("CharacterService.JobChanged");
 
     private int TransformJobError(GameSession session, int jobId)
     {
@@ -287,8 +287,8 @@ public sealed partial class CharacterService
             await PublishJobAsync(session);
         }
         await PayJobExpCatchUpAsync(session);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in JobChanged) await handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in JobChanged.Handlers) await handler(session);
         return $"Job {career} {data.TextOf(data.Row("JobConfig", career)!.Value, "_iName")}".TrimEnd();
     }
 

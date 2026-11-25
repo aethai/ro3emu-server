@@ -289,7 +289,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         await _world.AddUnitAsync(monster);
         if (!state.Retired)
         {
-            foreach (var handler in Born) await handler(monster);
+            foreach (var handler in Born.Handlers) await handler(monster);
             return true;
         }
         if (state.Units.Remove(monster)) await _world.RemoveUnitAsync(monster);
@@ -357,7 +357,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     }
 
     /// <summary>After a monster joined its map, from a spawn group or alone (MvpService: NPCConfig _kBornEventBuff).</summary>
-    public List<Func<MonsterUnit, Task>> Born { get; } = [];
+    public AsyncHook<MonsterUnit> Born { get; } = new("MonsterService.Born");
 
     /// <summary>
     /// A monster outside the map's spawn groups (field MVPs): no group respawn, the caller decides when it comes back.
@@ -403,7 +403,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             await _world.AddUnitAsync(monster);
             if (state is not { Retired: true })
             {
-                foreach (var handler in Born) await handler(monster);
+                foreach (var handler in Born.Handlers) await handler(monster);
                 return monster;
             }
             if (state.Units.Remove(monster)) await _world.RemoveUnitAsync(monster);
@@ -629,7 +629,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     }
 
     /// <summary>Authoritative target transitions, consumed by hatred/lock notifications and facing effects.</summary>
-    public List<Func<MonsterUnit, GameSession?, GameSession?, Task>> TargetChanged { get; } = [];
+    public AsyncHook<MonsterUnit, GameSession?, GameSession?> TargetChanged { get; } = new("MonsterService.TargetChanged");
 
     private void SetTarget(MonsterUnit monster, GameSession? target)
     {
@@ -638,7 +638,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         monster.Target = target;
         if (previous == null && target != null) LeaveRoute(monster); // MonsterService.March
         ReleaseSurroundSlot(monster);
-        foreach (var handler in TargetChanged) _loop.TrackRuntimeDetached("monster target change", () => handler(monster, previous, target));
+        foreach (var handler in TargetChanged.Handlers) _loop.TrackRuntimeDetached("monster target change", () => handler(monster, previous, target));
     }
 
     /// <summary>A tower pet's attack can draw aggro without losing the player fallback (inferred).</summary>

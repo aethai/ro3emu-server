@@ -30,7 +30,7 @@ public sealed class TotemService
     {
         this._data = data; this._character = character; this._roles = roles; this._items = items; this._functions = functions; this._effects = effects; this._seasons = seasons; this._clock = clock;
         character.TotemAttrFactory = CreateAttributes;
-        character.ExtraAttributes.Add(Attributes);
+        character.ExtraAttributes.Subscribe(Attributes);
     }
 
     private string RefineEpoch => $"{_seasons.PlayBook}:{_seasons.Start.Ticks}";
@@ -42,7 +42,7 @@ public sealed class TotemService
     public static bool IsTotem(GameData data, int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 7;
 
     /// <summary>A committed combine: the session and the made totem's entry (quest target 315004).</summary>
-    public List<Action<GameSession, int>> Combined { get; } = [];
+    public SyncHook<GameSession, int> Combined { get; } = new("TotemService.Combined");
 
     /// <summary>The active plan's deployed totem instances.</summary>
     internal static IEnumerable<InvItem> Deployed(GameSession s, GameData data)
@@ -567,7 +567,7 @@ public sealed class TotemService
                 newGuid = next.Guid;
             });
             await _character.ItemsChangedAsync(s, stats: true); await SyncAsync(s);
-            foreach (var handler in Combined) handler(s, next.Entry);
+            foreach (var handler in Combined.Handlers) handler(s, next.Entry);
         }
         await s.SendGameAsync(82366, new CombineTotemResp { Result = error, NewTotemGuid = newGuid });
     }

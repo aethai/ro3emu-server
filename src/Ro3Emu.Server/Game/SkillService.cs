@@ -48,7 +48,7 @@ public sealed partial class SkillService
         this._roles = roles;
         this._clock = clock;
         this._log = log;
-        character.ProgressHandlers.Add(SyncAsync);
+        character.ProgressHandlers.Subscribe(SyncAsync);
     }
 
     /// <summary>SkillConfig row id of a group at a level (mode 0), or 0.</summary>
@@ -774,7 +774,7 @@ public sealed partial class SkillService
     /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>
     internal async Task OnActivePlanChangedAsync(GameSession session)
     {
-        foreach (var handler in Learned) await handler(session);
+        foreach (var handler in Learned.Handlers) await handler(session);
     }
 
     internal static void CopySkills(RoleProgress from, RoleProgress to)
@@ -845,11 +845,11 @@ public sealed partial class SkillService
             await session.SendGameAsync(PlanUpdate, new SkillGrowthSkillPlanUpdateResp { Result = code });
         }
         // Learned observers may take the same StateLock (cart capacity); run them after the commit and reply.
-        if (learned) foreach (var handler in Learned) await handler(session);
+        if (learned) foreach (var handler in Learned.Handlers) await handler(session);
     }
 
     /// <summary>Skills were learned (quests: 104012 CheckCostJobPoint).</summary>
-    public List<Func<GameSession, Task>> Learned { get; } = [];
+    public AsyncHook<GameSession> Learned { get; } = new("SkillService.Learned");
 
     /// <summary>
     /// GM panel 110 GmCurAllSkillLevUpMax (GMConfig 3007: 1 learns every skill of the current job and stage at its

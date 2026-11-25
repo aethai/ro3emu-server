@@ -70,9 +70,9 @@ public sealed class FirstHeartService : IGameTicker
                 _taskRows[GameData.Int(r, "_iID")] = new TaskRow(GameData.Int(r, "_iID"), GameData.Int(r, "_iType"),
                     GameData.Int(r, "_iPoint"), GameData.Int(r, "_iAward"),
                     [.. targets[0].EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))]);
-        character.StateChanged.Add(MarkDirty);
-        character.ProgressHandlers.Add(s => { MarkDirty(s); return Task.CompletedTask; });
-        cards.CollectionChanged.Add(s => { MarkDirty(s); return Task.CompletedTask; });
+        character.StateChanged.Subscribe(MarkDirty);
+        character.ProgressHandlers.Subscribe(s => { MarkDirty(s); return Task.CompletedTask; });
+        cards.CollectionChanged.Subscribe(s => { MarkDirty(s); return Task.CompletedTask; });
         gm.Register("firstheart", "day <n> | reset | info (Seven-Day Goal test aid: move the start so day n is open)", GmAsync);
     }
 

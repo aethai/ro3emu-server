@@ -95,7 +95,7 @@ public sealed partial class TradeService
         "", req.TotalQuantity, req.Price, req.TotalPrice, false);
 
     /// <summary>After a committed purchase (quest target 103002, TaskService.MiscTargets.cs).</summary>
-    public List<Action<GameSession>> Bought { get; } = [];
+    public SyncHook<GameSession> Bought { get; } = new("TradeService.Bought");
 
     private async Task Purchase(GameSession s, int entry, string spu, string sku, int quantity, int quote, int total, bool premium)
     {
@@ -164,7 +164,7 @@ public sealed partial class TradeService
             return 0;
         });
         log.LogInformation("{Role} buys {Entry} x{Count} via {Opcode}: {Result}", s.Role!.Id, entry, quantity, id, code);
-        if (code == 0) foreach (var handler in Bought) handler(s);
+        if (code == 0) foreach (var handler in Bought.Handlers) handler(s);
         if (premium) await s.SendGameAsync(id, new TradeBuyItemsResp { Result = code });
         else await s.SendGameAsync(id, new TradeBuyNormalItemsResp { Result = code });
     }

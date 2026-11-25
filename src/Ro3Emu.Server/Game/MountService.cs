@@ -58,11 +58,11 @@ public sealed class MountService : IGameTicker
         combat.GrantedSkill.Subscribe((s, id) => FlySkills(data, s) is { } fly && id == (s.WorldState.Flying ? fly.Down : fly.Up));
         this._data = data; this._character = character; this._roles = roles; this._functions = functions;
         this._world = world; this._loop = loop; this._sessions = sessions; this._deadlines = deadlines; this._clock = clock;
-        character.ExtraAttributes.Add(Attributes);
-        character.SpecialItemUse.Add(TryUseItemAsync);
-        character.ItemsAwarded.Add((s, items) => { if (items.Any(i => IsAutoUsedVoucher(i.Entry))) UseHeldVouchers(s); });
+        character.ExtraAttributes.Subscribe(Attributes);
+        character.SpecialItemUse.Subscribe(TryUseItemAsync);
+        character.ItemsAwarded.Subscribe((s, items) => { if (items.Any(i => IsAutoUsedVoucher(i.Entry))) UseHeldVouchers(s); });
         wardrobe.MountGrant = PlanShopGrant;
-        character.JobChanged.Add(ReconcileAsync);
+        character.JobChanged.Subscribe(ReconcileAsync);
         scenes.BeforeSelf.Subscribe(ReconcileAsync);
     }
 
@@ -144,7 +144,7 @@ public sealed class MountService : IGameTicker
     internal Task PublishAsync(GameSession s) => ChangedAsync(s);
 
     /// <summary>After a committed 5012 change, the rider's stats sent (RidingEffects: the ridden mount's buffs).</summary>
-    internal List<Func<GameSession, Task>> RideChanged { get; } = [];
+    internal AsyncHook<GameSession> RideChanged { get; } = new("MountService.RideChanged");
 
     /// <summary>The ridden mount's _kBindBuff rows (CartRemouldTable or MountsConfig), and its CartRemouldTable
     /// _iSubType (2 Peco Peco, 4 wolf, 5 Madogear, 6 dragon, 7 gryphon; 0 for any other mount or none).</summary>
@@ -322,13 +322,13 @@ public sealed class MountService : IGameTicker
     }
 
     /// <summary>After a committed 5012 change (ownership, riding): BuffService adds or drops mount energy meters.</summary>
-    public List<Func<GameSession, Task>> Changed { get; } = [];
+    public AsyncHook<GameSession> Changed { get; } = new("MountService.Changed");
 
     /// <summary>5012 after a committed change, then the <see cref="Changed"/> listeners.</summary>
     private async Task PublishOwnedAsync(GameSession s)
     {
         await LoginAsync(s);
-        foreach (var handler in Changed) await handler(s);
+        foreach (var handler in Changed.Handlers) await handler(s);
     }
 
     private async Task ChangedAsync(GameSession s)
@@ -336,7 +336,7 @@ public sealed class MountService : IGameTicker
         ArmExpiry(s);
         await PublishOwnedAsync(s);
         await _character.RefreshStatsAsync(s);
-        foreach (var handler in RideChanged) await handler(s);
+        foreach (var handler in RideChanged.Handlers) await handler(s);
         var entity = RoleSessionService.PlayerEntity(s);
         entity.NotifyType = EntityBase.Types.NotifyType.Rider;
         await s.SendGameAsync(CharacterService.EntityBaseChange, entity);

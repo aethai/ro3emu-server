@@ -111,13 +111,13 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
 
     /// <summary>After a party's roster or a member's card (career, online state) changed, with the roles it concerns: the
     /// members and one who left (PassiveSkills: Union).</summary>
-    internal List<Func<IReadOnlyList<long>, Task>> RosterChanged { get; } = [];
+    internal AsyncHook<IReadOnlyList<long>> RosterChanged { get; } = new("TeamService.RosterChanged");
 
     private async Task NotifyRosterAsync(IReadOnlyList<long> roles)
     {
         foreach (long role in roles)
             if (Session(role) is { } member) await SyncUnitTeamAsync(member);
-        foreach (var handler in RosterChanged) await handler(roles);
+        foreach (var handler in RosterChanged.Handlers) await handler(roles);
     }
 
     /// <summary>

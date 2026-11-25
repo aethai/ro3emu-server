@@ -104,7 +104,7 @@ public sealed partial class TaskService
     internal const int MarkGuildActivityJoin = 115;
 
     /// <summary>A delivered task's 115 MarkGuildActivityJoin: the role and the DailyActivityConfig id.</summary>
-    public List<Action<GameSession, long>> GuildActivityJoined { get; } = [];
+    public SyncHook<GameSession, long> GuildActivityJoined { get; } = new("TaskService.GuildActivityJoined");
 
     private readonly HashSet<(long Role, long Task, string Reason)> _heldLogged = [];
 

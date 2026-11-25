@@ -53,7 +53,7 @@ public sealed partial class SkillService
                     + (outside.Count > 0 ? $", not in this career's tree: {string.Join(' ', outside)}." : ".");
             }
         }
-        if (learned) foreach (var handler in Learned) await handler(session);
+        if (learned) foreach (var handler in Learned.Handlers) await handler(session);
         return reply;
     }
 

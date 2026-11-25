@@ -121,7 +121,7 @@ public sealed partial class CharacterService
         long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
         sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
         sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
-        foreach (var provider in DynamicProperties)
+        foreach (var provider in DynamicProperties.Handlers)
             foreach (var (id, value) in provider(session))
             {
                 // Independent active shield owners (totems and timed buffs) contribute to property 2003.
@@ -289,7 +289,7 @@ public sealed partial class CharacterService
             if (id is >= 1 and <= 6) baseStats[id - 1] += value;
             else Add(id, value);
         }
-        foreach (var provider in ExtraAttributes)
+        foreach (var provider in ExtraAttributes.Handlers)
             foreach (var (id, value) in provider(session))
             {
                 if (id is >= 1 and <= 6) baseStats[id - 1] += value;
@@ -340,13 +340,13 @@ public sealed partial class CharacterService
     public Func<GameSession, long>? TitleOf { get; set; }
 
     /// <summary>Configured contributions from other owned systems (pet lineup/collection).</summary>
-    public List<Func<GameSession, IEnumerable<(long Id, double Value)>>> ExtraAttributes { get; } = [];
+    public OrderedHook<Func<GameSession, IEnumerable<(long Id, double Value)>>> ExtraAttributes { get; } = new("CharacterService.ExtraAttributes");
 
     /// <summary>A match owner's replacement build (null: the character's own), e.g. a Survivor Battle career.</summary>
     public Func<GameSession, IReadOnlyList<(long Id, double Value)>?>? MatchAttributes { get; set; }
 
     /// <summary>Runtime properties such as an absorb shield, projected on full stats and late AOI snapshots.</summary>
-    public List<Func<GameSession, IEnumerable<(int Id, long Value)>>> DynamicProperties { get; } = [];
+    public OrderedHook<Func<GameSession, IEnumerable<(int Id, long Value)>>> DynamicProperties { get; } = new("CharacterService.DynamicProperties");
 
     /// <summary>Set by BuffService: puts a buff on the player (item use action 203).</summary>
     public Func<GameSession, int, int, Task>? GiveBuff { get; set; }

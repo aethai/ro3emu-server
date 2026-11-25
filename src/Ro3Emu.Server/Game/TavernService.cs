@@ -110,7 +110,7 @@ public sealed partial class TavernService : Messaging.IMessageModule, IGameTicke
     }
 
     /// <summary>Raised on the loop after a role's Star Power changed (AchievementService re-reads 106008).</summary>
-    public List<Action<GameSession>> PopularityChanged { get; } = [];
+    public SyncHook<GameSession> PopularityChanged { get; } = new("TavernService.PopularityChanged");
 
     /// <summary>A role's own Tavern counters, role blob "barroom" (JSON). Popularity and WeekPopularity are the Star Power
     /// received from gifts (5043 popularity / weekPopularity); ActDays counts the days whose stay reached the daily quest's

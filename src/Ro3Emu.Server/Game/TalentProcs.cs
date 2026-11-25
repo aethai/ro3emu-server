@@ -312,13 +312,13 @@ public sealed partial class TalentProcs
         combat.SkillBuffAllowed = SkillBuffAllowed;
         combat.CastResolved.Subscribe(OnCastResolvedAsync);
         combat.DealtAsync.Subscribe(RowProcsOnDealtAsync);
-        buffs.Changed.Add(OnBuffsChangedAsync);
+        buffs.Changed.Subscribe(OnBuffsChangedAsync);
         combat.TargetCountRow = TargetCountRow;
         combat.TakenAsync.Subscribe(OnTakenAsync);
         combat.Killed.Subscribe(OnKilledAsync);
         combat.PlayerDied.Subscribe(OnDiedAsync);
         combat.PlayerKilled.Subscribe(OnPlayerKilledAsync);
-        character.ExtraAttributes.Add(SoulReaperAttributes);
+        character.ExtraAttributes.Subscribe(SoulReaperAttributes);
     }
 
     /// <summary>

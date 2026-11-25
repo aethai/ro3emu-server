@@ -53,12 +53,10 @@ public sealed partial class DungeonTests
             session.Dead = true;
         });
         Action<GameSession> fail = s => { if (s == session) throw new InvalidOperationException("postcommit test hook"); };
-        Service<CharacterService>().StateChanged.Add(fail);
-        try
+        using (Service<CharacterService>().StateChanged.Subscribe(fail))
         {
             await Assert.ThrowsAsync<InvalidOperationException>(() => OnLoop(() => Service<WorldCoreService>().ItemReviveAsync(session)));
         }
-        finally { Service<CharacterService>().StateChanged.Remove(fail); }
         Assert.False(session.Dead);
         Assert.True(Service<CharacterService>().Stats(session)[2000] > 0);
         Assert.Equal(before - 1, Items(alice, 1112001));
@@ -132,13 +130,11 @@ public sealed partial class DungeonTests
             aborted = true;
             s.Channel.Abort(); // StateChanged follows the durable receipt and the revive claim's synchronous Apply.
         };
-        Service<CharacterService>().StateChanged.Add(abort);
-        try
+        using (Service<CharacterService>().StateChanged.Subscribe(abort))
         {
             try { await OnLoop(() => Service<WorldCoreService>().ItemReviveAsync(session)); }
             catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
         }
-        finally { Service<CharacterService>().StateChanged.Remove(abort); }
         Assert.True(aborted);
         Assert.False(session.Dead);
         Assert.Equal(before - 1, Items(alice, 1112001));

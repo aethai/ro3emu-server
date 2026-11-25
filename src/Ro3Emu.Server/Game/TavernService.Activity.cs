@@ -160,7 +160,7 @@ public sealed partial class TavernService
         next.Popularity = AddClamped(next.Popularity, star);
         next.WeekPopularity = AddClamped(next.WeekPopularity, star);
         await CommitAsync(s, next, "tavern/star");
-        foreach (var handler in PopularityChanged) handler(s);
+        foreach (var handler in PopularityChanged.Handlers) handler(s);
     }
 
     private async Task CommitAsync(GameSession s, RoleState next, string label)
@@ -213,7 +213,7 @@ public sealed partial class TavernService
             case GmSetTag: return SetTag(Arg(0), (int)Arg(1), Arg(2) == 1);
             case GmAddStar: return await GmAddAsync(s, st => st.Popularity = AddClamped(st.Popularity, Arg(0)), star: (int)Arg(0));
             case GmAddQuests:
-                foreach (var handler in TavernQuestsAdded) handler(s, (int)Math.Clamp(Arg(0), 0, int.MaxValue));
+                foreach (var handler in TavernQuestsAdded.Handlers) handler(s, (int)Math.Clamp(Arg(0), 0, int.MaxValue));
                 return $"Tavern quest completions +{Arg(0)} (achievement 106007).";
             case GmAddActDays: return await GmAddAsync(s, st => st.ActDays = AddClamped(st.ActDays, Arg(0)));
             case GmAddStay: return await GmAddAsync(s, st => st.TodaySeconds = AddClamped(st.TodaySeconds, Arg(0)));
@@ -222,7 +222,7 @@ public sealed partial class TavernService
     }
 
     /// <summary>GMAddBarroomTaskFinishTimes: the daily quest's completion count for 106007 (AchievementService).</summary>
-    public List<Action<GameSession, int>> TavernQuestsAdded { get; } = [];
+    public SyncHook<GameSession, int> TavernQuestsAdded { get; } = new("TavernService.TavernQuestsAdded");
 
     private async Task<string> GmAddAsync(GameSession s, Action<RoleState> change, int star = 0)
     {
@@ -233,7 +233,7 @@ public sealed partial class TavernService
         if (star > 0) next.WeekPopularity = AddClamped(next.WeekPopularity, star);
         await CommitAsync(s, next, "tavern/gm");
         await PayOwedDrinkAsync(s);
-        if (star > 0) foreach (var handler in PopularityChanged) handler(s);
+        if (star > 0) foreach (var handler in PopularityChanged.Handlers) handler(s);
         _tasks.OnTavernStay(s);
         return $"Tavern: Star Power {next.Popularity} (week {next.WeekPopularity}), active days {next.ActDays}, today {next.TodaySeconds} s.";
     }

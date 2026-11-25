@@ -75,7 +75,7 @@ public sealed partial class CharacterService
         if (persist) SaveEquipLevels(session);
         await SyncAsync(session, EquipSync, BuildEquip(session));
         await SendStatsAsync(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     // ---- per-instance gear stats (ItemAttrTypeEnum 30-49 attribute ids, 60-79 values; LC_ItemProtoParse.ParseEquipInfo) ----
@@ -247,7 +247,7 @@ public sealed partial class CharacterService
             StrengthenEffectLv = Resonance(session, "StrengthenEffectTable"),
         });
         await EquipmentAppearanceChangedAsync(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     private int PartOf(int entry) => (int)(data.Row("ItemConfig", entry) is { } row ? GameData.Int(row, "_iEquipPart") : 0);

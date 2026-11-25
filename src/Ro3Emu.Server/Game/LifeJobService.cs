@@ -49,9 +49,9 @@ public sealed partial class LifeJobService
         this._data = data; this._character = character; this._functions = functions; this._seasons = seasons;
         this._awards = awards; this._roles = roles; this._loop = loop; this._clock = clock; this._log = log;
         character.LifeItemUse = UseLifeItemAsync;
-        character.StateChanged.Add(SyncVigorChange);
-        character.ExtraAttributes.Add(FoodAttributes);
-        character.ProgressHandlers.Add(OnLevelChangedAsync);
+        character.StateChanged.Subscribe(SyncVigorChange);
+        character.ExtraAttributes.Subscribe(FoodAttributes);
+        character.ProgressHandlers.Subscribe(OnLevelChangedAsync);
         scene.Leaving.Subscribe(CancelAsync);
     }
 
@@ -141,14 +141,14 @@ public sealed partial class LifeJobService
 
     /// <summary>Restrictions another service keeps (the Rift's RestrictConfig 1020): shown in the same 5018 map, never
     /// saved with or compared against the life restrictions.</summary>
-    public List<Func<GameSession, RestrictInfo?>> ProjectedRestrictions { get; } = [];
+    public OrderedHook<Func<GameSession, RestrictInfo?>> ProjectedRestrictions { get; } = new("LifeJobService.ProjectedRestrictions");
 
     private DBRestrictInfo RestrictView(GameSession s)
     {
         var view = s.Restrictions!.Clone();
         if (view.RestrictCount.TryGetValue(VigorId, out var vigor))
             vigor.Count = Energy(s);
-        foreach (var project in ProjectedRestrictions)
+        foreach (var project in ProjectedRestrictions.Handlers)
             if (project(s) is { } info) view.RestrictCount[info.Id] = info;
         return view;
     }

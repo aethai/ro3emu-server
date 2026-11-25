@@ -26,13 +26,13 @@ public sealed partial class DungeonService
     public const uint PlotSceneEvent = 84012;
 
     /// <summary>Committed clears only; consumers receive the scene entry and whether an actual personal award was paid.</summary>
-    public List<Func<GameSession, int, bool, Task>> Completed { get; } = [];
+    public AsyncHook<GameSession, int, bool> Completed { get; } = new("DungeonService.Completed");
     /// <summary>After <see cref="Completed"/> for a TenGameplay run: the boss (TenGameplayBossConfig._iBoss) and the
     /// run's settled participants (quest target 106602).</summary>
-    public List<Func<GameSession, long, IReadOnlyCollection<GameSession>, Task>> MultiBossCleared { get; } = [];
+    public AsyncHook<GameSession, long, IReadOnlyCollection<GameSession>> MultiBossCleared { get; } = new("DungeonService.MultiBossCleared");
     /// <summary>A loaded member's dungeon task tracker (TaskService.OnDungeonRun): scene, instance and the scripted steps
     /// the run has passed. Listeners post their work.</summary>
-    public List<Action<GameSession, long, long, int>> RunTracked { get; } = [];
+    public SyncHook<GameSession, long, long, int> RunTracked { get; } = new("DungeonService.RunTracked");
     /// <summary>Guild Challenge owns admission and rewards; this engine retains scenes, combat and cleanup.</summary>
     internal Func<GameSession, EnterDungeonReq, Task<bool>>? GuildChallengeEnter { get; set; }
     /// <summary>Another private-room owner whose 30402 exit revives a dead member on return (the guild home).</summary>
@@ -113,7 +113,7 @@ public sealed partial class DungeonService
         combat.Dealt.Subscribe((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
         combat.Taken.Subscribe((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
         combat.Healed.Subscribe((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
-        character.ProgressHandlers.Add(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
+        character.ProgressHandlers.Subscribe(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
     }
 
     public sealed class Attempt
@@ -438,7 +438,7 @@ public sealed partial class DungeonService
     internal void TrackRun(Attempt a, IEnumerable<GameSession> members, int step)
     {
         foreach (var s in members)
-            foreach (var handler in RunTracked) handler(s, a.Plan.SceneEntry, a.Room.Id, step);
+            foreach (var handler in RunTracked.Handlers) handler(s, a.Plan.SceneEntry, a.Room.Id, step);
     }
 
     // Waiting for all remaining members before starting the encounter clock is (inferred).
@@ -1016,13 +1016,13 @@ public sealed partial class DungeonService
             if (!committed) continue;
             if (committed && success)
             {
-                foreach (var handler in Completed)
+                foreach (var handler in Completed.Handlers)
                     try { await handler(s, (int)a.Plan.SceneEntry, goods.Count > 0); }
                     catch (Exception e) { _log.LogError(e, "Dungeon clear callback failed for {Role}, instance {Instance}", roleId, a.Room.Id); }
                 if (a.Plan.Boss is { } boss)
                 {
                     var party = participants.Select(p => p.Session).ToArray();
-                    foreach (var handler in MultiBossCleared)
+                    foreach (var handler in MultiBossCleared.Handlers)
                         try { await handler(s, GameData.Int(boss, "_iBoss"), party); }
                         catch (Exception e) { _log.LogError(e, "Dungeon boss clear callback failed for {Role}, instance {Instance}", roleId, a.Room.Id); }
                 }

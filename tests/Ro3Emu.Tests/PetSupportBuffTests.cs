@@ -152,7 +152,7 @@ public sealed class PetSupportBuffTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var player = Session("alice");
         var character = _app.Services.GetRequiredService<CharacterService>();
-        character.DynamicProperties.Add(_ => [(2003, 17L)]); // A second shield owner, as TotemEffects is.
+        character.DynamicProperties.Subscribe(_ => [(2003, 17L)]); // A second shield owner, as TotemEffects is.
         await Run(() => Buffs.AddSupportAsync(player, 2354401, 3000, 42, 65));
         Assert.Equal(82, character.Stats(player)[2003]);
         Assert.Equal(0, await Run(() => Buffs.AbsorbAsync(player, 20)));
