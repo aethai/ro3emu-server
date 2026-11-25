@@ -1,4 +1,5 @@
 using Romsg;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
@@ -17,13 +18,23 @@ public enum GmCombatSwitches
     Unlimited = 4,
 }
 
-public sealed partial class GmCommands
+/// <summary>Combat and entity GM panel ops + !boss, registered on <see cref="GmCommands"/> by combat composition.</summary>
+internal sealed class CombatGmCommands(
+    GameData data, GameLoop loop, SessionRegistry sessions, CharacterService character,
+    CombatService combat, BuffService buffs, MonsterService monsters, World world)
 {
     /// <summary>GmOpEnum values of the combat and entity debug buttons (GMConfig _iBelong 2, and 1010 / 3006).</summary>
     private const int OpChangeHp = 23, OpAddNpc = 27, OpKillEntity = 30, OpDumpEntityAttr = 32, OpSetEntityAttr = 33,
         OpChangeEntityAttr = 34, OpAddBuff = 35, OpRemoveBuff = 36, OpNoCd = 52, OpDamageFix = 53, OpReloadSkillBlueprint = 58,
         OpShowBuff = 76, OpShowAttr = 77, OpUnlimit = 80, OpCastSkill = 81, OpTargetCastSkill = 82, OpOpenLog = 92,
         OpSetEntityCamp = 95, OpBattle = 20000;
+
+    private static readonly int[] CombatOps =
+    [
+        OpChangeHp, OpAddNpc, OpKillEntity, OpDumpEntityAttr, OpSetEntityAttr, OpChangeEntityAttr,
+        OpAddBuff, OpRemoveBuff, OpNoCd, OpDamageFix, OpReloadSkillBlueprint, OpShowBuff, OpShowAttr,
+        OpUnlimit, OpCastSkill, OpTargetCastSkill, OpOpenLog, OpSetEntityCamp, OpBattle,
+    ];
 
     // AttributeConfig rows the monster template carries beyond AttributeId's: maxsp and lv.
     private const int AttrMaxSp = 102, AttrLevel = 2002;
@@ -33,10 +44,15 @@ public sealed partial class GmCommands
 
     private bool _gmAttributesHooked;
 
-    private CombatService Combat => services.GetRequiredService<CombatService>();
-    private BuffService Buffs => services.GetRequiredService<BuffService>();
-    private MonsterService Monsters => services.GetRequiredService<MonsterService>();
-    private World World => services.GetRequiredService<World>();
+    public void Register(GmCommands gm)
+    {
+        gm.RegisterOptionalOps(CombatOps, CombatOpAsync);
+        gm.Register("boss", "spawn <npcId> | skills [npcId] | phase <n> | cast <skillId> | kill (boss skill test aids: the nearest boss within 40 m)", async (s, a) =>
+        {
+            string reply = await monsters.BossGmAsync(s, a);
+            foreach (string line in reply.Split('\n')) await GmCommands.ReplyAsync(s, line);
+        });
+    }
 
     /// <summary>GM panel combat and entity debug ops (HP, buffs, attributes, skills, NPCs, camps); null when the op is not one of them.</summary>
     private async Task<string?> CombatOpAsync(GameSession s, int op, string[] args)
@@ -46,7 +62,7 @@ public sealed partial class GmCommands
             case OpChangeHp: // target, heal, damage
                 return await ChangeHpAsync(Target(s, args, 0), NumArg(args, 1), NumArg(args, 2));
             case OpAddNpc:
-                return await AddNpcAsync(s, I(args[0]));
+                return await AddNpcAsync(s, GmCommands.I(args[0]));
             case OpKillEntity:
                 return await KillAsync(Target(s, args, 0));
             case OpDumpEntityAttr:
@@ -54,13 +70,13 @@ public sealed partial class GmCommands
             case OpShowAttr: // attribute, target
                 return ShowAttributes(Target(s, args, 1), (int)NumArg(args, 0));
             case OpSetEntityAttr: // target, attribute, value
-                return await SetAttributeAsync(Target(s, args, 0), I(args[1]), L(args[2]), delta: false);
+                return await SetAttributeAsync(Target(s, args, 0), GmCommands.I(args[1]), GmCommands.L(args[2]), delta: false);
             case OpChangeEntityAttr: // unit, attribute, change
-                return await SetAttributeAsync(Target(s, args, 0), I(args[1]), L(args[2]), delta: true);
+                return await SetAttributeAsync(Target(s, args, 0), GmCommands.I(args[1]), GmCommands.L(args[2]), delta: true);
             case OpAddBuff: // buff, duration (0: the buff's own), target
-                return await AddBuffAsync(s, Target(s, args, 2), I(args[0]), (int)NumArg(args, 1));
+                return await AddBuffAsync(s, Target(s, args, 2), GmCommands.I(args[0]), (int)NumArg(args, 1));
             case OpRemoveBuff: // buff, target, by stacks, stacks
-                return await RemoveBuffAsync(Target(s, args, 1), I(args[0]), NumArg(args, 2) != 0, (int)NumArg(args, 3));
+                return await RemoveBuffAsync(Target(s, args, 1), GmCommands.I(args[0]), NumArg(args, 2) != 0, (int)NumArg(args, 3));
             case OpShowBuff:
                 return ShowBuffs(Target(s, args, 0));
             case OpNoCd:
@@ -77,9 +93,9 @@ public sealed partial class GmCommands
                     _ => throw new ArgumentException("kind 1 (no cooldown) or 2 (invincible, no costs)"),
                 };
             case OpCastSkill: // the GM casts at herself
-                return await CastAsync(s, new Entity(s, null, s.Role!.Id), I(args[0]));
+                return await CastAsync(s, new Entity(s, null, s.Role!.Id), GmCommands.I(args[0]));
             case OpTargetCastSkill: // skill, caster: the target casts, at the GM
-                return await CastAsync(s, Target(s, args, 1), I(args[0]));
+                return await CastAsync(s, Target(s, args, 1), GmCommands.I(args[0]));
             case OpSetEntityCamp:
                 return await SetCampAsync(Target(s, args, 0), (int)NumArg(args, 1));
             case OpReloadSkillBlueprint:
@@ -100,14 +116,14 @@ public sealed partial class GmCommands
         if (uid == 0 || uid == s.Role?.Id) return new(s, null, s.Role?.Id ?? 0);
         if (sessions.All().FirstOrDefault(p => p.Role?.Id == uid) is { } player) return new(player, null, uid);
         // The GM's own map first: what she clicks is beside her (another map's unit still answers, inferred).
-        var unit = World.Map(s.WorldScene).Units.FirstOrDefault(u => u.Uid == uid) ?? World.AllUnits().FirstOrDefault(u => u.Uid == uid);
+        var unit = world.Map(s.WorldScene).Units.FirstOrDefault(u => u.Uid == uid) ?? world.AllUnits().FirstOrDefault(u => u.Uid == uid);
         return new(null, unit, uid);
     }
 
-    private static long NumArg(string[] args, int index) => args.Length > index && args[index].Length > 0 ? L(args[index]) : 0;
+    private static long NumArg(string[] args, int index) => args.Length > index && args[index].Length > 0 ? GmCommands.L(args[index]) : 0;
 
     private string Name(Entity e) => e.Player?.Role?.Name
-        ?? (e.Unit is MonsterUnit m ? $"{Monsters.NpcName(m.Template.NpcId)} ({m.Uid})" : $"unit {e.Uid}");
+        ?? (e.Unit is MonsterUnit m ? $"{monsters.NpcName(m.Template.NpcId)} ({m.Uid})" : $"unit {e.Uid}");
 
     private static string Missing(Entity e) => e.Player == null && e.Unit == null
         ? $"No entity {e.Uid} online or on a map." : $"Entity {e.Uid} is not a player or a monster.";
@@ -133,7 +149,7 @@ public sealed partial class GmCommands
             decimal after = (decimal)before + heal - damage;
             if (after <= 0) return await KillAsync(e);
             m.Hp = (long)Math.Min(after, m.Template.MaxHp);
-            await World.ToUnitViewersAsync(m, CombatService.AoiAttrChange, MonsterService.Hp(m));
+            await world.ToUnitViewersAsync(m, CombatService.AoiAttrChange, MonsterService.Hp(m));
             return $"{Name(e)} HP {before} -> {m.Hp}.";
         }
         return Missing(e);
@@ -148,13 +164,13 @@ public sealed partial class GmCommands
         if (e.Player is { Progress: not null } p)
         {
             if (p.Dead) return $"{Name(e)} is already dead.";
-            await Combat.KillPlayerAsync(p);
+            await combat.KillPlayerAsync(p);
             return p.Dead ? $"{Name(e)} killed." : $"{Name(e)} is changing maps; try again.";
         }
         if (e.Unit is MonsterUnit m)
         {
             if (m.Dead) return $"{Name(e)} is already dead.";
-            await Monsters.KillAsync(m);
+            await monsters.KillAsync(m);
             return $"{Name(e)} killed (no rewards).";
         }
         return Missing(e);
@@ -164,11 +180,11 @@ public sealed partial class GmCommands
     private async Task<string> AddNpcAsync(GameSession s, int npc)
     {
         // (inferred) It behaves as its AI says (the panel's dummies 5099000.. stand still); it does not engage the GM.
-        if (Monsters.Template(npc) == null) return $"NPC {npc} is not a monster.";
+        if (monsters.Template(npc) == null) return $"NPC {npc} is not a monster.";
         double angle = s.Face * Math.PI / 180;
         var at = new MapPoint(s.Position.X + (float)Math.Sin(angle) * 4, s.Position.Y, s.Position.Z + (float)Math.Cos(angle) * 4, s.Face + 180);
-        if (await Monsters.SpawnSingleAsync(s.RuntimeMap, npc, at) is not { } unit) return $"Could not spawn {npc} here.";
-        return $"Spawned {Monsters.NpcName(npc)} ({npc}, uid {unit.Uid}).";
+        if (await monsters.SpawnSingleAsync(s.RuntimeMap, npc, at) is not { } unit) return $"Could not spawn {npc} here.";
+        return $"Spawned {monsters.NpcName(npc)} ({npc}, uid {unit.Uid}).";
     }
 
     // ---- attributes ----
@@ -181,7 +197,7 @@ public sealed partial class GmCommands
     {
         if (e.Player is { Progress: not null } p) return character.Stats(p).Data;
         if (e.Unit is not MonsterUnit m) return null;
-        var values = Combat.MonsterStats(m).Data;
+        var values = combat.MonsterStats(m).Data;
         values[AttrMaxSp] = m.Template.MaxSp;
         values[AttributeId.Hp] = m.Dead ? 0 : m.Hp;
         values[AttrLevel] = m.Template.Level;
@@ -252,7 +268,7 @@ public sealed partial class GmCommands
         }
         else return $"A monster has no attribute {attr} {AttrName(attr)} of its own to set.";
         changed.Property.Add(new AoIProperty { Idx = AttributeId.Hp, Data = m.Hp });
-        await World.ToUnitViewersAsync(m, CombatService.AoiAttrChange, changed);
+        await world.ToUnitViewersAsync(m, CombatService.AoiAttrChange, changed);
         return $"{Name(e)} {attr} {AttrName(attr)}: {before} -> {Attributes(e)!.GetValueOrDefault(attr)}.";
     }
 
@@ -292,13 +308,13 @@ public sealed partial class GmCommands
         bool applied;
         if (e.Player is { Role: not null } p)
         {
-            await Buffs.AddAsync(p, buff, durationMs, s.Role!.Id);
+            await buffs.AddAsync(p, buff, durationMs, s.Role!.Id);
             applied = p.Buffs.Any(b => b.ConfigId == buff);
         }
         else if (e.Unit is { } unit)
         {
-            await Buffs.AddSupportAsync(unit, buff, durationMs, s.Role!.Id);
-            applied = Buffs.UnitBuffs(unit).Any(b => b.ConfigId == buff);
+            await buffs.AddSupportAsync(unit, buff, durationMs, s.Role!.Id);
+            applied = buffs.UnitBuffs(unit).Any(b => b.ConfigId == buff);
         }
         else return Missing(e);
         return applied ? $"Buff {buff} {BuffName(row)} on {Name(e)}." : $"Buff {buff} was not applied to {Name(e)} (immune or resisted).";
@@ -318,15 +334,15 @@ public sealed partial class GmCommands
             int piles = live.Sum(b => b.PileCount);
             if (byStacks && stacks > 0 && stacks < piles)
             {
-                await Buffs.ConsumeBuffPilesAsync(p, (int)row.BuffId, stacks);
+                await buffs.ConsumeBuffPilesAsync(p, (int)row.BuffId, stacks);
                 return $"Buff {buff} {BuffName(row)} on {Name(e)}: {stacks} of {piles} stacks removed.";
             }
-            foreach (var b in live) await Buffs.RemoveAsync(p, b);
+            foreach (var b in live) await buffs.RemoveAsync(p, b);
         }
         else if (e.Unit is { } unit)
         {
-            if (!Buffs.UnitBuffs(unit).Any(b => b.ConfigId == buff)) return $"{Name(e)} has no buff {buff}.";
-            await Buffs.RemoveUnitConfigAsync(unit, buff);
+            if (!buffs.UnitBuffs(unit).Any(b => b.ConfigId == buff)) return $"{Name(e)} has no buff {buff}.";
+            await buffs.RemoveUnitConfigAsync(unit, buff);
         }
         else return Missing(e);
         return $"Buff {buff} {BuffName(row)} removed from {Name(e)}.";
@@ -335,9 +351,9 @@ public sealed partial class GmCommands
     /// <summary>GmShowBuff: the live buffs with their stacks and remaining seconds.</summary>
     private string ShowBuffs(Entity e)
     {
-        IReadOnlyList<ActiveBuff>? list = e.Player is { } p ? p.Buffs : e.Unit is { } unit ? Buffs.UnitBuffs(unit) : null;
+        IReadOnlyList<ActiveBuff>? list = e.Player is { } p ? p.Buffs : e.Unit is { } unit ? buffs.UnitBuffs(unit) : null;
         if (list == null) return Missing(e);
-        long now = services.GetRequiredService<GameLoop>().NowMs;
+        long now = loop.NowMs;
         var live = list.Where(b => b.ExpireMs > now).ToList();
         if (live.Count == 0) return $"{Name(e)} has no buffs.";
         return $"{Name(e)}: " + string.Join(", ", live.Select(b =>
@@ -378,13 +394,13 @@ public sealed partial class GmCommands
     {
         if (SkillConfig.Get(data, skill) is not { } row) return $"No skill {skill} in SkillConfig.";
         string name = row.Name is [var text, ..] ? data.Text(text) : "";
-        if (caster.Unit is MonsterUnit m) return m.Dead ? $"{Name(caster)} is dead." : Monsters.GmCastBossSkill(m, s, skill);
+        if (caster.Unit is MonsterUnit m) return m.Dead ? $"{Name(caster)} is dead." : monsters.GmCastBossSkill(m, s, skill);
         if (caster.Player is not { Role: not null, Progress: not null } p) return Missing(caster);
         var before = p.SkillCast;
         p.GmCastSkill = skill;
         try
         {
-            await Combat.CastAsync(p, new CastSkillReq { SkillId = skill, TargetId = s.Role!.Id, TargetPos = s.Position.Clone(), Face = p.Face });
+            await combat.CastAsync(p, new CastSkillReq { SkillId = skill, TargetId = s.Role!.Id, TargetPos = s.Position.Clone(), Face = p.Face });
         }
         finally { p.GmCastSkill = 0; }
         return p.SkillCast is { } cast && !ReferenceEquals(cast, before)
@@ -403,7 +419,7 @@ public sealed partial class GmCommands
         if (e.Unit is not MonsterUnit m) return Missing(e);
         if (m.Dead) return $"{Name(e)} is dead.";
         m.CampOverride = camp;
-        await World.ToUnitViewersAsync(m, WorldEffectsService.Camp, new EntityChangeCampNotify { EntityId = m.Uid, Camp = camp });
+        await world.ToUnitViewersAsync(m, WorldEffectsService.Camp, new EntityChangeCampNotify { EntityId = m.Uid, Camp = camp });
         return $"{Name(e)} camp {camp}.";
     }
 }

@@ -50,9 +50,9 @@ CharacterService.JobChanged (9)
   PassiveSkills.StandingBuffsAsync
   RidingEffects.SyncAsync
   StealthEffects.PublishAsync
-  SocialOutfitService.<.ctor> lambda
-  PowerService.<.ctor> lambda
   CareerSpecialService.ReconcileAsync
+  PowerService.<.ctor> lambda
+  SocialOutfitService.<.ctor> lambda
 CharacterService.ProgressHandlers (12)
   SkillService.SyncAsync
   FunctionService.SyncAsync
@@ -64,8 +64,8 @@ CharacterService.ProgressHandlers (12)
   AchievementService.<.ctor> lambda
   FirstHeartService.<.ctor> lambda
   PersonalService.RefreshAsync
-  EmojiService.RefreshUnlocksAsync
   PowerService.<.ctor> lambda
+  EmojiService.RefreshUnlocksAsync
 CharacterService.SpecialItemUse (5)
   WardrobeService.TryUseAppearanceItemAsync
   PetService.TryUseSelfChooseAsync
@@ -263,7 +263,7 @@ DailyActivityService.EventProjections (1)
   FestivalService.Project
 DungeonService.Completed (3)
   AchievementService.<.ctor> lambda
-  ServerHost.<Create> lambda
+  DungeonComposition.TaskDungeonCleared
   ValhallaService.ClearedAsync
 DungeonService.MultiBossCleared (2)
   TaskService.OnTenBossClearedAsync
@@ -288,7 +288,7 @@ GuildLeagueService.MatchCommitted (2)
   TaskService.OnGuildLeagueMatch
   TaskService.OnGuildLeagueFought
 GuildService.GuildIdChanged (1)
-  ServerHost.<Create> lambda
+  GuildComposition.ReshowPlayerOnGuildIdChanged
 GuildService.MembershipChanged (3)
   AchievementService.QueueRecheck
   TaskService.OnStateChanged
@@ -306,7 +306,7 @@ MonsterService.TargetChanged (2)
 MountService.Changed (1)
   BuffService.MountsChangedAsync
 MountService.RideChanged (5)
-  ServerHost.<Create> lambda
+  CharacterComposition.MountRideChanged
   RidingEffects.SyncAsync
   SkillService.AttackInputChangedAsync
   SkillService.SyncAsync
@@ -323,8 +323,8 @@ PublicLineManager.HasPendingWork (5)
   MvpService.HasPendingWork
   MonsterService.HasPendingWork
   CombatService.HasPendingMapWork
-  StallsService.HasPendingWork
   GatheringService.HasPendingWork
+  StallsService.HasPendingWork
 PublicLineManager.Retiring (6)
   GatheringService.RetireRuntimeAsync
   StallsService.RetireLineAsync
@@ -333,9 +333,9 @@ PublicLineManager.Retiring (6)
   ChatService.RetireLineAsync
   WorldCoreService.<.ctor> lambda
 RewardService.ExtraKillDrops (3)
-  MonsterHuntService.AreaDrops
   ParagonService.StarCoreDrops
   TitleService.CrestDrops
+  MonsterHuntService.AreaDrops
 RewardService.KillDropsGranted (2)
   WildAfkService.DropsGrantedAsync
   MonsterHuntService.KilledAsync
@@ -376,9 +376,9 @@ SceneService.Leaving (28)
   TerritoryEscortService.SceneLeavingAsync
   GuildLeagueService.LeavingAsync
   WorldCoreService.LeavingAsync
-  EmojiService.LeavingAsync
-  StallsService.<.ctor> lambda
   GatheringService.<.ctor> lambda
+  StallsService.<.ctor> lambda
+  EmojiService.LeavingAsync
 SceneService.LineSwitchChecks (1)
   WorldInteractionService.<.ctor> lambda
 SceneService.Loaded (25)
@@ -405,8 +405,8 @@ SceneService.Loaded (25)
   PetFollowerService.RefreshAsync
   TowerService.LoadedAsync
   CardEffects.RefreshAsync
-  StallsService.<.ctor> lambda
   GatheringService.<.ctor> lambda
+  StallsService.<.ctor> lambda
 SceneService.LoadedKeys (2)
   TerritoryWarsService.SceneKeys
   TerritoryEscortService.SceneKeys
@@ -436,19 +436,19 @@ TaskService.QuestDelivered (5)
   TaskService.AddFactionPoints
   NewActivityService.OnExplorationQuestDelivered
   AdventureGroupService.OnTaskDelivered
-  ServerHost.<Create> lambda
+  SocialComposition.AchievementTaskDelivered
   TaskService.OnConnectDelivered
 TavernService.PopularityChanged (1)
   AchievementService.OnStateChanged
 TavernService.TavernQuestsAdded (1)
-  ServerHost.<Create> lambda
+  SocialComposition.AchievementTavernQuests
 TeamService.RosterChanged (1)
   PassiveSkills.<.ctor> lambda
 TerritoryEscortService.CartStarted (1)
-  ServerHost.<Create> lambda
+  TerritoryComposition.EscortJoined
 TerritoryWarsService.BattleSettled (2)
   TaskService.OnTerritoryBattleSettled
-  ServerHost.<Create> lambda
+  TerritoryComposition.GuildWarScored
 TerritoryWarsService.CampChanged (1)
   TaskService.OnFactionCampChanged
 TerritoryWarsService.CrystalCollected (1)
@@ -456,7 +456,7 @@ TerritoryWarsService.CrystalCollected (1)
 TerritoryWarsService.SiegeSettled (3)
   TerritoryWarsService.SiegeMachinesSettled
   TaskService.OnSiegeSettled
-  ServerHost.<Create> lambda
+  TerritoryComposition.RoyalCityJoined
 TerritoryWarsService.SiegeTracked (1)
   TaskService.OnDungeonRun
 TotemService.Combined (1)

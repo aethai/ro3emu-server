@@ -16,11 +16,11 @@ public sealed class CodeShapeTests
     private const int ManyDependencies = 15;
     private const int MaxLineLength = 200;
 
-    private const int MethodsOver80Lines = 96;
+    private const int MethodsOver80Lines = 94;
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 28;
     private const int RoleNullForgiving = 961;
-    private const int LinesOver200Chars = 93;
+    private const int LinesOver200Chars = 92;
     private const int ExposedHookLists = 0;
     private const int NumericIsOpenCalls = 0;
     private const int NumericStatIndexers = 0;
@@ -106,6 +106,22 @@ public sealed class CodeShapeTests
     [Fact]
     public void TaskDelayCallsInTestsOnlyGoDown() =>
         AssertRatchet(nameof(TaskDelayCallsInTests), TaskDelayCallsInTests, TestsSnapshot.Value.TaskDelays);
+
+    [Fact]
+    public void ServerHostStaysThin()
+    {
+        string path = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server", "ServerHost.cs");
+        int lines = File.ReadAllLines(path).Length;
+        Assert.True(lines <= 150, string.Create(CultureInfo.InvariantCulture,
+            $"ServerHost.cs grew to {lines} lines (limit 150). Add new services to a feature composition module under Composition/."));
+    }
+
+    [Fact]
+    public void GmCommandsDoesNotInjectServiceProvider()
+    {
+        var ctors = typeof(Ro3Emu.Server.Game.GmCommands).GetConstructors();
+        Assert.DoesNotContain(ctors.SelectMany(c => c.GetParameters()), p => p.ParameterType == typeof(IServiceProvider));
+    }
 
     [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()

@@ -6,37 +6,19 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class GmCommands
 {
     /// <summary>GmOpEnum values only the GMCombinationConfig presets use (GMConfig buttons 1030-1032, 3008-3011).</summary>
-    private const int OpSkillQueue = 38, OpJobProfessSkill = 170, OpJobProfessAttr = 171, OpSetSkillWheel = 172, OpEquipWeapon = 173,
+    internal const int OpSkillQueue = 38, OpJobProfessSkill = 170, OpJobProfessAttr = 171, OpSetSkillWheel = 172, OpEquipWeapon = 173,
         OpCreateLvEmblem = 174, OpEquipMount = 175, OpEquipPendant = 176, OpWarRobe = 251, OpSeasonTalent = 261, OpPlayerAsset = 999;
 
     private const int ItemTypeEquip = 5; // ItemConfig._iType
 
-    /// <summary>GM panel ops that only GMCombinationConfig presets use (builds: weapon, mount, pendant, emblem, skills, talents); null when the op is not one of them.</summary>
+    /// <summary>GM panel preset ops that only need GmCommands's core dependencies; feature-specific preset ops register via RegisterOp.</summary>
     private async Task<string?> PresetOpAsync(GameSession s, int op, string[] args) => op switch
     {
         // ["GmPlayerAsset","openallfunc"]: the only subcommand the client data names.
         OpPlayerAsset => await PlayerAssetAsync(s, args),
-        // ["GmjobProfessSkill","101"] / ["GmjobProfessAttr","101"]: a JobProfessConfig build (school) id.
-        OpJobProfessSkill => await services.GetRequiredService<SkillService>().GmProfessionSkillsAsync(s, Profession(args[0])),
+        // ["GmjobProfessAttr","101"]: a JobProfessConfig build (school) id.
         OpJobProfessAttr => await character.SetProfessionStatsAsync(s, Profession(args[0])),
-        // ["GmsetSkillWheel", six SkillConfig row ids] and ["GmskillQueue", skill group ids...].
-        OpSetSkillWheel => await services.GetRequiredService<SkillService>().GmSkillBarAsync(s, [.. args.Select(L)]),
-        OpSkillQueue => await services.GetRequiredService<SkillService>().GmSkillQueueAsync(s, [.. args.Select(I)]),
         OpEquipWeapon => await EquipAsync(s, I(args[0])),
-        // ["GmcreateLvEmblem", item, level].
-        OpCreateLvEmblem => await services.GetRequiredService<EmblemService>().GmCreateAsync(s, I(args[0]), args.Length > 1 ? I(args[1]) : 0),
-        // ["GmequipMount", CartRemouldTable id, "1" (ride)?] and ["GmequipPendant", CartRemouldTable id].
-        OpEquipMount => await services.GetRequiredService<CareerSpecialService>().GmLeaseAsync(s, L(args[0]), mount: true,
-            ride: args.Length > 1 && args[1] == "1"),
-        OpEquipPendant => await services.GetRequiredService<CareerSpecialService>().GmLeaseAsync(s, L(args[0]), mount: false, ride: false),
-        // ["GmseasonTalent","upgradetree", tree].
-        OpSeasonTalent => args.Length > 1 && args[0].Equals("upgradetree", StringComparison.OrdinalIgnoreCase)
-            ? await services.GetRequiredService<SeasonTalentService>().GmUpgradeTreeAsync(s, L(args[1]))
-            : $"GmSeasonTalent {string.Join(',', args)}: only upgradetree <tree> is known (the presets' one subcommand).",
-        // ["251","lightupallappearance"].
-        OpWarRobe => args.Length > 0 && args[0].Equals("lightupallappearance", StringComparison.OrdinalIgnoreCase)
-            ? await services.GetRequiredService<WardrobeService>().GmLightUpAllAsync(s)
-            : $"GMWarRobe {string.Join(',', args)}: only lightupallappearance is known (the presets' one subcommand).",
         _ => null,
     };
 
@@ -44,7 +26,7 @@ public sealed partial class GmCommands
     /// A JobProfessConfig id as the client reads it: its _iProfessionID keys the recommended stats and skills
     /// (Lua_CFG_JobProfessConfig.GetProfessionId before JobProfessPointConfig / JobProfessSkillConfig).
     /// </summary>
-    private long Profession(string arg) =>
+    internal long Profession(string arg) =>
         JobProfessConfig.Get(data, L(arg)) is { } build ? build.ProfessionId : throw new ArgumentException($"no JobProfessConfig {arg}");
 
     /// <summary>
