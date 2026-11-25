@@ -20,7 +20,7 @@ namespace Ro3Emu.Server.Game;
 /// (LC_MonthCardHelper.JustIsUpperLimit); the pass only while the open pass is not premium and its item is not owned;
 /// the pass gift token while none is owned, once per game day.
 /// </summary>
-public sealed partial class NewActivityService
+public sealed partial class ActivityPassService
 {
     public const uint CreateOrder = 2001, PayResult = 2002, FirstRechargeAward = 2003, FirstRechargeUpdate = 2004;
 
@@ -103,7 +103,7 @@ public sealed partial class NewActivityService
         if (priced.Result != 0) return (priced.Result, 0);
         var runtime = CloneRuntime(session);
         runtime.Purchases[key] = new PurchaseRecord { Total = bought.Total + 1, Day = day, DayCount = today + 1 };
-        int result = await CommitAsync(session, session.NewActivities.Clone(), extra: priced.Grants, runtime: runtime,
+        int result = await _activities.CommitAsync(session, session.NewActivities.Clone(), extra: priced.Grants, runtime: runtime,
             source: "purchase/" + order);
         if (result != 0) return (result, 0);
         await ReconcilePassAsync(session);

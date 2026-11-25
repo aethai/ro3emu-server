@@ -5,16 +5,16 @@ using Ro3Emu.Server.Data;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Activity 199/5054 MonthCard, using the two ProductConfig item entitlements.</summary>
-public sealed partial class NewActivityService
+public sealed partial class ActivityPassService
 {
-    private void InitializeMonthCard(GameSession session, JsonElement row, PlayerActivityInfo info)
+    internal void InitializeMonthCard(GameSession session, JsonElement row, PlayerActivityInfo info)
     {
         if (GameData.Int(row, "_iActivityType") != 21) return;
         info.ActivityParam ??= new PlayerActivityParam();
         info.ActivityParam.MonthCard ??= new DBMonthCardInfo();
     }
 
-    private async Task<bool> HandleMonthCardCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    internal async Task<bool> HandleMonthCardCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
     {
         if (req.GainMonthCardDailyAward == null) return false;
         res.GainMonthCardDailyAward = new GainMonthCardDailyAwardResp { Req = req.GainMonthCardDailyAward.Clone() };
@@ -48,12 +48,12 @@ public sealed partial class NewActivityService
             next.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward = true;
             nextRuntime.MonthCards[id] = new MonthCardRuntime { ClaimedDay = day };
         }
-        return await CommitAsync(session, next, groups, runtime: nextRuntime,
+        return await _activities.CommitAsync(session, next, groups, runtime: nextRuntime,
             source: $"month-card/claim/{day}/{string.Join(',', req.MonthCardId.Order())}");
     }
 
     /// <summary>Convert owned 701/702 once and advance each card at the realm-local day boundary (inferred).</summary>
-    private async Task ReconcileMonthCardAsync(GameSession session)
+    internal async Task ReconcileMonthCardAsync(GameSession session)
     {
         if (session.NewActivities == null || session.ActivityRuntime == null || ActivityError(session, 199, 21, allowInitializing: true) != 0) return;
         foreach (var row in _data.Table("MonthCardConfig").Values)
@@ -87,12 +87,12 @@ public sealed partial class NewActivityService
                 MonthCardId = id, ExpireTs = newExpiry, LastDays = lastDays, DayAward = dayAward,
             };
             var costs = available > 0 ? new[] { (Entry: token, Count: available) } : [];
-            if (await CommitAsync(session, next, costs: costs, runtime: nextRuntime,
+            if (await _activities.CommitAsync(session, next, costs: costs, runtime: nextRuntime,
                 source: $"month-card/convert/{id}/{newExpiry}") != 0) return;
         }
     }
 
-    private long StartOfLocalDay(long dayNumber)
+    internal long StartOfLocalDay(long dayNumber)
     {
         DateTime date = DateOnly.FromDayNumber(checked((int)dayNumber)).ToDateTime(TimeOnly.MinValue);
         return new DateTimeOffset(date, _activityClock.LocalTimeZone.GetUtcOffset(date)).ToUnixTimeSeconds();

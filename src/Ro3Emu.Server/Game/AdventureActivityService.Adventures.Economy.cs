@@ -6,9 +6,9 @@ using Romsg;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
-    private EconomyAsset AdventureAsset(int entry) => _data.Row("ItemConfig", entry) is { } row
+    internal EconomyAsset AdventureAsset(int entry) => _data.Row("ItemConfig", entry) is { } row
         ? new(GameData.Int(row, "_iType") == 1 ? EconomyAssetKind.Currency : EconomyAssetKind.Item, entry)
         : throw new InvalidOperationException($"Adventure economy entry {entry} is not configured.");
 
@@ -19,7 +19,7 @@ public sealed partial class NewActivityService
         Action<RoleItemPlanBuilder>? persist = null, bool stateLockHeld = false,
         Func<Task>? beforeSync = null, Action? committed = null, string? journeySource = null,
         [CallerMemberName] string command = "") =>
-        CommitAsync(session, next, awardIds, costs, extra, runtime, persist, stateLockHeld, beforeSync,
+        _activities.CommitAsync(session, next, awardIds, costs, extra, runtime, persist, stateLockHeld, beforeSync,
             committed: committed, journeySource: journeySource,
             economy: journeySource == null ? new EscrowEconomyIntent("activity/adventure/" + command,
                 session.Account ?? "", session.Role?.Id ?? 0) : null);

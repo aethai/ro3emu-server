@@ -4,7 +4,7 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
     private const int SouthernMorroc = 10522, MorrocPhase = 102;
     private const int MorrocConch = 8000004, MorrocPillar = 8000312;

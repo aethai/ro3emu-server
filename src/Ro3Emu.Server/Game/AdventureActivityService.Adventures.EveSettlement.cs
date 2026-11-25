@@ -11,13 +11,13 @@ public sealed partial class ActivityRuntimeState
     public long EveSettledCycleStart { get; set; }
 }
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
     /// <summary>
     /// Settle the saved Season Eve cycle before RefreshCalendar replaces its timestamps.
     /// ActivityGate is held, including on login before ActivitiesReady becomes true.
     /// </summary>
-    private async Task SettleEveExpiredAsync(GameSession session, DeadlineLease? scheduled = null)
+    internal async Task SettleEveExpiredAsync(GameSession session, DeadlineLease? scheduled = null)
     {
         // Settlement ownership survives a replacement of this service's timer; only attachment/role changes abort it.
         var lease = scheduled is { } due

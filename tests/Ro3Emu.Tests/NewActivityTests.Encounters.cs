@@ -80,7 +80,7 @@ public sealed partial class NewActivityTests
         {
             var dummy = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits()
                 .OfType<MonsterUnit>().Single(m => m.InstanceId == instance)));
-            await OnLoop(() => { Session(bot).SkillCds.Clear(); return Task.CompletedTask; });
+            await OnLoop(() => { Session(bot).SkillCds.Clear(); _clock.AdvanceSeconds(2); return Task.CompletedTask; });
             await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = dummy.Pos, BStop = true, SpeedRate = 1 });
             await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = dummy.Uid });
             Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -94,7 +94,6 @@ public sealed partial class NewActivityTests
             for (var until = DateTime.UtcNow.AddSeconds(5); dummy.Hp != dummy.Template.MaxHp && DateTime.UtcNow < until;) await Task.Delay(10);
             Assert.Equal(dummy.Template.MaxHp, dummy.Hp);
             await bot.SendGameAsync(CombatService.SkillInterrupt, new NullArg());
-            await Task.Delay(600); // a swing cancelled by a move holds the next one (CombatService.CancelCastAsync)
         }
         await bot.SendGameAsync(DungeonService.Enter, new EnterDungeonReq { SceneEntry = 2100009 });
         Assert.Equal(0, (await Next(bot, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);

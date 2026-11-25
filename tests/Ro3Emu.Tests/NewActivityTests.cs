@@ -43,6 +43,7 @@ public sealed partial class NewActivityTests : IAsyncLifetime
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.PlayBook = 101; o.SeasonStart = "2026-10-05";
         }, _clock);
+        SureHitRolls.Install(_app);
         await _app.StartAsync();
         _http = $"http://127.0.0.1:{httpPort}";
     }

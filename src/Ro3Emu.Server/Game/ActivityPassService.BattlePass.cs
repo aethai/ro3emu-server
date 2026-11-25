@@ -8,7 +8,7 @@ using Ro3Emu.Server.Economy;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>82976 BattlePass activity 200/201/9201 (clientB LC_BattlePassHelper.lua).</summary>
-public sealed partial class NewActivityService
+public sealed partial class ActivityPassService
 {
     private static readonly long[] PassIds = [200, 201, 9201];
 
@@ -28,7 +28,7 @@ public sealed partial class NewActivityService
     /// With Pass:Play a pass opens only once the pass before it is at its last level. Both fill
     /// from the same currency, and the server's open windows never end, so together they would pay every level twice.
     /// </summary>
-    private bool PassTurnReached(GameSession session, long activityId, DBNewActivityInfo? state)
+    internal bool PassTurnReached(GameSession session, long activityId, DBNewActivityInfo? state)
     {
         if (!_passPlay || PassBefore(activityId) is not long before || PassConfig(before) is not { } config) return true;
         var infos = (state ?? session.NewActivities)?.ActivityInfo;
@@ -36,14 +36,14 @@ public sealed partial class NewActivityService
             && info.ActivityParam?.BattlePass is { } pass && pass.Level >= GameData.Int(config, "_iMaxLevel");
     }
 
-    private void InitializePass(GameSession session, JsonElement row, PlayerActivityInfo info)
+    internal void InitializePass(GameSession session, JsonElement row, PlayerActivityInfo info)
     {
         if (GameData.Int(row, "_iActivityType") != 23) return;
         info.ActivityParam ??= new PlayerActivityParam();
         info.ActivityParam.BattlePass ??= new PlayerActivityBattlePass();
     }
 
-    private async Task<bool> HandlePassCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    internal async Task<bool> HandlePassCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
     {
         if (req.BattlePassClaimReward != null)
         {
@@ -117,7 +117,7 @@ public sealed partial class NewActivityService
             try { direct = [.. groups.SelectMany(id => _awards.ResolveDirect(session, id).Grants)]; }
             catch (AwardResolutionException) { return ErrorCodes.RewardMissing; }
         }
-        int result = await CommitAsync(session, next, activityId == 9201 ? null : groups, extra: direct,
+        int result = await _activities.CommitAsync(session, next, activityId == 9201 ? null : groups, extra: direct,
             source: $"pass/claim/{activityId}/{next.ActivityInfo[activityId].CycleStartTime}/{req.RewardType}/{string.Join(',', req.Levels.Order())}");
         if (result == 0) res.ClaimedLevels.Add(req.Levels);
         return result;
@@ -129,7 +129,7 @@ public sealed partial class NewActivityService
         if (session.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass.UnlockPageViewed) return 0;
         var next = session.NewActivities.Clone();
         next.ActivityInfo[activityId].ActivityParam.BattlePass.UnlockPageViewed = true;
-        return await CommitAsync(session, next);
+        return await _activities.CommitAsync(session, next);
     }
 
     private async Task<int> BuyPassLevelAsync(GameSession session, long activityId, BattlePassBuyLevelReq req, BattlePassBuyLevelRes res)
@@ -148,7 +148,7 @@ public sealed partial class NewActivityService
         var updated = next.ActivityInfo[activityId].ActivityParam.BattlePass;
         updated.Level += req.Count;
         updated.BoughtLevelCount += req.Count;
-        int result = await CommitAsync(session, next, costs: [((int)cost[0].Id, (int)amount)],
+        int result = await _activities.CommitAsync(session, next, costs: [((int)cost[0].Id, (int)amount)],
             source: $"pass/buy/{activityId}/{next.ActivityInfo[activityId].CycleStartTime}/{Guid.NewGuid():N}");
         if (result == 0) res.ActualCount = req.Count;
         return result;
@@ -187,7 +187,7 @@ public sealed partial class NewActivityService
                     Recipient = req.TargetPlayerId, Activity = activityId, Token = token,
                     Entitlement = entitlement, Message = req.GiftMessage
                 });
-            result = await CommitAsync(session, session.NewActivities!.Clone(), costs: [(token, 1)],
+            result = await _activities.CommitAsync(session, session.NewActivities!.Clone(), costs: [(token, 1)],
                 persist: delivery.Persist, stateLockHeld: true, economy: economy);
             if (result == 0) delivered = delivery;
         }
@@ -207,7 +207,7 @@ public sealed partial class NewActivityService
     }
 
     /// <summary>Observe actual earned pass currency, keeping already credited EXP when a balance is spent elsewhere (inferred).</summary>
-    private async Task ReconcilePassAsync(GameSession session)
+    internal async Task ReconcilePassAsync(GameSession session)
     {
         if (session.NewActivities == null || session.ActivityRuntime == null) return;
         foreach (long activityId in PassIds)
@@ -261,7 +261,7 @@ public sealed partial class NewActivityService
             nextRuntime.PassProgress[activityId] = new PassProgressRuntime
             { Initialized = true, LastBalance = balance, ActivityInstance = info.ActivityInstance };
             var costs = activate && !_freePremiumPass ? new[] { (Entry: premiumItem, Count: 1) } : [];
-            if (await CommitAsync(session, next, costs: costs, runtime: nextRuntime,
+            if (await _activities.CommitAsync(session, next, costs: costs, runtime: nextRuntime,
                 source: $"pass/activate/{activityId}/{info.ActivityInstance}/{premiumItem}") != 0) return;
         }
     }

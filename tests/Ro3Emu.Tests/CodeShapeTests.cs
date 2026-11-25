@@ -18,7 +18,7 @@ public sealed class CodeShapeTests
 
     private const int MethodsOver80Lines = 94;
     private const int MethodsOver10ParamsInGame = 7;
-    private const int ClassesWith15OrMoreDependencies = 27;
+    private const int ClassesWith15OrMoreDependencies = 26;
     private const int RoleNullForgiving = 961;
     private const int LinesOver200Chars = 92;
     private const int ExposedHookLists = 0;
@@ -31,7 +31,7 @@ public sealed class CodeShapeTests
     private const int PrivateRepoRootHelpersInTests = 0;
     private const int ServerHostCreateOutsideTestServer = 193;
     private const int ClearAllPoolsInTests = 61;
-    private const int TaskDelayCallsInTests = 534;
+    private const int TaskDelayCallsInTests = 533;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;

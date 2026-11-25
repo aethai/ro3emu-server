@@ -28,11 +28,7 @@ public sealed partial class NewActivityService
     private readonly CharacterService _character;
     private readonly FunctionService _functions;
     private readonly RoleStore _roles;
-    private readonly AccountStore _accounts;
-    private readonly ItemStore _items;
-    private readonly MailService _mail;
     private readonly SeasonService _seasons;
-    private readonly TimeProvider _clock;
     private readonly ActivityClock _activityClock;
     private readonly AwardService _awards;
     private readonly TaskService _tasks;
@@ -41,63 +37,111 @@ public sealed partial class NewActivityService
     private readonly Deadlines _deadlines;
     private readonly LifeJobService _life;
     internal ExplorationNoteDrops NoteDrops { get; }
-    private readonly SceneService _scene;
-    private readonly Maps.WorldData _worldData;
-    private readonly InstanceService _instances;
-    private readonly DungeonService _dungeons;
     private readonly PronteraDefenseService _defense;
-    private readonly TeamService _teams;
-    private readonly bool _freePremiumPass, _passPlay, _freeProducts;
-    private readonly int _freeTopUpsPerDay;
     private readonly ILogger<NewActivityService> _log;
     private readonly HashSet<(GameSession Session, long Attachment)> _queued = [];
-    private long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
+    private TimeProvider _clock => _loop.Time;
+    internal long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
+
+    internal GameData GameData => _data;
+    internal CharacterService Character => _character;
+    internal FunctionService Functions => _functions;
+    internal RoleStore Roles => _roles;
+    internal SeasonService Seasons => _seasons;
+    internal TimeProvider Clock => _clock;
+    internal ActivityClock ActivityClock => _activityClock;
+    internal AwardService Awards => _awards;
+    internal TaskService Tasks => _tasks;
+    internal SessionRegistry Sessions => _sessions;
+    internal GameLoop Loop => _loop;
+    internal Deadlines Deadlines => _deadlines;
+    internal ILogger<NewActivityService> Log => _log;
+
+    internal AdventureActivityService Adventures { get; private set; } = null!;
+    internal ActivityPassService Passes { get; private set; } = null!;
+    internal void BindAdventures(AdventureActivityService adventures) => Adventures = adventures;
+    internal void BindPass(ActivityPassService passes) => Passes = passes;
+
+    // ---- Adventure, conch, battle pass, month card, and purchase facades ----
+
+    public const uint PassPanelMsg = ActivityPassService.PassPanelMsg;
+    public const uint CreateOrder = ActivityPassService.CreateOrder, PayResult = ActivityPassService.PayResult,
+        FirstRechargeAward = ActivityPassService.FirstRechargeAward, FirstRechargeUpdate = ActivityPassService.FirstRechargeUpdate;
+    internal const int PassExpCurrency = ActivityPassService.PassExpCurrency,
+        NovicePassExpCurrency = ActivityPassService.NovicePassExpCurrency,
+        Liveness = ActivityPassService.Liveness;
+    internal const long DailyTaskBase = ActivityPassService.DailyTaskBase, WeeklyTaskBase = ActivityPassService.WeeklyTaskBase;
+    internal static readonly ActivityPassService.PassChallenge[] DailyChallenges = ActivityPassService.DailyChallenges;
+    internal static readonly ActivityPassService.PassChallenge[] WeeklyChallenges = ActivityPassService.WeeklyChallenges;
+    internal static long TaskIdOf(ActivityPassService.PassChallenge c) => ActivityPassService.TaskIdOf(c);
+    internal static IReadOnlyList<ActivityPassService.PassChallenge> DailyFor(long roleId, long day) => ActivityPassService.DailyFor(roleId, day);
+    internal void PassEvent(GameSession session, (ActivityPassService.PassGoal Goal, long Count)[] progress, long kills = 0,
+        long dungeons = 0, long mvps = 0, long quest = 0) =>
+        Passes.PassEvent(session, progress, kills, dungeons, mvps, quest);
+    public Task PassPanelAsync(GameSession session) => Passes.PassPanelAsync(session);
+    public Task CreateOrderAsync(GameSession session, CreateOrderReq req) => Passes.CreateOrderAsync(session, req);
+    public Task PayResultAsync(GameSession session, PayResultReq req) => Passes.PayResultAsync(session, req);
+    public Task FirstRechargeAwardsAsync(GameSession session) => Passes.FirstRechargeAwardsAsync(session);
+
+    public Task PreSubmitAsync(GameSession session, NewActivityPreSubmitItemReq req) => Adventures.PreSubmitAsync(session, req);
+    public Task PreGetDataAsync(GameSession session, NewActivityPreGetDataReq req) => Adventures.PreGetDataAsync(session, req);
+    public Task PreReceiveAsync(GameSession session, NewActivityPreReceiveRewardReq req) => Adventures.PreReceiveAsync(session, req);
+    public Task FragmentAskAsync(GameSession session, NewActivityFragmentGatherAskReq req) => Adventures.FragmentAskAsync(session, req);
+    public Task FragmentAskFinishedAsync(GameSession session, NewActivityFragmentGatherAskFinishedReq req) => Adventures.FragmentAskFinishedAsync(session, req);
+    public Task FragmentCraftAsync(GameSession session, NewActivityFragmentGatherCraftReq req) => Adventures.FragmentCraftAsync(session, req);
+    public Task FragmentProgressAsync(GameSession session, NewActivityFragmentGatherProgressReq req) => Adventures.FragmentProgressAsync(session, req);
+    public Task FragmentSendAsync(GameSession session, NewActivityFragmentGatherSendReq req) => Adventures.FragmentSendAsync(session, req);
+    public Task WorldFillAsync(GameSession session, WorldExplorationFillPhaseNodeReq req) => Adventures.WorldFillAsync(session, req);
+    internal long? TreasureOutcomeForTest { get => Adventures.TreasureOutcomeForTest; set => Adventures.TreasureOutcomeForTest = value; }
+    internal static long ConchUid(long map, int point) => AdventureActivityService.ConchUid(map, point);
+    internal Task<bool> TryConchAsync(GameSession session, NpcInteractionReq req) => Adventures.TryConchAsync(session, req);
+    internal Task ConchMovedAsync(GameSession session) => Adventures.ConchMovedAsync(session);
+    internal Task InterruptConchAsync(GameSession session) => Adventures.InterruptConchAsync(session);
+    internal static bool RecordConch(DBWorldExploration state, long map, int point) => AdventureActivityService.RecordConch(state, map, point);
+    internal IEnumerable<Maps.SpawnPoint> ConchPlacements(Maps.MapWorld world) => Adventures.ConchPlacements(world);
+    internal static bool MorrocQuotaReached(DBWorldExplorationNpcCollectCount collected, long limit) =>
+        AdventureActivityService.MorrocQuotaReached(collected, limit);
+
+    private const int ExplorationActivity = AdventureActivityService.ExplorationActivity;
+    private const int WorldExplorationType = AdventureActivityService.WorldExplorationType;
+    private void InitializeAdventure(GameSession session, JsonElement row, PlayerActivityInfo info) => Adventures.InitializeAdventure(session, row, info);
+    private Task<bool> HandleAdventureCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res) =>
+        Adventures.HandleAdventureCommonAsync(session, req, res);
+    private bool UpdateChapterProgress(GameSession session, DBWorldExplorationPhase phase) => Adventures.UpdateChapterProgress(session, phase);
+    private bool WorldPhaseWindow(GameSession session, JsonElement row, out long start, out long end) =>
+        Adventures.WorldPhaseWindow(session, row, out start, out end);
+    private Task<int> ClaimAdventureAsync(GameSession session, NewActivityGetRewardCommonReq req) => Adventures.ClaimAdventureAsync(session, req);
+    private Task SettleEveExpiredAsync(GameSession session, DeadlineLease? scheduled = null) => Adventures.SettleEveExpiredAsync(session, scheduled);
+    private Task SyncTreasureAsync(GameSession session, DeadlineLease lease) => Adventures.SyncTreasureAsync(session, lease);
+    private Task SyncConchesAsync(GameSession session) => Adventures.SyncConchesAsync(session);
+    private bool PassTurnReached(GameSession session, long activityId, DBNewActivityInfo? state) => Passes.PassTurnReached(session, activityId, state);
+    private void InitializePass(GameSession session, JsonElement row, PlayerActivityInfo info) => Passes.InitializePass(session, row, info);
+    private Task<bool> HandlePassCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res) =>
+        Passes.HandlePassCommonAsync(session, req, res);
+    private Task ReconcilePassAsync(GameSession session) => Passes.ReconcilePassAsync(session);
+    private void InitializeMonthCard(GameSession session, JsonElement row, PlayerActivityInfo info) => Passes.InitializeMonthCard(session, row, info);
+    private Task<bool> HandleMonthCardCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res) =>
+        Passes.HandleMonthCardCommonAsync(session, req, res);
+    private Task ReconcileMonthCardAsync(GameSession session) => Passes.ReconcileMonthCardAsync(session);
+    private long StartOfLocalDay(long dayNumber) => Passes.StartOfLocalDay(dayNumber);
 
     public NewActivityService(GameData data, CharacterService character, FunctionService functions, RoleStore roles,
-        AccountStore accounts, ItemStore items, MailService mail, SeasonService seasons, TimeProvider clock, ActivityClock activityClock,
-        AwardService awards, TaskService tasks, SessionRegistry sessions, GameLoop loop, SceneService scene, Maps.WorldData worldData,
-        InstanceService instances, DungeonService dungeons, PronteraDefenseService defense, CombatService combat,
-        Deadlines deadlines, TeamService teams, MvpService mvps, ChatService chat, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
-        LifeJobService life, RewardService rewards, ILogger<NewActivityService> log)
+        SeasonService seasons, ActivityClock activityClock, AwardService awards, TaskService tasks,
+        SessionRegistry sessions, GameLoop loop, PronteraDefenseService defense, Deadlines deadlines,
+        LifeJobService life, ILogger<NewActivityService> log)
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
-        this._accounts = accounts; this._items = items; this._mail = mail; this._seasons = seasons; this._clock = clock;
-        this._activityClock = activityClock; this._awards = awards; this._tasks = tasks; this._sessions = sessions;
-        this._loop = loop; this._scene = scene; this._instances = instances; this._defense = defense; this._log = log;
-        this._deadlines = deadlines;
-        this._worldData = worldData;
-        _life = life;
-        NoteDrops = new(data, seasons, clock, s => ActivityError(s, ExplorationActivity, WorldExplorationType) == 0);
+        this._seasons = seasons; this._activityClock = activityClock; this._awards = awards; this._tasks = tasks;
+        this._sessions = sessions; this._loop = loop; this._defense = defense; this._deadlines = deadlines;
+        this._life = life; this._log = log;
+        NoteDrops = new(data, seasons, _clock, s => ActivityError(s, ExplorationActivity, WorldExplorationType) == 0);
         life.ExplorationNotes = NoteDrops;
         life.ProjectedRestrictions.Subscribe(NoteDrops.Remaining);
-        rewards.ExplorationNotes = NoteDrops;
-        rewards.SyncExplorationRestriction = life.SyncRestrictionsAsync;
-        this._dungeons = dungeons;
-        this._teams = teams;
-        _freePremiumPass = options.Value.Pass.FreePremium;
-        _passPlay = options.Value.Pass.Play;
-        _freeProducts = options.Value.Shop.FreeProducts;
-        _freeTopUpsPerDay = options.Value.Shop.FreeTopUpsPerDay;
-        if (_passPlay) InitializePassPlay(combat, dungeons, mvps, tasks, chat);
-        dungeons.JourneyWon = JourneyDungeonWonAsync;
-        dungeons.CanStageJourneyVictory = session => ActivityError(session, 112, 15) == 0;
-        InitializeAdventureServices(accounts, items);
-        character.StartTreasureMap = StartTreasureMapAsync;
-        combat.Killed.Subscribe(OnTreasureMonsterKilledAsync);
-        combat.EventDamageRecorded.Subscribe(OnTreasureMonsterDamagedAsync);
-        scene.TreasureComplete = CompleteTreasureHuntAsync;
-        scene.Loaded.Subscribe(OnTreasureSceneLoadedAsync);
-        combat.PlayerDied.Subscribe(InterruptConchAsync);
-        scene.AfterTeleport = ConchMovedAsync;
-        scene.Loaded.Subscribe(ReloadConchesAsync);
-        scene.Resync.Subscribe(ReloadConchesAsync);
-        scene.Leaving.Subscribe(LeaveConchesAsync);
         character.StateChanged.Subscribe(QueueRefresh);
         character.ProgressHandlers.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
         seasons.ScheduleChanged.Subscribe(InvalidateAllSchedules);
         tasks.OpenActivityTaskGroups = OpenTaskGroups;
-        tasks.QuestDelivered.Subscribe(OnExplorationQuestDelivered);
     }
 
     /// <summary>TimeLimitConfig 18 "refreshTaskDaily" (_iTimeLimitId 1013): a _kTaskRenew group renewed every game day.</summary>
@@ -122,7 +166,7 @@ public sealed partial class NewActivityService
     }
 
     private IEnumerable<JsonElement> Definitions => _data.Table("NewActivityConfig").Values;
-    private int Playbook(GameSession session) => (int)(session.SeasonState?.PlayBookId ?? _seasons.PlayBook);
+    internal int Playbook(GameSession session) => (int)(session.SeasonState?.PlayBookId ?? _seasons.PlayBook);
     private static bool InBook(JsonElement row, int book) => row.TryGetProperty("_kMultiverseArray", out var ids)
         && ids.ValueKind == JsonValueKind.Array && ids.EnumerateArray().Any(i => GameData.Number(i) is 0 || GameData.Number(i) == book);
 
@@ -212,7 +256,7 @@ public sealed partial class NewActivityService
     }
 
     /// <summary>Recompute schedule/gates and distinct login days on the server's advancing clock.</summary>
-    private void RefreshCalendar(GameSession session, DBNewActivityInfo state)
+    internal void RefreshCalendar(GameSession session, DBNewActivityInfo state)
     {
         int book = Playbook(session);
         long now = Now;
@@ -263,7 +307,7 @@ public sealed partial class NewActivityService
         }
     }
 
-    private int ActivityError(GameSession session, long activityId, int expectedType = 0, bool allowInitializing = false)
+    internal int ActivityError(GameSession session, long activityId, int expectedType = 0, bool allowInitializing = false)
     {
         if (!allowInitializing && !session.ActivitiesReady || session.Role == null || session.Progress == null || session.NewActivities == null)
             return ErrorCodes.FeatureUnavailable;
@@ -424,10 +468,10 @@ public sealed partial class NewActivityService
             source: $"simple/{activityId}/{next.ActivityInfo[activityId].CycleStartTime}/{rewardId}");
     }
 
-    private static ActivityRuntimeState CloneRuntime(GameSession session) => JsonSerializer.Deserialize<ActivityRuntimeState>(JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime))!;
+    internal static ActivityRuntimeState CloneRuntime(GameSession session) => JsonSerializer.Deserialize<ActivityRuntimeState>(JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime))!;
 
     /// <summary>One source settlement, with source markers committed before any observable success or reward packet.</summary>
-    private async Task<int> CommitAsync(GameSession session, DBNewActivityInfo next, IEnumerable<long>? awardIds = null,
+    internal async Task<int> CommitAsync(GameSession session, DBNewActivityInfo next, IEnumerable<long>? awardIds = null,
         IReadOnlyList<(int Entry, int Count)>? costs = null, IEnumerable<AwardGrant>? extra = null,
         ActivityRuntimeState? runtime = null,
         Action<Ro3Emu.Server.Accounts.Persistence.RoleItemPlanBuilder>? persist = null, bool stateLockHeld = false,
@@ -526,7 +570,7 @@ public sealed partial class NewActivityService
         await SaveCalendarAsync(session, next, before);
     }
 
-    private async Task SyncAsync(GameSession session)
+    internal async Task SyncAsync(GameSession session)
     {
         if (session.NewActivities == null) return;
         var lease = _deadlines.Capture(session);
@@ -607,7 +651,7 @@ public sealed partial class NewActivityService
         await _functions.SyncAsync(session);
     }
 
-    private void QueueRefresh(GameSession session)
+    internal void QueueRefresh(GameSession session)
     {
         if (!session.ActivitiesReady) return;
         if (!_loop.IsOnLoop)
