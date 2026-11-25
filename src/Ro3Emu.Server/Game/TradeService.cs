@@ -239,7 +239,7 @@ public sealed partial class TradeService(
         var config = Eligible(l.Entry);
         return new CCommodityInfo
         {
-            ItemId = l.Entry.ToString(CultureInfo.InvariantCulture), SkuId = l.Sku, SpuId = l.Spu,
+            ItemId = l.Entry.ToString(CultureInfo.InvariantCulture), SkuId = l.Sku, BaseSkuId = l.Sku, SpuId = l.Spu,
             SpuName = config is { } row && row.TryGetProperty("_kSpuName", out var name)
                 && name.ValueKind == JsonValueKind.String ? name.GetString() ?? "" : "",
             // Commodity times are Unix seconds: LC_DAL_Trade._parseCommodity copies them unscaled and the trade cells compare

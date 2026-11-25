@@ -397,6 +397,29 @@ public sealed class WorldCoreTests : IAsyncLifetime
         Assert.Contains(10111, saved.Mapid);
     }
 
+    [ClientDataFact]
+    public async Task MiniMapOnlyIncludesNearbyMonsters()
+    {
+        await using var alice = await InWorld("MiniMapAlice");
+        var s = Player("minimapalice");
+        await ChangeScene(alice, s, 10111);
+        MonsterUnit? near = null, far = null;
+        await Service<GameLoop>().InvokeAsync(() =>
+        {
+            var world = Service<World>();
+            near = s.VisibleUnits.OfType<MonsterUnit>().FirstOrDefault(m => !m.Dead);
+            far = world.UnitsIn(s.WorldScene).OfType<MonsterUnit>().FirstOrDefault(m => !m.Dead && !s.VisibleUnits.Contains(m));
+            return Task.CompletedTask;
+        });
+        Assert.NotNull(near);
+        Assert.NotNull(far);
+        await alice.SendGameAsync(31043, new MiniMapStatus { IsOpen = true });
+        var mini = await Next(alice, WorldCoreService.MiniMap, MiniMapMsg.Parser,
+            p => p.MiniInfo.Any(i => i.Uid == (ulong)s.Role!.Id));
+        Assert.Contains(mini.MiniInfo, i => i.Uid == (ulong)near!.Uid);
+        Assert.DoesNotContain(mini.MiniInfo, i => i.Uid == (ulong)far!.Uid);
+    }
+
     private static string RepoRoot()
     {
         var p = new DirectoryInfo(AppContext.BaseDirectory);
