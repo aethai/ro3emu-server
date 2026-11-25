@@ -175,181 +175,207 @@ internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEco
             .Concat(intent.Changes.Select(x => x.Asset)).Distinct()
             .OrderBy(x => x.Kind).ThenBy(x => x.Id).ThenBy(x => x.Epoch, StringComparer.Ordinal);
         foreach (var asset in assets)
-        {
-            var changes = before.Keys.Concat(after.Keys).Where(x => x.Asset == asset).Distinct()
-                .OrderBy(x => x.Location.Owner.Kind).ThenBy(x => x.Location.Owner.Id, StringComparer.Ordinal)
-                .ThenBy(x => x.Location.Compartment).ThenBy(x => x.Location.Key, StringComparer.Ordinal)
-                .ThenBy(x => x.Location.Instance, StringComparer.Ordinal)
-                .Select(key => new Movement(key.Location, before.GetValueOrDefault(key), after.GetValueOrDefault(key),
-                    inventoryBinds.TryGetValue(key.Location, out long bind) ? bind : null))
-                .ToArray();
-            var realizations = intent.Realizations.Where(x => x.Asset == asset)
-                .Select(x => new MailRealizationRemainder(x)).ToArray();
-            var realizedDestinations = new Dictionary<EconomyLocation, string>();
-            foreach (var realization in realizations)
-            {
-                var sourceMovement = changes.SingleOrDefault(x => x.Location == realization.Value.SourceLocation);
-                if (sourceMovement?.Old?.Quantity != realization.Value.Quantity ||
-                    sourceMovement.New is not null ||
-                    sourceMovement.Old.Fingerprint != realization.Value.AbstractFingerprint)
-                    throw new InvalidOperationException("E03 mail realization does not match its exact abstract attachment.");
-            }
-            long source = Sum(EconomyLegKind.Source), sink = Sum(EconomyLegKind.Sink);
-            long net = 0;
-            foreach (var movement in changes) net = checked(net + movement.Delta);
-            if (net != checked(source - sink))
-                throw new InvalidOperationException($"E03 actual asset delta disagrees with authorized external changes: {asset}.");
-            var negatives = changes.Where(x => x.Delta < 0).Select(x => new Remainder(x, -x.Delta)).ToList();
-            var positives = changes.Where(x => x.Delta > 0).Select(x => new Remainder(x, x.Delta)).ToList();
-            // With both a sink and a source of this asset authorized (a system stall's retire and restock), only the
-            // movements their authorizations may consume explain them: an unrelated transfer of the same asset in the
-            // same operation (a closing player stall's stock to mail) must not count as the retired holding. Those
-            // other movements must then balance as pure transfers.
-            var sinks = intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Sink).ToArray();
-            var sources = intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Source).ToArray();
-            bool both = sinks.Length > 0 && sources.Length > 0;
-            long grossNegative = negatives.Where(x => !both || sinks.Any(a => Eligible(a, x.Move.Location)))
-                .Aggregate(0L, (n, x) => checked(n + x.Quantity));
-            long grossPositive = positives.Where(x => !both || sources.Any(a => Eligible(a, x.Move.Location)))
-                .Aggregate(0L, (n, x) => checked(n + x.Quantity));
-            long overlap = checked(sink - grossNegative);
-            if (overlap != checked(source - grossPositive))
-                throw new InvalidOperationException("E03 external changes disagree with concrete movements.");
-            if (overlap > 0)
-            {
-                foreach (var movement in changes.Where(x => x.Old is not null && x.New is not null &&
-                    intent.Changes.Any(a => a.Asset == asset && a.Kind == EconomyLegKind.Sink && Eligible(a, x.Location)) &&
-                    intent.Changes.Any(a => a.Asset == asset && a.Kind == EconomyLegKind.Source && Eligible(a, x.Location))))
-                {
-                    if (overlap == 0) break;
-                    long amount = Math.Min(overlap, Math.Min(movement.Old!.Quantity, movement.New!.Quantity));
-                    if (amount == 0) continue;
-                    negatives.Add(new Remainder(movement, amount));
-                    positives.Add(new Remainder(movement, amount));
-                    overlap -= amount;
-                }
-                if (overlap != 0) throw new InvalidOperationException("E03 same-location source/sink lacks retained holding.");
-            }
-            foreach (var authorization in intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Sink))
-                Consume(negatives, authorization);
-            foreach (var authorization in intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Source))
-                Consume(positives, authorization);
-            // Preserve exact InvItem transfers before pairing abstract configured grants with resolved stacks.
-            foreach (var debit in negatives.OrderBy(x =>
-                realizations.Any(r => r.Value.SourceLocation == x.Move.Location) ? 1 : 0))
-            {
-                while (debit.Quantity > 0)
-                {
-                    var realization = realizations.FirstOrDefault(x => x.Value.SourceLocation == debit.Move.Location);
-                    if (realization is not null && realization.Quantity == 0)
-                        throw new InvalidOperationException("E03 mail realization exceeded its authorized amount.");
-                    bool Compatible(Remainder credit) => credit.Quantity > 0 &&
-                        credit.Move.Location != debit.Move.Location &&
-                        (asset.Kind != EconomyAssetKind.Item ||
-                         (realization is not null
-                            ? credit.Move.Location.Owner == debit.Move.Location.Owner &&
-                              credit.Move.Location.Compartment == EconomyCompartment.Inventory &&
-                              credit.Move.NewBind == realization.Value.Bind &&
-                              (debit.Move.Old?.Fingerprint == credit.Move.New?.Fingerprint ||
-                               credit.Move.Old is null)
-                            : debit.Move.Old?.Fingerprint == credit.Move.New?.Fingerprint));
-                    // Refunds, reserve release and claims stay with their owner before matching
-                    // cross-owner sale or gift edges of the same denomination.
-                    var credit = realization is not null
-                        ? positives.FirstOrDefault(x => Compatible(x) &&
-                            debit.Move.Old?.Fingerprint == x.Move.New?.Fingerprint)
-                        : null;
-                    credit ??= positives.FirstOrDefault(x => Compatible(x) &&
-                        x.Move.Location.Owner == debit.Move.Location.Owner)
-                        ?? positives.FirstOrDefault(Compatible)
-                        ?? throw new InvalidOperationException("E03 transfer remainder has no matching counterparty.");
-                    long amount = Math.Min(debit.Quantity, credit.Quantity);
-                    if (realization is not null) amount = Math.Min(amount, realization.Quantity);
-                    bool materialized = realization is not null &&
-                        debit.Move.Old?.Fingerprint != credit.Move.New?.Fingerprint;
-                    if (materialized && (credit.Move.Old is not null ||
-                        credit.Move.New?.Quantity != amount || credit.Quantity != amount ||
-                        realizedDestinations.ContainsKey(credit.Move.Location)))
-                        throw new InvalidOperationException("E03 randomized mail attachment must occupy one new destination stack.");
-                    int number = ++edge;
-                    Add(debit.Move, -amount, EconomyLegKind.Transfer, intent.TransferReason, number);
-                    Add(credit.Move, amount, EconomyLegKind.Transfer, intent.TransferReason, number);
-                    if (materialized)
-                    {
-                        realizedDestinations.Add(credit.Move.Location, debit.Move.Old!.Fingerprint);
-                        Add(credit.Move, 0, EconomyLegKind.Metadata, EconomyReason.ItemMetadata, 0);
-                    }
-                    debit.Quantity -= amount; credit.Quantity -= amount;
-                    if (realization is not null) realization.Quantity -= amount;
-                }
-            }
-            if (realizations.Any(x => x.Quantity != 0))
-                throw new InvalidOperationException("E03 mail realization has no complete transfer edge.");
-            if (negatives.Any(x => x.Quantity != 0) || positives.Any(x => x.Quantity != 0))
-                throw new InvalidOperationException("E03 transfer remainder is unbalanced.");
-            foreach (var movement in changes.Where(x => x.Delta == 0 && x.Old?.Fingerprint != x.New?.Fingerprint))
-                Add(movement, 0, EconomyLegKind.Metadata, EconomyReason.ItemMetadata, 0);
-            // A location can have several legs. Preserve a continuous fingerprint chain in their ledger order.
-            foreach (var group in result.Where(x => x.Asset == asset).GroupBy(x => x.Location))
-            {
-                var movement = changes.Single(x => x.Location == group.Key);
-                string? old = movement.Old?.Fingerprint is { Length: > 0 } prior ? prior : null;
-                string? next = movement.New?.Fingerprint is { Length: > 0 } current ? current : null;
-                var positions = group.Select(x => x.LegNumber).ToArray();
-                if (asset.Kind != EconomyAssetKind.Item) continue;
-                string? currentState = old;
-                foreach (int position in positions)
-                {
-                    var leg = result[position];
-                    string? afterState = leg.Kind == EconomyLegKind.Metadata || leg.Delta > 0 ? next : currentState;
-                    if (leg.Kind == EconomyLegKind.Transfer && leg.Delta > 0 &&
-                        realizedDestinations.TryGetValue(group.Key, out var abstractFingerprint))
-                        afterState = abstractFingerprint;
-                    if (position == positions[^1]) afterState = next;
-                    result[position] = leg with { BeforeFingerprint = currentState, AfterFingerprint = afterState };
-                    currentState = afterState;
-                }
-            }
+            BuildAssetLegs(asset, before, after, inventoryBinds, result, ref edge);
+        return result;
+    }
 
-            long Sum(EconomyLegKind kind) => intent.Changes.Where(x => x.Asset == asset && x.Kind == kind)
-                .Aggregate(0L, (sum, x) => checked(sum + x.Quantity));
-            void Consume(List<Remainder> pool, EscrowExternalChange authorization)
+    private void BuildAssetLegs(EconomyAsset asset,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after,
+        IReadOnlyDictionary<EconomyLocation, long> inventoryBinds, List<EconomyLeg> result, ref int edge)
+    {
+        var changes = before.Keys.Concat(after.Keys).Where(x => x.Asset == asset).Distinct()
+            .OrderBy(x => x.Location.Owner.Kind).ThenBy(x => x.Location.Owner.Id, StringComparer.Ordinal)
+            .ThenBy(x => x.Location.Compartment).ThenBy(x => x.Location.Key, StringComparer.Ordinal)
+            .ThenBy(x => x.Location.Instance, StringComparer.Ordinal)
+            .Select(key => new Movement(key.Location, before.GetValueOrDefault(key), after.GetValueOrDefault(key),
+                inventoryBinds.TryGetValue(key.Location, out long bind) ? bind : null))
+            .ToArray();
+        var realizations = intent.Realizations.Where(x => x.Asset == asset)
+            .Select(x => new MailRealizationRemainder(x)).ToArray();
+        foreach (var realization in realizations)
+        {
+            var sourceMovement = changes.SingleOrDefault(x => x.Location == realization.Value.SourceLocation);
+            if (sourceMovement?.Old?.Quantity != realization.Value.Quantity ||
+                sourceMovement.New is not null ||
+                sourceMovement.Old.Fingerprint != realization.Value.AbstractFingerprint)
+                throw new InvalidOperationException("E03 mail realization does not match its exact abstract attachment.");
+        }
+        var (negatives, positives) = ConsumeExternalChanges(asset, changes, result);
+        var realizedDestinations = PairTransfers(asset, negatives, positives, realizations, result, ref edge);
+        foreach (var movement in changes.Where(x => x.Delta == 0 && x.Old?.Fingerprint != x.New?.Fingerprint))
+            AddLeg(result, asset, movement, 0, EconomyLegKind.Metadata, EconomyReason.ItemMetadata, 0);
+        ChainAssetFingerprints(asset, changes, realizedDestinations, result);
+    }
+
+    private (List<Remainder> Negatives, List<Remainder> Positives) ConsumeExternalChanges(EconomyAsset asset,
+        Movement[] changes, List<EconomyLeg> result)
+    {
+        long Sum(EconomyLegKind kind) => intent.Changes.Where(x => x.Asset == asset && x.Kind == kind)
+            .Aggregate(0L, (sum, x) => checked(sum + x.Quantity));
+        long source = Sum(EconomyLegKind.Source), sink = Sum(EconomyLegKind.Sink);
+        long net = 0;
+        foreach (var movement in changes) net = checked(net + movement.Delta);
+        if (net != checked(source - sink))
+            throw new InvalidOperationException($"E03 actual asset delta disagrees with authorized external changes: {asset}.");
+        var negatives = changes.Where(x => x.Delta < 0).Select(x => new Remainder(x, -x.Delta)).ToList();
+        var positives = changes.Where(x => x.Delta > 0).Select(x => new Remainder(x, x.Delta)).ToList();
+        // With both a sink and a source of this asset authorized (a system stall's retire and restock), only the
+        // movements their authorizations may consume explain them: an unrelated transfer of the same asset in the
+        // same operation (a closing player stall's stock to mail) must not count as the retired holding. Those
+        // other movements must then balance as pure transfers.
+        var sinks = intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Sink).ToArray();
+        var sources = intent.Changes.Where(x => x.Asset == asset && x.Kind == EconomyLegKind.Source).ToArray();
+        bool both = sinks.Length > 0 && sources.Length > 0;
+        long grossNegative = negatives.Where(x => !both || sinks.Any(a => IsEligible(a, x.Move.Location)))
+            .Aggregate(0L, (n, x) => checked(n + x.Quantity));
+        long grossPositive = positives.Where(x => !both || sources.Any(a => IsEligible(a, x.Move.Location)))
+            .Aggregate(0L, (n, x) => checked(n + x.Quantity));
+        long overlap = checked(sink - grossNegative);
+        if (overlap != checked(source - grossPositive))
+            throw new InvalidOperationException("E03 external changes disagree with concrete movements.");
+        if (overlap > 0)
+        {
+            foreach (var movement in changes.Where(x => x.Old is not null && x.New is not null &&
+                sinks.Any(a => IsEligible(a, x.Location)) && sources.Any(a => IsEligible(a, x.Location))))
             {
-                long quantity = authorization.Quantity;
-                foreach (var remainder in pool.Where(x => Eligible(authorization, x.Move.Location)))
-                {
-                    if (quantity == 0) break;
-                    long amount = Math.Min(quantity, remainder.Quantity);
-                    if (amount == 0) continue;
-                    Add(remainder.Move, authorization.Kind == EconomyLegKind.Sink ? -amount : amount,
-                        authorization.Kind, authorization.Reason, 0);
-                    remainder.Quantity -= amount; quantity -= amount;
-                }
-                if (quantity != 0) throw new InvalidOperationException("E03 authorized amount exceeds concrete holding delta.");
+                if (overlap == 0) break;
+                long amount = Math.Min(overlap, Math.Min(movement.Old!.Quantity, movement.New!.Quantity));
+                if (amount == 0) continue;
+                negatives.Add(new Remainder(movement, amount));
+                positives.Add(new Remainder(movement, amount));
+                overlap -= amount;
             }
-            void Add(Movement movement, long delta, EconomyLegKind kind, EconomyReason reason, int number)
-                => result.Add(new EconomyLeg(0, intent.OperationId, result.Count, kind, reason, asset,
-                    movement.Location, delta, number,
-                    BeforeFingerprint: asset.Kind == EconomyAssetKind.Item ? movement.Old?.Fingerprint : null,
-                    AfterFingerprint: asset.Kind == EconomyAssetKind.Item ? movement.New?.Fingerprint : null,
-                    SourceKey: intent.SourceKey));
-            static bool Eligible(EscrowExternalChange authorization, EconomyLocation location)
+            if (overlap != 0) throw new InvalidOperationException("E03 same-location source/sink lacks retained holding.");
+        }
+        foreach (var authorization in sinks) ConsumePool(asset, negatives, authorization, result);
+        foreach (var authorization in sources) ConsumePool(asset, positives, authorization, result);
+        return (negatives, positives);
+    }
+
+    private void ConsumePool(EconomyAsset asset, List<Remainder> pool, EscrowExternalChange authorization,
+        List<EconomyLeg> result)
+    {
+        long quantity = authorization.Quantity;
+        foreach (var remainder in pool.Where(x => IsEligible(authorization, x.Move.Location)))
+        {
+            if (quantity == 0) break;
+            long amount = Math.Min(quantity, remainder.Quantity);
+            if (amount == 0) continue;
+            AddLeg(result, asset, remainder.Move, authorization.Kind == EconomyLegKind.Sink ? -amount : amount,
+                authorization.Kind, authorization.Reason, 0);
+            remainder.Quantity -= amount; quantity -= amount;
+        }
+        if (quantity != 0) throw new InvalidOperationException("E03 authorized amount exceeds concrete holding delta.");
+    }
+
+    private Dictionary<EconomyLocation, string> PairTransfers(EconomyAsset asset, List<Remainder> negatives,
+        List<Remainder> positives, MailRealizationRemainder[] realizations, List<EconomyLeg> result, ref int edge)
+    {
+        var realizedDestinations = new Dictionary<EconomyLocation, string>();
+        // Preserve exact InvItem transfers before pairing abstract configured grants with resolved stacks.
+        foreach (var debit in negatives.OrderBy(x =>
+            realizations.Any(r => r.Value.SourceLocation == x.Move.Location) ? 1 : 0))
+        {
+            while (debit.Quantity > 0)
             {
-                if (authorization.Compartment is { } part && location.Compartment != part ||
-                    authorization.Owner is { } owner && location.Owner != owner) return false;
-                return authorization.Reason switch
+                var realization = realizations.FirstOrDefault(x => x.Value.SourceLocation == debit.Move.Location);
+                if (realization is not null && realization.Quantity == 0)
+                    throw new InvalidOperationException("E03 mail realization exceeded its authorized amount.");
+                bool Compatible(Remainder credit) => credit.Quantity > 0 &&
+                    credit.Move.Location != debit.Move.Location &&
+                    (asset.Kind != EconomyAssetKind.Item ||
+                     (realization is not null
+                        ? credit.Move.Location.Owner == debit.Move.Location.Owner &&
+                          credit.Move.Location.Compartment == EconomyCompartment.Inventory &&
+                          credit.Move.NewBind == realization.Value.Bind &&
+                          (debit.Move.Old?.Fingerprint == credit.Move.New?.Fingerprint || credit.Move.Old is null)
+                        : debit.Move.Old?.Fingerprint == credit.Move.New?.Fingerprint));
+                // Refunds, reserve release and claims stay with their owner before matching
+                // cross-owner sale or gift edges of the same denomination.
+                var credit = realization is not null
+                    ? positives.FirstOrDefault(x => Compatible(x) &&
+                        debit.Move.Old?.Fingerprint == x.Move.New?.Fingerprint)
+                    : null;
+                credit ??= positives.FirstOrDefault(x => Compatible(x) &&
+                    x.Move.Location.Owner == debit.Move.Location.Owner)
+                    ?? positives.FirstOrDefault(Compatible)
+                    ?? throw new InvalidOperationException("E03 transfer remainder has no matching counterparty.");
+                long amount = Math.Min(debit.Quantity, credit.Quantity);
+                if (realization is not null) amount = Math.Min(amount, realization.Quantity);
+                bool materialized = realization is not null &&
+                    debit.Move.Old?.Fingerprint != credit.Move.New?.Fingerprint;
+                if (materialized && (credit.Move.Old is not null ||
+                    credit.Move.New?.Quantity != amount || credit.Quantity != amount ||
+                    realizedDestinations.ContainsKey(credit.Move.Location)))
+                    throw new InvalidOperationException("E03 randomized mail attachment must occupy one new destination stack.");
+                int number = ++edge;
+                AddLeg(result, asset, debit.Move, -amount, EconomyLegKind.Transfer, intent.TransferReason, number);
+                AddLeg(result, asset, credit.Move, amount, EconomyLegKind.Transfer, intent.TransferReason, number);
+                if (materialized)
                 {
-                    EconomyReason.MailExpiry => location.Compartment is EconomyCompartment.Mail or EconomyCompartment.LegacyMail,
-                    EconomyReason.SystemRetire => location.Compartment == EconomyCompartment.Stall &&
-                        location.Owner.Kind == EconomyOwnerKind.System,
-                    EconomyReason.SystemRestock => location.Compartment == EconomyCompartment.Stall &&
-                        location.Owner.Kind == EconomyOwnerKind.System,
-                    EconomyReason.GuildMarketCapDiscard => location.Compartment is EconomyCompartment.GuildMarket or EconomyCompartment.Recovery,
-                    _ => true
-                };
+                    realizedDestinations.Add(credit.Move.Location, debit.Move.Old!.Fingerprint);
+                    AddLeg(result, asset, credit.Move, 0, EconomyLegKind.Metadata, EconomyReason.ItemMetadata, 0);
+                }
+                debit.Quantity -= amount; credit.Quantity -= amount;
+                if (realization is not null) realization.Quantity -= amount;
             }
         }
-        return result;
+        if (realizations.Any(x => x.Quantity != 0))
+            throw new InvalidOperationException("E03 mail realization has no complete transfer edge.");
+        if (negatives.Any(x => x.Quantity != 0) || positives.Any(x => x.Quantity != 0))
+            throw new InvalidOperationException("E03 transfer remainder is unbalanced.");
+        return realizedDestinations;
+    }
+
+    private static void ChainAssetFingerprints(EconomyAsset asset, Movement[] changes,
+        Dictionary<EconomyLocation, string> realizedDestinations, List<EconomyLeg> result)
+    {
+        if (asset.Kind != EconomyAssetKind.Item) return;
+        // A location can have several legs. Preserve a continuous fingerprint chain in their ledger order.
+        foreach (var group in result.Where(x => x.Asset == asset).GroupBy(x => x.Location))
+        {
+            var movement = changes.Single(x => x.Location == group.Key);
+            string? old = movement.Old?.Fingerprint is { Length: > 0 } prior ? prior : null;
+            string? next = movement.New?.Fingerprint is { Length: > 0 } current ? current : null;
+            var positions = group.Select(x => x.LegNumber).ToArray();
+            string? currentState = old;
+            foreach (int position in positions)
+            {
+                var leg = result[position];
+                string? afterState = leg.Kind == EconomyLegKind.Metadata || leg.Delta > 0 ? next : currentState;
+                if (leg.Kind == EconomyLegKind.Transfer && leg.Delta > 0 &&
+                    realizedDestinations.TryGetValue(group.Key, out var abstractFingerprint))
+                    afterState = abstractFingerprint;
+                if (position == positions[^1]) afterState = next;
+                result[position] = leg with { BeforeFingerprint = currentState, AfterFingerprint = afterState };
+                currentState = afterState;
+            }
+        }
+    }
+
+    private void AddLeg(List<EconomyLeg> result, EconomyAsset asset, Movement movement, long delta,
+        EconomyLegKind kind, EconomyReason reason, int number) =>
+        result.Add(new EconomyLeg(0, intent.OperationId, result.Count, kind, reason, asset,
+            movement.Location, delta, number,
+            BeforeFingerprint: asset.Kind == EconomyAssetKind.Item ? movement.Old?.Fingerprint : null,
+            AfterFingerprint: asset.Kind == EconomyAssetKind.Item ? movement.New?.Fingerprint : null,
+            SourceKey: intent.SourceKey));
+
+    private static bool IsEligible(EscrowExternalChange authorization, EconomyLocation location)
+    {
+        if (authorization.Compartment is { } part && location.Compartment != part ||
+            authorization.Owner is { } owner && location.Owner != owner) return false;
+        return authorization.Reason switch
+        {
+            EconomyReason.MailExpiry => location.Compartment is EconomyCompartment.Mail or EconomyCompartment.LegacyMail,
+            EconomyReason.SystemRetire => location.Compartment == EconomyCompartment.Stall &&
+                location.Owner.Kind == EconomyOwnerKind.System,
+            EconomyReason.SystemRestock => location.Compartment == EconomyCompartment.Stall &&
+                location.Owner.Kind == EconomyOwnerKind.System,
+            EconomyReason.GuildMarketCapDiscard => location.Compartment is EconomyCompartment.GuildMarket or EconomyCompartment.Recovery,
+            _ => true
+        };
     }
 
     private sealed record Movement(EconomyLocation Location, EconomyHolding? Old, EconomyHolding? New, long? NewBind)
