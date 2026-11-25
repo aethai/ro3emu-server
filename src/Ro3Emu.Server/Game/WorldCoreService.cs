@@ -121,7 +121,7 @@ public sealed partial class WorldCoreService : IGameTicker
     }
 
     private long Now => _clock.GetUtcNow().ToUnixTimeMilliseconds();
-    private GameSession? Player(long uid) => _sessions.All().FirstOrDefault(s => s.Role?.Id == uid);
+    private GameSession? Player(long uid) => _sessions.ByRole(uid);
     private int PreferredLine(GameSession s, long map)
     {
         if (s.Role == null) return 0;

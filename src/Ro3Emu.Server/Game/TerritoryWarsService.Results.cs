@@ -88,7 +88,7 @@ public sealed partial class TerritoryWarsService
             string awardKey = $"{_clock.Epoch}:{r.Round}:{r.Zone}";
             if (role.Paid.Contains(awardKey) || role.Pending.ContainsKey(awardKey)) continue;
             role.Honor += p.Score; role.Valor += p.Kills;
-            var recipient = _sessions.All().FirstOrDefault(s => s.Role?.Id == p.Id)
+            var recipient = _sessions.ByRole(p.Id)
                 ?? new GameSession(null!, null!) { Role = _roles.Get(p.Id), Progress = _roles.LoadProgress(p.Id) };
             var goods = new List<Grant>();
             if (recipient.Role != null)

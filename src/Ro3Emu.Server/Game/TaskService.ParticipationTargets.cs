@@ -39,7 +39,7 @@ public sealed partial class TaskService
     /// <summary>FriendService.RelationChanged: the role's friend list changed.</summary>
     public void OnRelationChanged(long role)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == role) is { } session) QueueFriendCount(session);
+        if (_sessions.ByRole(role) is { } session) QueueFriendCount(session);
     }
 
     /// <summary>A state change outside CharacterService (guild membership): re-read the snapshot targets.</summary>
@@ -94,7 +94,7 @@ public sealed partial class TaskService
     /// guild won.</summary>
     public void OnSiegeSettled(long role, long score, bool won)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == role) is not { } session) return;
+        if (_sessions.ByRole(role) is not { } session) return;
         _loop.PostOwned(session, () => ProgressAsync(session, null, t => t switch
         {
             [TSiegeScore, var points, _] when score >= points => 1,

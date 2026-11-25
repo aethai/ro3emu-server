@@ -32,7 +32,7 @@ public sealed partial class TaskDomainService
 
     public void OnGuildEventJoined(long role, GuildEvent guildEvent)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == role) is { } session) OnGuildEventJoined(session, guildEvent);
+        if (_sessions.ByRole(role) is { } session) OnGuildEventJoined(session, guildEvent);
     }
 
     /// <summary>A settled territory battle the role was loaded into. (inferred) Round 1 is the Stronghold War and later

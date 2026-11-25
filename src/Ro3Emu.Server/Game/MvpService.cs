@@ -155,7 +155,7 @@ public sealed partial class MvpService : IGameTicker
         // No tick retry (as before the shared component): an undelivered award waits for the next kill's delivery
         // pass or the next login, and a refused delivery stops that pass.
         _awardObligations = new RoleObligations<MvpObligationRow>("MVP award", accounts, loop, loop.Time,
-            role => sessions.All().FirstOrDefault(s => s.Role?.Id == role), s => s.Progress != null, PayAsync,
+            sessions.ByRole, s => s.Progress != null, PayAsync,
             ObligationRetry.NextRecovery, log);
         combat.EventDamageRecorded.Subscribe((s, m, damage) => { OnDealt(s, m, damage); return Task.CompletedTask; });
         combat.Taken.Subscribe(OnTaken);
@@ -432,7 +432,7 @@ public sealed partial class MvpService : IGameTicker
         var stat = StatOf(st, role.Id);
         stat.Attack += damage;
         // First strike: the first attacker; lost when the owner logs out or leaves the map (rules text 10960000072).
-        if (st.FirstPlayer == 0 || _sessions.All().FirstOrDefault(p => p.Role?.Id == st.FirstPlayer) is not { } owner
+        if (st.FirstPlayer == 0 || _sessions.ByRole(st.FirstPlayer) is not { } owner
             || owner.WorldScene != st.Runtime.WorldScene)
             st.FirstPlayer = role.Id;
         if (m.Hp == 0) _unpublishedLethalHits[m] = (role.Id, damage, previousFirst, newStat);
@@ -597,7 +597,7 @@ public sealed partial class MvpService : IGameTicker
             }
             if (!prepared.DeliveryAttempted)
             {
-                await RoleFanout.EachAsync(prepared.Obligations.Select(row => _sessions.All().FirstOrDefault(s => s.Role?.Id == row.PlayerId))
+                await RoleFanout.EachAsync(prepared.Obligations.Select(row => _sessions.ByRole(row.PlayerId))
                     .Where(s => s != null).Cast<GameSession>(), TryDeliverPendingAsync);
                 prepared.DeliveryAttempted = true; // offline/refused roles recover their durable obligation on login
             }

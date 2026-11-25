@@ -296,7 +296,7 @@ public sealed partial class TavernService : Messaging.IMessageModule, IGameTicke
 
     private static bool IsForbidden(Room room, long role, long now) => room.Forbidden.TryGetValue(role, out long until) && until > now;
 
-    private GameSession? Online(long role) => _sessions.All().FirstOrDefault(s => s.Role?.Id == role);
+    private GameSession? Online(long role) => _sessions.ByRole(role);
 
     private long NowMs() => _clock.GetUtcNow().ToUnixTimeMilliseconds();
 

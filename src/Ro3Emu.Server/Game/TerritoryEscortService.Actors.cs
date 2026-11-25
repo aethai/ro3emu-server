@@ -251,7 +251,7 @@ public sealed partial class TerritoryEscortService
             }
             foreach (var cart in wanted)
             {
-                var owner = _sessions.All().FirstOrDefault(s => s.Role?.Id == cart.Owner && !s.SceneLoading && EscortLine(s));
+                var owner = _sessions.ByRole(cart.Owner) is { SceneLoading: false } candidate && EscortLine(candidate) ? candidate : null;
                 if (owner == null) continue;
                 long uid = CartUidBase | cart.Id;
                 if (_cartRespawnAfter.TryGetValue(uid, out long due))

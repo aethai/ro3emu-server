@@ -60,7 +60,7 @@ public sealed partial class PanelBackend
     /// not in the game.</summary>
     private CharacterState? LiveState(long id)
     {
-        if (sessions.All().FirstOrDefault(s => s.Role?.Id == id) is not { Role: { } role, Progress: { } progress } session) return null;
+        if (sessions.ByRole(id) is not { Role: { } role, Progress: { } progress } session) return null;
         var copy = new RoleProgress
         {
             Career = progress.Career, Level = progress.Level, JobLevel = progress.JobLevel, Exp = progress.Exp, JobExp = progress.JobExp,

@@ -150,8 +150,9 @@ public sealed partial class NewActivityService
     /// <summary>SessionRegistry supplies only a presentation endpoint; RoleOwner remains the durable identity.</summary>
     internal GameSession? AttachedSocialSession(RoleOwner owner) =>
         owner.State == RoleOwnerState.Attached && owner.Attachment is { } attachment
-            ? _sessions.All().FirstOrDefault(session => ReferenceEquals(session.Owner, owner)
-                && ReferenceEquals(session.Attachment, attachment) && session.Role?.Id == owner.RoleId)
+            && _sessions.ByRole(owner.RoleId) is { } session
+            && ReferenceEquals(session.Owner, owner) && ReferenceEquals(session.Attachment, attachment)
+            ? session
             : null;
 
     internal async Task<RoleOwner?> PinSocialRecipientAsync(long roleId)

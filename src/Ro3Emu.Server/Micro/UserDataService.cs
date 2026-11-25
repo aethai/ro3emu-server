@@ -116,7 +116,7 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
     private Dictionary<string, object?> Entry(Accounts.Persistence.ProfileSnapshot profile, IReadOnlySet<string> asked)
     {
         var role = profile.Role;
-        var session = sessions.All().FirstOrDefault(s => s.Role?.Id == role.Id);
+        var session = sessions.ByRole(role.Id);
         var live = session?.Progress;
         var guild = profile.Guild;
         var member = guild?.Members.GetValueOrDefault(role.Id);

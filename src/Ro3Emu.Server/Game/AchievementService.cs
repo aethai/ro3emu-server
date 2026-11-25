@@ -670,7 +670,7 @@ public sealed partial class AchievementService : IGameTicker
 
     private void QueueFriendRecheck(long roleId)
     {
-        var s = _sessions.All().FirstOrDefault(x => x.Role?.Id == roleId);
+        var s = _sessions.ByRole(roleId);
         if (s == null || !Ready(s) || !_friendQueued.Add(s)) return;
         _loop.PostOwned(s, async () =>
         {

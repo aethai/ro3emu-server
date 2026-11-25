@@ -67,7 +67,7 @@ public sealed partial class FactionWorldService
     {
         foreach (var (place, role, _) in await GloryStandingsAsync(epoch))
         {
-            var recipient = _sessions.All().FirstOrDefault(s => s.Role?.Id == role)
+            var recipient = _sessions.ByRole(role)
                 ?? new GameSession(null!, null!) { Role = _roles.Get(role), Progress = _roles.LoadProgress(role) };
             if (recipient.Role == null) continue;
             var goods = new List<TerritoryWarsService.Grant>();

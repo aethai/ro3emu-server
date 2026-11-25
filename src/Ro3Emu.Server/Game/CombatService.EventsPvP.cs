@@ -23,8 +23,8 @@ public sealed partial class CombatService
     internal bool CanPlayerHit(GameSession source, GameSession target) =>
         CanEventHit(source, target) || CanTerritoryHit(source, target);
 
-    internal GameSession? EventTarget(GameSession source, long id) => _sessions.All()
-        .FirstOrDefault(target => target.Role?.Id == id && CanPlayerHit(source, target) && CanSee(source, target));
+    internal GameSession? EventTarget(GameSession source, long id) =>
+        _sessions.ByRole(id) is { } target && CanPlayerHit(source, target) && CanSee(source, target) ? target : null;
 
     internal static float PlayerDistance(GameSession a, GameSession b) =>
         MonsterService.Distance(a.Position.X, a.Position.Z, b.Position.X, b.Position.Z);

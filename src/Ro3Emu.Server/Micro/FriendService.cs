@@ -247,7 +247,7 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
 
     private async Task PushAsync(long role, string method, object? arg)
     {
-        var account = sessions.All().FirstOrDefault(s => s.Role?.Id == role)?.Account;
+        var account = sessions.ByRole(role)?.Account;
         if (account != null) await micro.PushAsync(account, Name, method, arg);
     }
 

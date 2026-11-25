@@ -114,7 +114,7 @@ internal sealed class CombatGmCommands(
     {
         long uid = NumArg(args, index);
         if (uid == 0 || uid == s.Role?.Id) return new(s, null, s.Role?.Id ?? 0);
-        if (sessions.All().FirstOrDefault(p => p.Role?.Id == uid) is { } player) return new(player, null, uid);
+        if (sessions.ByRole(uid) is { } player) return new(player, null, uid);
         // The GM's own map first: what she clicks is beside her (another map's unit still answers, inferred).
         var unit = world.Map(s.WorldScene).Units.FirstOrDefault(u => u.Uid == uid) ?? world.AllUnits().FirstOrDefault(u => u.Uid == uid);
         return new(null, unit, uid);

@@ -610,7 +610,7 @@ public sealed class GuildVoiceService(GameData data, GuildStore store, GuildServ
 
     private GuildStore.State? Guild(GameSession s) => s.Role == null ? null : store.ForRole(s.Role.Id);
 
-    private GameSession? Online(long role) => sessions.All().FirstOrDefault(s => s.Role?.Id == role);
+    private GameSession? Online(long role) => sessions.ByRole(role);
 
     private long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
 

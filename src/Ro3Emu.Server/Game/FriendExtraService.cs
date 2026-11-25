@@ -15,7 +15,7 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
         DismissGroup = 82204, LeaveGroup = 82205, SetGroupDnd = 82206, FetchMetadata = 82207,
         SetMetadata = 82208, GiveGift = 82209, Recommend = 82210, GroupNotify = 82250, GiftNotify = 82251;
 
-    private GameSession? Online(long id) => sessions.All().FirstOrDefault(s => s.Role?.Id == id);
+    private GameSession? Online(long id) => sessions.ByRole(id);
     private static bool Member(FriendStore.ChatGroup? group, long id) => group?.Members.Any(m => m.Role == id) == true;
     private static int Denied => ErrorCodes.NoPermission; // exact original code is unverified.
 

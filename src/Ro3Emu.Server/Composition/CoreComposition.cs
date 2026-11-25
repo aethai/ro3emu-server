@@ -215,7 +215,7 @@ internal static partial class CoreComposition
             long uid = GmCommands.L(args[0]);
             if (uid == s.Role!.Id) return "That is you.";
             (RuntimeMapKey Map, long Scene, float X, float Y, float Z)? target = null;
-            if (sessions.All().FirstOrDefault(o => o.Role?.Id == uid) is { } player)
+            if (sessions.ByRole(uid) is { } player)
                 target = (player.RuntimeMap, player.SceneEntry, player.Position.X, player.Position.Y, player.Position.Z);
             else if (world.AllUnits().FirstOrDefault(u => u.Uid == uid) is { } unit)
                 target = (unit.RuntimeMap, unit.SceneEntry, unit.X, unit.Y, unit.Z);

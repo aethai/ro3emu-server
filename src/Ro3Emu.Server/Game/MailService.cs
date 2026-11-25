@@ -344,7 +344,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
 
     private async Task NotifyAsync(long role, int category)
     {
-        var account = sessions.All().FirstOrDefault(s => s.Role?.Id == role)?.Account;
+        var account = sessions.ByRole(role)?.Account;
         if (account != null) await micro.PushAsync(account, Name,
             category == 3 ? "newGroupMailNotice" : "newMailNotice", new Dictionary<string, object?>());
     }
@@ -633,8 +633,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
     private async ValueTask<object?> InvokeMicroCoreAsync(MicroSession session, string method, object? args)
     {
         if (method is not ("getUserMailList" or "getMailContent" or "setMailHaveRead" or "deleteMail" or "syncGroupMail")) return null;
-        var role = sessions.All().FirstOrDefault(s => s.Account != null
-            && string.Equals(s.Account, session.Account, StringComparison.Ordinal))?.Role;
+        var role = sessions.ByAccount(session.Account)?.Role;
         if (role == null) return MicroServiceRouter.Fail("no selected role");
         string? requestedUid = method is "getUserMailList" or "deleteMail"
             ? MicroServiceRouter.MapString(args, "Uid") : (args as object?[])?.FirstOrDefault() as string;

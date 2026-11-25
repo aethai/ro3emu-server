@@ -71,6 +71,40 @@ public sealed class SessionIdentityTests
     }
 
     [Fact]
+    public async Task ByRoleAndByAccountTrackLiveSessionsInConstantTime()
+    {
+        var registry = Registry();
+        var session = Game();
+        var role = RoleOf("alice");
+        await registry.SignInAsync(session, "alice", register: true);
+        Assert.Same(session, registry.ByAccount("alice"));
+        Assert.Null(registry.ByAccount("bob"));
+        Assert.Null(registry.ByRole(role.Id));
+
+        session.Role = role;
+        Assert.Same(session, registry.ByRole(role.Id));
+
+        session.Role = null;
+        Assert.Null(registry.ByRole(role.Id));
+
+        session.Role = role;
+        registry.Unregister(session);
+        Assert.Null(registry.ByRole(role.Id));
+        Assert.Null(registry.ByAccount("alice"));
+    }
+
+    [Fact]
+    public async Task BroadcastSkipsNonMatchingSessions()
+    {
+        var registry = Registry();
+        var session = Game();
+        await registry.SignInAsync(session, "alice", register: true);
+
+        // No matching sessions: returns cleanly without touching Channel.
+        await registry.BroadcastAsync(30001, new Phonest.Proto.DisconnectClientInfo(), _ => false);
+    }
+
+    [Fact]
     public void AMicroConnectionThatChangesAccountStopsReceivingTheFirstOnesPushes()
     {
         var micro = new MicroSessions(NullLogger<MicroSessions>.Instance);

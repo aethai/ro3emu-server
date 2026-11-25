@@ -270,7 +270,7 @@ public sealed partial class EmojiService : IGameTicker
     {
         var group = new List<GameSession> { session };
         foreach (long id in session.Emote?.Targets ?? [])
-            if (_sessions.All().FirstOrDefault(s => s.Role?.Id == id) is { Emote: { } other } partner
+            if (_sessions.ByRole(id) is { Emote: { } other } partner
                 && other.EmojiId == session.Emote!.EmojiId && other.Targets.Contains(session.Role!.Id))
                 group.Add(partner);
         return group;
@@ -371,7 +371,7 @@ public sealed partial class EmojiService : IGameTicker
 
     // ---------------------------------------------------------------- duo emotes
 
-    private GameSession? Online(long roleId) => _sessions.All().FirstOrDefault(s => s.Role?.Id == roleId && s.Handoff == null);
+    private GameSession? Online(long roleId) => _sessions.ByRole(roleId) is { Handoff: null } s ? s : null;
 
     private bool Near(GameSession a, GameSession b)
     {
