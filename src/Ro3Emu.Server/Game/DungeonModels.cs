@@ -86,3 +86,24 @@ internal sealed class SceneActorUnit : WorldUnit
 /// ChangeControlUnit) until someone reaches Region; then Arrived runs.
 /// </summary>
 internal sealed record Drive(SceneActorUnit Carrier, long Region, Func<Task> Arrived, int Generation);
+
+/// <summary>
+/// Mode-specific hooks for special dungeon runs (Guild Challenge, Dracula's Lair) so <see cref="DungeonService"/>
+/// and <see cref="DungeonService.Attempt"/> stay free of feature-specific fields.
+/// </summary>
+internal interface IDungeonMode
+{
+    bool SuppressesStandardKillObligation => false;
+    bool WaitsForManualStart => false;
+    bool SuppressesDungeonReturn => false;
+    bool ClearsSceneActorsOnSettle => false;
+    int TrackerStep(DungeonService.Attempt attempt) => attempt.Settled ? TaskService.RunOver : attempt.Wave;
+    void PopulateSnapshot(DungeonService.Attempt attempt, DungeonBaseInfoNotify snapshot) { }
+    void PopulateWaveEvent(DungeonService.Attempt attempt, DungeonEventNotify change) { }
+    Task OnWaveSpawnedAsync(DungeonService.Attempt attempt) => Task.CompletedTask;
+    Task<bool> TryHandleClientEventAsync(GameSession session, ClientDungeonEvent req) => Task.FromResult(false);
+    Task OnPlayerLeftAsync(DungeonService.Attempt attempt, GameSession session) => Task.CompletedTask;
+    Task SettleAsync(DungeonService.Attempt attempt, bool won);
+    int InteractionError(DungeonService.Attempt attempt, GameSession session, int npcId) => 0;
+    Task OnInteractedAsync(DungeonService.Attempt attempt, GameSession session, int npcId) => Task.CompletedTask;
+}

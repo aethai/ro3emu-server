@@ -131,7 +131,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         public List<int> AuctionEntries { get; set; } = [];
     }
 
-    internal sealed class Run
+    internal sealed class Run : IDungeonMode
     {
         public required GuildChallengeService Owner { get; init; }
         public required long Guild { get; init; }
@@ -142,7 +142,29 @@ public sealed partial class GuildChallengeService : IGameTicker
         public required long End { get; init; }
         public IEnumerable<DungeonVar> Vars() => [new() { VarId = 901, Vi64 = { Challenge } },
             new() { VarId = 902, Vi64 = { Stage } }, new() { VarId = 903, Vi64 = { End } }];
+
+        bool IDungeonMode.SuppressesStandardKillObligation => true;
+        bool IDungeonMode.WaitsForManualStart => true;
+        bool IDungeonMode.SuppressesDungeonReturn => true;
+        int IDungeonMode.TrackerStep(DungeonService.Attempt attempt) => attempt.Settled ? TaskService.RunOver : TaskService.FinalStep;
+        void IDungeonMode.PopulateSnapshot(DungeonService.Attempt attempt, DungeonBaseInfoNotify snapshot)
+        {
+            snapshot.Vars.Add(Vars());
+            snapshot.Level = Difficulty;
+            // Lua_GameDefine.enum_WhaleDungeonBigStage: Prepare=0, Fight=1, End=2.
+            snapshot.Stage = snapshot.StageModuleData.Stage = attempt.Settled ? 2 : attempt.Started ? 1 : 0;
+            snapshot.StageModuleData.MapStateEndTime = End * 1000;
+        }
+        void IDungeonMode.PopulateWaveEvent(DungeonService.Attempt attempt, DungeonEventNotify change) => change.Vars.Add(Vars());
+        async Task<bool> IDungeonMode.TryHandleClientEventAsync(GameSession session, ClientDungeonEvent req)
+        {
+            await Owner.ClientEventAsync(session, req);
+            return true;
+        }
+        Task IDungeonMode.SettleAsync(DungeonService.Attempt attempt, bool won) => Owner.SettleAsync(attempt, won);
     }
+
+    private static Run? RunOf(DungeonService.Attempt? attempt) => attempt?.Mode as Run;
 
     private IEnumerable<JsonElement> Configs => _data.Table("GuildChallengeConfig").Values
         .Where(r => TowerService.FitsPlayBook(r, _seasons.PlayBook)).OrderBy(r => GameData.Int(r, "_iLevel"));
@@ -441,7 +463,7 @@ public sealed partial class GuildChallengeService : IGameTicker
             var g = Guild(s); var state = g == null ? null : await EnsureStateAsync(g.Id, s.Role!.Id); var c = state == null ? null : Config(state.Difficulty);
             var live = g == null ? null : Live(g.Id);
             // (inferred) Shared preparation accepts members; a running encounter does not accept late entries.
-            bool continuation = s.DungeonAttempt is { Settled: true, GuildChallenge: not null } previous && previous.GuildChallenge.Guild == g?.Id;
+            bool continuation = s.DungeonAttempt is { Settled: true, Mode: Run previousRun } && previousRun.Guild == g?.Id;
             int code = g == null ? ErrorCodes.GuildMissing : !Available(s) ? ErrorCodes.FeatureUnavailable
                 : !_schedule.IsOpen(Activity) ? ErrorCodes.ActivityPeriod
                 : req.InitData?.CalculateSize() > 0 || req.Param?.CalculateSize() > 0 ? ErrorCodes.Parameter
@@ -455,7 +477,7 @@ public sealed partial class GuildChallengeService : IGameTicker
             if (code == 0 && plan == null) code = ErrorCodes.DungeonDataMissing;
             await s.SendGameAsync(DungeonService.Enter, new EnterDungeonRsp { Result = code });
             if (code != 0) return true;
-            var run = live?.GuildChallenge ?? new Run
+            var run = RunOf(live) ?? new Run
             {
                 Owner = this, Guild = g!.Id, Cycle = state!.Cycle,
                 Challenge = (int)GameData.Int(c!.Value, "_iGuildChallengeId"), Difficulty = state.Difficulty, Stage = state.Stage,
@@ -471,7 +493,7 @@ public sealed partial class GuildChallengeService : IGameTicker
 
     internal async Task ClientEventAsync(GameSession s, ClientDungeonEvent req)
     {
-        if (s.DungeonAttempt is not { GuildChallenge: { } run } a || s.InstanceId != a.Room.Id || s.SceneLoading
+        if (s.DungeonAttempt is not { Mode: Run run } a || s.InstanceId != a.Room.Id || s.SceneLoading
             || a.Room.Closed || a.Settled || Guild(s) is not { } guild || guild.Id != run.Guild || !IsManager(s, guild)) return;
         // Only original manager controls. Params/functions/rewards supplied by the client never settle a win.
         if (req.StrCmd == "DungeonGiveUp") await _dungeons.StopGuildChallengeAsync(a);
@@ -494,7 +516,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         await _gate.WaitAsync();
         try
         {
-            var run = a.GuildChallenge!;
+            var run = RunOf(a)!;
             // (inferred) Present, loaded guild members earn the clear; no contribution threshold was recovered.
             var present = a.Room.ActiveMembers.Select(m => m.Session).Where(s => a.Loaded.Contains(s)
                 && s.InstanceId == a.Room.Id && s.Role != null && Guild(s)?.Id == run.Guild).ToArray();
@@ -712,7 +734,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         {
             // Close the test occurrence first (including when the real event happens to be open now).
             _schedule.TestWindows[Activity] = new(Now - 2, Now - 1);
-            foreach (var a in _runs.Values.Where(a => !a.Settled && !a.Room.Closed && a.GuildChallenge!.Cycle < 0).ToArray())
+            foreach (var a in _runs.Values.Where(a => !a.Settled && !a.Room.Closed && RunOf(a)!.Cycle < 0).ToArray())
                 await _dungeons.StopGuildChallengeAsync(a);
             _testCycle = null;
             _schedule.TestWindows.Remove(Activity);
@@ -727,7 +749,7 @@ public sealed partial class GuildChallengeService : IGameTicker
 
     private bool TestWindowExpired => _testCycle != null && _schedule.TestWindows.TryGetValue(Activity, out var test) && Now >= test.End;
     private DungeonService.Attempt[] RunsToStop() => [.. _runs.Values.Where(a => !a.Settled && !a.Room.Closed
-        && (Now >= a.GuildChallenge!.End || !_schedule.IsOpen(Activity)
+        && (Now >= RunOf(a)!.End || !_schedule.IsOpen(Activity)
             || a.SeasonId != _seasons.SeasonId || a.PlayBook != _seasons.PlayBook))];
 
     public void Tick(GameTime _)

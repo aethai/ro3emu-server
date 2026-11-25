@@ -76,7 +76,7 @@ public sealed class DraculaWeddingService : IGameTicker
     }
 
     /// <summary>One guild's occurrence of the event.</summary>
-    internal sealed class Run
+    internal sealed class Run : IDungeonMode
     {
         public required DraculaWeddingService Owner { get; init; }
         public required long Guild { get; init; }
@@ -100,7 +100,19 @@ public sealed class DraculaWeddingService : IGameTicker
         public DungeonService.Attempt? Live => Lair is { Settled: false, Room.Closed: false } a ? a : null;
         public IEnumerable<DungeonVar> Vars() => [Var(VarBride, Bride), Var(VarRescuer, Rescuer), Var(VarEndTime, End * 1000),
             Var(VarOpen, 1)];
+
+        bool IDungeonMode.ClearsSceneActorsOnSettle => true;
+        void IDungeonMode.PopulateSnapshot(DungeonService.Attempt attempt, DungeonBaseInfoNotify snapshot) => snapshot.Vars.Add(Vars());
+        Task IDungeonMode.OnWaveSpawnedAsync(DungeonService.Attempt attempt) => Owner.WaveAsync(attempt);
+        // (inferred) The lair is the whole guild's room: no member's give-up or reset ends it for the others.
+        Task<bool> IDungeonMode.TryHandleClientEventAsync(GameSession session, ClientDungeonEvent req) => Task.FromResult(true);
+        Task IDungeonMode.OnPlayerLeftAsync(DungeonService.Attempt attempt, GameSession session) => Owner.LeftAsync(attempt, session);
+        Task IDungeonMode.SettleAsync(DungeonService.Attempt attempt, bool won) => Owner.SettleAsync(attempt, won);
+        int IDungeonMode.InteractionError(DungeonService.Attempt attempt, GameSession session, int npcId) => Owner.InteractionError(attempt, session, npcId);
+        Task IDungeonMode.OnInteractedAsync(DungeonService.Attempt attempt, GameSession session, int npcId) => Owner.InteractedAsync(attempt, session, npcId);
     }
+
+    internal static Run? RunOf(DungeonService.Attempt? attempt) => attempt?.Mode as Run;
 
     private static DungeonVar Var(int id, long value) => new() { VarId = id, Vi64 = { value } };
 
@@ -228,7 +240,7 @@ public sealed class DraculaWeddingService : IGameTicker
     /// </summary>
     private async Task LoadedAsync(GameSession s)
     {
-        if (s.SceneEntry == Lair && s.DungeonAttempt is { Dracula: { } lair } a && s.InstanceId == a.Room.Id)
+        if (s.SceneEntry == Lair && s.DungeonAttempt is { Mode: Run lair } a && s.InstanceId == a.Room.Id)
         {
             await SendQuietAsync(s, WeddingState, State(lair));
             await _tasks.SyncTasksAsync(s);
@@ -292,7 +304,7 @@ public sealed class DraculaWeddingService : IGameTicker
             foreach (var s in members)
             {
                 // LC_DunGeon_Dracula.PlayStory adds the bride from 83641's entity, so it comes first.
-                await SendQuietAsync(s, WeddingState, State(a.Dracula!));
+                await SendQuietAsync(s, WeddingState, State(RunOf(a)!));
                 await SendQuietAsync(s, DungeonService.Event, Story(Lair, StoryId(1)));
             }
         _dungeons.TrackRun(a, members, a.Wave);
@@ -300,7 +312,7 @@ public sealed class DraculaWeddingService : IGameTicker
 
     /// <summary>The cage opens only for the key's holder (its client button shows only with the key buff, too).</summary>
     internal int InteractionError(DungeonService.Attempt a, GameSession s, int npc) =>
-        npc == DungeonCatalog.DraculaCage && (a.Dracula!.Rescuer == 0 || a.Dracula.Rescuer != s.Role?.Id) ? ErrorCodes.FeatureUnavailable : 0;
+        npc == DungeonCatalog.DraculaCage && (RunOf(a)!.Rescuer == 0 || RunOf(a)!.Rescuer != s.Role?.Id) ? ErrorCodes.FeatureUnavailable : 0;
 
     /// <summary>
     /// A bush search (6000018-6000021). The bush that hides the key gives it to its searcher: the key buff (kept until
@@ -308,7 +320,7 @@ public sealed class DraculaWeddingService : IGameTicker
     /// </summary>
     internal async Task InteractedAsync(DungeonService.Attempt a, GameSession s, int npc)
     {
-        var run = a.Dracula!;
+        var run = RunOf(a)!;
         if (!DungeonCatalog.DraculaBushes.Contains(npc) || !run.Searched.Add(npc) || npc != run.KeyBush || run.Rescuer != 0
             || s.Role == null) return;
         run.Rescuer = s.Role.Id;
@@ -337,7 +349,7 @@ public sealed class DraculaWeddingService : IGameTicker
     /// </summary>
     public async Task WatchAsync(GameSession s, DungeonWatchChangeTargetReq req)
     {
-        if (s.DungeonAttempt is not { Dracula: { } run } a || !ReferenceEquals(run.Live, a) || s.Role?.Id != run.Bride
+        if (s.DungeonAttempt is not { Mode: Run run } a || !ReferenceEquals(run.Live, a) || s.Role?.Id != run.Bride
             || s.SceneLoading || s.InstanceId != a.Room.Id || !a.Loaded.Contains(s)) return;
         long target = req.PlayerId > 0 && req.PlayerId != run.Bride
             && DungeonService.LoadedMembers(a).Any(m => m.Role?.Id == req.PlayerId) ? req.PlayerId : 0;
@@ -364,7 +376,7 @@ public sealed class DraculaWeddingService : IGameTicker
     /// </summary>
     private async Task WatchLeftAsync(DungeonService.Attempt a, GameSession s)
     {
-        var run = a.Dracula!;
+        var run = RunOf(a)!;
         var stay = DungeonService.LoadedMembers(a).Where(m => !ReferenceEquals(m, s) && m.Role != null).ToArray();
         if (s.Role?.Id == run.Bride)
             await SetWatchedAsync(a, s, run, 0);
@@ -375,7 +387,7 @@ public sealed class DraculaWeddingService : IGameTicker
 
     private async Task StopWatchingAsync(DungeonService.Attempt a)
     {
-        var run = a.Dracula!;
+        var run = RunOf(a)!;
         if (run.Watched != 0 && DungeonService.LoadedMembers(a).FirstOrDefault(m => m.Role?.Id == run.Bride) is { } bride)
             await SetWatchedAsync(a, bride, run, 0);
         run.Watched = 0;
@@ -388,7 +400,7 @@ public sealed class DraculaWeddingService : IGameTicker
     internal async Task LeftAsync(DungeonService.Attempt a, GameSession s)
     {
         if (s.Buffs.FirstOrDefault(b => b.ConfigId == KeyBuff) is { } key) await _buffs.RemoveAsync(s, key);
-        var run = a.Dracula!;
+        var run = RunOf(a)!;
         await WatchLeftAsync(a, s);
         if (!a.Settled && run.Rescuer != 0 && run.Rescuer == s.Role?.Id)
         {
@@ -409,7 +421,7 @@ public sealed class DraculaWeddingService : IGameTicker
     /// </summary>
     internal async Task SettleAsync(DungeonService.Attempt a, bool won)
     {
-        var run = a.Dracula!;
+        var run = RunOf(a)!;
         bool success = won && run.Rescuer != 0 && Now < run.End && !run.Settled;
         // (inferred) The guild's occurrence ends with its first result; a lost lair (time, everyone gone) can be entered
         // again while the event lasts.

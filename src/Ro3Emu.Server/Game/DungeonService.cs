@@ -169,13 +169,13 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     internal static bool Sheltered(float bossX, float bossZ, float coverX, float coverZ, float x, float z, float width, float depth) =>
         RaidTrialsService.Sheltered(bossX, bossZ, coverX, coverZ, x, z, width, depth);
 
-    internal Task<Attempt?> EnterDraculaAsync(GameSession s, DungeonCatalog.Plan plan, DraculaWeddingService.Run run, Attempt? existing) =>
-        Scripted.EnterDraculaAsync(s, plan, run, existing);
+    internal Task<Attempt?> EnterDraculaAsync(GameSession s, DungeonCatalog.Plan plan, IDungeonMode mode, Attempt? existing) =>
+        Scripted.EnterDraculaAsync(s, plan, mode, existing);
     internal Task StopDraculaAsync(Attempt a) => Scripted.StopDraculaAsync(a);
     internal static IReadOnlyList<GameSession> LoadedMembers(Attempt a) => ScriptedDungeonService.LoadedMembers(a);
     internal Task SendToRoomAsync(Attempt a, uint id, IMessage msg) => Scripted.SendToRoomAsync(a, id, msg);
-    internal Task<Attempt?> EnterGuildChallengeAsync(GameSession s, DungeonCatalog.Plan plan, GuildChallengeService.Run run, Attempt? existing) =>
-        Scripted.EnterGuildChallengeAsync(s, plan, run, existing);
+    internal Task<Attempt?> EnterGuildChallengeAsync(GameSession s, DungeonCatalog.Plan plan, IDungeonMode mode, Attempt? existing) =>
+        Scripted.EnterGuildChallengeAsync(s, plan, mode, existing);
     internal Task StartGuildChallengeAsync(Attempt a) => Scripted.StartGuildChallengeAsync(a);
     internal Task StopGuildChallengeAsync(Attempt a) => Scripted.StopGuildChallengeAsync(a);
     internal List<DungeonCatalog.Plan> RandomPool(DungeonCatalog.Plan origin, IReadOnlyCollection<GameSession> members) =>
@@ -300,11 +300,10 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         internal List<CompanionUnit> Companions { get; } = [];
         /// <summary>The companions (NPC, point) that fell in this run: they do not come back.</summary>
         internal HashSet<(int NpcId, long Point)> FallenCompanions { get; } = [];
-        internal GuildChallengeService.Run? GuildChallenge { get; set; }
         /// <summary>A raid boss's scripted trials in this run (DungeonService.RaidTrials); null: none.</summary>
         internal RaidRun? Raid { get; set; }
-        /// <summary>Dracula's Lair: DraculaWeddingService owns admission, the bride, the key and the settlement.</summary>
-        internal DraculaWeddingService.Run? Dracula { get; set; }
+        /// <summary>Feature-owned special dungeon mode (e.g. Guild Challenge, Dracula's Lair); null for ordinary/raid runs.</summary>
+        internal IDungeonMode? Mode { get; set; }
     }
 
     private sealed class Preparation
@@ -542,7 +541,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     /// The tracker step a run is at: the lair's wave (each wave is one of its dungeon tasks, DraculaWeddingService); a Guild
     /// Challenge stage is rebuilt as its boss fight, so its chain is at the last step, the boss (inferred).
     /// </summary>
-    private static int TrackerStep(Attempt a) => a.Settled ? TaskService.RunOver : a.GuildChallenge != null ? TaskService.FinalStep : a.Wave;
+    private static int TrackerStep(Attempt a) => a.Mode is { } mode ? mode.TrackerStep(a) : a.Settled ? TaskService.RunOver : a.Wave;
 
     internal void TrackRun(Attempt a, IEnumerable<GameSession> members, int step)
     {
@@ -552,7 +551,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
 
     // Waiting for all remaining members before starting the encounter clock is (inferred).
     private static bool ReadyToStart(Attempt a) => !a.Entering && !a.Started && !a.Settled
-        && a.GuildChallenge == null // Whale waits for the manager's real DungeonStart command.
+        && a.Mode?.WaitsForManualStart != true
         && a.Room.ActiveMembers.Count > 0 && a.Room.ActiveMembers.All(m => a.Loaded.Contains(m.Session));
 
     // Lua_GameDefine enum_DungeonMapStage: 0/1/2 initializing/running/settling; LC_DunGeon_Base:1507-1522
@@ -577,15 +576,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         };
         if (QuestList(a) is { } quests) snapshot.Vars.Add(quests);
         if (GoalParams(a) is { } goal) snapshot.Vars.Add(goal);
-        if (a.GuildChallenge is { } challenge)
-        {
-            snapshot.Vars.Add(challenge.Vars());
-            snapshot.Level = challenge.Difficulty;
-            // Lua_GameDefine.enum_WhaleDungeonBigStage: Prepare=0, Fight=1, End=2.
-            snapshot.Stage = snapshot.StageModuleData.Stage = a.Settled ? 2 : a.Started ? 1 : 0;
-            snapshot.StageModuleData.MapStateEndTime = challenge.End * 1000;
-        }
-        if (a.Dracula is { } dracula) snapshot.Vars.Add(dracula.Vars());
+        a.Mode?.PopulateSnapshot(a, snapshot);
         if (FunctionButtons(a) is { } buttons) snapshot.Vars.Add(buttons);
         if (GuideWays(a) is { } ways) snapshot.Vars.Add(ways);
         if (Resurrections(a) is { } revives) snapshot.Vars.Add(revives);
@@ -724,12 +715,12 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         };
         if (QuestList(a) is { } quests) change.Vars.Add(quests);
         if (GoalParams(a) is { } goal) change.Vars.Add(goal);
-        if (a.GuildChallenge is { } challenge) change.Vars.Add(challenge.Vars());
+        a.Mode?.PopulateWaveEvent(a, change);
         await BroadcastAsync(a, Event, change);
         // Seen live: the task widget takes its vars from 30401 only, not from this event; a later wave whose
         // quest is known republishes the state so the tracker moves on (the first one follows StartAsync's).
         if (a.Wave > 0 && QuestList(a) != null) await BroadcastAsync(a, BaseInfo, Snapshot(a));
-        if (a.Dracula is { } dracula) await dracula.Owner.WaveAsync(a);
+        if (a.Mode is { } mode) await mode.OnWaveSpawnedAsync(a);
         if (Step(a) is { } step)
         {
             await BeginStepAsync(a, step);
@@ -967,14 +958,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
 
     public async Task ClientEventAsync(GameSession s, ClientDungeonEvent req)
     {
-        if (s.DungeonAttempt?.GuildChallenge is { } challenge)
-        {
-            await challenge.Owner.ClientEventAsync(s, req);
-            await s.SendGameAsync(ClientEvent, new NullArg());
-            return;
-        }
-        // (inferred) The lair is the whole guild's room: no member's give-up or reset ends it for the others.
-        if (s.DungeonAttempt?.Dracula != null)
+        if (s.DungeonAttempt?.Mode is { } mode && await mode.TryHandleClientEventAsync(s, req))
         {
             await s.SendGameAsync(ClientEvent, new NullArg());
             return;
@@ -1001,7 +985,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         var attempt = s.DungeonAttempt;
         // Only an owned ordinary/multi run opts into inferred recovery; other private-room owners retain
         // their existing exit semantics. A stale dungeon attempt cannot turn another room's exit into a revive.
-        bool dungeonReturn = valid && (attempt != null && attempt.GuildChallenge == null
+        bool dungeonReturn = valid && (attempt != null && attempt.Mode?.SuppressesDungeonReturn != true
             && ReferenceEquals(attempt.Room, room) || attempt == null && RecoverDeadOnLeave?.Invoke(room!.Id) == true);
         await s.SendGameAsync(Leave, new LeaveDungeonRsp { Result = valid ? 0 : ErrorCodes.SceneMissing });
         if (!valid || !ReferenceEquals(s.Role, role) || s.SceneLoading || s.InstanceId != room!.Id
@@ -1021,7 +1005,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         s.DungeonAttempt = null; s.Attack = null;
         try
         {
-            if (a.Dracula is { } dracula) await dracula.Owner.LeftAsync(a, s);
+            if (a.Mode is { } mode) await mode.OnPlayerLeftAsync(a, s);
             await ClearBondsAsync(s, a);
             await _instances.AbandonAsync(s);
         }
@@ -1052,24 +1036,18 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     internal async Task SettleAsync(Attempt a, bool won)
     {
         if (a.Settled || a.Room.Closed) return;
-        if (a.GuildChallenge is { } challenge)
+        if (a.Mode is { } mode)
         {
             a.Settled = true;
             await _instances.ClearMonstersAsync(a.Room);
+            if (mode.ClearsSceneActorsOnSettle)
+            {
+                a.SceneActors.Clear(); // removed with the room's monsters
+                a.Companions.Clear();
+            }
             await BroadcastAsync(a, BaseInfo, Snapshot(a));
             TrackRun(a, LoadedMembers(a), TaskService.RunOver);
-            await challenge.Owner.SettleAsync(a, won);
-            return;
-        }
-        if (a.Dracula is { } dracula)
-        {
-            a.Settled = true;
-            await _instances.ClearMonstersAsync(a.Room);
-            a.SceneActors.Clear(); // removed with the room's monsters
-            a.Companions.Clear();
-            await BroadcastAsync(a, BaseInfo, Snapshot(a));
-            TrackRun(a, LoadedMembers(a), TaskService.RunOver);
-            await dracula.Owner.SettleAsync(a, won);
+            await mode.SettleAsync(a, won);
             return;
         }
         if (a.ObligationsFrozen && !a.ObligationsActivated)

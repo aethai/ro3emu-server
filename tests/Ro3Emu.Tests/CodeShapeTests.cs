@@ -148,6 +148,15 @@ public sealed class CodeShapeTests
     }
 
     [Fact]
+    public void DungeonAttemptHasNoFeatureSpecificModeFields()
+    {
+        var members = typeof(Ro3Emu.Server.Game.DungeonService.Attempt)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.DoesNotContain(members, p => p.PropertyType == typeof(Ro3Emu.Server.Game.GuildChallengeService.Run)
+            || p.PropertyType == typeof(Ro3Emu.Server.Game.DraculaWeddingService.Run));
+    }
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));

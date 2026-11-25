@@ -14,7 +14,7 @@ public sealed partial class DungeonService
     /// <summary>The final actor's report and all eligible recipients become durable before lethal publication.</summary>
     private async Task FreezeTerminalKillAsync(GameSession killer, MonsterUnit monster)
     {
-        if (Active(killer) is not { } a || a.GuildChallenge != null
+        if (Active(killer) is not { } a || a.Mode?.SuppressesStandardKillObligation == true
             || monster.InstanceId != a.Room.Id || !a.Room.Monsters.Contains(monster)
             || a.Spawning || a.Advancing || a.Wave + 1 != a.Plan.Waves.Count) return;
         long roleId = killer.Role?.Id ?? throw new OperationCanceledException("Dungeon killer detached before terminal freeze.");
