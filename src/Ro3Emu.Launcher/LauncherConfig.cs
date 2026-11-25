@@ -15,6 +15,8 @@ public sealed class LauncherConfig
     [JsonPropertyName("mode")] public string? Mode { get; set; }
     [JsonPropertyName("repository")] public string? Repository { get; set; }
     [JsonPropertyName("channel")] public string Channel { get; set; } = "test";
+    /// <summary>Optional RSA-3072 public key PEM pinning channels/&lt;channel&gt;.json.sig verification.</summary>
+    [JsonPropertyName("channelPublicKey")] public string? ChannelPublicKey { get; set; }
     [JsonPropertyName("server")] public string? Server { get; set; }
     /// <summary>The name on the title bar, the built-in hero, the tray and the shortcuts.</summary>
     [JsonPropertyName("serverName")] public string ServerName { get; set; } = "RO3Emu";

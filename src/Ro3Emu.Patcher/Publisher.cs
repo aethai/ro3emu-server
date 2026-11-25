@@ -20,6 +20,8 @@ public sealed class PublishOptions
     /// <summary>Write the manifest but leave the channel pointing at its previous release.</summary>
     public bool SkipChannel { get; init; }
     public LauncherRelease? Launcher { get; init; }
+    /// <summary>Optional RSA-3072 private key PEM; when set, writes channels/&lt;channel&gt;.json.sig alongside the channel.</summary>
+    public string? SigningKeyPem { get; init; }
 }
 
 public sealed record PublishResult(Manifest Manifest, ChannelInfo Channel, int NewChunks, long NewStoredBytes, int ReusedChunks);
@@ -189,7 +191,7 @@ public static class Publisher
         };
         if (!options.SkipChannel)
         {
-            await WriteChannelAsync(repo, channel, ct);
+            await WriteChannelAsync(repo, channel, options.SigningKeyPem, ct);
         }
         return new PublishResult(manifest, channel, newChunks, newBytes, reused);
     }
@@ -220,7 +222,8 @@ public static class Publisher
     }
 
     /// <summary>Points a channel at an existing release (promote beta → stable, roll back).</summary>
-    public static async Task<ChannelInfo> SetChannelAsync(string repoDirectory, string channelName, string version, LauncherRelease? launcher, CancellationToken ct = default)
+    public static async Task<ChannelInfo> SetChannelAsync(string repoDirectory, string channelName, string version,
+        LauncherRelease? launcher, string? signingKeyPem = null, CancellationToken ct = default)
     {
         string repo = Path.GetFullPath(repoDirectory);
         using var repoLock = AcquireLock(repo);
@@ -236,12 +239,13 @@ public static class Publisher
             Published = DateTimeOffset.UtcNow,
             Launcher = launcher,
         };
-        await WriteChannelAsync(repo, channel, ct);
+        await WriteChannelAsync(repo, channel, signingKeyPem, ct);
         return channel;
     }
 
     /// <summary>Publishes a launcher exe (launcher/&lt;version&gt;/) and points the channel's launcher field at it.</summary>
-    public static async Task<ChannelInfo> PublishLauncherAsync(string repoDirectory, string channelName, string exePath, string version, CancellationToken ct = default)
+    public static async Task<ChannelInfo> PublishLauncherAsync(string repoDirectory, string channelName, string exePath,
+        string version, string? signingKeyPem = null, CancellationToken ct = default)
     {
         if (!Version.TryParse(version, out _))
         {
@@ -261,11 +265,11 @@ public static class Publisher
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         await File.WriteAllBytesAsync(target, exe, ct);
         channel.Launcher = new LauncherRelease { Version = version, Url = relative, Sha256 = Hashing.Sha256Hex(exe) };
-        await WriteChannelAsync(repo, channel, ct);
+        await WriteChannelAsync(repo, channel, signingKeyPem, ct);
         return channel;
     }
 
-    static async Task WriteChannelAsync(string repo, ChannelInfo channel, CancellationToken ct)
+    static async Task WriteChannelAsync(string repo, ChannelInfo channel, string? signingKeyPem, CancellationToken ct)
     {
         string path = Path.Combine(repo, "channels", channel.Channel + ".json");
         if (channel.Launcher is null && File.Exists(path))
@@ -275,8 +279,17 @@ public static class Publisher
             channel.Launcher = existing?.Launcher;
         }
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        byte[] jsonBytes = JsonSerializer.SerializeToUtf8Bytes(channel, Json.Indented);
         string temp = path + ".tmp";
-        await File.WriteAllBytesAsync(temp, JsonSerializer.SerializeToUtf8Bytes(channel, Json.Indented), ct);
+        await File.WriteAllBytesAsync(temp, jsonBytes, ct);
         File.Move(temp, path, overwrite: true);
+        if (!string.IsNullOrWhiteSpace(signingKeyPem))
+        {
+            byte[] sig = ChannelSignature.Sign(jsonBytes, signingKeyPem);
+            string sigPath = path + ".sig";
+            string sigTemp = sigPath + ".tmp";
+            await File.WriteAllBytesAsync(sigTemp, sig, ct);
+            File.Move(sigTemp, sigPath, overwrite: true);
+        }
     }
 }
