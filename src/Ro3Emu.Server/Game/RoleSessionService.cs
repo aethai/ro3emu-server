@@ -280,9 +280,9 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.Position = new Vec3 { X = arrival.X, Y = arrival.Y, Z = arrival.Z };
         session.Face = arrival.Face;
         session.RolePositionReady = true;
-        session.LastWalkUtc = DateTime.UtcNow;
+        session.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
         session.Speed = data.JobAttributes(role.Career).GetValueOrDefault(AttrSpeed, DefaultSpeed);
-        session.PositionSavedUtc = DateTime.UtcNow;
+        session.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
         session.DeferFunctionSync = true;
         session.DeferTaskSync = true;
         session.SkillProtocol = new();
@@ -366,7 +366,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         if (session.Dead || buffs.HasForbidden(session, ForbiddenState.Walk))
         {
             // The client cannot move now: what it reports later may not include distance covered meanwhile.
-            SceneService.HoldWalk(session, DateTime.UtcNow, walking: false);
+            SceneService.HoldWalk(session, clock.GetUtcNow().UtcDateTime, walking: false);
             return;
         }
         // A skill's 31112 moved the player: the client stops its walk and its perform agent puts the unit at the move's
@@ -381,7 +381,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.Position = walk.Pos;
         session.Face = walk.Face;
         session.WalkDir = float.IsFinite(walk.Dir) ? walk.Dir : walk.Face;
-        session.LastWalkUtc = DateTime.UtcNow; // also when the walk check is off
+        session.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // also when the walk check is off
         session.Walking = !walk.BStop && walk.SpeedRate > 0;
         positions.MarkDirty(session, urgent: walk.BStop); // C/D 18: written lazily, never on the loop
         await systems.MovedAsync(session, walk);
@@ -402,7 +402,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         if (session.Role is not { } role || session.InstanceId != 0) return;
         var p = session.Position;
         roles.SavePosition(role.Id, session.SceneEntry, p.X, p.Y, p.Z, session.Face);
-        session.PositionSavedUtc = DateTime.UtcNow;
+        session.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
         positions.Persisted(session); // a durable barrier: no older lazy capture may follow it
     }
 
@@ -542,7 +542,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             {
                 Pos = position.Clone(),
                 Face = face,
-                ServerTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                ServerTime = session.NowMs,
             },
             NotifyType = EntityBase.Types.NotifyType.All,
         };

@@ -45,7 +45,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     public Func<long, GuildItemData>? ItemDataOf { get; set; }
 
     private readonly Dictionary<long, Invitation> _invites = [];
-    private long _nextToken = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private long _nextToken = clock.GetUtcNow().ToUnixTimeMilliseconds();
     private sealed record Invitation(long GuildId, long Recipient, long Inviter, long ExpiresMs);
     // The injected clock, as WeekStart: membership times compared with the guild week must share its calendar.
     private long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();

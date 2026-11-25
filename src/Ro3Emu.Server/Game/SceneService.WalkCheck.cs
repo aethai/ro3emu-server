@@ -25,7 +25,7 @@ public sealed partial class SceneService
     {
         var mode = options.Value.WalkCheck;
         if (mode == "off") return true;
-        var now = DateTime.UtcNow;
+        var now = s.UtcNow;
         var from = s.Position;
         string? problem = WalkProblem(s, from, walk.Pos, now, out float spend);
         double speed = WalkSpeed(s);
@@ -48,7 +48,7 @@ public sealed partial class SceneService
 
     /// <summary>The player cannot walk until <paramref name="until"/> (a root, a stun, a cast that holds it in place).</summary>
     public static void HoldWalk(GameSession s, DateTime until, bool walking) =>
-        s.WalkAllowance.Hold(DateTime.UtcNow, until, WalkSpeed(s), walking ? (DateTime.UtcNow - s.LastWalkUtc).TotalSeconds : 0);
+        s.WalkAllowance.Hold(s.UtcNow, until, WalkSpeed(s), walking ? (s.UtcNow - s.LastWalkUtc).TotalSeconds : 0);
 
     /// <summary>Metres a second the walk budget grows by: the speed attribute, at least 1 m/s (a slowed player still walks).</summary>
     internal static double WalkSpeed(GameSession s) => Math.Max(1, s.Speed / 100.0);

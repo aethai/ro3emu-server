@@ -61,7 +61,7 @@ public sealed class FlyingDragonService : IGameTicker
         gm.Register("dragon", "info | start [packet 0-3] | progress <0-10000> | complete | end | timeout (Starshatter ritual test aid)", GmAsync);
     }
 
-    private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    private long Now => _loop.NowSec;
 
     private DBFlyingDragonProduceInfo State => _state ??=
         _accounts.ReadSync<string?>(new SeasonStateReadPlan(StateKey)) is { Length: > 0 } saved

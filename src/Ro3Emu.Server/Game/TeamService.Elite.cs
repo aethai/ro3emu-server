@@ -39,7 +39,7 @@ public sealed partial class TeamService
             team = new Team
             {
                 Id = ++_nextId, Type = TeamType.Forty, Leader = self, Target = NoTarget,
-                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Area = _options.Value.ClusterId.ToString(),
+                Created = _loop.NowSec, Area = _options.Value.ClusterId.ToString(),
                 PlayBook = _seasons.PlayBook,
             };
             _teams[team.Id] = team;
@@ -49,7 +49,7 @@ public sealed partial class TeamService
             await s.SendGameAsync(TeamAll, All(team));
         }
         team.Elites.UnionWith(elites);
-        DateTime expires = DateTime.UtcNow + InviteLife;
+        DateTime expires = _loop.Time.GetUtcNow().UtcDateTime + InviteLife;
         long teamId = team.Id;
         foreach (long id in online)
         {
@@ -59,7 +59,7 @@ public sealed partial class TeamService
             _loop.ScheduleRuntime(InviteLife, () => RunTeamAsync("team/invite-expiry", [invited], teamId, () =>
             {
                 if (_invites.TryGetValue((invited, teamId), out var current) && current == expires
-                    && current <= DateTime.UtcNow) _invites.Remove((invited, teamId));
+                    && current <= _loop.Time.GetUtcNow().UtcDateTime) _invites.Remove((invited, teamId));
                 return Task.CompletedTask;
             }));
             var simple = new TeamTotalSimpleInfo { Info = Simple(team) };

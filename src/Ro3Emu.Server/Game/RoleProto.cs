@@ -29,11 +29,11 @@ public static class RoleProto
         role.Hair != 0 ? new() { [HairSlot] = role.Hair } : new();
 
     /// <summary>Offline/model cache projection of the same persisted wardrobe used by the world entity.</summary>
-    public static Dictionary<int, int> Appearances(Role role, byte[]? saved)
+    public static Dictionary<int, int> Appearances(Role role, byte[]? saved, TimeProvider? clock = null)
     {
         if (saved == null) return Appearances(role);
         var wardrobe = DBWardRobeInfo.Parser.ParseFrom(saved);
-        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long now = (clock ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds();
         var result = wardrobe.CurUseAppearances.Where(p => wardrobe.AllLightUpAppearances.TryGetValue(p.Value, out var owned)
             && (owned.OverdueTimeMs == 0 || owned.OverdueTimeMs > now)).ToDictionary(p => p.Key, p => p.Value);
         if (!result.ContainsKey(HairSlot) && role.Hair != 0) result[HairSlot] = role.Hair;

@@ -16,6 +16,8 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
 {
     internal TimeProvider Clock { get; } = clock ?? TimeProvider.System;
     internal long NowMs => Clock.GetUtcNow().ToUnixTimeMilliseconds();
+    internal long NowSec => Clock.GetUtcNow().ToUnixTimeSeconds();
+    internal DateTime UtcNow => Clock.GetUtcNow().UtcDateTime;
 
     /// <summary>The current game transport. A silent reconnect (ReconnectService) swaps it on the loop; frames and
     /// closes of a swapped-out channel are ignored by the gate.</summary>

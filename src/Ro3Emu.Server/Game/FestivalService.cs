@@ -491,7 +491,7 @@ public sealed class FestivalService : IGameTicker
                     Asset(grant.Entry), grant.Count))).ToArray();
             transaction.WithEventEconomy(new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"),
                 "realm", 0, "event/festival-complete", $"festival/{r.Cycle}/complete",
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [], goods, deltas,
+                _loop.NowMs, [], goods, deltas,
                 JsonSerializer.SerializeToUtf8Bytes(new { r.Cycle, Rows = frozen.Count })));
         }
         await transaction.CommitAsync(_accounts, "festival/complete", _ => _current = r);

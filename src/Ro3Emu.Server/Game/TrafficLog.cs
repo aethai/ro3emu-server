@@ -22,6 +22,7 @@ public sealed class TrafficLog : IDisposable
 
     private const int Capacity = 65536;
     private readonly MsgCatalog _catalog;
+    private readonly TimeProvider _clock;
     private readonly string _dir;
     private readonly bool _all;
     private readonly HashSet<string>? _accounts;
@@ -29,9 +30,10 @@ public sealed class TrafficLog : IDisposable
     private readonly Task? _writerTask;
     private long _dropped, _reportedDropped;
 
-    public TrafficLog(IOptions<ServerOptions> options, MsgCatalog catalog)
+    public TrafficLog(IOptions<ServerOptions> options, MsgCatalog catalog, TimeProvider? clock = null)
     {
         _catalog = catalog;
+        _clock = clock ?? TimeProvider.System;
         _dir = Path.Combine(options.Value.DataDir, "logs");
         string mode = options.Value.TrafficLog?.Trim() ?? "off";
         if (mode.Equals("off", StringComparison.OrdinalIgnoreCase) || mode.Length == 0) return;
@@ -58,26 +60,26 @@ public sealed class TrafficLog : IDisposable
     public void ClientToServer(string? account, uint msgId, ReadOnlyMemory<byte> body)
     {
         if (!Enabled(account) || msgId == MsgId.Heartbeat) return;
-        Enqueue(new Entry(DateTime.Now, account, "c2s", msgId, null, body.ToArray(), null));
+        Enqueue(new Entry(_clock.GetLocalNow().DateTime, account, "c2s", msgId, null, body.ToArray(), null));
     }
 
     /// <summary><paramref name="bytes"/> is the already serialized <paramref name="type"/> body (not copied again).</summary>
     public void ServerToClient(string? account, uint msgId, MessageDescriptor type, byte[] bytes)
     {
         if (!Enabled(account) || msgId == MsgId.Heartbeat) return;
-        Enqueue(new Entry(DateTime.Now, account, "s2c", msgId, type, bytes, null));
+        Enqueue(new Entry(_clock.GetLocalNow().DateTime, account, "s2c", msgId, type, bytes, null));
     }
 
     public void ServerToClientRaw(string? account, uint msgId, int length)
     {
         if (!Enabled(account)) return;
-        Enqueue(new Entry(DateTime.Now, account, "s2c", msgId, null, default, $"{length} bytes"));
+        Enqueue(new Entry(_clock.GetLocalNow().DateTime, account, "s2c", msgId, null, default, $"{length} bytes"));
     }
 
     public void Rpc(string? account, string direction, string method, Func<string> args)
     {
         if (!Enabled(account)) return;
-        Enqueue(new Entry(DateTime.Now, account, direction, 0, null, default, method + "\n" + args()));
+        Enqueue(new Entry(_clock.GetLocalNow().DateTime, account, direction, 0, null, default, method + "\n" + args()));
     }
 
     private void Enqueue(in Entry entry) => _queue!.Writer.TryWrite(entry);

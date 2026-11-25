@@ -66,7 +66,7 @@ public sealed partial class TeamService
         var team = new Team
         {
             Id = ++_nextId, Type = TeamType.Five, Leader = ids[0], Target = NoTarget,
-            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Area = _options.Value.ClusterId.ToString(),
+            Created = _loop.NowSec, Area = _options.Value.ClusterId.ToString(),
             PlayBook = _seasons.PlayBook,
         };
         _teams[team.Id] = team;

@@ -29,7 +29,7 @@ public sealed partial class CharacterService
         byte[] receipt = resolved.Length <= 15 * 1024 ? resolved
             : JsonSerializer.SerializeToUtf8Bytes(new { Version = 1, ResultHash = fingerprint, ResultBytes = resolved.Length });
         return new EconomyMutation(Guid.NewGuid().ToString("N"), session.Account!, session.Role!.Id, kind,
-            fingerprint, sourceKey, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            fingerprint, sourceKey, session.NowMs,
             [.. costs.Where(x => x.Count > 0).GroupBy(x => x.Entry).Select(g => new EconomyQuantity(Asset(g.Key), g.Sum(x => x.Count)))],
             [.. goods.Where(x => x.Count > 0).GroupBy(x => x.Entry).Select(g => new EconomyQuantity(Asset(g.Key), g.Sum(x => (long)x.Count)))], receipt);
     }
@@ -67,6 +67,6 @@ public sealed partial class CharacterService
             { Version = 1, Hash = Convert.ToHexString(SHA256.HashData(outcome)) });
         return new EconomyMutation(Guid.NewGuid().ToString("N"), session.Account!, session.Role!.Id,
             source.CommandKind, Convert.ToHexString(SHA256.HashData(outcome)), source.SourceKey,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Quantities(costs), goods, outcome, evidence);
+            session.NowMs, Quantities(costs), goods, outcome, evidence);
     }
 }

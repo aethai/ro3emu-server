@@ -638,7 +638,7 @@ public sealed partial class TimedBattleService
                 : throw new InvalidDataException($"OnePiece grant {entry} is not catalogued.");
             tx.WithEventEconomy(new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"),
                 "realm", 0, "event/timed-battle-onepiece", $"timed_battle/onepiece/{a.Room.Id.ToString(CultureInfo.InvariantCulture)}",
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [],
+                _loop.NowMs, [],
                 [.. economic.Select(x => new EconomyQuantity(Asset(x.Grant.Entry), x.Grant.Count))],
                 [.. economic.Select(x => new EventEconomyOwnerDelta(new EconomyOwner(EconomyOwnerKind.Role,
                     x.Pay.Obligation.RoleId.ToString(CultureInfo.InvariantCulture)), Asset(x.Grant.Entry), x.Grant.Count))],

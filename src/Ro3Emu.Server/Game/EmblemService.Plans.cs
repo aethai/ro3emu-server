@@ -12,7 +12,7 @@ public sealed partial class EmblemService
     private const int PlanCount = 5, PlanNameMax = 8;
 
     internal int PlanSwitchCooldownError(GameSession session) =>
-        DateTime.UtcNow - session.EmblemPlanSwitchUtc < TimeSpan.FromSeconds(3) ? ErrorCodes.Cooldown : 0;
+        session.UtcNow - session.EmblemPlanSwitchUtc < TimeSpan.FromSeconds(3) ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Project the selected 5005 plan onto detached 5009 item instances before committing either owner.</summary>
     internal void ApplyGenreMarkers(IEnumerable<InvItem> inventory, EmblemState state)
@@ -68,7 +68,7 @@ public sealed partial class EmblemService
                 {
                     await CommitEmblemsAsync(session, "emblem-plan-switch", next, beforeItems, afterItems, [],
                         new { From = state.CurrentPlan, To = req.TargetIndex },
-                        () => session.EmblemPlanSwitchUtc = DateTime.UtcNow);
+                        () => session.EmblemPlanSwitchUtc = session.UtcNow);
                 }
                 catch (SqliteException e)
                 {

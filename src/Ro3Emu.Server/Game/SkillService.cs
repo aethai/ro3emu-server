@@ -28,6 +28,7 @@ public sealed partial class SkillService
     private readonly CharacterService _character;
     private readonly RoleStore _roles;
     private readonly TimeProvider _clock;
+    internal TimeProvider Clock => _clock;
     private readonly ILogger<SkillService> _log;
     private Dictionary<(int Group, int Level), int>? _rowIds;
     private Dictionary<int, int>? _upgradedGroupByBase;
@@ -736,7 +737,7 @@ public sealed partial class SkillService
             if (result == 0 && req.Plan != session.SkillPlans!.CurrentPlanIndex)
             {
                 await CommitAsync(session, next, progress, "cd13c/skill-switch",
-                    () => session.SkillPlanSwitchUtc = DateTime.UtcNow);
+                    () => session.SkillPlanSwitchUtc = _clock.GetUtcNow().UtcDateTime);
                 changed = true;
             }
             await session.SendGameAsync(SwitchPlan, new SwitchPlanResp { Result = result, Plan = req.Plan, Flag = 0 });
@@ -767,7 +768,7 @@ public sealed partial class SkillService
 
     /// <summary>Shared gate for direct skill switches and Build-window child switches.</summary>
     internal int PlanSwitchCooldownError(GameSession session) => InCombat(session) ? ErrorCodes.Parameter
-        : DateTime.UtcNow - session.SkillPlanSwitchUtc < TimeSpan.FromSeconds((int)(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3))
+        : _clock.GetUtcNow().UtcDateTime - session.SkillPlanSwitchUtc < TimeSpan.FromSeconds((int)(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3))
             ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>

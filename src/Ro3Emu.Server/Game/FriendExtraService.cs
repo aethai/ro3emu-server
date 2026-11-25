@@ -235,7 +235,7 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
         var record = new FriendGiftRecord
         {
             Sender = self, Receiver = req.RoleId, ItemId = req.ItemId, Count = req.Count, Message = req.Message,
-            IsAnonymous = req.IsAnonymous, SendTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Intimacy = intimacy,
+            IsAnonymous = req.IsAnonymous, SendTime = loop.NowSec, Intimacy = intimacy,
         };
         (record.Popularity, record.Affection) = personal.GiftValues(req.ItemId, req.Count);
         sender.SendGiftRecords.Add(record);
@@ -247,7 +247,7 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
         string operationId = Guid.NewGuid().ToString("N");
         var envelope = new EconomyEnvelope(operationId, s.Account!, self, "friend-gift",
             Convert.ToHexString(SHA256.HashData(req.ToByteArray())), "friend-gift:" + operationId,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            loop.NowMs,
             [new EconomyEffect(new EconomyAsset(EconomyAssetKind.Item, item),
                 new EconomyOwner(EconomyOwnerKind.Role, self.ToString(CultureInfo.InvariantCulture)),
                 EconomyCompartment.Inventory, -req.Count, EconomyLegKind.Sink, EconomyReason.FriendGiftCost)],

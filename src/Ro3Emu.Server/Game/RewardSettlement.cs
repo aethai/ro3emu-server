@@ -13,12 +13,12 @@ public sealed record RewardSourceId(string Realm, string Run, string Generation)
 }
 
 /// <summary>One frozen natural reward source. Completion belongs to the economic receipt, not its packets.</summary>
-public sealed class RewardSettlement(string sourceKey, string commandKind, bool autoDecompose = false)
+public sealed class RewardSettlement(string sourceKey, string commandKind, bool autoDecompose = false, long? effectiveUtcMs = null)
 {
     public string SourceKey { get; } = sourceKey;
     public string CommandKind { get; } = commandKind;
     public string OperationId { get; } = "reward-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceKey)));
-    public long EffectiveUtcMs { get; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    public long EffectiveUtcMs { get; } = effectiveUtcMs ?? TimeProvider.System.GetUtcNow().ToUnixTimeMilliseconds();
     public bool AutoDecompose { get; } = autoDecompose;
     public bool Committed { get; internal set; }
     internal bool OutcomeUnknown { get; set; }

@@ -163,7 +163,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             s.Position = new Vec3 { X = arrival.X, Y = arrival.Y, Z = arrival.Z };
             s.PreviousPosition = s.Position;
             s.Face = arrival.Face;
-            s.LastWalkUtc = DateTime.UtcNow; // the walk before the switch is over (GameSession.WalkReportLag)
+            s.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // the walk before the switch is over (GameSession.WalkReportLag)
             s.Walking = false;
             s.SceneLoading = true;
             if (instanceId == 0)
@@ -349,7 +349,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     }
 
     /// <summary>EntityBase of a server NPC: entity type 2, NPCConfig id as template, scene-editor position.</summary>
-    public static EntityBase NpcEntity(WorldNpc npc) => new()
+    public static EntityBase NpcEntity(WorldNpc npc, long? nowMs = null) => new()
     {
         Uuid = (ulong)npc.Uid,
         EntityTemplateID = (ulong)npc.NpcId,
@@ -361,7 +361,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         {
             Pos = new Vec3 { X = npc.X, Y = npc.Y, Z = npc.Z },
             Face = npc.Face,
-            ServerTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            ServerTime = nowMs ?? TimeProvider.System.GetUtcNow().ToUnixTimeMilliseconds(),
         },
         NotifyType = EntityBase.Types.NotifyType.All,
     };
@@ -498,12 +498,12 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         {
             Uid = s.Role!.Id,
             TransType = MovesOnSurface(s.SceneEntry) ? MovementTransitionType.MoveTransResetPos : MovementTransitionType.MoveTransForceTeleport,
-            MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() },
+            MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = clock.GetUtcNow().ToUnixTimeMilliseconds() },
         });
         s.PreviousPosition = s.Position;
         s.Position = pos;
         s.Face = at.Face;
-        s.LastWalkUtc = DateTime.UtcNow;
+        s.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
         s.Walking = false;
         await world.MoveAsync(s, new WalkReq { Pos = pos, Face = at.Face, BStop = true, SpeedRate = 1 }, forceTeleport: true);
         if (AfterTeleport != null) await AfterTeleport(s);

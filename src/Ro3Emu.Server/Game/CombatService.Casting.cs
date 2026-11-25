@@ -444,8 +444,8 @@ public sealed partial class CombatService
     // only when its direction changes (in-game 22.10: straight legs of 0.86 s and 0.9 s), so the time is not capped
     // below the 5 s SceneService.AcceptWalkAsync allows.
     internal const double MaxWalkSlackSeconds = 5;
-    private static double WalkedSeconds(DateTime since) => Math.Clamp((DateTime.UtcNow - since).TotalSeconds, 0, MaxWalkSlackSeconds);
-    private static float WalkSlack(GameSession s) => !s.Walking ? 0 : (float)(s.Speed / 100.0 * WalkedSeconds(s.LastWalkUtc));
+    private static double WalkedSeconds(DateTime since, DateTime now) => Math.Clamp((now - since).TotalSeconds, 0, MaxWalkSlackSeconds);
+    private static float WalkSlack(GameSession s) => !s.Walking ? 0 : (float)(s.Speed / 100.0 * WalkedSeconds(s.LastWalkUtc, s.UtcNow));
 
     /// <summary>
     /// Where along the walk in progress the caster can be nearest to the target: the walk goes straight from the last walk's
@@ -757,7 +757,7 @@ public sealed partial class CombatService
         // that walks on without reporting it cannot claim the distance afterwards (SceneService.AcceptWalkAsync).
         // One pressed in mid-walk is the exception: the client walks on (PlayerMoved).
         if (actor == null && !s.Walking && new SkillConfig(row).Movement == 0)
-            SceneService.HoldWalk(s, DateTime.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
+            SceneService.HoldWalk(s, s.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
         s.WorldState.ResurrectionCastId = IsResurrection(row) ? id : 0;
         s.Face = face;
         req.Face = face;
@@ -895,7 +895,7 @@ public sealed partial class CombatService
             && (FindMonster(s.WorldScene, action.Request.TargetId) is { Hp: > 0 } || EventTarget(s, action.Request.TargetId) is { Dead: false })
             && SkillShow.MoveInterruptOffset(_data.SkillTemplate(new SkillConfig(action.Row).ScriptShow), action.ChantMs, action.ActionMs) is { } moveMs)
             s.SwingLockUntilMs = action.StartMs + moveMs;
-        s.WalkAllowance.Release(DateTime.UtcNow);
+        s.WalkAllowance.Release(s.UtcNow);
         await ToPlayerAndViewersAsync(s, SkillEnd, new SkillEndNotify
         {
             SrcID = action.SourceId, SessionId = action.Id, Type = SkillEndNotify.Types.SkillEndType.Interrupted,
@@ -935,7 +935,7 @@ public sealed partial class CombatService
             // Clicking an enemy from afar: the client attacks on reaching range and stops a few ms later (in-game
             // 11.10), so that first stop is where the auto-attack starts, not a step away that ends it. The 300 ms grace is inferred.
             if (a.StartedWalking && !s.Walking && Now - a.StartMs <= 300
-                && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) <= a.ArrivalSpeed * WalkedSeconds(a.WalkFromUtc) + 0.5)
+                && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) <= a.ArrivalSpeed * WalkedSeconds(a.WalkFromUtc, s.UtcNow) + 0.5)
             {
                 a.StartX = s.Position.X; a.StartZ = s.Position.Z;
                 a.StartedWalking = false;

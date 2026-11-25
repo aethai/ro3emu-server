@@ -61,7 +61,7 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
                 var candidate = equip!.Clone();
                 int installed = (int)GameData.Int(enchantRow, "_iID");
                 // (inferred) Monotonic Unix seconds preserve a definite display order even for rapid rerolls.
-                rolled.GetTime = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), candidate.Enchantments.Values.Select(e => e.GetTime).DefaultIfEmpty(0).Max() + 1);
+                rolled.GetTime = Math.Max(session.NowSec, candidate.Enchantments.Values.Select(e => e.GetTime).DefaultIfEmpty(0).Max() + 1);
                 if (replacement.Value != 0) candidate.Enchantments.Remove(replacement.Value);
                 candidate.Enchantments[installed] = rolled;
                 // No sync inside the exchange: the paid bag and updated item are published together below.
