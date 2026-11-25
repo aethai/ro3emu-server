@@ -15,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// (lua-src Logic/Asset/LC_DAL_Valhalla.lua). The statue is role blob "heroic_spirit" (DBOdinStatue).
 /// The statue's cumulative Field Auto-Battle EXP Bonus is applied by RewardService.
 /// </summary>
-public sealed class ValhallaService
+public sealed partial class ValhallaService
 {
     public const uint Sync = 5046, Challenge = 83490, Pray = 83491;
     public const int Function = 96;

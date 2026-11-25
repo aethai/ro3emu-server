@@ -199,6 +199,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<Game.Persistence.PositionPersistence>();
         builder.Services.AddSingleton<Game.Persistence.SettingsPersistence>();
         builder.Services.AddSingleton<Game.Persistence.WildAfkPersistence>();
+        RegisterRoleLifecycles(builder.Services);
         builder.Services.AddSingleton<RoleSystems>();
         builder.Services.AddSingleton<RoleSessionService>();
         // Message modules in this order: it is the order of their interceptors (World before Economy before Character).
@@ -542,6 +543,80 @@ public static partial class ServerHost
     [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:RefuseUnknownAccounts is on but the web panel's sign-up is " +
         "off: no new account can be created. Turn on Ro3Emu:Panel:Enabled and Ro3Emu:Panel:Registration (docs/guide/hosting.md).")]
     private static partial void LogNoSignUp(ILogger logger);
+
+    private static void RegisterRoleLifecycles(IServiceCollection services)
+    {
+        void Add<T>() where T : class, IRoleLifecycle =>
+            services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<T>());
+
+        services.AddSingleton<IRoleLifecycle, WorldRoleLifecycle>();
+        Add<ChatService>();
+        Add<CharacterService>();
+        Add<SkillService>();
+        Add<FunctionService>();
+        Add<CombatService>();
+        Add<BuffService>();
+        Add<SceneService>();
+        Add<TaskService>();
+        Add<DailyActivityService>();
+        Add<GuideService>();
+        Add<EmojiService>();
+        Add<PersonalService>();
+        Add<SocialOutfitService>();
+        Add<AchievementService>();
+        services.AddSingleton<IRoleLifecycle, FriendRoleLifecycle>();
+        Add<MvpService>();
+        Add<CardService>();
+        Add<ShopService>();
+        Add<EmblemService>();
+        Add<SeasonService>();
+        Add<SeasonPageService>();
+        Add<SeasonRefineService>();
+        Add<SeasonTalentService>();
+        Add<PetService>();
+        Add<TowerService>();
+        Add<ValhallaService>();
+        Add<FlyingDragonService>();
+        Add<MonsterHuntService>();
+        Add<GrowthClassService>();
+        Add<ParagonService>();
+        Add<TitleService>();
+        Add<FirstHeartService>();
+        Add<Game.MailService>();
+        Add<AuctionService>();
+        Add<GuildService>();
+        Add<AdventureGroupService>();
+        Add<GuildCaravanService>();
+        Add<GuildChallengeService>();
+        Add<DungeonService>();
+        Add<DungeonMatchService>();
+        Add<InstanceService>();
+        Add<TradeService>();
+        Add<StallsService>();
+        Add<LifeJobService>();
+        Add<GatheringService>();
+        Add<WildAfkService>();
+        Add<WorldCoreService>();
+        Add<TavernService>();
+        Add<WorldInteractionService>();
+        Add<NewActivityService>();
+        Add<TimedEventService>();
+        Add<PronteraDefenseService>();
+        Add<TimedBattleService>();
+        Add<CasualBattleService>();
+        Add<FestivalService>();
+        Add<TrainingService>();
+        Add<LotteryService>();
+        Add<MountService>();
+        Add<CareerSpecialService>();
+        Add<WardrobeService>();
+        Add<TotemService>();
+        Add<GenreService>();
+        Add<PowerService>();
+        Add<TerritoryWarsService>();
+        Add<TerritoryEscortService>();
+        Add<Game.Persistence.SettingsPersistence>();
+    }
 
     private static string RepositoryRoot()
     {

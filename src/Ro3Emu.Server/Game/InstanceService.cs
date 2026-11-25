@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// handoff and World owns AOI; this service owns the instance id, each participant's outside return point, and
 /// spawned actors. The return-on-reconnect and last-participant cleanup policies are (inferred).
 /// </summary>
-public sealed class InstanceService
+public sealed partial class InstanceService
 {
     private readonly RoleStore _roles;
     private readonly SceneService _scene;

@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 /// NPC-owned gameplay states. NPCInteractConfig selects GameplayStatusConfig; VehicleConfig selects the
 /// VehicleSeatConfig rows. LC_GamePlayStatusMgr.lua:876-931 consumes 32702, and LC_VehicleServer.lua:143-167 sends 32708.
 /// </summary>
-public sealed class WorldInteractionService
+public sealed partial class WorldInteractionService
 {
     public const uint Change = 32702, Action = 32703, Change3C = 32704,
         SeatChange = 32708, VehicleSync = 31074;

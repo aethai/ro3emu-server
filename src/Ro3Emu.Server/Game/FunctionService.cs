@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// 4004 quest delivered (TaskService.IsDelivered), 1014 cleared Spirit Tower floor, 11001 active life skill, 1102 learned skill. Resent when the level or
 /// job changes, so functions unlock as the player grows.
 /// </summary>
-public sealed class FunctionService
+public sealed partial class FunctionService
 {
     public const uint FunctionOpenSync = 5056;
     public const int SkillFunction = 10, SeasonTalentFunction = 1003; // FunctionConfig: skills and season talents

@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// question ordering, a 30-second answer / 5-second reveal cadence, tied ranks and automatic reward delivery
 /// are (inferred). Position at the deadline is authoritative; a client event cannot answer or award the quiz.
 /// </summary>
-public sealed class FestivalService : IGameTicker
+public sealed partial class FestivalService : IGameTicker
 {
     public const int ActivityId = 3301;
     public const int Function = 5901; // FunctionConfig: Festival Invitation

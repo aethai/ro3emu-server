@@ -1,0 +1,138 @@
+Load (23)
+  10: PowerService.Load
+  20: CharacterService.Load
+  30: CareerSpecialService.Load
+  40: ValhallaService.Load
+  50: MonsterHuntService.Load
+  60: GrowthClassService.Load
+  70: ParagonService.Load
+  80: TitleService.Load
+  90: FirstHeartService.Load
+  100: MountService.Load
+  110: TotemService.Load
+  120: LifeJobService.Load
+  130: SeasonService.Load
+  140: NewActivityService.ResetReady
+  150: DailyActivityService.ResetReady
+  160: WildAfkService.Load
+  170: DailyActivityService.Load
+  180: EmblemService.Load
+  190: SeasonTalentService.Load
+  200: SeasonRefineService.Load
+  210: TavernService.Load
+  220: PowerService.Prime
+  230: CharacterService.Refresh
+Login (64)
+  10: ChatService.OnRoleEntered [checkpoint]
+  20: SeasonService.Login [checkpoint]
+  30: CharacterService.SendLoginSync [checkpoint]
+  40: SkillService.Load [checkpoint]
+  50: LifeJobService.Login [checkpoint]
+  60: SeasonPageService.Login [checkpoint]
+  70: SeasonRefineService.Login [checkpoint]
+  80: WardrobeService.Login [checkpoint]
+  90: MountService.Login [checkpoint]
+  100: CareerSpecialService.Login [checkpoint]
+  110: TotemService.Sync [checkpoint]
+  120: WildAfkService.Login [checkpoint]
+  130: CharacterService.CatchUpJobExp [checkpoint]
+  140: TaskService.Login [checkpoint]
+  150: DailyActivityService.Login [checkpoint]
+  160: WildAfkService.Reconcile [checkpoint]
+  170: SeasonTalentService.Sync [checkpoint]
+  180: GuideService.Login [checkpoint]
+  190: EmojiService.Login [checkpoint]
+  200: PersonalService.Login
+  210: SocialOutfitService.Login [checkpoint]
+  220: CardService.Login [checkpoint]
+  230: TowerService.Login [checkpoint]
+  240: DungeonService.Login
+  250: ValhallaService.Login
+  260: FlyingDragonService.Login
+  270: MonsterHuntService.Login [checkpoint]
+  280: EmblemService.Login [checkpoint]
+  290: ShopService.Login [checkpoint]
+  300: TradeService.Login [checkpoint]
+  310: StallsService.Login [checkpoint]
+  320: GuildService.Login [checkpoint]
+  330: AdventureGroupService.Login [checkpoint]
+  340: GuildChallengeService.Login [checkpoint]
+  350: GuildCaravanService.Login [checkpoint]
+  360: TerritoryWarsService.Login [checkpoint]
+  370: TerritoryEscortService.Login [checkpoint]
+  380: PronteraDefenseService.Login [checkpoint]
+  390: NewActivityService.Login [checkpoint]
+  400: DungeonService.DeliverJourneyPending [checkpoint]
+  410: TimedEventService.Login [checkpoint]
+  420: TimedBattleService.Login [checkpoint]
+  430: CasualBattleService.Login [checkpoint]
+  440: FestivalService.Login [checkpoint]
+  450: TrainingService.Login [checkpoint]
+  460: AuctionService.Login [checkpoint]
+  470: PetService.Login [checkpoint]
+  480: GenreService.Login
+  490: PowerService.Login [checkpoint]
+  500: TaskService.Refresh
+  510: ParagonService.Login
+  520: TitleService.Login
+  530: GrowthClassService.Login [checkpoint]
+  540: AchievementService.Login [checkpoint]
+  550: FirstHeartService.Login [checkpoint]
+  560: FunctionService.Sync [checkpoint]
+  570: LotteryService.Login [checkpoint]
+  580: MailService.Login
+  590: MvpService.Recover [checkpoint]
+  600: SkillService.Sync [checkpoint]
+  610: BuffService.InitializeEnergy [checkpoint]
+  620: WorldCoreService.Login [checkpoint]
+  630: TavernService.Login [checkpoint]
+  640: MountService.UseHeldVouchers
+LoginKeys (9)
+  10: PronteraDefenseService.LoginKeys
+  20: NewActivityService.LoginKeys
+  30: TerritoryWarsService.LoginKeys
+  40: GuildCaravanService.LoginKeys
+  50: GuildChallengeService.LoginKeys
+  60: MvpService.LoginKeys
+  70: DungeonService.LoginKeys
+  80: CasualBattleService.LoginKeys
+  90: TimedBattleService.LoginKeys
+LeaveKeys (2)
+  10: GuildService.OwnGuildKeys
+  20: TimedBattleService.CleanupKeys
+Move (10)
+  10: World.Move
+  20: TerritoryWarsService.VehicleMoved
+  30: CasualBattleService.MadogearMoved
+  40: TerritoryWarsService.PlatformMoved
+  50: NewActivityService.ConchMoved
+  60: GatheringService.PlayerMoved
+  70: CombatService.PlayerMoved
+  80: CombatService.PlayerWalked
+  90: EmojiService.PlayerMoved
+  100: DungeonService.PlayerMoved
+Leave (24)
+  10: [scene] SceneService.DisconnectLine (Essential)
+  20: [combat] CombatService.ClearSkills (Essential)
+  30: [interaction] WorldInteractionService.Disconnect (Essential)
+  40: [gathering] GatheringService.Interrupt (Essential)
+  50: [life] LifeJobService.Cancel (Essential)
+  60: [friends] FriendService.OfflineNotice (Optional)
+  70: [position] RoleSession.SavePosition (Essential)
+  80: [settings] SettingsPersistence.Flush (Essential)
+  90: [territory] TerritoryWarsService.Disconnect (Essential)
+  100: [afk] WildAfkService.Leave (Essential)
+  110: [daily boundary] DailyActivityService.Reconcile (Essential)
+  120: [dungeon] DungeonService.Abandon (Essential)
+  130: [tower] TowerService.Abandon (Essential)
+  140: [guild] GuildService.OfflineNotice (Essential)
+  150: [activities-reset] NewActivityService.ResetReady (StateReset)
+  160: [training] TrainingService.LeaveRole (Essential)
+  170: [festival] FestivalService.LeaveRole (Essential)
+  180: [dungeon match] DungeonMatchService.LeaveRole (Essential)
+  190: [timed battle] TimedBattleService.LeaveRole (Essential)
+  200: [instance] InstanceService.Abandon (Essential)
+  210: [world] World.Leave (Essential)
+  220: [tavern] TavernService.LeaveRole (Essential)
+  230: [chat] ChatService.OnRoleLeft (Essential)
+  240: [world core] WorldCoreService.Disconnected (Essential)

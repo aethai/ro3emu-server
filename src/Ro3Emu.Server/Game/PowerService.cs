@@ -45,7 +45,7 @@ namespace Ro3Emu.Server.Game;
 /// <see cref="Throttle"/> (inferred interval). maxHistoryPower is the highest total ever published and is saved,
 /// with the current total for the offline leaderboard, in the role's Soul Echo blob (EmblemState.Power).
 /// </summary>
-public sealed class PowerService : IGameTicker
+public sealed partial class PowerService : IGameTicker
 {
     public const uint ChangeNtf = 31502, PackageNtf = 31503;
     private static readonly TimeSpan ProbeEvery = TimeSpan.FromMilliseconds(250);

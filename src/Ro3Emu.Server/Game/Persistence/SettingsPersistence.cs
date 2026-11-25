@@ -9,8 +9,10 @@ namespace Ro3Emu.Server.Game.Persistence;
 /// accounting (SettingType.WildAfk) stays durable at once together with its reconciliation; leaving the world
 /// flushes synchronously.
 /// </summary>
-public sealed class SettingsPersistence : LazyRolePart
+public sealed class SettingsPersistence : LazyRolePart, IRoleLifecycle
 {
+    void IRoleLifecycle.RegisterLifecycle(RoleLifecycleBuilder builder) =>
+        builder.OnLeave(RoleLifecycleOrder.LeaveSettings, "settings", "SettingsPersistence.Flush", Flush);
     private readonly RoleStore _roles;
 
     public SettingsPersistence(RoleStore roles, GameLoop loop, ILogger<SettingsPersistence> log) : base(loop, roles, log)

@@ -21,7 +21,7 @@ namespace Ro3Emu.Server.Game;
 /// unlockInfos is derived each time from the unlock conditions of the tables the editor checks (theme, background,
 /// action). The likes a card received are the role blob "personal_upvote" (PersonalUpvoteList), its popularity the role blob "popularity" (DBPopularityStar).</para>
 /// </summary>
-public sealed class PersonalService
+public sealed partial class PersonalService
 {
     public const uint Sync = 5016, UpdateAppearance = 82553, Upvote = 82554, UpdateCurPlan = 82559, UpdatePlanName = 82560;
     // ErrorCodeConfig 3351-3367, the profile family.

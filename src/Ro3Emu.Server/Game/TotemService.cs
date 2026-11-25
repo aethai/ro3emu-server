@@ -13,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// Totems remain bag instances in pack 4; itemInfos 10001/10002/10003 identify the active deployment.
 /// Client ranges/weights govern generation; uniform draws inside attribute ranges are (inferred).
 /// </summary>
-public sealed class TotemService
+public sealed partial class TotemService
 {
     public const uint Sync = 5032;
     public const int Function = 29; // FunctionConfig: Divine Totem

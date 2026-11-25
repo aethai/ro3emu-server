@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 /// Placement, refresh-time units, and terminal Idle ordering are inferred from the client;
 /// the concrete source/config/client contracts are cited there. All mutable state runs on GameLoop.
 /// </summary>
-public sealed class GatheringService : IGameTicker
+public sealed partial class GatheringService : IGameTicker
 {
     public const uint Interaction = 32700;
     public const uint StateChange = 32702;

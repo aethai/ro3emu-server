@@ -8,7 +8,7 @@ namespace Ro3Emu.Server.Game;
 /// multi dungeon and mark; LC_DAL_Match drives the separate 82636/82637 ready panel. The ordinary
 /// DungeonService owns admission, 70010/30005 and encounter settlement after all votes.
 /// </summary>
-public sealed class DungeonMatchService : IGameTicker
+public sealed partial class DungeonMatchService : IGameTicker
 {
     public const uint StartMatch = 82681, CancelMatch = 82682, Ready = 82637, ReadyNotify = 82636,
         Reminder = 82634, ReminderNotify = 82635, MatchStartNotify = 82638, CancelNotify = 82639, FailNotify = 82643;
