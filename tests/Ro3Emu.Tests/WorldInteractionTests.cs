@@ -22,11 +22,11 @@ public sealed class WorldInteractionTests : IAsyncLifetime
         var fixture = Path.Combine(_stateDir, "fixture");
         var config = Path.Combine(fixture, "config");
         Directory.CreateDirectory(config);
-        foreach (var file in Directory.GetFiles(Path.Combine(RepoRoot(), "data", "config"), "*.json"))
+        foreach (var file in Directory.GetFiles(Path.Combine(ClientData.RepoRoot, "data", "config"), "*.json"))
             File.Copy(file, Path.Combine(config, Path.GetFileName(file)));
         var sceneDir = Path.Combine(fixture, "sceneeditor");
         Directory.CreateDirectory(sceneDir);
-        var source = Path.Combine(RepoRoot(), "data", "sceneeditor", "sc_prt_fild08_001_sceneeditor.json");
+        var source = Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", "sc_prt_fild08_001_sceneeditor.json");
         var scene = JsonNode.Parse(await File.ReadAllTextAsync(source))!.AsObject();
         var npcs = scene["kNpcList"]!.AsObject();
         npcs["900001"] = new JsonObject
@@ -54,7 +54,6 @@ public sealed class WorldInteractionTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_stateDir, true); } catch (IOException) { }
     }
 
@@ -116,12 +115,5 @@ public sealed class WorldInteractionTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
         await bob.SendGameAsync(SceneService.NpcInteraction, Request(vehicle, 5400001));
         Assert.Equal(0, (await Next(bob, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

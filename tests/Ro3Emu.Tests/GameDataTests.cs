@@ -10,7 +10,7 @@ namespace Ro3Emu.Tests;
 public sealed class GameDataTests
 {
     private static readonly GameData Data = new(
-        Options.Create(new ServerOptions { DataDir = Path.Combine(RepoRoot(), "data") }), NullLogger<GameData>.Instance);
+        Options.Create(new ServerOptions { DataDir = Path.Combine(ClientData.RepoRoot, "data") }), NullLogger<GameData>.Instance);
 
     [ClientDataFact]
     public void ConfigRowsRetainAttributePairsAndLocalizedNames()
@@ -41,12 +41,5 @@ public sealed class GameDataTests
         Assert.True(Data.SkillTemplateTable("Lua_Config_EffectData").ContainsKey("1000002"));
         Assert.Null(Data.SkillTemplate(-1));
         Assert.Null(Data.Row("NotAnExport", 1));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

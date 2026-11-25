@@ -28,7 +28,7 @@ public sealed class PetFamilyOwnerEconomyTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _directory;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -38,7 +38,6 @@ public sealed class PetFamilyOwnerEconomyTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -60,9 +59,9 @@ public sealed class PetFamilyOwnerEconomyTests : IAsyncLifetime
         (await client.PostAsync(_http + "/ro3emu/gm?account=alice", Operator.Command(command))).EnsureSuccessStatusCode();
     }
 
-    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomyLedgerWindow Window(EconomySnapshot a, EconomySnapshot b) =>
-        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")), a, b)!;
+        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")), a, b)!;
     private static async Task<PetCombineResp> Combine(BotClient bot)
     {
         await bot.SendGameAsync(PetService.Combine, new PetCombineReq { PetId = 10001 });
@@ -207,11 +206,4 @@ public sealed class PetFamilyOwnerEconomyTests : IAsyncLifetime
         Service<OwnerRegistry>().DeferredForTest = null;
         return Task.CompletedTask;
     });
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 }

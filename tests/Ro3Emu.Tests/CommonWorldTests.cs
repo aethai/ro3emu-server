@@ -18,7 +18,7 @@ public sealed class CommonWorldTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -32,7 +32,6 @@ public sealed class CommonWorldTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -87,12 +86,5 @@ public sealed class CommonWorldTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, WorldCommonService.LegacyGmProc, GMProcRes.Parser)).Result);
         await bob.SendGameAsync(WorldCommonService.LegacyGmProc, new GMProcReq { GmType = 1 });
         Assert.Equal(ErrorCodes.NoPermission, (await Next(bob, WorldCommonService.LegacyGmProc, GMProcRes.Parser)).Result);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

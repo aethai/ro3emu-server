@@ -10,7 +10,7 @@ namespace Ro3Emu.Tests;
 public sealed class StatCalculatorTests
 {
     private static readonly GameData Data = new(
-        Options.Create(new ServerOptions { DataDir = Path.Combine(RepoRoot(), "data") }), NullLogger<GameData>.Instance);
+        Options.Create(new ServerOptions { DataDir = Path.Combine(ClientData.RepoRoot, "data") }), NullLogger<GameData>.Instance);
 
     [ClientDataFact]
     public void PercentMembersScaleTheirRootAndTheResultRoundsUp()
@@ -28,12 +28,5 @@ public sealed class StatCalculatorTests
         // baseaspd 115 = 100 (1.00, dt 2), AGI 10 -> aspd 114 = 20 (+20 %, calc 2), buff_aspd 1142 = 10 (+0.10, calc 3).
         var sheet = StatCalculator.Compute(new Dictionary<int, double> { [115] = 100, [114] = 20, [1142] = 10 }, Data);
         Assert.Equal(130, sheet[115]); // 1.00 * 1.20 + 0.10 = 1.30
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

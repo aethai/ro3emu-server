@@ -9,7 +9,7 @@ namespace Ro3Emu.Tests;
 
 public sealed class PetCombatRulesTests
 {
-    private static readonly GameData Data = new(Options.Create(new ServerOptions { GameDataDir = Path.Combine(RepoRoot(), "data") }),
+    private static readonly GameData Data = new(Options.Create(new ServerOptions { GameDataDir = Path.Combine(ClientData.RepoRoot, "data") }),
         NullLogger<GameData>.Instance);
 
     [ClientDataTheory]
@@ -52,12 +52,5 @@ public sealed class PetCombatRulesTests
         Assert.Equal(0, PetCombatRules.AttributeAmount(Data.Row("SkillConfig", 2354401)!.Value, source, target));
         Assert.Equal(PetCombatRules.SupportKind.Buff, PetCombatRules.SupportFor(Data.Row("SkillConfig", 2354301)!.Value)!.Kind);
         Assert.Null(PetCombatRules.SupportFor(Data.Row("SkillConfig", 2354401)!.Value));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

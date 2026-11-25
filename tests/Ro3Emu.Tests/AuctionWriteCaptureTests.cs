@@ -175,7 +175,6 @@ public sealed class AuctionWriteCaptureTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 }

@@ -182,7 +182,6 @@ public sealed class ProgressionEconomyTransactionTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         Directory.Delete(_directory, recursive: true);
     }
 }

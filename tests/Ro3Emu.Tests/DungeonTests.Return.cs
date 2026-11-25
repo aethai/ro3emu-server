@@ -105,7 +105,6 @@ public sealed partial class DungeonTests
         }
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         await InitializeAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Equal(role, (long)recovered.Self!.Uuid);

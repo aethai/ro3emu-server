@@ -59,7 +59,6 @@ public sealed class ShutdownWithClientTests
         {
             cts.Cancel();
             await app.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }

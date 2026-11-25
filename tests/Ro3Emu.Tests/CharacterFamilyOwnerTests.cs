@@ -17,13 +17,13 @@ namespace Ro3Emu.Tests;
 /// <summary>C/D 13a/E05a: real dispatcher, deadline and GM competitors, and exact economic outcomes.</summary>
 public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
 {
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "cd13a-character-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "cd13a-character-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private GameSession Alice => Service<SessionRegistry>().All().Single(s => s.Account == "alice");
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);
     private EconomyLedgerWindow Window(EconomySnapshot a, EconomySnapshot b) =>
         S3EconomyReader.ReadLedger(_directory, Catalog.Value, a, b)!;
@@ -33,7 +33,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{web}";
@@ -41,8 +41,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> Enter(string name = "Alice")
@@ -224,12 +223,5 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         Assert.Equal(kind, Assert.Single(ledger.Receipts).CommandKind);
         Assert.Equal(balance - 2 * price, s.Progress.Currency[1]); Assert.Equal(2, s.Shop!.Bought[offer].Count);
         Exact(opening, closing, ledger);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

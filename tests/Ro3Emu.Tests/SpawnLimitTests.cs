@@ -28,7 +28,7 @@ public sealed class SpawnLimitTests
         var app = ServerHost.Create([], o =>
         {
             o.DataDir = dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.SpawnLimits = [.. rules];
         });
@@ -45,7 +45,6 @@ public sealed class SpawnLimitTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }
@@ -65,12 +64,5 @@ public sealed class SpawnLimitTests
         var rules = new SpawnLimitRule[] { new() { Scene = DeepForest, Npc = GreatestGeneral, Max = 400 } };
         Assert.Equal(400, await GeneralsAsync(rules, DeepForest));
         Assert.Equal(400, await GeneralsAsync(rules, PayonForest)); // a rule is for its own map
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 }

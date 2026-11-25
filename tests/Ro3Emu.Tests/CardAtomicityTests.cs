@@ -14,11 +14,11 @@ namespace Ro3Emu.Tests;
 public sealed class CardAtomicityTests : IAsyncLifetime
 {
     private const int Lunatic = 1420100, Dagger = 2010121;
-    private readonly string _dataDir = Path.Combine(RepoRoot(), ".loadtest-temp", "cd13a-card-" + Guid.NewGuid().ToString("N"));
+    private readonly string _dataDir = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "cd13a-card-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _httpUrl = "";
     private static readonly Lazy<EconomyCatalog> Catalog = new(() =>
-        EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+        EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomySnapshot Cut() => S3EconomyReader.Read(_dataDir, Catalog.Value);
 
     public async Task InitializeAsync()
@@ -27,7 +27,7 @@ public sealed class CardAtomicityTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -166,12 +166,5 @@ public sealed class CardAtomicityTests : IAsyncLifetime
         var evt = await bot.Inbox.WaitAsync(e => e.IsGame(id) &&
             (match == null || match(parser.ParseFrom(e.Body))), TimeSpan.FromSeconds(10));
         return parser.ParseFrom(evt.Body);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repo data");
     }
 }

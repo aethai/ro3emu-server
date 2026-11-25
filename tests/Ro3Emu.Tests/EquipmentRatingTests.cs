@@ -11,7 +11,7 @@ namespace Ro3Emu.Tests;
 public sealed class EquipmentRatingTests
 {
     private static readonly GameData Data = new(
-        Options.Create(new ServerOptions { DataDir = Path.Combine(RepoRoot(), "data") }), NullLogger<GameData>.Instance);
+        Options.Create(new ServerOptions { DataDir = Path.Combine(ClientData.RepoRoot, "data") }), NullLogger<GameData>.Instance);
 
     [ClientDataFact]
     public void AppraisedCutterUsesItsActualRolledValuesAffixAndSpecial()
@@ -58,12 +58,5 @@ public sealed class EquipmentRatingTests
         Assert.Equal(250, EquipmentRating.Calculate(cutter, Data)); // stored 2 is an output, not an input to the proxy
         cutter.Entry = 2; // currency ItemConfig entry
         Assert.Equal(0, EquipmentRating.Calculate(cutter, Data));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

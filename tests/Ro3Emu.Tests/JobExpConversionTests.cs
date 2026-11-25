@@ -38,7 +38,6 @@ public sealed class JobExpConversionTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 

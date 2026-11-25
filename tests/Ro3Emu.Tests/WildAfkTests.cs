@@ -28,7 +28,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         var (hp, mp, gp) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp;
         });
         Service<SeasonService>().SetPlayBook(101);
@@ -41,7 +41,6 @@ public sealed class WildAfkTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -1051,13 +1050,5 @@ public sealed class WildAfkTests : IAsyncLifetime
             if (grant != null) await grant.WaitAsync(Wait);
             if (exp != null) await exp.WaitAsync(Wait);
         }
-    }
-
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

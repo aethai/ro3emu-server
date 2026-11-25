@@ -28,7 +28,7 @@ public sealed class QuestWalkTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -47,7 +47,6 @@ public sealed class QuestWalkTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -248,12 +247,5 @@ public sealed class QuestWalkTests : IAsyncLifetime
 
     private long GameData(long task, string field) =>
         _tasks.TryGetValue(task, out var row) && row.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 
 }

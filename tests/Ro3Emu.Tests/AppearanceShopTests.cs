@@ -29,12 +29,12 @@ public sealed class AppearanceShopTests : IAsyncLifetime
     private const int Stroll = 5000007, StrollSuit = 40030010;        // [3,680], no award, no pieces.
     private const int Potions = 12105, PotionItem = 1003100;          // [1,1000], cd13a/shop-buy.
     private const int BigPoringLook = 5000038, BigPoring = 60030010;  // class 50202 [3,980]; WardRobeConfig type 6 -> MountsConfig.
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "fashion-shop-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "fashion-shop-" + Guid.NewGuid().ToString("N"));
     private readonly ManualClock _clock = new();
     private WebApplication _app = null!;
     private string _http = "";
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private GameSession Alice => Service<SessionRegistry>().All().Single(s => s.Account == "fashionalice" && s.Role != null);
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);
@@ -46,7 +46,7 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101;
         }, _clock);
@@ -57,7 +57,6 @@ public sealed class AppearanceShopTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -453,12 +452,5 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         public void Set(string value) => Interlocked.Exchange(ref _seconds,
             DateTimeOffset.Parse(value + "Z", null, global::System.Globalization.DateTimeStyles.AssumeUniversal).ToUnixTimeSeconds());
         public void Advance(TimeSpan by) => Interlocked.Add(ref _seconds, (long)by.TotalSeconds);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

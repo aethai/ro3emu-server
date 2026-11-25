@@ -84,7 +84,7 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        _gameData = Path.Combine(RepoRoot(), "data");
+        _gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -105,7 +105,6 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         if (_bot != null) await _bot.DisposeAsync();
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -1068,12 +1067,5 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
             }
         }
         return regions;
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

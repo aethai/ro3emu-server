@@ -19,7 +19,7 @@ public sealed class LifeItemPublicationTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = h;
             o.MicroGatePort = m;
             o.GameGatePort = g;
@@ -32,7 +32,6 @@ public sealed class LifeItemPublicationTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
@@ -75,12 +74,5 @@ public sealed class LifeItemPublicationTests : IAsyncLifetime
         using var client = new HttpClient();
         using var response = await client.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command(line));
         response.EnsureSuccessStatusCode();
-    }
-
-    private static string RepoRoot()
-    {
-        var path = new DirectoryInfo(AppContext.BaseDirectory);
-        while (path != null && !File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) path = path.Parent;
-        return path?.FullName ?? throw new DirectoryNotFoundException("repository");
     }
 }

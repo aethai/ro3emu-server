@@ -32,7 +32,7 @@ public sealed class MessageRoutesTests
         string dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-routes-" + Guid.NewGuid().ToString("N"));
         var app = ServerHost.Create([], o =>
         {
-            o.DataDir = dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp;
         });
         try
@@ -51,12 +51,5 @@ public sealed class MessageRoutesTests
             await app.DisposeAsync();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new InvalidOperationException("repo root not found");
     }
 }

@@ -22,19 +22,12 @@ public sealed class LifeJobTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-    private static string RepoRoot()
-    {
-        var p = new DirectoryInfo(AppContext.BaseDirectory);
-        while (p != null && !File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) p = p.Parent;
-        return p?.FullName ?? throw new DirectoryNotFoundException("repository");
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {

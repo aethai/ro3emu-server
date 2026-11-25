@@ -31,7 +31,7 @@ public sealed partial class LotteryActivityTests : IAsyncLifetime
         _app = ServerHost.Create([], options =>
         {
             options.DataDir = _dataDir;
-            options.GameDataDir = Path.Combine(RepoRoot(), "data");
+            options.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             options.HttpPort = httpPort;
             options.MicroGatePort = microPort;
             options.GameGatePort = gamePort;
@@ -46,7 +46,6 @@ public sealed partial class LotteryActivityTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -192,12 +191,5 @@ public sealed partial class LotteryActivityTests : IAsyncLifetime
         await reconnect.SendGameAsync(LotteryService.DrawRequest, new LotteryReq { PoolId = 200, Type = ELotteryPoolType.GachaCountMin });
         Assert.Equal(ErrorCodes.AttemptsExhausted,
             (await Next(reconnect, LotteryService.DrawRequest, LotteryResp.Parser, r => r.Result != 0)).Result);
-    }
-
-    private static string RepoRoot()
-    {
-        var path = new DirectoryInfo(AppContext.BaseDirectory);
-        while (path != null && !Directory.Exists(Path.Combine(path.FullName, "data", "config"))) path = path.Parent;
-        return path?.FullName ?? throw new DirectoryNotFoundException("Repository data/config");
     }
 }

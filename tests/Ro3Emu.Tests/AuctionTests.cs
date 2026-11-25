@@ -61,7 +61,6 @@ public abstract class AuctionTestsHost : IAsyncLifetime
     {
         await app.StopAsync();
         await app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(dataDir, true); } catch (IOException) { }
     }
 
@@ -190,7 +189,6 @@ public abstract class AuctionTestsHost : IAsyncLifetime
     {
         await app.StopAsync();
         await app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         clock.Advance(downtime);
         await StartHostAsync();
     }
@@ -457,7 +455,6 @@ public sealed partial class AuctionTests : AuctionTestsHost
         }
         await app.StopAsync();
         await app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await StartHostAsync();
         await using var again = await InWorld("Alice", create: false);
         Assert.Equal(role, (long)again.Self!.Uuid);

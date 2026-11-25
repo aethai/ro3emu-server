@@ -26,7 +26,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -39,7 +39,6 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -265,12 +264,5 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         await bot.SendGameAsync(EquipmentService.ItemAutoDecomposeSetting, filter);
         var reply = await bot.Inbox.WaitAsync(e => e.IsGame(EquipmentService.ItemAutoDecomposeSetting), TimeSpan.FromSeconds(5));
         Assert.Equal(0, ItemAutoDecomposeSettingResp.Parser.ParseFrom(reply.Body).Result);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

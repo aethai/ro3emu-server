@@ -252,7 +252,7 @@ public sealed partial class DungeonTests
         var request = new EnterDungeonReq { SceneEntry = story };
         string original = Service<GameData>().Row("DungeonConfig", story)!.Value
             .GetProperty("_kResSceneEditorName").GetString()!;
-        string source = Path.Combine(RepoRoot(), "data", "sceneeditor", original + ".json");
+        string source = Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", original + ".json");
         string directory = Path.Combine(_dataDir, "sceneeditor");
         Directory.CreateDirectory(directory);
         string stem = Path.Combine(directory, "synthetic_aoe_1054001");

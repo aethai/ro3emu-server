@@ -28,7 +28,7 @@ public sealed class SeasonRefineTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -41,7 +41,6 @@ public sealed class SeasonRefineTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -143,7 +142,7 @@ public sealed class SeasonRefineTests : IAsyncLifetime
             Assert.Equal(ErrorCodes.ItemsShort, (await Next(alice, SeasonRefineService.Recast, SeasonRefineRecastResp.Parser)).Result);
             await Gm("alice", "!item 1200000 4");
             await Gm("alice", "!item 2 32000");
-            var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+            var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
             var beforeRecast = S3EconomyReader.Read(_dataDir, catalog);
             var (recastResult, candidates, offer) = await RecastOffer(alice, freeOffer); // replaces the free offer
             Assert.Equal(3, candidates.Length);
@@ -269,7 +268,7 @@ public sealed class SeasonRefineTests : IAsyncLifetime
             m => !m.SyncAllMark && m.EquipParts.TryGetValue(1, out var part) && part.Inc.RefineSlots.TryGetValue(1, out var slot)
                 && slot.Inc.CanSelectedAttr.Count == 3);
         int groupId = pending.EquipParts[1].Inc.RefineSlots[1].Inc.CanSelectedAttr.Keys.First();
-        using var groups = JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoRoot(), "data", "config", "RefiningSeasonAttrConfig.json")));
+        using var groups = JsonDocument.Parse(File.ReadAllText(Path.Combine(ClientData.RepoRoot, "data", "config", "RefiningSeasonAttrConfig.json")));
         var effects = SeasonRefineService.GroupAttributes(groupId, groups.RootElement.GetProperty(groupId.ToString()))
             .Select(e => (Property: (int)e.Id, Bonus: (int)e.Value)).ToArray();
         await alice.SendGameAsync(SeasonRefineService.SelectAttr,
@@ -392,13 +391,6 @@ public sealed class SeasonRefineTests : IAsyncLifetime
         // Row 12 ("Advanced Attack") had 105/106 in client data -> remapped to 103/104 (PATK/MATK).
         Assert.Equal([(103L, 80.0), (104L, 80.0)],
             Parse(12, """{"_kAttrs":[[105,80],[106,80]]}"""));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

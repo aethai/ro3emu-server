@@ -36,7 +36,7 @@ public sealed partial class StallsTests : IAsyncLifetime
         var (port, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = port; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
         }, _clock);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{port}";
@@ -45,7 +45,6 @@ public sealed partial class StallsTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -286,7 +285,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         }
 
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync(); // Same market DB; no owner connected and no saved login line.
         await using var buyer = await InWorld("Buyer");
         await Ready(buyer);
@@ -530,7 +528,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         }
 
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync(); // Same database, fresh services, sessions, world and inventory objects.
         await using var returningBuyer = await InWorld("Buyer", create: false);
         await Warp(returningBuyer, 10111, 251, 2);
@@ -557,13 +554,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         await returningSeller.SendGameAsync(StallsService.Info, new PlayerStallsInfoReq());
         var info = await Next(returningSeller, StallsService.Info, PlayerStallsInfoResp.Parser);
         Assert.Equal(sellerId, info.CurrentStallsID); Assert.Empty(info.Info.Itembase);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName;
-        throw new DirectoryNotFoundException();
     }
     private sealed class MutableClock : TimeProvider
     {

@@ -252,7 +252,6 @@ public sealed class GuildWriteCaptureTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, recursive: true); } catch (IOException) { }
     }
 }

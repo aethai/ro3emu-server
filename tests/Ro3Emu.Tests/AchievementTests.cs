@@ -38,7 +38,7 @@ public sealed class AchievementTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -51,15 +51,7 @@ public sealed class AchievementTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -152,10 +144,10 @@ public sealed class AchievementTests : IAsyncLifetime
     }
 
     private EconomySnapshot Cut() => EconomySnapshotReader.Read(Service<AccountStore>().DatabasePath,
-        EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")), "auto");
+        EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")), "auto");
 
     private EconomyLedgerWindow Ledger(EconomySnapshot opening, EconomySnapshot closing) =>
-        EconomyLedgerReader.Read(Service<AccountStore>().DatabasePath, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")),
+        EconomyLedgerReader.Read(Service<AccountStore>().DatabasePath, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")),
             "auto", opening.Cut.CommitSequence!.Value, closing.Cut.CommitSequence!.Value);
 
     private DBRoleAchievementInfo Saved(long role) =>

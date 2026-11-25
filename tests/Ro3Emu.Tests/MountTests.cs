@@ -22,13 +22,12 @@ public sealed class MountTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {
@@ -701,9 +700,6 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(BigPoring, MountService.Rider(session));
         Assert.Equal(1050, session.Speed);
     }
-
-    private static string RepoRoot()
-    { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName; throw new DirectoryNotFoundException(); }
 
     private sealed class ManualClock(DateTimeOffset initial) : TimeProvider
     {

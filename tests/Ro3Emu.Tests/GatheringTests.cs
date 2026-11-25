@@ -25,7 +25,7 @@ public sealed class GatheringTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -557,12 +557,5 @@ public sealed class GatheringTests : IAsyncLifetime
         await Task.Delay(4700);
         Assert.Equal(items, Count(alice, CharacterService.ItemsSync));
         Assert.Equal(vigor, Count(alice, LifeJobService.RestrictSync));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("data/config");
     }
 }

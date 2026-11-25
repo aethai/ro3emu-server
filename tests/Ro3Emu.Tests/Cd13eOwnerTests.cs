@@ -19,7 +19,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
 {
     private const int Token = 1250709;
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ro3-cd13e-" + Guid.NewGuid().ToString("N"));
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -31,7 +31,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         Service<SeasonService>().SetPlayBook(101);
@@ -247,12 +247,5 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
             Assert.True(JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons(s.Role!.Id)!)!.FirstSetted);
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_dungeon_guide"); }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

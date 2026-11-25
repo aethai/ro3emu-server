@@ -25,7 +25,7 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -38,7 +38,6 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -396,13 +395,6 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         var cards = Stored(alice).Where(i => i.Entry == Lunatic).ToArray();
         Assert.Equal(1, cards.Single(i => i.IsLocked).Stack);
         Assert.Equal(2, cards.Single(i => !i.IsLocked).Stack);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

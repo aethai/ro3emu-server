@@ -62,12 +62,12 @@ public sealed class SeasonTalentTests
         {
             string config = Path.Combine(_dir, "game", "config");
             Directory.CreateDirectory(config);
-            foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "data", "config"), "*.json"))
+            foreach (var file in Directory.EnumerateFiles(Path.Combine(ClientData.RepoRoot, "data", "config"), "*.json"))
                 File.Copy(file, Path.Combine(config, Path.GetFileName(file)));
             // The quest unlock test reports a real nearby task NPC; include that map's authoritative points.
             string sceneEditor = Path.Combine(_dir, "game", "sceneeditor");
             Directory.CreateDirectory(sceneEditor);
-            File.Copy(Path.Combine(RepoRoot(), "data", "sceneeditor", "sc_izlude_001_sceneeditor.json"),
+            File.Copy(Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", "sc_izlude_001_sceneeditor.json"),
                 Path.Combine(sceneEditor, "sc_izlude_001_sceneeditor.json"));
 
             if (missingGraph)
@@ -508,13 +508,6 @@ public sealed class SeasonTalentTests
         Assert.Equal(1, fixture.Session.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
         Assert.Equal(40, fixture.Character.CountOf(fixture.Session, Remnant));
         Assert.Equal(400, fixture.Character.CountOf(fixture.Session, MintedCoin));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

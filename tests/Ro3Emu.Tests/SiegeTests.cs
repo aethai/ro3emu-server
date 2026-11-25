@@ -59,7 +59,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game; o.PlayBook = 101; o.SeasonStart = "2026-05-19";
             o.GmAccounts = ["siegegm"];
         }, _clock);
@@ -68,14 +68,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-    private static string RepoRoot()
-    {
-        for (var p = new DirectoryInfo(AppContext.BaseDirectory); p != null; p = p.Parent)
-            if (File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) return p.FullName;
-        throw new DirectoryNotFoundException();
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
     private async Task<BotClient> Bot(string name, bool create = true)
     {
@@ -432,8 +425,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
             var after = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
             Assert.Single(after.Letters, m => m.DeliveryKey.StartsWith("siege:"));
         }
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        await StartAsync();
+        await _app.StopAsync(); await _app.DisposeAsync(); await StartAsync();
         await using var returning = await Bot("SiegeDefender", create: false);
         Assert.Equal(winningGuild, Service<TerritoryWarsService>().OwnerOf(1));
         var fullSiege = await Next(returning, 5020, DBRoleSiegeDataIncrement.Parser, d => d.SyncAllMark);

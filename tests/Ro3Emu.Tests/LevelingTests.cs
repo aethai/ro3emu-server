@@ -68,7 +68,6 @@ public sealed class LevelingTests
             await Bot.DisposeAsync();
             await _app.StopAsync();
             await _app.DisposeAsync();
-            SqliteConnection.ClearAllPools();
             try { Directory.Delete(_dir, true); } catch (IOException) { }
         }
     }

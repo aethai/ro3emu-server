@@ -40,7 +40,7 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.SeasonStart = "2026-10-05"; o.PlayBook = 101;
         }, _clock);
@@ -224,13 +224,6 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         cmd.Parameters.AddWithValue("$guild", guild);
         using var json = JsonDocument.Parse((byte[])cmd.ExecuteScalar()!);
         return json.RootElement.GetProperty("Money").GetInt64();
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     [ClientDataFact]
@@ -445,7 +438,7 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         var initialGuild = store.Get(guildId)!;
         long fundsBefore = initialGuild.Money;
         long contributionBefore = initialGuild.Members[roleId].CurContribute;
-        var before = MarketEconomyEvidence.Cut(_dir, RepoRoot());
+        var before = MarketEconomyEvidence.Cut(_dir, ClientData.RepoRoot);
         var accounts = _app.Services.GetRequiredService<AccountStore>();
         int advanced = 0;
         accounts.BeforeOwnedCommitForTest = label =>
@@ -476,8 +469,8 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         Assert.Equal(fundsBefore + 1000, store.Get(guildId)!.Money);
         Assert.Equal(contributionBefore + 1000, store.Get(guildId)!.Members[roleId].CurContribute);
         Assert.Equal("revision advance during rollover", store.Get(guildId)!.Notice);
-        var after = MarketEconomyEvidence.Cut(_dir, RepoRoot());
-        var ledger = MarketEconomyEvidence.Exact(_dir, RepoRoot(), before, after);
+        var after = MarketEconomyEvidence.Cut(_dir, ClientData.RepoRoot);
+        var ledger = MarketEconomyEvidence.Exact(_dir, ClientData.RepoRoot, before, after);
         // The realm's one-second stall maintenance may commit its own receipt in this window (C/D 15: no longer at login).
         Assert.Single(ledger.Receipts, r => r.CommandKind == "guild-caravan-rollover");
         Assert.Contains(ledger.Legs, leg => leg.Kind == EconomyLegKind.Source
@@ -535,7 +528,7 @@ public sealed class GuildCaravanTests : IAsyncLifetime
             "Expiring reward", "Caravan rollover fixture", [new(2, 7), new(1000000, 3)],
             expiresAt: _clock.GetUtcNow().AddSeconds(1));
         Assert.Contains(Mailbox(role).Letters, letter => letter.Id == expiredId && !letter.Claimed);
-        var before = MarketEconomyEvidence.Cut(_dir, RepoRoot());
+        var before = MarketEconomyEvidence.Cut(_dir, ClientData.RepoRoot);
         long moneyBefore = _app.Services.GetRequiredService<GuildStore>().Get(guild)!.Money;
 
         _clock.Advance(10 * 60);
@@ -549,8 +542,8 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         Assert.Contains(compensation.Attachments, attachment => attachment.Entry == 102 && attachment.Count == 1000);
         Assert.Equal(moneyBefore + 1000, _app.Services.GetRequiredService<GuildStore>().Get(guild)!.Money);
 
-        var after = MarketEconomyEvidence.Cut(_dir, RepoRoot());
-        var ledger = MarketEconomyEvidence.Exact(_dir, RepoRoot(), before, after);
+        var after = MarketEconomyEvidence.Cut(_dir, ClientData.RepoRoot);
+        var ledger = MarketEconomyEvidence.Exact(_dir, ClientData.RepoRoot, before, after);
         // The ten-minute advance can also restock the realm's system stalls in this window (their own receipt).
         var receipt = Assert.Single(ledger.Receipts, r => r.CommandKind == "guild-caravan-rollover");
         string source = $"guild-caravan:{role}:{day}:0";

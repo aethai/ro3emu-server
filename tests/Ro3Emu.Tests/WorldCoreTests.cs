@@ -23,13 +23,12 @@ public sealed class WorldCoreTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (hp, mp, gp) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp; });
+        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{hp}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {
@@ -418,12 +417,5 @@ public sealed class WorldCoreTests : IAsyncLifetime
             p => p.MiniInfo.Any(i => i.Uid == (ulong)s.Role!.Id));
         Assert.Contains(mini.MiniInfo, i => i.Uid == (ulong)near!.Uid);
         Assert.DoesNotContain(mini.MiniInfo, i => i.Uid == (ulong)far!.Uid);
-    }
-
-    private static string RepoRoot()
-    {
-        var p = new DirectoryInfo(AppContext.BaseDirectory);
-        while (p != null && !Directory.Exists(Path.Combine(p.FullName, "data", "config"))) p = p.Parent;
-        return p?.FullName ?? throw new DirectoryNotFoundException("data/config");
     }
 }

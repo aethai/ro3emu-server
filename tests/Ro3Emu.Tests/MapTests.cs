@@ -24,7 +24,7 @@ public sealed partial class MapTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -930,18 +930,11 @@ public sealed partial class MapTests : IAsyncLifetime
     [ClientDataFact]
     public void NavGridMatchesTheClient()
     {
-        var grid = NavGrid.Load(Path.Combine(RepoRoot(), "data", "nav", "sc_prontera_001_dynamicmapdata.bytes"));
+        var grid = NavGrid.Load(Path.Combine(ClientData.RepoRoot, "data", "nav", "sc_prontera_001_dynamicmapdata.bytes"));
         Assert.Equal(300, grid.Width);
         Assert.Equal(395, grid.Height);
         Assert.True(grid.IsWalkable(156.04f, -0.2f, 181.91f));  // born point
         Assert.False(grid.IsWalkable(1f, 0f, 1f));             // map corner, outside the walls
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

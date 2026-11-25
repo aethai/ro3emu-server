@@ -35,7 +35,7 @@ public sealed class MarketMaintenanceTests : IAsyncLifetime
         var (http, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         }, _clock);
         // Exact AOI snapshots below assume market maintenance is the only producer changing world units.
@@ -50,15 +50,7 @@ public sealed class MarketMaintenanceTests : IAsyncLifetime
         Accounts.BeforeOwnedCommitForTest = null;
         Owners.DeferredForTest = null;
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var path = new DirectoryInfo(AppContext.BaseDirectory); path != null; path = path.Parent)
-            if (File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) return path.FullName;
-        throw new InvalidOperationException("repository root");
     }
 
     private async Task<(BotClient Bot, GameSession Session)> Login(string name)

@@ -28,7 +28,7 @@ public sealed class TowerTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -44,7 +44,6 @@ public sealed class TowerTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -634,7 +633,6 @@ public sealed class TowerTests : IAsyncLifetime
         }
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Null(Service<InstanceService>().Find(room));
@@ -827,13 +825,6 @@ public sealed class TowerTests : IAsyncLifetime
             await Task.Delay(20);
         }
         Assert.Fail("role did not disconnect");
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     /// <summary>

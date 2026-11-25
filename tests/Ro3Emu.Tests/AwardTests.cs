@@ -27,7 +27,7 @@ public sealed class AwardTests : IAsyncLifetime
         _app = ServerHost.Create([], options =>
         {
             options.DataDir = _dataDir;
-            options.GameDataDir = Path.Combine(RepoRoot(), "data");
+            options.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             options.HttpPort = httpPort;
             options.MicroGatePort = microPort;
             options.GameGatePort = gamePort;
@@ -40,7 +40,6 @@ public sealed class AwardTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -73,7 +72,7 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Equal(0, session.Progress!.Currency.GetValueOrDefault(1) - 1000);
         FixtureSql.Execute(accounts, "DROP TRIGGER e02_grant_fail");
 
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var opening = S3EconomyReader.Read(_dataDir, catalog);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -435,7 +434,7 @@ public sealed class AwardTests : IAsyncLifetime
             roles.SaveJobExpCatchUp(role, []);
             return Task.CompletedTask;
         });
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         await bot.SwitchRoleAsync();
         var opening = S3EconomyReader.Read(_dataDir, catalog);
         await bot.EnterWorldAsync(role); await WorldSettle.StallsAsync(_app.Services);
@@ -583,13 +582,6 @@ public sealed class AwardTests : IAsyncLifetime
     {
         var envelope = await bot.Inbox.WaitAsync(e => e.IsGame(msgId) && (match == null || match(parser.ParseFrom(e.Body))), Wait);
         return parser.ParseFrom(envelope.Body);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

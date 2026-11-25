@@ -24,7 +24,7 @@ public sealed class AssetReconnectTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _directory;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = hp;
             o.MicroGatePort = mp;
             o.GameGatePort = gp;
@@ -37,7 +37,6 @@ public sealed class AssetReconnectTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -95,12 +94,5 @@ public sealed class AssetReconnectTests : IAsyncLifetime
         Assert.Equal(savedRefineBefore, roles.LoadSeasonRefine(id));
         Assert.True(session.SyncVersions[DailyActivityService.StageSync] > claimVersion);
         Assert.True(session.SyncVersions[SeasonRefineService.SeasonRefineSync] > refineVersion);
-    }
-
-    private static string RepoRoot()
-    {
-        var p = new DirectoryInfo(AppContext.BaseDirectory);
-        while (p != null && !Directory.Exists(Path.Combine(p.FullName, "data", "config"))) p = p.Parent;
-        return p?.FullName ?? throw new DirectoryNotFoundException("data/config");
     }
 }

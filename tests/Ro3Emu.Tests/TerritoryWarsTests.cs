@@ -65,7 +65,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game; o.PlayBook = 101; o.SeasonStart = "2026-05-19";
         }, _clock);
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -75,12 +75,6 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
     {
         await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-    private static string RepoRoot()
-    {
-        for (var p = new DirectoryInfo(AppContext.BaseDirectory); p != null; p = p.Parent)
-            if (File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) return p.FullName;
-        throw new DirectoryNotFoundException();
     }
     private async Task<BotClient> Bot(string name, bool create = true)
     {

@@ -37,7 +37,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         var (port, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = port; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101; o.SeasonStart = "2026-10-05";
         }, _clock);
@@ -428,7 +428,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         await Gm(bot, "!lvl 50");
         await Gm(bot, "!item 11 100");
         var session = Session(bot);
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var before = S3EconomyReader.Read(_dataDir, catalog);
         var staged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -485,7 +485,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         await using var bot = await InWorld("AckRank");
         await Gm(bot, "!lvl 50");
         await Gm(bot, "!item 11 100");
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var before = S3EconomyReader.Read(_dataDir, catalog);
         Service<AccountStore>().FailNextEconomyAcknowledgementForTest();
         Assert.Equal(0, (await Claim(bot, (2, 17))).Result);
@@ -507,7 +507,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.SeasonRankReward, (await Claim(bot, (2, 17), (3, 23))).Result);
         Assert.Empty(Session(bot).SeasonPage!.RankRewardReceiveInfo);
         foreach (int function in new[] { 17, 67, 60 }) Assert.Equal(0, (await Claim(bot, (2, function))).Result);
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var beforeCapRefusal = S3EconomyReader.Read(_dataDir, catalog);
         Assert.Equal(ErrorCodes.SeasonRankReward, (await Claim(bot, (2, 36))).Result);
         Assert.Equal(beforeCapRefusal.Cut.CommitSequence, S3EconomyReader.Read(_dataDir, catalog).Cut.CommitSequence);
@@ -572,13 +572,5 @@ public sealed class SeasonPageTests : IAsyncLifetime
     {
         var day = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).LocalDateTime.Date;
         return new DateTimeOffset(day).ToUnixTimeSeconds() < unixSeconds ? day.AddDays(1) : day;
-    }
-
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("Repository root");
     }
 }

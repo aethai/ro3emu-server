@@ -34,7 +34,6 @@ public sealed class PersistenceRoutingTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 

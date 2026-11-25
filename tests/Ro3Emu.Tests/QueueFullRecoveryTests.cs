@@ -177,7 +177,6 @@ public sealed class QueueFullRecoveryTests
     private static void Clean(AccountStore accounts, string directory)
     {
         accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(directory, true); } catch (IOException) { }
     }
 

@@ -26,7 +26,7 @@ public sealed class TowerPetTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.PetWorldFollower = true; // the field follower the tower lineup replaces (off by default)
         });
@@ -40,7 +40,6 @@ public sealed class TowerPetTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -371,13 +370,6 @@ public sealed class TowerPetTests : IAsyncLifetime
             .SelectMany(e => AoIViewChangeData.Parser.ParseFrom(e.Body).LeaveAoi)
             .ToHashSet();
         Assert.All(petUids, uid => Assert.Contains(uid, removed));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

@@ -22,7 +22,7 @@ public sealed class CardPresentationTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -35,7 +35,6 @@ public sealed class CardPresentationTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -140,12 +139,5 @@ public sealed class CardPresentationTests : IAsyncLifetime
             || cardUpdate.StoragePack?.Inc?.CardInfo.ContainsKey(1) == true,
             "裝備卡片的 5009 必須含孔位資料，才能喚起客戶端綁定更新");
         AssertPresentationOrder(alice, start, replyFirst: true);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

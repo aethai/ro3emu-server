@@ -26,7 +26,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -41,7 +41,6 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -369,12 +368,5 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var timeoutSelf = await ReturnToWorld(bot);
         Assert.Equal(EntityState.Alive, timeoutSelf.Base.State);
         Assert.Equal(afterTimeout, timeoutSelf.Base.Property.Single(p => p.Idx == 2000).Data);
-    }
-
-    private static string RepoRoot()
-    {
-        var d = new DirectoryInfo(AppContext.BaseDirectory);
-        while (d != null && !Directory.Exists(Path.Combine(d.FullName, "data", "config"))) d = d.Parent;
-        return d?.FullName ?? throw new DirectoryNotFoundException("Repository data/config not found");
     }
 }

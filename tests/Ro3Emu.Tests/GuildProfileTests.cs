@@ -25,7 +25,7 @@ public sealed class GuildProfileTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -38,7 +38,6 @@ public sealed class GuildProfileTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -155,12 +154,5 @@ public sealed class GuildProfileTests : IAsyncLifetime
     private static async Task<T> Next<T>(BotClient bot, uint id, MessageParser<T> parser, Func<T, bool>? match = null)
         where T : IMessage<T> => parser.ParseFrom((await bot.Inbox.WaitAsync(
             e => e.IsGame(id) && (match == null || match(parser.ParseFrom(e.Body))), Wait)).Body);
-
-    private static string RepoRoot()
-    {
-        var path = new DirectoryInfo(AppContext.BaseDirectory);
-        while (path != null && !File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) path = path.Parent;
-        return path?.FullName ?? throw new DirectoryNotFoundException("Ro3Emu.slnx");
-    }
 
 }

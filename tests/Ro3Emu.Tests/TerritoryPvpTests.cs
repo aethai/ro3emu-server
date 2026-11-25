@@ -25,7 +25,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -36,7 +36,6 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -57,13 +56,6 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
 
     private GameSession Session(BotClient bot) => Service<SessionRegistry>().All()
         .Single(s => s.Account == bot.Account && s.Role != null);
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 
     [ClientDataFact]
     public async Task ExplicitTerritoryPilesDoNotChangeOrdinaryBuffStacking()
