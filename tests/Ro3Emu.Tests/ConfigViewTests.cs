@@ -130,7 +130,39 @@ public sealed class ConfigViewTests
         var names = ConfigTables.All.Select(t => t.Name).ToArray();
         Assert.Equal(names.Distinct().Count(), names.Length);
         Assert.Contains(SkillConfig.Info, ConfigTables.All);
+        Assert.Contains(PublicParams.Info, ConfigTables.All);
+        Assert.Contains(GuildSettings.Info, ConfigTables.All);
         Assert.All(ConfigTables.All, t => Assert.NotEmpty(t.Fields));
+    }
+
+    [Fact]
+    public void KeyedConstantsDistinguishAbsentFromZeroAndValidateKind()
+    {
+        var probe = new ConfigTableInfo("KeyedProbe", false, false,
+        [
+            new("Zero", ConfigKind.Integral, false),
+            new("Missing", ConfigKind.Integral, false),
+            new("BadKind", ConfigKind.Integral, false),
+        ], Keyed: true, ValueField: "_kValue");
+
+        using var dir = new DataDir(export: true, ("KeyedProbe", new Dictionary<string, object>
+        {
+            ["Zero"] = new { _kValue = 0 },
+            ["BadKind"] = new { _kValue = "oops" },
+        }));
+
+        var table = dir.Data.Table("KeyedProbe");
+        Assert.Equal(0L, ConfigValue.IntegralConstant(table, "Zero", "_kValue"));
+        Assert.Null(ConfigValue.IntegralConstant(table, "Missing", "_kValue"));
+        Assert.Equal(
+        [
+            "KeyedProbe.Missing._kValue: missing",
+            "KeyedProbe.BadKind._kValue: holds string \"oops\", not an integer",
+        ], ConfigValidator.Validate(dir.Data, [probe], strict: true));
+        Assert.Equal(
+        [
+            "KeyedProbe.BadKind._kValue: holds string \"oops\", not an integer",
+        ], ConfigValidator.Validate(dir.Data, [probe], strict: false));
     }
 
     [ClientDataFact]
@@ -143,6 +175,7 @@ public sealed class ConfigViewTests
     // Each client field name written as a string outside Data/Config is a read the startup check cannot see. The
     // count only goes down: lower it when a change removes such reads, never raise it.
     private const int FieldNamesOutsideViews = 2649;
+    private const int KeyValueTableReadsOutsideViews = 97;
     private static readonly string Obj = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
 
     [Fact]
@@ -156,5 +189,18 @@ public sealed class ConfigViewTests
                 && !path.Contains(Obj, StringComparison.Ordinal))
             .Sum(path => pattern.Count(File.ReadAllText(path)));
         Assert.Equal(FieldNamesOutsideViews, count);
+    }
+
+    [Fact]
+    public void KeyValueConfigTablesLiveInConstantViews()
+    {
+        var source = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server");
+        var config = Path.Combine(source, "Data", "Config") + Path.DirectorySeparatorChar;
+        var pattern = new Regex("""\.Table\("(?:PublicParamConfig|GuildSettingConfig|ActivityConstant|MultiverseConstant|GVGConfig)"\)""");
+        int count = Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.StartsWith(config, StringComparison.Ordinal)
+                && !path.Contains(Obj, StringComparison.Ordinal))
+            .Sum(path => pattern.Count(File.ReadAllText(path)));
+        Assert.Equal(KeyValueTableReadsOutsideViews, count);
     }
 }

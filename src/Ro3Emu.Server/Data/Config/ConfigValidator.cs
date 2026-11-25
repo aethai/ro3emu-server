@@ -32,6 +32,11 @@ public static class ConfigValidator
                 if (strict && !table.Optional) errors.Add($"{table.Name}: the table is missing or empty");
                 continue;
             }
+            if (table.Keyed)
+            {
+                foreach (var key in table.Fields) CheckConstant(table, rows, key, strict, errors);
+                continue;
+            }
             var entries = table.Grouped ? Entries(rows) : rows;
             foreach (var field in table.Fields) CheckField(table.Name, entries, field, strict, errors);
             if (errors.Count >= MaxErrors) break;
@@ -57,6 +62,18 @@ public static class ConfigValidator
             foreach (var entry in group.EnumerateArray()) entries[$"{key}[{index++}]"] = entry;
         }
         return entries;
+    }
+
+    private static void CheckConstant(ConfigTableInfo table, IReadOnlyDictionary<string, JsonElement> values,
+        ConfigFieldInfo key, bool strict, List<string> errors)
+    {
+        string name = table.ValueField == null ? key.Name : key.Name + "." + table.ValueField;
+        if (ConfigValue.Constant(values, key.Name, table.ValueField) is not { } value)
+        {
+            if (strict && !key.Optional) errors.Add($"{table.Name}.{name}: missing");
+        }
+        else if (!Fits(value, key.Kind))
+            errors.Add($"{table.Name}.{name}: holds {Describe(value)}, not {Expected(key.Kind)}");
     }
 
     private static void CheckField(string table, IReadOnlyDictionary<string, JsonElement> rows, ConfigFieldInfo field,
