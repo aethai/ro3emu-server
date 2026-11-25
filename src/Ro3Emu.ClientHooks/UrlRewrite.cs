@@ -41,6 +41,20 @@ namespace Ro3Emu.ClientHooks
         }
 
         /// <summary>
+        /// Only absolute http and https URLs may be handed to ShellExecute; local files, executables, and custom
+        /// protocol handlers are refused.
+        /// </summary>
+        public static bool IsAllowedUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            Uri uri;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out uri)) return false;
+            return (string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase))
+                && !string.IsNullOrEmpty(uri.Host);
+        }
+
+        /// <summary>
         /// The managed body OpenUrlPatch gives UnityEngine.Application.OpenURL: rewrite the URL, then open the result in
         /// the user's default browser (ShellExecute, the path the original icall ended in). A failure is logged and
         /// swallowed, as the engine's own OpenURL does nothing visible on failure.
@@ -56,6 +70,12 @@ namespace Ro3Emu.ClientHooks
                 return;
             }
             url = fixedUrl;
+            if (!IsAllowedUrl(url))
+            {
+                try { UnityEngine.Debug.LogWarning("[Ro3Emu.UrlRewrite] refused non-http(s) URL: " + url); }
+                catch { /* logging must never throw out of OpenURL */ }
+                return;
+            }
             try
             {
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
