@@ -2,7 +2,7 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Assembly-CSharp NetworkLib.VoiceCallAdapter is the client's Tencent GME voice (tavern and guild voice rooms, voice

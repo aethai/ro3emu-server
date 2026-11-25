@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Keeps the client's purchase links away from the publisher's store (issue #147: a player could pay the publisher and

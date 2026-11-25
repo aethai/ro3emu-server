@@ -1,4 +1,4 @@
-using Ro3Emu.ClientTools;
+using Ro3Emu.ClientPatching;
 using Ro3Emu.DataExport;
 
 namespace Ro3Emu.Setup.Tests;

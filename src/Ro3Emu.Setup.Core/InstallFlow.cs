@@ -207,9 +207,10 @@ internal sealed class OptionsWithClient(Options options, string client)
         if (o.NoLaunch) args.Add("--no-launch");
         if (o.Yes) args.Add("--yes");
         if (o.Home != null) args.AddRange(["--home", o.Home]);
-        args.AddRange(["--http-port", o.Ports.Http.ToString(), "--micro-port", o.Ports.MicroGate.ToString(), "--game-port", o.Ports.GameGate.ToString()]);
-        if (o.Ports.Voice > 0) args.AddRange(["--voice-port", o.Ports.Voice.ToString()]);
-        if (o.Ports.Panel > 0) args.AddRange(["--panel-port", o.Ports.Panel.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        args.AddRange(["--http-port", o.Ports.Http.ToString(inv), "--micro-port", o.Ports.MicroGate.ToString(inv), "--game-port", o.Ports.GameGate.ToString(inv)]);
+        if (o.Ports.Voice > 0) args.AddRange(["--voice-port", o.Ports.Voice.ToString(inv)]);
+        if (o.Ports.Panel > 0) args.AddRange(["--panel-port", o.Ports.Panel.ToString(inv)]);
         else args.Add("--no-panel");
         if (o.PurchaseUrl != null) args.AddRange(["--purchase-url", o.PurchaseUrl]);
         return [.. args];

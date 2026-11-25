@@ -19,8 +19,6 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
     <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
-    <!-- Ro3Emu.Setup is the console RO3Emu.exe (framework-dependent in a plain build); the launcher only uses its code. -->
-    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -31,7 +29,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" />
     <ProjectReference Include="..\Ro3Emu.Patcher\Ro3Emu.Patcher.csproj" />
     <!-- RO3Emu mode: the flows of RO3Emu.exe (find/install the game, export, server, patch, join). -->
-    <ProjectReference Include="..\Ro3Emu.Setup\Ro3Emu.Setup.csproj" />
+    <ProjectReference Include="..\Ro3Emu.Setup.Core\Ro3Emu.Setup.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

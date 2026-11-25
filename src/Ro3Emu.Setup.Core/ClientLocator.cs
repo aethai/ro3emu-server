@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Win32;
-using Ro3Emu.ClientTools;
+using Ro3Emu.ClientPatching;
 using Ro3Emu.DataExport;
 
 namespace Ro3Emu.Setup;

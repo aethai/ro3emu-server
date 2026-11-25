@@ -108,7 +108,7 @@ public class PanelLinkTests
     {
         var o = Options.Parse(["panel", "203.0.113.10", "--panel-port", "5391"]);
         Assert.Equal(("panel", "203.0.113.10", 5391), (o.Command, o.Positional.Single(), o.Ports.Panel));
-        Assert.Contains("panel [address]", Program.Usage);
+        Assert.Contains("panel [address]", SetupRuntime.Usage);
     }
 
     [Fact]

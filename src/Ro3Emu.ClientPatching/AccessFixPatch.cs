@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Makes a private method or field internal when code outside its type (and outside the types nested in it) uses it.

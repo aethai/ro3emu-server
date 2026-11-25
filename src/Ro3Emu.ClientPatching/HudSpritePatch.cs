@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Assembly-CSharp.dll -> Ro3Emu.ClientHooks.SpriteRegion.TextureOf(Sprite):

@@ -1,3 +1,4 @@
+using Ro3Emu.ClientPatching;
 using Ro3Emu.Patcher;
 
 namespace Ro3Emu.ClientTools;
