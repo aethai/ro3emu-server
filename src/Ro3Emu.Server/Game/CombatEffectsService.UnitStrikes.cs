@@ -8,7 +8,7 @@ namespace Ro3Emu.Server.Game;
 /// A monster's blow on another monster outside any player's cast: the siege's battering ram on the City Gate and an
 /// archer on a siege ladder (TerritoryWarsService.SiegeUnits.cs). The gameplay decides when one strikes; this settles it.
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     /// <summary>
     /// With a normal attack (SkillConfig row of MonsterTemplate.NormalSkill) the cast shows first and the blow lands at
@@ -20,7 +20,7 @@ public sealed partial class CombatService
     internal async Task<bool> MonsterStrikeAsync(MonsterUnit source, MonsterUnit target, float reach, Func<long, long> adjust)
     {
         if (!Strikes(source, target, reach)) return false;
-        long castId = ++_sessionIds;
+        long castId = NextSessionId();
         source.Face = MonsterService.Angle(source.X, source.Z, target.X, target.Z);
         if (SkillConfig.Get(_data, source.Template.NormalSkill) is not { } skill)
         {

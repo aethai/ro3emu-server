@@ -12,6 +12,7 @@ internal static class CombatComposition
         services.AddSingleton<BuffService>();
         services.AddSingleton<CombatService>();
         services.AddSingleton<PetCombatService>();
+        services.AddSingleton<CombatEffectsService>();
         services.AddSingleton<CombatGmCommands>();
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<CombatService>());
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<BuffService>());
@@ -21,6 +22,7 @@ internal static class CombatComposition
     {
         var combat = app.Services.GetRequiredService<CombatService>();
         combat.BindPets(app.Services.GetRequiredService<PetCombatService>());
+        combat.BindEffects(app.Services.GetRequiredService<CombatEffectsService>());
         combat.BindRules(app.Services.GetServices<ICombatRule>());
     }
 

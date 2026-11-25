@@ -14,8 +14,8 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class CombatService
 {
-    private const int DemonRace = 3, UndeadRace = 5, ShadowElement = 8, UndeadElement = 10;
-    private const int SanctuaryNpc = 22000003, GravitationFieldNpc = 1200013;
+    internal const int DemonRace = 3, UndeadRace = 5, ShadowElement = 8, UndeadElement = 10;
+    internal const int SanctuaryNpc = 22000003, GravitationFieldNpc = 1200013;
     private static readonly long[] TwoHandedSpear = [5];
 
     /// <summary><paramref name="monster"/> is null for a player target: the rows' monster bonus does not reach one.</summary>

@@ -5,7 +5,7 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     /// <summary>
     /// A monster skill landing on players (MVP minion blasts, boss ground fields): the row's damage from the caster's
@@ -23,7 +23,7 @@ public sealed partial class CombatService
     {
         if (caster.Dead || caster.Hp <= 0 || _buffs.UnitForbidden(caster, ForbiddenState.CastSkill)) return 0;
         int skillId = (int)GameData.Int(row, "_iID");
-        if (session <= 0) session = ++_sessionIds;
+        if (session <= 0) session = NextSessionId();
         int show = HitEffect(GameData.Int(row, "_iScriptShow"));
         int element = (int)GameData.Int(row, "_iEleType") is var e and > 1 ? e : caster.Template.Element;
         var attacker = MonsterFighter(caster);
@@ -37,7 +37,7 @@ public sealed partial class CombatService
             bool Current() => ReferenceEquals(p.Role, targetRole) && p.WorldScene == scene && p.SceneGeneration == generation
                 && ReferenceEquals(p.Attachment, lease) && lease?.Cancelled != true;
             var stats = _character.Stats(p);
-            var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
+            var defender = new CombatService.Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
             {
                 Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee],
                 ResCri = stats[AttributeId.ResCri], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,

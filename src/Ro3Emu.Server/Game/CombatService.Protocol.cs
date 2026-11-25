@@ -259,7 +259,7 @@ public sealed partial class CombatService
             TargetPos = at.Pos.Clone(), SkillId = skill,
         });
 
-    private const int DisplayGfx = 2; // enum_DisplayEffectType.Gfx
+    internal const int DisplayGfx = 2; // enum_DisplayEffectType.Gfx
 
     /// <summary>Server-timed bullet only when a skill script owns projectile travel.</summary>
     public Task SendSkillBulletAsync(GameSession source, SkillFixTimeBulletNotify bullet, bool highLevel = false) =>
@@ -291,7 +291,7 @@ public sealed partial class CombatService
     /// Lv. 5 drops five. (inferred) one notify per target per hit, timed at the hit; fixedTime (unread by the client)
     /// carries the bullet's configured life time.
     /// </summary>
-    private async Task SendHitBulletsAsync(IEnumerable<GameSession> viewers, JsonElement row, SkillHitInfo hit, long masterId)
+    internal async Task SendHitBulletsAsync(IEnumerable<GameSession> viewers, JsonElement row, SkillHitInfo hit, long masterId)
     {
         int effect = BulletEffect(GameData.Int(row, "_iScriptShow"));
         if (effect == 0 || hit.Dsts.Count == 0) return;
@@ -385,7 +385,7 @@ public sealed partial class CombatService
 
     /// <summary>The 31101 showPoint of a row's hits, on monsters and players alike: Warg Strike's from the capture (inferred
     /// for its automatic cast, which casts the same row), else the show's own damage effect.</summary>
-    private int HitShowPoint(JsonElement row) => WargStrikeHigh(row) ? WargHitEffect : HitEffect(new SkillConfig(row).ScriptShow);
+    internal int HitShowPoint(JsonElement row) => WargStrikeHigh(row) ? WargHitEffect : HitEffect(new SkillConfig(row).ScriptShow);
 
     /// <summary>
     /// The wolf's charge of Warg Strike: a 31108 bullet and a 31109 PendantShow (<see cref="WolfEffect"/>). Without them the

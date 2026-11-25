@@ -409,19 +409,19 @@ public sealed partial class CombatService
     }
 
     internal MonsterUnit? FindMonster(long sceneId, long uid) => _world.Map(sceneId).Units.OfType<MonsterUnit>().FirstOrDefault(m => m.Uid == uid && !m.Dead);
-    private GameSession? FindPlayer(GameSession s, long uid, bool dead = false) => _world.PlayersIn(s.WorldScene).FirstOrDefault(p => p.Role?.Id == uid && p.Dead == dead);
+    internal GameSession? FindPlayer(GameSession s, long uid, bool dead = false) => _world.PlayersIn(s.WorldScene).FirstOrDefault(p => p.Role?.Id == uid && p.Dead == dead);
     internal static bool Finite(Vec3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
     internal static float Distance(Vec3 a, Vec3 b) => MonsterService.Distance(a.X, a.Z, b.X, b.Z);
     internal static float Range(JsonElement row) => Math.Max(0, GameData.Int(row, "_iDistanceMax") / 100f);
     internal static string Script(JsonElement row) => row.TryGetProperty("_kScriptLogic", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
     // AcolyteBD4 is Resurrection's mode row under Revive [Buff Effect] (SkillConfig 1411211-1411214), with the same text.
-    private static bool IsResurrection(JsonElement row) => Script(row) is "Resurrection" or "AcolyteBD4";
+    internal static bool IsResurrection(JsonElement row) => Script(row) is "Resurrection" or "AcolyteBD4";
     internal static double[] Numbers(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
         ? [.. list.EnumerateArray().Select(v => GameData.Number(v) ?? 0)] : [];
     internal static IEnumerable<JsonElement> Tuples(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
         ? list.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Array) : [];
 
-    private bool Relation(JsonElement row, bool friendly, bool self = false, int race = 0, bool dead = false)
+    internal bool Relation(JsonElement row, bool friendly, bool self = false, int race = 0, bool dead = false)
     {
         var template = _data.SkillTemplate(GameData.Int(row, "_iScriptShow"));
         if (template is not { } t || !t.TryGetProperty("m_kSelectInfo", out var selectors) || selectors.ValueKind != JsonValueKind.Array)
@@ -806,7 +806,7 @@ public sealed partial class CombatService
         return (int)Math.Max(0, Math.Round(ms));
     }
 
-    private static bool Live(GameSession s, ActiveSkillCast action) => !action.Cancelled && ReferenceEquals(s.SkillCast, action)
+    internal static bool Live(GameSession s, ActiveSkillCast action) => !action.Cancelled && ReferenceEquals(s.SkillCast, action)
         && !s.Dead && !s.SceneLoading && s.Role?.Id == action.OwnerId && s.WorldScene == action.WorldScene
         && (action.Operator == null || !action.Operator.Removing && action.Operator.ExpiresMs > s.NowMs);
 
@@ -891,12 +891,12 @@ public sealed partial class CombatService
     /// break a cast, and Stun or Freeze, whose _kForbidden has neither, do not. Card: Phen keeps a cast through them. OPEN: this only keeps the
     /// server's cast; the forbid bits still go out, and LC_State_Unit_Skill may end the skill on the client by them (needs a client test).
     /// </summary>
-    private Task BreakForbiddenCastAsync(GameSession s) =>
+    internal Task BreakForbiddenCastAsync(GameSession s) =>
         s.SkillCast is { Cancelled: false } cast && !ControlCannotInterrupt(s)
         && _buffs.HasForbidden(s, Now - cast.StartMs < cast.ChantMs ? ForbiddenState.SkillChant : ForbiddenState.SkillCast)
             ? CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.State) : Task.CompletedTask;
 
-    private async Task CancelCastAsync(GameSession s, SkillInterruptedInfo.Types.SkillInterruptType cause)
+    internal async Task CancelCastAsync(GameSession s, SkillInterruptedInfo.Types.SkillInterruptType cause)
     {
         s.WorldState.ResurrectionCastId = 0;
         if (s.SkillCast is not { } action) return;

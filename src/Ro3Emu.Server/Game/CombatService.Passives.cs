@@ -157,7 +157,7 @@ public sealed partial class CombatService
     /// below ${1}%, and changes the percentage damage multiplier increase to ${2}%": the third pair below its ${1}%. The
     /// target's Life is read before the hit (inferred).
     /// </summary>
-    private int SonicBlowBranch(GameSession s, MonsterUnit target, JsonElement row)
+    internal int SonicBlowBranch(GameSession s, MonsterUnit target, JsonElement row)
     {
         var skill = new SkillConfig(row);
         if (skill.ScriptLogic != "SonicBlow" || skill.LogicData is not [_, _, var threshold, ..] || skill.DamageParam1.Length < 2) return 0;

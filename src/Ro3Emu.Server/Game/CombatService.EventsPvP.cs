@@ -50,7 +50,7 @@ public sealed partial class CombatService
         if (!await AdmitAutomaticCostAsync(source, row, request, session)) { _eventAttacks.Remove(source); return; }
         await StartCastAsync(source, row, request, session);
     }
-    private async Task HitEventPlayersAsync(GameSession source, GameSession[] targets, JsonElement row,
+    internal async Task HitEventPlayersAsync(GameSession source, GameSession[] targets, JsonElement row,
         int skillId, int show, long session, Func<bool> currentSource, Action<long, long>? onHit = null, Vec3? center = null)
     {
         if (FirstNumber(row, "_kDamageParam1") is not > 0 && FirstNumber(row, "_kDamageParam2") is not > 0)

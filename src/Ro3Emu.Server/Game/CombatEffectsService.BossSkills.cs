@@ -16,7 +16,7 @@ namespace Ro3Emu.Server.Game;
 /// its own damage path. _kBuff1 goes on the boss, a summon spawns its minions, a charge moves the boss to its target
 /// first (31112). Hit timing and charge distance are (inferred).
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     private const float ChargeStopShort = 1.5f; // a charge ends this far in front of its target (inferred)
 
@@ -61,7 +61,7 @@ public sealed partial class CombatService
         var rt = boss.BossSkills!;
         var options = _monsters.BossOptions;
         long now = Now;
-        long session = ++_sessionIds;
+        long session = NextSessionId();
         int chant = _monsters.BossChant(boss, skill);
         rt.ActiveSession = session;
         var role = player?.Role;
@@ -268,7 +268,7 @@ public sealed partial class CombatService
                 await SendMonsterTimelineAsync(minion, new UseInSkillInfo
                 {
                     SrcID = minion.Uid, SkillID = skill.SummonBlast, TargetPos = minion.Pos, Face = minion.Face,
-                    SessionId = ++_sessionIds, SkillMs = (int)GameData.Int(row, "_iActionTime"), StartTime = Now,
+                    SessionId = NextSessionId(), SkillMs = (int)GameData.Int(row, "_iActionTime"), StartTime = Now,
                 });
             else if (target != null && !target.Dead) _monsters.Engage(minion, target);
             ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(skill.SummonLifeMs), () => SummonLifeEndsAsync(rt, minion, skill));
@@ -305,7 +305,7 @@ public sealed partial class CombatService
     /// </summary>
     internal async Task<long> PlayBossShowAsync(MonsterUnit boss, int skillId, int ms, Vec3? at = null, float? face = null)
     {
-        long session = ++_sessionIds;
+        long session = NextSessionId();
         await SendMonsterTimelineAsync(boss, new UseInSkillInfo
         {
             SrcID = boss.Uid, SkillID = skillId, TargetPos = at ?? boss.Pos, Face = face ?? boss.Face, SessionId = session, SkillMs = ms,

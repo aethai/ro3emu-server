@@ -68,7 +68,7 @@ public sealed partial class CombatService
     }
 
     /// <summary>The mode row, script "book": "Ends the current [Reading] state."</summary>
-    private async Task EndReadingAsync(GameSession s, ActiveSkillCast action)
+    internal async Task EndReadingAsync(GameSession s, ActiveSkillCast action)
     {
         if (Script(action.Row) != "book") return;
         foreach (var reading in s.Buffs.Where(b => b.ConfigId == ReadingBuff).ToArray()) await _buffs.RemoveAsync(s, reading);

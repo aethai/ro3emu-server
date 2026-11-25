@@ -81,9 +81,80 @@ public sealed partial class CombatService : IGameTicker
     internal long NextSessionId() => ++_sessionIds;
     internal PetCombatService PetCombat { get; private set; } = null!;
     internal void BindPets(PetCombatService pets) => PetCombat = pets;
+    internal CombatEffectsService Effects { get; private set; } = null!;
+    internal void BindEffects(CombatEffectsService effects) => Effects = effects;
     internal static bool SkillAreaContains(JsonElement row, Vec3 origin, Vec3 requested, float face, Vec3 point) =>
         PetCombatService.SkillAreaContains(row, origin, requested, face, point);
     internal static bool RaisesDamage(long attribute, int element) => PetCombatService.RaisesDamage(attribute, element);
+    internal void ClearEventAttack(GameSession s) => _eventAttacks.Remove(s);
+
+    // ---- effect, boss, buff-rule, and stealth facades (owned by CombatEffectsService) ----
+
+    internal const int StealthCategory = CombatEffectsService.StealthCategory;
+    internal const int DetectionCategory = CombatEffectsService.DetectionCategory;
+    internal static bool StealthBuff(BuffConfig row) => CombatEffectsService.StealthBuff(row);
+    internal bool Stealthed(GameSession player) => Effects.Stealthed(player);
+    internal int DetectionRadiusCm(GameSession player) => Effects.DetectionRadiusCm(player);
+    internal bool CanSee(GameSession viewer, GameSession subject) => Effects.CanSee(viewer, subject);
+    internal bool Hostile(GameSession source, GameSession target) => Effects.Hostile(source, target);
+    internal static bool LocksItsTarget(JsonElement row) => CombatEffectsService.LocksItsTarget(row);
+    internal List<MonsterUnit> SelectEnemies(GameSession s, ActiveSkillCast action, Vec3 center, float? radiusOverride = null) =>
+        Effects.SelectEnemies(s, action, center, radiusOverride);
+    internal List<MonsterUnit> MonstersInCastArea(GameSession s, ActiveSkillCast action) => Effects.MonstersInCastArea(s, action);
+    internal Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
+        IReadOnlyList<MonsterUnit>? chosenTargets = null, IReadOnlyList<GameSession>? chosenAllies = null) =>
+        Effects.ApplyEffectsAsync(s, action, center, field, chosenTargets, chosenAllies);
+    internal Task ResolveCastAsync(GameSession s, ActiveSkillCast action) => Effects.ResolveCastAsync(s, action);
+    internal static int[] CleanseKinds(JsonElement row) => CombatEffectsService.CleanseKinds(row);
+    internal static bool Cleanses(int[] kinds, BuffConfig buff) => CombatEffectsService.Cleanses(kinds, buff);
+    internal Task CastExtraAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets, bool parametersApplied = false,
+        long sessionId = 0) =>
+        Effects.CastExtraAsync(s, row, targets, parametersApplied, sessionId);
+    internal Task CastExtraOnAlliesAsync(GameSession s, JsonElement row, IReadOnlyList<GameSession> allies) =>
+        Effects.CastExtraOnAlliesAsync(s, row, allies);
+    internal Task CastExtraOnPlayerAsync(GameSession source, SkillConfig row, GameSession target) =>
+        Effects.CastExtraOnPlayerAsync(source, row, target);
+    internal Task CreateZoneAsync(GameSession s, JsonElement row, int npc, Vec3 center, int intervalMs, int durationMs) =>
+        Effects.CreateZoneAsync(s, row, npc, center, intervalMs, durationMs);
+    internal JsonElement ExtraRow(GameSession s, JsonElement row) => Effects.ExtraRow(s, row);
+    internal List<GameSession> AlliesNear(GameSession s, Vec3 center, float radius) => Effects.AlliesNear(s, center, radius);
+    internal List<MonsterUnit> MonstersNear(GameSession s, Vec3 center, float radius) => Effects.MonstersNear(s, center, radius);
+    internal bool RollBuff(JsonElement tuple, out int id, out int duration) => Effects.RollBuff(tuple, out id, out duration);
+    internal bool RollHostileBuff(JsonElement tuple, GameSession? sourcePlayer, WorldUnit? sourceUnit,
+        GameSession? targetPlayer, MonsterUnit? targetMonster, out int id, out int duration) =>
+        Effects.RollHostileBuff(tuple, sourcePlayer, sourceUnit, targetPlayer, targetMonster, out id, out duration);
+    internal static IReadOnlyDictionary<string, (CombatEffectsService.DisplaceKind Kind, int DescIndex, float Metres)> Displacements =>
+        CombatEffectsService.Displacements;
+    internal static IReadOnlyDictionary<string, int> MovementEffectOverrides => CombatEffectsService.MovementEffectOverrides;
+    internal static (int Id, int Ms) MovementEffectById(GameData data, int id) => CombatEffectsService.MovementEffectById(data, id);
+    internal (int Id, int Ms) MovementEffect(long scriptShow) => Effects.MovementEffect(scriptShow);
+    internal static (int Id, int Ms, string Curve) FindMovementEffect(GameData data, long show) => CombatEffectsService.FindMovementEffect(data, show);
+    internal Vec3 WalkableEnd(long sceneId, Vec3 start, float dx, float dz) => Effects.WalkableEnd(sceneId, start, dx, dz);
+    public Task ClearSkillsAsync(GameSession s) => Effects.ClearSkillsAsync(s);
+    internal Task<bool> GroundProtectsAsync(GameSession target, JsonElement? skill) => Effects.GroundProtectsAsync(target, skill);
+    internal static bool InBossArea(BossSkill skill, Vec3 origin, Vec3 center, float face, float x, float z) =>
+        CombatEffectsService.InBossArea(skill, origin, center, face, x, z);
+    internal static (double Forward, double Side) FacingOffset(double dx, double dz, float face) =>
+        CombatEffectsService.FacingOffset(dx, dz, face);
+    internal Task<long> PlayBossShowAsync(MonsterUnit boss, int skillId, int ms, Vec3? at = null, float? face = null) =>
+        Effects.PlayBossShowAsync(boss, skillId, ms, at, face);
+    internal Task InterruptBossShowAsync(MonsterUnit boss, long session) => Effects.InterruptBossShowAsync(boss, session);
+    internal int ArmorElement(GameSession p) => Effects.ArmorElement(p);
+    internal Task<int> MonsterSkillHitAsync(MonsterUnit caster, JsonElement row, IEnumerable<GameSession> targets, long sourceId,
+        long session = 0, int damagePercent = 100, bool bossDebuffsOnly = false, int maxHpBasisPoints = 0) =>
+        Effects.MonsterSkillHitAsync(caster, row, targets, sourceId, session, damagePercent, bossDebuffsOnly, maxHpBasisPoints);
+    internal Task<bool> MonsterStrikeAsync(MonsterUnit source, MonsterUnit target, float reach, Func<long, long> adjust) =>
+        Effects.MonsterStrikeAsync(source, target, reach, adjust);
+    internal (CombatEffectsService.DisplaceKind Kind, float Distance, int EffectId, int Ms)? AlsoMovesCaster(JsonElement row) =>
+        Effects.AlsoMovesCaster(row);
+    internal Task MoveCasterAsync(GameSession s, ActiveSkillCast action, (CombatEffectsService.DisplaceKind Kind, float Distance, int EffectId, int Ms) move) =>
+        Effects.MoveCasterAsync(s, action, move);
+    internal static int ElementFromBuff(GameSession s) => CombatEffectsService.ElementFromBuff(s);
+    internal static DamageAttributes.Kind KindOf(MonsterTemplate t) => CombatEffectsService.KindOf(t);
+    internal Task TickSkillObjectAsync(SkillObject unit) => Effects.TickSkillObjectAsync(unit);
+    internal Task DisplacePlayerAsync(GameSession s, GameSession target, JsonElement row, int skillId, Vec3? center) =>
+        Effects.DisplacePlayerAsync(s, target, row, skillId, center);
+    internal Task HolyLightBreaksKyrieAsync(GameSession target, JsonElement row) => Effects.HolyLightBreaksKyrieAsync(target, row);
 
     /// <summary>
     /// Synchronous monster damage modifiers (TowerService.PowerSuppress): a pet's hit on a monster (false), a monster's hit
@@ -348,11 +419,8 @@ public sealed partial class CombatService : IGameTicker
         skills.QueueEligibility = CanQueueSkill;
         character.ProgressHandlers.Subscribe(buffs.ReconcileEnergyAsync);
         CastResolved.Subscribe(AutoCounterOnCastAsync, order: GuardianHookOrder);
-        CastResolved.Subscribe(SupportSkillOnCastAsync, order: GuardianHookOrder);
         CastResolved.Subscribe(ReadingExtraCastAsync);
         CastResolved.Subscribe(ClassLoopsOnCastAsync);
-        WireBuffRules();
-        WireBossSkills();
     }
 
     private long Now => _loop.NowMs;
@@ -392,7 +460,7 @@ public sealed partial class CombatService : IGameTicker
     /// <summary>The hit effect a buff-only cast shows on the units it buffed: HitEffect's pick when it is an entry of the show's own
     /// range that draws a prefab or a flash, else 0. HitEffect's fallback 1000002 is a struck unit's hit (fx_common_hit_1, ReceivingDamage,
     /// the hit sound): a buff showing it would make every ally flinch as if struck (Sacred Lily's range 430400-430499 has no hit entry).</summary>
-    private int BuffHitEffect(long scriptShow)
+    internal int BuffHitEffect(long scriptShow)
     {
         int id = HitEffect(scriptShow);
         return id >= scriptShow * 100 && id < scriptShow * 100 + 100
@@ -406,7 +474,7 @@ public sealed partial class CombatService : IGameTicker
     /// with split 1 the total repeats the hit. A cast resolves at its first attack point, so the first count applies
     /// (inferred for skills with several points).
     /// </summary>
-    private static int HitSplit(JsonElement row) => (int)Math.Max(1, new SkillConfig(row).ShowDmg.FirstOrDefault(1));
+    internal static int HitSplit(JsonElement row) => (int)Math.Max(1, new SkillConfig(row).ShowDmg.FirstOrDefault(1));
 
     // ---- pet & companion facades (owned by PetCombatService) ----
 
@@ -510,7 +578,7 @@ public sealed partial class CombatService : IGameTicker
         : Math.Max(1, (long)Math.Round((decimal)damage * ratio / 10000m, MidpointRounding.AwayFromZero));
 
     /// <summary>One protected HP transition for monster and event hits; reserve lethal state before publication.</summary>
-    private async Task<(long Damage, long Hp, long Effective, long ShieldDamage)?> CommitPlayerDamageAsync(GameSession target, long damage, JsonElement? row,
+    internal async Task<(long Damage, long Hp, long Effective, long ShieldDamage)?> CommitPlayerDamageAsync(GameSession target, long damage, JsonElement? row,
         Func<bool>? valid = null, int sourceElement = 1, bool directHit = false)
     {
         var targetRole = target.Role;
@@ -571,10 +639,10 @@ public sealed partial class CombatService : IGameTicker
     }
 
     /// <summary>Every JobConfig row has _iRace 2 (Demi-Human) and _iSize 2 (Medium).</summary>
-    private const int PlayerRace = 2, PlayerSize = 2;
+    internal const int PlayerRace = 2, PlayerSize = 2;
 
     /// <summary>What a hit reads on a player: the sheet without the buffs that have their own path and would count twice.</summary>
-    private Func<int, long> PlayerAttributes(GameSession p, StatSheet stats)
+    internal Func<int, long> PlayerAttributes(GameSession p, StatSheet stats)
     {
         if (!p.Buffs.Any(BuffService.HasOwnDamagePath)) return id => stats[id];
         var own = _buffs.OwnDamagePathAttributes(p);
@@ -628,7 +696,7 @@ public sealed partial class CombatService : IGameTicker
     }
 
     /// <summary>The roll-free part of a hit: skill ratio and flat, defense and element.</summary>
-    private double BaseDamage(Fighter a, Fighter b, JsonElement skill, int branch, out bool magic, bool attack = true)
+    internal double BaseDamage(Fighter a, Fighter b, JsonElement skill, int branch, out bool magic, bool attack = true)
     {
         magic = GameData.Int(skill, "_iDmgType") == 2;
         var ratios = Numbers(skill, "_kDamageParam1");
@@ -720,7 +788,7 @@ public sealed partial class CombatService : IGameTicker
 
     // ---- stance, death, revive, regen ----
 
-    private async Task FightingAsync(GameSession p)
+    internal async Task FightingAsync(GameSession p)
     {
         p.LastCombatMs = Now;
         if ((p.StatusBits & FightBit) != 0) return;
@@ -745,7 +813,7 @@ public sealed partial class CombatService : IGameTicker
     };
 
     /// <summary>the Dead state to the player and its viewers, the auto-revive countdown.</summary>
-    private async Task PlayerDiesAsync(GameSession p)
+    internal async Task PlayerDiesAsync(GameSession p)
     {
         bool ownsPublication;
         lock (_reviveClaims) ownsPublication = _deathPublications.Add(p);
@@ -842,7 +910,7 @@ public sealed partial class CombatService : IGameTicker
     private readonly HashSet<GameSession> _deathPublications = [];
     private readonly Dictionary<GameSession, TaskCompletionSource> _reviveAvailabilityWaiters = [];
 
-    private void ReleaseDeathPublication(GameSession p)
+    internal void ReleaseDeathPublication(GameSession p)
     {
         TaskCompletionSource? completed;
         lock (_reviveClaims)

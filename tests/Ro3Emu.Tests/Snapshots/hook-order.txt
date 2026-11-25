@@ -109,7 +109,7 @@ CombatService.CastLanded (4)
   StealthEffects.BackSlideCamouflageAsync
 CombatService.CastResolved (7)
   CombatService.AutoCounterOnCastAsync
-  CombatService.SupportSkillOnCastAsync
+  CombatEffectsService.SupportSkillOnCastAsync
   CombatService.ReadingExtraCastAsync
   CombatService.ClassLoopsOnCastAsync
   CardEffects.OnCastResolvedAsync

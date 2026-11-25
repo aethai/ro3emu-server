@@ -38,14 +38,14 @@ public sealed class SkillObject : WorldUnit
     };
 }
 
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     private long _skillObjectIds = 0x600000000000L;
 
     /// <summary>SkillConfig._kScriptLogic of a flying mount's take-off/landing (both pairs share these two scripts).</summary>
     private const string FlightTakeOffScript = "normal_leisuremount_upper", FlightLandingScript = "normal_leisuremount_below";
 
-    private async Task ResolveCastAsync(GameSession s, ActiveSkillCast action)
+    internal async Task ResolveCastAsync(GameSession s, ActiveSkillCast action)
     {
         var row = action.Row;
         if (!CurrentCastMap(s, action)) return;
@@ -264,7 +264,7 @@ public sealed partial class CombatService
         }
         var stats = _character.Stats(s);
         int attackElement = AttackElement(s, row);
-        var attacker = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], s.Progress!.Level, attackElement)
+        var attacker = new CombatService.Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], s.Progress!.Level, attackElement)
         { FixedDamage = (s.GmCombat & GmCombatSwitches.FixedDamage) != 0, Attributes = PlayerAttributes(s, stats), Race = PlayerRace, Size = PlayerSize };
         var hit = new SkillHitInfo
         {
@@ -481,7 +481,7 @@ public sealed partial class CombatService
         var target = targets[0];
         var action = new ActiveSkillCast
         {
-            Id = sessionId > 0 ? sessionId : ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = sessionId > 0 ? sessionId : NextSessionId(), OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = parametersApplied ? row : ExtraRow(s, row),
             Request = new CastSkillReq
             {
@@ -500,7 +500,7 @@ public sealed partial class CombatService
         if (s.Role == null || allies.Count == 0) return Task.CompletedTask;
         var action = new ActiveSkillCast
         {
-            Id = ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = NextSessionId(), OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = ExtraRow(s, row),
             Request = new CastSkillReq
             {
@@ -519,7 +519,7 @@ public sealed partial class CombatService
         if (s.Role == null || _data.Row("NPCConfig", npc) is not { } npcRow) return;
         var action = new ActiveSkillCast
         {
-            Id = ++_sessionIds, OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = NextSessionId(), OwnerId = s.Role.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = ExtraRow(s, row),
             Request = new CastSkillReq { SkillId = (int)new SkillConfig(row).Id, TargetPos = center.Clone(), Face = s.Face, IsExtraSkill = true },
             Origin = s.Position.Clone(), StartMs = Now, ChantMs = 0, ActionMs = 1,
@@ -717,7 +717,7 @@ public sealed partial class CombatService
 
     /// <summary>Fearless Charge: "Move ${12} meters in that direction" after a knockback of its own, so the row has two rules. Its ${12} is empty;
     /// _kDescData[0] and _iDistanceMax both say 12 (inferred). 1162411 is its show's first movement, in the rows on show 111624 too.</summary>
-    private (DisplaceKind Kind, float Distance, int EffectId, int Ms)? AlsoMovesCaster(JsonElement row)
+    internal (DisplaceKind Kind, float Distance, int EffectId, int Ms)? AlsoMovesCaster(JsonElement row)
     {
         if (Script(row) != "PinpointAttack2") return null;
         var (effect, ms) = MovementEffectById(_data, 1162411);
@@ -754,7 +754,7 @@ public sealed partial class CombatService
             && FarChargeHolds(s, action)) await MoveCasterAsync(s, action, move);
     }
 
-    private async Task MoveCasterAsync(GameSession s, ActiveSkillCast action, (DisplaceKind Kind, float Distance, int EffectId, int Ms) move)
+    internal async Task MoveCasterAsync(GameSession s, ActiveSkillCast action, (DisplaceKind Kind, float Distance, int EffectId, int Ms) move)
     {
         float face = action.Request.Face + (move.Kind == DisplaceKind.CasterBack ? 180 : 0);
         double angle = face * Math.PI / 180;
@@ -830,7 +830,7 @@ public sealed partial class CombatService
     }
 
     /// <summary>A PvP hit's knockback or pull of the player it struck, as the same skill moves a monster.</summary>
-    private Task DisplacePlayerAsync(GameSession s, GameSession target, JsonElement row, int skillId, Vec3? center) =>
+    internal Task DisplacePlayerAsync(GameSession s, GameSession target, JsonElement row, int skillId, Vec3? center) =>
         target.WorldScene == s.WorldScene && Displacement(row) is { } move && TargetMove(move.Kind, s, center ?? s.Position) is var (from, push)
             ? KnockPlayerAsync(target, from.X, from.Z, push ? move.Distance : -move.Distance, skillId, move.EffectId, move.Ms > 0 ? move.Ms : 300)
             : Task.CompletedTask;
@@ -951,7 +951,7 @@ public sealed partial class CombatService
         return true;
     }
 
-    private async Task TickSkillObjectAsync(SkillObject unit)
+    internal async Task TickSkillObjectAsync(SkillObject unit)
     {
         if (unit.Busy || unit.Removing) return;
         unit.Busy = true;
@@ -987,7 +987,7 @@ public sealed partial class CombatService
     /// <summary>Scene/role/disconnect teardown invalidates callbacks before despawning owned skill entities.</summary>
     public async Task ClearSkillsAsync(GameSession s)
     {
-        _eventAttacks.Remove(s);
+        ClearEventAttack(s);
         s.WorldState.ResurrectionCastId = 0;
         s.Attack = null;
         if (s.SkillCast is { } cast) cast.Cancelled = true;
@@ -1019,7 +1019,7 @@ public sealed partial class CombatService
 
     /// <summary>One monster's damage from a player's cast: the hit, the guardian factors, the shared adjusters and a
     /// guardian's resistance changes. A guardian's fixed hit takes only its direct-damage factor.</summary>
-    private (long Amount, DamageHitResult Result) MonsterHitDamage(GameSession s, Fighter attacker, MonsterUnit target,
+    private (long Amount, DamageHitResult Result) MonsterHitDamage(GameSession s, CombatService.Fighter attacker, MonsterUnit target,
         JsonElement row, string script)
     {
         // Heal's enemy values are its second pair; AcolyteBD11 is its mode row under Holy Healing Light, with the same pairs and text.
