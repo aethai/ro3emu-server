@@ -66,6 +66,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     private bool _disposeRequested;
     private bool _queueDisposed;
     private TimeSpan _lastTick;
+    private TimeSpan _nextTick = TickInterval;
     private TimeSpan _nextStuckScan;
 
     public GameLoop(ILogger<GameLoop> log, ServerMetrics? metrics = null, TimeProvider? time = null)
@@ -260,6 +261,32 @@ public sealed partial class GameLoop : IHostedService, IDisposable
 
     /// <summary>Runs work on the loop and completes when it has finished (inline when already on the loop).</summary>
     public Task InvokeAsync(Func<Task> work) => InvokeAsync(async () => { await work(); return true; });
+
+    /// <summary>
+    /// Advances a controllable clock in <see cref="TickInterval"/> slices, executing every due timer and ticker on the
+    /// loop thread deterministically without sleeping for wall time.
+    /// </summary>
+    public async Task AdvanceAsync(TimeSpan duration, Action<TimeSpan> advanceClock)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(duration, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(advanceClock);
+        if (!_started) throw new InvalidOperationException("The game loop has not started.");
+        if (IsOnLoop) throw new InvalidOperationException("Cannot advance the game loop clock from the loop thread.");
+
+        var remaining = duration;
+        while (remaining > TimeSpan.Zero && Phase == GameLoopPhase.Accepting)
+        {
+            var step = remaining > TickInterval ? TickInterval : remaining;
+            remaining -= step;
+            advanceClock(step);
+            while (Phase == GameLoopPhase.Accepting
+                && await InvokeAsync(() => Task.FromResult(Now >= _nextTick)).ConfigureAwait(false))
+            {
+            }
+            if (Phase == GameLoopPhase.Accepting)
+                await InvokeAsync(() => Task.CompletedTask).ConfigureAwait(false);
+        }
+    }
 
     public Task<T> InvokeAsync<T>(Func<Task<T>> work)
     {
@@ -469,13 +496,13 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             SynchronizationContext.SetSynchronizationContext(_context);
             ServerMetrics.LoopOwner = _metrics;
             using var waiter = new HighResolutionWaiter(_workAvailable);
-            var nextTick = TickInterval;
+            _nextTick = TickInterval;
             long itemTicks = 0;
             int items = 0;
             while (!_queue.IsCompleted)
             {
                 var now = Now;
-                if (now >= nextTick)
+                if (now >= _nextTick)
                 {
                     long tickStart = Stopwatch.GetTimestamp();
                     // Independent deadlines cannot monopolize the loop. A non-preemptible callback can still overrun;
@@ -533,10 +560,10 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     if (_metrics != null && _queue.Count > BurstQueueLength) RecordBurst();
                     items = 0; itemTicks = 0;
                     // Keep the 50 ms phase; skip missed deadlines rather than running a catch-up ticker storm.
-                    nextTick += TickInterval;
+                    _nextTick += TickInterval;
                     var after = Now;
-                    if (nextTick <= after)
-                        nextTick += TimeSpan.FromTicks(((after - nextTick).Ticks / TickInterval.Ticks + 1) * TickInterval.Ticks);
+                    if (_nextTick <= after)
+                        _nextTick += TimeSpan.FromTicks(((after - _nextTick).Ticks / TickInterval.Ticks + 1) * TickInterval.Ticks);
                 }
                 // Always give queued work one turn after a timer/ticker batch, even if that batch overran.
                 if (_queue.TryTake(out var item))
@@ -549,7 +576,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
                     if (_metrics != null && Stopwatch.GetElapsedTime(started, finished).TotalMilliseconds >= SlowItemMs)
                         _metrics.RecordSlowItem(Describe(item.Callback, item.State), Stopwatch.GetElapsedTime(started, finished).TotalMilliseconds);
                 }
-                else if (!_queue.IsCompleted) waiter.Wait(nextTick - Now);
+                else if (!_queue.IsCompleted) waiter.Wait(_nextTick - Now);
             }
         }
         finally

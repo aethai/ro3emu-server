@@ -29,8 +29,9 @@ public sealed class CodeShapeTests
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
     private const int PrivateRepoRootHelpersInTests = 0;
-    private const int ServerHostCreateOutsideTestServer = 197;
-    private const int ClearAllPoolsInTests = 63;
+    private const int ServerHostCreateOutsideTestServer = 193;
+    private const int ClearAllPoolsInTests = 61;
+    private const int TaskDelayCallsInTests = 536;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;
@@ -101,6 +102,10 @@ public sealed class CodeShapeTests
     [Fact]
     public void ClearAllPoolsInTestsOnlyGoDown() =>
         AssertRatchet(nameof(ClearAllPoolsInTests), ClearAllPoolsInTests, TestsSnapshot.Value.ClearAllPools);
+
+    [Fact]
+    public void TaskDelayCallsInTestsOnlyGoDown() =>
+        AssertRatchet(nameof(TaskDelayCallsInTests), TaskDelayCallsInTests, TestsSnapshot.Value.TaskDelays);
 
     [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
@@ -506,6 +511,7 @@ public sealed class CodeShapeTests
         List<string> privateRepoRoots = [];
         List<string> serverHostCreates = [];
         List<string> clearAllPools = [];
+        List<string> taskDelays = [];
 
         foreach (string path in Directory.EnumerateFiles(testsRoot, "*.cs", SearchOption.AllDirectories)
             .Where(p => !p.Contains(ObjDir, StringComparison.Ordinal) && !p.Contains(BinDir, StringComparison.Ordinal))
@@ -539,16 +545,23 @@ public sealed class CodeShapeTests
                     int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
                     clearAllPools.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
                 }
+                else if (ma.Name.Identifier.ValueText == "Delay"
+                    && ma.Expression is IdentifierNameSyntax taskId && taskId.Identifier.ValueText == "Task")
+                {
+                    int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                    taskDelays.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+                }
             }
         }
 
-        return new(privateRepoRoots, serverHostCreates, clearAllPools);
+        return new(privateRepoRoots, serverHostCreates, clearAllPools, taskDelays);
     }
 
     private sealed record TestShapeSnapshot(
         IReadOnlyList<string> PrivateRepoRoots,
         IReadOnlyList<string> ServerHostCreates,
-        IReadOnlyList<string> ClearAllPools);
+        IReadOnlyList<string> ClearAllPools,
+        IReadOnlyList<string> TaskDelays);
 
     private sealed record ShapeSnapshot(
         IReadOnlyList<string> LongMethods,
