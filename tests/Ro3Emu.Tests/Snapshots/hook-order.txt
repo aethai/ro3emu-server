@@ -69,7 +69,7 @@ CharacterService.ProgressHandlers (12)
 CharacterService.SpecialItemUse (5)
   WardrobeService.TryUseAppearanceItemAsync
   MountService.TryUseItemAsync
-  CharacterService.UseItemActionAsync
+  CharacterInventoryService.UseItemActionAsync
   PetService.TryUseSelfChooseAsync
   ItemBoxService.TryOpenAsync
 CharacterService.StateChanged (9)

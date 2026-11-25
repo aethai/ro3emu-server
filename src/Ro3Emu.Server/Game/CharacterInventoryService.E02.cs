@@ -6,14 +6,12 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
+using OwnedAwardSource = Ro3Emu.Server.Game.CharacterService.OwnedAwardSource;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
-    public sealed record OwnedAwardSource(string CommandKind, string SourceKey, object Outcome);
-    internal Func<GameSession, MonsterUnit, Ownership.ReservationKey[]>? GetKillTaskParticipantKeys { get; set; }
-    internal Action<GameSession, MonsterUnit, RewardSettlement>? StageKillTaskObligations { get; set; }
-
     /// <summary>Stage E02/13e: freeze one owned payment and result before the writer is admitted.
     /// The natural source names a world or activity occurrence, while the operation ID identifies this attempt.</summary>
     internal EconomyMutation EconomyForOwnedExchange(GameSession session, string kind, string sourceKey,
@@ -34,7 +32,7 @@ public sealed partial class CharacterService
             [.. goods.Where(x => x.Count > 0).GroupBy(x => x.Entry).Select(g => new EconomyQuantity(Asset(g.Key), g.Sum(x => (long)x.Count)))], receipt);
     }
 
-    private EconomyMutation EconomyForOwnedAward(GameSession session, OwnedAwardSource source, AwardPlan plan,
+    internal EconomyMutation EconomyForOwnedAward(GameSession session, OwnedAwardSource source, AwardPlan plan,
         RoleProgress before, RoleProgress after, IReadOnlyList<(int Entry, long Count)> costs,
         long baseExp, long jobExp, ItemAutoDecomposeTipsNtf conversion)
     {

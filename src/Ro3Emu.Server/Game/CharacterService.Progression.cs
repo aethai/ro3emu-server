@@ -19,9 +19,9 @@ public sealed partial class CharacterService
 
     private JsonElement? JobLvRow(int career, int jobLevel) => data.Row("JobLvConfig", JobRank(career) * 100L + jobLevel);
 
-    private long BaseExpNeed(int level) => data.Row("BaseLvConfig", level) is { } row ? GameData.Int(row, "_iBaseExp") : 0;
+    internal long BaseExpNeed(int level) => data.Row("BaseLvConfig", level) is { } row ? GameData.Int(row, "_iBaseExp") : 0;
 
-    private long JobExpNeed(int career, int jobLevel) => JobLvRow(career, jobLevel) is { } row ? GameData.Int(row, "_iJobeExp") : 0;
+    internal long JobExpNeed(int career, int jobLevel) => JobLvRow(career, jobLevel) is { } row ? GameData.Int(row, "_iJobeExp") : 0;
 
     /// <summary>All stat points a role has earned: the starting 48, BaseLvConfig._iStatusPoint per level reached, GM extras.</summary>
     public int TotalPoints(RoleProgress p) =>
@@ -32,12 +32,12 @@ public sealed partial class CharacterService
     public int StatCost(int value) =>
         Enumerable.Range(2, Math.Max(0, value - 1)).Sum(v => (int)(data.Row("BasePointConfig", v) is { } row ? GameData.Int(row, "_iStatusPoint") : 0));
 
-    private int UsedPoints(RoleProgress p) => p.Stats.Sum(StatCost);
+    internal int UsedPoints(RoleProgress p) => p.Stats.Sum(StatCost);
 
     /// <summary>Stat points spent on the six stats (quests: 104013 CheckCostBasePoint).</summary>
     public int SpentStatPoints(RoleProgress p) => UsedPoints(p);
 
-    private PlanBaseProperty CurrentPlan(RoleProgress p, PlanBaseProperty? saved = null)
+    internal PlanBaseProperty CurrentPlan(RoleProgress p, PlanBaseProperty? saved = null)
     {
         int used = UsedPoints(p);
         var plan = saved?.Clone() ?? new PlanBaseProperty();
@@ -47,7 +47,7 @@ public sealed partial class CharacterService
         return plan;
     }
 
-    private Task SendStatPlanAsync(GameSession session) => SyncAsync(session, BaseAttrSync, BuildAttr(session));
+    internal Task SendStatPlanAsync(GameSession session) => SyncAsync(session, BaseAttrSync, BuildAttr(session));
 
     /// <summary>Sets base and job level (exp inside the level restarts at 0); a higher level shows the level-up popup.</summary>
     public async Task<string> SetLevelAsync(GameSession session, int level, int? jobLevel)
@@ -126,7 +126,7 @@ public sealed partial class CharacterService
 
     /// <param name="levelUp">The base level rose: HP and SP refill to the new maximum (inferred: classic RO heals fully on
     /// a base level up and the client shows no rule of its own; from akreao's fork).</param>
-    private async Task AfterLevelChangeAsync(GameSession session, Func<bool>? stillOwner = null, bool persist = true, bool levelUp = false)
+    internal async Task AfterLevelChangeAsync(GameSession session, Func<bool>? stillOwner = null, bool persist = true, bool levelUp = false)
     {
         var p = session.Progress!;
         if (levelUp && !session.Dead) (session.CurrentHp, session.CurrentSp) = (null, null); // unset = full (Stats)

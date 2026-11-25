@@ -2,7 +2,7 @@ using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     /// <summary>
     /// GMJobProfessAttr 171: the active stat plan takes a profession's recommended stats at the role's base level,

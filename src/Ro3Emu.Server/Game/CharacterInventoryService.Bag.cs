@@ -7,9 +7,11 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
+using LifeItemExchangeScope = Ro3Emu.Server.Game.CharacterService.LifeItemExchangeScope;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     // ---- bag: clear, use, sort and pack ----
 
@@ -49,10 +51,7 @@ public sealed partial class CharacterService
     internal Task<int> AutoUseItemAsync(GameSession session, long guid) =>
         UseItemCoreAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }, reply: false);
 
-    /// <summary>BuffService supplies live item-use restrictions to every use path, including shortcuts.</summary>
-    public Func<GameSession, bool>? IsItemUseForbidden { get; set; }
-
-    private async Task<int> UseItemCoreAsync(GameSession session, ItemUseReq req, bool reply)
+    internal async Task<int> UseItemCoreAsync(GameSession session, ItemUseReq req, bool reply)
     {
         if (session.Role == null)
         {
@@ -166,7 +165,7 @@ public sealed partial class CharacterService
     private const int ErrItemInCd = 161;
 
     /// <summary>Shortcut/quick-use eligibility recognizes each effect owner; actual use rechecks their runtime limits.</summary>
-    private bool CanUseItemEffects(JsonElement row) => CanApplyUseEffects(row)
+    internal bool CanUseItemEffects(JsonElement row) => CanApplyUseEffects(row)
         || SpecialItemUse.Count > 0 && HandlesCollectionItem(row)
         || HandlesItemAction(row)
         || LifeItemUse != null && HandlesLifeItem(row)
@@ -211,9 +210,6 @@ public sealed partial class CharacterService
     /// <summary>A 204 SelfChoosePet box sends its pick as selfChoosePet; PetService.TryUseSelfChooseAsync owns the use.</summary>
     private static bool CarriesPetChoice(JsonElement row, ItemUseReq req) => UseActions(row).Contains(PetService.SelfChoosePetAction)
         && req.ItemParam.Count == 1 && req.ItemParam[0].VarCase == ItemUseParamInfo.VarOneofCase.SelfChoosePet;
-
-    /// <summary>Moves the player for a wing: a destination scene (the current one for a Fly Wing). WorldCoreService.</summary>
-    public Func<GameSession, long, Task<bool>>? WingJump { get; set; }
 
     private bool ClientHosted(int action) => data.Row("ActionConfig", action) is { } a && GameData.Int(a, "_iEXECHost") == 0;
 
@@ -312,7 +308,7 @@ public sealed partial class CharacterService
         await SyncItemsAsync(session);
     }
 
-    private DBPackInfo FullPack(IEnumerable<InvItem> items)
+    internal DBPackInfo FullPack(IEnumerable<InvItem> items)
     {
         var pack = new DBPackInfo();
         foreach (var item in items)
@@ -324,7 +320,7 @@ public sealed partial class CharacterService
         return pack;
     }
 
-    private int PackCapacity(int pack) => (int)(data.Row("BackpackConfig", pack) is { } row ? GameData.Int(row, "_iTabCapacity") : 0);
+    internal int PackCapacity(int pack) => (int)(data.Row("BackpackConfig", pack) is { } row ? GameData.Int(row, "_iTabCapacity") : 0);
 
     private const int PackItem = 1;
     private const int PackCard = 3;
@@ -346,7 +342,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Moves saved non-cards out of the card pack (granted by _iBagTab alone before <see cref="ConfigPack"/>).</summary>
-    private void MigrateCardPackItems(GameSession session)
+    internal void MigrateCardPackItems(GameSession session)
     {
         var moved = session.Items.Where(i => i.Grid == 0 && i.Pack == PackCard
             && data.Row("ItemConfig", i.Entry) is { } row && ConfigPack(row) != PackCard).ToList();
@@ -426,7 +422,7 @@ public sealed partial class CharacterService
         return 0;
     }
 
-    private static long NextSort(GameSession session, int pack) =>
+    internal static long NextSort(GameSession session, int pack) =>
         session.Items.Where(i => i.Grid == 0 && i.Pack == pack).Select(i => i.Sort).DefaultIfEmpty(0).Max() + 1;
 
     /// <summary>
@@ -436,7 +432,7 @@ public sealed partial class CharacterService
     internal ItemBaseInfo? EquipmentInfo(InvItem item) => IsEquipment(item.Entry) ? ItemInfo(item) : null;
 
     /// <summary>ItemBaseInfo as the client parses it: itemInfos must not be empty; equipment must be appraised to be worn.</summary>
-    private ItemBaseInfo ItemInfo(InvItem item)
+    internal ItemBaseInfo ItemInfo(InvItem item)
     {
         // itemBindInfo present (even empty): the bag's sort compares itemBindType of both items, nil < nil throws.
         var info = new ItemBaseInfo

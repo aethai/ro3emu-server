@@ -4,7 +4,7 @@ using Ro3Emu.Server.Accounts;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     public const uint EquipSwitchPlan = 31413, EquipChangePlanName = 31414;
 
@@ -47,7 +47,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Migrate existing worn gear into plan 0, keep names and inactive GUID references.</summary>
-    private void LoadEquipmentPlans(GameSession session)
+    internal void LoadEquipmentPlans(GameSession session)
     {
         var saved = roles.LoadEquipPlans(session.Role!.Id);
         session.EquipmentPlans = saved != null ? DBEquipInfo.Parser.ParseFrom(saved) : new DBEquipInfo();
@@ -70,7 +70,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Consumed/deleted instances leave all plans; a plan never owns a second copy (inferred invariant).</summary>
-    private static bool PruneEquipmentPlans(GameSession session)
+    internal static bool PruneEquipmentPlans(GameSession session)
     {
         var owned = session.Items.Select(i => i.Guid).ToHashSet();
         bool changed = false;
@@ -82,10 +82,7 @@ public sealed partial class CharacterService
 
     internal Task SyncEquipmentAsync(GameSession session) => SyncAsync(session, EquipSync, BuildEquip(session));
 
-    /// <summary>Worn gear changed (equip, unequip, plan switch): sockets that depend on it, CardEffects.</summary>
-    public AsyncHook<GameSession> WornGearChanged { get; } = new("CharacterService.WornGearChanged");
-
-    private async Task EquipmentAppearanceChangedAsync(GameSession session)
+    internal async Task EquipmentAppearanceChangedAsync(GameSession session)
     {
         Refresh(session);
         var look = new EntityBase { Uuid = (ulong)session.Role!.Id, NotifyType = EntityBase.Types.NotifyType.Equip };

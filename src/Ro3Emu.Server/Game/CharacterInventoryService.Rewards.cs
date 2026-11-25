@@ -6,14 +6,14 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     internal string RewardRealmId => roles.RewardRealmId;
     internal Task<bool> RewardSourceCommittedAsync(string sourceKey) => roles.RewardSourceCommittedAsync(sourceKey);
 
     /// <summary>E04: the declared roll, automatic conversion, consumed EXP thresholds and final progress
     /// accompany the source claim in the same transaction as the detached bag and currency changes.</summary>
-    private EconomyMutation RewardMutation(GameSession session, RewardSettlement settlement,
+    internal EconomyMutation RewardMutation(GameSession session, RewardSettlement settlement,
         RoleProgress before, RoleProgress after, IReadOnlyList<(int Entry, long Count)> costs,
         IReadOnlyList<(int Entry, int Count)> goods, long baseExp, long jobExp, ItemAutoDecomposeTipsNtf conversion)
     {

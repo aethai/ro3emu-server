@@ -33,7 +33,7 @@ public sealed partial class CharacterService
     // is keyed by the group (_iSkillID), so a row counts once its group reaches that level.
     private static readonly (int Skill, int Size)[] CartSizes =
         [(1600301, 50), (1600501, 55), (1600502, 60), (1600503, 70), (1600504, 80), (1600505, 90)];
-    private const int StatPlanCount = 5; // PublicParamConfig.SchemeNum=5 (inferred for attribute plans).
+    internal const int StatPlanCount = 5; // PublicParamConfig.SchemeNum=5 (inferred for attribute plans).
     private const int StatPlanNameLimit = 8; // PublicParamConfig.SchemeNameNumMax=8.
     private const int ShortcutSlotLimit = 6; // UI_Sys_Main_PropsWidget has PropsItem01..06, bound to keys ShortCut_1..6.
 

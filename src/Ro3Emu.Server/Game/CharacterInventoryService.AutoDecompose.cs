@@ -4,11 +4,8 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
-    /// <summary>EquipmentService supplies the saved loot filter and the same returns as manual dismantling.</summary>
-    internal Func<GameSession, InvItem, IReadOnlyList<(int Entry, long Count)>>? AutoDecomposeReturns { get; set; }
-
     private sealed record AutoDecomposePlan(ItemAutoDecomposeTipsNtf Notice, List<(InvItem Item, int Count)> Sources,
         Dictionary<int, int> Gains);
 
@@ -52,7 +49,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Quest award returns join its detached item/progress snapshot before the one SQLite commit.</summary>
-    private ItemAutoDecomposeTipsNtf StageAutoDecomposeAward(GameSession session, List<InvItem> items, RoleProgress progress,
+    internal ItemAutoDecomposeTipsNtf StageAutoDecomposeAward(GameSession session, List<InvItem> items, RoleProgress progress,
         IEnumerable<InvItem> received, IReadOnlyDictionary<long, int> before, List<(int Entry, int Count)> gained)
     {
         var plan = PlanAutoDecompose(session, received, before);

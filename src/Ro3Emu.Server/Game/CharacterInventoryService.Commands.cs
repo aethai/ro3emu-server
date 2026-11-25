@@ -5,7 +5,7 @@ using Ro3Emu.Server.Accounts.Persistence;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     /// <summary>C/D 13a: keep surviving instance identities while publishing one committed inventory revision.</summary>
     internal static void ApplyStagedItems(GameSession session, List<InvItem> staged, long[] ids)
@@ -33,7 +33,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Stage is completed by the caller under StateLock/WholeRole. Apply contains no awaits or hooks.</summary>
-    private async Task CommitCharacterAsync(GameSession session, string operation, List<InvItem>? nextItems = null,
+    internal async Task CommitCharacterAsync(GameSession session, string operation, List<InvItem>? nextItems = null,
         RoleProgress? progress = null, IReadOnlyDictionary<string, byte[]>? blobs = null, Action? apply = null,
         IReadOnlyList<(int Entry, long Count)>? costs = null, IReadOnlyList<(int Entry, int Count)>? goods = null)
     {
@@ -57,11 +57,11 @@ public sealed partial class CharacterService
         });
     }
 
-    private Task CommitBagAsync(GameSession session, string operation, DBItemsInfo next) =>
+    internal Task CommitBagAsync(GameSession session, string operation, DBItemsInfo next) =>
         CommitCharacterAsync(session, operation, blobs: new Dictionary<string, byte[]> { ["bag_state"] = next.ToByteArray() },
             apply: () => session.BagState.Info = next);
 
-    private Task CommitStatsAsync(GameSession session, string operation, RoleProgress progress, BaseAttrInfo plans) =>
+    internal Task CommitStatsAsync(GameSession session, string operation, RoleProgress progress, BaseAttrInfo plans) =>
         CommitCharacterAsync(session, operation, progress: progress,
             blobs: new Dictionary<string, byte[]> { ["stat_plans"] = plans.ToByteArray() },
             apply: () => session.StatPlans.Info = plans);

@@ -13,6 +13,8 @@ internal static class CharacterComposition
             services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<T>());
 
         services.AddSingleton<CharacterService>();
+        services.AddSingleton<CharacterInventoryService>();
+        services.AddSingleton<CharacterStatsService>();
         services.AddSingleton<SkillService>();
         services.AddSingleton<FunctionService>();
         services.AddSingleton<RewardService>();
@@ -88,6 +90,9 @@ internal static class CharacterComposition
         // Stats memoize across short tick windows on hot combat/ticker paths (CharacterService.Stats).
         var loop = app.Services.GetRequiredService<GameLoop>();
         var character = app.Services.GetRequiredService<CharacterService>();
+        character.BindSubsystems(
+            app.Services.GetRequiredService<CharacterInventoryService>(),
+            app.Services.GetRequiredService<CharacterStatsService>());
         character.WorkSerial = () => loop.WorkSerial;
         character.TickSerial = () => loop.TickSerial;
     }

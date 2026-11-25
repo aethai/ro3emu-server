@@ -372,7 +372,7 @@ public sealed partial class CharacterService
         return true;
     }
 
-    private void ApplyExp(RoleProgress p, long baseExp, long jobExp)
+    internal void ApplyExp(RoleProgress p, long baseExp, long jobExp)
     {
         p.Exp = checked(p.Exp + baseExp);
         for (long need; p.Level < MaxLevel && (need = BaseExpNeed(p.Level)) > 0 && p.Exp >= need;)
@@ -398,7 +398,7 @@ public sealed partial class CharacterService
         if (p.JobLevel >= maxJob) p.JobExp = Math.Min(p.JobExp, Math.Max(0, JobExpNeed(p.Career, p.JobLevel)));
     }
 
-    private void AddVirtualReward(Romsg.GetRewardNotify notification, int entry, long amount)
+    internal void AddVirtualReward(Romsg.GetRewardNotify notification, int entry, long amount)
     {
         while (amount > 0)
         {
@@ -408,9 +408,9 @@ public sealed partial class CharacterService
         }
     }
 
-    private bool IsCurrency(int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == ItemTypeCurrency;
+    internal bool IsCurrency(int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == ItemTypeCurrency;
 
-    private static RoleProgress CloneProgress(RoleProgress source)
+    internal static RoleProgress CloneProgress(RoleProgress source)
     {
         var result = new RoleProgress
         {
@@ -425,7 +425,7 @@ public sealed partial class CharacterService
         return result;
     }
 
-    private static void CopyProgress(RoleProgress target, RoleProgress source)
+    internal static void CopyProgress(RoleProgress target, RoleProgress source)
     {
         target.SourceRevision = source.SourceRevision;
         target.Career = source.Career; target.Level = source.Level; target.JobLevel = source.JobLevel;
@@ -438,7 +438,7 @@ public sealed partial class CharacterService
         target.SkillBar.Clear(); foreach (var (key, value) in source.SkillBar) target.SkillBar[key] = value;
     }
 
-    private static void CopyItem(InvItem target, InvItem source)
+    internal static void CopyItem(InvItem target, InvItem source)
     {
         target.Entry = source.Entry; target.Stack = source.Stack; target.Pack = source.Pack;
         target.Sort = source.Sort; target.Grid = source.Grid; target.IsLocked = source.IsLocked;
@@ -448,7 +448,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>Adds to the state and the database only; returns the instances that changed (new or restacked).</summary>
-    private List<InvItem> AddItemCore(GameSession session, int entry, int count, out bool currency,
+    internal List<InvItem> AddItemCore(GameSession session, int entry, int count, out bool currency,
         bool persist = true, bool notifyItemGained = true, int bind = 0)
     {
         var changed = new List<InvItem>();
@@ -497,7 +497,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>(inferred) Plain rewards stack only onto plain, unlocked instances with the same permanent binding.</summary>
-    private static bool CanStackGrant(InvItem item, int entry, int limit, int bind, long bindExpire = 0) =>
+    internal static bool CanStackGrant(InvItem item, int entry, int limit, int bind, long bindExpire = 0) =>
         item.Grid == 0 && !item.IsLocked && item.Entry == entry && item.Stack < limit
         && (item.Attrs?.Count ?? 0) == 0 && (item.StringAttrs?.Count ?? 0) == 0 && item.Enchantments.Count == 0
         && item.BindType == bind && item.BindExpire == bindExpire;

@@ -23,7 +23,7 @@ internal sealed record ItemActionUse(GameSession Session, ItemUseReq Request, In
     public Func<Task>? AfterReply { get; set; }
 }
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     private sealed record ItemAction(Func<ItemActionUse, Task<int>> Handler, bool TakesParam,
         Func<GameSession, Ownership.ReservationKey[]>? Keys);

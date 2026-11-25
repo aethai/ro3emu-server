@@ -4,7 +4,7 @@ using Ro3Emu.Server.Accounts;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Detached 5067 plan validation for the composed Build window.</summary>
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     internal Task GenreAppearanceChangedAsync(GameSession session) => EquipmentAppearanceChangedAsync(session);
 

@@ -5,7 +5,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     /// <summary>E05c: capture the family's resolved payment/result before writer admission. The original wire
     /// has no retry token; each server-admitted intent gets one source, retained across receipt recovery.</summary>
