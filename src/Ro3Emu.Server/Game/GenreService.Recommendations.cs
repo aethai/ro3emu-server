@@ -9,7 +9,7 @@ public sealed partial class GenreService
 {
     private const long CodeLifetime = 24 * 60 * 60; // (inferred) one-day share window; no original expiration policy recovered.
 
-    private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    private long Now() => skills.Clock.GetUtcNow().ToUnixTimeSeconds();
     private string NewShareCode(long now)
     {
         for (int attempt = 0; attempt < 32; attempt++)

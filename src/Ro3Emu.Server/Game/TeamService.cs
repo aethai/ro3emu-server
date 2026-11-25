@@ -184,7 +184,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         var team = new Team
         {
             Id = ++_nextId, Type = req.TeamType == TeamType.Forty ? TeamType.Forty : TeamType.Five, Leader = self,
-            Target = req.TargetId != 0 ? req.TargetId : NoTarget, Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Target = req.TargetId != 0 ? req.TargetId : NoTarget, Created = _loop.NowSec,
             Description = req.TeamDesc, Area = req.TeamAreaInfo.Length > 0 ? req.TeamAreaInfo : _options.Value.ClusterId.ToString(),
             MinBattlePoint = req.LimitScore, PlayBook = req.PlayBookId != 0 ? req.PlayBookId : _seasons.PlayBook,
         };
@@ -212,13 +212,13 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         await s.SendGameAsync(TeamInvite, new InviteIntoTeamResp { Result = code });
         _log.LogInformation("{Name} invites {Target} to party: {Result}", s.Role.Name, req.Guid, ok ? "ok" : "refused");
         if (!ok) return;
-        DateTime expires = DateTime.UtcNow + InviteLife;
+        DateTime expires = _loop.Time.GetUtcNow().UtcDateTime + InviteLife;
         _invites[(req.Guid, team!.Id)] = expires;
         long invitedTeam = team.Id;
         _loop.ScheduleRuntime(InviteLife, () => RunTeamAsync("team/invite-expiry", [req.Guid], invitedTeam, () =>
         {
             if (_invites.TryGetValue((req.Guid, invitedTeam), out var current) && current == expires
-                && current <= DateTime.UtcNow) _invites.Remove((req.Guid, invitedTeam));
+                && current <= _loop.Time.GetUtcNow().UtcDateTime) _invites.Remove((req.Guid, invitedTeam));
             return Task.CompletedTask;
         }));
         var simple = new TeamTotalSimpleInfo { Info = Simple(team) };
@@ -232,7 +232,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     private async Task InviteeRespCoreAsync(GameSession s, InviteeResp req)
     {
         long self = s.Role!.Id;
-        bool invited = _invites.TryGetValue((self, req.TeamId), out var expires) && expires > DateTime.UtcNow;
+        bool invited = _invites.TryGetValue((self, req.TeamId), out var expires) && expires > _loop.Time.GetUtcNow().UtcDateTime;
         if (!req.IsAgree)
         {
             _invites.Remove((self, req.TeamId));
@@ -314,7 +314,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     {
         team.Applicants.Remove(role);
         team.Members.Add(role);
-        team.Joined[role] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        team.Joined[role] = _loop.NowSec;
         _byMember[role] = team;
     }
 

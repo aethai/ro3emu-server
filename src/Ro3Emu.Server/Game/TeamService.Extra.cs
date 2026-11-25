@@ -97,7 +97,7 @@ public sealed partial class TeamService
         if (code == 0)
         {
             if (admitted) await RecordAndJoinAsync(team!, self);
-            else team!.Applicants[self] = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(); // (inferred) ms from Lua clock
+            else team!.Applicants[self] = _loop.Time.GetUtcNow().AddSeconds(30).ToUnixTimeMilliseconds(); // (inferred) ms from Lua clock
         }
         await s.SendGameAsync(TeamEnter, new EnterTeamResp { Result = code, TeamId = req.TeamId });
         if (code != 0) return;
@@ -111,7 +111,7 @@ public sealed partial class TeamService
     private async Task ApplyCoreAsync(GameSession s, ApplyListOperateReq req)
     {
         bool leader = TryLeader(s, out var team);
-        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long now = _loop.Time.GetUtcNow().ToUnixTimeMilliseconds();
         bool expired = leader && req.OperType is (ApplyListOperateType.Agree or ApplyListOperateType.Refuse)
             && team!.Applicants.TryGetValue(req.TargetGuid, out long expiry) && expiry <= now;
         int code = !leader ? ErrorCodes.NoPermission
@@ -223,7 +223,7 @@ public sealed partial class TeamService
         if (code != 0) return;
         foreach (long member in team!.Members.Where(m => m != s.Role!.Id))
         {
-            team.Rallies[member] = (req.RallyType, DateTimeOffset.UtcNow.AddSeconds(15)); // TeamGatheringTime; inferred server expiry.
+            team.Rallies[member] = (req.RallyType, _loop.Time.GetUtcNow().AddSeconds(15)); // TeamGatheringTime; inferred server expiry.
             if (Session(member) is { } target) await target.SendGameAsync(TeamRallyBroadcast, new RallyTeamNotify { RallyType = req.RallyType, OperGuid = s.Role!.Id });
         }
     }
@@ -235,7 +235,7 @@ public sealed partial class TeamService
     {
         long self = s.Role!.Id;
         int code = !_byMember.TryGetValue(self, out var team) || !team!.Rallies.TryGetValue(self, out var pending)
-            || pending.Type != req.RallyType || pending.Expires <= DateTimeOffset.UtcNow ? ErrorCodes.Parameter : 0;
+            || pending.Type != req.RallyType || pending.Expires <= _loop.Time.GetUtcNow() ? ErrorCodes.Parameter : 0;
         await s.SendGameAsync(TeamRallyResponse, new RallyTeamMemberResponseResp { Result = code, RallyType = req.RallyType, IsAgree = req.IsAgree });
         if (code != 0) return;
         team!.Rallies.Remove(self);
@@ -259,10 +259,10 @@ public sealed partial class TeamService
     {
         int code = !TryLeader(s, out var team) ? ErrorCodes.NoPermission
             : string.IsNullOrWhiteSpace(req.Content) || req.Content.Length > 512 ? ErrorCodes.Parameter
-            : _recruitUntil.GetValueOrDefault(team!.Id) > DateTimeOffset.UtcNow ? ErrorCodes.Cooldown : 0;
+            : _recruitUntil.GetValueOrDefault(team!.Id) > _loop.Time.GetUtcNow() ? ErrorCodes.Cooldown : 0;
         await s.SendGameAsync(TeamRecruit, new TeamRecruitResp { Result = code });
         if (code != 0) return null;
-        _recruitUntil[team!.Id] = DateTimeOffset.UtcNow.AddSeconds(30); // TeamPromptCD, server enforcement inferred.
+        _recruitUntil[team!.Id] = _loop.Time.GetUtcNow().AddSeconds(30); // TeamPromptCD, server enforcement inferred.
         return (team.Id, team.Members.Count, Capacity(team), team.Members.Select(m => Detail(team, m).Job).ToArray());
     }
 

@@ -87,7 +87,7 @@ public sealed partial class SeasonTalentService
         if (index == state.CurPlanId && !replaceCurrent) return 0;
         if (!Available(session)) return ErrorCodes.FeatureUnavailable;
         if (index is < 0 or >= PlanCount || !state.Plan.ContainsKey(index)) return ErrorCodes.Parameter;
-        if (index != state.CurPlanId && DateTime.UtcNow - session.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds)) return ErrorCodes.Cooldown;
+        if (index != state.CurPlanId && session.UtcNow - session.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds)) return ErrorCodes.Cooldown;
         state.CurPlanId = index;
         BuildUnlocks(session, state);
         return 0;
@@ -356,7 +356,7 @@ public sealed partial class SeasonTalentService
         {
             result = !Available(s) || s.SeasonTalent == null ? ErrorCodes.FeatureUnavailable
                 : req.PlanId is < 0 or >= PlanCount ? ErrorCodes.Parameter
-                : DateTime.UtcNow - s.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds) ? ErrorCodes.Cooldown : 0;
+                : s.UtcNow - s.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds) ? ErrorCodes.Cooldown : 0;
             if (result == 0)
             {
                 var next = s.SeasonTalent!.Clone();
@@ -369,7 +369,7 @@ public sealed partial class SeasonTalentService
                     await _roles.CommitAsync(transaction, "season-talent/set-plan", _ =>
                     {
                         s.SeasonTalent = next;
-                        s.TalentPlanSwitchUtc = DateTime.UtcNow;
+                        s.TalentPlanSwitchUtc = s.UtcNow;
                     });
                     await CharacterService.SyncAsync(s, TalentSync, next.Clone());
                     await _character.RefreshStatsAsync(s);

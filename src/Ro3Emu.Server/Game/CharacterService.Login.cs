@@ -34,7 +34,7 @@ public sealed partial class CharacterService
         session.BagState = new RoleBagState(roles.LoadBagState(role.Id));
         session.ItemCds.Clear();
         session.ItemGroupCds.Clear();
-        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long nowMs = session.NowMs;
         foreach (var (id, end) in session.BagState.Info.ItemCds?.Data ?? new CdData().Data)
             if (id is > 0 and <= int.MaxValue && end > nowMs) session.ItemCds[(int)id] = end;
         foreach (var (id, end) in session.BagState.Info.ShareCds?.Data ?? new CdData().Data)

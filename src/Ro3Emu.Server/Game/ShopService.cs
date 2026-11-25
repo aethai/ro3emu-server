@@ -247,7 +247,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         EconomyQuantity[] costs = payment > 0 && unit > 0 ? [new(Asset(payment), checked((long)unit * count))] : [];
         return new EconomyMutation(operation, session.Account!, session.Role!.Id, "npc-shop-buy", fingerprint,
             "npc-shop/" + session.Role.Id.ToString(CultureInfo.InvariantCulture) + "/" + operation,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), costs, [new(Asset(entry), checked((long)perUnit * count))], outcome);
+            _clock.GetUtcNow().ToUnixTimeMilliseconds(), costs, [new(Asset(entry), checked((long)perUnit * count))], outcome);
     }
 
     /// <summary>Why a commodity cannot be bought now, or null: its shop's function, the buy/lock conditions, the variant.</summary>

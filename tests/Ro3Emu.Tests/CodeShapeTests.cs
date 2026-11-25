@@ -26,6 +26,7 @@ public sealed class CodeShapeTests
     private const int NumericStatIndexers = 0;
     private const int NumericRouteMaps = 105;
     private const int NumericSendGameCalls = 48;
+    private const int SystemClockCallsInGame = 0;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;
@@ -77,6 +78,10 @@ public sealed class CodeShapeTests
         AssertRatchet(nameof(NumericSendGameCalls), NumericSendGameCalls, ServerSnapshot.Value.NumericSendGame);
 
     [Fact]
+    public void SystemClockCallsInGameOnlyGoDown() =>
+        AssertRatchet(nameof(SystemClockCallsInGame), SystemClockCallsInGame, ServerSnapshot.Value.SystemClockCalls);
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));
@@ -98,6 +103,8 @@ public sealed class CodeShapeTests
                     long hp = stats[101];
                     routes.Map(30400, (s, b) => Task.CompletedTask);
                     session.SendGameAsync(30400, new object());
+                    var now = DateTime.UtcNow;
+                    var ticks = Environment.TickCount64;
             {{body}}
                 }
                 public void TooWide(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, int a10, int a11) { }
@@ -115,6 +122,7 @@ public sealed class CodeShapeTests
         Assert.Single(snapshot.NumericStatIndexers);
         Assert.Single(snapshot.NumericRouteMaps);
         Assert.Single(snapshot.NumericSendGame);
+        Assert.Equal(2, snapshot.SystemClockCalls.Count);
     }
 
     private static void AssertRatchet(string name, int ceiling, IReadOnlyList<string> items)
@@ -158,6 +166,7 @@ public sealed class CodeShapeTests
         List<string> numericStatIndexers = [];
         List<string> numericRouteMaps = [];
         List<string> numericSendGame = [];
+        List<string> systemClockCalls = [];
 
         foreach (var (relPath, text) in files)
         {
@@ -175,6 +184,7 @@ public sealed class CodeShapeTests
             if (inGame) CollectNumericStatIndexers(relPath, root, numericStatIndexers);
             CollectNumericRouteMaps(relPath, root, numericRouteMaps);
             CollectNumericSendGame(relPath, root, numericSendGame);
+            if (inGame) CollectSystemClockCalls(relPath, root, systemClockCalls);
         }
 
         List<string> heavyClasses =
@@ -188,7 +198,7 @@ public sealed class CodeShapeTests
         ];
 
         return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists,
-            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame);
+            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame, systemClockCalls);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -397,6 +407,26 @@ public sealed class CodeShapeTests
         }
     }
 
+    private static void CollectSystemClockCalls(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var access in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+        {
+            string typeName = access.Expression switch
+            {
+                IdentifierNameSyntax id => id.Identifier.ValueText,
+                MemberAccessExpressionSyntax inner => inner.Name.Identifier.ValueText,
+                _ => "",
+            };
+            string memberName = access.Name.Identifier.ValueText;
+            bool forbidden = (typeName == "DateTime" && memberName is "Now" or "UtcNow" or "Today")
+                || (typeName == "DateTimeOffset" && memberName is "Now" or "UtcNow")
+                || (typeName == "Environment" && memberName is "TickCount" or "TickCount64");
+            if (!forbidden) continue;
+            int line = access.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, access.ToString()));
+        }
+    }
+
     private static bool IsNumericLiteral(ExpressionSyntax expr) => expr switch
     {
         LiteralExpressionSyntax lit => lit.IsKind(SyntaxKind.NumericLiteralExpression),
@@ -433,5 +463,6 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> NumericIsOpen,
         IReadOnlyList<string> NumericStatIndexers,
         IReadOnlyList<string> NumericRouteMaps,
-        IReadOnlyList<string> NumericSendGame);
+        IReadOnlyList<string> NumericSendGame,
+        IReadOnlyList<string> SystemClockCalls);
 }

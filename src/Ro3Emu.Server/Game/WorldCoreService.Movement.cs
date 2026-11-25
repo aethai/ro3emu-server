@@ -61,7 +61,7 @@ public sealed partial class WorldCoreService
         // As a skill's caster move (CombatService.MoveCasterAsync): the server is at the end at once, and a walk report
         // that predates the move is dropped (RoleSessionService.WalkAsync, SkillCarry).
         s.CarryBySkill(start, move.End, Now, move.MoveMs);
-        s.LastWalkUtc = DateTime.UtcNow;
+        s.LastWalkUtc = _clock.GetUtcNow().UtcDateTime;
         s.Walking = false;
         await ToSelfAndViewersAsync(s, CombatService.SkillMove, new SkillStartMoveNotify
         {
@@ -148,7 +148,7 @@ public sealed partial class WorldCoreService
             || floor is not { } under || req.Pos.Y < under - 1 || req.Pos.Y > under + MountFlight.MaxHeight)
         { await ErrorAsync(s, FlyMove, ErrorCodes.Parameter); await CorrectFlightAsync(s); return; }
         float distance = Distance(s.Position, req.Pos);
-        if (!s.FlightAllowance.TrySpend(DateTime.UtcNow, speed, distance))
+        if (!s.FlightAllowance.TrySpend(_clock.GetUtcNow().UtcDateTime, speed, distance))
         {
             _scene.Cheats.Refused(s, CheatMonitor.Flight, $"scene {s.SceneEntry} {distance:F1} m beyond the flight budget at {speed:F1} m/s");
             await ErrorAsync(s, FlyMove, ErrorCodes.Parameter); await CorrectFlightAsync(s); return;
@@ -203,7 +203,7 @@ public sealed partial class WorldCoreService
             move.MoveType = MovementType.MoveTypeMove; move.MoveDuration = 1000;
             move.MovementMove = new MovementMove { StartVelocity = new Vec3 { X = direction.X / length * speed, Y = direction.Y / length * speed, Z = direction.Z / length * speed }, AccVelocity = new Vec3() };
         }
-        s.PreviousPosition = s.Position; s.Position = pos.Clone(); s.Face = face; s.LastWalkUtc = DateTime.UtcNow; s.Walking = false;
+        s.PreviousPosition = s.Position; s.Position = pos.Clone(); s.Face = face; s.LastWalkUtc = _clock.GetUtcNow().UtcDateTime; s.Walking = false;
         _combat.PlayerMoved(s);
         var notify = new MovementChangeNtf { Uid = s.Role!.Id, TransType = transition, MovementInfo = move };
         await s.SendGameAsync(GameAoiSink.MovementChange, notify);

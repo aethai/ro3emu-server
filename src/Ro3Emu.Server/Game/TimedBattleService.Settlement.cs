@@ -229,7 +229,7 @@ public sealed partial class TimedBattleService
                 }).ToArray();
                 tx.WithEventEconomy(new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"),
                     "realm", 0, "event/timed-battle-settle", $"timed-battle/match/{match.Room.Id}",
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), debits, goods, deltas,
+                    _loop.NowMs, debits, goods, deltas,
                     JsonSerializer.SerializeToUtf8Bytes(new { Match = match.Room.Id, Recipients = frozen.Select(x => x.Obligation.RoleId).ToArray() })));
             }
             await _roles.CommitAsync(tx, "timed-battle/settlement", _ =>

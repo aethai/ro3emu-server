@@ -65,7 +65,7 @@ public sealed partial class CharacterService
         var item = session.Items.FirstOrDefault(i => i.Guid == req.ItemGuid && i.Grid == 0);
         int count = req.ItemCount;
         var row = item != null ? data.Row("ItemConfig", item.Entry) : null;
-        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long now = session.NowMs;
         int group = row is { } r0 && r0.TryGetProperty("_kCDGroup", out var g) && g.ValueKind == JsonValueKind.Array && g.GetArrayLength() > 0
             ? (int)(GameData.Number(g[0]) ?? 0) : 0;
         int result = count is <= 0 or > 999 ? ErrorCodes.Parameter

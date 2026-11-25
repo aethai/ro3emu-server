@@ -22,7 +22,7 @@ public sealed partial class TerritoryWarsService
             new(EconomyOwnerKind.Role, g.Key.Role.ToString(CultureInfo.InvariantCulture)), g.Key.Asset,
             g.Aggregate(0L, (n, x) => checked(n + x.Grant.Count)))).ToArray();
         return new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"), "realm", 0,
-            "event/territory-" + kind, sourceKey, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            "event/territory-" + kind, sourceKey, _loop.NowMs,
             [], goods, deltas, JsonSerializer.SerializeToUtf8Bytes(new
             {
                 Kind = kind, Source = sourceKey,
@@ -44,7 +44,7 @@ public sealed partial class TerritoryWarsService
             new(EconomyOwnerKind.Role, g.Key.Role.ToString(CultureInfo.InvariantCulture)), g.Key.Asset,
             g.Aggregate(0L, (n, x) => checked(n + x.Grant.Count)))).ToArray();
         return new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"), "realm", 0,
-            "event/territory-siege-settle", sourceKey, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            "event/territory-siege-settle", sourceKey, _loop.NowMs,
             [], goods, deltas, JsonSerializer.SerializeToUtf8Bytes(new
             {
                 Source = sourceKey,
@@ -121,7 +121,7 @@ public sealed partial class TerritoryWarsService
             Delta: g.Aggregate(0L, (n, x) => checked(n + x.Delta)))).ToArray();
         return new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
             actor?.Account ?? "realm", actor?.Role?.Id ?? 0, "event/territory-" + kind, sourceKey,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            _loop.NowMs,
             [.. totals.Where(x => x.Delta < 0).Select(x => new EconomyQuantity(x.Asset, -x.Delta))],
             [.. totals.Where(x => x.Delta > 0).Select(x => new EconomyQuantity(x.Asset, x.Delta))],
             ownerDeltas, JsonSerializer.SerializeToUtf8Bytes(new

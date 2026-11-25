@@ -24,16 +24,17 @@ public sealed class TotemService
     private readonly FunctionService _functions;
     private readonly TotemEffects _effects;
     private readonly SeasonService _seasons;
+    private readonly TimeProvider _clock;
 
-    public TotemService(GameData data, CharacterService character, RoleStore roles, ItemStore items, FunctionService functions, TotemEffects effects, SeasonService seasons)
+    public TotemService(GameData data, CharacterService character, RoleStore roles, ItemStore items, FunctionService functions, TotemEffects effects, SeasonService seasons, TimeProvider clock)
     {
-        this._data = data; this._character = character; this._roles = roles; this._items = items; this._functions = functions; this._effects = effects; this._seasons = seasons;
+        this._data = data; this._character = character; this._roles = roles; this._items = items; this._functions = functions; this._effects = effects; this._seasons = seasons; this._clock = clock;
         character.TotemAttrFactory = CreateAttributes;
         character.ExtraAttributes.Add(Attributes);
     }
 
     private string RefineEpoch => $"{_seasons.PlayBook}:{_seasons.Start.Ticks}";
-    private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private long Now => _clock.GetUtcNow().ToUnixTimeMilliseconds();
     private static long[][] Rows(JsonElement v) => v.ValueKind == JsonValueKind.Array
         ? [.. v.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Array).Select(x => x.EnumerateArray().Select(y => (long)(GameData.Number(y) ?? 0)).ToArray())] : [];
     private static long[][] Rows(JsonElement row, string key) => row.TryGetProperty(key, out var v) ? Rows(v) : [];
@@ -438,7 +439,7 @@ public sealed class TotemService
     }
 
     internal int PlanSwitchCooldownError(GameSession s) => s.TotemSwitchUtc != default
-        && DateTime.UtcNow - s.TotemSwitchUtc < TimeSpan.FromSeconds(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3) ? ErrorCodes.GenreCooldown : 0;
+        && _clock.GetUtcNow().UtcDateTime - s.TotemSwitchUtc < TimeSpan.FromSeconds(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3) ? ErrorCodes.GenreCooldown : 0;
 
     internal async Task SwitchAsync(GameSession s, TotemSwitchPlanReq req)
     {
@@ -448,7 +449,7 @@ public sealed class TotemService
         if (error == 0)
         {
             var next = s.Totems!.Clone(); next.CurrentPlan = req.TargetIndex;
-            await CommitAsync(s, next); s.TotemSwitchUtc = DateTime.UtcNow;
+            await CommitAsync(s, next); s.TotemSwitchUtc = _clock.GetUtcNow().UtcDateTime;
         }
         await s.SendGameAsync(82367, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Totems!.CurrentPlan });
     }

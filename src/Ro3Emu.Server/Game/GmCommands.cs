@@ -380,7 +380,7 @@ public sealed partial class GmCommands(IOptions<ServerOptions> options, GameData
             var guild = services.GetRequiredService<Accounts.GuildStore>().ForRole(s.Role!.Id) ?? throw new ArgumentException("Join a guild first");
             int challenge = a.Length > 0 ? I(a[0]) : 1001, stage = a.Length > 1 ? I(a[1]) : 0;
             int code = await services.GetRequiredService<AuctionService>().PublishGuildChallengeAsync(
-                "gm:" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), guild.Id, challenge, stage, [s.Role.Id]);
+                "gm:" + services.GetRequiredService<GameLoop>().NowMs, guild.Id, challenge, stage, [s.Role.Id]);
             await ReplyAsync(s, code == 0 ? $"guild auction published (challenge {challenge}, stage {stage})" : $"guild auction failed: {code}");
         }
         ),

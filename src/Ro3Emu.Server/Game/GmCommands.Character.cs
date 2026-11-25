@@ -275,10 +275,10 @@ public sealed partial class GmCommands
     /// A mail expiry from the panel: empty or 0 = the mail's default, (inferred) a bare number = days from now, otherwise
     /// a host-local date time as GmSetServerTime writes it ("年-月-日 时:分:秒").
     /// </summary>
-    private static DateTimeOffset? MailExpiry(string text)
+    private DateTimeOffset? MailExpiry(string text)
     {
         if (text.Length == 0 || text == "0") return null;
-        if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int days)) return DateTimeOffset.UtcNow.AddDays(days);
+        if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int days)) return services.GetRequiredService<TimeProvider>().GetUtcNow().AddDays(days);
         return DateTimeOffset.Parse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal);
     }
 

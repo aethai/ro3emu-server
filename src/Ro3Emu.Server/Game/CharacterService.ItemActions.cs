@@ -189,7 +189,7 @@ public sealed partial class CharacterService
         if (currency) throw new InvalidOperationException("An item action spends a bag item.");
         string operation = Guid.NewGuid().ToString("N");
         var envelope = new EconomyEnvelope(operation, s.Account!, s.Role.Id, kind, kind, kind + ":" + operation,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [sink], []);
+            s.NowMs, [sink], []);
         // E05d freezes the staged children when it binds, so the item use's cooldown (the 31323 scope's bag_state) is
         // staged here, before it, and the scope is published with the commit instead of by the exchange.
         var scope = LifeItemExchange.Value is { Active: true, Committed: false } live && ReferenceEquals(live.Session, s) ? live : null;

@@ -51,7 +51,7 @@ public sealed partial class SceneService
     /// only when its direction changes: it is allowed what it can have walked since, up to 2 s (inferred), and nothing once the report is past the walk check's 5 s.</summary>
     private static bool Near(GameSession s, MapRegion region)
     {
-        double sinceWalk = (DateTime.UtcNow - s.LastWalkUtc).TotalSeconds;
+        double sinceWalk = (s.UtcNow - s.LastWalkUtc).TotalSeconds;
         float lag = s.Walking && sinceWalk is >= 0 and <= 5 ? s.Speed / 100f * (float)Math.Min(sinceWalk, 2) : 0;
         float dx = s.Position.X - region.X, dz = s.Position.Z - region.Z, reach = Math.Max(region.Width, region.Length) + 5 + lag;
         return !s.SceneLoading && dx * dx + dz * dz <= reach * reach;

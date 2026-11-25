@@ -116,7 +116,7 @@ public sealed partial class LifeJobService
     private long Today => Day(_clock.GetLocalNow().DateTime);
     private static long Day(DateTime now) => DateOnly.FromDateTime(now.AddHours(-5)).DayNumber;
     public static long DailyEnergyUsed(GameSession s, long restriction) => restriction == VigorId
-        && s.LifeRuntime.EnergyDay == Day(DateTime.Now) ? s.LifeRuntime.EnergySpent : 0;
+        && s.LifeRuntime.EnergyDay == Day(s.Clock.GetLocalNow().DateTime) ? s.LifeRuntime.EnergySpent : 0;
     private long RestrictMax(int id) => _data.Row("RestrictConfig", id) is { } r ? GameData.Int(r, "_iMaxRestrictNum") : 0;
     private static RuntimeState Copy(RuntimeState r) => new()
     { EnergyDay = r.EnergyDay, EnergySpent = r.EnergySpent, PotionDay = r.PotionDay, FoodBook = r.FoodBook };

@@ -84,7 +84,7 @@ public sealed class WildAfkService : IGameTicker
     private long DailySeconds => (Data.Config.PublicParams.Of(_data).OnHookDailyFightTime ?? 60) * 60;
     private long CapSeconds => (Data.Config.PublicParams.Of(_data).OnHookFightTimeLimit ?? 180) * 60;
     private long MonitorMs => (Data.Config.PublicParams.Of(_data).OnHookConditionMonito ?? 10) * 1000;
-    private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private long Now => _loop.NowMs;
     // A queued operation may acquire the old role's gate after logout or a role switch replaced this state.
     private static bool Owns(GameSession s, State state) => s.Role != null && ReferenceEquals(s.WildAfk, state);
     private async Task<LegacyOwnerScope?> EnterStateScopeAsync(GameSession s, State state, string origin)

@@ -358,7 +358,7 @@ public sealed partial class TerritoryWarsService
                         : $"territory-world-pickup:{state.Epoch}:{unit.Slot}:{unit.Ordinal}";
                     var movement = new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
                         s.Account!, s.Role.Id, "event/territory-world-pickup", source,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [],
+                        _loop.NowMs, [],
                         unit.DropId == 0 ? [new EconomyQuantity(asset, unit.Amount)] : [],
                         unit.DropId == 0 ? [new EventEconomyOwnerDelta(beneficiary, asset, unit.Amount)] :
                             [new(escrow, asset, -unit.Amount), new(beneficiary, asset, unit.Amount)],
@@ -507,7 +507,7 @@ public sealed partial class TerritoryWarsService
                     var movement = new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
                         victim.Account!, victim.Role.Id, "event/territory-world-death",
                         $"territory-drop:{state.Epoch}:{drop.Id}:create",
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [], [],
+                        _loop.NowMs, [], [],
                         [new(new(EconomyOwnerKind.Role, victim.Role.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)), asset, -lost),
                          new(new(EconomyOwnerKind.Escrow, "territory-drop:" + state.Epoch), asset, lost)],
                         JsonSerializer.SerializeToUtf8Bytes(new { drop.Id, drop.Amount, Role = victim.Role.Id }));

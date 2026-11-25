@@ -41,7 +41,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
                     next = new PetFollowerActor(
                         Interlocked.Increment(ref _nextActorId), role.Id, slot.Value, npcId,
                         Math.Max(1, GameData.Int(npc, "_iCamp")), session.Position.Clone(), session.Face, // friendly fallback (inferred)
-                        GameData.Int(npc, "_iSpeed"), (int)GameData.Int(npc, "_iElement"));
+                        GameData.Int(npc, "_iSpeed"), (int)GameData.Int(npc, "_iElement"), world.Clock);
                 break;
             }
         }
@@ -51,7 +51,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
 
 /// <summary>One server-driven AOI projection; no inferred pet combat, skill AI or damage.</summary>
 public sealed class PetFollowerActor(long uid, long ownerId, int petId, int npcTemplateId, long camp, Vec3 position, float face,
-    long npcSpeed = 0, int element = 0)
+    long npcSpeed = 0, int element = 0, TimeProvider? clock = null)
 {
     // Config/ComplexConfig/PublicParamConfig.lua:8896-8901: PetConfigFollow = 300.
     // Centimetres and the diagonal side/back placement are (inferred);
@@ -132,7 +132,7 @@ public sealed class PetFollowerActor(long uid, long ownerId, int petId, int npcT
             Face = Face,
             MovementInfo = new MovementInfo
             {
-                Pos = Position.Clone(), Face = Face, ServerTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Pos = Position.Clone(), Face = Face, ServerTime = (clock ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds(),
                 MoveType = MovementType.MoveTypeNone,
             },
             NotifyType = EntityBase.Types.NotifyType.All,

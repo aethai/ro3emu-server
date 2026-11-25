@@ -92,7 +92,7 @@ public sealed partial class TerritoryEscortService
                 var source = $"escort-cargo:{Epoch}:{id}:claim";
                 var mutation = new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
                     session.Account!, session.Role!.Id, "event/escort-cargo-pickup", source,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [], [],
+                    _loop.NowMs, [], [],
                     [new(new(EconomyOwnerKind.Escrow, "escort-cargo:" + id), item, -1),
                      new(new(EconomyOwnerKind.Role, session.Role.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)), item, 1)],
                     JsonSerializer.SerializeToUtf8Bytes(new { Cargo = id, Role = session.Role.Id }));

@@ -106,7 +106,7 @@ public sealed partial class GuildService
         catch (AwardResolutionException) { return ErrorCodes.ItemNoConfig; }
         var recipients = g.Members.Values.Where(m => Compare(op, m.Official, position)).Select(m => m.RoleId).Order().ToArray();
         if (recipients.Length == 0) return ErrorCodes.Parameter;
-        string source = $"guild-pack:{g.Id}:{s.Role!.Id}:{use.Item.Guid}:{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        string source = $"guild-pack:{g.Id}:{s.Role!.Id}:{use.Item.Guid}:{NowMs()}";
         if (!await character.CommitItemActionAsync(use, null, null, new
         {
             Guild = g.Id, Group = group, Template = template,

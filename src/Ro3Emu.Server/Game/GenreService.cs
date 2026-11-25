@@ -94,7 +94,7 @@ public sealed partial class GenreService(
             finally { s.Totems = old; }
             if (code != 0) return code;
             next.Totems.CurrentPlan = totem;
-            TotemService.ApplyMarkers(next.Items, next.Totems, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            TotemService.ApplyMarkers(next.Items, next.Totems, skills.Clock.GetUtcNow().ToUnixTimeMilliseconds());
         }
         if (selected.TryGetValue(Emblem, out int emblem) && (emblem != next.Echoes.CurrentPlan || replaced?.Contains(Emblem) == true))
         {
@@ -254,7 +254,7 @@ public sealed partial class GenreService(
             s.Genre = genre; s.Progress = next.Progress; s.StatPlans.Info = next.Attrs; s.SkillPlans = next.Skills;
             s.EquipmentPlans = next.Equipment; s.CardPlans = next.Cards; s.Totems = next.Totems;
             s.Emblems = next.Echoes; s.Pets = next.Pets; s.SeasonTalent = next.Talents; s.Items = next.Items;
-            DateTime switchedAt = DateTime.UtcNow;
+            DateTime switchedAt = skills.Clock.GetUtcNow().UtcDateTime;
             if (skillChanged) s.SkillPlanSwitchUtc = switchedAt;
             if (totemChanged) s.TotemSwitchUtc = switchedAt;
             if (emblemChanged) s.EmblemPlanSwitchUtc = switchedAt;

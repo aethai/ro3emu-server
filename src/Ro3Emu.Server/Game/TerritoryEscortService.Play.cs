@@ -472,7 +472,7 @@ public sealed partial class TerritoryEscortService
             var mutation = new EventEconomyMutation(EventEconomy.Catalog(_data), operationId,
                 s.Account!, roleId, "event/escort-drop-submit",
                 $"escort-drop-submit:{Epoch}:{roleId}:{operationId}",
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), [new(item, count)], [new(materials, materialCount)],
+                _loop.NowMs, [new(item, count)], [new(materials, materialCount)],
                 [new(new(EconomyOwnerKind.Role, roleId.ToString(System.Globalization.CultureInfo.InvariantCulture)), item, -count),
                  new(new(EconomyOwnerKind.Guild, guildId.ToString(System.Globalization.CultureInfo.InvariantCulture)), materials, materialCount)],
                 JsonSerializer.SerializeToUtf8Bytes(new { Role = roleId, Guild = guildId, Count = count }));

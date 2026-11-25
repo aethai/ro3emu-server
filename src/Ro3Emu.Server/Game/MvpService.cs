@@ -741,7 +741,7 @@ public sealed partial class MvpService : IGameTicker
                 new EconomyOwner(EconomyOwnerKind.Role, x.PlayerId.ToString(CultureInfo.InvariantCulture)),
                 goods[index].Asset, x.Grant.Count)).ToArray();
             builder.WithEventEconomy(new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"), "realm", 0,
-                "event/mvp-settlement", parentSource, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                "event/mvp-settlement", parentSource, _loop.NowMs,
                 [], goods, deltas, JsonSerializer.SerializeToUtf8Bytes(new
                 {
                     st.Def.CfgId, DeadMs = deadMs,
@@ -946,12 +946,12 @@ public sealed partial class MvpService : IGameTicker
             info.TeamNum = row.Team;
             info.LastTime = row.Last;
         }
-        var now = DateTime.Now;
+        var now = _loop.Time.GetLocalNow().DateTime;
         var lastReset = now.Date.AddHours(ResetHour) is var today && now >= today ? today : today.AddDays(-1);
         if (DateTimeOffset.FromUnixTimeMilliseconds(info.LastTime).LocalDateTime < lastReset)
         {
             info.FirstNum = info.EndNum = info.JoinNum = info.TeamNum = 0;
-            info.LastTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            info.LastTime = _loop.NowMs;
             return (info, true);
         }
         return (info, false);

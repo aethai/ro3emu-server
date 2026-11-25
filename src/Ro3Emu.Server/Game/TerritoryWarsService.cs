@@ -692,7 +692,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
                     if (goods.Any(g => g.Count > 0 && g.Entry is not (100 or 101)))
                         tx.WithEventEconomy(new EventEconomyMutation(EventEconomy.Catalog(_data),
                             Guid.NewGuid().ToString("N"), s.Account!, s.Role.Id, "event/territory-pending-deliver",
-                            $"territory-pending-deliver:{s.Role.Id}:{key}", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            $"territory-pending-deliver:{s.Role.Id}:{key}", _loop.NowMs,
                             [], [], [], JsonSerializer.SerializeToUtf8Bytes(new { Role = s.Role.Id, Key = key })));
                 },
                 BoundGoods = [.. goods.Select(g => (g.Entry, g.Count, g.Bind))],

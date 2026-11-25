@@ -30,12 +30,15 @@ public sealed partial class ChatService
     private readonly ChatFloodGuard _flood;
     private readonly ILogger<ChatService> _log;
     private readonly CheatMonitor _cheats;
+    private readonly TimeProvider _clock;
 
     public ChatService(GmCommands gm, FeedbackService feedback, GuildStore guilds, FriendStore friends, CharacterService character,
         GameData data, SessionRegistry sessions, IOptions<ServerOptions> options, ChatFloodGuard flood, ILogger<ChatService> log,
-        CheatMonitor cheats)
+        CheatMonitor cheats, TimeProvider clock)
     {
         this._cheats = cheats;
+        this._clock = clock;
+        this._nextMessageId = clock.GetUtcNow().ToUnixTimeMilliseconds();
         this._gm = gm; this._feedback = feedback; this._guilds = guilds; this._friends = friends; this._character = character; this._data = data;
         this._sessions = sessions; this._options = options; this._flood = flood; this._log = log;
         character.RegisterItemAction(SoundTransmissionAction, UseHornAsync, takesParam: true);
@@ -81,7 +84,7 @@ public sealed partial class ChatService
     private readonly object _sync = new();
     private readonly Dictionary<string, HashSet<GameSession>> _groups = [];
     private readonly Dictionary<long, GameSession> _online = [];
-    private long _nextMessageId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private long _nextMessageId;
 
     /// <summary>
     /// Server-origin recruitment uses the client's channel-8 Tencent text push. The special
@@ -109,7 +112,7 @@ public sealed partial class ChatService
             {
                 MessageId = Interlocked.Increment(ref _nextMessageId).ToString(),
                 SenderId = sender.Role!.Id.ToString(), ReceiveId = id,
-                SendTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                SendTime = (ulong)_clock.GetUtcNow().ToUnixTimeSeconds(),
                 Content = content, ExtraParam = extra,
             };
             Remember(message);
@@ -145,7 +148,7 @@ public sealed partial class ChatService
             Result = 0,
             UserSig = "ro3emu",
             SdkAppID = SdkAppId,
-            ExpireTime = DateTimeOffset.UtcNow.AddDays(1).ToUnixTimeSeconds(),
+            ExpireTime = _clock.GetUtcNow().AddDays(1).ToUnixTimeSeconds(),
         });
 
     /// <summary>
@@ -209,7 +212,7 @@ public sealed partial class ChatService
             return $"line of {req.Content.Length} characters (extra {req.ExtraParam.Length}) to {req.ReceiveId}";
         if (_gm.IsCommand(req.Content) && _gm.Allowed(sender)) return null; // a GM's command lines are not chat
         sender.ChatLines ??= RateBucket.Parse(limits.ChatLines) ?? new RateBucket(1, 10);
-        return sender.ChatLines.TryTake(Environment.TickCount64) ? null : $"line to {req.ReceiveId} over the chat rate";
+        return sender.ChatLines.TryTake(_clock.GetUtcNow().ToUnixTimeMilliseconds()) ? null : $"line to {req.ReceiveId} over the chat rate";
     }
 
     /// <summary>
@@ -356,7 +359,7 @@ public sealed partial class ChatService
             MessageId = Interlocked.Increment(ref _nextMessageId).ToString(),
             SenderId = sender.Role!.Id.ToString(),
             ReceiveId = req.ReceiveId,
-            SendTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            SendTime = (ulong)_clock.GetUtcNow().ToUnixTimeSeconds(),
             Content = req.Content,
             ExtraParam = req.ExtraParam,
         };
@@ -472,7 +475,7 @@ public sealed partial class ChatService
             var message = new TextChatMessage
             {
                 MessageId = Interlocked.Increment(ref _nextMessageId).ToString(), SenderId = sender.Role.Id.ToString(),
-                ReceiveId = id, SendTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ReceiveId = id, SendTime = (ulong)_clock.GetUtcNow().ToUnixTimeSeconds(),
                 Content = content, ExtraParam = extra,
             };
             Remember(message);
@@ -495,7 +498,7 @@ public sealed partial class ChatService
         var message = new TextChatMessage
         {
             MessageId = Interlocked.Increment(ref _nextMessageId).ToString(), SenderId = sender.Role!.Id.ToString(),
-            ReceiveId = group, SendTime = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Content = content,
+            ReceiveId = group, SendTime = (ulong)_clock.GetUtcNow().ToUnixTimeSeconds(), Content = content,
             ExtraParam = JsonSerializer.Serialize(new
             {
                 templateId = 102,

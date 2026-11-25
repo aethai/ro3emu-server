@@ -923,7 +923,7 @@ public sealed partial class CombatService : IGameTicker
             if (!ReviveInfoOwners.Any(owns => owns(p)))
                 await p.SendGameAsync(ReviveInfo, new SyncClientPlayerReviveInfoNtf
                 {
-                    BDead = true, ReviveTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 30, SceneEntry = p.SceneEntry,
+                    BDead = true, ReviveTime = _loop.NowSec + 30, SceneEntry = p.SceneEntry,
                 });
             foreach (var handler in PlayerDied) await handler(p);
         }

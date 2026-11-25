@@ -227,7 +227,7 @@ public sealed partial class TerritoryWarsService
             tx.WithEventEconomy(new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
                 s.Account!, s.Role.Id, "event/territory-submit-drop",
                 $"territory-submit-drop:{next.Epoch}:{s.Role.Id}:{role.Donated}",
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                _loop.NowMs,
                 [new(new(EconomyAssetKind.Currency, 133), count)],
                 [new(new(EconomyAssetKind.GuildResource, 3), count)],
                 [new(new(EconomyOwnerKind.Role, s.Role.Id.ToString()), new(EconomyAssetKind.Currency, 133), -count),

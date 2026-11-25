@@ -175,7 +175,7 @@ public sealed partial class DailyActivityService : IGameTicker
         var economy = new EconomyMutation(Guid.NewGuid().ToString("N"), session.Account!, session.Role!.Id,
             "cd13e/daily-reset", Convert.ToHexString(SHA256.HashData(outcome)),
             $"daily-reset/{session.Role.Id}/{previousDailyEpoch}/{daily}/{previousWeeklyEpoch}/{weekly}",
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            _clock.GetUtcNow().ToUnixTimeMilliseconds(),
             livenessSink > 0 ? [new EconomyQuantity(new(EconomyAssetKind.Currency, Liveness), livenessSink)] : [],
             [], outcome);
         string currencyBytes = string.Join(',', currency.Select(c => $"{c.Key}:{c.Value}"));
