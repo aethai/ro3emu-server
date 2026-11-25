@@ -30,6 +30,8 @@ public sealed class ReceiptRetentionTests : IDisposable
         _options = new ServerOptions { DataDir = _directory };
         _options.ReceiptRetention.Days = 1;
         _options.ReceiptRetention.BatchSize = 2;
+        _options.ReceiptRetention.LedgerDays = 0;
+        _options.ReceiptRetention.MailDays = 0;
         _accounts = new AccountStore(Options.Create(_options));
         _roles = new RoleStore(_accounts);
         _role = _roles.Create("retention-account", 1, "Ret" + Guid.NewGuid().ToString("N")[..8], 1, 1000, 1)!.Id;
@@ -281,5 +283,145 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.True(ReceiptBlobs.SameOutcome([], ReceiptBlobs.CompactedPayload, [1, 2]));
         Assert.False(ReceiptBlobs.SameOutcome([], current, [1, 2]));
         Assert.True(ReceiptBlobs.SameOutcome([1, 2], current, [1, 2]));
+    }
+
+    [Fact]
+    public async Task OldLedgerEntriesRollIntoDailyAggregateAndPruneCleanly()
+    {
+        var progress = _roles.LoadProgress(_role);
+        progress.Currency[1] = 100;
+        _roles.SaveProgress(_role, progress);
+
+        string op = Guid.NewGuid().ToString("N");
+        var buy = _roles.NewTransaction();
+        buy.ItemDelta(_role, [], [new InvItem { Entry = 3, Stack = 2, Pack = 1, Sort = 1 }]);
+        progress = _roles.LoadProgress(_role);
+        progress.Currency[1] = 90;
+        buy.Progress(_role, progress);
+        buy.RoleBlob(_role, "shop", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Ro3Emu.Server.Game.ShopService.ShopState()));
+        buy.WithEconomy(new EconomyMutation(op, "retention-account", _role, "npc-shop-buy", "agg-buy",
+            "npc:" + op, 1_000_000, [new(new(EconomyAssetKind.Currency, 1), 10)],
+            [new(new(EconomyAssetKind.Item, 3), 2)], [1]));
+        _roles.Commit(buy, "test/retention-ledger-prune");
+
+        long oldTs = new DateTimeOffset(2025, 1, 15, 12, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        Run("UPDATE operation_receipt SET recorded_utc_ms=$ts WHERE operation_id=$op", ("$ts", oldTs), ("$op", op));
+        Run("UPDATE economy_entry SET recorded_utc_ms=$ts WHERE operation_id=$op", ("$ts", oldTs), ("$op", op));
+
+        _options.ReceiptRetention.LedgerDays = 30;
+        var retention = Retention();
+        await retention.CompactAsync();
+        Assert.Equal(2, retention.LastLedgerEntriesPruned);
+
+        Assert.Equal(0L, Scalar<long>("SELECT COUNT(*) FROM economy_entry WHERE operation_id=$op", op));
+        using (var db = _accounts.Open())
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*), SUM(entry_count), SUM(abs_delta) FROM economy_daily_aggregate WHERE day_utc='2025-01-15'";
+            using var row = cmd.ExecuteReader();
+            Assert.True(row.Read());
+            Assert.Equal(2L, row.GetInt64(0));
+            Assert.Equal(2L, row.GetInt64(1));
+            Assert.Equal(12L, row.GetInt64(2)); // 10 currency + 2 items
+        }
+        var ledger = EconomyLedgerReader.Read(_accounts.DatabasePath, Catalog, "auto", 0, 1);
+        Assert.Contains(ledger.Issues, i => i.Key == "ledger/pruned");
+    }
+
+    [Fact]
+    public async Task OldMailReceiptsCompactIntoMailDeliveryReplayAndStillReplay()
+    {
+        string op = Guid.NewGuid().ToString("N");
+        string source = "mail:delivery:retention-test";
+        string deliveryKey = "k-retention-1";
+        string semanticHash = "HASH-ABC-123";
+        string letterId = "987654321";
+        string evidenceJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Role = _role, DeliveryKey = deliveryKey, DeliverySemanticHash = semanticHash, LetterId = letterId,
+        });
+        byte[] evidenceBytes = Encoding.UTF8.GetBytes(evidenceJson);
+        string evidenceHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(evidenceBytes));
+        byte[] payload = Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            OperationId = op, SourceKey = source, CommandKind = "mail/deliver", ActorAccount = "", ActorRoleId = 0L,
+            Evidence = new[] { new { Json = evidenceJson, Bytes = evidenceBytes.Length, Hash = evidenceHash } },
+        }));
+        string payloadHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
+
+        long fiveDaysAgo = DateTimeOffset.UtcNow.AddDays(-5).ToUnixTimeMilliseconds();
+        string realm = Scalar<string>("SELECT realm_id FROM economy_meta WHERE singleton=1 AND $op=$op", "");
+        Run("""
+            UPDATE economy_meta SET next_sequence=next_sequence+1 WHERE singleton=1;
+            INSERT INTO operation_receipt(operation_id,realm_id,commit_seq,actor_account,actor_role,command_kind,
+                request_fingerprint,intent_hash,intent_payload,source_key,recorded_utc_ms,effective_utc_ms,outcome,
+                child_receipts,before_revisions,after_revisions,leg_count)
+            VALUES($op,$realm,(SELECT next_sequence FROM economy_meta WHERE singleton=1),'',0,'mail/deliver',
+                $hash,$hash,$payload,$source,$ts,$ts,X'',X'','','',0);
+            INSERT INTO operation_source(realm_id,source_key,operation_id) VALUES($realm,$source,$op);
+            """, ("$op", op), ("$realm", realm), ("$hash", payloadHash), ("$payload", payload), ("$source", source), ("$ts", fiveDaysAgo));
+
+        _options.ReceiptRetention.MailDays = 30;
+        var retention = Retention();
+        await retention.CompactAsync();
+        Assert.Equal(0, retention.LastMailCompacted);
+        Assert.False(ReceiptBlobs.IsCompacted(Blobs(op).Payload));
+
+        long fortyDaysAgo = DateTimeOffset.UtcNow.AddDays(-40).ToUnixTimeMilliseconds();
+        Run("UPDATE operation_receipt SET recorded_utc_ms=$ts WHERE operation_id=$op", ("$ts", fortyDaysAgo), ("$op", op));
+
+        await retention.CompactAsync();
+        Assert.Equal(1, retention.LastMailCompacted);
+        Assert.True(ReceiptBlobs.IsCompacted(Blobs(op).Payload));
+
+        string? replayed = await _accounts.ReadAsync<string?>(
+            new MailDeliveryReceiptReadPlan(source, _role, deliveryKey, semanticHash));
+        Assert.Equal(letterId, replayed);
+        await Assert.ThrowsAsync<EconomyOperationConflictException>(() =>
+            _accounts.ReadAsync<string?>(new MailDeliveryReceiptReadPlan(source, _role, deliveryKey, "WRONG-HASH")));
+    }
+
+    [Fact]
+    public void EveryPersistedTableHasAnExplicitRetentionPolicy()
+    {
+        var policies = new HashSet<string>(StringComparer.Ordinal)
+        {
+            // Bounded account, auth, and panel tables
+            "account", "auth_token", "account_ban", "admin_audit", "panel_news", "panel_role",
+            "account_login", "account_totp", "feedback_triage", "feedback_note", "panel_setting",
+            // Anti-cheat hourly tables (pruned by AntiCheatFlushPlan)
+            "anticheat_refusal", "anticheat_exp",
+            // Revision and receipt tables (compacted/pruned by ReceiptRetention)
+            "role_lifecycle", "owner_revision", "owner_operation_receipt",
+            "economy_meta", "operation_receipt", "operation_source", "economy_entry",
+            "economy_daily_aggregate", "mail_delivery_replay",
+            // Per-role and per-entity gameplay state
+            "role", "item", "server_state", "tower_first_pass",
+            "friend", "friend_apply", "blacklist", "friend_metadata", "friend_chat_group", "friend_chat_member",
+            "recent_team_peer", "adventure_group", "adventure_group_member",
+            "market_record", "auction_item", "auction_run", "auction_bonus", "auction_source", "auction_prebuy",
+            "guild", "guild_member", "guild_market", "guild_recovery", "guild_event",
+            "guild_caravan_member", "guild_caravan_version", "guild_campfire", "guild_hunting",
+            "guild_challenge", "guild_challenge_clear",
+            "territory_wars", "territory_wars_seasons", "territory_escort", "guild_league",
+            "festival_round", "festival_reward",
+            "dungeon_reward_obligation", "mvp_award_obligation", "mvp_settlement",
+            "timed_battle_obligation", "casual_battle_obligation",
+            "gift_code", "gift_code_redemption",
+            "activity_pre_progress", "activity_pre_donation_area", "activity_eve_global",
+            "mvp_state", "mvp_line_cooldown", "mvp_player",
+            "prontera_defense_world", "prontera_defense_station", "prontera_defense_guild_prep",
+        };
+        using var db = _accounts.Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+        var unclassified = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            string table = reader.GetString(0);
+            if (!policies.Contains(table)) unclassified.Add(table);
+        }
+        Assert.Empty(unclassified);
     }
 }

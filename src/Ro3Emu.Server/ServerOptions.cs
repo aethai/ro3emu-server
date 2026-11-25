@@ -411,6 +411,12 @@ public sealed class ReceiptRetentionOptions
 
     /// <summary>Minutes between compaction runs (the first runs a few minutes after startup).</summary>
     public int IntervalMinutes { get; set; } = 60;
+
+    /// <summary>Age in days after which economy_entry rows are rolled into economy_daily_aggregate and pruned; 0 keeps raw legs forever.</summary>
+    public int LedgerDays { get; set; } = 30;
+
+    /// <summary>Age in days after which mail/* receipt payloads are compacted once their replay keys are stored in mail_delivery_replay; 0 keeps mail receipts whole.</summary>
+    public int MailDays { get; set; } = 30;
 }
 
 /// <summary>In-game bug reports: the menu's Feedback button and "/bug" in chat (FeedbackService).</summary>
@@ -520,6 +526,9 @@ public sealed class BackupOptions
 
     /// <summary>Hours between integrity checks of scheduled copies on a big database.</summary>
     public int BigDatabaseCheckHours { get; set; } = 24;
+
+    /// <summary>Maximum total size in megabytes of completed backups in DataDir/backups (0 = unlimited). Oldest copies past the newest two are pruned to stay within this cap.</summary>
+    public int MaxTotalMegabytes { get; set; } = 10240;
 }
 
 /// <summary>

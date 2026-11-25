@@ -16,6 +16,7 @@ internal static partial class DatabaseMigrations
     [
         new(1, "baseline_schema", ApplyBaselineSchema),
         new(2, "anticheat_gains_index", ApplyAntiCheatGainsIndex),
+        new(3, "retention_tables", ApplyRetentionTables),
     ];
 
     internal static int CurrentVersion => All[^1].Version;
@@ -90,6 +91,35 @@ internal static partial class DatabaseMigrations
                 ON economy_entry(recorded_utc_ms, owner_id, asset_kind, asset_id, delta)
                 WHERE owner_kind=1 AND leg_kind=1 AND delta>0;
             """);
+    }
+
+    private static void ApplyRetentionTables(SqliteConnection db, SqliteTransaction tx)
+    {
+        SchemaSql.Execute(db, tx, """
+            CREATE TABLE IF NOT EXISTS economy_daily_aggregate (
+                day_utc TEXT NOT NULL,
+                asset_kind INTEGER NOT NULL,
+                asset_id INTEGER NOT NULL,
+                reason_code INTEGER NOT NULL,
+                leg_kind INTEGER NOT NULL,
+                entry_count INTEGER NOT NULL,
+                net_delta INTEGER NOT NULL,
+                abs_delta INTEGER NOT NULL,
+                PRIMARY KEY(day_utc, asset_kind, asset_id, reason_code, leg_kind)
+            );
+            CREATE TABLE IF NOT EXISTS mail_delivery_replay (
+                realm_id TEXT NOT NULL,
+                source_key TEXT NOT NULL,
+                operation_id TEXT NOT NULL,
+                role_id INTEGER NOT NULL,
+                delivery_key TEXT NOT NULL,
+                semantic_hash TEXT NOT NULL,
+                letter_id TEXT NOT NULL,
+                PRIMARY KEY(realm_id, source_key)
+            );
+            """);
+        SchemaSql.AddColumn(db, tx, "economy_meta", "pruned_entry_seq", "INTEGER NOT NULL DEFAULT 0");
+        SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_mail_seq", "INTEGER NOT NULL DEFAULT 0");
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name})")]

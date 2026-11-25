@@ -41,6 +41,15 @@ public static class EconomyLedgerReader
             issues.Add(new(EconomyIssueKind.Corruption, "ledger/realm", "Expected realm ID differs from durable database identity."));
         if (fromExclusive < floor || floor != 0 || throughInclusive > watermark)
             issues.Add(new(EconomyIssueKind.Coverage, "ledger/range", "Requested range is outside the retained committed sequence."));
+        using (var hasPruned = Command(db, tx, "SELECT COUNT(*) FROM pragma_table_info('economy_meta') WHERE name='pruned_entry_seq'"))
+            if ((long)hasPruned.ExecuteScalar()! > 0)
+            {
+                using var prunedCmd = Command(db, tx, "SELECT pruned_entry_seq FROM economy_meta WHERE singleton=1");
+                long prunedSeq = prunedCmd.ExecuteScalar() is long p ? p : 0;
+                if (prunedSeq > 0 && fromExclusive < prunedSeq)
+                    issues.Add(new(EconomyIssueKind.Coverage, "ledger/pruned",
+                        "Requested range includes economy_entry rows already aggregated into economy_daily_aggregate."));
+            }
         var receipts = new List<EconomyReceipt>();
         var prior = new List<EconomySourceClaim>();
         var legs = new List<EconomyLeg>();

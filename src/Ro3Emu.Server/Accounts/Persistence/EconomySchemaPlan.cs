@@ -75,6 +75,27 @@ internal sealed class EconomySchemaPlan : DbPlan
             CREATE INDEX IF NOT EXISTS economy_entry_cut ON economy_entry(commit_seq,entry_id);
             -- Duplicate-source checks ask by source_key alone; the primary key starts with realm_id, so they scanned the table.
             CREATE INDEX IF NOT EXISTS operation_source_key ON operation_source(source_key);
+            CREATE TABLE IF NOT EXISTS economy_daily_aggregate (
+                day_utc TEXT NOT NULL,
+                asset_kind INTEGER NOT NULL,
+                asset_id INTEGER NOT NULL,
+                reason_code INTEGER NOT NULL,
+                leg_kind INTEGER NOT NULL,
+                entry_count INTEGER NOT NULL,
+                net_delta INTEGER NOT NULL,
+                abs_delta INTEGER NOT NULL,
+                PRIMARY KEY(day_utc, asset_kind, asset_id, reason_code, leg_kind)
+            );
+            CREATE TABLE IF NOT EXISTS mail_delivery_replay (
+                realm_id TEXT NOT NULL,
+                source_key TEXT NOT NULL,
+                operation_id TEXT NOT NULL,
+                role_id INTEGER NOT NULL,
+                delivery_key TEXT NOT NULL,
+                semantic_hash TEXT NOT NULL,
+                letter_id TEXT NOT NULL,
+                PRIMARY KEY(realm_id, source_key)
+            );
             """);
         SchemaSql.AddColumn(db, tx, "operation_receipt", "intent_hash", "TEXT NOT NULL DEFAULT ''");
         SchemaSql.AddColumn(db, tx, "operation_receipt", "intent_payload", "BLOB NOT NULL DEFAULT X''");
@@ -82,6 +103,10 @@ internal sealed class EconomySchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_seq", "INTEGER NOT NULL DEFAULT 0");
         // Up to this commit sequence compacted receipts also lost their child results and owner acknowledgement (#473).
         SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_full_seq", "INTEGER NOT NULL DEFAULT 0");
+        // Up to this commit sequence economy_entry rows were aggregated into economy_daily_aggregate and pruned.
+        SchemaSql.AddColumn(db, tx, "economy_meta", "pruned_entry_seq", "INTEGER NOT NULL DEFAULT 0");
+        // Up to this commit sequence mail/* receipts were walked for mail_delivery_replay extraction and compaction.
+        SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_mail_seq", "INTEGER NOT NULL DEFAULT 0");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_owner_kind", "INTEGER");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_owner_id", "TEXT");
         SchemaSql.AddColumn(db, tx, "economy_entry", "counterparty_compartment_kind", "INTEGER");
