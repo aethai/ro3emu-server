@@ -275,10 +275,34 @@ public sealed class SeasonRefineService
 
     /// <summary>Only selected, unlocked groups contribute; pending choices never affect combat stats.</summary>
     public IEnumerable<(long Id, double Value)> ActiveAttributes(GameSession session) =>
-        ActiveGroups(session).SelectMany(group => GameData.Pairs(group, "_kAttrs"));
+        ActiveEntries(session).SelectMany(e => GroupAttributes(e.GroupId, e.Group));
+
+    /// <summary>
+    /// Attributes of one RefiningSeasonAttrConfig row. The shipped client table swaps PATK/MATK (103/104) and
+    /// PDEF/MDEF (105/106) on groups 2 ("Basic Defense") and 12 ("Advanced Attack"); both the server and
+    /// Ro3Emu.ClientHooks.SeasonRefineAttrs correct those two rows so UI and stats agree.
+    /// </summary>
+    internal static IEnumerable<(long Id, double Value)> GroupAttributes(long groupId, JsonElement group)
+    {
+        foreach (var (id, value) in GameData.Pairs(group, "_kAttrs"))
+        {
+            long fixedId = (groupId, id) switch
+            {
+                (2, 103) => 105,
+                (2, 104) => 106,
+                (12, 105) => 103,
+                (12, 106) => 104,
+                _ => id,
+            };
+            yield return (fixedId, value);
+        }
+    }
 
     /// <summary>The RefiningSeasonAttrConfig rows of the selected, unlocked groups (stats and PowerService).</summary>
-    internal IEnumerable<JsonElement> ActiveGroups(GameSession session)
+    internal IEnumerable<JsonElement> ActiveGroups(GameSession session) =>
+        ActiveEntries(session).Select(e => e.Group);
+
+    private IEnumerable<(int GroupId, JsonElement Group)> ActiveEntries(GameSession session)
     {
         if (session.SeasonState?.PlayBookId != 101 || session.SeasonRefine == null) yield break;
         foreach (var (part, equip) in session.SeasonRefine.EquipParts)
@@ -288,7 +312,7 @@ public sealed class SeasonRefineService
                 if (slot.ActiveAttr <= 0 || error != 0 || row is not { } configured
                     || !GameData.Pairs(configured, "_kAttrsId").Any(p => p.Id == slot.ActiveAttr)
                     || _data.Row("RefiningSeasonAttrConfig", slot.ActiveAttr) is not { } group) continue;
-                yield return group;
+                yield return (slot.ActiveAttr, group);
             }
     }
 }
