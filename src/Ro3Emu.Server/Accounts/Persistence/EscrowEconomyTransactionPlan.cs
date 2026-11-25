@@ -50,9 +50,6 @@ internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEco
             if (owner.ExecuteScalar() is not string account || account != intent.ActorAccount)
                 throw new EconomyOperationConflictException("E03 actor role is not owned by the authenticated account.");
         }
-        string realm;
-        using (var meta = DbSql.Command(db, tx, "SELECT realm_id FROM economy_meta WHERE singleton=1"))
-            realm = meta.ExecuteScalar() as string ?? throw new InvalidDataException("Missing E03 economy realm.");
         var scope = Scope(null);
         var before = EconomySnapshotReader.ReadEscrowScope(db, tx, scope, catalog);
         var receipts = (object?[])child.Execute(db, tx);
@@ -60,11 +57,6 @@ internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEco
         var expanded = Scope(receipts);
         var after = EconomySnapshotReader.ReadEscrowScope(db, tx, expanded, catalog);
         var legs = BuildLegs(before.Holdings, after.Holdings, after.InventoryBinds);
-        long sequence;
-        using (var advance = DbSql.Command(db, tx,
-            "UPDATE economy_meta SET next_sequence=next_sequence+1 WHERE singleton=1 RETURNING next_sequence"))
-            sequence = (long?)advance.ExecuteScalar() ?? throw new InvalidDataException("Missing E03 watermark.");
-        long recorded = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var revisionBefore = new Dictionary<string, object?>();
         var revisionAfter = new Dictionary<string, object?>();
         var mutatedRoleWrites = child.MutatedRoleWrites(receipts).ToHashSet();
@@ -83,74 +75,13 @@ internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEco
                         ? checked(x.Value + 1) : x.Value, StringComparer.Ordinal)
             };
         }
-        byte[] payload = intent.Payload;
         byte[] childBytes = EscrowEconomyReceiptCodec.Encode(receipts);
-        using (var receipt = DbSql.Command(db, tx, """
-            INSERT INTO operation_receipt(operation_id,realm_id,commit_seq,actor_account,actor_role,command_kind,
-                request_fingerprint,intent_hash,intent_payload,source_key,recorded_utc_ms,effective_utc_ms,outcome,
-                child_receipts,before_revisions,after_revisions,leg_count)
-            VALUES($op,$realm,$seq,$account,$role,$kind,$fingerprint,$hash,$payload,$source,$recorded,$effective,
-                $outcome,$children,$before,$after,$count)
-            """))
-        {
-            receipt.Parameters.AddWithValue("$op", intent.OperationId);
-            receipt.Parameters.AddWithValue("$realm", realm);
-            receipt.Parameters.AddWithValue("$seq", sequence);
-            receipt.Parameters.AddWithValue("$account", intent.ActorAccount);
-            receipt.Parameters.AddWithValue("$role", intent.ActorRoleId);
-            receipt.Parameters.AddWithValue("$kind", intent.CommandKind);
-            receipt.Parameters.AddWithValue("$fingerprint", intent.Hash);
-            receipt.Parameters.AddWithValue("$hash", intent.Hash);
-            receipt.Parameters.AddWithValue("$payload", payload);
-            receipt.Parameters.AddWithValue("$source", intent.SourceKey);
-            receipt.Parameters.AddWithValue("$recorded", recorded);
-            receipt.Parameters.AddWithValue("$effective", intent.EffectiveUtcMs);
-            receipt.Parameters.AddWithValue("$outcome", childBytes);
-            receipt.Parameters.AddWithValue("$children", childBytes);
-            receipt.Parameters.AddWithValue("$before", JsonSerializer.Serialize(revisionBefore));
-            receipt.Parameters.AddWithValue("$after", JsonSerializer.Serialize(revisionAfter));
-            receipt.Parameters.AddWithValue("$count", legs.Count);
-            receipt.ExecuteNonQuery();
-        }
-        using (var source = DbSql.Command(db, tx,
-            "INSERT INTO operation_source(realm_id,source_key,operation_id) VALUES($realm,$key,$op)"))
-        {
-            source.Parameters.AddWithValue("$realm", realm);
-            source.Parameters.AddWithValue("$key", intent.SourceKey);
-            source.Parameters.AddWithValue("$op", intent.OperationId);
-            source.ExecuteNonQuery();
-        }
-        foreach (var leg in legs)
-        {
-            using var entry = DbSql.Command(db, tx, """
-                INSERT INTO economy_entry(commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,
-                    owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,
-                    delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,source_key)
-                VALUES($seq,$op,$no,$recorded,$effective,$ownerKind,$owner,$compartment,$key,$instance,$assetKind,
-                    $asset,$epoch,$delta,$reason,$legKind,$edge,$before,$after,$source)
-                """);
-            entry.Parameters.AddWithValue("$seq", sequence);
-            entry.Parameters.AddWithValue("$op", intent.OperationId);
-            entry.Parameters.AddWithValue("$no", leg.LegNumber);
-            entry.Parameters.AddWithValue("$recorded", recorded);
-            entry.Parameters.AddWithValue("$effective", intent.EffectiveUtcMs);
-            entry.Parameters.AddWithValue("$ownerKind", (int)leg.Location.Owner.Kind);
-            entry.Parameters.AddWithValue("$owner", leg.Location.Owner.Id);
-            entry.Parameters.AddWithValue("$compartment", (int)leg.Location.Compartment);
-            entry.Parameters.AddWithValue("$key", leg.Location.Key);
-            entry.Parameters.AddWithValue("$instance", leg.Location.Instance);
-            entry.Parameters.AddWithValue("$assetKind", (int)leg.Asset.Kind);
-            entry.Parameters.AddWithValue("$asset", leg.Asset.Id);
-            entry.Parameters.AddWithValue("$epoch", leg.Asset.Epoch);
-            entry.Parameters.AddWithValue("$delta", leg.Delta);
-            entry.Parameters.AddWithValue("$reason", (int)leg.Reason);
-            entry.Parameters.AddWithValue("$legKind", (int)leg.Kind);
-            entry.Parameters.AddWithValue("$edge", leg.EdgeNumber);
-            entry.Parameters.AddWithValue("$before", (object?)leg.BeforeFingerprint ?? DBNull.Value);
-            entry.Parameters.AddWithValue("$after", (object?)leg.AfterFingerprint ?? DBNull.Value);
-            entry.Parameters.AddWithValue("$source", intent.SourceKey);
-            entry.ExecuteNonQuery();
-        }
+        EconomyLedgerWrite.Append(db, tx, new EconomyLedgerCommit(
+            intent.OperationId, intent.ActorAccount, intent.ActorRoleId, intent.CommandKind,
+            intent.Hash, intent.Hash, intent.Payload, intent.SourceKey, intent.EffectiveUtcMs,
+            childBytes, childBytes,
+            JsonSerializer.Serialize(revisionBefore), JsonSerializer.Serialize(revisionAfter),
+            legs, UseLegNumber: true));
         return receipts;
     }
 
