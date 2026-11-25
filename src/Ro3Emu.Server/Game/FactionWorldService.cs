@@ -13,8 +13,9 @@ namespace Ro3Emu.Server.Game;
 /// progression rules, stronghold gameplay scene points, quest targets, and panel snapshot. Extracted from
 /// <see cref="TerritoryWarsService"/>.
 /// </summary>
-public sealed partial class FactionWorldService
+public sealed partial class FactionWorldService : IDisposable
 {
+    public void Dispose() => _worldGate.Dispose();
     private readonly TerritoryWarsService _territory;
     private readonly AwardService _awards;
     private readonly MailService _mail;
