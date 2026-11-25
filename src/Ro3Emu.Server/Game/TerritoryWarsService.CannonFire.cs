@@ -26,12 +26,12 @@ public sealed partial class TerritoryWarsService
     private const int FireButton = 2;
     /// <summary>LC_ConditionList sub-condition types of the enter condition (4900001): CheckBuilder, CheckCamp, and
     /// 12001 the gameplay status, inverted (not already in one).</summary>
-    private const long CheckBuilder = 2201, CheckCamp = 2200, InStatus = 12001;
+    internal const long CheckBuilder = 2201, CheckCamp = 2200, InStatus = 12001;
     private const long BulletUidFlag = 1L << 40;
     private long _bulletSerial;
     private readonly Dictionary<GameSession, CannonUnit> _operators = [];
 
-    private static long CampOf(GameSession s) => s.EventFaction > 0 ? s.EventFaction : 1;
+    internal static long CampOf(GameSession s) => s.EventFaction > 0 ? s.EventFaction : 1;
 
     /// <summary>32700 on a cannon and 32703 from its operator; anything else goes on to its usual owner.</summary>
     public async Task<bool> CannonSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body)

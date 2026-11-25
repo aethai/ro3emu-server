@@ -176,7 +176,7 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>On loading into the battle: the side's commander marks, the party's own marks, the command letters and the
     /// command skills.</summary>
-    private async Task SendCommandBoardAsync(GameSession s)
+    internal async Task SendCommandBoardAsync(GameSession s)
     {
         if (CommandSideOf(s) is not { } side) return;
         await s.SendGameAsync(MarkNotify, MarkSnapshot(side.Board.CommanderMarks.GetValueOrDefault(side.Guild), DungeonMarkType.DungeonMarkCommander));

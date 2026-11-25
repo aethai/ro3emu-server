@@ -29,7 +29,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>The camp of a cannon or vehicle, or null for any other unit.</summary>
-    private static long? MachineCamp(MonsterUnit m) => m switch
+    internal static long? MachineCamp(MonsterUnit m) => m switch
     {
         CannonUnit cannon => cannon.Camp,
         VehicleUnit vehicle => vehicle.Camp,
@@ -40,7 +40,7 @@ public sealed partial class TerritoryWarsService
     /// A member of the running siege hits a machine of the other camp only (LC_CommonCondition.CheckCamp compares
     /// EntityCamp: the machines of the own camp are allies).
     /// </summary>
-    private bool MachineHittable(GameSession s, SiegeRun battle, long camp) =>
+    internal bool MachineHittable(GameSession s, SiegeRun battle, long camp) =>
         SiegeActive(battle) && SiegeMember(s, battle) && CampOf(s) != camp;
 
     /// <summary>CombatService.AfterLethalPublication: a cannon or vehicle was destroyed.</summary>

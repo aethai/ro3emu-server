@@ -3,12 +3,12 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
-    public const uint SiegeBaseQuery = 44402, SiegeHistoryQuery = 44403, SiegeResultNotify = 44404;
-    public const uint SiegeToolAdd = 32275;
     private const int SiegeActivity = 115;
     private bool? _siegeTestOpen;
     private long _siegeTestStart;
@@ -18,7 +18,7 @@ public sealed partial class TerritoryWarsService
     /// DailyActivityConfig[115] gives the local weekly occurrence (Wednesday 20:30-21:30 in the 7 Oct 2026 client, Saturday 21:30-22:30 in the 16 Oct one). The GM override is
     /// an ephemeral test aid (inferred), deliberately outside the durable Territory Wars state.
     /// </summary>
-    private TimedTodoSchedule.Occurrence? SiegeWindow()
+    internal TimedTodoSchedule.Occurrence? SiegeWindow()
     {
         if (_siegeTestOpen == true)
         {
@@ -38,7 +38,7 @@ public sealed partial class TerritoryWarsService
     /// (inferred) The sole exported Territory Wars root is SiegeConfig area 1. Its sorted three capitals
     /// correspond to that area's three senior cities. There is no ownership source for areas 2-10.
     /// </summary>
-    private int SiegeZone(int city)
+    internal int SiegeZone(int city)
     {
         if (city == 1001) return Zones.Where(z => GameData.Int(z, "_iType") == 1)
             .Select(z => (int)Id(z)).Order().FirstOrDefault();
@@ -47,7 +47,7 @@ public sealed partial class TerritoryWarsService
         return 0;
     }
 
-    private (long Attack, long Defense) SiegeGuilds(int city)
+    internal (long Attack, long Defense) SiegeGuilds(int city)
     {
         var window = SiegeWindow();
         if (window != null && state.SiegeRuns.TryGetValue(SiegeKey(city, window.Start), out var frozen))
@@ -67,7 +67,7 @@ public sealed partial class TerritoryWarsService
     }
 
     // No exported 44401 exists. 44402's nested SiegeBaseInfoNtf is the registered DAL update payload.
-    private SiegeBaseInfoNtf SiegeBase(GameSession? viewer = null)
+    internal SiegeBaseInfoNtf SiegeBase(GameSession? viewer = null)
     {
         var window = SiegeWindow();
         var info = new SiegeBaseInfoNtf();
@@ -124,14 +124,14 @@ public sealed partial class TerritoryWarsService
         return snap;
     }
 
-    private Task SiegeBaseAsync(GameSession s, GetSiegeBaseInfoReq req)
+    internal Task SiegeBaseAsync(GameSession s, GetSiegeBaseInfoReq req)
     {
         int error = req.PlayerId is not 0 && req.PlayerId != s.Role!.Id || req.GuildId is not 0 && req.GuildId != (Own(s)?.Id ?? 0)
             ? ErrorCodes.NoPermission : 0;
         return Send(s, SiegeBaseQuery, new GetSiegeBaseInfoRsp { Result = error, SiegeBaseInfo = SiegeBase(s) });
     }
 
-    private Task SiegeHistoryAsync(GameSession s, SiegeCityHistoryInfoReq req)
+    internal Task SiegeHistoryAsync(GameSession s, SiegeCityHistoryInfoReq req)
     {
         var ids = req.CityIds.Count > 0 ? req.CityIds.Distinct().ToArray() : req.CityId > 0 ? [req.CityId] : [];
         var response = new SiegeCityHistoryInfoResp { CityId = req.CityId };
@@ -145,7 +145,7 @@ public sealed partial class TerritoryWarsService
         return Send(s, SiegeHistoryQuery, response);
     }
 
-    private async Task PublishSiegeIfChangedAsync()
+    internal async Task PublishSiegeIfChangedAsync()
     {
         var window = SiegeWindow();
         string token = $"{window?.Start}:{window?.End}:{SiegeActivityState(window)}"

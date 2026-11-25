@@ -81,7 +81,7 @@ public sealed partial class TerritoryWarsService
             if (b.Room.ActiveMembers.Count == 0) _siegeBattles.Remove(b.Key);
         }
         if (_queue.Count != 0 || _battles.Count != 0 || _siegeBattles.Count != 0) return;
-        _siegeTestOpen = null;
+        Siege.ResetTestWindow();
         await ResetWorldAsync();
         _seasonCleanupState = null;
     }

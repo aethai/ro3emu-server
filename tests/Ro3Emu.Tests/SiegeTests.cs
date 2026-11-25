@@ -21,10 +21,12 @@ public sealed partial class SiegeTests : IAsyncLifetime
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
     private sealed class Clock(long start) : TimeProvider
     {
-        private long _seconds = start;
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeSeconds(Interlocked.Read(ref _seconds));
+        private long _ms = start * 1000;
+        public long NowMs => Interlocked.Read(ref _ms);
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeMilliseconds(Interlocked.Read(ref _ms));
         public override TimeZoneInfo LocalTimeZone => Zone;
-        public void Set(long value) => Interlocked.Exchange(ref _seconds, value);
+        public void Set(long value) => Interlocked.Exchange(ref _ms, value * 1000);
+        public void AdvanceMs(long ms) => Interlocked.Add(ref _ms, ms);
     }
     // The exported siege occurrence (DailyActivityConfig 115) in the week of 12 Oct 2026, and the following one.
     private readonly ScheduleRows.Window _siege, _nextSiege;

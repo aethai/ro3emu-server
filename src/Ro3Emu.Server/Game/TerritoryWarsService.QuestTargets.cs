@@ -34,11 +34,11 @@ public sealed partial class TerritoryWarsService
             ? target switch { RatingTarget => p.Score, AssistsTarget => p.Assists, _ => -1 } : -1;
 
     /// <summary>A non-lethal hit for a later assist.</summary>
-    private static void SiegeHit(SiegeRun battle, long attacker, long victim, long now) =>
+    internal static void SiegeHit(SiegeRun battle, long attacker, long victim, long now) =>
         (battle.Hits.TryGetValue(victim, out var hits) ? hits : battle.Hits[victim] = [])[attacker] = now;
 
     /// <summary>A kill: the other recent hitters get an assist each; returns them.</summary>
-    private static long[] SiegeAssists(SiegeRun battle, long killer, long victim, long now)
+    internal static long[] SiegeAssists(SiegeRun battle, long killer, long victim, long now)
     {
         if (!battle.Hits.Remove(victim, out var hits)) return [];
         var helpers = hits.Where(h => h.Key != killer && now - h.Value <= GloryAssistWindowMs
@@ -47,7 +47,7 @@ public sealed partial class TerritoryWarsService
         return helpers;
     }
 
-    private void SiegeTrack(SiegeRun battle, IEnumerable<long> roles)
+    internal void SiegeTrack(SiegeRun battle, IEnumerable<long> roles)
     {
         int step = battle.State.Stage >= SiegeGateStage ? SiegeFightStep : 0;
         foreach (var member in battle.Room.ActiveMembers.Where(m => m.Session.Role is { } role && roles.Contains(role.Id)))

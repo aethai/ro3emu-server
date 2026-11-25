@@ -35,9 +35,13 @@ public sealed partial class SiegeTests
         Assert.True(unit.March!.Arrived);
     }
 
-    private static async Task Until(Func<bool> done, int tenths = 80)
+    private async Task Until(Func<bool> done, int tenths = 80)
     {
-        for (int i = 0; i < tenths && !done(); i++) await Task.Delay(100);
+        for (int i = 0; i < tenths * 2 && !done(); i++)
+        {
+            _clock.AdvanceMs(50);
+            await Task.Delay(50);
+        }
         Assert.True(done());
     }
 
@@ -213,11 +217,16 @@ public sealed partial class SiegeTests
 
         // A defender below the archer is spared; an attacker there is shot at.
         await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(defense), new MapPoint(610, 14.2f, 107, 270)));
-        await Task.Delay(1500);
+        for (int i = 0; i < 30; i++) { _clock.AdvanceMs(50); await Task.Delay(50); }
         Assert.Null(archer.Target);
-        await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(attack), new MapPoint(612, 14.2f, 107, 270)));
+        await OnLoop(() =>
+        {
+            Session(attack).GmCombat |= GmCombatSwitches.Unlimited;
+            return Service<SceneService>().TeleportInMapAsync(Session(attack), new MapPoint(612, 14.2f, 107, 270));
+        });
         await Until(() => ReferenceEquals(archer.Target, Session(attack)));
-        await Next(attack, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == archer.Uid);
+        await Until(() => attack.Inbox.Snapshot().Any(e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SrcID == archer.Uid));
         // Out of its reach it lets go.
         await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(attack), new MapPoint(700, 14.2f, 150, 270)));
         await Until(() => archer.Target == null);

@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace Ro3Emu.Server.Game;
 /// workshops, 273/274/299/308 the arrow towers) by whether an object stands at the point, so the markers 4903002 keep
 /// the workshops and towers standing. Every spawned castle NPC has NPCConfig _iNeedNotifyGlobalData 1.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     private GlobalObjectData SiegeGlobalEntry(int point, MonsterUnit unit) => new()
     {

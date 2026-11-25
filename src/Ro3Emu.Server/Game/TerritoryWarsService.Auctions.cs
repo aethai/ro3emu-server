@@ -340,7 +340,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>Point phase seats are distributed across its three child flags; later phases contest the selected city.</summary>
-    private long[] QualifiedFor(int territory, int? roundId = null)
+    internal long[] QualifiedFor(int territory, int? roundId = null)
     {
         int round = roundId ?? Math.Clamp(_clock.Current.Round, 1, 3);
         if (!state.Rounds.TryGetValue(round, out var r) || !r.Settled) return [];

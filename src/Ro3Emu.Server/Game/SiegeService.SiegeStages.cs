@@ -1,5 +1,7 @@
 using Romsg;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -9,9 +11,9 @@ namespace Ro3Emu.Server.Game;
 /// follows stageModuleData.stage of 30401 and pushes the stage's chat itself when it changes
 /// (LC_SceneCom_UIModule_Siege.lua _processDungeonEvent, UIModule_StageSwitchChatIdMap 4110141-4110146).
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
-    private const int SiegePrepareStage = 0, SiegeGateStage = 1, SiegeStrongholdStage = 2, SiegeCrystalStage = 3;
+    internal const int SiegePrepareStage = 0, SiegeGateStage = 1, SiegeStrongholdStage = 2, SiegeCrystalStage = 3;
     /// <summary>DungeonStageModule maxTime of stages 0-3 in seconds (300000, 1500000, 3000000, 3000000 ms).</summary>
     private static readonly long[] SiegeStageMaxSeconds = [300, 1500, 3000, 3000];
     /// <summary>LC_DunGeon_VarDefine.lua:330-440: 512 CSiegeTopBarTimestamp (the top bar's Prepare countdown, epoch ms) and

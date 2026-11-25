@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// run on the original server; the client holds none of them, so how the units move and strike is reconstructed from
 /// their data and the scene and marked so.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     private const int SiegeLeftLadderNpc = 4900012, SiegeLadderNpc = 4900000, SiegeRamNpc = 4900002, SiegeArcherNpc = 4901001,
         SiegeGuideArrowNpc = 4903001;

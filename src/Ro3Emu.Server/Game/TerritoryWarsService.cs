@@ -32,6 +32,55 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         SubmitDrop = 83024, Bid = 84031, AuctionQuery = 84032, AutoSet = 84033, AutoCancel = 84034,
         AutoQuery = 84035, AutoNotify = 84036, RankNotify = 84037, WarHall = 84081, ActivitySync = 5013;
 
+    internal GameData GameData => _data;
+    internal AccountStore AccountStore => _accounts;
+    internal RoleStore Roles => _roles;
+    internal GuildStore GuildStore => _guildStore;
+    internal GuildService Guilds => _guilds;
+    internal CharacterService Character => _character;
+    internal FunctionService Functions => _functions;
+    internal TerritoryWarsClock Clock => _clock;
+    internal SessionRegistry Sessions => _sessions;
+    internal InstanceService Instances => _instances;
+    internal SceneService Scene => _scene;
+    internal WorldData Maps => _maps;
+    internal BuffService Buffs => _buffs;
+    internal CombatService Combat => _combat;
+    internal RewardService Rewards => _rewards;
+    internal NewActivityService Activities => _activities;
+    internal GameLoop Loop => _loop;
+    internal SemaphoreSlim Gate => _gate;
+    internal WorldState CurrentState { get => state; set => state = value; }
+    internal Dictionary<string, SiegeRun> SiegeBattles => _siegeBattles;
+    internal SiegeService Siege { get; private set; } = null!;
+    internal void BindSiege(SiegeService siege) => Siege = siege;
+
+    // ---- siege facades (owned by SiegeService) ----
+
+    internal const long SiegeScene = SiegeService.SiegeScene;
+    internal const int SiegeGateStage = SiegeService.SiegeGateStage;
+    public Task<string> SiegeGmAsync(string[] args) => Siege.SiegeGmAsync(args);
+    public Task<bool> SiegeEnterAsync(GameSession s, EnterDungeonReq req) => Siege.SiegeEnterAsync(s, req);
+    public Task<bool> SiegeSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body) => Siege.SiegeSharedAsync(s, id, body);
+    public Task<bool> SiegeBagSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body) => Siege.SiegeBagSharedAsync(s, id, body);
+    internal Task SettleSiegeForTestAsync(string key, long winner) => Siege.SettleSiegeForTestAsync(key, winner);
+    internal bool SiegeSkillLineBlocked(GameSession caster, MonsterUnit? target, Vec3 origin, Vec3 destination) =>
+        Siege.SiegeSkillLineBlocked(caster, target, origin, destination);
+    private bool SiegeCanHit(GameSession s, MonsterUnit m, SiegeRun battle) => Siege.SiegeCanHit(s, m, battle);
+    private bool SiegeHostile(GameSession a, GameSession b) => Siege.SiegeHostile(a, b);
+    private Task SiegeLeavingAsync(GameSession s) => Siege.SiegeLeavingAsync(s);
+    private bool SiegeMember(GameSession s, SiegeRun battle) => Siege.SiegeMember(s, battle);
+    private bool SiegeActive(SiegeRun battle) => Siege.SiegeActive(battle);
+    private Task PublishSiegeIfChangedAsync() => Siege.PublishSiegeIfChangedAsync();
+    private SiegeBaseInfoNtf SiegeBase(GameSession? viewer = null) => Siege.SiegeBase(viewer);
+    private Task SiegeBaseAsync(GameSession s, GetSiegeBaseInfoReq req) => Siege.SiegeBaseAsync(s, req);
+    private Task SiegeClockAsync() => Siege.SiegeClockAsync();
+    private Task SiegeHistoryAsync(GameSession s, SiegeCityHistoryInfoReq req) => Siege.SiegeHistoryAsync(s, req);
+    private (long Attack, long Defense) SiegeGuilds(int city) => Siege.SiegeGuilds(city);
+    private static string SiegeKey(int city, long start) => SiegeService.SiegeKey(city, start);
+    private TimedTodoSchedule.Occurrence? SiegeWindow() => Siege.SiegeWindow();
+    private int SiegeZone(int city) => Siege.SiegeZone(city);
+
     private readonly GameData _data;
     private readonly AccountStore _accounts;
     private readonly RoleStore _roles;
@@ -41,7 +90,6 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private readonly CharacterService _character;
     private readonly FunctionService _functions;
     private readonly TerritoryWarsClock _clock;
-    private readonly TimedTodoSchedule _siegeSchedule;
     private readonly SessionRegistry _sessions;
     private readonly InstanceService _instances;
     private readonly SceneService _scene;
@@ -83,7 +131,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
             else _committedState = value;
         }
     }
-    private IDisposable StageState()
+    internal IDisposable StageState()
     {
         var prior = _stagedState.Value;
         var stage = new StateStage(Copy(state), _loop.CurrentWork);
@@ -136,7 +184,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
             keys.Add(Ownership.ReservationKey.Entity("guild", guild.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         return [.. keys];
     }
-    private async Task<Ownership.LegacyOwnerScope?> EnterGateAsync(string origin, GameSession? actor = null,
+    internal async Task<Ownership.LegacyOwnerScope?> EnterGateAsync(string origin, GameSession? actor = null,
         IReadOnlyCollection<long>? additionalGuilds = null, bool includeParticipants = false)
     {
         if (_loop.Owners is not { } owners) { await _gate.WaitAsync(); return null; }
@@ -166,9 +214,6 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private readonly Dictionary<GameSession, QueueEntry> _queue = [];
     private TimeSpan _lastTick;
     private bool _ticking, _reconciledOnce; // the first reconciliation runs on the loop's first tick (startup), not 1 s later
-    private string _siegePublishedState = "";
-    /// <summary>The guild each session was last sent the siege panel for (weak: dies with the session).</summary>
-    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameSession, System.Runtime.CompilerServices.StrongBox<long>> _siegePublishedGuild = [];
     private sealed class ActivityBatch(GameLoop.WorkPermit? permit)
     {
         public readonly GameLoop.WorkPermit? Permit = permit;
@@ -178,14 +223,13 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private readonly AsyncLocal<ActivityBatch?> _pendingActivity = new();
 
     public TerritoryWarsService(GameData data, AccountStore accounts, RoleStore roles, GuildStore guildStore,
-        GuildService guilds, CharacterService character, FunctionService functions, TerritoryWarsClock clock, TimedTodoSchedule siegeSchedule,
+        GuildService guilds, CharacterService character, FunctionService functions, TerritoryWarsClock clock,
         SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData maps, World world,
         MonsterService monsters, CombatService combat, BuffService buffs, RewardService rewards, MailService mail, NewActivityService activities,
         TeamService teams, AwardService awards, GameLoop loop, ILogger<TerritoryWarsService> log)
     {
         this._data = data; this._accounts = accounts; this._roles = roles; this._guildStore = guildStore;
         this._guilds = guilds; this._character = character; this._functions = functions; this._clock = clock;
-        this._siegeSchedule = siegeSchedule;
         this._sessions = sessions; this._instances = instances; this._scene = scene; this._maps = maps;
         this._world = world; this._monsters = monsters; this._buffs = buffs; this._combat = combat; this._awards = awards; this._rewards = rewards; this._mail = mail;
         this._activities = activities; this._teams = teams;
@@ -194,19 +238,13 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryWars)) is { } saved
             ? JsonSerializer.Deserialize<WorldState>(saved)! : new();
         scene.Loaded.Subscribe(LoadedAsync);
-        scene.Loaded.Subscribe(SiegeLoadedAsync);
         scene.Loaded.Subscribe(WorldLoadedAsync);
         scene.LoadedKeys.Subscribe(SceneKeys);
         scene.Leaving.Subscribe(LeavingAsync);
-        scene.Leaving.Subscribe(SiegeLeavingAsync);
         scene.Leaving.Subscribe(GloryLeavingAsync);
         scene.Leaving.Subscribe(CannonLeavingAsync);
         scene.Leaving.Subscribe(VehicleLeavingAsync);
-        scene.WalkBlocked = SiegeWalkBlocked;
-        scene.WalkBridged = SiegeWalkBridged;
-        monsters.Spares = SiegeSpares;
         combat.Killed.Subscribe(KilledAsync);
-        combat.Killed.Subscribe(SiegeKilledAsync);
         combat.Killed.Subscribe(WorldKilledAsync);
         combat.PlayerDied.Subscribe(DiedAsync);
         // DiedAsync publishes the battle's own countdown for a recorded participant.
@@ -223,13 +261,9 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         SiegeSettled.Subscribe(SiegeMachinesSettled);
         world.PlayerEntered.Add(VehicleRiderSeenAsync);
         combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
-        combat.EventDamageRecorded.Subscribe(SiegeDamageRecordedAsync);
         combat.EventDamageRecorded.Subscribe(MachineDamageRecordedAsync);
-        combat.DamageAdjusters.Subscribe((_, target, row, _, damage) => SiegeTagDamage(target, row, damage));
         combat.PvpDealtAsync.Subscribe(PvpRecordedAsync);
-        combat.PvpDealtAsync.Subscribe(SiegePvpRecordedAsync);
         combat.HealedAsync.Subscribe(BattleHealRecordedAsync);
-        combat.HealedAsync.Subscribe(SiegeHealRecordedAsync);
         combat.PlayerKilled.Subscribe(GloryKilledAsync);
         combat.PvpDealtAsync.Subscribe(GloryHitAsync);
         character.StateChanged.Subscribe(s => _ = SyncGloryAsync(s));
@@ -278,8 +312,8 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         /// <summary>Past seasons whose Battle Merit standings are still to be mailed (TerritoryWarsService.BattleGlorySeason).</summary>
         public List<string> GlorySettle { get; set; } = [];
     }
-    private static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.SerializeToUtf8Bytes(value))!;
-    private async Task SaveAsync(WorldState value, string kind = "state", GameSession? actor = null,
+    internal static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.SerializeToUtf8Bytes(value))!;
+    internal async Task SaveAsync(WorldState value, string kind = "state", GameSession? actor = null,
         string? sourceKey = null)
     {
         var transaction = _roles.NewTransaction();
@@ -311,13 +345,13 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         await _roles.CommitAsync(transaction, "territory/commit");
         PublishCommitted(next);
     }
-    private void PublishCommitted(WorldState value)
+    internal void PublishCommitted(WorldState value)
     {
         _committedState = Copy(value);
         state = value;
     }
     private string Epoch => _clock.Epoch;
-    private RoleState LoadRole(long id)
+    internal RoleState LoadRole(long id)
     {
         var value = _roles.LoadTerritoryWars(id) is { } bytes ? JsonSerializer.Deserialize<RoleState>(bytes)! : new();
         if (value.Epoch == Epoch) return value;
@@ -335,32 +369,32 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         SaveRole(id, value, transaction);
         await _roles.CommitAsync(transaction, "territory/role");
     }
-    private async Task<long> AllocateStatisticsIdAsync()
+    internal async Task<long> AllocateStatisticsIdAsync()
     {
         var transaction = _accounts.NewTransaction();
         int index = transaction.Add(new RoleIdentityWritePlan(RoleIdentityWriteKind.AllocateInstance));
         var receipts = await transaction.CommitAsync(_accounts, "territory/statistics-id");
         return (long)receipts[index]!;
     }
-    private static void SaveRole(long id, RoleState value, RoleItemPlanBuilder tx) =>
+    internal static void SaveRole(long id, RoleState value, RoleItemPlanBuilder tx) =>
         tx.RoleBlob(id, "territory_wars", JsonSerializer.SerializeToUtf8Bytes(value));
-    private static void Save(WorldState value, RoleItemPlanBuilder tx) =>
+    internal static void Save(WorldState value, RoleItemPlanBuilder tx) =>
         tx.Add(new RealmStatePlan(RealmStateKind.TerritoryWars, JsonSerializer.SerializeToUtf8Bytes(value)));
-    private GuildStore.State? Own(GameSession s) => s.Role == null ? null : _guildStore.ForRole(s.Role.Id);
+    internal GuildStore.State? Own(GameSession s) => s.Role == null ? null : _guildStore.ForRole(s.Role.Id);
     /// <summary>
     /// The role's guild id for per-hit checks. GuildService keeps <see cref="GameSession.Guild"/> current on login,
     /// join, leave and kick; <see cref="Own"/> joins and deserializes the whole guild row, which combat called
     /// ~90 times per player per second in a siege.
     /// </summary>
-    private long OwnId(GameSession s) => s.Role == null ? 0 : s.Guild is { } g ? g.GuildId : Own(s)?.Id ?? 0;
+    internal long OwnId(GameSession s) => s.Role == null ? 0 : s.Guild is { } g ? g.GuildId : Own(s)?.Id ?? 0;
     private static bool Right(GuildStore.State g, long role, int right) => g.Members.TryGetValue(role, out var m)
         && (m.Official == 1 || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
-    private IEnumerable<JsonElement> Zones => _data.Table("GVGWarZoneConfig").Values;
+    internal IEnumerable<JsonElement> Zones => _data.Table("GVGWarZoneConfig").Values;
     private JsonElement? Zone(int id) => _data.Row("GVGWarZoneConfig", id);
     private int Parent(int id) => Zone(id) is { } row ? (int)GameData.Int(row, "_iBelongID") : 0;
-    private int ZoneType(int id) => Zone(id) is { } row ? (int)GameData.Int(row, "_iType") : 0;
+    internal int ZoneType(int id) => Zone(id) is { } row ? (int)GameData.Int(row, "_iType") : 0;
     public long OwnerOf(int id) => state.Owners.GetValueOrDefault(id);
-    private void AssignTerritoryOwner(WorldState next, int zone, long winner)
+    internal void AssignTerritoryOwner(WorldState next, int zone, long winner)
     {
         if (zone <= 0 || winner <= 0) return;
         next.Owners[zone] = winner;
@@ -371,9 +405,9 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     }
     public int GuildPoint(long id) => state.Owners.Where(x => x.Value == id && ZoneType(x.Key) == 3).Select(x => x.Key).Order().FirstOrDefault();
     public Func<long, int, long> GuildEscortScore { get; set; } = (_, _) => 0;
-    private int RootOf(int id) { while (Parent(id) != 0) id = Parent(id); return id; }
-    private static long Id(JsonElement row) => GameData.Int(row, "_iID");
-    private async Task Send(GameSession s, uint id, IMessage msg)
+    internal int RootOf(int id) { while (Parent(id) != 0) id = Parent(id); return id; }
+    internal static long Id(JsonElement row) => GameData.Int(row, "_iID");
+    internal async Task Send(GameSession s, uint id, IMessage msg)
     {
         try { await s.SendGameAsync(id, msg); }
         catch (Exception e) when (e is IOException or ObjectDisposedException or System.Net.Sockets.SocketException)
@@ -571,7 +605,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
             throw new InvalidOperationException("Territory activity fanout lacks its command batch.");
         if (s.Role is { } role) batch.Peers[s] = (role.Id, s.Attachment);
     }
-    private async Task FlushActivityAsync()
+    internal async Task FlushActivityAsync()
     {
         var batch = _pendingActivity.Value;
         if (batch is not { Active: true } || !ReferenceEquals(batch.Permit, _loop.CurrentWork)) return;
@@ -629,7 +663,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         };
     }
 
-    private async Task PublishAsync()
+    internal async Task PublishAsync()
     {
         var map = new TerritoryWarsMapDataNotify { Data = MapData() };
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.TerritoryWars != null), async s =>
@@ -719,7 +753,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         await FlushActivityAsync();
         await SettleGlorySeasonsAsync();
     }
-    private async Task ReconcileLockedAsync()
+    internal async Task ReconcileLockedAsync()
     {
         await ReconcileSeasonAsync();
         if (_seasonCleanupState != null) return;

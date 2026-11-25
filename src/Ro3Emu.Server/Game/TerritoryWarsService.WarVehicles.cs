@@ -16,10 +16,11 @@ public sealed partial class TerritoryWarsService
     private const long VehicleUidBase = (1L << 49) | (1L << 48);
     private const int VehicleStatusType = VehicleSeats.StatusType;
     /// <summary>LC_ConditionDefine CheckGVGPermission.</summary>
-    private const long GvgPermission = 2202;
+    internal const long GvgPermission = 2202;
     private long _vehicleSerial;
     private long _vehicleBuffGuid = (1L << 56) | (1L << 54);
     private readonly ConcurrentDictionary<long, (VehicleUnit Unit, InstanceService.Room Room)> _vehicles = new();
+    internal ConcurrentDictionary<long, (VehicleUnit Unit, InstanceService.Room Room)> Vehicles => _vehicles;
     private VehicleSeats? _vehicleSeats;
     private VehicleSeats VehicleRiders => _vehicleSeats ??= new VehicleSeats(_data, _world, Send);
 
@@ -58,7 +59,7 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>A vehicle NPC of <paramref name="room"/> at <paramref name="spot"/>, of its owner (0: none), camp and guild,
     /// with NPCConfig _kBornEventBuff standing on it; null for an NPC that is no vehicle with seats.</summary>
-    private VehicleUnit? NewVehicle(int npcId, InstanceService.Room room, MapPoint spot, long owner, long camp, long guild)
+    internal VehicleUnit? NewVehicle(int npcId, InstanceService.Room room, MapPoint spot, long owner, long camp, long guild)
     {
         if (NPCConfig.Get(_data, npcId) is not { NPCSubType: 103 } npc
             || VehicleConfig.Get(_data, npc.SubTypeValue) is not { Seats: { Length: > 0 } seats }

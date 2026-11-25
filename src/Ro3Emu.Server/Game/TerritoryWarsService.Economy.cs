@@ -29,7 +29,7 @@ public sealed partial class TerritoryWarsService
                 Grants = grants.Select(x => new { x.Role, x.Grant.Entry, x.Grant.Count, x.Grant.Bind })
             }));
     }
-    private EventEconomyMutation? SiegeMailSource(IReadOnlyDictionary<long, List<MailService.Attachment>> awards,
+    internal EventEconomyMutation? SiegeMailSource(IReadOnlyDictionary<long, List<MailService.Attachment>> awards,
         string sourceKey)
     {
         var catalog = EventEconomy.Catalog(_data);

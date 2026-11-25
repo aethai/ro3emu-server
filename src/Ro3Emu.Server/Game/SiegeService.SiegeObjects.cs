@@ -1,6 +1,8 @@
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace Ro3Emu.Server.Game;
 /// opened again for it, except the ladders and the ram, which come back (TerritoryWarsService.SiegeUnits.cs); a damaged
 /// one keeps its HP.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     /// <summary>enum_SiegeObjectType (Config/Define/Lua_GameDefine.lua:14875).</summary>
     private enum SiegeObjectType { Ladder = 0, Car = 1, CityGate = 2, OuterTower = 3, InnerTower = 4, Revive = 5, Crystal = 6 }

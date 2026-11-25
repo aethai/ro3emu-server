@@ -1,6 +1,8 @@
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -12,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// bag (TerritoryWarsService.WarVehicles.cs): the Vehicle permission, a free seat, the same camp. The other camp destroys
 /// them; NPCConfig _iNeedNotifyGlobalData 1 puts them in 30115 at their points.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     private static readonly HashSet<long> SiegeFixedVehicleNpcs = [4901004, 4901005, 4901006, 4901007, 4901008, 4901009];
 

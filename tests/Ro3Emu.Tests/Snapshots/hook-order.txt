@@ -121,7 +121,7 @@ CombatService.DamageAdjusters (10)
   DungeonService.TrialDamage
   DungeonService.<.ctor> lambda
   MvpService.<.ctor> lambda
-  TerritoryWarsService.<.ctor> lambda
+  SiegeService.<.ctor> lambda
   TowerService.<RegisterSuppression> lambda
   TotemEffects.AdjustDamage
   CardEffects.AdjustDamage
@@ -146,8 +146,8 @@ CombatService.EventDamageRecorded (7)
   NewActivityService.OnTreasureMonsterDamagedAsync
   TrainingService.<.ctor> lambda
   TerritoryWarsService.DamageRecordedAsync
-  TerritoryWarsService.SiegeDamageRecordedAsync
   TerritoryWarsService.MachineDamageRecordedAsync
+  SiegeService.SiegeDamageRecordedAsync
   GuildLeagueService.MonsterDamagedAsync
 CombatService.ExtraHeal (1)
   TotemEffects.ExtraHealing
@@ -166,7 +166,7 @@ CombatService.Healed (3)
   CasualBattleService.<.ctor> lambda
 CombatService.HealedAsync (3)
   TerritoryWarsService.BattleHealRecordedAsync
-  TerritoryWarsService.SiegeHealRecordedAsync
+  SiegeService.SiegeHealRecordedAsync
   GuildLeagueService.HealedAsync
 CombatService.IncomingDamageAdjusters (3)
   DungeonService.<.ctor> lambda
@@ -186,9 +186,9 @@ CombatService.Killed (21)
   GuildCampfireService.KilledAsync
   GuildHuntingService.KilledAsync
   TerritoryWarsService.KilledAsync
-  TerritoryWarsService.SiegeKilledAsync
   TerritoryWarsService.WorldKilledAsync
   TerritoryWarsService.MachineKilledAsync
+  SiegeService.SiegeKilledAsync
   TerritoryEscortService.CartKilledAsync
   GuildLeagueService.MonsterKilledAsync
   TowerService.KilledAsync
@@ -234,8 +234,8 @@ CombatService.PvpDealt (3)
   TerritoryEscortService.PvpRecorded
 CombatService.PvpDealtAsync (6)
   TerritoryWarsService.PvpRecordedAsync
-  TerritoryWarsService.SiegePvpRecordedAsync
   TerritoryWarsService.GloryHitAsync
+  SiegeService.SiegePvpRecordedAsync
   GuildLeagueService.PvpAsync
   CardEffects.<.ctor> lambda
   StealthEffects.<.ctor> lambda
@@ -368,11 +368,11 @@ SceneService.Leaving (28)
   TrainingService.<.ctor> lambda
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.LeavingAsync
-  TerritoryWarsService.SiegeLeavingAsync
   TerritoryWarsService.GloryLeavingAsync
   TerritoryWarsService.CannonLeavingAsync
   TerritoryWarsService.VehicleLeavingAsync
   TerritoryWarsService.PlatformLeavingAsync
+  SiegeService.SiegeLeavingAsync
   TerritoryEscortService.SceneLeavingAsync
   GuildLeagueService.LeavingAsync
   WorldCoreService.LeavingAsync
@@ -396,8 +396,8 @@ SceneService.Loaded (25)
   AdventureGroupService.OnSceneLoadedAsync
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.LoadedAsync
-  TerritoryWarsService.SiegeLoadedAsync
   TerritoryWarsService.WorldLoadedAsync
+  SiegeService.SiegeLoadedAsync
   TerritoryEscortService.SceneLoadedAsync
   GuildLeagueService.LoadedAsync
   PetCombatService.SyncGuardianWheelAsync

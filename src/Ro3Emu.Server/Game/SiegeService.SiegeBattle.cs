@@ -5,83 +5,19 @@ using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
-    private const long SiegeScene = 2230101;
+    internal const long SiegeScene = 2230101;
     private const int SiegeCrystal = 4900009, SiegeCrystalPoint = 44;
     private bool _siegeDirty;
 
-    /// <summary>After a committed siege settlement, per loaded participant: role, personal score, whether its guild
-    /// won (quest target 106611). Listeners post their work.</summary>
-    public SyncHook<long, long, bool> SiegeSettled { get; } = new("TerritoryWarsService.SiegeSettled");
-    /// <summary>After a committed territory battle settlement, per loaded participant: role and round (1 Stronghold,
-    /// 2 and later Regional Capital). Listeners post their work.</summary>
-    public SyncHook<long, int> BattleSettled { get; } = new("TerritoryWarsService.BattleSettled");
-
-    public sealed class SiegeRunState
-    {
-        public int City { get; set; }
-        public long Start { get; set; }
-        public long End { get; set; }
-        public long Attack { get; set; }
-        public long Defense { get; set; }
-        public long StatisticsId { get; set; }
-        public byte[] AttackSnapshot { get; set; } = [];
-        public byte[] DefenseSnapshot { get; set; } = [];
-        public long CrystalHp { get; set; }
-        /// <summary>The castle objects' HP below their maximum and the destroyed ones, by scene point
-        /// (TerritoryWarsService.SiegeObjects.cs).</summary>
-        public Dictionary<int, long> ObjectHp { get; set; } = [];
-        public List<int> Destroyed { get; set; } = [];
-        /// <summary>The stage (0 Prepare to 3 Crystal) and when it began, epoch s (TerritoryWarsService.SiegeStages.cs).</summary>
-        public int Stage { get; set; }
-        public long StageStart { get; set; }
-        /// <summary>Seconds the kills added to the running stage's countdown, and the last addition in ms (var 542,
-        /// TerritoryWarsService.SiegeUnits.cs).</summary>
-        public long StageAdded { get; set; }
-        public long LastAdded { get; set; }
-        /// <summary>Test aid (!siege prepare): Prepare ends at this epoch second instead of 300 s after the start; 0 none.</summary>
-        public long PrepareEnd { get; set; }
-        /// <summary>The ladders and the ram waiting to come back, by point: [death, return] epoch ms (30401
-        /// npcRefreshModuleData, TerritoryWarsService.SiegeUnits.cs).</summary>
-        public Dictionary<int, long[]> Refresh { get; set; } = [];
-        /// <summary>The ladders standing against the city wall, by their spawn point.</summary>
-        public List<int> PlacedLadders { get; set; } = [];
-        public long SettledAt { get; set; }
-        public bool Settled { get; set; }
-        public long Winner { get; set; }
-        public Dictionary<long, Participant> Players { get; set; } = [];
-        public byte[]? Result { get; set; }
-    }
-
-    public sealed class SiegeRun(TerritoryWarsService owner, string key, InstanceService.Room room)
-    {
-        public string Key { get; } = key;
-        public string Epoch { get; } = owner.state.Epoch;
-        public InstanceService.Room Room { get; } = room;
-        public SiegeRunState State => owner._seasonCleanupState is { } retiring && retiring.Epoch == Epoch
-            ? retiring.SiegeRuns.GetValueOrDefault(Key)
-              ?? throw new InvalidOperationException("Retiring territory siege state is missing.")
-            : owner.state.Epoch == Epoch && owner.state.SiegeRuns.TryGetValue(Key, out var current) ? current
-              : throw new InvalidOperationException("Territory siege has no active or retiring epoch state.");
-        public MonsterUnit? Crystal { get; set; }
-        /// <summary>The castle objects of this room by scene point, the crystal included (dead ones stay listed).</summary>
-        internal Dictionary<int, MonsterUnit> Objects { get; } = [];
-        /// <summary>The HP of each object last sent in 30115 (TerritoryWarsService.SiegeGlobalData.cs).</summary>
-        internal Dictionary<int, long> SentHp { get; } = [];
-        /// <summary>The two bag NPCs by uid (TerritoryWarsService.SiegeBags.cs).</summary>
-        internal Dictionary<long, SiegeBagUnit> Bags { get; } = [];
-        internal CommandBoard Command { get; } = new();
-        public bool Spawning { get; set; }
-        /// <summary>For assists: each victim's recent hitters and when (TerritoryWarsService.QuestTargets.cs).</summary>
-        internal Dictionary<long, Dictionary<long, long>> Hits { get; } = [];
-    }
-
-    private static string SiegeKey(int city, long start) => $"{start}:{city}";
-    private bool SiegeActive(SiegeRun battle) => !battle.State.Settled && _clock.Now >= battle.State.Start && _clock.Now < battle.State.End;
-    private bool SiegeMember(GameSession s, SiegeRun battle) => s.Role != null && s.InstanceId == battle.Room.Id
+    internal static string SiegeKey(int city, long start) => $"{start}:{city}";
+    internal bool SiegeActive(SiegeRun battle) => !battle.State.Settled && _clock.Now >= battle.State.Start && _clock.Now < battle.State.End;
+    internal bool SiegeMember(GameSession s, SiegeRun battle) => s.Role != null && s.InstanceId == battle.Room.Id
         && !s.SceneLoading && battle.Room.ActiveMembers.Any(m => ReferenceEquals(m.Session, s))
         && battle.State.Players.TryGetValue(s.Role.Id, out var p) && OwnId(s) == p.Guild
         && p.Guild is > 0 && (p.Guild == battle.State.Attack || p.Guild == battle.State.Defense);
@@ -133,7 +69,7 @@ public sealed partial class TerritoryWarsService
                 || record.Players.TryGetValue(s.Role.Id, out var previousPlayer) && previousPlayer.Guild != guild)
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.TerritoryNotQualified }); return true; }
             if (!_siegeBattles.TryGetValue(key, out var battle) || battle.Room.Closed)
-                _siegeBattles[key] = battle = new SiegeRun(this, key, _instances.Create(SiegeScene, [s]));
+                _siegeBattles[key] = battle = new SiegeRun(_territory, key, _instances.Create(SiegeScene, [s]));
             else if (_data.Row("DungeonConfig", SiegeScene) is { } dungeon && GameData.Int(dungeon, "_iRoleCntLimit") is > 0 and var limit
                 && battle.Room.ActiveMembers.Count >= limit)
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.Parameter }); return true; }
@@ -244,20 +180,20 @@ public sealed partial class TerritoryWarsService
         return info;
     }
 
-    private Task SiegeLeavingAsync(GameSession s)
+    internal Task SiegeLeavingAsync(GameSession s)
     {
         if (s.SiegeBattle != null) s.EventFaction = 0;
         s.SiegeBattle = null;
         return Task.CompletedTask;
     }
 
-    private bool SiegeHostile(GameSession a, GameSession b) => a.SiegeBattle is { } battle
+    internal bool SiegeHostile(GameSession a, GameSession b) => a.SiegeBattle is { } battle
         && ReferenceEquals(b.SiegeBattle, battle) && SiegeActive(battle) && SiegeMember(a, battle)
         && SiegeMember(b, battle) && OwnId(a) != OwnId(b);
 
     /// <summary>The crystal falls to the attackers in the Crystal stage only (inferred: the stage is named after it and comes
     /// after the inner city's guardians, TerritoryWarsService.SiegeStages.cs).</summary>
-    private bool SiegeCanHit(GameSession s, MonsterUnit m, SiegeRun battle)
+    internal bool SiegeCanHit(GameSession s, MonsterUnit m, SiegeRun battle)
         => MachineCamp(m) is { } camp ? MachineHittable(s, battle, camp)
             : m == battle.Crystal ? SiegeActive(battle) && SiegeMember(s, battle) && OwnId(s) == battle.State.Attack
                 && battle.State.Stage == SiegeCrystalStage
@@ -268,7 +204,7 @@ public sealed partial class TerritoryWarsService
     /// TerritoryWarsService.SiegeWalls.cs), and (inferred) the castle's solid parts stop it along the navigation grid.
     /// Elsewhere nothing stops a skill, as in the client.
     /// </summary>
-    private bool SiegeSkillLineBlocked(GameSession s, MonsterUnit? m, Vec3 origin, Vec3 target)
+    internal bool SiegeSkillLineBlocked(GameSession s, MonsterUnit? m, Vec3 origin, Vec3 target)
     {
         if (s.SiegeBattle is not { } battle || battle.Room.Closed || s.SceneEntry != SiegeScene
             || _maps.Map(SiegeScene) is not { } map) return false;
@@ -399,7 +335,7 @@ public sealed partial class TerritoryWarsService
         }
     }
 
-    private async Task SiegeClockAsync()
+    internal async Task SiegeClockAsync()
     {
         foreach (var (key, run) in state.SiegeRuns.ToArray())
         {

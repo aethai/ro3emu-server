@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// new list is removed). The client lists 2210101 and 2230101 specially (file head). The server sends the active set for
 /// everyone (groupType 0) and treats its cells as blocked for walks and skill lines.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     private const int AirWallListVar = 133;
     /// <summary>72 "空气墙_城门阻挡(内)" and 74 "空气墙_城门阻挡(外)": the gateway's inner and outer gate walls.</summary>

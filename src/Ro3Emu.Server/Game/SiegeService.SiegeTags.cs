@@ -2,6 +2,8 @@ using System.Text.Json;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// A cannon shot on a gate, ram, ladder or barricade so deals a tenth. A player's cast carries a cannon's tags when its
 /// skill is that cannon's (GVGCannonConfig _iSkillID); the war vehicles' seat skills carry none.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     private const long BulletNpcType = 10;
     /// <summary>Skill id -> the NPC tags its casts carry (the cannons of that skill and its bullet NPC); read once.</summary>

@@ -89,9 +89,10 @@ public sealed partial class SiegeTests
     private async Task Cast(BotClient bot, int skill) => await bot.SendGameAsync(CombatService.UseSkill,
         new CastSkillReq { SkillId = skill, TargetPos = Session(bot).Position.Clone() });
 
-    /// <summary>Skips the 5 s common cooldown the panel shares (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() is the wall clock).</summary>
+    /// <summary>Skips the 5 s common cooldown the panel shares and any cast action tail on the unified clock.</summary>
     private Task ClearCommonCd(BotClient commander, long guild) => OnLoop(() =>
     {
+        _clock.AdvanceMs(5500);
         Session(commander).SiegeBattle!.Command.Skills[guild].CommonCdEnd = 0;
         return Task.CompletedTask;
     });

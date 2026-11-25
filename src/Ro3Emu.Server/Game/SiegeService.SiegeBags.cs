@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// Vehicle-permission member has no other way to its bag in the siege: the button widget shows the bag for Firearm only
 /// (UI/Dungeon/Controllers/UI_Sys_Dungeon_Siege_ButtonWidgetCtrl.lua _checkShowInstrument).
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class SiegeService
 {
     /// <summary>
     /// Bag NPC uids: below 2^53 like the other machines' (TerritoryWarsService.WarMachines.cs CannonUidBase). The client's
@@ -30,36 +32,6 @@ public sealed partial class TerritoryWarsService
     /// </summary>
     private static readonly (int Npc, int Born)[] SiegeBagNpcs = [(4900201, 75), (4900202, 73)];
     private long _siegeBagSerial;
-
-    /// <summary>
-    /// A bag NPC: an NPC entity (type 2) of its camp, not a combat unit. NPCConfig gives it monster stats
-    /// (_iAttributeVariated 220, _kAttriScale) and the client draws its HP bar, so (inferred) the entity carries its full
-    /// template HP like a war machine's (properties 101, 2000, 2002), not an empty bar.
-    /// </summary>
-    internal sealed class SiegeBagUnit : WorldUnit
-    {
-        public required int NpcId { get; init; }
-        public required long Camp { get; init; }
-        public MonsterTemplate? Template { get; init; }
-
-        public override EntityBase Entity()
-        {
-            var entity = new EntityBase
-            {
-                Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = 2, EntityCamp = Camp, Face = Face,
-                State = EntityState.Alive, NotifyType = EntityBase.Types.NotifyType.All,
-                MovementInfo = new MovementInfo
-                {
-                    Pos = new Vec3 { X = X, Y = Y, Z = Z }, Face = Face, ServerTime = NowMs,
-                    MoveType = MovementType.MoveTypeNone,
-                },
-            };
-            if (Template is { } t)
-                foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level) })
-                    entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            return entity;
-        }
-    }
 
     /// <summary>Both bag NPCs, once per room.</summary>
     private async Task SiegeSpawnBagsAsync(SiegeRun battle)
