@@ -73,8 +73,7 @@ public sealed partial class TaskService
                     else if (now - since < PlotRegionFallbackDelay) continue;
                     entered.Remove(key);
                     present.Remove(key);
-                    _log.LogInformation("{Name} waited in trigger region {Region} of plot {Plot} (task {Task}): objective complete",
-                        session.Role.Name, trigger.Region, plot, info.TaskId);
+                    LogPlotRegionCompleted(_log, session.Role.Name, trigger.Region, plot, info.TaskId);
                     var owner = session;
                     long matchedPlot = plot;
                     _loop.PostOwned(owner, () => ProgressAsync(owner, TPlot, t => t is [TPlot, var p] && p == matchedPlot ? long.MaxValue : 0),
@@ -89,6 +88,9 @@ public sealed partial class TaskService
         }
         return Task.CompletedTask;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Name} waited in trigger region {Region} of plot {Plot} (task {Task}): objective complete")]
+    private static partial void LogPlotRegionCompleted(ILogger logger, string name, long region, long plot, long task);
 
     /// <summary>The game loop's two-second scan for <see cref="ScanPlotRegionsAsync"/>.</summary>
     private sealed class PlotRegionTicker(TaskService owner) : IGameTicker
