@@ -8,14 +8,8 @@ namespace Ro3Emu.Server.Game;
 /// itself and completes a step when every member is done. The daily watering quest 2000000 is [322003, 1, 1]; the third
 /// value tells it from the ritual's [322003, 10, 0] (inferred).
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    internal const int TSaplingChosen = 322001, TDeclaration = 322002, TWaterSapling = 322003;
-
-    /// <summary>After a committed delivery: the task and the award it granted (AdventureGroupService counts the group
-    /// quests' Adventure Bond Points as group EXP). Runs inside the quest lock: listeners post their work.</summary>
-    public SyncHook<GameSession, long, AwardPlan> QuestDelivered { get; } = new("TaskService.QuestDelivered");
-
     /// <summary>TaskConfig._iTaskType of a quest (23 = enum_TaskType.AdventureGroup), 0 when unknown.</summary>
     public int TypeOf(long taskId) => Defs().TryGetValue(taskId, out var def) ? def.Type : 0;
 

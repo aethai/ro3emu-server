@@ -29,8 +29,9 @@ public sealed partial class TaskService
     private const TaskState Running = TaskState.Running, Finished = TaskState.Finish, Delivered = TaskState.Delivery;
 
     // LC_ConditionDefine.enum_Progress target types
-    private const int TDialog = 104001, TArea = 104003, TBaseLevel = 101002, TClientInteract = 103046, TPlot = 309002,
-        TKill = 104002, TKillInvolved = 104014, TKillOnMap = 310001, TJobChange = 104005, TSkillPoints = 104012,
+    private const int TDialog = 104001, TArea = 104003, TBaseLevel = 101002, TClientInteract = 103046;
+    internal const int TPlot = 309002;
+    private const int TKill = 104002, TKillInvolved = 104014, TKillOnMap = 310001, TJobChange = 104005, TSkillPoints = 104012,
         TStatPoints = 104013, TTaskDone = 104004, TJobRank = 101019;
 
     private const int ReceiveAuto = 1, ReceiveNpc = 2, ReceiveUi = 3; // enum_TaskReceiveType / enum_TaskRewardType
@@ -41,8 +42,33 @@ public sealed partial class TaskService
     /// <summary>Main-story points where characters older than the quest system resume (§4: they keep their windows).</summary>
     private const long NoviceResume = 10101150, FirstJobResume = 10101210;
 
-    private sealed record TaskDef(long Id, int Type, long[] Pre, long Condition, int Accept, int Deliver, long[][] Targets,
+    internal sealed record TaskDef(long Id, int Type, long[] Pre, long Condition, int Accept, int Deliver, long[][] Targets,
         long Award, long Exp, long[] AcceptArgs, long[] DeliverArgs, string[][] AcceptActions, string[][] ExecActions, string[][] Track);
+
+    public enum GuildEvent { Escort, Stronghold, RegionalCapital, RoyalCity }
+
+    public const int FactionFunction = 7202;
+    public const long BecomeStrongerFunction = 48;
+    public const int FinalStep = int.MaxValue - 1;
+    public const int RunOver = int.MaxValue;
+    internal const int BarRoomTaskType = 9;
+    internal const int ChickenTaskType = 10;
+    internal const int TSaplingChosen = 322001, TDeclaration = 322002, TWaterSapling = 322003;
+    internal const int TFactionPoints = 101022, TFactionCrystal = 107102, TRivalKill = 101023;
+
+    private TaskDomainService _domains = null!;
+    private TimeSpan _nextPlotRegionScan;
+    internal void BindDomains(TaskDomainService domains) => _domains = domains;
+
+    public Func<GameSession, int>? FactionCamp { get; set; }
+    public Func<GameSession, GameSession, bool>? FactionRivals { get; set; }
+    public Action<GameSession, long>? FactionGuildAward { get; set; }
+    public Func<GameSession, int, long>? DungeonRunValue { get; set; }
+    internal TimeSpan PlotRegionFallbackDelay { get; set; } = TimeSpan.FromSeconds(10);
+    public Func<GameSession, IReadOnlyDictionary<(int Type, int Son), bool>>? OpenActivityTaskGroups { get; set; }
+    public Func<GameSession, Task>? SyncGrowthClass { get; set; }
+    public SyncHook<GameSession, long, AwardPlan> QuestDelivered { get; } = new("TaskService.QuestDelivered");
+    public Func<GameSession, long>? TavernSeconds { get; set; }
 
     private readonly GameData _data;
     private readonly CharacterService _character;
@@ -473,7 +499,7 @@ public sealed partial class TaskService
     /// Adds progress from an event to every running task's matching targets: <paramref name="amount"/> returns how much a
     /// target gains (long.MaxValue = complete it); <paramref name="type"/> limits it to one target type.
     /// </summary>
-    private async Task ProgressAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null)
+    internal async Task ProgressAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null)
     {
         using var gate = await LockTasksAsync(session);
         if (BeforeProgress is { } before) await before(session);
@@ -533,7 +559,7 @@ public sealed partial class TaskService
     }
 
     /// <summary>Finished tasks become status 3, Auto ones are delivered (and their follow-ups accepted) until nothing moves; then one 5027.</summary>
-    private async Task SettleAsync(GameSession session)
+    internal async Task SettleAsync(GameSession session)
     {
         if (session.Tasks == null) return;
         var context = RequireTaskOwner(session);
@@ -586,7 +612,7 @@ public sealed partial class TaskService
         await NotifyChickenFinishedAsync(session, chickenFinished.Where(id => session.Tasks.Infos.GetValueOrDefault(id)?.Status == Finished));
     }
 
-    private async Task FlushAsync(GameSession session, bool settled = false)
+    internal async Task FlushAsync(GameSession session, bool settled = false)
     {
         if (settled && _roles.HasTaskFollowup(session.Role!.Id))
             await _roles.SaveSettledTasksAsync(session.Role.Id, session.Tasks!.ToByteArray(), JsonSerializer.SerializeToUtf8Bytes(session.TaskRuntime));
@@ -697,11 +723,11 @@ public sealed partial class TaskService
             + AcceptChickenTasks(session) + AcceptTavernTasks(session) + AcceptRootTasks(session) + AcceptMiscTasks(session);
     }
 
-    private bool Ready(GameSession session, TaskDef def) =>
+    internal bool Ready(GameSession session, TaskDef def) =>
         def.Pre.All(p => IsDelivered(session, p)) && (def.Condition == 0 || _functions.ConditionMet(session, def.Condition))
         && AcceptActionsSupported(def);
 
-    private void Accept(GameSession session, long id)
+    internal void Accept(GameSession session, long id)
     {
         session.Tasks!.Infos[id] = NewInfo(id, Running);
         StartLoginTargets(session, id);
@@ -729,7 +755,7 @@ public sealed partial class TaskService
         return info;
     }
 
-    private bool Active(GameSession session, long id) =>
+    internal bool Active(GameSession session, long id) =>
         session.Tasks!.Infos.TryGetValue(id, out var info) && info.Status is Running or Finished;
 
     /// <summary>Targets the server reads from the player's state rather than from events.</summary>
@@ -768,7 +794,7 @@ public sealed partial class TaskService
         }
     }
 
-    private Dictionary<long, TaskDef> Defs()
+    internal Dictionary<long, TaskDef> Defs()
     {
         if (_defs != null) return _defs;
         var defs = new Dictionary<long, TaskDef>();
@@ -791,7 +817,7 @@ public sealed partial class TaskService
         return defs;
     }
 
-    private static long[] Longs(JsonElement row, string field) =>
+    internal static long[] Longs(JsonElement row, string field) =>
         row.TryGetProperty(field, out var a) && a.ValueKind == JsonValueKind.Array
             ? [.. a.EnumerateArray().Select(e => (long)(GameData.Number(e) ?? 0))] : [];
 
@@ -801,4 +827,59 @@ public sealed partial class TaskService
         row.TryGetProperty("_kProgressTarget", out var a) && a.ValueKind == JsonValueKind.Array
             ? [.. a.EnumerateArray().Where(t => t.ValueKind == JsonValueKind.Array && t.GetArrayLength() > 0).Select(t => t.EnumerateArray().Select(e => (long)(GameData.Number(e) ?? 0)).ToArray())]
             : [];
+
+    // ---- subsystem facades (TaskDomainService) ----
+
+    public void OnFactionCrystalCollected(GameSession s) => _domains.OnFactionCrystalCollected(s);
+    internal Task OnFactionPlayerKilledAsync(GameSession killer, GameSession victim) => _domains.OnFactionPlayerKilledAsync(killer, victim);
+    public void OnFactionCampChanged(GameSession s) => _domains.OnFactionCampChanged(s);
+    private void AddFactionPoints(GameSession s, long taskId, AwardPlan plan) => _domains.AddFactionPoints(s, taskId, plan);
+    private int AcceptFactionTasks(GameSession session) => _domains.AcceptFactionTasks(session);
+    public void OnDungeonRun(GameSession s, long scene, long instance, int step) => _domains.OnDungeonRun(s, scene, instance, step);
+    internal IEnumerable<TaskInfo> DungeonRunTasks(GameSession s) => _domains.DungeonRunTasks(s);
+    internal long[] DungeonTaskChain(long scene) => _domains.DungeonTaskChain(scene);
+    internal Task ScanPlotRegionsAsync() => _domains.ScanPlotRegionsAsync();
+    private int AcceptActivityTasks(GameSession session) => _domains.AcceptActivityTasks(session);
+    private bool ActivityClaim(GameSession session, TaskDef def) => _domains.ActivityClaim(session, def);
+    private void CountLogin(GameSession session) => _domains.CountLogin(session);
+    private void StartLoginTargets(GameSession session, long id) => _domains.StartLoginTargets(session, id);
+    internal IReadOnlyDictionary<long, (long Module, int Stage)> GrowthClassTasks() => _domains.GrowthClassTasks();
+    internal bool GrowthModuleOpen(GameSession session, long module) => _domains.GrowthModuleOpen(session, module);
+    internal int GrowthStage(GameSession session, long module) => _domains.GrowthStage(session, module);
+    private int AcceptGrowthClass(GameSession session) => _domains.AcceptGrowthClass(session);
+    public int TypeOf(long taskId) => _domains.TypeOf(taskId);
+    public Task OnSaplingWateredAsync(GameSession session) => _domains.OnSaplingWateredAsync(session);
+    internal Task StartAdventureRitualAsync(GameSession session, IReadOnlyList<long> chain) => _domains.StartAdventureRitualAsync(session, chain);
+    internal Task SetAdventureRitualAsync(GameSession session, long taskId, long value, bool complete, long next = 0) =>
+        _domains.SetAdventureRitualAsync(session, taskId, value, complete, next);
+    private int AcceptTavernTasks(GameSession session) => _domains.AcceptTavernTasks(session);
+    private static bool DeliversItself(TaskDef def) => TaskDomainService.DeliversItself(def);
+    private long TavernStay(GameSession session, TaskDef def, long[] t) => _domains.TavernStay(session, def, t);
+    public void OnTavernStay(GameSession session) => _domains.OnTavernStay(session);
+    private int AcceptChickenTasks(GameSession session) => _domains.AcceptChickenTasks(session);
+    private static Task NotifyChickenFinishedAsync(GameSession session, IEnumerable<long> finished) =>
+        TaskDomainService.NotifyChickenFinishedAsync(session, finished);
+    private int AcceptGrowthTitle(GameSession session) => _domains.AcceptGrowthTitle(session);
+    private static bool ChapterLocked(TaskInfo info) => TaskDomainService.ChapterLocked(info);
+    private static bool GuildEventTask(long task) => TaskDomainService.GuildEventTask(task);
+    public void OnGuildEventJoined(GameSession s, GuildEvent guildEvent) => _domains.OnGuildEventJoined(s, guildEvent);
+    public void OnGuildEventJoined(long role, GuildEvent guildEvent) => _domains.OnGuildEventJoined(role, guildEvent);
+    public void OnTerritoryBattleSettled(long role, int round) => _domains.OnTerritoryBattleSettled(role, round);
+    public Task OnOnePieceRewardAsync(GameSession session) => _domains.OnOnePieceRewardAsync(session);
+    public Task OnGuildHuntAsync(GameSession session) => _domains.OnGuildHuntAsync(session);
+    public Task OnTimedBattleSettlementAsync(GameSession session, int matchEntry) => _domains.OnTimedBattleSettlementAsync(session, matchEntry);
+    private static bool TimedBattleTarget(long[] target, int matchEntry) => TaskDomainService.TimedBattleTarget(target, matchEntry);
+    public Task OnDraculaWeddingAsync(GameSession session) => _domains.OnDraculaWeddingAsync(session);
+
+    private sealed class PlotRegionTicker(TaskService owner) : IGameTicker
+    {
+        private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
+
+        public void Tick(GameTime time)
+        {
+            if (time.Now < owner._nextPlotRegionScan) return;
+            owner._nextPlotRegionScan = time.Now + Interval;
+            owner._loop.Post(owner.ScanPlotRegionsAsync);
+        }
+    }
 }

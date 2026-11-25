@@ -12,14 +12,10 @@ namespace Ro3Emu.Server.Game;
 /// trigger region past <see cref="PlotRegionFallbackDelay"/> completes the target so the story cannot softlock, while
 /// the dwell window lets normal cutscenes play and finish via 84011 first.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
     private Dictionary<long, (long Scene, long Region)>? _plotRegions;
-    private TimeSpan _nextPlotRegionScan;
     private readonly ConditionalWeakTable<GameSession, Dictionary<(long TaskId, long PlotId), DateTimeOffset>> _plotRegionEntered = [];
-
-    /// <summary>How long a player must stand in a plot's trigger region before the fallback completes it.</summary>
-    internal TimeSpan PlotRegionFallbackDelay { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>plot id -> the scene and region that trigger it; plots without a trigger are absent.</summary>
     private Dictionary<long, (long Scene, long Region)> PlotRegions()
@@ -91,17 +87,4 @@ public sealed partial class TaskService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Name} waited in trigger region {Region} of plot {Plot} (task {Task}): objective complete")]
     private static partial void LogPlotRegionCompleted(ILogger logger, string name, long region, long plot, long task);
-
-    /// <summary>The game loop's two-second scan for <see cref="ScanPlotRegionsAsync"/>.</summary>
-    private sealed class PlotRegionTicker(TaskService owner) : IGameTicker
-    {
-        private static readonly TimeSpan Interval = TimeSpan.FromSeconds(2);
-
-        public void Tick(GameTime time)
-        {
-            if (time.Now < owner._nextPlotRegionScan) return;
-            owner._nextPlotRegionScan = time.Now + Interval;
-            owner._loop.Post(owner.ScanPlotRegionsAsync);
-        }
-    }
 }

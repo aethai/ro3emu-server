@@ -15,15 +15,11 @@ namespace Ro3Emu.Server.Game;
 /// (inferred) A module counts once function 48 (Become Stronger) and its BecomeStrongerConfig._iFunction are open: the
 /// client's _checkModuleUnlock reads that function's open condition.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    public const long BecomeStrongerFunction = 48;
     private const int GrowthClassType = 20;
 
     private Dictionary<long, (long Module, int Stage)>? _growthClass;
-
-    /// <summary>5045 follows every quest flush (GrowthClassService).</summary>
-    public Func<GameSession, Task>? SyncGrowthClass { get; set; }
 
     /// <summary>Growth Classroom quest id → (module, stage).</summary>
     internal IReadOnlyDictionary<long, (long Module, int Stage)> GrowthClassTasks() => _growthClass ??= _data.Table("TaskConfig").Values
@@ -51,7 +47,7 @@ public sealed partial class TaskService
     }
 
     /// <summary>Accepts the open stages' quests of every open module; returns how many.</summary>
-    private int AcceptGrowthClass(GameSession session)
+    internal int AcceptGrowthClass(GameSession session)
     {
         int accepted = 0;
         foreach (var module in GrowthClassTasks().Values.Select(t => t.Module).Distinct())

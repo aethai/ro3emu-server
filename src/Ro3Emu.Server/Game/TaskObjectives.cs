@@ -18,7 +18,8 @@ public sealed partial class TaskService
         TTreasure = 314001, TSlotRefine = 103021, TCraftQuality = 103006, TCollect = 103050,
         TEquipmentQuality = 106002, TStrength = 103004, TRefineCount = 103005, TMvp = 103011,
         TSkillRank = 311001, TCargo = 103053, TPydDownload = 106701, TAfkSeconds = 106901, TRestrictUse = 106906,
-        TOnePieceCount = 103049, TTimedBattle = 106509, TCaravan = 104011, TDungeonPass = 101018, TAreaAction = 106903;
+        TCaravan = 104011, TDungeonPass = 101018, TAreaAction = 106903;
+    internal const int TOnePieceCount = 103049, TTimedBattle = 106509;
 
     // Growth-manual child targets (TaskService.GrowthManual.cs). Displays from ProgressConfig/Localization: 326002
     // "Activate ${1} talents" (zh_CN 激活的天赋达到${1}, its unmet tip 天赋等级不足 "talent level too low": counted as
@@ -44,12 +45,12 @@ public sealed partial class TaskService
     // 210011 [210011, n]: TaskConfig 1602120 "Guild Activities - Hunting Challenge" (type 16, _kEXECAction 115 3015) is
     // its only user. The client has no formatter for it; R is the trailing count, as the sibling 104011 caravan departure
     // (inferred). Credited once per event when a member takes part (GuildHuntingService).
-    private const int TGuildHunt = 210011;
+    internal const int TGuildHunt = 210011;
 
     // 210010 [210010, n] "Guild Activities - Wedding Crashers" (guild quest 1602110, accepted by the hidden DailyActivity
     // 3014's _iTaskReceiveAction ["31","1","1602110"]): one per Wedding Crashers clear (DraculaWeddingService). Its
     // TaskTargetConfig row is not exported; counting a successful rescue, not an entry, is (inferred).
-    private const int TDraculaWedding = 210010;
+    internal const int TDraculaWedding = 210010;
 
     // Growth Classroom modules Pet 1004, Divine Totem 1005, Soul Echo 1006 and Equip 1002 (also side quests, the growth
     // manual and type 13 echo quests). R per LC_ConditionDefine.m_kGetDesFunctionGroup (LC_InteractCondition.lua):
@@ -114,7 +115,8 @@ public sealed partial class TaskService
     //   since the target has none (inferred).
     private const int TDummyChallenge = 210006;
     private const int TStunts = 302005, TPetRoom = 306004, TTenBossWin = 106602, TTreasureDig = 106802,
-        TCoffinOrSurvivor = 210012, TDragonCoffin = 210009, TLeagueJoin = 106603, TGveJoin = 103014;
+        TLeagueJoin = 106603, TGveJoin = 103014;
+    internal const int TCoffinOrSurvivor = 210012, TDragonCoffin = 210009;
 
     // Survivor Battle weekly targets (TaskConfig 2501-2507, type 10), LC_InteractCondition Chicken* (:2030-2050 and the
     // default formatter): 106501 ChickenRankWeek [top, n], 106502 ChickenUseItem [item type, n] and 106505
@@ -155,7 +157,8 @@ public sealed partial class TaskService
     // - 106610 [n] "Reach @{1} Battle Merit" (120001-120005, Realm Campaign 107; ProgressConfig "Earn a total of ${1} Personal
     //   Points in the Territory War"): the Battle Merit points earned this Territory War season (TerritoryWarsService
     //   GloryState.Points, not the spendable currency 15).
-    private const int TGvgJoin = 106605, TGvgWin = 106606, TLogin = 106801, TBattleMerit = 106610;
+    private const int TGvgJoin = 106605, TGvgWin = 106606, TBattleMerit = 106610;
+    internal const int TLogin = 106801;
 
     /// <summary>106610: this season's Battle Merit points of a loaded role, -1 before it loads (TerritoryWarsService.GloryPoints).</summary>
     public Func<GameSession, long>? BattleMeritPoints { get; set; }
@@ -163,12 +166,12 @@ public sealed partial class TaskService
     // 106010 BarroomToDayActTime [n] "Today's active time in the Tavern" is the Tavern quest's target (TaskConfig 2000,
     // type 9, [106010,1200]; today's seconds in a room, TaskService.TavernTasks); the guild To-Do tasks reuse it as a
     // stand-in, [106010,5], an event counter (TaskService.GuildEvents). Other quests with it stay without a producer.
-    private const int TBarroomActTime = 106010;
+    internal const int TBarroomActTime = 106010;
 
     private readonly ConditionalWeakTable<MonsterUnit, HashSet<long>> _participants = [];
     private readonly HashSet<GameSession> _refreshQueued = [];
 
-    private void QueueRefresh(GameSession session)
+    internal void QueueRefresh(GameSession session)
     {
         if (session.Tasks == null || !_refreshQueued.Add(session)) return;
         _loop.PostOwned(session, async () => { _refreshQueued.Remove(session); await RefreshAsync(session); },
@@ -179,7 +182,7 @@ public sealed partial class TaskService
     /// Exact formatter R, independent of the domain predicate.
     /// Unsupported/malformed targets return -1. In particular, a trailing filter 0 is never a completion threshold.
     /// </summary>
-    private long Required(GameSession? session, long[] t) => t switch
+    internal long Required(GameSession? session, long[] t) => t switch
     {
         [TDialog, _, _, _] or [TArea, _, _] or [TJobChange, _] or [TTaskDone, _] or [TJobRank, _] or [TAreaAction, _, _, _]
             or [TGuide, _] or [TPydDownload, 1] or [TRentCareerSpecial, _] or [TValhallaLayer, _] or [TPetCamp, 0]

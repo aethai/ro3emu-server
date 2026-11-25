@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// claimed. A chapter whose _iCondition is unmet is still offered, flagged isChapterLocked: the panel then shows the
 /// condition instead of the claim (UI_Sys_GrowthManualPopWidgetCtrl.lua:613-623,744-770), and the claim is refused.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
     private List<(long Chapter, long[] Children)>? _growthTitles;
 
@@ -30,7 +30,7 @@ public sealed partial class TaskService
         .Where(t => Defs().ContainsKey(t.Item1))];
 
     /// <summary>Offers the current growth title (see the class remarks); returns how many tasks were accepted.</summary>
-    private int AcceptGrowthTitle(GameSession session)
+    internal int AcceptGrowthTitle(GameSession session)
     {
         int accepted = 0;
         foreach (var (chapter, children) in GrowthTitles())
@@ -50,5 +50,5 @@ public sealed partial class TaskService
     }
 
     /// <summary>A claim of a locked chapter is refused: its condition is what the panel shows instead.</summary>
-    private static bool ChapterLocked(TaskInfo info) => info.IsChapterLocked;
+    internal static bool ChapterLocked(TaskInfo info) => info.IsChapterLocked;
 }

@@ -19,6 +19,7 @@ internal static class CharacterComposition
         services.AddSingleton<FunctionService>();
         services.AddSingleton<RewardService>();
         services.AddSingleton<TaskService>();
+        services.AddSingleton<TaskDomainService>();
         services.AddSingleton<AwardService>();
         services.AddSingleton<WildAfkService>();
         services.AddSingleton<LifeJobService>();
@@ -100,7 +101,7 @@ internal static class CharacterComposition
     public static void WireCharacterHooks(WebApplication app)
     {
         app.Services.GetRequiredService<RewardService>();
-        app.Services.GetRequiredService<TaskService>(); // hooks kills / level / job changes
+        app.Services.GetRequiredService<TaskService>().BindDomains(app.Services.GetRequiredService<TaskDomainService>()); // hooks kills / level / job changes
     }
 
     public static void WireWildAfk(WebApplication app)

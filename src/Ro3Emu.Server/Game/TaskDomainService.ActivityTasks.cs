@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Ro3Emu.Server.Data;
 
+using TaskDef = Ro3Emu.Server.Game.TaskService.TaskDef;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -16,13 +18,9 @@ namespace Ro3Emu.Server.Game;
 /// each game day (Lost Treasure's login and treasure hunt, Pass II's daily activity); 0 never renews. The last value
 /// (11300, 1108, ...) is not interpreted.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
     private const int SeasonTreasureType = 13;
-
-    /// <summary>The (type, sonType) task groups of the session's open NewActivityConfig rows and whether each renews daily
-    /// (NewActivityService).</summary>
-    public Func<GameSession, IReadOnlyDictionary<(int Type, int Son), bool>>? OpenActivityTaskGroups { get; set; }
 
     private Dictionary<long, int>? _activityTasks;
 
@@ -37,7 +35,7 @@ public sealed partial class TaskService
         && (groups ?? OpenActivityTaskGroups?.Invoke(session))?.ContainsKey((SeasonTreasureType, son)) == true;
 
     /// <summary>Accepts the open activities' tasks; returns how many.</summary>
-    private int AcceptActivityTasks(GameSession session)
+    internal int AcceptActivityTasks(GameSession session)
     {
         if (OpenActivityTaskGroups?.Invoke(session) is not { Count: > 0 } groups) return 0;
         int accepted = 0;
@@ -60,18 +58,18 @@ public sealed partial class TaskService
     }
 
     /// <summary>A finished activity task without a delivery mode is claimed in its activity's panel (31205).</summary>
-    private bool ActivityClaim(GameSession session, TaskDef def) =>
+    internal bool ActivityClaim(GameSession session, TaskDef def) =>
         def.Type == SeasonTreasureType && def.Deliver == 0 && ActivityTaskOpen(session, def.Id);
 
     /// <summary>106801 at login: every running login target counts this login.</summary>
-    private void CountLogin(GameSession session)
+    internal void CountLogin(GameSession session)
     {
         foreach (var info in session.Tasks!.Infos.Values.Where(i => i.Status == Running))
             if (Defs().TryGetValue(info.TaskId, out var def)) StepLoginTargets(session, def, info);
     }
 
     /// <summary>A newly accepted login target starts at the login it was accepted in (inferred).</summary>
-    private void StartLoginTargets(GameSession session, long id)
+    internal void StartLoginTargets(GameSession session, long id)
     {
         if (session.Tasks!.Infos.TryGetValue(id, out var info)) StepLoginTargets(session, Defs()[id], info);
     }

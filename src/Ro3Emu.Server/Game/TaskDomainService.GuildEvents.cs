@@ -1,3 +1,5 @@
+using GuildEvent = Ro3Emu.Server.Game.TaskService.GuildEvent;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -8,10 +10,8 @@ namespace Ro3Emu.Server.Game;
 /// (inferred) Taking part in the event completes the task at once: the original counter is not in the client.
 /// Task 1602080 (Gloom over Longgu Island) has no To-Do row and stays without a producer.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    public enum GuildEvent { Escort, Stronghold, RegionalCapital, RoyalCity }
-
     private static readonly Dictionary<GuildEvent, long[]> GuildEventTasks = new()
     {
         [GuildEvent.Escort] = [1602050, 1603013],
@@ -20,7 +20,7 @@ public sealed partial class TaskService
         [GuildEvent.RoyalCity] = [1603012],
     };
 
-    private static bool GuildEventTask(long task) => GuildEventTasks.Values.Any(tasks => tasks.Contains(task));
+    internal static bool GuildEventTask(long task) => GuildEventTasks.Values.Any(tasks => tasks.Contains(task));
 
     /// <summary>A member took part in a guild event: its To-Do tasks complete.</summary>
     public void OnGuildEventJoined(GameSession s, GuildEvent guildEvent)
