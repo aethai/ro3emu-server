@@ -32,5 +32,8 @@ public enum ConfigKind
 /// <summary>A declared field of a config table view.</summary>
 public sealed record ConfigFieldInfo(string Name, ConfigKind Kind, bool Optional);
 
-/// <summary>A declared config table view and its fields (generated, listed in <c>ConfigTables.All</c>).</summary>
-public sealed record ConfigTableInfo(string Name, bool Optional, bool Grouped, IReadOnlyList<ConfigFieldInfo> Fields);
+/// <summary>A declared config table view and its fields (generated, listed in <c>ConfigTables.All</c>). For a
+/// key/value table (<see cref="Keyed"/>) the fields are its keys, and <see cref="ValueField"/> names the field of the
+/// key's row that holds the value, if the value is a row.</summary>
+public sealed record ConfigTableInfo(string Name, bool Optional, bool Grouped, IReadOnlyList<ConfigFieldInfo> Fields,
+    bool Keyed = false, string? ValueField = null);
