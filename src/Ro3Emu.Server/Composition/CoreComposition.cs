@@ -97,6 +97,8 @@ internal static partial class CoreComposition
         services.AddSingleton<Game.Messaging.IMessageModule, WorldMessages>();
         services.AddSingleton<Game.Messaging.IMessageModule, EconomyMessages>();
         services.AddSingleton<Game.Messaging.IMessageModule, CharacterMessages>();
+        services.AddSingleton<Game.Messaging.IMessageModule, CharacterGearMessages>();
+        services.AddSingleton<Game.Messaging.IMessageModule, CharacterCompanionMessages>();
         services.AddSingleton<Game.Messaging.IMessageModule, SocialMessages>();
         services.AddSingleton<Game.Messaging.IMessageModule, ActivitiesMessages>();
         services.AddSingleton<Game.Messaging.IMessageModule, AdventureGroupMessages>();

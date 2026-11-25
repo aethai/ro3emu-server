@@ -16,6 +16,8 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class TotemService
 {
     public const uint Sync = 5032;
+    public const uint Setup = 82362, Refine = 82363, Learn = 82364, Upgrade = 82365, Combine = 82366,
+        SwitchPlan = 82367, Rename = 82368, Swap = 82369, Appraise = 82370;
     public const int Function = 29; // FunctionConfig: Divine Totem
     private readonly GameData _data;
     private readonly CharacterService _character;
