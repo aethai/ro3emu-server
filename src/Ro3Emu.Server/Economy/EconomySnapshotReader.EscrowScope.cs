@@ -172,7 +172,9 @@ public static partial class EconomySnapshotReader
             }
             foreach (var (kind, id) in scope.Markets.OrderBy(x => x.Kind).ThenBy(x => x.Id))
             {
-                using var cmd = Command("SELECT data FROM market_record WHERE kind=$kind AND id=$id");
+                using var cmd = Command(kind == "trade_listing"
+                    ? "SELECT data FROM trade_listing WHERE sku=$id UNION ALL SELECT data FROM market_record WHERE kind=$kind AND id=$id LIMIT 1"
+                    : "SELECT data FROM market_record WHERE kind=$kind AND id=$id");
                 cmd.Parameters.AddWithValue("$kind", kind); cmd.Parameters.AddWithValue("$id", id);
                 if (cmd.ExecuteScalar() is not string data) continue;
                 using var doc = Json(data);

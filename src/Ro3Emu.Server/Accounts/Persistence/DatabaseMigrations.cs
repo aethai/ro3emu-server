@@ -17,6 +17,7 @@ internal static partial class DatabaseMigrations
         new(1, "baseline_schema", ApplyBaselineSchema),
         new(2, "anticheat_gains_index", ApplyAntiCheatGainsIndex),
         new(3, "retention_tables", ApplyRetentionTables),
+        new(4, "trade_listing_table", ApplyTradeListingTable),
     ];
 
     internal static int CurrentVersion => All[^1].Version;
@@ -120,6 +121,11 @@ internal static partial class DatabaseMigrations
             """);
         SchemaSql.AddColumn(db, tx, "economy_meta", "pruned_entry_seq", "INTEGER NOT NULL DEFAULT 0");
         SchemaSql.AddColumn(db, tx, "economy_meta", "compacted_mail_seq", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private static void ApplyTradeListingTable(SqliteConnection db, SqliteTransaction tx)
+    {
+        TradeListingSql.MigrateFromMarketRecord(db, tx);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name})")]

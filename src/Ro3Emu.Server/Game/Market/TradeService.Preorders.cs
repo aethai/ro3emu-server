@@ -171,8 +171,10 @@ public sealed partial class TradeService
             successfulPreorders.Clear();
             failedPreorders.Clear();
             long now = NowMs;
-            var matured = Active(tx).Where(l => l.PublicUntilMs is > 0 && l.PublicUntilMs <= now).ToList();
-            var allOrders = tx.All<PreorderRow>(Orders);
+            var (matured, expired, nextDue) = tx.QueryDueListings(now);
+            IReadOnlyList<PreorderRow> allOrders = matured.Count > 0 || expired.Count > 0
+                ? tx.All<PreorderRow>(Orders) : [];
+            var removedSkus = new HashSet<string>(StringComparer.Ordinal);
             foreach (var listing in matured)
             {
                 foreach (var order in allOrders.Where(o => o.Sku == listing.Sku && o.Status == 0)
@@ -209,17 +211,18 @@ public sealed partial class TradeService
                     tx.Put(Orders, order.Id, order);
                 }
                 listing.PublicUntilMs = 0;
-                if (listing.Quantity == 0) tx.Delete(Listings, listing.Sku);
+                if (listing.Quantity == 0) { tx.Delete(Listings, listing.Sku); removedSkus.Add(listing.Sku); }
                 else tx.Put(Listings, listing.Sku, listing);
             }
             // (inferred) PublicParam listing-display times are hours. Remaining unsold escrow
             // expires into the current exchange return template and can be claimed once.
-            foreach (var listing in Active(tx).Where(l => l.ExpiresAtMs is > 0 && l.ExpiresAtMs <= now))
+            foreach (var listing in expired)
             {
+                if (removedSkus.Contains(listing.Sku)) continue;
                 var back = listing.Item.Clone(); back.Guid = 0; back.Grid = 0; back.Stack = listing.Quantity;
                 tx.DeliverMail(listing.SellerId, 1067, [back], contentParams: [data.ItemName(back.Entry)]);
                 expiredCount[listing.SellerId] = expiredCount.GetValueOrDefault(listing.SellerId) + 1;
-                foreach (var order in tx.All<PreorderRow>(Orders).Where(o => o.Sku == listing.Sku && o.Status == 0))
+                foreach (var order in allOrders.Where(o => o.Sku == listing.Sku && o.Status == 0))
                 {
                     tx.DeliverMail(order.BuyerId, 1065,
                         currency: new Dictionary<int, long> { [order.Currency] = (long)order.Quantity * order.Price },
@@ -231,11 +234,7 @@ public sealed partial class TradeService
                 tx.Delete(Listings, listing.Sku);
             }
             wrote = matured.Count > 0 || expiredCount.Count > 0;
-            foreach (var listing in Active(tx))
-            {
-                if (listing.PublicUntilMs > 0) due = Math.Min(due, listing.PublicUntilMs);
-                if (listing.ExpiresAtMs > 0) due = Math.Min(due, listing.ExpiresAtMs);
-            }
+            due = nextDue;
             return 0;
         }, _ => NotifyTradeAsync(expiredCount, successfulPreorders, failedPreorders));
         if (code != 0) return;

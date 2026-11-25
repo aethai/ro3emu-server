@@ -21,9 +21,21 @@ public sealed partial class TradeService
         {
             page.TotalCount = 0;
             page.DataList.Clear();
+            bool desc = page.SortFiled["item_price"] == "Desc";
+            if (req.WhereFiled.Count == 0)
+            {
+                long? seller = long.TryParse(req.UserRoleId, CultureInfo.InvariantCulture, out long sid) ? sid : null;
+                var (paged, total) = tx.QueryListingsPage(Entry(req.ItemId),
+                    req.ItemSpecialType == ETradeItemSpecialType.None ? null : (int)req.ItemSpecialType,
+                    seller, string.IsNullOrEmpty(req.ShareSkuId) ? null : req.ShareSkuId,
+                    req.IsPublicity, NowMs, desc, page.PageNo, page.PageSize);
+                page.TotalCount = total;
+                page.DataList.AddRange(paged.Select(Commodity));
+                return 0;
+            }
             var rows = FilterRows(Active(tx), req.ItemId, req.ItemSpecialType, req.IsPublicity,
                 req.UserRoleId, req.ShareSkuId, req.WhereFiled).ToList();
-            if (page.SortFiled["item_price"] == "Desc") rows = [.. rows.OrderByDescending(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs)];
+            if (desc) rows = [.. rows.OrderByDescending(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs)];
             else rows = [.. rows.OrderBy(l => l.UnitPrice).ThenBy(l => l.SaleTimeMs)];
             page.TotalCount = rows.Count;
             page.DataList.AddRange(rows.Skip((page.PageNo - 1) * page.PageSize).Take(page.PageSize).Select(Commodity));
@@ -95,17 +107,20 @@ public sealed partial class TradeService
         await market.RunAsync(s, tx =>
         {
             dataRows.ItemInventoryInfos.Clear();
-            var all = Active(tx);
-            foreach (string id in req.ItemIds.Take(MaxQueriesPerRequest))
+            var requestedIds = req.ItemIds.Take(MaxQueriesPerRequest).ToArray();
+            int? spec = req.ItemSpecialType == ETradeItemSpecialType.None ? null : (int)req.ItemSpecialType;
+            int[] entries = [.. requestedIds.Select(Entry).Where(e => e > 0).Distinct()];
+            var summaries = tx.QueryListingInventory(entries, spec, req.IsPublicity, NowMs);
+            int keySpec = spec ?? 0;
+            foreach (string id in requestedIds)
             {
                 int entry = Entry(id);
-                var rows = all.Where(l => l.Entry == entry && Visible(l, req.IsPublicity)
-                    && (req.ItemSpecialType == ETradeItemSpecialType.None || l.SpecialType == (int)req.ItemSpecialType)).ToList();
+                summaries.TryGetValue((entry, keySpec), out var sum);
                 dataRows.ItemInventoryInfos.Add(new ItemInventoryInfo
                 {
-                    ItemId = id, InventoryQuantity = rows.Sum(l => l.Quantity),
-                    MinPrice = rows.Count == 0 ? 0 : rows.Min(l => l.UnitPrice),
-                    MaxPrice = rows.Count == 0 ? 0 : rows.Max(l => l.UnitPrice),
+                    ItemId = id, InventoryQuantity = (int)Math.Min(int.MaxValue, sum?.Quantity ?? 0),
+                    MinPrice = sum?.MinPrice ?? 0,
+                    MaxPrice = sum?.MaxPrice ?? 0,
                     IsPublicity = req.IsPublicity, ItemSpecialType = req.ItemSpecialType,
                 });
             }
@@ -121,7 +136,6 @@ public sealed partial class TradeService
         {
             result.ItemInfo.Clear();
             result.PublicityItemInfo.Clear();
-            var rows = Active(tx);
             foreach (var (kind, requested, target) in new[]
             {
                 (false, req.ItemInfo, result.ItemInfo), (true, req.PublicityItemInfo, result.PublicityItemInfo),
@@ -129,16 +143,20 @@ public sealed partial class TradeService
                 foreach (var (special, list) in requested)
                 {
                     var group = new ItemInventoryInfoByItemId();
+                    int? spec = special == 0 ? null : special;
+                    int[] entries = [.. list.Itemid.Select(Entry).Where(e => e > 0).Distinct()];
+                    var summaries = tx.QueryListingInventory(entries, spec, kind, NowMs);
+                    int keySpec = spec ?? 0;
                     foreach (var id in list.Itemid)
                     {
                         int entry = Entry(id);
-                        var matches = rows.Where(l => l.Entry == entry && (special == 0 || l.SpecialType == special) && Visible(l, kind)).ToList();
+                        summaries.TryGetValue((entry, keySpec), out var sum);
                         group.ItemInventoryInfos.Add(new ItemInventoryInfo
                         {
                             ItemId = id, ItemSpecialType = (ETradeItemSpecialType)special, IsPublicity = kind,
-                            InventoryQuantity = matches.Sum(l => l.Quantity),
-                            MinPrice = matches.Count == 0 ? 0 : matches.Min(l => l.UnitPrice),
-                            MaxPrice = matches.Count == 0 ? 0 : matches.Max(l => l.UnitPrice),
+                            InventoryQuantity = (int)Math.Min(int.MaxValue, sum?.Quantity ?? 0),
+                            MinPrice = sum?.MinPrice ?? 0,
+                            MaxPrice = sum?.MaxPrice ?? 0,
                         });
                     }
                     target[special] = group;
@@ -175,7 +193,7 @@ public sealed partial class TradeService
         {
             page.TotalCount = 0;
             page.DataList.Clear();
-            var rows = Active(tx).Where(l => l.SellerId == s.Role!.Id).OrderBy(l => l.SaleTimeMs).ToList();
+            var rows = tx.ListingsBySeller(s.Role!.Id);
             page.TotalCount = rows.Count;
             page.DataList.AddRange(rows.Select(Commodity));
             return 0;
@@ -189,7 +207,7 @@ public sealed partial class TradeService
         await market.RunAsync(s, tx =>
         {
             result.CommodityInfos.Clear();
-            result.CommodityInfos.AddRange(Active(tx).Where(l => req.SkuIds.Contains(l.Sku)).Select(Commodity));
+            result.CommodityInfos.AddRange(tx.ListingsBySkus(req.SkuIds).Select(Commodity));
             return 0;
         });
         await s.SendGameAsync(QuerySkus, new CQueryProductBySkuIdResp { Data = result });
@@ -207,9 +225,19 @@ public sealed partial class TradeService
         {
             page.TotalCount = 0;
             page.DataList.Clear();
+            bool desc = page.SortFiled["item_price"] == "Desc";
+            if (req.WhereFiled.Count == 0)
+            {
+                long? seller = long.TryParse(req.UserRoleId, CultureInfo.InvariantCulture, out long sid) ? sid : null;
+                var (paged, total) = tx.QueryListingsPage(Entry(req.ItemId), null, seller, null,
+                    req.IsPublicity, NowMs, desc, page.PageNo, page.PageSize);
+                page.TotalCount = total;
+                page.DataList.AddRange(paged.Select(Commodity));
+                return 0;
+            }
             var rows = FilterRows(Active(tx), req.ItemId, ETradeItemSpecialType.None,
                 req.IsPublicity, req.UserRoleId, filters: req.WhereFiled).ToList();
-            rows = page.SortFiled["item_price"] == "Desc" ? [.. rows.OrderByDescending(l => l.UnitPrice)] : [.. rows.OrderBy(l => l.UnitPrice)];
+            rows = desc ? [.. rows.OrderByDescending(l => l.UnitPrice)] : [.. rows.OrderBy(l => l.UnitPrice)];
             page.TotalCount = rows.Count;
             page.DataList.AddRange(rows.Skip((page.PageNo - 1) * page.PageSize).Take(page.PageSize).Select(Commodity));
             return 0;
@@ -306,9 +334,8 @@ public sealed partial class TradeService
         await market.RunAsync(s, tx =>
         {
             result.BuyTradeInfos.Clear();
-            var rows = tx.All<Sale>(History).Where(x => x.BuyerId == s.Role!.Id
-                && (req.ItemId.Length == 0 || x.Entry == Entry(req.ItemId)))
-                .OrderByDescending(x => x.TimeMs).Skip((Page(req.PageNo) - 1) * Size(req.PageSize)).Take(Size(req.PageSize));
+            int[] entries = req.ItemId.Length == 0 ? [] : [Entry(req.ItemId)];
+            var rows = tx.QueryHistoryPage(buyerId: s.Role!.Id, sellerId: null, entries, Page(req.PageNo), Size(req.PageSize));
             foreach (var row in rows) result.BuyTradeInfos.Add(new BuyTradeInfo
             {
                 OrderId = row.Id, SerialNumber = row.Id, ItemId = row.Entry.ToString(CultureInfo.InvariantCulture),
@@ -328,9 +355,8 @@ public sealed partial class TradeService
         await market.RunAsync(s, tx =>
         {
             result.SaleTradeInfos.Clear();
-            var rows = tx.All<Sale>(History).Where(x => x.SellerId == s.Role!.Id
-                && (req.ItemIds.Count == 0 || req.ItemIds.Contains(x.Entry.ToString(CultureInfo.InvariantCulture))))
-                .OrderByDescending(x => x.TimeMs).Skip((Page(req.PageNo) - 1) * Size(req.PageSize)).Take(Size(req.PageSize));
+            int[] entries = req.ItemIds.Count == 0 ? [] : [.. req.ItemIds.Select(Entry)];
+            var rows = tx.QueryHistoryPage(buyerId: null, sellerId: s.Role!.Id, entries, Page(req.PageNo), Size(req.PageSize));
             foreach (var row in rows) result.SaleTradeInfos.Add(new CSaleTradeInfo
             {
                 DetailId = row.Id, OrderId = row.Id, SerialNumber = row.Id,
