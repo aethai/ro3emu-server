@@ -988,11 +988,12 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                                 code = ErrorCodes.Cooldown;
                             if (code == 0)
                             {
-                                string oldName = g!.Name;
-                                long oldTime = g.LastChangeNameTime;
-                                g.HistoryNames.Add(oldName);
-                                g.Name = req.Name;
-                                g.LastChangeNameTime = NowSec();
+                                // Stage the rename on a detached copy so live references never observe an uncommitted name.
+                                var staged = JsonSerializer.Deserialize<GuildStore.State>(JsonSerializer.SerializeToUtf8Bytes(g!))!;
+                                staged.CapturedRevision = g!.CapturedRevision;
+                                staged.HistoryNames.Add(staged.Name);
+                                staged.Name = req.Name;
+                                staged.LastChangeNameTime = NowSec();
                                 var cost = (Data.Config.GuildSettings.Of(data).GuildChangeNameCost ?? [0, 0]);
                                 try
                                 {
@@ -1003,30 +1004,24 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                                             Cost = [((int)cost[0], cost[1])],
                                             Persist = tx =>
                                             {
-                                                store.EnlistSave(g, tx, "guild disappeared during rename"); EnlistViews(g, tx);
+                                                store.EnlistSave(staged, tx, "guild disappeared during rename"); EnlistViews(staged, tx);
                                                 tx.WithEconomy(GuildPayment(s, "guild-rename", (int)cost[0], cost[1]));
                                             },
                                             AsyncCommit = true,
                                         }) == null)
                                             code = ErrorCodes.ItemsShort;
-                                        else storedWithPayment = true;
+                                        else { g = staged; storedWithPayment = true; }
                                     }
-                                    else if (!await SaveGuildAsync(g)) code = ErrorCodes.GuildMissing;
-                                    else storedWithPayment = true;
+                                    else if (!await SaveGuildAsync(staged)) code = ErrorCodes.GuildMissing;
+                                    else { g = staged; storedWithPayment = true; }
                                 }
                                 catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
                                 {
                                     code = ErrorCodes.GuildNameTaken;
                                 }
-                                catch (RowMissingException ex) when (ex.Is(GuildStore.Table, g.Id))
+                                catch (RowMissingException ex) when (ex.Is(GuildStore.Table, staged.Id))
                                 {
                                     code = ErrorCodes.GuildMissing;
-                                }
-                                if (code != 0)
-                                {
-                                    g.Name = oldName;
-                                    g.LastChangeNameTime = oldTime;
-                                    g.HistoryNames.RemoveAt(g.HistoryNames.Count - 1);
                                 }
                             }
                         }
@@ -1076,30 +1071,38 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             if (code == 0 && g != null && !req.IsCheck)
             {
                 bool saved = tp == 9 || storedWithPayment || await SaveGuildAsync(g);
-                if (tp == 4 && saved)
-                    foreach (var handler in RightsChanged.Handlers) handler(g.Id);
-                await RefreshMembers(g);
-                if (tp is 1 or 2 or 5 or 10)
+                if (!saved)
                 {
-                    var change = BaseChangeOf(g);
-                    foreach (var m in g.Members.Values) if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);
+                    code = ErrorCodes.GuildMissing;
+                    g = Own(s);
                 }
-                if (tp == 10)
+                else
                 {
-                    await PushBase(g, new GuildBaseInfoChangeNtf
+                    if (tp == 4)
+                        foreach (var handler in RightsChanged.Handlers) handler(g.Id);
+                    await RefreshMembers(g);
+                    if (tp is 1 or 2 or 5 or 10)
                     {
-                        Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeAutoAcceptApply,
-                        AutoAcceptApply = g.AutoAccept
-                    });
-                    await PushBase(g, new GuildBaseInfoChangeNtf
+                        var change = BaseChangeOf(g);
+                        foreach (var m in g.Members.Values) if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);
+                    }
+                    if (tp == 10)
                     {
-                        Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeJoinLevelLimit,
-                        JoinLevelLimit = g.JoinLevelLimit
-                    });
-                    if (publishRecruit)
-                    {
-                        await chat.PublishRecruitmentAsync(s, g.Announce, g.Id,
-                            g.Status == (int)GuildStatus.PreCreate, g.Members.Count - 1);
+                        await PushBase(g, new GuildBaseInfoChangeNtf
+                        {
+                            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeAutoAcceptApply,
+                            AutoAcceptApply = g.AutoAccept
+                        });
+                        await PushBase(g, new GuildBaseInfoChangeNtf
+                        {
+                            Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeJoinLevelLimit,
+                            JoinLevelLimit = g.JoinLevelLimit
+                        });
+                        if (publishRecruit)
+                        {
+                            await chat.PublishRecruitmentAsync(s, g.Announce, g.Id,
+                                g.Status == (int)GuildStatus.PreCreate, g.Members.Count - 1);
+                        }
                     }
                 }
             }
