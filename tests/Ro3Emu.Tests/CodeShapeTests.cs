@@ -27,6 +27,7 @@ public sealed class CodeShapeTests
     private const int NumericRouteMaps = 105;
     private const int NumericSendGameCalls = 48;
     private const int SystemClockCallsInGame = 0;
+    private const int AdHocResetOffsetsInGame = 0;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;
@@ -82,6 +83,10 @@ public sealed class CodeShapeTests
         AssertRatchet(nameof(SystemClockCallsInGame), SystemClockCallsInGame, ServerSnapshot.Value.SystemClockCalls);
 
     [Fact]
+    public void AdHocResetOffsetsInGameOnlyGoDown() =>
+        AssertRatchet(nameof(AdHocResetOffsetsInGame), AdHocResetOffsetsInGame, ServerSnapshot.Value.AdHocResetOffsets);
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));
@@ -105,6 +110,7 @@ public sealed class CodeShapeTests
                     session.SendGameAsync(30400, new object());
                     var now = DateTime.UtcNow;
                     var ticks = Environment.TickCount64;
+                    var gameDay = now.AddHours(-5).Date;
             {{body}}
                 }
                 public void TooWide(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, int a10, int a11) { }
@@ -123,6 +129,7 @@ public sealed class CodeShapeTests
         Assert.Single(snapshot.NumericRouteMaps);
         Assert.Single(snapshot.NumericSendGame);
         Assert.Equal(2, snapshot.SystemClockCalls.Count);
+        Assert.Single(snapshot.AdHocResetOffsets);
     }
 
     private static void AssertRatchet(string name, int ceiling, IReadOnlyList<string> items)
@@ -167,6 +174,7 @@ public sealed class CodeShapeTests
         List<string> numericRouteMaps = [];
         List<string> numericSendGame = [];
         List<string> systemClockCalls = [];
+        List<string> adHocResetOffsets = [];
 
         foreach (var (relPath, text) in files)
         {
@@ -185,6 +193,8 @@ public sealed class CodeShapeTests
             CollectNumericRouteMaps(relPath, root, numericRouteMaps);
             CollectNumericSendGame(relPath, root, numericSendGame);
             if (inGame) CollectSystemClockCalls(relPath, root, systemClockCalls);
+            if (inGame && !string.Equals(relPath, "Game/GameCalendar.cs", StringComparison.Ordinal))
+                CollectAdHocResetOffsets(relPath, root, adHocResetOffsets);
         }
 
         List<string> heavyClasses =
@@ -198,7 +208,7 @@ public sealed class CodeShapeTests
         ];
 
         return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists,
-            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame, systemClockCalls);
+            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame, systemClockCalls, adHocResetOffsets);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -427,6 +437,27 @@ public sealed class CodeShapeTests
         }
     }
 
+    private static void CollectAdHocResetOffsets(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (call.Expression is not MemberAccessExpressionSyntax ma
+                || !string.Equals(ma.Name.Identifier.ValueText, "AddHours", StringComparison.Ordinal)) continue;
+            var args = call.ArgumentList.Arguments;
+            if (args.Count != 1) continue;
+            if (args[0].Expression is PrefixUnaryExpressionSyntax unary
+                && unary.IsKind(SyntaxKind.UnaryMinusExpression)
+                && unary.Operand is LiteralExpressionSyntax lit
+                && lit.IsKind(SyntaxKind.NumericLiteralExpression)
+                && lit.Token.Value is int or long or double
+                && Convert.ToDouble(lit.Token.Value, CultureInfo.InvariantCulture) == 5.0)
+            {
+                int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, call.ToString()));
+            }
+        }
+    }
+
     private static bool IsNumericLiteral(ExpressionSyntax expr) => expr switch
     {
         LiteralExpressionSyntax lit => lit.IsKind(SyntaxKind.NumericLiteralExpression),
@@ -464,5 +495,6 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> NumericStatIndexers,
         IReadOnlyList<string> NumericRouteMaps,
         IReadOnlyList<string> NumericSendGame,
-        IReadOnlyList<string> SystemClockCalls);
+        IReadOnlyList<string> SystemClockCalls,
+        IReadOnlyList<string> AdHocResetOffsets);
 }

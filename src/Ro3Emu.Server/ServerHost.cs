@@ -30,6 +30,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton(_ => RealmLock.Acquire(options.DataDir));
         builder.Services.AddSingleton(Options.Create(options));
         builder.Services.AddSingleton(clock ?? TimeProvider.System);
+        builder.Services.AddSingleton<GameCalendar>();
         // GM and Admin accounts need two-factor authentication on a public panel unless the operator says otherwise.
         options.Panel.RequireAdmin2FA ??= !options.LocalOnly();
         // Loopback for local play and tests; the web panel (docs/guide/panel.md) on its own port, routed by PanelSite.Map.

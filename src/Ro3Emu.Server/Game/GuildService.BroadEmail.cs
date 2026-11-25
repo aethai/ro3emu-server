@@ -20,14 +20,7 @@ public sealed partial class GuildService
     private const int SendMailRight = 6;
 
     /// <summary>Today's 05:00 local, unix seconds (the group mail count's reset).</summary>
-    private long DayStart
-    {
-        get
-        {
-            var local = clock.GetLocalNow();
-            return new DateTimeOffset(local.AddHours(-5).Date.AddHours(5), local.Offset).ToUnixTimeSeconds();
-        }
-    }
+    private long DayStart => GameCalendar.DayStart(clock).ToUnixTimeSeconds();
 
     private int BroadEmailsToday(GuildStore.State g) => g.BroadEmailDay == DayStart ? g.BroadEmailCount : 0;
 

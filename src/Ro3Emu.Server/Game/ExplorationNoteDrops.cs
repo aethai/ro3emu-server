@@ -15,8 +15,9 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
     // RestrictConfig recover type 1: use the same 05:00 realm day as the other life restrictions (inferred).
     internal (long Start, long End) Day()
     {
-        var today = TimeZoneInfo.ConvertTime(clock.GetUtcNow(), seasons.Zone).DateTime.AddHours(-5).Date.AddHours(5);
-        return (seasons.Unix(today), seasons.Unix(today.AddDays(1)));
+        var day = GameCalendar.GameDayOf(clock.GetUtcNow(), seasons.Zone);
+        return (GameCalendar.DayStartOf(day, seasons.Zone).ToUnixTimeSeconds(),
+            GameCalendar.DayStartOf(day.AddDays(1), seasons.Zone).ToUnixTimeSeconds());
     }
 
     internal RestrictInfo? Remaining(GameSession s)

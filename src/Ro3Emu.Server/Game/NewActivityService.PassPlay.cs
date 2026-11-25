@@ -126,9 +126,8 @@ public sealed partial class NewActivityService
     private static (long Day, long Week) PassPeriod(DateTimeOffset localNow)
     {
         // The game day turns at 05:00, like the daily activity rows.
-        var day = DateOnly.FromDateTime(localNow.AddHours(-5).Date);
-        int sinceMonday = ((int)day.DayOfWeek + 6) % 7;
-        return (day.DayNumber, day.DayNumber - sinceMonday);
+        var day = GameCalendar.GameDayOf(localNow.DateTime);
+        return (day.DayNumber, GameCalendar.MondayOf(day).DayNumber);
     }
 
     internal static IReadOnlyList<PassChallenge> DailyFor(long roleId, long day)

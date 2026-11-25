@@ -147,26 +147,9 @@ public sealed partial class AdventureGroupService : IGameTicker
     private long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
 
     /// <summary>Unix seconds of today's 05:00 local boundary (the daily reset of the To-Do system, inferred here).</summary>
-    private long DayStart
-    {
-        get
-        {
-            var local = _clock.GetLocalNow();
-            var day = local.AddHours(-5).Date.AddHours(5);
-            return new DateTimeOffset(day, local.Offset).ToUnixTimeSeconds();
-        }
-    }
+    private long DayStart => GameCalendar.DayStart(_clock).ToUnixTimeSeconds();
 
-    private long WeekStart
-    {
-        get
-        {
-            var local = _clock.GetLocalNow();
-            var day = local.AddHours(-5).Date;
-            int sinceMonday = ((int)day.DayOfWeek + 6) % 7;
-            return new DateTimeOffset(day.AddDays(-sinceMonday).AddHours(5), local.Offset).ToUnixTimeSeconds();
-        }
-    }
+    private long WeekStart => GameCalendar.WeekStart(_clock).ToUnixTimeSeconds();
 
     /// <summary>Apply the daily (rallies) and weekly (group EXP cap) periods; true when something changed.</summary>
     private bool Roll(AdventureGroupStore.State g)
