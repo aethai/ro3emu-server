@@ -316,6 +316,7 @@ public sealed class FamilyEconomyTransactionTests : IDisposable
                 outcome,child_receipts,before_revisions,after_revisions,leg_count FROM operation_receipt;
             DROP TABLE operation_receipt;
             ALTER TABLE operation_receipt_old RENAME TO operation_receipt;
+            PRAGMA user_version = 0;
             """);
         string operation = Guid.NewGuid().ToString("N");
         var tx = _roles.NewTransaction();

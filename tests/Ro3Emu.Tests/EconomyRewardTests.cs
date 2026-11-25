@@ -452,6 +452,7 @@ public sealed class EconomyRewardTests : IDisposable
             INSERT INTO economy_entry(entry_id,commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,counterparty_owner_kind,counterparty_owner_id,counterparty_compartment_kind,counterparty_compartment_key,counterparty_instance_key,before_fingerprint,after_fingerprint,source_key) SELECT entry_id,commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,counterparty_owner_kind,counterparty_owner_id,counterparty_compartment_kind,counterparty_compartment_key,counterparty_instance_key,before_fingerprint,after_fingerprint,source_key FROM economy_entry_saved;
             DROP TABLE economy_entry_saved;
             CREATE INDEX economy_entry_cut ON economy_entry(commit_seq,entry_id);
+            PRAGMA user_version = 0;
             """);
         _accounts.Dispose();
         using var reopened = new AccountStore(Options.Create(new ServerOptions { DataDir = _directory }));
@@ -539,6 +540,7 @@ public sealed class EconomyRewardTests : IDisposable
             INSERT INTO economy_entry(entry_id,commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,source_key) SELECT entry_id,commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,source_key FROM economy_entry_saved;
             DROP TABLE economy_entry_saved;
             CREATE INDEX economy_entry_cut ON economy_entry(commit_seq,entry_id);
+            PRAGMA user_version = 0;
             """);
         _accounts.Dispose();
         using var reopened = new AccountStore(Options.Create(new ServerOptions { DataDir = _directory }));

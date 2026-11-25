@@ -82,41 +82,13 @@ public sealed partial class AccountStore : IDisposable
         }
         // SQLite gives the WAL and shared-memory files the database file's mode, so they follow it.
         PrivateFiles.Files(_databasePath, _databasePath + "-wal", _databasePath + "-shm");
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS account (
-                name          TEXT PRIMARY KEY,
-                password_hash BLOB NOT NULL,
-                salt          BLOB NOT NULL,
-                created_utc   TEXT NOT NULL
-            );
-            -- Login finds an account in any letter case (AccountCredentialsRead); not unique, legacy spellings may coexist.
-            CREATE INDEX IF NOT EXISTS account_name_nocase ON account(name COLLATE NOCASE);
-            CREATE TABLE IF NOT EXISTS auth_token (
-                token       TEXT PRIMARY KEY,
-                kind        TEXT NOT NULL,
-                account     TEXT NOT NULL,
-                expires_utc INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS owner_revision (
-                kind TEXT NOT NULL,
-                id TEXT NOT NULL,
-                part TEXT NOT NULL,
-                revision INTEGER NOT NULL CHECK(revision >= 0),
-                PRIMARY KEY(kind,id,part)
-            );
-            CREATE TABLE IF NOT EXISTS owner_operation_receipt (
-                operation_id TEXT PRIMARY KEY,
-                family TEXT NOT NULL,
-                result BLOB NOT NULL
-            );
-            """;
-        cmd.ExecuteNonQuery();
+        AppliedMigrations = DatabaseMigrations.Migrate(db, _log);
         _writer = new(() => new DbWriter(_connectionString, AccessMetrics, _metrics, _log)
         { RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue });
         _readers = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log));
-        foreach (var plan in DatabaseSchema.Plans()) WriteSync<int>(plan);
     }
+
+    internal int AppliedMigrations { get; }
 
     internal string DatabasePath => _databasePath;
     internal EconomyCatalog EconomyCatalog => _economyCatalog.Value;

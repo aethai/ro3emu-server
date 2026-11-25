@@ -605,6 +605,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
                         entry INTEGER NOT NULL, stack INTEGER NOT NULL, pack INTEGER NOT NULL, sort INTEGER NOT NULL,
                         grid INTEGER NOT NULL DEFAULT 0, attrs TEXT);
                     INSERT INTO item (role_id, entry, stack, pack, sort, attrs) VALUES ($role, 2030540, 1, 2, 1, '{"3":1,"30":103,"60":100}');
+                    PRAGMA user_version = 0;
                     """, ("$role", roleId));
         }
         new AccountStore(options).Dispose(); // opening the old database migrates it; a second open must be harmless
