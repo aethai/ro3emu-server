@@ -445,6 +445,65 @@ public sealed class PersistenceRoutingTests : IDisposable
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public async Task PanelReadPoolIsIsolatedFromGameReadPool()
+    {
+        using var entered = new CountdownEvent(2);
+        using var release = new ManualResetEventSlim();
+        var panelHold1 = _accounts.ReadPanelAsync<int>(new HoldReadPlan(entered, release));
+        var panelHold2 = _accounts.ReadPanelAsync<int>(new HoldReadPlan(entered, release));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        try
+        {
+            var gameProbe = await _accounts.ReadAsync<(int Thread, long QueryOnly)>(new ReaderProbePlan())
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1L, gameProbe.QueryOnly);
+        }
+        finally { release.Set(); }
+        int[] panelThreads = await Task.WhenAll(panelHold1, panelHold2);
+        Assert.Equal(2, panelThreads.Distinct().Count());
+    }
+
+    [Fact]
+    public void AntiCheatGainsQueryUsesCoveringIndex()
+    {
+        using var db = _accounts.Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            EXPLAIN QUERY PLAN
+            SELECT owner_id,
+                TOTAL(CASE WHEN asset_kind=2 AND asset_id=1 THEN delta END),
+                TOTAL(CASE WHEN asset_kind=1 THEN delta END)
+            FROM economy_entry
+            WHERE recorded_utc_ms>=1000 AND owner_kind=1 AND leg_kind=1 AND delta>0
+            GROUP BY owner_id
+            """;
+        var details = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) details.Add(reader.GetString(3));
+        Assert.Contains(details, line => line.Contains("economy_entry_role_sources", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void StartupIntegrityCheckRefusesCorruptDatabase()
+    {
+        string corruptDir = Path.Combine(_dir, "corrupt");
+        Directory.CreateDirectory(corruptDir);
+        string dbFile = Path.Combine(corruptDir, "ro3emu.db");
+        using (var store = new AccountStore(Options.Create(new ServerOptions { DataDir = corruptDir })))
+        {
+            _ = store.Login("alice", "pw");
+        }
+        // Overwrite a page inside the SQLite database file to corrupt B-tree integrity.
+        byte[] bytes = File.ReadAllBytes(dbFile);
+        Assert.True(bytes.Length >= 4096);
+        for (int i = 100; i < 400; i++) bytes[i] ^= 0xFF;
+        File.WriteAllBytes(dbFile, bytes);
+
+        Assert.ThrowsAny<Exception>(() =>
+            new AccountStore(Options.Create(new ServerOptions { DataDir = corruptDir })));
+    }
+
     private sealed class HoldWritePlan(ManualResetEventSlim entered, ManualResetEventSlim release) : DbPlan
     {
         internal override int Bytes => 64;

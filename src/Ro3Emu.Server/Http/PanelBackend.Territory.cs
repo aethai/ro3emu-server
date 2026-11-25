@@ -43,7 +43,7 @@ public sealed partial class PanelBackend
         TerritoryWarsService.PanelView view;
         try { view = await loop.InvokeAsync(() => Task.FromResult(territory.PanelSnapshot())); }
         catch (OperationCanceledException) { view = EmptyTerritory(); } // the loop no longer admits work: the server is stopping
-        var guilds = (await accounts.ReadAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List))).ToDictionary(g => g.Id);
+        var guilds = (await accounts.ReadPanelAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List))).ToDictionary(g => g.Id);
         PanelGuildRef? Guild(long id) => id > 0 && guilds.TryGetValue(id, out var g) ? GuildRef(g) : null;
         var zones = GVGWarZoneConfig.All(data).OrderBy(z => z.Type).ThenBy(z => z.Id).Select(z =>
         {

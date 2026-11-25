@@ -27,7 +27,7 @@ public sealed partial class PanelBackend
         }
         var filter = new PanelEconomyFilter(query.Account, query.Character, [.. assets.Select(a => a.Id)],
             query.From?.ToUnixTimeMilliseconds(), query.To?.ToUnixTimeMilliseconds());
-        var (total, sumIn, sumOut, rows) = await accounts.ReadAsync<(int, long, long, List<PanelEconomyRow>)>(
+        var (total, sumIn, sumOut, rows) = await accounts.ReadPanelAsync<(int, long, long, List<PanelEconomyRow>)>(
             new PanelEconomyRead(filter, (query.Page - 1) * query.PageSize, query.PageSize));
         return new PanelEconomyPage([.. rows.Select(Entry)], total, sumIn, sumOut, assets, query.Page, query.PageSize);
     }

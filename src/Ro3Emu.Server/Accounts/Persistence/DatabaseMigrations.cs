@@ -15,6 +15,7 @@ internal static partial class DatabaseMigrations
     internal static IReadOnlyList<SchemaMigration> All { get; } =
     [
         new(1, "baseline_schema", ApplyBaselineSchema),
+        new(2, "anticheat_gains_index", ApplyAntiCheatGainsIndex),
     ];
 
     internal static int CurrentVersion => All[^1].Version;
@@ -80,6 +81,15 @@ internal static partial class DatabaseMigrations
             """);
         foreach (var plan in DatabaseSchema.Plans())
             plan.Execute(db, tx);
+    }
+
+    private static void ApplyAntiCheatGainsIndex(SqliteConnection db, SqliteTransaction tx)
+    {
+        SchemaSql.Execute(db, tx, """
+            CREATE INDEX IF NOT EXISTS economy_entry_role_sources
+                ON economy_entry(recorded_utc_ms, owner_id, asset_kind, asset_id, delta)
+                WHERE owner_kind=1 AND leg_kind=1 AND delta>0;
+            """);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name})")]

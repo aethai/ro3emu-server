@@ -27,18 +27,18 @@ public sealed partial class PanelBackend
 
     public async Task<PanelProfile?> ProfileAsync(string name)
     {
-        if ((await accounts.ReadAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ByName, name))).FirstOrDefault() is not { } role) return null;
-        var blobs = await accounts.ReadAsync<Dictionary<string, byte[]?>>(new PanelRoleBlobsRead(role.Id, ProfileBlobs));
-        var progress = await accounts.ReadAsync<RoleProgress>(new RoleProgressReadPlan(role.Id));
+        if ((await accounts.ReadPanelAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ByName, name))).FirstOrDefault() is not { } role) return null;
+        var blobs = await accounts.ReadPanelAsync<Dictionary<string, byte[]?>>(new PanelRoleBlobsRead(role.Id, ProfileBlobs));
+        var progress = await accounts.ReadPanelAsync<RoleProgress>(new RoleProgressReadPlan(role.Id));
         var online = (await OnlineRowsAsync()).FirstOrDefault(r => r.RoleId == role.Id);
         int career = online?.Career ?? progress.Career, level = Math.Max(online?.Level ?? 0, progress.Level);
-        var guild = await accounts.ReadAsync<GuildStore.State?>(new GuildReadPlan(GuildReadKind.ForRole, role.Id));
+        var guild = await accounts.ReadPanelAsync<GuildStore.State?>(new GuildReadPlan(GuildReadKind.ForRole, role.Id));
         string position = guild?.Members.GetValueOrDefault(role.Id) is { } member ? PositionName(member.Official) : "";
         var guildRef = guild != null ? GuildRef(guild) : null;
         if (Hidden(blobs.GetValueOrDefault("settings")))
             return new PanelProfile(role.Name, ClassName(career), ClassIcon(career), level, progress.JobLevel, online != null, true, guildRef, position,
                 null, [], null, []);
-        var items = await accounts.ReadAsync<List<InvItem>>(new ItemReadPlan(role.Id));
+        var items = await accounts.ReadPanelAsync<List<InvItem>>(new ItemReadPlan(role.Id));
         var levels = blobs.GetValueOrDefault("equip_levels") is { Length: > 0 } saved ? JsonSerializer.Deserialize<EquipLevels>(saved) ?? new() : new();
         var worn = Equipment(new CharacterState(role, progress, [.. items.Where(i => i.Grid > 0)], levels, 0, 0, 0, 0, Live: false));
         return new PanelProfile(role.Name, ClassName(career), ClassIcon(career), level, progress.JobLevel, online != null, false, guildRef, position,
@@ -128,17 +128,17 @@ public sealed partial class PanelBackend
 
     public async Task<IReadOnlyList<PanelGuildSummary>> GuildsAsync()
     {
-        var guilds = await accounts.ReadAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List));
+        var guilds = await accounts.ReadPanelAsync<List<GuildStore.State>>(new GuildReadPlan(GuildReadKind.List));
         var (map, league) = (await TerritoryAsync(), await LeagueAsync());
         return [.. guilds.Select(g => GuildSummary(g, map, league)).OrderByDescending(g => g.Prestige).ThenBy(g => g.Guild.Name, StringComparer.OrdinalIgnoreCase)];
     }
 
     public async Task<PanelGuildPage?> GuildAsync(long id)
     {
-        if (await accounts.ReadAsync<GuildStore.State?>(new GuildReadPlan(GuildReadKind.Guild, id)) is not { } guild) return null;
+        if (await accounts.ReadPanelAsync<GuildStore.State?>(new GuildReadPlan(GuildReadKind.Guild, id)) is not { } guild) return null;
         var (map, league) = (await TerritoryAsync(), await LeagueAsync());
         var online = (await OnlineRowsAsync()).Select(r => r.RoleId).ToHashSet();
-        var current = await accounts.ReadAsync<Dictionary<long, (string Name, int Career, int Level)>>(new PanelRoleNamesRead([.. guild.Members.Keys]));
+        var current = await accounts.ReadPanelAsync<Dictionary<long, (string Name, int Career, int Level)>>(new PanelRoleNamesRead([.. guild.Members.Keys]));
         var merit = (await ranks.TopAsync(RankService.BattleGlory, MeritBoardRows)).ToDictionary(r => r.Id, r => r.Score);
         var members = guild.Members.Values
             .Select(m => (Member: m, Now: current.TryGetValue(m.RoleId, out var c) ? c : (m.Name, m.Career, m.Level)))
@@ -173,7 +173,7 @@ public sealed partial class PanelBackend
     /// <summary>The guild league's standings (GuildLeagueService's durable state); null before the first season.</summary>
     private async Task<GuildLeagueService.LeagueState?> LeagueAsync()
     {
-        var blob = await accounts.ReadAsync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.GuildLeague));
+        var blob = await accounts.ReadPanelAsync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.GuildLeague));
         try { return blob is { Length: > 0 } ? JsonSerializer.Deserialize<GuildLeagueService.LeagueState>(blob) : null; }
         catch (JsonException) { return null; }
     }

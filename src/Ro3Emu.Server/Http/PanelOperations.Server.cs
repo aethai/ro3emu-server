@@ -46,7 +46,7 @@ public sealed partial class PanelOperations
         string result = Path.Combine(options.Value.DataDir, DatabaseRestore.ResultName);
         string? last = File.Exists(result) ? (await File.ReadAllTextAsync(result)).Trim() : null;
         return new PanelServerState(new PanelMaintenance(m.On, m.Note, m.By, m.Since > 0 ? DateTimeOffset.FromUnixTimeSeconds(m.Since) : null),
-            scheduled, Backups(), last, await accounts.ReadAsync<string?>(new PanelSettingRead(PanelSettingKeys.HideStaffRankings)) == "1");
+            scheduled, Backups(), last, await accounts.ReadPanelAsync<string?>(new PanelSettingRead(PanelSettingKeys.HideStaffRankings)) == "1");
     }
 
     public Task SetHideStaffRankingsAsync(string admin, bool enabled) =>

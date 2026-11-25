@@ -35,6 +35,9 @@ internal sealed class AntiCheatSchemaPlan : DbPlan
                 PRIMARY KEY(role_id, hour));
             CREATE INDEX IF NOT EXISTS anticheat_exp_hour ON anticheat_exp(hour);
             CREATE INDEX IF NOT EXISTS economy_entry_recorded ON economy_entry(recorded_utc_ms);
+            CREATE INDEX IF NOT EXISTS economy_entry_role_sources
+                ON economy_entry(recorded_utc_ms, owner_id, asset_kind, asset_id, delta)
+                WHERE owner_kind=1 AND leg_kind=1 AND delta>0;
             """);
         return 1;
     }

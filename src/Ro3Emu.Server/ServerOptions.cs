@@ -172,6 +172,9 @@ public sealed class ServerOptions
     /// <summary>Database copies in DataDir/backups (DatabaseBackup).</summary>
     public BackupOptions Backup { get; set; } = new();
 
+    /// <summary>Run SQLite PRAGMA integrity_check on startup before opening the writer. Fails fast on a corrupt file.</summary>
+    public bool StartupIntegrityCheck { get; set; } = true;
+
     /// <summary>The web panel's update manager (Updates.UpdateManager, docs/guide/panel.md).</summary>
     public UpdateOptions Updates { get; set; } = new();
 
