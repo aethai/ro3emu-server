@@ -120,8 +120,8 @@ public sealed partial class AuctionService
                         return ErrorCodes.RewardMissing;
                 bool created = false;
                 // (inferred) Guild exhibit/time values are minutes; dungeon _iTimeLast is separately in seconds.
-                long start = checked(Now + Math.Max(0, Param("GuildAuctionExhibit", 5)) * 60);
-                long end = checked(start + Math.Max(1, Param("GuildAuctionTime", 30)) * 60);
+                long start = checked(Now + Math.Max(0, (Data.Config.PublicParams.Of(data).GuildAuctionExhibit ?? 5)) * 60);
+                long end = checked(start + Math.Max(1, (Data.Config.PublicParams.Of(data).GuildAuctionTime ?? 30)) * 60);
                 int itemCount = goods.Sum(g => g.Count);
                 var keys = RoleKeys(members).Concat([
                     Ownership.ReservationKey.Entity("guild", guildId.ToString()),

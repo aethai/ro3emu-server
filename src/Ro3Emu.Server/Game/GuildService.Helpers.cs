@@ -16,11 +16,11 @@ public sealed partial class GuildService
         var guild = Own(s);
         long now = NowMs();
         long delay = guild?.Status == (int)GuildStatus.PreCreate
-            ? Setting("GuildResponseReleaseRecruitment", 300)[0] : Setting("GuildRecruitButtonCD", 300)[0];
+            ? (Data.Config.GuildSettings.Of(data).GuildResponseReleaseRecruitment ?? 300) : (Data.Config.GuildSettings.Of(data).GuildRecruitButtonCD ?? 300);
         long previous = guild?.LastRecruitMs ?? (s.Role == null ? 0 : _guildlessRecruitMs.GetValueOrDefault(s.Role.Id));
         int code = s.Role == null ? ErrorCodes.Parameter
             : guild != null && !HasRight(guild, s.Role.Id, 7) ? ErrorCodes.GuildPermission
-            : string.IsNullOrWhiteSpace(req.Content) || req.Content.Length > Setting("GuildRecruitNoticeMaxNum", 80)[0]
+            : string.IsNullOrWhiteSpace(req.Content) || req.Content.Length > (Data.Config.GuildSettings.Of(data).GuildRecruitNoticeMaxNum ?? 80)
             ? ErrorCodes.GuildTextLength : Sensitive(req.Content) ? ErrorCodes.TextSensitive
             : previous + delay * 1000 > now ? ErrorCodes.Cooldown : 0;
         if (code == 0)

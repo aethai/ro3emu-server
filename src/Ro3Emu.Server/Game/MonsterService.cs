@@ -190,7 +190,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     private float DamageRadiusOf(JsonElement npc)
     {
         var config = new Data.Config.NPCConfig(npc);
-        long min = _data.Table("PublicParamConfig").TryGetValue("MinCollisionCircleRadius", out var v) ? (long)(GameData.Number(v) ?? 110) : 110;
+        long min = Data.Config.PublicParams.Of(_data).MinCollisionCircleRadius ?? 110;
         return Data.Config.UnitConfig.Get(_data, config.UnitId)?.DamageRadius(config, min) ?? 0;
     }
 

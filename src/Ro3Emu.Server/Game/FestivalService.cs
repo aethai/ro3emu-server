@@ -508,7 +508,7 @@ public sealed class FestivalService : IGameTicker
         if (winners <= 0) return 0;
         if (KoiBetRewardConfig.All(_data).FirstOrDefault(t => t.WinnerMin <= winners && (t.WinnerMax < 0 || winners <= t.WinnerMax))
             is { AwardId: > 0 } tier) return tier.AwardId;
-        return _data.Table("PublicParamConfig").TryGetValue("LuckyAwardPreview", out var preview) ? (long)(GameData.Number(preview) ?? 0) : 0;
+        return Data.Config.PublicParams.Of(_data).LuckyAwardPreview ?? 0;
     }
 
     private async Task DeliverAsync(GameSession session)

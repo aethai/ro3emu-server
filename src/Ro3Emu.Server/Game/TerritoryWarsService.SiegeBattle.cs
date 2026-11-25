@@ -483,7 +483,8 @@ public sealed partial class TerritoryWarsService
             foreach (var p in recipients)
             {
                 bool win = p.Guild == winner;
-                int template = (int)Param(win ? "SiegeWinMailId" : "SiegeLoseMailId", win ? 10500 : 10501);
+                var pp = Data.Config.PublicParams.Of(_data);
+                int template = (int)(win ? pp.SiegeWinMailId ?? 10500 : pp.SiegeLoseMailId ?? 10501);
                 // SiegeConfig selects the city's player award; the royal city matches the
                 // win/loss mail template awards, while senior cities select group 30093.
                 int award = _data.Row("SiegeConfig", run.City) is { } row ? (int)GameData.Int(row,

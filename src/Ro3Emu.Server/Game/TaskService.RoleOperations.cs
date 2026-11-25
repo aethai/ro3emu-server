@@ -114,12 +114,9 @@ public sealed partial class TaskService
             await TaskErrorAsync(session, TaskLuckyTurn, req.Type, ErrorCodes.Parameter);
             return;
         }
-        var param = _data.Table("PublicParamConfig");
-        int ticket = param.TryGetValue("RunRingTaskTurntableItem", out var configuredTicket)
-            && GameData.Number(configuredTicket) is { } ticketNumber and > 0 and <= int.MaxValue
-            ? (int)ticketNumber : 0;
-        long reward = param.TryGetValue("RunRingTaskTurnReward", out var configuredReward)
-            && GameData.Number(configuredReward) is { } rewardNumber and > 0 ? (long)rewardNumber : 0;
+        var param = Data.Config.PublicParams.Of(_data);
+        int ticket = param.RunRingTaskTurntableItem is > 0 and <= int.MaxValue and var ticketNumber ? (int)ticketNumber : 0;
+        long reward = param.RunRingTaskTurnReward is > 0 and var rewardNumber ? rewardNumber : 0;
         var slots = reward > 0 ? WheelSlots(reward) : [];
         if (ticket <= 0 || slots.Count == 0)
         {

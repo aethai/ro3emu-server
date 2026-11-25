@@ -168,11 +168,6 @@ public sealed partial class GuildLeagueService : IGameTicker
 
     private long Now => _clock.GetUtcNow().ToUnixTimeSeconds();
     internal LeagueState State => _state;
-
-    private long Setting(string name, long fallback) => _data.Table("GuildSettingConfig").TryGetValue(name, out var row)
-        && row.TryGetProperty("_kValue", out var value) && GameData.Number(value) is { } n ? (long)n : fallback;
-    private long[] Param(string name) => _data.Table("PublicParamConfig").TryGetValue(name, out var v) && v.ValueKind == JsonValueKind.Array
-        ? [.. v.EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0))] : [];
     private JsonElement? Rank(int tier) => _data.Table("GuildLeagueRankConfig").Values
         .Where(r => GameData.Int(r, "_iRank") == tier).Select(r => (JsonElement?)r).FirstOrDefault();
     private int[] Tiers => [.. _data.Table("GuildLeagueRankConfig").Values.Select(r => (int)GameData.Int(r, "_iRank")).Order()];
@@ -214,8 +209,8 @@ public sealed partial class GuildLeagueService : IGameTicker
         var next = Copy(_state);
         bool newSeason = next.Season != _seasons.SeasonId;
         if (newSeason) { next.Season = _seasons.SeasonId; next.Guilds.Clear(); }
-        int minMembers = _options.Value.GuildLeagueMinMembers ?? (int)Setting("GuildLeaguePeopleNum", 40);
-        long minActivity = Setting("GuildLeagueActive", 0);
+        int minMembers = _options.Value.GuildLeagueMinMembers ?? (int)(Data.Config.GuildSettings.Of(_data).GuildLeaguePeopleNum ?? 40);
+        long minActivity = (Data.Config.GuildSettings.Of(_data).GuildLeagueActive ?? 0);
         int dropAfter = MailCount(1037, 2);
         var warned = new List<(long Leader, int Template)>();
         var eligible = new List<GuildStore.State>();
@@ -227,8 +222,8 @@ public sealed partial class GuildLeagueService : IGameTicker
             if (!next.Guilds.TryGetValue(g.Id, out var standing) || standing.Tier == 0) continue;
             standing.Misses++;
             long leader = g.Members.Values.FirstOrDefault(m => m.Official == 1)?.RoleId ?? 0;
-            if (standing.Misses >= dropAfter) { next.Guilds.Remove(g.Id); warned.Add((leader, (int)Setting("GuildLeagueLevelNoticeMailID", 1037))); }
-            else warned.Add((leader, (int)Setting("GuildLeagueLevelWarnMailID", 1036)));
+            if (standing.Misses >= dropAfter) { next.Guilds.Remove(g.Id); warned.Add((leader, (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueLevelNoticeMailID ?? 1037))); }
+            else warned.Add((leader, (int)(Data.Config.GuildSettings.Of(_data).GuildLeagueLevelWarnMailID ?? 1036)));
         }
         foreach (long gone in next.Guilds.Keys.Where(id => _guilds.Get(id) == null).ToArray()) next.Guilds.Remove(gone);
         foreach (var g in eligible)
@@ -386,7 +381,7 @@ public sealed partial class GuildLeagueService : IGameTicker
         var info = new GuildLeagueInfo();
         if (own != null)
             info.History.AddRange(_state.Reports.Where(r => r.Guilds.Contains(own.Id)).OrderByDescending(r => r.Time)
-                .Take((int)Setting("GuildLeagueHistoryReportNum", 10)).Select(r => GuildLeagueHistory.Parser.ParseFrom(r.History)));
+                .Take((int)(Data.Config.GuildSettings.Of(_data).GuildLeagueHistoryReportNum ?? 10)).Select(r => GuildLeagueHistory.Parser.ParseFrom(r.History)));
         return s.SendGameAsync(msgId, new GetGuildLeagueInfoRsp { Info = info });
     }
 

@@ -131,8 +131,8 @@ public sealed partial class WorldCoreService
         await MoveFlightAsync(s, position, s.Face, new Vec3(), true, MovementTransitionType.MoveTransFlyUp);
     }
 
-    private float FlightSpeed(GameSession s) => _data.Table("PublicParamConfig").TryGetValue("MountFlyMaxSpeed", out var value)
-        ? Math.Max(1, (float)(GameData.Number(value) ?? s.Speed) / 100) : Math.Max(1, s.Speed / 100f);
+    private float FlightSpeed(GameSession s) =>
+        Math.Max(1, (float)(Data.Config.PublicParams.Of(_data).MountFlyMaxSpeed ?? s.Speed) / 100);
 
     /// <summary>31084: AStarAgentNew sends position plus a three-dimensional direction, not a ground yaw. The distance is
     /// held to the flight speed's budget (WalkAllowance, as walks are); a move beyond it is put back and counted. The

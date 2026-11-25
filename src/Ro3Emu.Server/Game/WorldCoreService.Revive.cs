@@ -34,7 +34,7 @@ public sealed partial class WorldCoreService
     /// <summary>LC_SceneCom_Revive.SendReliveHelpReq sends the dead player's own id.</summary>
     public async Task HelpAsync(GameSession s, EntityReliveHelpReq req)
     {
-        long cooldown = _data.Table("PublicParamConfig").TryGetValue("SOSCD", out var value) ? (long)(GameData.Number(value) ?? 8) * 1000 : 8000;
+        long cooldown = (Data.Config.PublicParams.Of(_data).SOSCD ?? 8) * 1000;
         int error = req.TargetEntityID != s.Role!.Id ? ErrorCodes.Parameter : !s.Dead ? ErrorCodes.TargetAlive
             : !Ready(s) ? ErrorCodes.SwitchingScenes : Now - s.WorldState.LastHelpMs < cooldown ? ErrorCodes.ReviveHelpCooldown : 0;
         await s.SendGameAsync(ReliveHelp, new EntityReliveHelpResp { Result = error });

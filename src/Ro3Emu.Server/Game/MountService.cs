@@ -178,7 +178,6 @@ public sealed class MountService : IGameTicker
 
     private JsonElement? Config(long id) => _data.Row("MountsConfig", id) ?? _data.Row("CartRemouldTable", id);
     private int Slot(long id) => _data.Row("MountsConfig", id) != null ? 1 : _data.Row("CartRemouldTable", id) != null ? 2 : 0;
-    private int Param(string name, int fallback) => _data.Table("PublicParamConfig").TryGetValue(name, out var v) ? (int)(GameData.Number(v) ?? fallback) : fallback;
     private long Now => _clock.GetUtcNow().ToUnixTimeMilliseconds();
 
     private void ArmExpiry(GameSession s)
@@ -480,7 +479,7 @@ public sealed class MountService : IGameTicker
     {
         var defaults = Etchants(mount.MountId, 0).Where(r => GameData.Int(r, "_iDefault") == 1).ToArray();
         if (defaults.Length == 0) return;
-        for (int plan = 0; plan < Param("EtchantPlanMax", 4); plan++)
+        for (int plan = 0; plan < (int)(Data.Config.PublicParams.Of(_data).EtchantPlanMax ?? 4); plan++)
         {
             if (mount.EtChantInfo.ContainsKey(plan)) continue;
             var selection = new MountEtchant();
@@ -490,7 +489,7 @@ public sealed class MountService : IGameTicker
     }
 
     private int EtchantError(GameSession s, int mount, int plan, int part = 0) => OwnedError(s, mount) is var owned and not 0 ? owned
-        : plan < 0 || plan >= Param("EtchantPlanMax", 4) || !Etchants(mount, part).Any() ? ErrorCodes.Parameter : 0;
+        : plan < 0 || plan >= (int)(Data.Config.PublicParams.Of(_data).EtchantPlanMax ?? 4) || !Etchants(mount, part).Any() ? ErrorCodes.Parameter : 0;
 
     private static string PreviewKey(int mount, int plan, int part) => $"{mount}:{plan}:{part}";
 
@@ -498,7 +497,7 @@ public sealed class MountService : IGameTicker
     {
         using var gate = await CharacterService.Lock(s);
         int error = req.PlanId == 0 || req.Part <= 0 ? ErrorCodes.Parameter : EtchantError(s, req.MountId, req.PlanId, req.Part), selected = 0;
-        var cost = new[] { (Entry: Param("EtchantRefreshItemId", 2), Count: (long)Param("EtchantRefreshItemCount", 1000)) };
+        var cost = new[] { (Entry: (int)(Data.Config.PublicParams.Of(_data).EtchantRefreshItemId ?? 2), Count: (long)(int)(Data.Config.PublicParams.Of(_data).EtchantRefreshItemCount ?? 1000)) };
         if (error == 0)
         {
             var candidates = Etchants(req.MountId, req.Part).Where(r => GameData.Int(r, "_iWeight") > 0).ToArray();

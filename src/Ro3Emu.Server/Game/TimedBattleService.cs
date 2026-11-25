@@ -291,7 +291,7 @@ public sealed partial class TimedBattleService : IGameTicker
             await CharacterService.SyncAsync(session, 5038, onePiece);
         }
         // 5070 Mock Battle profile (CasualBattleService); RelaxGVGStartMMR is the unrated rating.
-        await CharacterService.SyncAsync(session, CasualBattleService.Sync, CasualInfo(state, (int)PublicValue("RelaxGVGStartMMR")));
+        await CharacterService.SyncAsync(session, CasualBattleService.Sync, CasualInfo(state, (int)(Data.Config.PublicParams.Of(_data).RelaxGVGStartMMR ?? 0)));
         await SyncRiftRestrictAsync(session);
     }
 
@@ -741,9 +741,6 @@ public sealed partial class TimedBattleService : IGameTicker
         }
         return result;
     }
-
-    private long PublicValue(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var row)
-        ? (long)(GameData.Number(row) ?? 0) : 0;
 
     public async Task ClaimDragonAsync(GameSession session, DragonIslandClaimRankRewardReq _)
     {

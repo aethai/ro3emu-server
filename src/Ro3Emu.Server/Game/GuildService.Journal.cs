@@ -42,7 +42,7 @@ public sealed partial class GuildService
     /// <summary>Queue a journal row on the guild; it commits with the guild's next save.</summary>
     private void Journal(GuildStore.State g, int cfgId, long[] players, params LanguageParam[] values)
     {
-        store.JournalCap = (int)Math.Clamp(Setting("GuildEventDateMaxNum", 500)[0], 1, 10_000);
+        store.JournalCap = (int)Math.Clamp((Data.Config.GuildSettings.Of(data).GuildEventDateMaxNum ?? 500), 1, 10_000);
         g.PendingEvents.Add(JournalRow(cfgId, players, values));
     }
 

@@ -259,11 +259,12 @@ public sealed partial class CharacterService
     /// PublicParamConfig ArrowsItemId with count -1 for the careers in ArrowsCanUseJob, so they are endless and never
     /// bought; the client data has no shop, drop or craft for them and the server never uses one up.
     /// </summary>
-    private bool UnlimitedArrow(GameSession session, long item) =>
-        data.Table("PublicParamConfig").TryGetValue("ArrowsItemId", out var ids) && ids.ValueKind == System.Text.Json.JsonValueKind.Array
-        && ids.EnumerateArray().Any(v => GameData.Number(v) == item)
-        && data.Table("PublicParamConfig").TryGetValue("ArrowsCanUseJob", out var jobs) && jobs.ValueKind == System.Text.Json.JsonValueKind.Array
-        && jobs.EnumerateArray().Any(v => GameData.Number(v) == session.Progress?.Career);
+    private bool UnlimitedArrow(GameSession session, long item)
+    {
+        var p = Data.Config.PublicParams.Of(data);
+        return p.ArrowsItemId is { } ids && ids.Contains(item)
+            && p.ArrowsCanUseJob is { } jobs && session.Progress?.Career is { } career && jobs.Contains(career);
+    }
 
     /// <summary>31335 moves owned GUID/count batches between normal tabs and Merchant cart pack 100.</summary>
     public async Task CareerSpecialTransferAsync(GameSession session, CareerSpecialTransferItemsReq req)

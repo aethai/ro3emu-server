@@ -168,7 +168,7 @@ public sealed partial class TavernService
                 if (code == 0)
                 {
                     room.Owner = req.TargetGuid;
-                    room.TransferReadySec = now + Param("BarRoomTransferRoomCd", DefaultTransferCdSec);
+                    room.TransferReadySec = now + (Data.Config.PublicParams.Of(_data).BarRoomTransferRoomCd ?? DefaultTransferCdSec);
                     room.Speakers.Remove(req.TargetGuid);
                     room.Applications.RemoveAll(a => a.Role == req.TargetGuid);
                 }
@@ -198,7 +198,7 @@ public sealed partial class TavernService
                 if (code == 0)
                 {
                     (room.Name, room.Type, room.Language) = (name, req.BarRoomType, req.LanguageType);
-                    room.InfoReadySec = now + Param("BarRoomSetInfoCd", DefaultSetInfoCdSec);
+                    room.InfoReadySec = now + (Data.Config.PublicParams.Of(_data).BarRoomSetInfoCd ?? DefaultSetInfoCdSec);
                 }
             }
         }
@@ -227,7 +227,7 @@ public sealed partial class TavernService
                     : !room.Members.ContainsKey(req.TargetGuid) ? ErrorCodes.TavernNotInRoom
                     : IsForbidden(room, req.TargetGuid, now) ? ErrorCodes.TavernMuted
                     : 0;
-                if (code == 0) room.Forbidden[req.TargetGuid] = now + Param("BarroomForbiddentime", DefaultForbiddenMs) / 1000;
+                if (code == 0) room.Forbidden[req.TargetGuid] = now + (Data.Config.PublicParams.Of(_data).BarroomForbiddentime ?? DefaultForbiddenMs) / 1000;
             }
         }
         var reply = new ForbiddenUserResp { Result = code };

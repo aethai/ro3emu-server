@@ -61,13 +61,6 @@ public sealed class FlyingDragonService : IGameTicker
         gm.Register("dragon", "info | start [packet 0-3] | progress <0-10000> | complete | end | timeout (Starshatter ritual test aid)", GmAsync);
     }
 
-    private long Param(string key, long fallback = 0) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var v) && GameData.Number(v) is { } n ? (long)n : fallback;
-
-    private long[] Params(string key) =>
-        _data.Table("PublicParamConfig").TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.Array
-            ? [.. v.EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0))] : [];
-
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     private DBFlyingDragonProduceInfo State => _state ??=
@@ -80,14 +73,16 @@ public sealed class FlyingDragonService : IGameTicker
     private FlyingDragonProductStatus Status => State.ProductInfo != null ? FlyingDragonProductStatus.Product
         : State.CeremonyInfo != null ? FlyingDragonProductStatus.Ceremony : FlyingDragonProductStatus.Idle;
 
-    private long StartTime => State.ProductInfo is { } p ? p.ProcessEndTimeStamp - Param("DragonTaskLimited", 3600) : 0;
+    private long StartTime => State.ProductInfo is { } p ? p.ProcessEndTimeStamp - (Data.Config.PublicParams.Of(_data).DragonTaskLimited ?? 3600) : 0;
 
     /// <summary>The ritual's progress now: DragonTaskPerSec per second since the start plus the assists (or full).</summary>
     private int Progress()
     {
         if (State.ProductInfo is not { } p) return 0;
         if (p.HasSelfAccelerate) return ProgressFull;
-        long value = Math.Max(0, Now - StartTime) * Param("DragonTaskPerSec", 50) + p.AssistantRoles.Count * Param("DragonTaskHelpProg", 500);
+        var pp = Data.Config.PublicParams.Of(_data);
+        long value = Math.Max(0, Now - StartTime) * (pp.DragonTaskPerSec ?? 50)
+            + p.AssistantRoles.Count * (pp.DragonTaskHelpProg ?? 500);
         return (int)Math.Min(ProgressFull, value);
     }
 
@@ -145,7 +140,7 @@ public sealed class FlyingDragonService : IGameTicker
             ? [.. pairs.Where(p => p.Length >= 2).Select(p => ((int)p[0], p[1]))] : [];
 
     /// <summary>The red packet of extraRewardIndex 1-3: DragonTaskResortRank[i - 1] per helper, times the helpers.</summary>
-    private long PacketPrice(int index) => index >= 1 && Params("DragonTaskResortRank") is { } ranks && index <= ranks.Length ? ranks[index - 1] : 0;
+    private long PacketPrice(int index) => index >= 1 && (Data.Config.PublicParams.Of(_data).DragonTaskResortRank ?? []) is { } ranks && index <= ranks.Length ? ranks[index - 1] : 0;
 
     // --- requests ---------------------------------------------------------------------------------------------------
 
@@ -156,22 +151,22 @@ public sealed class FlyingDragonService : IGameTicker
         await s.SendGameAsync(Start, new FlyingDragonStartProduceRes { Result = result });
         if (result == 0)
         {
-            await MarqueeAsync((int)Param("DragonChatTask", 8001), s.Role!.Name);
+            await MarqueeAsync((int)(Data.Config.PublicParams.Of(_data).DragonChatTask ?? 8001), s.Role!.Name);
             await PushAllAsync();
         }
     }
 
     private async Task<int> StartLockedAsync(GameSession s, int index, bool anywhere)
     {
-        long role = s.Role!.Id, wait = Param("DragonTaskWaitTime", 86400);
-        if (index < 0 || index > Params("DragonTaskResortRank").Length) return ErrorCodes.DragonConfig;
+        long role = s.Role!.Id, wait = (Data.Config.PublicParams.Of(_data).DragonTaskWaitTime ?? 86400);
+        if (index < 0 || index > (Data.Config.PublicParams.Of(_data).DragonTaskResortRank ?? []).Length) return ErrorCodes.DragonConfig;
         if (Status != FlyingDragonProductStatus.Idle) return ErrorCodes.DragonBusy;
         if (State.StartRoles.TryGetValue(role, out long last) && Now - last < wait) return ErrorCodes.DragonCooldown;
         if (OwnsDragon(s)) return ErrorCodes.DragonDone;
-        if (!anywhere && !Near(s, Params("DragonTaskNPC"), StartReach)) return ErrorCodes.DragonPlace;
+        if (!anywhere && !Near(s, (Data.Config.PublicParams.Of(_data).DragonTaskNPC ?? []), StartReach)) return ErrorCodes.DragonPlace;
         var cost = Material();
-        long packet = PacketPrice(index) * Param("DragonTaskHelpTimes", 10);
-        if (packet > 0) cost.Add(((int)Param("DragonTaskResortItem", 1), packet));
+        long packet = PacketPrice(index) * (Data.Config.PublicParams.Of(_data).DragonTaskHelpTimes ?? 10);
+        if (packet > 0) cost.Add(((int)(Data.Config.PublicParams.Of(_data).DragonTaskResortItem ?? 1), packet));
         if (cost.Count == 0) return ErrorCodes.DragonConfig;
         var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
         {
@@ -184,7 +179,7 @@ public sealed class FlyingDragonService : IGameTicker
         var next = State.Clone();
         next.ProductInfo = new DBProductInfo
         {
-            ProcessEndTimeStamp = Now + Param("DragonTaskLimited", 3600), ExtraRewardIndex = index,
+            ProcessEndTimeStamp = Now + (Data.Config.PublicParams.Of(_data).DragonTaskLimited ?? 3600), ExtraRewardIndex = index,
             OriItems = { cost.ToDictionary(c => c.Entry, c => (int)c.Count) },
         };
         next.CeremonyInfo = null;
@@ -210,10 +205,10 @@ public sealed class FlyingDragonService : IGameTicker
         if (State.ProductInfo is not { } p) return ErrorCodes.DragonDone;
         if (role == State.OwnerRoleId) return ErrorCodes.DragonSelf;
         if (p.AssistantRoles.ContainsKey(role)) return ErrorCodes.DragonAssisted;
-        if (Progress() >= ProgressFull || p.AssistantRoles.Count >= Param("DragonTaskHelpTimes", 10)) return ErrorCodes.DragonDone;
+        if (Progress() >= ProgressFull || p.AssistantRoles.Count >= (Data.Config.PublicParams.Of(_data).DragonTaskHelpTimes ?? 10)) return ErrorCodes.DragonDone;
         var goods = HelpReward();
         long share = PacketPrice(p.ExtraRewardIndex);
-        if (share > 0) goods.Add(((int)Param("DragonTaskReturnItem", 2), (int)share));
+        if (share > 0) goods.Add(((int)(Data.Config.PublicParams.Of(_data).DragonTaskReturnItem ?? 2), (int)share));
         var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
         {
             Goods = goods,
@@ -230,7 +225,7 @@ public sealed class FlyingDragonService : IGameTicker
 
     /// <summary>DragonTaskHelpReward: AwardConfig _kAward [entry, count, bind] triples (1001: one Minted Coin).</summary>
     private List<(int Entry, int Count)> HelpReward() =>
-        _data.Row("AwardConfig", Param("DragonTaskHelpReward", 1001)) is { ValueKind: JsonValueKind.Array } rows && rows.GetArrayLength() > 0
+        _data.Row("AwardConfig", (Data.Config.PublicParams.Of(_data).DragonTaskHelpReward ?? 1001)) is { ValueKind: JsonValueKind.Array } rows && rows.GetArrayLength() > 0
             && new AwardConfig(rows[0]).Award is { } award
             ? [.. award.Where(a => a.Length >= 2).Select(a => ((int)a[0], (int)a[1]))] : [];
 
@@ -248,7 +243,7 @@ public sealed class FlyingDragonService : IGameTicker
         if (s.Role!.Id != State.OwnerRoleId) return ErrorCodes.DragonSelf;
         int left = ProgressFull - Progress();
         if (left <= 0) return ErrorCodes.DragonDone;
-        var cost = new List<(int Entry, long Count)> { ((int)Param("DragonTaskSpUPItem", 2), left * Param("DragonTaskSpUPEffi", 10)) };
+        var cost = new List<(int Entry, long Count)> { ((int)(Data.Config.PublicParams.Of(_data).DragonTaskSpUPItem ?? 2), left * (Data.Config.PublicParams.Of(_data).DragonTaskSpUPEffi ?? 10)) };
         var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
         {
             Cost = cost,
@@ -271,7 +266,7 @@ public sealed class FlyingDragonService : IGameTicker
             : Progress() < ProgressFull ? ErrorCodes.DragonDone : 0;
         if (result == 0)
         {
-            long limit = Param("DragonCeremonyLimited", 30);
+            long limit = (Data.Config.PublicParams.Of(_data).DragonCeremonyLimited ?? 30);
             var ended = State.Clone();
             var next = State.Clone();
             next.ProductInfo = null;
@@ -284,7 +279,9 @@ public sealed class FlyingDragonService : IGameTicker
         await s.SendGameAsync(Complete, new FlyingDragonCompleteProduceRes { Result = result });
         if (result == 0)
         {
-            await MarqueeAsync((int)Param("DragonChatCeremony", 8002), s.Role!.Name, Param("DragonCeremonyLimited", 30).ToString(CultureInfo.InvariantCulture));
+            var pp = Data.Config.PublicParams.Of(_data);
+            await MarqueeAsync((int)(pp.DragonChatCeremony ?? 8002), s.Role!.Name,
+                (pp.DragonCeremonyLimited ?? 30).ToString(CultureInfo.InvariantCulture));
             await PushAllAsync();
         }
     }
@@ -296,7 +293,7 @@ public sealed class FlyingDragonService : IGameTicker
             : role == State.OwnerRoleId ? ErrorCodes.DragonSelf
             : c.ThumbsUpRoles.ContainsKey(role) ? ErrorCodes.DragonLiked
             : Now >= c.ThumbsUpEndTimeStamp ? ErrorCodes.DragonNoLike
-            : !Near(s, Params("DragonTaskVirtualNPC"), Param("DragonCeremonyAround", 40)) ? ErrorCodes.DragonPlace : 0;
+            : !Near(s, (Data.Config.PublicParams.Of(_data).DragonTaskVirtualNPC ?? []), (Data.Config.PublicParams.Of(_data).DragonCeremonyAround ?? 40)) ? ErrorCodes.DragonPlace : 0;
         if (result == 0)
         {
             var next = State.Clone();
@@ -344,7 +341,7 @@ public sealed class FlyingDragonService : IGameTicker
         _state = next;
         await SaveAsync();
         var material = Material().Select(m => new MailService.Attachment(m.Entry, (int)m.Count)).ToList();
-        await _mail.SendTemplateAsync(owner, (int)Param("DragonTaskMail", 1114), material);
+        await _mail.SendTemplateAsync(owner, (int)(Data.Config.PublicParams.Of(_data).DragonTaskMail ?? 1114), material);
         await RefundPacketAsync(owner, ended);
         await PushAllAsync();
     }
@@ -352,11 +349,11 @@ public sealed class FlyingDragonService : IGameTicker
     private async Task RefundPacketAsync(long owner, DBFlyingDragonProduceInfo ritual)
     {
         if (ritual.ProductInfo is not { } p) return;
-        long share = PacketPrice(p.ExtraRewardIndex), helpers = Param("DragonTaskHelpTimes", 10);
+        long share = PacketPrice(p.ExtraRewardIndex), helpers = (Data.Config.PublicParams.Of(_data).DragonTaskHelpTimes ?? 10);
         long left = (helpers - p.AssistantRoles.Count) * share;
         if (left <= 0) return;
-        await _mail.SendTemplateAsync(owner, (int)Param("DragonTaskPacketMail", 1116),
-            [new MailService.Attachment((int)Param("DragonTaskResortItem", 1), (int)left)]);
+        await _mail.SendTemplateAsync(owner, (int)(Data.Config.PublicParams.Of(_data).DragonTaskPacketMail ?? 1116),
+            [new MailService.Attachment((int)(Data.Config.PublicParams.Of(_data).DragonTaskResortItem ?? 1), (int)left)]);
     }
 
     private string ItemName(int entry) => _data.Row("ItemConfig", entry) is { } row && new ItemConfig(row).Name is [var text, ..]
@@ -373,7 +370,7 @@ public sealed class FlyingDragonService : IGameTicker
             using (await CharacterService.Lock(s)) result = await StartLockedAsync(s, index, anywhere: true);
             if (result == 0)
             {
-                await MarqueeAsync((int)Param("DragonChatTask", 8001), s.Role!.Name);
+                await MarqueeAsync((int)(Data.Config.PublicParams.Of(_data).DragonChatTask ?? 8001), s.Role!.Name);
                 await PushAllAsync();
             }
             await GmCommands.ReplyAsync(s, "start " + result);
@@ -388,8 +385,8 @@ public sealed class FlyingDragonService : IGameTicker
         {
             var next = State.Clone();
             // Move the start back so the per-second growth alone gives the asked progress.
-            long perSec = Math.Max(1, Param("DragonTaskPerSec", 50));
-            next.ProductInfo.ProcessEndTimeStamp = Now - value / perSec + Param("DragonTaskLimited", 3600);
+            long perSec = Math.Max(1, (Data.Config.PublicParams.Of(_data).DragonTaskPerSec ?? 50));
+            next.ProductInfo.ProcessEndTimeStamp = Now - value / perSec + (Data.Config.PublicParams.Of(_data).DragonTaskLimited ?? 3600);
             _state = next;
             await SaveAsync();
             await PushAllAsync();

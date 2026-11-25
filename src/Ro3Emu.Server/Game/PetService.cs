@@ -399,7 +399,7 @@ public sealed partial class PetService
     /// read them, and requiring them as well refused support slot 2 below level 55 ("Invalid support slot").
     /// </summary>
     private bool SlotOpen(GameSession s, int source, int slot) =>
-        slot >= 1 && slot <= (source == 1 ? PetParam("PetFightFieldNum", 4) : PetParam("PetAssistFieldNum", 5))
+        slot >= 1 && slot <= (source == 1 ? (Data.Config.PublicParams.Of(_data).PetFightFieldNum ?? 4) : (Data.Config.PublicParams.Of(_data).PetAssistFieldNum ?? 5))
         && PetSetLimitConfig.Get(_data, slot) is { } limit
         && _functions.ConditionMet(s, source == 1 ? limit.Condition1 : limit.Condition2);
 

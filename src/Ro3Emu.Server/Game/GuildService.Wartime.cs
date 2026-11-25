@@ -149,8 +149,7 @@ public sealed partial class GuildService
     {
         if (g.WartimeStocked) return g.WartimeItems;
         var stock = new SortedDictionary<int, int>();
-        if (data.Table("PublicParamConfig").TryGetValue("SiegeInitItemList", out var list)
-            && list.ValueKind == System.Text.Json.JsonValueKind.Array)
+        if (Data.Config.PublicParams.Of(data).SiegeInitItemList is { ValueKind: System.Text.Json.JsonValueKind.Array } list)
             foreach (var pair in list.EnumerateArray())
                 if (pair.ValueKind == System.Text.Json.JsonValueKind.Array && pair.GetArrayLength() == 2
                     && GameData.Number(pair[0]) is { } item && GameData.Number(pair[1]) is { } count && count > 0)

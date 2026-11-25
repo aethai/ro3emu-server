@@ -563,8 +563,8 @@ public sealed partial class TimedBattleService
 
     private const long ChickenScene = 2240101;
 
-    private int PoisonBuff() => PublicValue("EatChickenPoisonBuffId") is var id and > 0 ? (int)id : DefaultPoisonBuff;
-    private int BagLimit() => PublicValue("ChickenBagLimit") is var limit and > 0 ? (int)limit : DefaultBagLimit;
+    private int PoisonBuff() => (Data.Config.PublicParams.Of(_data).EatChickenPoisonBuffId ?? 0) is var id and > 0 ? (int)id : DefaultPoisonBuff;
+    private int BagLimit() => (Data.Config.PublicParams.Of(_data).ChickenBagLimit ?? 0) is var limit and > 0 ? (int)limit : DefaultBagLimit;
 
     // ---- test aids ----
 

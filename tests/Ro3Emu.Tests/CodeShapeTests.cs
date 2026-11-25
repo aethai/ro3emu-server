@@ -20,7 +20,7 @@ public sealed class CodeShapeTests
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 29;
     private const int RoleNullForgiving = 961;
-    private const int LinesOver200Chars = 96;
+    private const int LinesOver200Chars = 95;
     private const int ExposedHookLists = 107;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;

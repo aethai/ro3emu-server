@@ -38,7 +38,7 @@ public sealed partial class GuildService
     private sealed record HelperInvitation(long GuildId, long Recipient, long Inviter, long ExpiresMs);
     private readonly Dictionary<long, HelperInvitation> _helperInvites = [];
 
-    private int ResponderLimit => (int)Setting("GuildResponsePeopleLimit", 3)[0];
+    private int ResponderLimit => (int)(Data.Config.GuildSettings.Of(data).GuildResponsePeopleLimit ?? 3);
 
     private bool Founding(GuildStore.State g) => g.Status == (int)GuildStatus.PreCreate && g.HelperDeadlineMs > NowMs();
 
@@ -69,7 +69,7 @@ public sealed partial class GuildService
     /// </summary>
     private async Task EndFoundingAsync(GuildStore.State guild, long founder, IEnumerable<long>? removed = null)
     {
-        int template = (int)Setting("GuildMail18", 1018)[0];
+        int template = (int)(Data.Config.GuildSettings.Of(data).GuildMail18 ?? 1018);
         if (guild.FoundingItem == 0 || guild.FoundingCount <= 0 || data.Row("MailConfig", template) == null || roles.Get(founder) == null)
         {
             await DeleteGuildAsync(guild, removed);
@@ -81,7 +81,7 @@ public sealed partial class GuildService
             var transaction = roles.NewTransaction();
             mail.QueueTemplateLocked(founder, $"guild-found-refund:{guild.Id}", template,
                 [new MailService.Attachment(guild.FoundingItem, (int)guild.FoundingCount)], transaction,
-                (int)(Setting("GuildResponseTimeLimit", 86400)[0] / 3600), ResponderLimit);
+                (int)((Data.Config.GuildSettings.Of(data).GuildResponseTimeLimit ?? 86400) / 3600), ResponderLimit);
             var refund = new EconomyEffect(new(EconomyAssetKind.Item, guild.FoundingItem),
                 new(EconomyOwnerKind.Role, founder.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 EconomyCompartment.Mail, guild.FoundingCount, EconomyLegKind.Source, EconomyReason.GuildFoundingRefund);
@@ -133,7 +133,7 @@ public sealed partial class GuildService
             await RefreshMembers(guild);
             // MailConfig 1017 "Guild Creation Successful" names the guild: (inferred) the founder's letter, as 1018 is.
             await GuildMailAsync(guild.Members.Values.Where(m => m.Official == 1).Select(m => m.RoleId),
-                (int)Setting("GuildMail17", 1017)[0], $"guild-founded:{guild.Id}", guild.Name);
+                (int)(Data.Config.GuildSettings.Of(data).GuildMail17 ?? 1017), $"guild-founded:{guild.Id}", guild.Name);
         }
         await PushRedDotAsync(guild);
         return true;
@@ -147,9 +147,9 @@ public sealed partial class GuildService
         if (s.Progress!.Level < guild.JoinLevelLimit) return ErrorCodes.GuildJoinLevel;
         if (guild.AutoCreateHelper) return await AdmitHelperAsync(guild, s.Role!.Id) ? 0 : ErrorCodes.AlreadyInGuild;
         if (guild.HelperApplies.ContainsKey(s.Role!.Id)) return 0;
-        if (LiveResponses(guild).Count() >= Setting("GuildResponseMaxNum", 50)[0]) return ErrResponderListFull;
+        if (LiveResponses(guild).Count() >= (Data.Config.GuildSettings.Of(data).GuildResponseMaxNum ?? 50)) return ErrResponderListFull;
         if (store.List().Count(g => g.Id != guild.Id && Founding(g) && g.HelperApplies.ContainsKey(s.Role.Id))
-            >= Setting("GuildPersonResponseMaxNum", 10)[0]) return ErrResponderPersonalLimit;
+            >= (Data.Config.GuildSettings.Of(data).GuildPersonResponseMaxNum ?? 10)) return ErrResponderPersonalLimit;
         guild.HelperApplies[s.Role.Id] = new GuildStore.Application
         {
             RoleId = s.Role.Id, Name = s.Role.Name,
@@ -225,7 +225,7 @@ public sealed partial class GuildService
                 _helperInvites.Remove(stale);
             token = ++_nextToken;
             _helperInvites[token] = new HelperInvitation(g!.Id, target!.Role!.Id, s.Role!.Id,
-                now + Setting("GuildResponseInviteTime", 30)[0] * 1000);
+                now + (Data.Config.GuildSettings.Of(data).GuildResponseInviteTime ?? 30) * 1000);
             await target.SendGameAsync(InviteHelperNotify, new InviteCreateHelperNotify
             {
                 Token = token, PlayerId = s.Role.Id,

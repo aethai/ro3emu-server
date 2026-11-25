@@ -44,11 +44,13 @@ public sealed partial class SceneService
         || MapConfig.Get(data, target)?.SceneType == TerritoryWarsSceneType
         || target == GvgTransferTarget && (MapConfig.Get(data, s.SceneEntry) is not { } here || here.SceneType == TerritoryWarsSceneType);
 
-    private bool IsMainCity(long target) => target == FailedLoadCity
-        || data.Table("PublicParamConfig") is var parameters
-            && (parameters.TryGetValue("AutoBattleAutoBackMainCityID", out var city) && GameData.Number(city) == target
-                || parameters.TryGetValue("OnHookReturnMap", out var idle) && idle.ValueKind == JsonValueKind.Array
-                    && idle.GetArrayLength() > 0 && GameData.Number(idle[0]) == target);
+    private bool IsMainCity(long target)
+    {
+        if (target == FailedLoadCity) return true;
+        var p = PublicParams.Of(data);
+        return p.AutoBattleAutoBackMainCityID == target
+            || p.OnHookReturnMap is { Length: > 0 } idle && idle[0] == target;
+    }
 
     /// <summary>
     /// 30131 goes where an authored action 141 (JumpMapArea, LC_InteractActions) says: a task's completion or tracker, the

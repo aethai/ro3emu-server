@@ -452,9 +452,8 @@ public sealed partial class PronteraDefenseService : IGameTicker
             long map = session.Defense.RoundMap.GetValueOrDefault(round, 10100);
             var next = CopyState(session.Defense); next.SettledRounds.Add(round);
             // One award after actual contribution and round closure is an inferred eligibility rule.
-            string key = map == 10100 ? "PronteraDefenseMainCityDefendAward" : "PronteraDefenseOtherCityDefendAward";
-            long group = _data.Table("ActivityConstant").TryGetValue(key, out var configured)
-                ? (long)(GameData.Number(configured) ?? 0) : 0;
+            var constants = Data.Config.ActivityConstants.Of(_data);
+            long group = (map == 10100 ? constants.PronteraDefenseMainCityDefendAward : constants.PronteraDefenseOtherCityDefendAward) ?? 0;
             try
             {
                 var plan = _awards.Resolve(session, group, 101);

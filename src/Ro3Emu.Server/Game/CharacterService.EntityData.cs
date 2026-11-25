@@ -198,22 +198,21 @@ public sealed partial class CharacterService
     /// </summary>
     internal StatSheet ApplySpeedOverflow(Dictionary<int, double> raw, StatSheet sheet)
     {
-        var parameters = data.Table("PublicParamConfig");
-        if (!parameters.TryGetValue("FinalAtkSpdThdAndCastSpdThd", out var limits) || limits.ValueKind != JsonValueKind.Array
-            || limits.GetArrayLength() < 2) return sheet;
-        bool changed = false;
-        foreach (var (key, index) in new[] { ("OverflowAtkSpd2PhysDmgR", 0), ("OverflowCastSpd2MagicDmgR", 1) })
-        {
-            if (!parameters.TryGetValue(key, out var rule) || rule.ValueKind != JsonValueKind.Array || rule.GetArrayLength() < 5
-                || GameData.Number(limits[index]) is not { } threshold) continue;
-            var r = rule.EnumerateArray().Select(v => GameData.Number(v) ?? 0).ToArray();
-            (int source, double step, int target, double perStep, double cap) = ((int)r[0], r[1], (int)r[2], r[3], r[4]);
-            double excess = sheet[source] - threshold;
-            if (excess <= 0 || step <= 0) continue;
-            raw[target] = raw.GetValueOrDefault(target) + Math.Min(Math.Floor(excess / step) * perStep, cap);
-            changed = true;
-        }
+        var p = Data.Config.PublicParams.Of(data);
+        if (p.FinalAtkSpdThdAndCastSpdThd is not { Length: >= 2 } limits) return sheet;
+        bool changed = ApplyRule(p.OverflowAtkSpd2PhysDmgR, limits[0])
+            | ApplyRule(p.OverflowCastSpd2MagicDmgR, limits[1]);
         return changed ? StatCalculator.Compute(raw, data) : sheet;
+
+        bool ApplyRule(long[]? rule, long threshold)
+        {
+            if (rule is not { Length: >= 5 }) return false;
+            (int source, double step, int target, double perStep, double cap) = ((int)rule[0], rule[1], (int)rule[2], rule[3], rule[4]);
+            double excess = sheet[source] - threshold;
+            if (excess <= 0 || step <= 0) return false;
+            raw[target] = raw.GetValueOrDefault(target) + Math.Min(Math.Floor(excess / step) * perStep, cap);
+            return true;
+        }
     }
 
     /// <summary>The character's own raw contributions (gear, cards, talents, buffs, level and job rows, conversions).</summary>

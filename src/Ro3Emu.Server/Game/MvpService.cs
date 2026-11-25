@@ -790,10 +790,9 @@ public sealed partial class MvpService : IGameTicker
     /// five or more 50 (order inferred: "the more such members, the greater the decay").</summary>
     internal static int DecayPercent(GameData data, int capped)
     {
-        if (capped <= 0 || !data.Table("PublicParamConfig").TryGetValue("RewardDecayRatio", out var list)
-            || list.ValueKind != JsonValueKind.Array) return 100;
-        var ratios = list.EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 100)).OrderByDescending(v => v).ToArray();
-        return ratios.Length == 0 ? 100 : ratios[Math.Min(capped, ratios.Length) - 1];
+        if (capped <= 0 || Data.Config.PublicParams.Of(data).RewardDecayRatio is not { Length: > 0 } raw) return 100;
+        var ratios = raw.Select(v => (int)v).OrderByDescending(v => v).ToArray();
+        return ratios[Math.Min(capped, ratios.Length) - 1];
     }
 
     /// <summary>MVPScoreConfig points by rank in each statistic, deaths subtract (inferred).</summary>

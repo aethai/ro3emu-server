@@ -195,8 +195,8 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
         }
     }
 
-    private TimeSpan Ttl => TimeSpan.FromSeconds(data.Table("PublicParamConfig").TryGetValue("LeaderBoardRefreshIntervalTs", out var v)
-        && GameData.Number(v) is { } seconds && seconds > 0 ? seconds : 30);
+    private TimeSpan Ttl => TimeSpan.FromSeconds(
+        Data.Config.PublicParams.Of(data).LeaderBoardRefreshIntervalTs is > 0 and var seconds ? seconds : 30);
 
     private async Task<Snapshot> BuildAsync()
     {
@@ -349,7 +349,7 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
     private Dictionary<long, int> DummyBoards()
     {
         var map = new Dictionary<long, int>();
-        if (data.Table("PublicParamConfig").TryGetValue("TrainingRootJob2LdId", out var value) && value.ValueKind == JsonValueKind.Object)
+        if (Data.Config.PublicParams.Of(data).TrainingRootJob2LdId is { ValueKind: JsonValueKind.Object } value)
             foreach (var pair in value.EnumerateObject())
                 if (long.TryParse(pair.Name, out long job) && GameData.Number(pair.Value) is { } board) map[job] = (int)board;
         return map;

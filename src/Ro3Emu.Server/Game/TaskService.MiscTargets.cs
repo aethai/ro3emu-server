@@ -168,8 +168,7 @@ public sealed partial class TaskService
 
     /// <summary>PublicParamConfig.GuideMainQuestBranchChoice, the branch ids LC_TaskHelper.GetQuestBranchId checks.</summary>
     private long[] BranchChoices() =>
-        _data.Table("PublicParamConfig").TryGetValue("GuideMainQuestBranchChoice", out var v) && v.ValueKind == JsonValueKind.Array
-            ? [.. v.EnumerateArray().Select(e => (long)(GameData.Number(e) ?? 0)).Where(b => b > 0)] : [];
+        [.. (Data.Config.PublicParams.Of(_data).GuideMainQuestBranchChoice ?? []).Where(b => b > 0)];
 
     /// <summary>
     /// 309001: the seconds since its quest was accepted; while short of R a refresh is queued for when it is reached.

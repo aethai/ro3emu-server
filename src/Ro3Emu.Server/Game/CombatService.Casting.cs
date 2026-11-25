@@ -109,8 +109,10 @@ public sealed partial class CombatService
             else if (GameData.Int(row!.Value, "_iBasicType") != 1) error = ErrorCodes.SkillPassive;
             else if (_buffs.HasForbidden(s, new SkillConfig(row.Value).IsNormalAttack(_data)
                 ? ForbiddenState.NormalAttack : ForbiddenState.CastSkill)) error = ErrorCodes.SkillBadState;
-            else if (req.SkillId == PublicSkill("WorldTreeSkillId") && _buffs.HasForbidden(s, ForbiddenState.UseItem)) error = ErrorCodes.ItemUseForbidden;
-            else if (req.SkillId == PublicSkill("WorldTreeSkillId") && !ItemAllowedInMap(s, (int)PublicSkill("WorldTreeItemId"))) error = ErrorCodes.ItemUseAreaForbidden;
+            else if (req.SkillId == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0) && _buffs.HasForbidden(s, ForbiddenState.UseItem)) error = ErrorCodes.ItemUseForbidden;
+            else if (req.SkillId == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0)
+            && !ItemAllowedInMap(s, (int)(Data.Config.PublicParams.Of(_data).WorldTreeItemId ?? 0)))
+                error = ErrorCodes.ItemUseAreaForbidden;
             else if (req.IsExtraSkill && owned == null && GameData.Int(row.Value, "_iExtraType") == 0) error = ErrorCodes.SkillRequirements;
         }
         var origin = owned?.Pos ?? s.Position;
@@ -399,7 +401,7 @@ public sealed partial class CombatService
 
     private bool Learned(GameSession s, JsonElement row)
     {
-        if (GameData.Int(row, "_iID") == PublicSkill("WorldTreeSkillId")) return true; // paid item skill, LC_ReviveHelper.
+        if (GameData.Int(row, "_iID") == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0)) return true; // paid item skill, LC_ReviveHelper.
         // A Survivor Battle career owns the match skill set (TimedBattleService.Chicken), not the job tree.
         if (MatchSkillRule?.Invoke(s, (int)GameData.Int(row, "_iID")) is { } granted) return granted;
         if (new SkillConfig(row) is var skill && skill.IsNormalAttack(_data)) return _skills.MayCastAttack(s, skill);
@@ -408,7 +410,6 @@ public sealed partial class CombatService
 
     private MonsterUnit? FindMonster(long sceneId, long uid) => _world.Map(sceneId).Units.OfType<MonsterUnit>().FirstOrDefault(m => m.Uid == uid && !m.Dead);
     private GameSession? FindPlayer(GameSession s, long uid, bool dead = false) => _world.PlayersIn(s.WorldScene).FirstOrDefault(p => p.Role?.Id == uid && p.Dead == dead);
-    private long PublicSkill(string key) => _data.Table("PublicParamConfig").TryGetValue(key, out var value) ? (long)(GameData.Number(value) ?? 0) : 0;
     private static bool Finite(Vec3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
     private static float Distance(Vec3 a, Vec3 b) => MonsterService.Distance(a.X, a.Z, b.X, b.Z);
     private static float Range(JsonElement row) => Math.Max(0, GameData.Int(row, "_iDistanceMax") / 100f);
@@ -500,7 +501,7 @@ public sealed partial class CombatService
             if (revive)
             {
                 if (player == s) return ErrorCodes.SkillTargetInvalid;
-                if (req.SkillId == PublicSkill("WorldTreeSkillId") ? ReviveItemSkill == null : ReviveOffer == null)
+                if (req.SkillId == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0) ? ReviveItemSkill == null : ReviveOffer == null)
                     return ErrorCodes.SkillReviveNotAllowed;
                 if (ReviveCheck?.Invoke(player!) is { } reviveError && reviveError != 0) return reviveError;
             }

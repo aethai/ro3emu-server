@@ -294,7 +294,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
     /// </summary>
     private long MerchantDiscount(GameSession session)
     {
-        int skill = _data.Table("PublicParamConfig").TryGetValue("DiscountMerchantSkill", out var p) ? (int)(GameData.Number(p) ?? 16001) : 16001;
+        int skill = (int)(Data.Config.PublicParams.Of(_data).DiscountMerchantSkill ?? 16001);
         int level = session.Progress?.Skills.GetValueOrDefault(skill) ?? 0;
         if (level <= 0) return 0;
         var row = _data.Table("SkillConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iSkillID") == skill && GameData.Int(r, "_iLevel") == level);

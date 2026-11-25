@@ -61,7 +61,7 @@ public sealed partial class TavernService
                 : !_rooms.TryGetValue(guid, out var target) ? ErrorCodes.TavernNotFound
                 : target.Members.ContainsKey(self) ? ErrorCodes.TavernAlreadyIn
                 : target.Blocked.ContainsKey(self) ? ErrorCodes.TavernBlocked
-                : target.Members.Count >= Param("BarroomPersonNum", DefaultPersonNum) ? ErrorCodes.TavernFull
+                : target.Members.Count >= (Data.Config.PublicParams.Of(_data).BarroomPersonNum ?? DefaultPersonNum) ? ErrorCodes.TavernFull
                 : 0;
         if (code != 0)
         {
@@ -243,7 +243,7 @@ public sealed partial class TavernService
     private int InfoRefusal(string name, int type, int language)
     {
         if (name.Length == 0 || name.Any(char.IsControl)) return ErrorCodes.TavernNameInvalid;
-        if (name.Length > Param("BarRoomNameLen", DefaultNameLength)) return ErrorCodes.TavernNameTooLong;
+        if (name.Length > (Data.Config.PublicParams.Of(_data).BarRoomNameLen ?? DefaultNameLength)) return ErrorCodes.TavernNameTooLong;
         if (BarroomTypeConfig.Get(_data, type) is not { Type: TopicKind }) return ErrorCodes.TavernBadType;
         if (BarroomTypeConfig.Get(_data, language) is not { Type: LanguageKind }) return ErrorCodes.TavernBadLanguage;
         return 0;

@@ -155,10 +155,11 @@ public sealed partial class TimedBattleService
                     delta = next.DragonScore - oldScore;
                     long today = TreasureDay();
                     if (next.DragonCurrencyDay != today) { next.DragonCurrencyDay = today; next.DragonCurrencyEarned = 0; }
-                    int cap = (int)Math.Max(0, Math.Min(PublicValue("DragonIslandCurrencyLimit"),
+                    var p = Data.Config.PublicParams.Of(_data);
+                    int cap = (int)Math.Max(0, Math.Min(p.DragonIslandCurrencyLimit ?? 0,
                         level is { } capRow ? GameData.Int(capRow, "_iSettleCurrencyLimit") : int.MaxValue));
-                    int currency = actualVictory ? (int)PublicValue(won
-                        ? "DragonIslandCurrencyBaseWin" : "DragonIslandCurrencyBaseLose") : 0;
+                    int currency = actualVictory
+                        ? (int)((won ? p.DragonIslandCurrencyBaseWin : p.DragonIslandCurrencyBaseLose) ?? 0) : 0;
                     currency = Math.Clamp(currency, 0, Math.Max(0, cap - next.DragonCurrencyEarned));
                     next.DragonCurrencyEarned += currency;
                     if (currency > 0) grants.Add(new AwardGrant(6, currency));

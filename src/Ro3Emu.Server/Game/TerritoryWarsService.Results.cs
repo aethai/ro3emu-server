@@ -93,7 +93,8 @@ public sealed partial class TerritoryWarsService
             var goods = new List<Grant>();
             if (recipient.Role != null)
             {
-                AddAward(goods, Param(p.Guild == winner ? "TerritoryStrongHoldOccupyAuctionAward" : "TerritoryStrongHoldJoinAuctionAward", 1001006), recipient);
+                var pp = Data.Config.PublicParams.Of(_data);
+                AddAward(goods, (p.Guild == winner ? pp.TerritoryStrongHoldOccupyAuctionAward : pp.TerritoryStrongHoldJoinAuctionAward) ?? 1001006, recipient);
                 // Settlement tables are rank/qualification awards. Roll once here and persist the exact goods.
                 AddRankAward(goods, "SiegeSettlementPrimaryAward", rank, recipient);
                 // SiegeSettlementHonorAward is the Battle Merit season reward by board place (the client's
@@ -202,7 +203,7 @@ public sealed partial class TerritoryWarsService
     private async Task SubmitDropAsync(GameSession s)
     {
         var guild = Own(s);
-        var npc = _maps.Map(s.SceneEntry)?.Npcs.FirstOrDefault(n => n.NpcId == Param("TerritoryWorldMaterialNPC", 200052)
+        var npc = _maps.Map(s.SceneEntry)?.Npcs.FirstOrDefault(n => n.NpcId == (Data.Config.PublicParams.Of(_data).TerritoryWorldMaterialNPC ?? 200052)
             && MonsterService.Distance(n.X, n.Z, s.Position.X, s.Position.Z) <= 5);
         if (guild == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryGuild); return; }
         if (s.Dead || s.SceneLoading || npc == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryInvalidPoint); return; }

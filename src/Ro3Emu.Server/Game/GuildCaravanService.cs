@@ -262,21 +262,9 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
         await transaction.CommitAsync(_accounts, "guild-caravan/member-version");
     }
 
-    private long Setting(string key, long fallback)
-    {
-        if (!_data.Table("GuildSettingConfig").TryGetValue(key, out var row)
-            || !row.TryGetProperty("_kValue", out var value)) return fallback;
-        return value.ValueKind == JsonValueKind.Number ? (long)(GameData.Number(value) ?? fallback) : fallback;
-    }
-
-    private long[] Mix(int round)
-    {
-        if (_data.Table("GuildSettingConfig").TryGetValue("GuildTransportRoundSAB", out var row)
-            && row.TryGetProperty("_kValue", out var array) && array.ValueKind == JsonValueKind.Array
-            && round >= 0 && round < array.GetArrayLength() && array[round].ValueKind == JsonValueKind.Array)
-            return [.. array[round].EnumerateArray().Select(x => (long)(GameData.Number(x) ?? 0))];
-        return [];
-    }
+    private long[] Mix(int round) =>
+        Data.Config.GuildSettings.Of(_data).GuildTransportRoundSAB is { } rows && round >= 0 && round < rows.Length
+            ? rows[round] : [];
 
     private List<Sku> Generate(GameSession s, long day, long round, long salt = 0)
     {
@@ -346,7 +334,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
             { sku.Status = 0; sku.ReqHelpTime = 0; }
             await SaveAsync(roleId, state);
         }
-        if (state.CurRound < Setting("GuildTransportRoundNum", 5) && state.Skus.Count == 0)
+        if (state.CurRound < (Data.Config.GuildSettings.Of(_data).GuildTransportRoundNum ?? 5) && state.Skus.Count == 0)
         {
             state.Skus = Generate(s, state.Day, state.CurRound);
             await SaveAsync(roleId, state);
@@ -364,7 +352,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
             Day = Day, GuildId = state.GuildId, Revision = state.Revision,
             PendingAwards = [.. state.PendingAwards]
         };
-        long owed = !state.IsAwardGot && state.Skus.Count(x => x.Status == 1) >= Setting("GuildTransportRequestItemTypeNum", 5)
+        long owed = !state.IsAwardGot && state.Skus.Count(x => x.Status == 1) >= (Data.Config.GuildSettings.Of(_data).GuildTransportRequestItemTypeNum ?? 5)
             ? DepartureAward(state) : 0;
         if (owed > 0)
         {
@@ -578,7 +566,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
 
     private Sku? Slot(State state, long index) => state.Skus.FirstOrDefault(s => s.Index == index);
     private int Check(State state, long version, Sku? sku) => version != Version(state.GuildId, state.Day) ? ErrorCodes.CaravanOrderExpired
-        : state.CurRound >= Setting("GuildTransportRoundNum", 5) ? ErrorCodes.CaravanDeparted
+        : state.CurRound >= (Data.Config.GuildSettings.Of(_data).GuildTransportRoundNum ?? 5) ? ErrorCodes.CaravanDeparted
         : sku == null ? ErrorCodes.Parameter : 0;
 
     private static void EnlistMemberSave(RoleItemPlanBuilder transaction, long roleId, long guildId,
@@ -827,13 +815,13 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 // (inferred) The client labels five as the request threshold; count only this owner's
                 // loaded cargo. A helped slot cannot be submitted or requested again.
                 if (resp.Result == 0 && !req.IsCancle && state.Skus.Count(x => x.Status == 1)
-                    < Setting("GuildTransportRequestItemTypeNum", 5)) resp.Result = ErrorCodes.CaravanLoadShort;
-                if (resp.Result == 0 && !req.IsCancle && state.ReqHelpOtherCount >= Setting("GuildTransportRequestDayNum", 3))
+                    < (Data.Config.GuildSettings.Of(_data).GuildTransportRequestItemTypeNum ?? 5)) resp.Result = ErrorCodes.CaravanLoadShort;
+                if (resp.Result == 0 && !req.IsCancle && state.ReqHelpOtherCount >= (Data.Config.GuildSettings.Of(_data).GuildTransportRequestDayNum ?? 3))
                     resp.Result = ErrorCodes.CaravanHelpLimit;
                 // (inferred) reqHelpTime is wire milliseconds; cancellation clears the timestamp but
                 // does not refund the daily allowance. The authored RequestCD is currently zero.
                 if (resp.Result == 0 && !req.IsCancle && sku!.ReqHelpTime > 0
-                    && sku.ReqHelpTime + Setting("GuildTransportRequestCD", 0) * 1000 > NowMs)
+                    && sku.ReqHelpTime + (Data.Config.GuildSettings.Of(_data).GuildTransportRequestCD ?? 0) * 1000 > NowMs)
                     resp.Result = ErrorCodes.Cooldown;
                 if (resp.Result == 0)
                 {
@@ -915,7 +903,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                             : sku == null ? ErrorCodes.Parameter : 0;
                         if (resp.Result == 0 && target!.Day != own.Day) resp.Result = ErrorCodes.CaravanOrderExpired;
                         if (resp.Result == 0 && sku!.Status != 2) resp.Result = ErrorCodes.CaravanRequestMissing;
-                        if (resp.Result == 0 && own.HelpOtherCount >= Setting("GuildTransportHelpDayNum", 3))
+                        if (resp.Result == 0 && own.HelpOtherCount >= (Data.Config.GuildSettings.Of(_data).GuildTransportHelpDayNum ?? 3))
                             resp.Result = ErrorCodes.CaravanHelpLimit;
                         if (resp.Result == 0 && _data.Row("GuildTransportConfig", sku!.CfgId) is { } row)
                         {
@@ -1054,8 +1042,8 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 {
                     var state = await EnsureAsync(s, guild);
                     int done = state.Skus.Count(x => x.Status == 1);
-                    resp.Result = state.CurRound >= Setting("GuildTransportRoundNum", 5) ? ErrorCodes.CaravanDeparted
-                        : done < Setting("GuildTransportRequestItemTypeNum", 5) ? ErrorCodes.CaravanLoadShort : 0;
+                    resp.Result = state.CurRound >= (Data.Config.GuildSettings.Of(_data).GuildTransportRoundNum ?? 5) ? ErrorCodes.CaravanDeparted
+                        : done < (Data.Config.GuildSettings.Of(_data).GuildTransportRequestItemTypeNum ?? 5) ? ErrorCodes.CaravanLoadShort : 0;
                     if (resp.Result == 0)
                     {
                         long group = DepartureAward(state);
@@ -1071,7 +1059,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                                     next.CurRound++;
                                     // (inferred) IsAwardGot marks exhaustion of all daily departures,
                                     // while the active order can still depart with five through eight loaded slots.
-                                    next.IsAwardGot = next.CurRound >= Setting("GuildTransportRoundNum", 5);
+                                    next.IsAwardGot = next.CurRound >= (Data.Config.GuildSettings.Of(_data).GuildTransportRoundNum ?? 5);
                                     next.Skus.Clear();
                                 }, tx =>
                                 {
@@ -1114,7 +1102,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 var state = await EnsureAsync(s, guild);
                 resp.Result = req.DayVersion != Version(guild.Id, state.Day) ? ErrorCodes.CaravanRefreshExpired
                     : state.IsAwardGot ? ErrorCodes.CaravanDeparted
-                    : state.RefreshTimes >= Setting("GuildTransportRefreshNum", 5) ? ErrorCodes.CaravanRefreshLimit
+                    : state.RefreshTimes >= (Data.Config.GuildSettings.Of(_data).GuildTransportRefreshNum ?? 5) ? ErrorCodes.CaravanRefreshLimit
                     : state.Skus.All(x => x.Status != 0) ? ErrorCodes.CaravanRefreshUnavailable : 0;
                 if (resp.Result == 0)
                 {

@@ -16,13 +16,11 @@ public sealed partial class CombatService
     /// <summary>A*cspd/(B+C*cspd) from PublicParamConfig, cast speed clamped to FinalAtkSpdThdAndCastSpdThd[1].</summary>
     private static double VariableChantReduction(GameData data, double castSpeed)
     {
-        var parameters = data.Table("PublicParamConfig");
-        double Parameter(string key) => parameters.TryGetValue(key, out var value) ? GameData.Number(value) ?? 0 : 0;
+        var p = Data.Config.PublicParams.Of(data);
         double speed = Math.Max(0, castSpeed);
-        if (parameters.TryGetValue("FinalAtkSpdThdAndCastSpdThd", out var limits) && limits.ValueKind == JsonValueKind.Array
-            && limits.GetArrayLength() > 1) speed = Math.Min(speed, GameData.Number(limits[1]) ?? speed);
-        double denominator = Parameter("VariableChantPerParamB") + Parameter("VariableChantPerParamC") * speed;
-        return denominator > 0 ? Parameter("VariableChantPerParamA") * speed / denominator : 0;
+        if (p.FinalAtkSpdThdAndCastSpdThd is { Length: > 1 } limits) speed = Math.Min(speed, limits[1]);
+        double denominator = (p.VariableChantPerParamB ?? 0) + (p.VariableChantPerParamC ?? 0) * speed;
+        return denominator > 0 ? (p.VariableChantPerParamA ?? 0) * speed / denominator : 0;
     }
 
     /// <summary>LC_DAL_PlayerInfo.GetRealPropertyValue(PreVarChant): per_varchant - A*cspd/(B+C*cspd).

@@ -17,7 +17,7 @@ public sealed partial class AuctionService
     /// </summary>
     private async Task<int> SetPrebuyAsync(GameSession s, AuctionType type, int src, int entry, long target)
     {
-        if (s.Role == null || entry <= 0 || target < 0 || target > Math.Max(1, Param("AUCTION_BATCH_NUM", 100)))
+        if (s.Role == null || entry <= 0 || target < 0 || target > Math.Max(1, (Data.Config.PublicParams.Of(data).AUCTIONBATCHNUM ?? 100)))
             return ErrorCodes.AuctionParameter;
         src = RowSrc(type, src);
         long requestRole = s.Role.Id;

@@ -110,8 +110,7 @@ public sealed partial class CardService
     private int TierPoints(int card, int tier)
     {
         if (_data.Row("ItemConfig", card) is not { } row
-            || !_data.Table("PublicParamConfig").TryGetValue("LibraryCardUnlockReward", out var table)
-            || table.ValueKind != JsonValueKind.Object) return 0;
+            || Data.Config.PublicParams.Of(_data).LibraryCardUnlockReward is not { ValueKind: JsonValueKind.Object } table) return 0;
         long quality = GameData.Int(row, "_iQuality");
         return table.TryGetProperty(quality.ToString(), out var reward)
             && reward.ValueKind == JsonValueKind.Object && reward.TryGetProperty("PointValue", out var values)

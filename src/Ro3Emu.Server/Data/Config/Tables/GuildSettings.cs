@@ -53,6 +53,12 @@ public readonly partial record struct GuildSettings(IReadOnlyDictionary<string, 
     [ConfigConstant("GuildLeaguePersonAwardNeedScore")] public partial long? GuildLeaguePersonAwardNeedScore { get; }
     [ConfigConstant("GuildLeagueSceneID")] public partial long[]? GuildLeagueSceneID { get; }
     [ConfigConstant("GuildLeagueTriggerStayAreaTime")] public partial long? GuildLeagueTriggerStayAreaTime { get; }
+    [ConfigConstant("GuildMail01")] public partial long? GuildMail01 { get; }
+    [ConfigConstant("GuildMail02")] public partial long? GuildMail02 { get; }
+    [ConfigConstant("GuildMail03")] public partial long? GuildMail03 { get; }
+    [ConfigConstant("GuildMail04")] public partial long? GuildMail04 { get; }
+    [ConfigConstant("GuildMail05")] public partial long? GuildMail05 { get; }
+    [ConfigConstant("GuildMail06")] public partial long? GuildMail06 { get; }
     [ConfigConstant("GuildMail17")] public partial long? GuildMail17 { get; }
     [ConfigConstant("GuildMail18")] public partial long? GuildMail18 { get; }
     [ConfigConstant("GuildMail21")] public partial long? GuildMail21 { get; }

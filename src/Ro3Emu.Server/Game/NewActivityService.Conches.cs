@@ -110,7 +110,9 @@ public sealed partial class NewActivityService
     private bool ConchMapOpen(GameSession session) =>
         !session.SceneLoading && session.InstanceId == 0 && session.ActivitiesReady &&
         ExplorePhaseConfig.All(_data).Any(p => p.Activityid == ExplorationActivity && p.Map.Contains(session.SceneEntry)
-            && WorldPhaseOpen(session, p.Row)) && _functions.IsOpen(session, EveConstant("ExploreFunction")) && ActivityError(session, ExplorationActivity, WorldExplorationType) == 0;
+            && WorldPhaseOpen(session, p.Row))
+            && _functions.IsOpen(session, (int)(Data.Config.ActivityConstants.Of(_data).ExploreFunction ?? 0))
+            && ActivityError(session, ExplorationActivity, WorldExplorationType) == 0;
 
     private Task ReloadConchesAsync(GameSession session)
     {

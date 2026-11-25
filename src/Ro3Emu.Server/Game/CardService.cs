@@ -610,7 +610,7 @@ public sealed partial class CardService
             bool unlocked = before?.Unlock == true;
             if (Observe(library, starred)) nextLibrary = library;
             int points = unlocked ? TierPoints(card.Entry, reached, library.Cards[card.Entry].CardStar) : 0;
-            if (points > 0 && Param("LibraryOverviewPointID") is var pointItem and > 0) tierGains.Add((pointItem, points));
+            if (points > 0 && (int)(Data.Config.PublicParams.Of(_data).LibraryOverviewPointID ?? 0) is var pointItem and > 0) tierGains.Add((pointItem, points));
         }
         if (error == 0 && await _character.ExchangeLockedAsync(session, new ExchangeRequest
         {
@@ -861,7 +861,7 @@ public sealed partial class CardService
         else e.Unlock = true;
         long role = session.Role!.Id, epoch = session.Owner!.LifecycleEpoch;
         byte[] bytes = next.ToByteArray();
-        int points = treasure ? 0 : CardUnlockPoints(card, e.CardStar), item = Param("LibraryOverviewPointID");
+        int points = treasure ? 0 : CardUnlockPoints(card, e.CardStar), item = (int)(Data.Config.PublicParams.Of(_data).LibraryOverviewPointID ?? 0);
         if (points <= 0 || item <= 0)
         {
             await _roles.CommitCardUnlockAsync(role, epoch, card, treasure, bytes, session.Items,
