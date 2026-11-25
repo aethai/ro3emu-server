@@ -18,6 +18,9 @@ internal static class ActivitiesComposition
         services.AddSingleton<TimedTodoSchedule>();
         services.AddSingleton<PronteraDefenseService>();
         services.AddSingleton<TimedBattleService>();
+        services.AddSingleton<ChickenBattleService>();
+        services.AddSingleton<ChickenEncounterService>();
+        services.AddSingleton<RiftBattleService>();
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TimedBattleService>());
         services.AddSingleton<FestivalService>();
         services.AddSingleton<RankRewardService>();
@@ -48,7 +51,10 @@ internal static class ActivitiesComposition
         app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
         app.Services.GetRequiredService<TimedEventService>();
         app.Services.GetRequiredService<PronteraDefenseService>();
-        app.Services.GetRequiredService<TimedBattleService>();
+        var timedBattles = app.Services.GetRequiredService<TimedBattleService>();
+        timedBattles.BindChicken(app.Services.GetRequiredService<ChickenBattleService>());
+        timedBattles.BindChickenEncounters(app.Services.GetRequiredService<ChickenEncounterService>());
+        timedBattles.BindRift(app.Services.GetRequiredService<RiftBattleService>());
         app.Services.GetRequiredService<CasualBattleService>();
         app.Services.GetRequiredService<FestivalService>();
         app.Services.GetRequiredService<TrainingService>();
@@ -70,10 +76,14 @@ internal static class ActivitiesComposition
         var gm = app.Services.GetRequiredService<GmCommands>();
         var sessions = app.Services.GetRequiredService<SessionRegistry>();
         var battles = app.Services.GetRequiredService<TimedBattleService>();
+        var rifts = app.Services.GetRequiredService<RiftBattleService>();
         var mvps = app.Services.GetRequiredService<MvpService>();
         var testing = app.Services.GetRequiredService<TestingSwitches>();
         var daily = app.Services.GetRequiredService<DailyActivityService>();
         var dungeons = app.Services.GetRequiredService<DungeonService>();
+
+        gm.Register("rift", "| new | party [min] | <star 1-6> [boss name] (Rift Crisis test aid: status, new round, "
+            + "smallest party, or a stone next to you)", rifts.RiftGmAsync);
 
         gm.Register("chicken", "shape <players> <team>|shape reset|skip|rank <n> (Survivor Battle test aids)", async (s, a) =>
         {

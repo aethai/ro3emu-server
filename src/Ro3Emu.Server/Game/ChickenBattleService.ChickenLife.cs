@@ -4,6 +4,9 @@ using Ro3Emu.Server.Maps;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,19 +16,10 @@ namespace Ro3Emu.Server.Game;
 /// revives with the 20 s channel (82650 or using the card, 82680 to the target). A team with nobody left standing is
 /// out; the last team (or the best survivor at the 20 min end) wins. 82641 gives up. Flow (inferred) from the brief §6.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     public const uint ForceDead = 82641, StartRevive = 82650, Relife = 82661, RelifeOther = 82662, RelifeNotify = 82663,
         RevivingNotify = 82680;
-
-    private sealed class ReviveChannel
-    {
-        public required GameSession Reviver { get; init; }
-        public required long StartMs { get; init; }
-        public required float X { get; init; }
-        public required float Z { get; init; }
-        public required GameSession[] Targets { get; init; }
-    }
 
     // ---- statistics hooks (CombatService) ----
 
@@ -44,7 +38,7 @@ public sealed partial class TimedBattleService
 
     /// <summary>The kill credit after CombatService published the death (PlayerDied already ran). Assists: the victim's
     /// other attackers of the last 10 s (inferred).</summary>
-    private Task ChickenKillAsync(Match match, GameSession killer, GameSession victim)
+    internal Task ChickenKillAsync(Match match, GameSession killer, GameSession victim)
     {
         if (match.Chicken is not { } run || run.Stage != StageStartGame || !run.Players.TryGetValue(victim, out var dead)
             || !run.Players.ContainsKey(killer) || match.Faction[killer] == match.Faction[victim]) return Task.CompletedTask;
@@ -59,7 +53,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>30123: the battle report button's own kill and assist counters (DungeonService.PlayerCounters).</summary>
-    private Task CountersAsync(Match match, IEnumerable<GameSession> players) =>
+    internal Task CountersAsync(Match match, IEnumerable<GameSession> players) =>
         RoleFanout.EachAsync(players.Where(p => _active.GetValueOrDefault(p) == match && match.Loaded.Contains(p)), p =>
             p.SendGameAsync(DungeonService.PlayerStatistics, DungeonService.PlayerCounters(match.Participants[p].Id,
                 match.Kills.GetValueOrDefault(p), match.Chicken?.Players.GetValueOrDefault(p)?.Assists ?? 0)));
@@ -110,7 +104,7 @@ public sealed partial class TimedBattleService
         RecordEliminations(match, run);
     }
 
-    private static void RecordEliminations(Match match, ChickenRun run)
+    internal static void RecordEliminations(Match match, ChickenRun run)
     {
         var remaining = RemainingFactions(match);
         foreach (int faction in match.Players.Select(p => match.Faction[p]).Distinct().Order())
@@ -286,7 +280,7 @@ public sealed partial class TimedBattleService
     /// fight is NoRevive (TimedBattleService.OnePiece): no self-revive there either.</summary>
     public async Task<bool> TryRefuseReliveAsync(GameSession session)
     {
-        if (Chicken(session) == null && !InRiftFight(session)) return false;
+        if (Chicken(session) == null && !_timed.Rift.InRiftFight(session)) return false;
         await session.SendGameAsync(CombatService.Relive, new EntityReliveAck
         { Result = ErrorCodes.SkillReviveNotAllowed, EntityID = (ulong)(session.Role?.Id ?? 0) });
         return true;
@@ -338,7 +332,7 @@ public sealed partial class TimedBattleService
     /// Team ranks: standing teams first (more members standing, then kills, then damage; (inferred) tie-break), then the
     /// eliminated ones, the last eliminated first. Rank 1 is the winner.
     /// </summary>
-    private Dictionary<int, int> ChickenRanks(Match match)
+    internal Dictionary<int, int> ChickenRanks(Match match)
     {
         var run = match.Chicken;
         var factions = match.Players.Select(p => match.Faction[p]).Distinct().ToArray();
@@ -355,7 +349,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>Clears the match state off a participant when it leaves the room (settlement, abort, give up).</summary>
-    private async Task ChickenDetachAsync(Match match, GameSession player)
+    internal async Task ChickenDetachAsync(Match match, GameSession player)
     {
         player.Synced.Remove(RoundSync);
         ClearChickenCustom(player);
@@ -370,7 +364,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>32700 on a chest: the pickup panel is client-hosted (ActionConfig OpenPickUpPanel), so only acknowledge.</summary>
-    private async Task<bool> TryChestInteractAsync(GameSession session, NpcInteractionReq req)
+    internal async Task<bool> TryChestInteractAsync(GameSession session, NpcInteractionReq req)
     {
         if (Chicken(session) is not (_, var run, var me) || run.Chests.FirstOrDefault(c => c.Uid == req.NpcUid) is not { } chest) return false;
         if (BoxDrop.ContainsKey(chest.NpcId)) me.OpenedCrates.Add(chest.Uid); // a supply crate (weekly task 106504)

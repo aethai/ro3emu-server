@@ -213,7 +213,7 @@ public sealed class TimedEventTests : IAsyncLifetime
     /// The stone a "!rift" command just placed. The running round's random stones can sit on the same map point (and
     /// be any star), so a test never picks a stone by map and distance alone.
     /// </summary>
-    private async Task<TimedBattleService.RiftStone> GmRiftStoneAsync(BotClient bot, string command)
+    private async Task<RiftBattleService.RiftStone> GmRiftStoneAsync(BotClient bot, string command)
     {
         var before = await Service<GameLoop>().InvokeAsync(() =>
             Task.FromResult(Service<TimedBattleService>().RiftStones.Select(s => s.Uid).ToHashSet()));
@@ -915,7 +915,7 @@ public sealed class TimedEventTests : IAsyncLifetime
         Assert.Equal(0, (await Next(member, TeamService.TeamInviteeResp, InviteeRespResp.Parser)).Result);
     }
 
-    private static async Task<int> RiftEnterAsync(BotClient bot, TimedBattleService.RiftStone stone)
+    private static async Task<int> RiftEnterAsync(BotClient bot, RiftBattleService.RiftStone stone)
     {
         // The client names the stone by its unit uid (LC_SceneManagerNew.SendEnterDungeonWithOnePieceData).
         await bot.SendGameAsync(DungeonService.Enter, new EnterDungeonReq
@@ -927,7 +927,7 @@ public sealed class TimedEventTests : IAsyncLifetime
     }
 
     /// <summary>The leader's 30400, every member's 42033 + 30406, then everyone loads the one room.</summary>
-    private async Task<long> RiftFightAsync(TimedBattleService.RiftStone stone, BotClient leader, params BotClient[] others)
+    private async Task<long> RiftFightAsync(RiftBattleService.RiftStone stone, BotClient leader, params BotClient[] others)
     {
         Assert.Equal(0, await RiftEnterAsync(leader, stone));
         foreach (var member in others)
@@ -991,7 +991,7 @@ public sealed class TimedEventTests : IAsyncLifetime
         Session(bot).Synced.GetValueOrDefault(LifeJobService.RestrictSync) is DBRestrictInfo synced
             && synced.RestrictCount.TryGetValue(1020, out var info) ? info.Count : -1));
 
-    private Task<TimedBattleService.RiftStone[]> RiftStonesAsync() => Service<GameLoop>().InvokeAsync(() =>
+    private Task<RiftBattleService.RiftStone[]> RiftStonesAsync() => Service<GameLoop>().InvokeAsync(() =>
         Task.FromResult(Service<TimedBattleService>().RiftStones.ToArray()));
 
     [ClientDataFact]
@@ -1150,7 +1150,7 @@ public sealed class TimedEventTests : IAsyncLifetime
     {
         await using var bot = await InWorld("Rhea");
         await Gm(bot, "!lvl 99");
-        TimedBattleService.RiftStone[] round = [];
+        RiftBattleService.RiftStone[] round = [];
         for (int i = 0; i < 200 && round.Length == 0; i++)
         {
             round = await RiftStonesAsync();

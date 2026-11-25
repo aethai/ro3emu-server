@@ -5,6 +5,9 @@ using Ro3Emu.Server.Maps;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>One match item: EatChickenItemConfig entry and stack; the owner attributes mark an ID tag.</summary>
@@ -50,22 +53,23 @@ internal sealed class ChickenChestUnit : WorldUnit
     { Uuid = (ulong)Uid, ChickenChestInfo = Info(), NotifyType = EntityBase.Types.NotifyType.ChickenChestInfo };
 }
 
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     public const uint InsertItem = 82625, UseItem = 82626, DiscardItem = 82627, PickupItem = 82631, PickupAll = 82632,
         PickupNotify = 82642, ItemUpgrade = 82678, ItemUpgradeAll = 82679;
     /// <summary>Chest units: their own UID namespace below 2^53 (see DungeonService.SceneActorUidBase).</summary>
     private const long ChestUidBase = 1L << 48;
     private long _chestSerial;
+    internal long NextChestUid() => ChestUidBase | Interlocked.Increment(ref _chestSerial);
     /// <summary>(inferred) Bar slots: the client's InitChickenBar drops key 0, so slots start at 1.</summary>
     private const int MaxBarSlot = 10;
-    private const int EquipmentType = 3; // EatChickenItemConfig _iType 3: Weapon .. Ring (_iSubType 301-305)
+    internal const int EquipmentType = 3; // EatChickenItemConfig _iType 3: Weapon .. Ring (_iSubType 301-305)
     private const int ItemTypeItem = 1, ItemTypeSkill = 2, ItemTypeEquip = 3, ItemTypeCard = 5;
 
     /// <summary>NPCConfig _kName, the name a match NPC unit carries.</summary>
-    private string NpcName(JsonElement npc) => _data.TextOf(npc, "_kName");
+    internal string NpcName(JsonElement npc) => _data.TextOf(npc, "_kName");
 
-    private int ItemType(int entry) => ItemRow(entry) is { } row ? (int)new EatChickenItemConfig(row).Type : 0;
+    internal int ItemType(int entry) => ItemRow(entry) is { } row ? (int)new EatChickenItemConfig(row).Type : 0;
 
     private static long Weight(ChickenPlayer me, Func<int, long> weightOf) => me.Pack.Values.Sum(i => weightOf(i.Entry) * i.Stack);
     private long Weight(ChickenPlayer me) => Weight(me, ItemWeight);
@@ -73,7 +77,7 @@ public sealed partial class TimedBattleService
 
     /// <summary>How many of <paramref name="entry"/> fit: ChickenBagLimit weight and EatChickenItemConfig._iMaxQuantity
     /// (0 = no cap).</summary>
-    private int Fits(ChickenPlayer me, int entry, int wanted)
+    internal int Fits(ChickenPlayer me, int entry, int wanted)
     {
         if (ItemRow(entry) is not { } row || wanted <= 0) return 0;
         long fit = wanted;
@@ -85,7 +89,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>Adds to the pack, filling stacks of the same entry (and owner) up to _iStackLimit first.</summary>
-    private List<ChickenItem> AddToPack(ChickenRun run, ChickenPlayer me, int entry, int amount, long ownerId = 0, string ownerName = "")
+    internal List<ChickenItem> AddToPack(ChickenRun run, ChickenPlayer me, int entry, int amount, long ownerId = 0, string ownerName = "")
     {
         var touched = new List<ChickenItem>();
         int limit = ItemRow(entry) is { } row ? (int)Math.Max(1, new EatChickenItemConfig(row).StackLimit) : 1;
@@ -105,7 +109,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>Removes a pack item (or part of its stack) and anything that pointed at it: bars, carried ID tags.</summary>
-    private bool RemoveFromPack(ChickenPlayer me, long guid, int count)
+    internal bool RemoveFromPack(ChickenPlayer me, long guid, int count)
     {
         if (!me.Pack.TryGetValue(guid, out var item) || count <= 0 || count > item.Stack) return false;
         item.Stack -= count;
@@ -120,7 +124,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>In the battle stage and alive (the client refuses the same while dead, LC_DunGeon_Chicken.lua:2930-3255).</summary>
-    private static int CanAct(ChickenRun run, ChickenPlayer me, GameSession session) =>
+    internal static int CanAct(ChickenRun run, ChickenPlayer me, GameSession session) =>
         run.Stage != StageStartGame ? ErrorCodes.FeatureUnavailable
         : session.Dead || me.State != RoundRoleStatus.InWar ? ErrorCodes.UseWhileDead : 0;
 

@@ -3,6 +3,9 @@ using Ro3Emu.Server.Data;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -11,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// the AOI entity carries them to anyone who sees the player later, and pushed as 31018 to the room when they change.
 /// All of them are cleared before the player leaves the room, so the town entity is the player's own again.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     /// <summary>Chicken_PlayerCareer: LC_UnitBase.TryChangeUnitConfigID / ChangeChickenCareer swap the model for
     /// EatChickenGameCareer._iUnitB / _iUnitG of that career (a value above 0).</summary>
@@ -128,7 +131,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>Before the player leaves the room (no packet: the scene change drops the match units).</summary>
-    private static void ClearChickenCustom(GameSession player)
+    internal static void ClearChickenCustom(GameSession player)
     {
         foreach (int id in ChickenCustomIds) player.WorldState.CustomData.Remove(id);
     }

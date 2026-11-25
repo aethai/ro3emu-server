@@ -5,6 +5,8 @@ using Ro3Emu.Server.Maps;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>A Survivor Battle NPC that is not a chest: the Kafra Shop and the Equipment Merchant.</summary>
@@ -33,7 +35,7 @@ internal sealed class ChickenNpcUnit : WorldUnit
 /// _kGroup [[group, picks]] commodities by _iWeight, every NPC sells _iGlobalPurchase of one, a player buys at most
 /// _iPurchaseNum of it in the match (_iPurchaseTimesLimit 6, a family the ordinary shops do not have).
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenEncounterService
 {
     public const uint DungeonShop = 82334;
     private const int ChickenShopType = 8;
@@ -42,15 +44,7 @@ public sealed partial class TimedBattleService
     private static readonly (int Npc, float X, float Z, float Radius, int PerPlayers, int Min)[] ShopSpawns =
         [(KafraShop, 441, 424, 400, 10, 2), (EquipmentMerchant, 391, 421, 380, 20, 1)];
 
-    private sealed class ChickenShop
-    {
-        public required ChickenNpcUnit Unit { get; init; }
-        /// <summary>Drawn commodity id -> its ShopCommodityConfig row.</summary>
-        public Dictionary<long, JsonElement> Goods { get; } = [];
-        public Dictionary<long, long> Sold { get; } = [];
-    }
-
-    private async Task SpawnShopsAsync(Match match, ChickenRun run)
+    internal async Task SpawnShopsAsync(Match match, ChickenRun run)
     {
         foreach (var (npc, cx, cz, radius, perPlayers, min) in ShopSpawns)
         {
@@ -62,7 +56,7 @@ public sealed partial class TimedBattleService
                 if (WalkablePoint(x, z) is not { } at) continue;
                 var unit = new ChickenNpcUnit
                 {
-                    Uid = ChestUidBase | Interlocked.Increment(ref _chestSerial), SceneEntry = ChickenScene, InstanceId = match.Room!.Id,
+                    Uid = NextChestUid(), SceneEntry = ChickenScene, InstanceId = match.Room!.Id,
                     X = at.X, Y = at.Y, Z = at.Z, Face = (float)(run.Rng.NextDouble() * 360), NpcId = npc, Name = NpcName(row),
                 };
                 var shop = new ChickenShop { Unit = unit };
@@ -96,7 +90,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>A live match's shop NPC (or, with <paramref name="dice"/>, also a Magic Die).</summary>
-    private bool IsMatchNpc(long uid, bool dice) => uid > 0 && _matches.Values.Any(m => m.Chicken is { } run
+    internal bool IsMatchNpc(long uid, bool dice) => uid > 0 && _matches.Values.Any(m => m.Chicken is { } run
         && (run.Shops.Any(s => s.Unit.Uid == uid) || dice && run.Dice.Any(d => d.Uid == uid)));
 
     private static DungeonCommodityInfo GoodsInfo(ChickenShop shop, ChickenPlayer me, long id, JsonElement row) => new()
@@ -189,7 +183,7 @@ public sealed partial class TimedBattleService
         Chicken(session) is (_, var run, _) ? [.. run.Shops.Select(s => (s.Unit.Uid, s.Unit.NpcId, s.Unit.X, s.Unit.Z, s.Goods.Keys.ToArray()))] : [];
 
     /// <summary>32700 on a shop NPC: the panel is client-hosted (ActionConfig 1 OpenUI, _iEXECHost 0), so only acknowledge.</summary>
-    private async Task<bool> TryShopInteractAsync(GameSession session, NpcInteractionReq req)
+    internal async Task<bool> TryShopInteractAsync(GameSession session, NpcInteractionReq req)
     {
         if (Chicken(session) is not (_, var run, _) || run.Shops.All(s => s.Unit.Uid != req.NpcUid)) return false;
         await session.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = 0, Req = req });

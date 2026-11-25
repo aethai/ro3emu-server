@@ -23,7 +23,8 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
     public const uint StartMatch = 82681, CancelMatch = 82682, Ready = 82637, ReadyNotify = 82636,
         MatchStartNotify = 82638, ChickenResult = 82633, DragonClaim = 84071, DragonSettle = 84074,
         OnePieceInfo = 83351, OnePieceMap = 83350;
-    private const int ChickenEntry = 2, DragonEntry = 6;
+    internal const int ChickenEntry = 2;
+    private const int DragonEntry = 6;
 
     internal bool IsOwnerRequest(uint message, ReadOnlyMemory<byte> body)
     {
@@ -55,8 +56,6 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
     }
     private readonly GameData _data;
     private readonly TimedTodoSchedule _schedule;
-    private readonly TestingSwitches _testing;
-    private readonly TimeProvider _time;
     private readonly RoleStore _roles;
     private readonly AccountStore _accounts;
     private readonly CharacterService _character;
@@ -66,18 +65,151 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
     private readonly InstanceService _instances;
     private readonly SceneService _scene;
     private readonly WorldData _worldData;
-    private readonly MonsterService _monsters;
     private readonly CombatService _combat;
     private readonly BuffService _buffs;
-    private readonly SkillService _skills;
-    private readonly World _world;
     private readonly ServerOptions _options;
     private readonly SessionRegistry _sessions;
     private readonly TeamService _teams;
-    private readonly LifeJobService _life;
     private readonly GameLoop _loop;
     private readonly PraiseService _praise;
     private readonly ILogger<TimedBattleService> _log;
+    private TimeProvider _time => _loop.Time;
+
+    internal GameData GameData => _data;
+    internal TimedTodoSchedule Schedule => _schedule;
+    internal TimeProvider Time => _time;
+    internal RoleStore Roles => _roles;
+    internal AccountStore AccountStore => _accounts;
+    internal CharacterService Character => _character;
+    internal FunctionService Functions => _functions;
+    internal AwardService Awards => _awards;
+    internal TaskService Tasks => _tasks;
+    internal InstanceService Instances => _instances;
+    internal SceneService Scene => _scene;
+    internal WorldData WorldData => _worldData;
+    internal CombatService Combat => _combat;
+    internal BuffService Buffs => _buffs;
+    internal SessionRegistry Sessions => _sessions;
+    internal TeamService Teams => _teams;
+    internal GameLoop Loop => _loop;
+    internal ILogger<TimedBattleService> Log => _log;
+    internal HashSet<long> PendingDeliveryRoles => _pendingDeliveryRoles;
+    internal Dictionary<GameSession, Match> ActiveMatches => _active;
+    internal Dictionary<long, Match> MatchesByRoom => _matches;
+
+    internal ChickenBattleService Chicken { get; private set; } = null!;
+    internal ChickenEncounterService ChickenEncounters { get; private set; } = null!;
+    internal RiftBattleService Rift { get; private set; } = null!;
+
+    internal void BindChicken(ChickenBattleService chicken) => Chicken = chicken;
+    internal void BindChickenEncounters(ChickenEncounterService encounters) => ChickenEncounters = encounters;
+    internal void BindRift(RiftBattleService rift)
+    {
+        Rift = rift;
+        _combat.Killed.Subscribe(DragonBossKilledAsync);
+    }
+
+    // ---- Survivor Battle ("Chicken") facades (owned by ChickenBattleService / ChickenEncounterService) ----
+
+    public const uint RoundSync = ChickenBattleService.RoundSync, SelectCareer = ChickenBattleService.SelectCareer,
+        SelectPosition = ChickenBattleService.SelectPosition, PositionNotify = ChickenBattleService.PositionNotify,
+        TeamPositionNotify = ChickenBattleService.TeamPositionNotify, InsertItem = ChickenBattleService.InsertItem,
+        UseItem = ChickenBattleService.UseItem, DiscardItem = ChickenBattleService.DiscardItem,
+        PickupItem = ChickenBattleService.PickupItem, PickupAll = ChickenBattleService.PickupAll,
+        PickupNotify = ChickenBattleService.PickupNotify, ItemUpgrade = ChickenBattleService.ItemUpgrade,
+        ItemUpgradeAll = ChickenBattleService.ItemUpgradeAll, ForceDead = ChickenBattleService.ForceDead,
+        StartRevive = ChickenBattleService.StartRevive, Relife = ChickenBattleService.Relife,
+        RelifeOther = ChickenBattleService.RelifeOther, RelifeNotify = ChickenBattleService.RelifeNotify,
+        RevivingNotify = ChickenBattleService.RevivingNotify, SelectFollow = ChickenBattleService.SelectFollow,
+        FollowNotify = ChickenBattleService.FollowNotify, InviteFollowNotify = ChickenBattleService.InviteFollowNotify,
+        ChangeWatch = ChickenBattleService.ChangeWatch, WatchNotify = ChickenBattleService.WatchNotify,
+        EmojiPlay = ChickenBattleService.EmojiPlay, OpenPanel = ChickenBattleService.OpenPanel,
+        DungeonShop = ChickenEncounterService.DungeonShop, AdventureSelect = ChickenEncounterService.AdventureSelect,
+        AdventureRefresh = ChickenEncounterService.AdventureRefresh, AdventureSync = ChickenEncounterService.AdventureSync;
+    internal const int CustomCareer = ChickenBattleService.CustomCareer,
+        CustomClothQuality = ChickenBattleService.CustomClothQuality,
+        CustomShopSign = ChickenBattleService.CustomShopSign,
+        CustomAdventureSign = ChickenBattleService.CustomAdventureSign,
+        CustomAmbulanceSign = ChickenBattleService.CustomAmbulanceSign,
+        CustomEmoji = ChickenBattleService.CustomEmoji,
+        CustomCamera = ChickenBattleService.CustomCamera;
+
+    public Task SelectCareerAsync(GameSession session, SelectRoleCareerReq req) => Chicken.SelectCareerAsync(session, req);
+    public Task SelectPositionAsync(GameSession session, SelectRolePositionReq req) => Chicken.SelectPositionAsync(session, req);
+    public Task InsertAsync(GameSession session, InsertChickenItemReq req) => Chicken.InsertAsync(session, req);
+    public Task UseAsync(GameSession session, UseChickenItemReq req) => Chicken.UseAsync(session, req);
+    public Task DiscardAsync(GameSession session, DiscardChickenItemReq req) => Chicken.DiscardAsync(session, req);
+    public Task PickupAsync(GameSession session, PickUpChickenItemReq req) => Chicken.PickupAsync(session, req);
+    public Task PickupAllAsync(GameSession session, PickUpAllChickenItemReq req) => Chicken.PickupAllAsync(session, req);
+    public Task UpgradeAsync(GameSession session, ChickenItemUpgradeReq req) => Chicken.UpgradeAsync(session, req);
+    public Task UpgradeAllAsync(GameSession session) => Chicken.UpgradeAllAsync(session);
+    public Task ForceDeadAsync(GameSession session) => Chicken.ForceDeadAsync(session);
+    public Task StartReviveAsync(GameSession session) => Chicken.StartReviveAsync(session);
+    public Task RelifeAsync(GameSession session, ChickenRelifeReq req) => Chicken.RelifeAsync(session, req);
+    public Task RelifeOtherAsync(GameSession session, ChickenRelifeOtherReq req) => Chicken.RelifeOtherAsync(session, req);
+    public Task<bool> TryRefuseReliveAsync(GameSession session) => Chicken.TryRefuseReliveAsync(session);
+    public Task SelectFollowAsync(GameSession session, SelectFollowReq req) => Chicken.SelectFollowAsync(session, req);
+    public Task ChangeWatchAsync(GameSession session, ChickenChangeWatchPlayerReq req) => Chicken.ChangeWatchAsync(session, req);
+    public Task PlayEmojiAsync(GameSession session, int emojiId, Func<int, bool> onWheel) => Chicken.PlayEmojiAsync(session, emojiId, onWheel);
+    public Task OpenPanelAsync(GameSession session, ChickenOpenPanelReq req) => Chicken.OpenPanelAsync(session, req);
+    public Task GetDungeonShopAsync(GameSession session, GetDungeonShopReq req) => ChickenEncounters.GetDungeonShopAsync(session, req);
+    public Task<bool> TryBuyAsync(GameSession session, BuyCommodityReq req) => ChickenEncounters.TryBuyAsync(session, req);
+    public Task RefreshAdventureAsync(GameSession session, AdventureRefreshReq req) => ChickenEncounters.RefreshAdventureAsync(session, req);
+    public Task SelectAdventureAsync(GameSession session, AdventureEventSelectReq req) => ChickenEncounters.SelectAdventureAsync(session, req);
+
+    internal Task<string> SkipStageAsync(GameSession session) => Chicken.SkipStageAsync(session);
+    internal Task<string> SetChickenRankAsync(GameSession session, int rank) => Chicken.SetChickenRankAsync(session, rank);
+    internal IReadOnlyList<ChickenChestUnit> ChestsForTest(GameSession session) => Chicken.ChestsForTest(session);
+    internal Task<long> PlaceChestForTestAsync(GameSession near, int npcId, params (int Entry, int Amount)[] items) =>
+        Chicken.PlaceChestForTestAsync(near, npcId, items);
+    internal IReadOnlyList<(long Uid, int NpcId, float X, float Z, long[] Goods)> ShopsForTest(GameSession session) =>
+        ChickenEncounters.ShopsForTest(session);
+    internal IReadOnlyList<(long Uid, float X, float Z)> DiceForTest(GameSession session) =>
+        ChickenEncounters.DiceForTest(session);
+
+    private bool? MatchSkillRule(GameSession session, int skillId) => Chicken.MatchSkillRule(session, skillId);
+    private Func<long[], long>? ChickenWeekly(Match match, GameSession player) => Chicken.ChickenWeekly(match, player);
+    private ChickenRun NewRun(Match match) => Chicken.NewRun(match);
+    private Task ChickenKillAsync(Match match, GameSession killer, GameSession victim) => Chicken.ChickenKillAsync(match, killer, victim);
+    private Task CountersAsync(Match match, IEnumerable<GameSession> players) => Chicken.CountersAsync(match, players);
+    private Dictionary<int, int> ChickenRanks(Match match) => Chicken.ChickenRanks(match);
+    private Task ChickenLoadedAsync(Match match, GameSession session) => Chicken.ChickenLoadedAsync(match, session);
+    private static void RecordEliminations(Match match, ChickenRun run) => ChickenBattleService.RecordEliminations(match, run);
+    private Task ChickenDetachAsync(Match match, GameSession player) => Chicken.ChickenDetachAsync(match, player);
+    private Task DropFollowAsync(Match match, ChickenRun run, GameSession player) => Chicken.DropFollowAsync(match, run, player);
+    private Task SyncTeamAsync(Match match, int faction) => Chicken.SyncTeamAsync(match, faction);
+    private Task BroadcastHudAsync(Match match) => Chicken.BroadcastHudAsync(match);
+    private static void ClearChickenCustom(GameSession player) => ChickenBattleService.ClearChickenCustom(player);
+    private Task ChickenTickAsync(Match match) => Chicken.ChickenTickAsync(match);
+    private Task<bool> TryChestInteractAsync(GameSession session, NpcInteractionReq req) => Chicken.TryChestInteractAsync(session, req);
+    private bool IsMatchNpc(long uid, bool dice) => ChickenEncounters.IsMatchNpc(uid, dice);
+    private Task<bool> TryShopInteractAsync(GameSession session, NpcInteractionReq req) => ChickenEncounters.TryShopInteractAsync(session, req);
+    private Task<bool> TryDieInteractAsync(GameSession session, NpcInteractionReq req) => ChickenEncounters.TryDieInteractAsync(session, req);
+
+    // ---- Rift Crisis / OnePiece facades (owned by RiftBattleService) ----
+
+    public const int RiftFunction = RiftBattleService.RiftFunction;
+    internal IReadOnlyCollection<RiftBattleService.RiftStone> RiftStones => Rift.RiftStones;
+    internal void KeepRiftStonesForTest(Func<RiftBattleService.RiftStone, bool> keep) => Rift.KeepRiftStonesForTest(keep);
+    internal static bool IsRiftUid(long uid) => RiftBattleService.IsRiftUid(uid);
+    internal int? RiftTestMinParty { get => Rift.RiftTestMinParty; set => Rift.RiftTestMinParty = value; }
+    public Task OnePieceInfoAsync(GameSession session, HiddenTreasureRoundInfoReq req) => Rift.OnePieceInfoAsync(session, req);
+    public Task<bool> TryEnterOnePieceAsync(GameSession session, EnterDungeonReq req) => Rift.TryEnterOnePieceAsync(session, req);
+    public Task<bool> TryConfirmRiftAsync(GameSession session, ConfirmTeamDungeonReq req) => Rift.TryConfirmRiftAsync(session, req);
+    public Task<bool> TryRemindRiftAsync(GameSession session, TeamConfirmRemindersReq req) => Rift.TryRemindRiftAsync(session, req);
+    private Task SyncRiftRestrictAsync(GameSession session) => Rift.SyncRiftRestrictAsync(session);
+    private Task SendOnePieceMapAsync(GameSession session) => Rift.SendOnePieceMapAsync(session);
+    private Task OnePieceLoadedAsync(GameSession session) => Rift.OnePieceLoadedAsync(session);
+    private Task OnePieceLeavingAsync(GameSession session) => Rift.OnePieceLeavingAsync(session);
+    private long TreasureDay() => Rift.TreasureDay();
+    private void TickOnePiece(long now) => Rift.TickOnePiece(now);
+
+    public async Task<bool> TryInteractAsync(GameSession session, NpcInteractionReq req)
+    {
+        if (await TryChestInteractAsync(session, req) || await TryShopInteractAsync(session, req)
+            || await TryDieInteractAsync(session, req)) return true;
+        return await Rift.TryRiftInteractAsync(session, req);
+    }
     private readonly Dictionary<int, List<GameSession>> _queue = [];
     /// <summary>A queued party's members, the same array for each (a solo entrant has none): the party queues, leaves
     /// the queue and is placed in a match together.</summary>
@@ -157,7 +289,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         return info;
     }
 
-    private sealed class Match
+    internal sealed class Match
     {
         public required int Entry;
         public required int TeamSize;
@@ -180,13 +312,13 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         public DragonRun? Dragon;
     }
 
-    private sealed record Participant(Role Role, string Name, int Career, RoleOwner? Owner,
+    internal sealed record Participant(Role Role, string Name, int Career, RoleOwner? Owner,
         AttachmentLease? Lease, long? Epoch)
     {
         public long Id => Role.Id;
     }
 
-    private static (long Id, string Name, int Career) Presentation(Match match, GameSession player)
+    internal static (long Id, string Name, int Career) Presentation(Match match, GameSession player)
     {
         var original = match.Participants[player];
         return ReferenceEquals(player.Role, original.Role) && ReferenceEquals(player.Owner, original.Owner)
@@ -203,35 +335,22 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
     internal Action? SettlementCompletedForTest { get; set; }
     internal int ActiveMatchCountForTest => _matches.Count;
 
-    public TimedBattleService(GameData data, TimedTodoSchedule schedule, TimeProvider time, RoleStore roles, AccountStore accounts,
+    public TimedBattleService(GameData data, TimedTodoSchedule schedule, RoleStore roles, AccountStore accounts,
         CharacterService character, FunctionService functions, AwardService awards, TaskService tasks, InstanceService instances, SceneService scene, WorldData worldData,
-        MonsterService monsters, CombatService combat, SessionRegistry sessions, TeamService teams, LifeJobService life, GameLoop loop,
-        BuffService buffs, SkillService skills, World world, IOptions<ServerOptions> options, ILogger<TimedBattleService> log,
-        GmCommands gm, PraiseService praise, TestingSwitches testing)
+        CombatService combat, SessionRegistry sessions, TeamService teams, GameLoop loop,
+        BuffService buffs, IOptions<ServerOptions> options, ILogger<TimedBattleService> log,
+        PraiseService praise)
     {
-        this._praise = praise; this._testing = testing;
-        gm.Register("rift", "| new | party [min] | <star 1-6> [boss name] (Rift Crisis test aid: status, new round, "
-            + "smallest party, or a stone next to you)", RiftGmAsync);
-        this._teams = teams; this._life = life;
-        life.ProjectedRestrictions.Subscribe(RiftRestriction);
-        this._data = data; this._schedule = schedule; this._time = time; this._roles = roles; this._accounts = accounts;
+        this._praise = praise;
+        this._teams = teams;
+        this._data = data; this._schedule = schedule; this._roles = roles; this._accounts = accounts;
         this._character = character;
-        this._functions = functions; this._awards = awards; this._tasks = tasks; this._instances = instances; this._scene = scene; this._worldData = worldData; this._monsters = monsters;
+        this._functions = functions; this._awards = awards; this._tasks = tasks; this._instances = instances; this._scene = scene; this._worldData = worldData;
         this._sessions = sessions; this._loop = loop; this._log = log;
-        this._combat = combat; this._buffs = buffs; this._skills = skills; this._world = world; this._options = options.Value;
+        this._combat = combat; this._buffs = buffs; this._options = options.Value;
         scene.Loaded.Subscribe(LoadedAsync);
         scene.Leaving.Subscribe(LeavingAsync);
-        combat.Killed.Subscribe(OnePieceKilledAsync);
-        combat.PlayerDied.Subscribe(ChickenDiedAsync);
-        combat.PlayerDied.Subscribe(OnePieceDiedAsync);
-        combat.ReviveInfoOwners.Subscribe(OwnsRevive);
-        combat.PvpDealt.Subscribe(ChickenDealt);
-        combat.Healed.Subscribe(ChickenHealed);
-        combat.CastLanded.Subscribe(ChickenCastAsync);
-        world.CanObserve = CanBeSeen; // Survivor Battle watchers (TimedBattleService.ChickenWatch)
         combat.Dealt.Subscribe(DragonDealt);
-        combat.Killed.Subscribe(DragonBossKilledAsync);
-        character.MatchAttributes = MatchAttributes;
     }
 
     public async Task LoginAsync(GameSession session)
@@ -244,7 +363,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         await SendOnePieceMapAsync(session);
     }
 
-    private async Task SaveAsync(GameSession session, State next)
+    internal async Task SaveAsync(GameSession session, State next)
     {
         if (session.Role == null) return;
         var tx = _roles.NewTransaction();
@@ -252,7 +371,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         await _roles.CommitAsync(tx, "timed-battle/state", _ => session.TimedBattle = next);
     }
 
-    private async Task SyncBattleStateAsync(GameSession session, bool login = false)
+    internal async Task SyncBattleStateAsync(GameSession session, bool login = false)
     {
         if (session.TimedBattle is not { } state) return;
         var chicken = new DBChickenInfo { RankId = state.ChickenRank, ChickenTimes = state.ChickenMatches };
@@ -613,22 +732,22 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
             await SettleMatchAsync(match);
     }
 
-    private static HashSet<int> RemainingFactions(Match match) => [.. match.Players
+    internal static HashSet<int> RemainingFactions(Match match) => [.. match.Players
         .Where(p => !match.Absent.Contains(p) && !match.Fallen.Contains(p))
         .Select(p => match.Faction[p])];
 
-    private Task SettleMatchAsync(Match match) => SettleMatchCoreAsync(match);
+    internal Task SettleMatchAsync(Match match) => SettleMatchCoreAsync(match);
 
 
     /// <summary>The recipient's own rank-score change in its 82633 (UI_Sys_Chicken_RankPanl_FlashAniCom.lua:76-120).</summary>
-    private sealed record ChickenScoreChange(long Added, long Previous, int PreviousRank, int CurrentRank);
+    internal sealed record ChickenScoreChange(long Added, long Previous, int PreviousRank, int CurrentRank);
 
     /// <summary>
     /// 82633: LC_SceneCom_ChickenSettlement.lua:198-353 reads the extraData maps (keys enum_ChickenSettlementAttrDefine,
     /// Lua_GameDefine.lua:14610-14693). battleStartTime goes to GetRoundStartTimeStr without a
     /// /1000 (LC_ChickenHelper.lua:3806-3826): seconds. The rescue/revive keys' exact meaning is (inferred).
     /// </summary>
-    private ChickenResultNotify ChickenSnapshot(Match match, GameSession recipient, bool actualVictory,
+    internal ChickenResultNotify ChickenSnapshot(Match match, GameSession recipient, bool actualVictory,
         ChickenScoreChange? score = null)
     {
         var run = match.Chicken;
@@ -691,7 +810,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         return result;
     }
 
-    private long ChickenRankFloor(int rank)
+    internal long ChickenRankFloor(int rank)
     {
         long floor = 0;
         for (int previous = 1; previous < rank; previous++)
@@ -829,8 +948,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
             keys.Add(ReservationKey.Entity("timed_match", MatchKey(activeMatch)));
             keys.AddRange(activeMatch.Participants.Values.Select(p => ReservationKey.Role(p.Id)));
         }
-        if (_treasure.TryGetValue(session, out var run))
-            keys.Add(ReservationKey.Entity("timed_onepiece", run.Room.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        Rift.AddLeaveKeys(session, keys);
         return [.. keys.Distinct().OrderBy(key => key.Kind).ThenBy(key => key.Id, StringComparer.Ordinal).ThenBy(key => key.Part, StringComparer.Ordinal)];
     }
 
@@ -901,15 +1019,14 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
                 }
                 else await AbortMatchAsync(match, session);
             }
-            if (_treasure.TryGetValue(session, out var run))
-            { run.Settled = true; _treasure.Remove(session); }
+            Rift.LeaveTreasureRole(session);
         }
         // A retry of this leave no longer finds the match, so a refused settlement waits for room now. It marks the match
         // settled only after its commit, so it can run again.
         if (settle != null) await Accounts.Persistence.QueueFullPatience.RunAsync(() => SettleMatchAsync(settle));
     }
 
-    private async Task AbortMatchAsync(Match match, GameSession? departed)
+    internal async Task AbortMatchAsync(Match match, GameSession? departed)
     {
         if (match.Settled) return;
         match.Settled = true;
@@ -929,7 +1046,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule
         if (match.Room != null) _matches.Remove(match.Room.Id);
     }
 
-    private async Task RunMatchTransitionAsync(Match match, string origin, Func<Task> work)
+    internal async Task RunMatchTransitionAsync(Match match, string origin, Func<Task> work)
     {
         var keys = new[] { ReservationKey.Entity("timed_match", MatchKey(match)) }
             .Concat(match.Participants.Values.Select(participant => ReservationKey.Role(participant.Id)))

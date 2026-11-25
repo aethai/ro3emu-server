@@ -1,6 +1,9 @@
 using Romsg;
 using static Ro3Emu.Server.Game.ChickenRules;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -10,12 +13,8 @@ namespace Ro3Emu.Server.Game;
 /// interpolates. The schedule itself is (inferred) <see cref="ChickenRules.ZoneSchedule"/>; the damage is authoritative
 /// here, once per <see cref="ChickenRules.PoisonTickMs"/>, with the HP-drain buff shown while outside.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
-    private sealed record ZoneEvent(long AtMs, int VarId, long[] Values);
-    private sealed record ZoneShrink(long StartMs, long EndMs, float FromX, float FromZ, float ToX, float ToZ,
-        float FromRadius, float ToRadius, int Circle);
-
     /// <summary>Rolls this match's circle centres (each new circle inside the previous one, a walkable centre when one
     /// is found) and the timed var events of <see cref="ChickenRules.ZoneSchedule"/>.</summary>
     private void PlanZone(ChickenRun run, long start)

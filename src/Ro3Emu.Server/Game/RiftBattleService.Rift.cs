@@ -17,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// the scene's boss (NPCConfig 16000001-16000005 share a name and scale 80%-166%); star 6 scenes have one boss each.
 /// One stone set serves every line of a map.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class RiftBattleService
 {
     private const int RiftRoundSeconds = 7200;
     private const long StarNpcInfo = 4900700;
@@ -268,7 +268,7 @@ public sealed partial class TimedBattleService
     private string NpcName(int npc) => _data.Row("NPCConfig", npc) is { } row ? _data.TextOf(row, "_kName") : npc.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>!rift: test aid, not original behaviour.</summary>
-    private async Task RiftGmAsync(GameSession s, string[] args)
+    internal async Task RiftGmAsync(GameSession s, string[] args)
     {
         if (args.Length == 0)
         {

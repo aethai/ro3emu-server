@@ -15,7 +15,7 @@ public sealed partial class TimedBattleService
     /// <summary>The frozen grants of a settlement (timed_battle_obligation) on the shared obligation plans. Delivery
     /// stays this service's own: each row is paid under its role and row reservation right after the settlement
     /// commit, and at login (the role select reserves the pending rows, <see cref="LoginKeysAsync"/>).</summary>
-    private static class Obligations
+    internal static class Obligations
     {
         internal static ReservationKey Key(string source) => RoleObligations<TimedBattleObligationRow>.Key(source);
         internal static DbPlan CreatePlan(IEnumerable<TimedBattleObligationRow> rows) =>
@@ -315,7 +315,7 @@ public sealed partial class TimedBattleService
         _pendingDeliveryRoles.Remove(roleId);
     }
 
-    private async Task DeliverOneAsync(GameSession session, TimedBattleObligationRow obligation)
+    internal async Task DeliverOneAsync(GameSession session, TimedBattleObligationRow obligation)
     {
         var grants = JsonSerializer.Deserialize<AwardGrant[]>(obligation.Grants)
             ?? throw new InvalidDataException("Invalid frozen timed battle grants.");

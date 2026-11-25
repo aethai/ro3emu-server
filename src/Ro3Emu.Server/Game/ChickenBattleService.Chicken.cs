@@ -7,6 +7,9 @@ using Ro3Emu.Server.Game.Ownership;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -16,81 +19,11 @@ namespace Ro3Emu.Server.Game;
 /// Parameters in <see cref="ChickenRules"/>.
 /// A match is transient: none of this is persisted (only the settlement in TimedBattleService.Settlement is).
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     public const uint RoundSync = 5036, SelectCareer = 82622, SelectPosition = 82623, PositionNotify = 82630,
         TeamPositionNotify = 82676;
     private const int AttrChickenPlayerId = 1200, AttrChickenPlayerName = 1201;
-
-    /// <summary>One match's in-scene state.</summary>
-    private sealed class ChickenRun
-    {
-        public int Stage = StageNone;
-        public long StageStartMs, StageEndMs, BattleStartMs, BattleEndMs;
-        public required Random Rng;
-        public Dictionary<GameSession, ChickenPlayer> Players { get; } = new(ReferenceEqualityComparer.Instance);
-        public List<ChickenChestUnit> Chests { get; } = [];
-        public List<ZoneEvent> Zone { get; } = [];
-        public List<ZoneShrink> Shrinks { get; } = [];
-        public int ZonePublished = -1;
-        public List<int> EliminatedFactions { get; } = [];
-        public List<ReviveChannel> Channels { get; } = [];
-        public int PickOrder;
-        public long NextGuid = 1;
-        /// <summary>Landing follow (TimedBattleService.ChickenFollow): follower role -> followed role, and the invite
-        /// cooldowns (inviter, invitee) -> end in seconds.</summary>
-        public Dictionary<long, long> Follow { get; } = [];
-        public Dictionary<(long Inviter, long Invitee), long> InviteCdSec { get; } = [];
-        public long LastTickMs;
-        public HashSet<long> TagDropped { get; } = [];
-        public List<ChickenShop> Shops { get; } = [];
-        /// <summary>Magic Dice still standing, and the encounter offers' operate ids (TimedBattleService.ChickenAdventure).</summary>
-        public List<ChickenNpcUnit> Dice { get; } = [];
-        public long NextOperateId;
-    }
-
-    /// <summary>One participant's match state (the 5036 data and the settlement statistics).</summary>
-    private sealed class ChickenPlayer
-    {
-        public required int TeamIndex;
-        public int Career;
-        public int LandX = UnchosenX, LandZ = UnchosenZ, PickOrder;
-        public bool LandChosen;
-        public Dictionary<long, ChickenItem> Pack { get; } = [];
-        public SortedDictionary<int, long> SkillBar { get; } = [];
-        public SortedDictionary<int, long> EquipBar { get; } = [];
-        public SortedDictionary<int, int> ItemBar { get; } = [];
-        /// <summary>Carried ID tags: dead teammate id -> card guid in the pack (inferred key/value meaning).</summary>
-        public Dictionary<long, long> IdentityCards { get; } = [];
-        public Dictionary<int, long> ItemCd { get; } = [];
-        public RoundRoleStatus State = RoundRoleStatus.InWar;
-        public int FreeRelifeLeft = FreeRelifeCount;
-        /// <summary>An open 82663 revive map: the player comes back at a point of its choice before this time.</summary>
-        public long RelifeUntilMs;
-        public float RelifeX, RelifeZ;
-        public int Resurrections, TagDrops;
-        public bool GaveUp;
-        public long Damage, Injury, Cure, Assists, Deaths, Help, Rescued, Revived;
-        public long EliminatedMs;
-        public Dictionary<GameSession, long> LastHitBy { get; } = new(ReferenceEqualityComparer.Instance);
-        public List<(long PerTick, long UntilMs)> Heals { get; } = [];
-        public long EmojiAtSec;
-        /// <summary>Spectating (TimedBattleService.ChickenWatch): the watched role, the auto-watch time, the last switch.</summary>
-        public long Watching, AutoWatchAtMs, WatchSwitchMs;
-        /// <summary>The weekly tasks' counts (TaskService.ChickenTasks): items used per _iSubType, supply crates opened,
-        /// equipment picked up per quality.</summary>
-        public Dictionary<int, long> UsedSubType { get; } = [];
-        public HashSet<long> OpenedCrates { get; } = [];
-        public Dictionary<int, long> EquipQuality { get; } = [];
-        /// <summary>Match shop purchases per commodity (TimedBattleService.ChickenShop).</summary>
-        public Dictionary<long, long> Bought { get; } = [];
-        /// <summary>Resolved casts per SkillConfig._iSkillID family (weekly target 106506, Camouflage).</summary>
-        public Dictionary<long, long> CastFamilies { get; } = [];
-        /// <summary>Encounters: open offers by operate id, chosen cards in order, Magic Dice used.</summary>
-        public Dictionary<long, AdventureOffer> Offers { get; } = [];
-        public List<long> Cards { get; } = [];
-        public long EventTriggers;
-    }
 
     /// <summary>
     /// What one participant's match adds to the Survivor weekly targets (TaskObjectives TChicken*; inferred event
@@ -99,7 +32,7 @@ public sealed partial class TimedBattleService
     /// skill families p3..p4 (SkillConfig._iSkillID: 151001 is the Disguise items' Camouflage, the quest list reads
     /// "Have the team use Camouflage"), 106507 players defeated. 106503 has no source (no monster is spawned in the match).
     /// </summary>
-    private Func<long[], long>? ChickenWeekly(Match match, GameSession player)
+    internal Func<long[], long>? ChickenWeekly(Match match, GameSession player)
     {
         if (match.Chicken is not { } run || !run.Players.TryGetValue(player, out var me)) return null;
         var ranks = ChickenRanks(match);
@@ -120,7 +53,7 @@ public sealed partial class TimedBattleService
         };
     }
 
-    private ChickenRun NewRun(Match match)
+    internal ChickenRun NewRun(Match match)
     {
         var run = new ChickenRun { Rng = new Random(unchecked((int)(match.Room!.Id ^ (match.Room.Id >> 32)))) };
         foreach (var team in match.Players.GroupBy(p => match.Faction[p]))
@@ -134,12 +67,12 @@ public sealed partial class TimedBattleService
         return run;
     }
 
-    private long NowMs() => _time.GetUtcNow().ToUnixTimeMilliseconds();
+    internal long NowMs() => _time.GetUtcNow().ToUnixTimeMilliseconds();
 
     private static void SetStage(ChickenRun run, int stage, long start, long end)
     { run.Stage = stage; run.StageStartMs = start; run.StageEndMs = end; }
 
-    private (Match Match, ChickenRun Run, ChickenPlayer Me)? Chicken(GameSession session) =>
+    internal (Match Match, ChickenRun Run, ChickenPlayer Me)? Chicken(GameSession session) =>
         _active.TryGetValue(session, out var match) && match.Chicken is { } run && !match.Settled
             && match.Room is { Closed: false } room && session.InstanceId == room.Id
             && run.Players.TryGetValue(session, out var me) ? (match, run, me) : null;
@@ -147,7 +80,7 @@ public sealed partial class TimedBattleService
     private IEnumerable<GameSession> Team(Match match, int faction) =>
         match.Players.Where(p => match.Faction[p] == faction);
 
-    private IEnumerable<GameSession> InRoom(Match match) => match.Players
+    internal IEnumerable<GameSession> InRoom(Match match) => match.Players
         .Where(p => _active.GetValueOrDefault(p) == match && match.Loaded.Contains(p) && match.Room is { } room && p.InstanceId == room.Id);
 
     // ---- careers and the match build ----
@@ -158,7 +91,7 @@ public sealed partial class TimedBattleService
     /// <summary>Wrapper so a missing row is a null reference, not a default JsonElement.</summary>
     private sealed record JsonElementRow(System.Text.Json.JsonElement Row);
 
-    private System.Text.Json.JsonElement? ItemRow(int entry) => _data.Row("EatChickenItemConfig", entry);
+    internal System.Text.Json.JsonElement? ItemRow(int entry) => _data.Row("EatChickenItemConfig", entry);
 
     /// <summary>
     /// CharacterService.MatchAttributes: from ShowCareer on, a participant fights with its match career
@@ -182,7 +115,7 @@ public sealed partial class TimedBattleService
     /// character's own normal attack stays usable (inferred fallback: which attack the client binds in the match is
     /// not established). Anything else of the job tree is refused in the match.
     /// </summary>
-    private bool? MatchSkillRule(GameSession session, int skillId)
+    internal bool? MatchSkillRule(GameSession session, int skillId)
     {
         if (!_active.TryGetValue(session, out var match) || match.Chicken is not { } run || run.Stage < StageShowCareer
             || !run.Players.TryGetValue(session, out var me) || me.Career == 0 || CareerRow(me.Career) is not { } career) return null;
@@ -339,14 +272,14 @@ public sealed partial class TimedBattleService
         return info;
     }
 
-    private async Task SyncRoundAsync(Match match, ChickenRun run, GameSession player)
+    internal async Task SyncRoundAsync(Match match, ChickenRun run, GameSession player)
     {
         if (player.Role == null || !InRoom(match).Contains(player)) return;
         await CharacterService.SyncAsync(player, RoundSync, Round(match, run, player));
         await RefreshLookAsync(match, run, player);
     }
 
-    private Task SyncTeamAsync(Match match, int faction) => match.Chicken is { } run
+    internal Task SyncTeamAsync(Match match, int faction) => match.Chicken is { } run
         ? RoleFanout.EachAsync(Team(match, faction), player => SyncRoundAsync(match, run, player)) : Task.CompletedTask;
 
     // ---- 30401 / 30404 ----
@@ -397,7 +330,7 @@ public sealed partial class TimedBattleService
         await RoleFanout.EachAsync(InRoom(match), p => p.SendGameAsync(DungeonService.Event, notify));
     }
 
-    private Task BroadcastHudAsync(Match match) => match.Chicken is { } run
+    internal Task BroadcastHudAsync(Match match) => match.Chicken is { } run
         ? BroadcastVarsAsync(match, HudVars(match, run)) : Task.CompletedTask;
 
     private Task BroadcastBaseInfoAsync(Match match, ChickenRun run)
@@ -408,7 +341,7 @@ public sealed partial class TimedBattleService
 
     /// <summary>Scene load (also a reload): the whole 5036 first (it closes the ready panel and resets the match state,
     /// LC_DAL_Chicken.lua:1723-1761), then 30401 with the current stage.</summary>
-    private async Task ChickenLoadedAsync(Match match, GameSession session)
+    internal async Task ChickenLoadedAsync(Match match, GameSession session)
     {
         var run = match.Chicken!;
         session.Synced.Remove(RoundSync);
@@ -427,14 +360,14 @@ public sealed partial class TimedBattleService
         }
         await SyncTeamAsync(match, match.Faction[session]);
         if (run.Players[session].Watching is var watched and not 0) await SendCameraAsync(session, watched);
-        session.Synced.Remove(AdventureSync);
+        session.Synced.Remove(ChickenEncounterService.AdventureSync);
         if (run.Players[session] is { } me && (me.Cards.Count > 0 || me.Offers.Count > 0)) await SyncAdventureAsync(match, session, me);
     }
 
     // ---- the stage machine ----
 
     /// <summary>Once per second for every live match (Tick): the stage clock, then the battle's own work.</summary>
-    private async Task ChickenTickAsync(Match match)
+    internal async Task ChickenTickAsync(Match match)
     {
         var damage = new List<(GameSession Player, long Damage)>();
         bool settle = false;
@@ -541,7 +474,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>A walkable point at or near (x, z) on 2240101's nav grid (a ring search up to 40 m).</summary>
-    private MapPoint? WalkablePoint(float x, float z)
+    internal MapPoint? WalkablePoint(float x, float z)
     {
         if (_worldData.Map(ChickenScene) is not { } map) return null;
         if (map.Nav is not { } nav) return new MapPoint(x, 10, z, 0);
@@ -555,13 +488,13 @@ public sealed partial class TimedBattleService
         return null;
     }
 
-    private static (float X, float Z) RandomPoint(ChickenRun run, float cx, float cz, float radius)
+    internal static (float X, float Z) RandomPoint(ChickenRun run, float cx, float cz, float radius)
     {
         double angle = run.Rng.NextDouble() * Math.PI * 2, distance = Math.Sqrt(run.Rng.NextDouble()) * radius;
         return (cx + (float)(Math.Cos(angle) * distance), cz + (float)(Math.Sin(angle) * distance));
     }
 
-    private const long ChickenScene = 2240101;
+    internal const long ChickenScene = 2240101;
 
     private int PoisonBuff() => (Data.Config.PublicParams.Of(_data).EatChickenPoisonBuffId ?? 0) is var id and > 0 ? (int)id : DefaultPoisonBuff;
     private int BagLimit() => (Data.Config.PublicParams.Of(_data).ChickenBagLimit ?? 0) is var limit and > 0 ? (int)limit : DefaultBagLimit;
