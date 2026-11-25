@@ -4,6 +4,7 @@ namespace Ro3Emu.Server.Game;
 public static class MsgId
 {
     public const uint Heartbeat = 1;
+    public const uint CommonError = 2;
     public const uint LoginRoleCreate = 1006;
     public const uint LoginRoleSelect = 1007;
     /// <summary>LOGIN_RECONNECT: a server push only, after a silent gate reconnect.</summary>
@@ -21,6 +22,8 @@ public static class MsgId
     public const uint SyncAoiSelf = 31044;
     public const uint SelfInfoEndFrameNotify = 31053;
     public const uint Walk = 31082;
+    public const uint SceneLineInfo = 70009;
     public const uint SwitchSceneLine = 70010;
     public const uint ImSdkUserSig = 77001;
+    public const uint ApiError = 99999;
 }

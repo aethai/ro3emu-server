@@ -25,7 +25,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
     }
     public const uint ActivitySync = 5013, WorldExplorationSync = 5042, MonthCardSync = 5054;
     public const uint GetList = 82951, GetReward = 82975, Common = 82976, Notify = 82977;
-    public const uint LevelAward = 83200, FunctionPreviewAward = 83201;
+    public const uint LevelAward = 83200, FunctionPreviewAward = 83201, TreasureNotice = 83251;
     public const uint PreSubmit = 82960, PreGetData = 82961, PreReceive = 82962, FragmentAsk = 82963,
         FragmentSend = 82964, FragmentCraft = 82965, FragmentProgress = 82966, FragmentAskFinished = 82967,
         WorldFill = 83450;
@@ -657,7 +657,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         long day = (long)Math.Floor((Now - _activityClock.ServerOpen) / 86400d) + 1;
         if (session.Activities.ActivityServerDay == day) return;
         session.Activities.ActivityServerDay = day;
-        await session.SendGameAsync(30130, new ServerBasicInfo
+        await session.SendGameAsync(WorldCoreService.ServerInfo, new ServerBasicInfo
         { ServerOpenTime = (ulong)_activityClock.ServerOpen, ServerLogicTime = (ulong)Now });
         await _functions.SyncAsync(session);
     }

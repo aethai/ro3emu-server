@@ -483,7 +483,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule, ISt
         catch (Exception e) when (e is IOException or ObjectDisposedException or System.Net.Sockets.SocketException)
         { _log.LogDebug(e, "Territory notification {Id} to closed role {Role}", id, s.Role?.Id); }
     }
-    internal Task Error(GameSession s, uint request, int error) => s.SendGameAsync(2,
+    internal Task Error(GameSession s, uint request, int error) => s.SendGameAsync(MsgId.CommonError,
         new CommonErrorNtf { ErrorCode = error });
 
     /// <summary>Exact territory owner request set shared with dispatcher admission.</summary>

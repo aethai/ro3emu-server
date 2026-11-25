@@ -73,7 +73,7 @@ public sealed partial class AdventureActivityService
             }
         }
         finally { session.ActivityGate.Release(); }
-        await session.SendGameAsync(82960, res);
+        await session.SendGameAsync(NewActivityService.PreSubmit, res);
     }
 
     /// <summary>82961, global progress and today's contribution for the current cycle.</summary>
@@ -94,7 +94,7 @@ public sealed partial class AdventureActivityService
             }
         }
         finally { session.ActivityGate.Release(); }
-        await session.SendGameAsync(82961, res);
+        await session.SendGameAsync(NewActivityService.PreGetData, res);
     }
 
     /// <summary>82962 milestone claims from SeasonPreProgressRewardConfig; every id is once per cycle.</summary>
@@ -126,7 +126,7 @@ public sealed partial class AdventureActivityService
             }
         }
         finally { session.ActivityGate.Release(); }
-        await session.SendGameAsync(82962, res);
+        await session.SendGameAsync(NewActivityService.PreReceive, res);
     }
 
     /// <summary>82963 and the matching 82976 oneof.</summary>
@@ -167,8 +167,8 @@ public sealed partial class AdventureActivityService
         var response = new NewActivityFragmentGatherAskFinishedResp();
         try { error = await FragmentAskFinishedCoreAsync(session, 105, req, response); }
         finally { session.ActivityGate.Release(); scope.Dispose(); }
-        if (error != 0) await session.SendGameAsync(2, new CommonErrorNtf { ErrorCode = error });
-        await session.SendGameAsync(82967, response);
+        if (error != 0) await session.SendGameAsync(MsgId.CommonError, new CommonErrorNtf { ErrorCode = error });
+        await session.SendGameAsync(NewActivityService.FragmentAskFinished, response);
     }
 
     private async Task<int> FragmentAskFinishedCoreAsync(GameSession session, long activityId,
@@ -243,8 +243,8 @@ public sealed partial class AdventureActivityService
             try { await notices.FlushAsync(); }
             catch (Exception e) { _log.LogWarning(e, "Committed fragment notice failed for {Role}", session.Role?.Id); }
         }
-        if (error != 0) await session.SendGameAsync(2, new CommonErrorNtf { ErrorCode = error });
-        await session.SendGameAsync(82964, new NewActivityFragmentGatherSendResp());
+        if (error != 0) await session.SendGameAsync(MsgId.CommonError, new CommonErrorNtf { ErrorCode = error });
+        await session.SendGameAsync(NewActivityService.FragmentSend, new NewActivityFragmentGatherSendResp());
     }
 
     /// <summary>
@@ -368,7 +368,7 @@ public sealed partial class AdventureActivityService
         try { error = await handler(res); }
         finally { session.ActivityGate.Release(); }
         // Legacy 82963–67 responses have no result field; 2 is the client error channel.
-        if (error != 0) await session.SendGameAsync(2, new CommonErrorNtf { ErrorCode = error });
+        if (error != 0) await session.SendGameAsync(MsgId.CommonError, new CommonErrorNtf { ErrorCode = error });
         await session.SendGameAsync(id, res);
     }
 
@@ -379,7 +379,7 @@ public sealed partial class AdventureActivityService
         await session.ActivityGate.WaitAsync();
         try { res.Err = await WorldFillCoreAsync(session, 111, req); }
         finally { session.ActivityGate.Release(); }
-        await session.SendGameAsync(83450, res);
+        await session.SendGameAsync(NewActivityService.WorldFill, res);
     }
 
     /// <summary>82975 is used by SevenDays; other adventure rewards have subtype-specific requests.</summary>

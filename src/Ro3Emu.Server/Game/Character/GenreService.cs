@@ -20,7 +20,7 @@ public sealed partial class GenreService(
     public const uint GenreSync = 5008;
     public const uint Seek = 82800, Respond = 82801, SendPlan = 82802, SaveRec = 82803, DeleteRec = 82804,
         DeleteSeeker = 82805, SwitchPlan = 82806, Code = 82807, MyRecs = 82808, Others = 82809, Concrete = 82810,
-        RespondCode = 82812, ApplyRec = 82813, RenamePlan = 82816, Property = 82823, RenameRec = 82824,
+        RespondCode = 82812, ApplyRec = 82813, RenamePlan = 82816, UpdateNtf = 82822, Property = 82823, RenameRec = 82824,
         PlanPower = 82825, Season = 82826, School = 82827, QueryRecs = 82828;
     private const int PlanCount = 5; // (inferred) PublicParamConfig.SchemeNum, zero-based Build labels.
     private const int NameMax = 8; // PublicParamConfig.SchemeNameNumMax.
@@ -213,7 +213,7 @@ public sealed partial class GenreService(
                 }
             }
             reply.Result = code;
-            await s.SendGameAsync(82806, reply);
+            await s.SendGameAsync(SwitchPlan, reply);
             if (code == 0)
             {
                 await SyncAsync(s);
@@ -293,7 +293,7 @@ public sealed partial class GenreService(
             try { await SaveGenreAsync(s, next); await SyncAsync(s); }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build rename failed"); code = ErrorCodes.Unknown; }
         }
-        await s.SendGameAsync(82816, new GenreChangePlanNameResp { Result = code });
+        await s.SendGameAsync(RenamePlan, new GenreChangePlanNameResp { Result = code });
     }
 
     internal async Task PropertyAsync(GameSession s, GenreGetPlanPropertyReq req)
@@ -304,7 +304,7 @@ public sealed partial class GenreService(
         if (code == 0) code = StageSelection(s, next, req.GenrePlans);
         var reply = new GenreGetPlanPropertyResp { Result = code };
         if (code == 0) foreach (var (id, value) in Properties(s, next)) reply.Propertys[id] = value;
-        await s.SendGameAsync(82823, reply);
+        await s.SendGameAsync(Property, reply);
     }
 
     internal async Task PowerAsync(GameSession s, GenrePlanPowerReq req)
@@ -313,7 +313,7 @@ public sealed partial class GenreService(
         int code = Gate(s);
         var next = new Stage(s, skills);
         if (code == 0) code = StageSelection(s, next, req.GenrePlans);
-        await s.SendGameAsync(82825, new GenrePlanPowerResp { Result = code, Power = code == 0 ? Power(s, next) : new() });
+        await s.SendGameAsync(PlanPower, new GenrePlanPowerResp { Result = code, Power = code == 0 ? Power(s, next) : new() });
     }
 
     internal async Task SeasonAsync(GameSession s)
@@ -326,7 +326,7 @@ public sealed partial class GenreService(
             try { await SaveGenreAsync(s, next); await SyncAsync(s); }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build season flag failed"); code = ErrorCodes.Unknown; }
         }
-        await s.SendGameAsync(82826, new GenreSeasonResp { Result = code });
+        await s.SendGameAsync(Season, new GenreSeasonResp { Result = code });
     }
 
     internal async Task SchoolAsync(GameSession s, GenreAttrSettingSchoolReq req)
@@ -348,7 +348,7 @@ public sealed partial class GenreService(
             }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build school selection failed"); code = ErrorCodes.Unknown; }
         }
-        await s.SendGameAsync(82827, new GenreAttrSettingSchoolResp
+        await s.SendGameAsync(School, new GenreAttrSettingSchoolResp
         { Result = code, PlanId = req.PlanId, ProfessionId = req.ProfessionId });
     }
 }
