@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Repoints the RO3 client (the PC build) at an emulator by rewriting string literals in managed DLLs:
@@ -375,7 +375,7 @@ public static class ClientPatcher
             }
             catch (AssemblyResolutionException e) { missing.Add($"{member.FullName} (assembly {e.AssemblyReference.Name})"); }
         }
-        return missing.ToList();
+        return [.. missing];
     }
 
     /// <summary>Resolves assemblies by file name in the given folders only.</summary>
@@ -466,7 +466,7 @@ public static class ClientPatcher
     {
         public int Hits { get; set; }
         /// <summary>The hosts of the URLs replaced, for the log.</summary>
-        public HashSet<string> Hosts { get; } = new();
+        public HashSet<string> Hosts { get; } = [];
 
         /// <summary>Whether <paramref name="value"/>, a literal in a member of <paramref name="type"/>, is one this rule rewrites.</summary>
         public bool Applies(TypeDefinition type, string value) => Match(value) && (InType == null || Within(type, InType));

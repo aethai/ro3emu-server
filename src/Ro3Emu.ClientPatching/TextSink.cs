@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Layer 1 of the localization: every text the client draws passes Ro3Emu.Loc.Ro3Loc.Map* first.

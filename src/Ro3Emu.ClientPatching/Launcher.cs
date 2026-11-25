@@ -3,7 +3,7 @@ using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// Starts ro3.exe the way RO3Launcher.exe does. RO3.ClientSecurity.LauncherProofGuard kills the game (exit 70) unless

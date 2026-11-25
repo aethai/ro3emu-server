@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Mono.Cecil" />
+    <ProjectReference Include="..\Ro3Emu.ClientPatching\Ro3Emu.ClientPatching.csproj" />
     <ProjectReference Include="..\Ro3Emu.Patcher\Ro3Emu.Patcher.csproj" />
   </ItemGroup>
 

@@ -1,7 +1,7 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace Ro3Emu.ClientTools;
+namespace Ro3Emu.ClientPatching;
 
 /// <summary>
 /// UnityEngine.UI.dll -> Ro3Emu.ClientHooks TextureSwap (English art for Chinese-text images):

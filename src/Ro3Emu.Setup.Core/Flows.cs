@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
-using Ro3Emu.ClientTools;
+using Ro3Emu.ClientPatching;
 using Ro3Emu.DataExport;
 
 namespace Ro3Emu.Setup;
@@ -165,7 +165,7 @@ internal static class Flows
     /// <summary>Our translations, embedded in RO3Emu.exe, in file name order.</summary>
     public static List<string> Translations()
     {
-        var assembly = Assembly.GetExecutingAssembly();
+        var assembly = typeof(Flows).Assembly;
         return [.. assembly.GetManifestResourceNames().Where(n => n.StartsWith("translations/", StringComparison.Ordinal)).Order(StringComparer.Ordinal)
             .Select(n =>
             {
@@ -204,12 +204,12 @@ internal static class Flows
                 if (local.Ports.Panel > 0)
                     Ui.Info($"Web panel for players and admins: http://{local.PublicHost}:{local.Ports.Panel} (docs/guide/panel.md).");
             }
-            if (server != null) Program.OnClose = () => server.Stop(TimeSpan.FromSeconds(4));
+            if (server != null) SetupRuntime.OnClose = () => server.Stop(TimeSpan.FromSeconds(4));
             return await PlayAndWaitAsync(client, server, options.NoLaunch);
         }
         finally
         {
-            Program.OnClose = null;
+            SetupRuntime.OnClose = null;
             StopServer(server);
         }
     }
@@ -315,10 +315,10 @@ internal static class Flows
 
         Task<string?>? line = Ui.Interactive ? null : Task.Run(Console.In.ReadLine);
         bool gameAnnounced = false;
-        Program.Waiting = true;
+        SetupRuntime.Waiting = true;
         try
         {
-            while (!Program.StopRequested)
+            while (!SetupRuntime.StopRequested)
             {
                 if (server is { HasExited: true })
                 {
@@ -349,7 +349,7 @@ internal static class Flows
                 await Task.Delay(300);
             }
         }
-        finally { Program.Waiting = false; }
+        finally { SetupRuntime.Waiting = false; }
         return 0;
     }
 
@@ -525,7 +525,7 @@ internal static class Flows
     {
         var zip = DiagnosticsZip.Write(KnownClient(options));
         Ui.Ok($"Wrote {zip}");
-        Ui.Info($"Attach it to an issue at {Program.IssuesUrl}.");
+        Ui.Info($"Attach it to an issue at {SetupRuntime.IssuesUrl}.");
         Ui.Reveal(zip);
         return 0;
     }

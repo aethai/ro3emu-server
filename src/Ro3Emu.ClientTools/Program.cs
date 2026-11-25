@@ -1,3 +1,4 @@
+using Ro3Emu.ClientPatching;
 using Ro3Emu.ClientTools;
 
 // Ro3Emu.ClientTools — everything a player needs to use the RO3 client (the PC build) with an Ro3Emu server.
