@@ -24,7 +24,7 @@ public sealed partial class CardService
 
     private const int PlanCount = 5; // (inferred) PublicParamConfig.SchemeNum; card plans have no separate count field.
     private const int NameMax = 8; // (inferred) PublicParamConfig.SchemeNameNumMax shared with scheme UI.
-    public List<Func<GameSession, Task>> CollectionChanged { get; } = [];
+    public AsyncHook<GameSession> CollectionChanged { get; } = new("CardService.CollectionChanged");
     /// <summary>Required quest continuation, installed by TaskService. Unlike optional observers it
     /// retains durable debt until the task pass has committed.</summary>
     internal Func<GameSession, OwnerContext, Task<bool>>? RequiredCollectionRefresh { get; set; }
@@ -67,7 +67,7 @@ public sealed partial class CardService
         this._clock = clock;
         this._log = log;
         this._loop = loop;
-        character.ItemGained.Add(OnItemGained);
+        character.ItemGained.Subscribe(OnItemGained);
         character.StageFirstCardSight = StageFirstCardSight;
         character.RegisterItemAction(GainLibraryPageAction, UseLibraryPageItemAsync);
     }
@@ -899,7 +899,7 @@ public sealed partial class CardService
         // Quest collection subscribers may deliver rewards; run them after the character lock and before any reply.
         // The library was already committed, so a failed subscriber cannot turn a successful unlock into a lost reply.
         if (attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
-            foreach (var handler in CollectionChanged)
+            foreach (var handler in CollectionChanged.Handlers)
                 try { await handler(session); }
                 catch (Exception e) { _log.LogError(e, "Card collection callback failed for role {Role}", session.Role!.Id); }
     }

@@ -55,7 +55,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     public Func<int, Dictionary<int, long>?>? TotemAttrFactory { get; set; }
 
     /// <summary>Transactional collection consumables. Called with StateLock held after common item validation.</summary>
-    public List<Func<GameSession, ItemUseReq, InvItem, JsonElement, int, Task<int?>>> SpecialItemUse { get; } = [];
+    public OrderedHook<Func<GameSession, ItemUseReq, InvItem, JsonElement, int, Task<int?>>> SpecialItemUse { get; } = new("CharacterService.SpecialItemUse");
 
     /// <summary>EntityBase.equipInfo holds the item ids of equipment grids 1..7 (MainHand, ViceHand, Armor, ...).</summary>
     private const int EquipInfoSlots = 7;
@@ -79,16 +79,16 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     internal void Save(GameSession session) => roles.SaveProgress(session.Role!.Id, session.Progress!);
 
     /// <summary>An item entered the bag: entry and the count gained (card collection first sight, achievement counters).</summary>
-    public List<Action<GameSession, int, int>> ItemGained { get; } = [];
+    public SyncHook<GameSession, int, int> ItemGained { get; } = new("CharacterService.ItemGained");
 
     /// <summary>The items of a committed award (quest reward, drop, gift). A GM grant or a shop exchange does not pass here.</summary>
-    public List<Action<GameSession, IReadOnlyList<(int Entry, int Count)>>> ItemsAwarded { get; } = [];
+    public SyncHook<GameSession, IReadOnlyList<(int Entry, int Count)>> ItemsAwarded { get; } = new("CharacterService.ItemsAwarded");
     internal sealed record FirstCardSightPlan(Action<RoleItemPlanBuilder> Persist, Action Apply);
     /// <summary>CardService enlists first sight in owned award/exchange commits and, for a kill, the slain monster's Codex kill (NPC id, 0 none).</summary>
     internal Func<GameSession, IReadOnlyList<int>, int, FirstCardSightPlan?>? StageFirstCardSight { get; set; }
 
     /// <summary>After a successful 31323 consume and its effects; quest engine queues objective evaluation.</summary>
-    public List<Action<GameSession, int, int>> ItemUsed { get; } = [];
+    public SyncHook<GameSession, int, int> ItemUsed { get; } = new("CharacterService.ItemUsed");
 
     /// <summary>LifeJobService owns action 607/315 item transactions; null means ordinary item effects.</summary>
     internal Func<GameSession, InvItem, JsonElement, int, Task<int?>>? LifeItemUse { get; set; }
@@ -106,7 +106,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     }
 
     /// <summary>After a committed inventory, equipment or stat change; listeners defer any grant work.</summary>
-    public List<Action<GameSession>> StateChanged { get; } = [];
+    public SyncHook<GameSession> StateChanged { get; } = new("CharacterService.StateChanged");
 
     /// <summary>For CardService: item, stat and look updates after socket changes (caller holds the lock).</summary>
     internal async Task ItemsChangedAsync(GameSession session, bool stats)
@@ -120,7 +120,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
         }
         await SyncItemsAsync(session);
         if (stats) await SendStatsAsync(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     internal ItemBaseInfo ItemInfoOf(InvItem item) => ItemInfo(item);
@@ -147,7 +147,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     internal Func<GameSession, IEnumerable<(long Id, double Value)>>? TalentAttributes { get; set; }
 
     /// <summary>Runs after level / job level / job changes (SkillService resends skill points and the normal attack).</summary>
-    public List<Func<GameSession, Task>> ProgressHandlers { get; } = [];
+    public AsyncHook<GameSession> ProgressHandlers { get; } = new("CharacterService.ProgressHandlers");
 
 }
 

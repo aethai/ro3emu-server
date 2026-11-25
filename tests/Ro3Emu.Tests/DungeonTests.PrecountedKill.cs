@@ -59,8 +59,8 @@ public sealed partial class DungeonTests
             if (ReferenceEquals(m, actors[0])) firstObserved.TrySetResult();
             return Task.CompletedTask;
         };
-        combat.DealtAsync.Add(holdFirst);
-        combat.Killed.Add(observeFirst);
+        using var holdSub = combat.DealtAsync.Subscribe(holdFirst);
+        using var observeSub = combat.Killed.Subscribe(observeFirst);
         dungeon.AfterTerminalKillsPrecountedForTest = attempt =>
         {
             if (attempt.Room.Id != room) return Task.CompletedTask;
@@ -109,8 +109,6 @@ public sealed partial class DungeonTests
             releaseFirst.TrySetResult();
             releaseFreeze.TrySetResult();
             dungeon.AfterTerminalKillsPrecountedForTest = null;
-            combat.DealtAsync.Remove(holdFirst);
-            combat.Killed.Remove(observeFirst);
         }
     }
 }

@@ -102,18 +102,18 @@ public sealed class CardEffects
         this._character = character;
         this._buffs = buffs;
         this._combat = combat;
-        cards.SocketsChanged.Add(RefreshAsync);
-        character.WornGearChanged.Add(RefreshAsync);
-        scenes.Loaded.Add(RefreshAsync);
-        combat.DamageAdjusters.Add(AdjustDamage);
-        combat.DealtAsync.Add(OnDealtAsync);
-        combat.CastResolved.Add(OnCastResolvedAsync);
-        combat.PlayerDamageAdjusters.Add(AdjustDamageTaken);
-        combat.CardHitReactions.Add(ReflectAsync);
-        combat.PvpDamageAdjusters.Add(AdjustPvpDamage);
-        combat.PvpHitLanded.Add(OnPvpHitAsync);
-        combat.TakenAsync.Add((_, s, damage) => OnHitTakenAsync(s, damage));
-        combat.PvpDealtAsync.Add((_, target, damage, _) => OnHitTakenAsync(target, damage));
+        cards.SocketsChanged.Subscribe(RefreshAsync);
+        character.WornGearChanged.Subscribe(RefreshAsync);
+        scenes.Loaded.Subscribe(RefreshAsync);
+        combat.DamageAdjusters.Subscribe(AdjustDamage);
+        combat.DealtAsync.Subscribe(OnDealtAsync);
+        combat.CastResolved.Subscribe(OnCastResolvedAsync);
+        combat.PlayerDamageAdjusters.Subscribe(AdjustDamageTaken);
+        combat.CardHitReactions.Subscribe(ReflectAsync);
+        combat.PvpDamageAdjusters.Subscribe(AdjustPvpDamage);
+        combat.PvpHitLanded.Subscribe(OnPvpHitAsync);
+        combat.TakenAsync.Subscribe((_, s, damage) => OnHitTakenAsync(s, damage));
+        combat.PvpDealtAsync.Subscribe((_, target, damage, _) => OnHitTakenAsync(target, damage));
     }
 
     private IEnumerable<Passive> Passives(GameSession s)

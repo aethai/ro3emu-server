@@ -38,9 +38,9 @@ public sealed class WorldInteractionService
         this._worldData = worldData;
         scene.ValidateInteraction = ValidateInteraction;
         scene.ApplyInteraction = ApplyInteractionAsync;
-        scene.Leaving.Add(LeaveAsync);
+        scene.Leaving.Subscribe(LeaveAsync);
         // MiniMap_ServerCellWidget refuses line changes while interacting (client lines 350-377).
-        scene.LineSwitchChecks.Add(s => _active.ContainsKey(s) ? ErrorCodes.NpcParameter : 0);
+        scene.LineSwitchChecks.Subscribe(s => _active.ContainsKey(s) ? ErrorCodes.NpcParameter : 0);
         world.PlayerEntered.Add(PlayerEnteredAsync);
     }
 

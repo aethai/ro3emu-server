@@ -31,9 +31,9 @@ public sealed class InstanceService
         this._monsters = monsters;
         this._combat = combat;
         this._loop = loop;
-        scene.Leaving.Add(AbandonAsync);
-        scene.BeforeSelf.Add(RecoverOnReturnAsync);
-        scene.AfterLoaded.Add(NotifyRecoveredAsync);
+        scene.Leaving.Subscribe(AbandonAsync, order: SceneService.LeaveOrderInstance);
+        scene.BeforeSelf.Subscribe(RecoverOnReturnAsync);
+        scene.AfterLoaded.Subscribe(NotifyRecoveredAsync);
     }
 
     private sealed class ReturnRecovery(Role role, AttachmentLease? lease, long generation, long outsideScene, long sourceInstance)

@@ -219,9 +219,8 @@ public sealed class GatheringTests : IAsyncLifetime
         var character = _server.Service<CharacterService>();
         int faults = 0;
         Action<GameSession> fail = _ => { faults++; throw new IOException("test gather postcommit notice failure"); };
-        character.StateChanged.Add(fail);
-        try { await Cast(alice, node, advanceSeconds: 7); }
-        finally { character.StateChanged.Remove(fail); }
+        using (character.StateChanged.Subscribe(fail))
+            await Cast(alice, node, advanceSeconds: 7);
         Assert.Equal(1, faults);
         Assert.Single(GatherSources());
         Assert.Equal(1, await OnLoop("alice", s =>

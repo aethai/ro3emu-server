@@ -65,9 +65,9 @@ public sealed class GuildHuntingService : IGameTicker
         this._sessions = sessions; this._functions = functions; this._schedule = schedule; this._time = time;
         this._instances = instances; this._maps = maps; this._buffs = buffs; this._loop = loop; this._home = home;
         this._mail = mail; this._awards = awards; this._seasons = seasons; this._tasks = tasks; this._log = log;
-        scene.Loaded.Add(LoadedAsync);
-        combat.Killed.Add(KilledAsync);
-        combat.Dealt.Add(Dealt);
+        scene.Loaded.Subscribe(LoadedAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.Dealt.Subscribe(Dealt);
         guildService.HuntingBusy = Busy;
     }
 

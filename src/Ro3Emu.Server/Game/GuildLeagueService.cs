@@ -48,7 +48,7 @@ public sealed partial class GuildLeagueService : IGameTicker
 
     /// <summary>A newly committed match outcome: its round (1-3) and each fighter's personal points (quest targets
     /// 106603 and 106019). Runs inside the Realm settlement; listeners post their work.</summary>
-    public List<Action<int, IReadOnlyDictionary<long, long>>> MatchCommitted { get; } = [];
+    public SyncHook<int, IReadOnlyDictionary<long, long>> MatchCommitted { get; } = new("GuildLeagueService.MatchCommitted");
     private readonly SemaphoreSlim _gate = new(1, 1);
     private LeagueState _state;
 

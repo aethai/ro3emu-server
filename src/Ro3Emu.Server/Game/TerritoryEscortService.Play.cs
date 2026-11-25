@@ -374,7 +374,7 @@ public sealed partial class TerritoryEscortService
         });
         if (result == 0)
         {
-            foreach (var handler in CartStarted) handler(s);
+            foreach (var handler in CartStarted.Handlers) handler(s);
             await RefreshCartActorsAsync();
             var c = startedCart!;
             var play = ledger.Play[g!.Id];

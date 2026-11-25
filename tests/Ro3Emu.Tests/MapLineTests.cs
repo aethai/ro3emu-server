@@ -205,7 +205,7 @@ public sealed class MapLineTests : IAsyncLifetime
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<SceneService>().BeforeSelf.Add(async s =>
+            Service<SceneService>().BeforeSelf.Subscribe(async s =>
             {
                 if (s == player) { entered.TrySetResult(); await release.Task; }
             });
@@ -248,7 +248,7 @@ public sealed class MapLineTests : IAsyncLifetime
         {
             await Service<GmCommands>().RunAsync(a, "!job 2100");
             a.Progress!.Skills[12010] = 1;
-            Service<CombatService>().CastLanded.Add(async (s, _) => { if (s == a) { entered.TrySetResult(); await release.Task; } });
+            Service<CombatService>().CastLanded.Subscribe(async (s, _) => { if (s == a) { entered.TrySetResult(); await release.Task; } });
         });
         try
         {
@@ -281,7 +281,7 @@ public sealed class MapLineTests : IAsyncLifetime
         await Move(alice, a, 10100);
         await OnLoop(() =>
         {
-            Service<SceneService>().Leaving.Add(s => s == a ? Task.FromException(new IOException("controlled leave failure")) : Task.CompletedTask);
+            Service<SceneService>().Leaving.Subscribe(s => s == a ? Task.FromException(new IOException("controlled leave failure")) : Task.CompletedTask);
             return Task.CompletedTask;
         });
         await Assert.ThrowsAsync<IOException>(() => OnLoop(() => Service<SceneService>().EnterSceneAsync(a, 10100, createLine: true)));

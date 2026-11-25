@@ -27,8 +27,8 @@ public sealed partial class CharacterService
         await CommitStatsAsync(session, "gm-profession-stats", p, plans);
         await SendStatPlanAsync(session);
         await SendStatsAsync(session, showChange: true);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
         return $"Stats {string.Join('/', stats)} (profession {profession}, level {build.BaseLv}), {TotalPoints(p) - UsedPoints(p)} points left.";
     }
 }

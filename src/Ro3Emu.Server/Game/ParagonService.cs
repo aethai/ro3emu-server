@@ -52,10 +52,10 @@ public sealed class ParagonService
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
         this._options = options.Value;
-        character.ExtraAttributes.Add(Attributes);
-        character.StateChanged.Add(s => _ = SyncIfOpenAsync(s));
+        character.ExtraAttributes.Subscribe(Attributes);
+        character.StateChanged.Subscribe(s => _ = SyncIfOpenAsync(s));
         power.ParagonPower = s => s.Paragon == null || s.Progress == null ? 0 : Power(s, s.Paragon);
-        rewards.ExtraKillDrops.Add(StarCoreDrops);
+        rewards.ExtraKillDrops.Subscribe(StarCoreDrops);
         gm.Register("paragon", "exp <n> | level <n> | info (Astral Level test aid)", GmAsync);
     }
 

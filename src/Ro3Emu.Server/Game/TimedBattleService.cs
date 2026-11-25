@@ -210,24 +210,24 @@ public sealed partial class TimedBattleService : IGameTicker
         gm.Register("rift", "| new | party [min] | <star 1-6> [boss name] (Rift Crisis test aid: status, new round, "
             + "smallest party, or a stone next to you)", RiftGmAsync);
         this._teams = teams; this._life = life;
-        life.ProjectedRestrictions.Add(RiftRestriction);
+        life.ProjectedRestrictions.Subscribe(RiftRestriction);
         this._data = data; this._schedule = schedule; this._time = time; this._roles = roles; this._accounts = accounts;
         this._character = character;
         this._functions = functions; this._awards = awards; this._tasks = tasks; this._instances = instances; this._scene = scene; this._worldData = worldData; this._monsters = monsters;
         this._sessions = sessions; this._loop = loop; this._log = log;
         this._combat = combat; this._buffs = buffs; this._skills = skills; this._world = world; this._options = options.Value;
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(LeavingAsync);
-        combat.Killed.Add(OnePieceKilledAsync);
-        combat.PlayerDied.Add(ChickenDiedAsync);
-        combat.PlayerDied.Add(OnePieceDiedAsync);
-        combat.ReviveInfoOwners.Add(OwnsRevive);
-        combat.PvpDealt.Add(ChickenDealt);
-        combat.Healed.Add(ChickenHealed);
-        combat.CastLanded.Add(ChickenCastAsync);
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
+        combat.Killed.Subscribe(OnePieceKilledAsync);
+        combat.PlayerDied.Subscribe(ChickenDiedAsync);
+        combat.PlayerDied.Subscribe(OnePieceDiedAsync);
+        combat.ReviveInfoOwners.Subscribe(OwnsRevive);
+        combat.PvpDealt.Subscribe(ChickenDealt);
+        combat.Healed.Subscribe(ChickenHealed);
+        combat.CastLanded.Subscribe(ChickenCastAsync);
         world.CanObserve = CanBeSeen; // Survivor Battle watchers (TimedBattleService.ChickenWatch)
-        combat.Dealt.Add(DragonDealt);
-        combat.Killed.Add(DragonBossKilledAsync);
+        combat.Dealt.Subscribe(DragonDealt);
+        combat.Killed.Subscribe(DragonBossKilledAsync);
         combat.MatchSkillRule = MatchSkillRule;
         character.MatchAttributes = MatchAttributes;
     }

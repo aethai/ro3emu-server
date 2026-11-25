@@ -131,7 +131,7 @@ public sealed partial class TerritoryWarsService
             { _log.LogDebug(e, "Territory settlement delivery deferred for disconnected role {Role}", s.Role?.Id); }
         });
         foreach (var p in r.Players.Values.Where(p => p.Loaded))
-            foreach (var handler in BattleSettled) handler(p.Id, r.Round);
+            foreach (var handler in BattleSettled.Handlers) handler(p.Id, r.Round);
         // The battle's war machines end with it, outside the territory gate (their owners' slots are the guild's).
         if (_battles.GetValueOrDefault(key) is { } room)
             _loop.PostLegacy(async () => { await EndPlatformsAsync(room); await EndWarMachinesAsync(room.Room); });

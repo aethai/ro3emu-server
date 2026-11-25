@@ -893,14 +893,13 @@ public sealed class WildAfkTests : IAsyncLifetime
         var eligibilityReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var rewardSettled = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var trailingCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        int rewardIndex = combat.BeforeKilled.FindIndex(h => h.Target is RewardService);
-        Assert.True(rewardIndex >= 0);
-        var originalRewardHandler = combat.BeforeKilled[rewardIndex];
-        combat.BeforeKilled[rewardIndex] = async (owner, monster) =>
-        {
-            try { await originalRewardHandler(owner, monster); rewardSettled.TrySetResult(null); }
-            catch (Exception error) { rewardSettled.TrySetResult(error); throw; }
-        };
+        using var rewardWrap = combat.BeforeKilled.WrapForTest(
+            h => h.Target is RewardService,
+            original => async (owner, monster) =>
+            {
+                try { await original(owner, monster); rewardSettled.TrySetResult(null); }
+                catch (Exception error) { rewardSettled.TrySetResult(error); throw; }
+            });
         Func<GameSession, MonsterUnit, Task> afterKill = (_, _) => { trailingCalled.TrySetResult(); return Task.CompletedTask; };
         rewards.QualifiesForBonus = (owner, monster) =>
         {
@@ -908,7 +907,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             eligibilityReached.TrySetResult();
             return decision;
         };
-        combat.Killed.Add(afterKill);
+        using var afterKillSub = combat.Killed.Subscribe(afterKill);
 
         var killCaptured = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var enterOldGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -996,8 +995,6 @@ public sealed class WildAfkTests : IAsyncLifetime
             if (initialGateHeld) oldAfk.Gate.Release();
             if (blockerAcquired && !blockerReleased) oldAfk.Gate.Release();
             rewards.QualifiesForBonus = originalEligibility;
-            combat.BeforeKilled[rewardIndex] = originalRewardHandler;
-            combat.Killed.Remove(afterKill);
         }
     }
 

@@ -110,6 +110,60 @@ public class OrderedHook<TDelegate>(
         return list;
     }
 
+    internal void ClearForTest()
+    {
+        lock (_gate)
+        {
+            _entries = [];
+            _handlers = [];
+        }
+    }
+
+    internal IDisposable WrapForTest(Func<TDelegate, bool> match, Func<TDelegate, TDelegate> wrap)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        ArgumentNullException.ThrowIfNull(wrap);
+        long sequence;
+        TDelegate original;
+        lock (_gate)
+        {
+            int index = -1;
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                if (match(_entries[i].Handler))
+                {
+                    index = i;
+                    break;
+                }
+            }
+            if (index < 0) throw new InvalidOperationException("No matching hook subscriber found.");
+            var existing = _entries[index];
+            sequence = existing.Sequence;
+            original = existing.Handler;
+            var wrapped = wrap(original);
+            _entries = _entries.SetItem(index, existing with { Handler = wrapped });
+            _handlers = _handlers.SetItem(index, wrapped);
+        }
+
+        return new RestoreWrap(this, sequence, original);
+    }
+
+    private void RestoreHandler(long sequence, TDelegate original)
+    {
+        lock (_gate)
+        {
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                if (_entries[i].Sequence == sequence)
+                {
+                    _entries = _entries.SetItem(i, _entries[i] with { Handler = original });
+                    _handlers = _handlers.SetItem(i, original);
+                    return;
+                }
+            }
+        }
+    }
+
     protected void RecordFailure(Exception exception, string subscriberName)
     {
         if (logger != null)
@@ -156,6 +210,17 @@ public class OrderedHook<TDelegate>(
         {
             var hook = Interlocked.Exchange(ref _owner, null);
             hook?.Unsubscribe(sequence);
+        }
+    }
+
+    private sealed class RestoreWrap(OrderedHook<TDelegate> owner, long sequence, TDelegate original) : IDisposable
+    {
+        private OrderedHook<TDelegate>? _owner = owner;
+
+        public void Dispose()
+        {
+            var hook = Interlocked.Exchange(ref _owner, null);
+            hook?.RestoreHandler(sequence, original);
         }
     }
 }

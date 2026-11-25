@@ -21,7 +21,7 @@ public sealed partial class CharacterService
         await CommitCharacterAsync(session, "gm-clear", nextItems: next,
             costs: [.. removed.Select(i => (i.Entry, (long)i.Stack))]);
         await SyncItemsAsync(session);
-        if (removed.Count > 0) foreach (var handler in StateChanged) handler(session);
+        if (removed.Count > 0) foreach (var handler in StateChanged.Handlers) handler(session);
         return $"Removed {removed.Count} item(s).";
     }
 
@@ -118,7 +118,7 @@ public sealed partial class CharacterService
             LifeItemExchange.Value = lifeUse;
             try
             {
-                foreach (var handler in SpecialItemUse)
+                foreach (var handler in SpecialItemUse.Handlers)
                 {
                     specialized = await handler(session, req, item, row.Value, count);
                     if (specialized != null) break;
@@ -158,8 +158,8 @@ public sealed partial class CharacterService
         }
         if (specialized == null) await ApplyUseEffectsAsync(session, row.Value, count, req);
         else await AfterItemActionAsync(session);
-        foreach (var handler in ItemUsed) handler(session, entry, count);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in ItemUsed.Handlers) handler(session, entry, count);
+        foreach (var handler in StateChanged.Handlers) handler(session);
         return 0;
     }
 

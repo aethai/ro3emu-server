@@ -14,17 +14,17 @@ internal sealed class EventSettlementOutcomeUnknownException(string message, Exc
 public sealed partial class CombatService
 {
     /// <summary>E05e: frozen event entitlement precedes lethal wire publication; ordinary kill callbacks retain their order.</summary>
-    public List<Func<GameSession, MonsterUnit, long, Task>> BeforeLethalPublication { get; } = [];
+    public AsyncHook<GameSession, MonsterUnit, long> BeforeLethalPublication { get; } = new("Combat.BeforeLethalPublication");
     /// <summary>Finalize a committed event death even when the initiating attachment stopped during commit.</summary>
-    public List<Func<MonsterUnit, Task>> AfterLethalPublication { get; } = [];
+    public AsyncHook<MonsterUnit> AfterLethalPublication { get; }
     /// <summary>Undo unpublished combat-side scores when the event source is proven absent.</summary>
-    public List<Action<MonsterUnit>> LethalHitRolledBack { get; } = [];
+    public SyncHook<MonsterUnit> LethalHitRolledBack { get; } = new("Combat.LethalHitRolledBack");
     internal Action<MonsterUnit, long, long>? LethalRollbackObservedForTest { get; set; }
 
     internal void RestoreUnpublishedLethalHit(MonsterUnit monster, long beforeHp)
     {
         monster.Hp = beforeHp;
-        foreach (var handler in LethalHitRolledBack) handler(monster);
+        LethalHitRolledBack.Invoke(monster);
         LethalRollbackObservedForTest?.Invoke(monster, beforeHp, monster.Hp);
     }
 
@@ -70,12 +70,12 @@ public sealed partial class CombatService
         }
     }
     /// <summary>Durable event scores complete before their corresponding hit is published.</summary>
-    public List<Func<GameSession, GameSession, long, bool, Task>> PvpDealtAsync { get; } = [];
+    public AsyncHook<GameSession, GameSession, long, bool> PvpDealtAsync { get; } = new("Combat.PvpDealtAsync");
     /// <summary>A player's hit on a player, with its row, what the attacker's cards see: the attacker, the target, the row, what it took
     /// and whether it was lethal (CardEffects).</summary>
-    internal List<Func<GameSession, GameSession, JsonElement, long, bool, Task>> PvpHitLanded { get; } = [];
+    internal AsyncHook<GameSession, GameSession, JsonElement, long, bool> PvpHitLanded { get; } = new("Combat.PvpHitLanded");
     /// <summary>A player's hit on a player before it commits: the attacker, the row, its result, the damage (CardEffects).</summary>
-    internal List<Func<GameSession, JsonElement, DamageHitResult, long, long>> PvpDamageAdjusters { get; } = [];
-    public List<Func<GameSession, MonsterUnit, long, Task>> EventDamageRecorded { get; } = [];
-    public List<Func<GameSession, long, Task>> HealedAsync { get; } = [];
+    internal OrderedHook<Func<GameSession, JsonElement, DamageHitResult, long, long>> PvpDamageAdjusters { get; } = new("Combat.PvpDamageAdjusters");
+    public AsyncHook<GameSession, MonsterUnit, long> EventDamageRecorded { get; } = new("Combat.EventDamageRecorded");
+    public AsyncHook<GameSession, long> HealedAsync { get; } = new("Combat.HealedAsync");
 }

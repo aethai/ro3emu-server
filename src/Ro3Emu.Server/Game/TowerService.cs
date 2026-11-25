@@ -60,14 +60,14 @@ public sealed partial class TowerService
         this._clock = clock;
         this._log = log;
         // Owner-bound pets must leave before InstanceService removes their owner (LC_Unit_Pet.Destroy).
-        scene.Leaving.Insert(scene.Leaving.IndexOf(instances.AbandonAsync), AbandonAsync);
-        scene.Loaded.Add(followers.RefreshAsync); // suppress the passive projection in tower; restore it on return
-        scene.Loaded.Add(LoadedAsync);
+        scene.Leaving.Subscribe(AbandonAsync, order: SceneService.LeaveOrderTowerPets);
+        scene.Loaded.Subscribe(followers.RefreshAsync); // suppress the passive projection in tower; restore it on return
+        scene.Loaded.Subscribe(LoadedAsync);
         RegisterSuppression();
-        combat.Killed.Add(KilledAsync);
-        combat.BeforeKilled.Insert(0, BeforeTerminalKillAsync);
-        combat.PlayerDied.Add(PlayerDiedAsync);
-        combat.TowerPetDied.Add(PetDiedAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.BeforeKilled.Subscribe(BeforeTerminalKillAsync, order: CombatService.BeforeKilledOrderTower);
+        combat.PlayerDied.Subscribe(PlayerDiedAsync);
+        combat.TowerPetDied.Subscribe(PetDiedAsync);
     }
 
     public sealed record Spawn(int NpcId, MapPoint Point, int DelayMs);
@@ -142,9 +142,9 @@ public sealed partial class TowerService
     public int HighestClearedFloor(GameSession s) => s.Tower == null ? 0 : Cleared(s);
 
     /// <summary>After a committed floor clear is applied to the session (achievement 101014); listeners post their work.</summary>
-    public List<Action<GameSession>> FloorCleared { get; } = [];
+    public SyncHook<GameSession> FloorCleared { get; } = new("TowerService.FloorCleared");
     /// <summary>After a floor attempt's 32802 result, won or lost (quest targets 101007 / 101010); listeners post.</summary>
-    public List<Action<GameSession, bool>> Settled { get; } = [];
+    public SyncHook<GameSession, bool> Settled { get; } = new("TowerService.Settled");
     private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, TowerSync, s.Tower!.Clone());
     private async Task SaveAsync(GameSession s, DBClimTower next)
     {
@@ -525,7 +525,7 @@ public sealed partial class TowerService
         settlement.Applied = () =>
         {
             s.Tower = next;
-            foreach (var handler in FloorCleared)
+            foreach (var handler in FloorCleared.Handlers)
                 try { handler(s); }
                 catch (Exception e) { _log.LogError(e, "Tower clear hook failed for {Role}", s.Role.Id); }
             var reward = new GetRewardNotify { TargetUid = s.Role.Id };
@@ -622,11 +622,11 @@ public sealed partial class TowerService
         {
             await SyncAsync(s);
             // A new cleared floor: quest targets read it (growth-manual 101014 CheckClimbTowerLayer).
-            foreach (var handler in _character.StateChanged) handler(s);
+            foreach (var handler in _character.StateChanged.Handlers) handler(s);
         }
         _log.LogInformation("{Name} tower floor {Floor}: {Won}, {Duration}s", s.Role!.Name, floor, won, duration);
         if (result == 0)
-            foreach (var handler in Settled)
+            foreach (var handler in Settled.Handlers)
                 try { handler(s, won); }
                 catch (Exception e) { _log.LogError(e, "Tower settlement hook failed for {Role}", s.Role.Id); }
     }

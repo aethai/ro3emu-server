@@ -83,7 +83,7 @@ public sealed partial class CharacterService
     internal Task SyncEquipmentAsync(GameSession session) => SyncAsync(session, EquipSync, BuildEquip(session));
 
     /// <summary>Worn gear changed (equip, unequip, plan switch): sockets that depend on it, CardEffects.</summary>
-    public List<Func<GameSession, Task>> WornGearChanged { get; } = [];
+    public AsyncHook<GameSession> WornGearChanged { get; } = new("CharacterService.WornGearChanged");
 
     private async Task EquipmentAppearanceChangedAsync(GameSession session)
     {
@@ -92,7 +92,7 @@ public sealed partial class CharacterService
         look.EquipInfo.Add(EquipInfo(session));
         await ToSelfAndViewersAsync(session, EntityBaseChange, look);
         await SendStatsAsync(session);
-        foreach (var handler in WornGearChanged) await handler(session);
+        foreach (var handler in WornGearChanged.Handlers) await handler(session);
     }
 
     /// <summary>
@@ -155,7 +155,7 @@ public sealed partial class CharacterService
         if (result == 0)
         {
             await EquipmentAppearanceChangedAsync(session);
-            foreach (var handler in StateChanged) handler(session);
+            foreach (var handler in StateChanged.Handlers) handler(session);
         }
     }
 

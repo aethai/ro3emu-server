@@ -185,52 +185,52 @@ public sealed partial class TerritoryWarsService : IGameTicker
         this._loop = loop; this._log = log;
         state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryWars)) is { } saved
             ? JsonSerializer.Deserialize<WorldState>(saved)! : new();
-        scene.Loaded.Add(LoadedAsync);
-        scene.Loaded.Add(SiegeLoadedAsync);
-        scene.Loaded.Add(WorldLoadedAsync);
-        scene.LoadedKeys.Add(SceneKeys);
-        scene.Leaving.Add(LeavingAsync);
-        scene.Leaving.Add(SiegeLeavingAsync);
-        scene.Leaving.Add(GloryLeavingAsync);
-        scene.Leaving.Add(CannonLeavingAsync);
-        scene.Leaving.Add(VehicleLeavingAsync);
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Loaded.Subscribe(SiegeLoadedAsync);
+        scene.Loaded.Subscribe(WorldLoadedAsync);
+        scene.LoadedKeys.Subscribe(SceneKeys);
+        scene.Leaving.Subscribe(LeavingAsync);
+        scene.Leaving.Subscribe(SiegeLeavingAsync);
+        scene.Leaving.Subscribe(GloryLeavingAsync);
+        scene.Leaving.Subscribe(CannonLeavingAsync);
+        scene.Leaving.Subscribe(VehicleLeavingAsync);
         scene.WalkBlocked = SiegeWalkBlocked;
         scene.WalkBridged = SiegeWalkBridged;
         monsters.Spares = SiegeSpares;
-        combat.Killed.Add(KilledAsync);
-        combat.Killed.Add(SiegeKilledAsync);
-        combat.Killed.Add(WorldKilledAsync);
-        combat.PlayerDied.Add(DiedAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.Killed.Subscribe(SiegeKilledAsync);
+        combat.Killed.Subscribe(WorldKilledAsync);
+        combat.PlayerDied.Subscribe(DiedAsync);
         // DiedAsync publishes the battle's own countdown for a recorded participant.
-        combat.ReviveInfoOwners.Add(s => s.TerritoryBattle is { } battle && s.Role is { } role && battle.State.Players.ContainsKey(role.Id));
-        combat.PlayerDied.Add(WorldDiedAsync);
-        combat.PlayerDied.Add(CannonDiedAsync);
-        combat.PlayerDied.Add(VehicleDiedAsync);
-        combat.PlayerDied.Add(PlatformLeavingAsync);
-        scene.Leaving.Add(PlatformLeavingAsync);
+        combat.ReviveInfoOwners.Subscribe(s => s.TerritoryBattle is { } battle && s.Role is { } role && battle.State.Players.ContainsKey(role.Id));
+        combat.PlayerDied.Subscribe(WorldDiedAsync);
+        combat.PlayerDied.Subscribe(CannonDiedAsync);
+        combat.PlayerDied.Subscribe(VehicleDiedAsync);
+        combat.PlayerDied.Subscribe(PlatformLeavingAsync);
+        scene.Leaving.Subscribe(PlatformLeavingAsync);
         world.PlayerEntered.Add(PlatformActivatorSeenAsync);
-        combat.GrantedSkill.Add(SeatSkill);
-        combat.AfterLethalPublication.Add(MachineDestroyedAsync);
-        combat.Killed.Add(MachineKilledAsync);
-        SiegeSettled.Add(SiegeMachinesSettled);
+        combat.GrantedSkill.Subscribe(SeatSkill);
+        combat.AfterLethalPublication.Subscribe(MachineDestroyedAsync);
+        combat.Killed.Subscribe(MachineKilledAsync);
+        SiegeSettled.Subscribe(SiegeMachinesSettled);
         world.PlayerEntered.Add(VehicleRiderSeenAsync);
-        combat.EventDamageRecorded.Add(DamageRecordedAsync);
-        combat.EventDamageRecorded.Add(SiegeDamageRecordedAsync);
-        combat.EventDamageRecorded.Add(MachineDamageRecordedAsync);
+        combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
+        combat.EventDamageRecorded.Subscribe(SiegeDamageRecordedAsync);
+        combat.EventDamageRecorded.Subscribe(MachineDamageRecordedAsync);
         combat.PlayerHostile = Hostile;
         combat.MonsterTargetAllowed = CanHitObjective;
         combat.SkillLineBlocked = SiegeSkillLineBlocked;
-        combat.DamageAdjusters.Add((_, target, row, _, damage) => SiegeTagDamage(target, row, damage));
-        combat.PvpDealtAsync.Add(PvpRecordedAsync);
-        combat.PvpDealtAsync.Add(SiegePvpRecordedAsync);
-        combat.HealedAsync.Add(BattleHealRecordedAsync);
-        combat.HealedAsync.Add(SiegeHealRecordedAsync);
+        combat.DamageAdjusters.Subscribe((_, target, row, _, damage) => SiegeTagDamage(target, row, damage));
+        combat.PvpDealtAsync.Subscribe(PvpRecordedAsync);
+        combat.PvpDealtAsync.Subscribe(SiegePvpRecordedAsync);
+        combat.HealedAsync.Subscribe(BattleHealRecordedAsync);
+        combat.HealedAsync.Subscribe(SiegeHealRecordedAsync);
         combat.OwnSkillAdmit = CommandSkillAdmit;
         combat.OwnSkillCast = CommandSkillCastAsync;
         combat.OwnSkillLanded = CommandSkillLandedAsync;
-        combat.PlayerKilled.Add(GloryKilledAsync);
-        combat.PvpDealtAsync.Add(GloryHitAsync);
-        character.StateChanged.Add(s => _ = SyncGloryAsync(s));
+        combat.PlayerKilled.Subscribe(GloryKilledAsync);
+        combat.PvpDealtAsync.Subscribe(GloryHitAsync);
+        character.StateChanged.Subscribe(s => _ = SyncGloryAsync(s));
         guilds.WarSideOf = WarSide;
         guilds.WarMachines = new MachineSite(this);
     }
@@ -487,7 +487,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
             s.TerritoryWars = aligned;
             _seasonRoleProjectionPending.Remove(roleId);
         }
-        foreach (var handler in CampChanged) handler(s); // the quests settled at login before this state was loaded
+        foreach (var handler in CampChanged.Handlers) handler(s); // the quests settled at login before this state was loaded
         // Epoch alignment just committed this role projection. An empty outbox needs no reload
         // after that write invalidates the login snapshot; nonempty delivery still checks its source.
         if (s.TerritoryWars!.Pending.Count != 0) await DeliverAsync(s);
@@ -653,7 +653,7 @@ public sealed partial class TerritoryWarsService : IGameTicker
             : remain > 0 ? ErrorCodes.TerritoryCampCombat : 0;
         if (error == 0) { role.Camp = (int)req.Type; role.LastCampChange = _clock.Now; await SaveRoleAsync(s.Role!.Id, role); s.TerritoryWars = role; }
         await Send(s, Camp, new PvpSetRoleCampResp { Result = error, Type = (EPvpRoleCampNum)role.Camp, PeaceTimeInterval = remain });
-        if (error == 0) foreach (var handler in CampChanged) handler(s);
+        if (error == 0) foreach (var handler in CampChanged.Handlers) handler(s);
     }
 
     private Task HistoryAsync(GameSession s, GetTerritoryWarsHistoryStatisticsReq req)

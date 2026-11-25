@@ -21,7 +21,7 @@ public sealed class CodeShapeTests
     private const int ClassesWith15OrMoreDependencies = 29;
     private const int RoleNullForgiving = 961;
     private const int LinesOver200Chars = 94;
-    private const int ExposedHookLists = 107;
+    private const int ExposedHookLists = 0;
     private const int NumericIsOpenCalls = 0;
     private const int NumericStatIndexers = 0;
     private const int NumericRouteMaps = 105;

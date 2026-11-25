@@ -62,9 +62,8 @@ public sealed class LifeItemPublicationTests : IAsyncLifetime
                 Assert.True(cooldown > 0);
                 Assert.Equal(cooldown, session.BagState.Info.ItemCds!.Data[1001801]);
             }
-            character.StateChanged.Add(Observe);
-            try { await character.UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }); }
-            finally { character.StateChanged.Remove(Observe); }
+            using (character.StateChanged.Subscribe(Observe))
+                await character.UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
             Assert.True(calls >= 2);
         });
     }

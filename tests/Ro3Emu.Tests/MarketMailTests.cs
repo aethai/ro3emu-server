@@ -492,26 +492,12 @@ public sealed class MarketMailTests : IAsyncLifetime
         var loop = _app.Services.GetRequiredService<GameLoop>();
         var character = _app.Services.GetRequiredService<CharacterService>();
         Action<GameSession, int, int> failure = (_, _, _) => throw new InvalidOperationException("forced post-commit hook failure");
-        await loop.InvokeAsync(() =>
-        {
-            character.ItemGained.Add(failure);
-            return Task.CompletedTask;
-        });
-        try
-        {
-            await alice.SendGameAsync(MailService.ClaimMail, new ClaimMailReq { MailUid = { mailId } });
-            var claimed = await Next(alice, MailService.ClaimMail, ClaimMailRsp.Parser);
-            Assert.Equal(0, claimed.Result);
-            Assert.Equal(mailId, Assert.Single(claimed.MailUid));
-        }
-        finally
-        {
-            await loop.InvokeAsync(() =>
-            {
-                character.ItemGained.Remove(failure);
-                return Task.CompletedTask;
-            });
-        }
+        using var failSub = character.ItemGained.Subscribe(failure);
+        await alice.SendGameAsync(MailService.ClaimMail, new ClaimMailReq { MailUid = { mailId } });
+        var claimed = await Next(alice, MailService.ClaimMail, ClaimMailRsp.Parser);
+        Assert.Equal(0, claimed.Result);
+        Assert.Equal(mailId, Assert.Single(claimed.MailUid));
+        failSub.Dispose();
         var items = _app.Services.GetRequiredService<ItemStore>();
         var roles = _app.Services.GetRequiredService<RoleStore>();
         Assert.Single(items.Load(aliceId), i => i.Attrs?.GetValueOrDefault(30) == 888);

@@ -61,7 +61,7 @@ public sealed partial class SeasonTalentService
             ? other.DescData : special.DescData;
 
     /// <summary>Observers of a changed set of talent skill modifiers in the world (CombatService republishes 31132).</summary>
-    public List<Func<GameSession, Task>> EffectsChanged { get; } = [];
+    public AsyncHook<GameSession> EffectsChanged { get; } = new("SeasonTalentService.EffectsChanged");
 
     private IEnumerable<(long Id, double Value)> SpecialAttributes(GameSession s, JsonElement effect)
     {
@@ -148,6 +148,6 @@ public sealed partial class SeasonTalentService
         if (next.SequenceEqual(s.TalentSkillModifiers)) return;
         s.TalentSkillModifiers = next;
         if (s.SceneLoading || s.Role == null) return; // the loaded scene publishes 31132 itself
-        foreach (var observer in EffectsChanged) await observer(s);
+        foreach (var observer in EffectsChanged.Handlers) await observer(s);
     }
 }

@@ -44,7 +44,7 @@ public sealed class TrainingService : IGameTicker
         public bool Settling;
     }
     /// <summary>After a challenge's result is committed (quest target 210006, TaskService.OnDummyChallengeSettled).</summary>
-    public List<Action<GameSession>> ChallengeSettled { get; } = [];
+    public SyncHook<GameSession> ChallengeSettled { get; } = new("TrainingService.ChallengeSettled");
     private long Now => _clock.UtcNow.ToUnixTimeMilliseconds();
     private int Duration => checked((int)(Data.Config.PublicParams.Of(_data).TrainingChallengeTimeLimit ?? 60));
 
@@ -69,9 +69,9 @@ public sealed class TrainingService : IGameTicker
                     break;
                 }
             }
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(s => { _attempts.Remove(s); return Task.CompletedTask; });
-        combat.EventDamageRecorded.Add((s, m, amount) =>
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(s => { _attempts.Remove(s); return Task.CompletedTask; });
+        combat.EventDamageRecorded.Subscribe((s, m, amount) =>
         {
             if (!_attempts.TryGetValue(s, out var a) || a.Dummy != m || s.InstanceId != a.Room.Id || s.SceneLoading)
                 return Task.CompletedTask;
@@ -315,7 +315,7 @@ public sealed class TrainingService : IGameTicker
             });
             await CharacterService.SyncAsync(s, Sync, next.Clone()); await SnapshotAsync(s, a);
             if (a.Challenge)
-                foreach (var handler in ChallengeSettled) handler(s);
+                foreach (var handler in ChallengeSettled.Handlers) handler(s);
         }
         finally { a.Settling = false; }
     }

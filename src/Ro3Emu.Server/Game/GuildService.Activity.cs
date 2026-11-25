@@ -81,7 +81,7 @@ public sealed partial class GuildService
     {
         if (_depositHooked) return;
         _depositHooked = true;
-        character.StateChanged.Add(s =>
+        character.StateChanged.Subscribe(s =>
         {
             if (s.Role == null || s.Progress is not { } p || !GuildCurrencies.Any(c => p.Currency.GetValueOrDefault(c) > 0)
                 || store.ForRole(s.Role.Id) == null || !_depositQueued.Add(s)) return;

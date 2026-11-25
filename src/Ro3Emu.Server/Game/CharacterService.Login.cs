@@ -95,7 +95,7 @@ public sealed partial class CharacterService
                 var guids = (long[])receipts[receipt]!;
                 for (int i = 0; i < items.Count; i++) items[i].Guid = guids[i];
             });
-            foreach (var (entry, count) in gained) foreach (var handler in ItemGained) handler(session, entry, count);
+            foreach (var (entry, count) in gained) foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
             Refresh(session);
         }
     }

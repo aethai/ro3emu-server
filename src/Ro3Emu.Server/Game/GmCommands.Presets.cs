@@ -60,7 +60,7 @@ public sealed partial class GmCommands
         if (args.Length == 0 || !args[0].Equals("openallfunc", StringComparison.OrdinalIgnoreCase))
             return $"GmPlayerAsset {string.Join(',', args)}: only openallfunc is known (the presets' one subcommand).";
         character.OpenAllFunctions(s);
-        foreach (var handler in character.ProgressHandlers) await handler(s);
+        foreach (var handler in character.ProgressHandlers.Handlers) await handler(s);
         return "Every function is open for this role.";
     }
 

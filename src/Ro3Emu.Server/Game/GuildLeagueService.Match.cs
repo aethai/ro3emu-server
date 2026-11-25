@@ -174,14 +174,14 @@ public sealed partial class GuildLeagueService
 
     private void HookBattle()
     {
-        _scene.Loaded.Add(LoadedAsync);
-        _scene.Leaving.Add(LeavingAsync);
-        _combat.PlayerDied.Add(DiedAsync);
-        _combat.ReviveInfoOwners.Add(s => Locate(s) != null);
-        _combat.PvpDealtAsync.Add(PvpAsync);
-        _combat.HealedAsync.Add(HealedAsync);
-        _combat.EventDamageRecorded.Add(MonsterDamagedAsync);
-        _combat.Killed.Add(MonsterKilledAsync);
+        _scene.Loaded.Subscribe(LoadedAsync);
+        _scene.Leaving.Subscribe(LeavingAsync);
+        _combat.PlayerDied.Subscribe(DiedAsync);
+        _combat.ReviveInfoOwners.Subscribe(s => Locate(s) != null);
+        _combat.PvpDealtAsync.Subscribe(PvpAsync);
+        _combat.HealedAsync.Subscribe(HealedAsync);
+        _combat.EventDamageRecorded.Subscribe(MonsterDamagedAsync);
+        _combat.Killed.Subscribe(MonsterKilledAsync);
     }
 
     // ---- admission -----------------------------------------------------------------------------------------------------

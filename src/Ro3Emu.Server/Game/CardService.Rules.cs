@@ -7,11 +7,11 @@ public sealed partial class CardService
 {
     /// <summary>Socketed cards changed (insert, remove, transfer, plan switch, star-up of a socketed copy):
     /// CardEffects reconciles the card-owned passive buffs.</summary>
-    public List<Func<GameSession, Task>> SocketsChanged { get; } = [];
+    public AsyncHook<GameSession> SocketsChanged { get; } = new("CardService.SocketsChanged");
 
     private async Task NotifySocketsChangedAsync(GameSession session)
     {
-        foreach (var handler in SocketsChanged)
+        foreach (var handler in SocketsChanged.Handlers)
             try { await handler(session); }
             catch (Exception e) { _log.LogError(e, "Card socket observer failed for role {Role}", session.Role?.Id); }
     }

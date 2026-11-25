@@ -42,10 +42,10 @@ public sealed class RewardService
     /// Other kills use environment 0, preserving ordinary rewards (localization 10960000077; mapping inferred).</summary>
     public Func<GameSession, MonsterUnit, Task<bool>>? QualifiesForBonus { get; set; }
     /// <summary>Actual committed kill drops, after EXP correction; excludes GM, quest and other item grants.</summary>
-    public List<Func<GameSession, MonsterUnit, IReadOnlyList<(int Entry, long Count)>, Task>> KillDropsGranted { get; } = [];
+    public AsyncHook<GameSession, MonsterUnit, IReadOnlyList<(int Entry, long Count)>> KillDropsGranted { get; } = new("RewardService.KillDropsGranted");
     internal Action<GameSession, MonsterUnit, RewardSettlement, IReadOnlyList<(int Entry, int Count)>, long, long>? StageAfkKill { get; set; }
     /// <summary>Monster Hunt: the area drop rolled with an ordinary field kill (MonsterHuntService).</summary>
-    internal List<Func<GameSession, MonsterUnit, IEnumerable<(int Entry, int Count)>>> ExtraKillDrops { get; } = [];
+    internal OrderedHook<Func<GameSession, MonsterUnit, IEnumerable<(int Entry, int Count)>>> ExtraKillDrops { get; } = new("RewardService.ExtraKillDrops");
     /// <summary>Monster Hunt: its kill counters join the kill's own transaction, after the AFK child (MonsterHuntService).</summary>
     internal Action<GameSession, MonsterUnit, RewardSettlement>? StageHuntKill { get; set; }
 
@@ -61,8 +61,8 @@ public sealed class RewardService
         this._data = data;
         this._log = log;
         _attenuation = new DropAttenuation(data);
-        combat.BeforeKilled.Add(PrepareKilledAsync);
-        combat.Killed.Add(KilledAsync);
+        combat.BeforeKilled.Subscribe(PrepareKilledAsync);
+        combat.Killed.Subscribe(KilledAsync);
     }
 
     private sealed class KillOutcome
@@ -202,7 +202,7 @@ public sealed class RewardService
         foreach (var (row, maps) in KillDropRows(_data, npc, bonus))
             if (maps.Count == 0 || maps.Contains(player.SceneEntry)) RollPools(row, player, drops, monster.Template.Level, partyRate);
 
-        foreach (var extra in ExtraKillDrops) drops.AddRange(extra(player, monster));
+        foreach (var extra in ExtraKillDrops.Handlers) drops.AddRange(extra(player, monster));
         long baseExp = drops.Where(d => d.Entry == BaseExpItem).Sum(d => (long)d.Count);
         var items = drops.Where(d => d.Entry is not (BaseExpItem or JobExpItem) && _data.Row("ItemConfig", d.Entry) != null).ToList();
         if (baseExp > 0)
@@ -302,7 +302,7 @@ public sealed class RewardService
         var granted = outcome.Items.Select(i => (i.Entry, Count: (long)i.Count)).ToList();
         if (outcome.BaseExp > 0) granted.Add((BaseExpItem, outcome.BaseExp));
         if (outcome.JobExp > 0) granted.Add((JobExpItem, outcome.JobExp));
-        foreach (var handler in KillDropsGranted)
+        foreach (var handler in KillDropsGranted.Handlers)
         {
             if (!ReferenceEquals(player.Role, role) || player.Attachment?.Cancelled == true) return;
             await handler(player, monster, granted);

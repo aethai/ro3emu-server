@@ -5,7 +5,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class SceneService
 {
-    public List<Func<GameSession, int>> LineSwitchChecks { get; } = [];
+    public OrderedHook<Func<GameSession, int>> LineSwitchChecks { get; } = new("Scene.LineSwitchChecks");
     /// <summary>LC_DAL_MapLine:782-790 uses zero map/area for the authenticated current map.</summary>
     public Task LineInfoAsync(GameSession s, GetSceneLineInfoReq req)
     {
@@ -31,7 +31,7 @@ public sealed partial class SceneService
                 ? ErrorCodes.SwitchingScenes
             : (s.StatusBits & (1L << 15)) != 0 ? ErrorCodes.ActionInBattle
             : s.Dead || req.Linenum == s.LineNumber ? ErrorCodes.Parameter : 0;
-        if (error == 0) error = LineSwitchChecks.Select(check => check(s)).FirstOrDefault(code => code != 0);
+        if (error == 0) error = LineSwitchChecks.Handlers.Select(check => check(s)).FirstOrDefault(code => code != 0);
         if (error == 0)
         {
             var point = new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, s.Face);

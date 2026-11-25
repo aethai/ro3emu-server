@@ -118,14 +118,14 @@ public sealed partial class CasualBattleService
 
     private void HookArena(CombatService combat)
     {
-        combat.Killed.Add(MonsterKilledAsync);
-        combat.Dealt.Add(BossDealt);
-        combat.PlayerDied.Add(DiedAsync);
-        combat.CastLanded.Add(CastLandedAsync);
-        combat.GrantedSkill.Add((s, skill) => Live(s) is { } m && m.Players[s].Battlefield == skill);
-        combat.GrantedSkill.Add((s, skill) => Live(s) != null && MadogearRiders.SeatSkill(s, skill));
-        combat.ReviveInfoOwners.Add(s => Live(s) != null);
-        _scene.Leaving.Add(s => MadogearRiders.GetOffAsync(s, interrupt: true));
+        combat.Killed.Subscribe(MonsterKilledAsync);
+        combat.Dealt.Subscribe(BossDealt);
+        combat.PlayerDied.Subscribe(DiedAsync);
+        combat.CastLanded.Subscribe(CastLandedAsync);
+        combat.GrantedSkill.Subscribe((s, skill) => Live(s) is { } m && m.Players[s].Battlefield == skill);
+        combat.GrantedSkill.Subscribe((s, skill) => Live(s) != null && MadogearRiders.SeatSkill(s, skill));
+        combat.ReviveInfoOwners.Subscribe(s => Live(s) != null);
+        _scene.Leaving.Subscribe(s => MadogearRiders.GetOffAsync(s, interrupt: true));
         _world.PlayerEntered.Add(MadogearRiderSeenAsync);
     }
 

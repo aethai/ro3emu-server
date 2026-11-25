@@ -233,7 +233,7 @@ public sealed partial class BuffService
     {
         foreach (int id in ids)
             if (p.Energy.ContainsKey(id)) await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)1, notifyChanged: false);
-        foreach (var handler in Changed) await handler(p);
+        foreach (var handler in Changed.Handlers) await handler(p);
     }
 
     private async Task SendEnergyAsync(GameSession p, int id, EPlayerEnergyChangeReason reason, bool notifyChanged = true)
@@ -244,6 +244,6 @@ public sealed partial class BuffService
             EnergyConfigId = id, EnergyValue = meter.Value, ChangeReason = reason,
             LastRecoverTimeMs = meter.LastRecoverMs, NextRecoverTimeMs = meter.NextRecoverMs,
         });
-        if (notifyChanged) foreach (var handler in Changed) await handler(p);
+        if (notifyChanged) foreach (var handler in Changed.Handlers) await handler(p);
     }
 }

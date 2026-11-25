@@ -86,25 +86,25 @@ public sealed partial class TaskService
         this._mounts = mounts;
         this._scene = scene;
         this._clock = clock;
-        combat.Killed.Add(OnKillAsync);
-        combat.Dealt.Add((s, m, damage) => { if (damage > 0 && s.Role != null) _participants.GetOrCreateValue(m).Add(s.Role.Id); });
-        character.JobChanged.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
+        combat.Killed.Subscribe(OnKillAsync);
+        combat.Dealt.Subscribe((s, m, damage) => { if (damage > 0 && s.Role != null) _participants.GetOrCreateValue(m).Add(s.Role.Id); });
+        character.JobChanged.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         // Level, stat and skill point targets are checked after the change settles (the handlers run inside
         // CharacterService's lock; a delivery grants exp, which takes it again).
-        character.ProgressHandlers.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
-        skills.Learned.Add(s => { QueueRefresh(s); return Task.CompletedTask; });
-        character.StateChanged.Add(QueueRefresh);
-        character.ItemUsed.Add((s, entry, count) => loop.PostOwned(s, () => OnItemUsedAsync(s, entry, count)));
-        equipment.Crafted.Add(OnCraftedAsync);
-        equipment.Refined.Add(s => ProgressAsync(s, TRefineCount, _ => 1));
+        character.ProgressHandlers.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
+        skills.Learned.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
+        character.StateChanged.Subscribe(QueueRefresh);
+        character.ItemUsed.Subscribe((s, entry, count) => loop.PostOwned(s, () => OnItemUsedAsync(s, entry, count)));
+        equipment.Crafted.Subscribe(OnCraftedAsync);
+        equipment.Refined.Subscribe(s => ProgressAsync(s, TRefineCount, _ => 1));
         // CardService releases the character lock before this callback and awaits it before the 82404 reply.
         cards.RequiredCollectionRefresh = RefreshCollectionRequiredAsync;
         character.GetKillTaskParticipantKeys = GetKillTaskParticipantKeys;
         character.StageKillTaskObligations = StageKillTaskObligations;
         _loop.Add(new PlotRegionTicker(this)); // TaskService.PlotRegions.cs
-        ExtraTasks.Add(DungeonRunTasks); // TaskService.DungeonTasks.cs
-        QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
-        combat.PlayerKilled.Add(OnFactionPlayerKilledAsync); // 101023
+        ExtraTasks.Subscribe(DungeonRunTasks); // TaskService.DungeonTasks.cs
+        QuestDelivered.Subscribe(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
+        combat.PlayerKilled.Subscribe(OnFactionPlayerKilledAsync); // 101023
     }
 
     /// <summary>Delivered = completeTaskNum &gt; 0 or status 4 (the client's CheckTaskDeliveryed). Without quest state: true.</summary>
@@ -112,14 +112,14 @@ public sealed partial class TaskService
     /// Tasks the client shows that are not quests of this service (the pass challenges, NewActivityService.PassPlay):
     /// added to every 5027 so the dataset's diff never drops them. They are not in <see cref="GameSession.Tasks"/>.
     /// </summary>
-    public List<Func<GameSession, IEnumerable<TaskInfo>>> ExtraTasks { get; } = [];
+    public OrderedHook<Func<GameSession, IEnumerable<TaskInfo>>> ExtraTasks { get; } = new("TaskService.ExtraTasks");
 
     /// <summary>5027: the role's quests plus <see cref="ExtraTasks"/>, as the change since the last send.</summary>
     public Task SyncTasksAsync(GameSession session)
     {
         if (session.Tasks == null) return Task.CompletedTask;
         var view = session.Tasks.Clone();
-        foreach (var extra in ExtraTasks)
+        foreach (var extra in ExtraTasks.Handlers)
             foreach (var info in extra(session)) view.Infos[info.TaskId] = info;
         return CharacterService.SyncAsync(session, TaskInfoSync, view);
     }
@@ -663,9 +663,9 @@ public sealed partial class TaskService
         session.Tasks = next;
         if (daily?.MirrorChanged == true && SyncDailyDelivery is { } sync) await sync(session);
         if (cutScene) session.InCutScene = true;
-        if (deliveredPlan != null) foreach (var handler in QuestDelivered) handler(session, id, deliveredPlan);
+        if (deliveredPlan != null) foreach (var handler in QuestDelivered.Handlers) handler(session, id, deliveredPlan);
         foreach (long activity in guildActivities)
-            foreach (var handler in GuildActivityJoined) handler(session, activity);
+            foreach (var handler in GuildActivityJoined.Handlers) handler(session, activity);
         _log.LogInformation("{Name} delivers task {Task} {TaskName}: exp {Exp}", session.Role?.Name, id,
             _data.TextOf(_data.Row("TaskConfig", id)!.Value, "_iName"), def.Exp);
         return 0;

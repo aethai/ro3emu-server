@@ -485,7 +485,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     }
 
     /// <summary>A settled stage attempt, won or lost, for each guild member present (quest target 103014); listeners post.</summary>
-    public List<Action<GameSession>> Participated { get; } = [];
+    public SyncHook<GameSession> Participated { get; } = new("GuildChallengeService.Participated");
 
     internal async Task SettleAsync(DungeonService.Attempt a, bool won)
     {
@@ -583,7 +583,7 @@ public sealed partial class GuildChallengeService : IGameTicker
                 }
                 try { await s.SendGameAsync(DungeonService.Result, result); }
                 catch (Exception e) { _log.LogWarning(e, "Guild Challenge result delivery failed for {Role}", s.Role?.Id); }
-                foreach (var handler in Participated)
+                foreach (var handler in Participated.Handlers)
                     try { handler(s); }
                     catch (Exception e) { _log.LogError(e, "Guild Challenge participation hook failed for {Role}", s.Role?.Id); }
             }

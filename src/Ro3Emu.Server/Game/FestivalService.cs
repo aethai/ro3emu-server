@@ -107,9 +107,9 @@ public sealed class FestivalService : IGameTicker
                         }
             }
         }
-        daily.EventProjections.Add(Project);
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(LeavingAsync);
+        daily.EventProjections.Subscribe(Project);
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
     }
 
     private ActivityClock.Window? Segment => _clock.Segments(1083, Now).FirstOrDefault(w => w.Contains(Now));

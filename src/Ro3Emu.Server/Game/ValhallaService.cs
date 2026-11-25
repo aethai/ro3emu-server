@@ -36,7 +36,7 @@ public sealed class ValhallaService
     {
         this._data = data; this._catalog = catalog; this._dungeons = dungeons; this._character = character;
         this._functions = functions; this._tasks = tasks; this._roles = roles;
-        dungeons.Completed.Add(ClearedAsync);
+        dungeons.Completed.Subscribe(ClearedAsync);
     }
 
     /// <summary>PublicParamConfig HeroSpiritItemId (Einherjar Coin 2000001) and HeroSpiritItemExp (statue EXP per coin, 2).</summary>

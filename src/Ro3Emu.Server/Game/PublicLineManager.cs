@@ -19,8 +19,12 @@ public sealed class PublicLineManager(GameData data, World world)
     private readonly Dictionary<GameSession, Reservation> _reservations = [];
     private long _token;
     private bool _sweeping;
-    public List<Func<RuntimeMapKey, bool>> HasPendingWork { get; } = [];
-    public List<Func<RuntimeMapKey, Task>> Retiring { get; } = [];
+    public const int RetireOrderGathering = -300;
+    public const int RetireOrderStalls = -200;
+    public const int RetireOrderMvp = -100;
+
+    public OrderedHook<Func<RuntimeMapKey, bool>> HasPendingWork { get; } = new("PublicLineManager.HasPendingWork");
+    public AsyncHook<RuntimeMapKey> Retiring { get; } = new("PublicLineManager.Retiring");
 
     public (int Soft, int Hard, bool Create) Limits(long scene)
     {
@@ -120,12 +124,12 @@ public sealed class PublicLineManager(GameData data, World world)
             {
                 lock (_gate)
                 {
-                    if (Load(line) != 0 || HasPendingWork.Any(p => p(line.Map))) continue;
+                    if (Load(line) != 0 || HasPendingWork.Handlers.Any(p => p(line.Map))) continue;
                     line.Closing = true;
                 }
                 try
                 {
-                    foreach (var retire in Retiring) await retire(line.Map);
+                    await Retiring.InvokeAsync(line.Map);
                     if (!world.TryRemoveInstance(line.Map.WorldScene))
                     {
                         lock (_gate) line.Closing = false;

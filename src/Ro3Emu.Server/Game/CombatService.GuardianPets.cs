@@ -12,17 +12,17 @@ public sealed partial class CombatService
     private void WireGuardians()
     {
         _skills.PetWheel = _pets.GuardianWheel;
-        _pets.Changed.Add(SyncGuardianWheelAsync);
-        _scene.Loaded.Add(SyncGuardianWheelAsync);
-        DealtAsync.Add(GuardianDamageReactionAsync);
-        DealtAsync.Add(GuardianWindowMonsterHitAsync);
-        DealtAsync.Add((_, target, _, damage) => damage > 0 ? _buffs.ConsumeGuardianGroupAsync(target, GuardianGroup.CatVulnerability) : Task.CompletedTask);
-        TakenAsync.Add((_, target, amount) => GuardianTakenAsync(target, amount));
-        DamageAdjusters.Add((s, _, row, _, damage) => GuardianOutgoingDamage(s, row, damage));
-        CastResolved.Add(AutoCounterOnCastAsync);
-        CastResolved.Add(SupportSkillOnCastAsync);
-        DamageAdjusters.Add((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
-        _buffs.UnitChanged.Add(PublishMonsterAttributesAsync);
+        _pets.Changed.Subscribe(SyncGuardianWheelAsync);
+        _scene.Loaded.Subscribe(SyncGuardianWheelAsync);
+        DealtAsync.Subscribe(GuardianDamageReactionAsync);
+        DealtAsync.Subscribe(GuardianWindowMonsterHitAsync);
+        DealtAsync.Subscribe((_, target, _, damage) => damage > 0 ? _buffs.ConsumeGuardianGroupAsync(target, GuardianGroup.CatVulnerability) : Task.CompletedTask);
+        TakenAsync.Subscribe((_, target, amount) => GuardianTakenAsync(target, amount));
+        DamageAdjusters.Subscribe((s, _, row, _, damage) => GuardianOutgoingDamage(s, row, damage));
+        CastResolved.Subscribe(AutoCounterOnCastAsync);
+        CastResolved.Subscribe(SupportSkillOnCastAsync);
+        DamageAdjusters.Subscribe((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
+        _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;
         _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
     }
@@ -289,7 +289,7 @@ public sealed partial class CombatService
     private async Task GuardianHealAsync(GameSession source, GameSession recipient, int skillId, long castId, long amount, Func<bool> current)
     {
         if (!current() || source.Role == null || recipient.Role == null) return;
-        foreach (var modifier in ExtraHeal) amount = modifier(source, amount);
+        foreach (var modifier in ExtraHeal.Handlers) amount = modifier(source, amount);
         var stats = _character.Stats(recipient);
         amount = ModifiedHealing(HealerAttributes(source), stats, amount);
         long actual = Math.Min(Math.Max(0, amount), Math.Max(0, stats[AttributeId.MaxHp] - stats[AttributeId.Hp]));
@@ -303,8 +303,8 @@ public sealed partial class CombatService
             Dsts = { new DamageInfo { DstID = target, Damage = actual, DamageType = DamageType.Heal, DstElement = 1 } },
         });
         if (!current()) return;
-        foreach (var observer in Healed) observer(source, actual);
-        foreach (var observer in HealedAsync)
+        Healed.Invoke(source, actual);
+        foreach (var observer in HealedAsync.Handlers)
         {
             if (!current()) break;
             await observer(source, actual);

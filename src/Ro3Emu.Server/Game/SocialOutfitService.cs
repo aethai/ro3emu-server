@@ -43,7 +43,7 @@ public sealed class SocialOutfitService
     public SocialOutfitService(GameData data, RoleStore roles, CharacterService character, Deadlines deadlines, TimeProvider clock)
     {
         this._data = data; this._roles = roles; this._character = character; this._deadlines = deadlines; this._clock = clock;
-        character.JobChanged.Add(s => s.Synced.ContainsKey(Sync) ? SyncAsync(s) : Task.CompletedTask);
+        character.JobChanged.Subscribe(s => s.Synced.ContainsKey(Sync) ? SyncAsync(s) : Task.CompletedTask);
         character.RegisterItemAction(UnlockAction, UseUnlockItemAsync);
     }
 

@@ -150,7 +150,7 @@ public sealed class PronteraDefenseInvaderTests : IAsyncLifetime
         {
             var session = Session(bot);
             await Service<MonsterService>().KillAsync(victim);
-            foreach (var killed in Service<CombatService>().Killed) await killed(session, victim);
+            await Service<CombatService>().Killed.InvokeAsync(session, victim);
         });
         await UntilAsync(async () => await Defense() == MaxDefense - loss, "the kill's restore");
         await OnLoop(() => { Assert.DoesNotContain(victim, Invaders()); return true; });

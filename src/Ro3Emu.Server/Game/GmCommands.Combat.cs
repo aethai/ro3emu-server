@@ -279,7 +279,7 @@ public sealed partial class GmCommands
     {
         if (_gmAttributesHooked) return;
         _gmAttributesHooked = true;
-        character.ExtraAttributes.Add(p => p.GmAttributes is { } changes ? changes.Select(c => ((long)c.Key, c.Value)) : []);
+        character.ExtraAttributes.Subscribe(p => p.GmAttributes is { } changes ? changes.Select(c => ((long)c.Key, c.Value)) : []);
     }
 
     // ---- buffs ----

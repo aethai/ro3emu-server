@@ -158,7 +158,7 @@ public sealed partial class CombatService
             if (companions.Count > room) companions.RemoveRange(room, companions.Count - room);
         }
         if (skill.Area != BossSkillArea.Target)
-            foreach (var landed in BossAreaLanded) await landed(boss, skill, origin, center, face);
+            await BossAreaLanded.InvokeAsync(boss, skill, origin, center, face);
         if (victims.Count > 0)
             await MonsterSkillHitAsync(boss, skill.Row, victims, boss.Uid, session, skill.Damages ? options.DamagePercent : 0, bossDebuffsOnly: true);
         if (skill.PushEffect > 0)

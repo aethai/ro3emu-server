@@ -41,8 +41,8 @@ public sealed partial class CareerSpecialService
         this._data = data; this._character = character; this._skills = skills; this._functions = functions;
         this._mounts = mounts; this._roles = roles; this._world = world; this._loop = loop;
         // A job change can leave a lease the new career may not hold (GM !job, or a line without the item; inferred).
-        character.JobChanged.Add(ReconcileAsync);
-        mounts.RideChanged.Add(RideChangedAsync);
+        character.JobChanged.Subscribe(ReconcileAsync);
+        mounts.RideChanged.Subscribe(RideChangedAsync);
     }
 
     /// <summary>The mount slot's lease entitles MountService's battle slot 2.</summary>
@@ -236,7 +236,7 @@ public sealed partial class CareerSpecialService
         // A talent can depend on the leased pendant (Falcon's Might: SpecialEffect type 20 on the falcon's subtype).
         else await _character.RefreshStatsAsync(s);
         if (!shown.SequenceEqual(s.CareerPendants)) await PendantsAsync(s, shown);
-        foreach (var handler in _character.StateChanged) handler(s);
+        foreach (var handler in _character.StateChanged.Handlers) handler(s);
     }
 
     /// <summary>

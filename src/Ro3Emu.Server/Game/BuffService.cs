@@ -40,7 +40,7 @@ public sealed partial class BuffService : IGameTicker
     private readonly Dictionary<long, long> _expiring = [];
 
     /// <summary>Subscribers recompute effective skill parameters/slots after a buff changes.</summary>
-    public List<Func<GameSession, Task>> Changed { get; } = [];
+    public AsyncHook<GameSession> Changed { get; } = new("BuffService.Changed");
 
     /// <summary>A player's control state or forbidden actions changed (CombatService ends a cast they forbid).</summary>
     internal Func<GameSession, Task>? ControlChanged { get; set; }
@@ -49,7 +49,7 @@ public sealed partial class BuffService : IGameTicker
     internal Func<long, JsonElement, IReadOnlyList<(long Id, double Value)>, IReadOnlyList<(long Id, double Value)>>? SourceAttributes { get; set; }
 
     /// <summary>Subscribers publish effective unit stats after a timed attribute buff changes.</summary>
-    public List<Func<WorldUnit, Task>> UnitChanged { get; } = [];
+    public AsyncHook<WorldUnit> UnitChanged { get; } = new("BuffService.UnitChanged");
 
     public BuffService(GameData data, World world, SessionRegistry sessions, CharacterService character, GameLoop loop, ILogger<BuffService> log)
     {
@@ -61,8 +61,8 @@ public sealed partial class BuffService : IGameTicker
         this._log = log;
         character.GiveBuff = (p, buff, ms) => AddAsync(p, buff, ms, p.Role!.Id);
         character.IsItemUseForbidden = p => HasForbidden(p, ForbiddenState.UseItem);
-        character.DynamicProperties.Add(SupportShieldProperties);
-        character.DynamicProperties.Add(BlindProperties);
+        character.DynamicProperties.Subscribe(SupportShieldProperties);
+        character.DynamicProperties.Subscribe(BlindProperties);
         world.UnitRemoved.Add(unit => { ForgetUnit(unit.Uid); return Task.CompletedTask; });
     }
 
@@ -214,7 +214,7 @@ public sealed partial class BuffService : IGameTicker
         if (options.GuardianOwned && group == BlindGroup) await PublishBlindAsync(p);
         if (buff.Changes.Count > 0 || existing?.Changes.Count > 0 || buff.ShieldRemaining > 0 || existing?.ShieldRemaining > 0)
             await _character.RefreshStatsAsync(p);
-        foreach (var handler in Changed) await handler(p);
+        foreach (var handler in Changed.Handlers) await handler(p);
     }
 
     /// <summary>Source-owned passive configuration. Zero-time totem passives are permanent until that source is removed;
@@ -302,7 +302,7 @@ public sealed partial class BuffService : IGameTicker
         // The resist first: Element Control strikes on it, and an MVP's born buff answers both.
         if (live != null && sourceId != unit.Uid && UnitResistsControl(live, row))
         {
-            foreach (var handler in ControlResisted) await handler(unit, sourceId, row);
+            foreach (var handler in ControlResisted.Handlers) await handler(unit, sourceId, row);
             return;
         }
         if (live != null && ImmuneTo(live, row)) return;
@@ -335,7 +335,7 @@ public sealed partial class BuffService : IGameTicker
             changed.Property.Add(new AoIProperty { Idx = 2003, Data = ShieldAmount(unit) });
         await _world.ToUnitViewersAsync(unit, AoiAttrChange, changed);
         if (buff.Changes.Count > 0 || existing?.Changes.Count > 0 || buff.StateOrdinal > 0 || existing?.StateOrdinal > 0)
-            foreach (var handler in UnitChanged) await handler(unit);
+            foreach (var handler in UnitChanged.Handlers) await handler(unit);
     }
 
     public async Task RemoveAsync(GameSession p, ActiveBuff buff)
@@ -356,7 +356,7 @@ public sealed partial class BuffService : IGameTicker
         if (buff.StateOrdinal != 0) await RefreshControlAsync(p);
         if (buff.IsGuardianOwned && buff.ConfigId / 100 == BlindGroup) await PublishBlindAsync(p);
         if (buff.Changes.Count > 0 || buff.ShieldRemaining > 0) await _character.RefreshStatsAsync(p);
-        foreach (var handler in Changed) await handler(p);
+        foreach (var handler in Changed.Handlers) await handler(p);
     }
 
     /// <summary>31332: only a current own GUID with BuffConfig._iHandRemove may be removed (inferred server rule).</summary>
@@ -428,7 +428,7 @@ public sealed partial class BuffService : IGameTicker
                     EntityUuid = (ulong)p.Role.Id, BuffInfo = new AoIBuffInfo { AddBuffs = { info } },
                 });
                 if (buff.Changes.Count > 0) await _character.RefreshStatsAsync(p);
-                foreach (var handler in Changed) await handler(p);
+                foreach (var handler in Changed.Handlers) await handler(p);
             }
             if (count == 0) break;
         }

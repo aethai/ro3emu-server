@@ -177,7 +177,7 @@ public sealed partial class NewActivityTests
                     LastDays = 4, DayAward = false
                 };
             Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.NewActivities.ToByteArray());
-            Service<NewActivityService>().ProjectionChanged.Add(s =>
+            Service<NewActivityService>().ProjectionChanged.Subscribe(s =>
             {
                 if (ReferenceEquals(s, session)) Interlocked.Increment(ref projections);
             });

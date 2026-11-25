@@ -914,7 +914,7 @@ public sealed class DailyTests : IAsyncLifetime
         {
             var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(x => x.Role != null);
             var combat = _app.Services.GetRequiredService<CombatService>();
-            var killed = combat.Killed.Single(h => h.Target is TaskService);
+            var killed = combat.Killed.Handlers.Single(h => h.Target is TaskService);
             var template = _app.Services.GetRequiredService<MonsterService>().Template(5000036)!;
             var point = new SpawnPoint(-1, 0, 0, 0, 0, template.NpcId);
             var group = new SpawnGroup(-1, false, 1, 0, [], [point]);

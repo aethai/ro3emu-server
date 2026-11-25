@@ -168,8 +168,8 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
         await Shows(h, 4900020, 0); // the Gate stage passed it: the assists step shows
         await OnLoop(async () =>
         {
-            foreach (var handler in Service<CombatService>().PvpDealtAsync) await handler(h, d, 10, false);
-            foreach (var handler in Service<CombatService>().PvpDealtAsync) await handler(a, d, 10, true);
+            await Service<CombatService>().PvpDealtAsync.InvokeAsync(h, d, 10, false);
+            await Service<CombatService>().PvpDealtAsync.InvokeAsync(a, d, 10, true);
         });
         Assert.Equal(1, await Read(() => wars.SiegeTrackerValue(h, 210003)));
         Assert.Equal(0, await Read(() => wars.SiegeTrackerValue(a, 210003))); // the killer is no assist

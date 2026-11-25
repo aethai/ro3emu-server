@@ -104,8 +104,8 @@ public sealed partial class CharacterService
         if (result != 0 || dest == old.CurPlanIndex) return;
         await SendStatPlanAsync(session);
         await SendStatsAsync(session, showChange: true);
-        foreach (var handler in ProgressHandlers) await handler(session);
-        foreach (var handler in StateChanged) handler(session);
+        foreach (var handler in ProgressHandlers.Handlers) await handler(session);
+        foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     /// <summary>31505 reply must echo the persisted name: the client writes it locally without checking result.</summary>

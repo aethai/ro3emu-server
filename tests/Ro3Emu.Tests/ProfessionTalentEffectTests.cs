@@ -299,8 +299,7 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
                 Request = new CastSkillReq { SkillId = AttackRow, TargetId = monster.Uid },
                 Row = _host.Service<GameData>().Row("SkillConfig", AttackRow)!.Value, StartMs = 0, ChantMs = 0, ActionMs = 1,
             };
-            foreach (var resolved in _host.Service<CombatService>().CastResolved)
-                await resolved(Session, action, [monster], new SkillHitInfo());
+            await _host.Service<CombatService>().CastResolved.InvokeAsync(Session, action, [monster], new SkillHitInfo());
             return 0;
         });
     }

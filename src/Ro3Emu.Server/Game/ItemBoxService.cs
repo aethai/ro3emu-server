@@ -40,7 +40,7 @@ public sealed class ItemBoxService : IGameTicker
         // a rollover that came before it.
         _gameDay = DailyActivityService.GameDay(clock.GetLocalNow().DateTime);
         character.UseClock = clock;
-        character.SpecialItemUse.Add(TryOpenAsync);
+        character.SpecialItemUse.Subscribe(TryOpenAsync);
     }
 
     /// <summary>At the 05:00 game day the online roles with use-time counts get 5009 again (ended periods drop out).</summary>

@@ -59,7 +59,7 @@ public sealed class PersonalService
         this._data = data; this._roles = roles; this._functions = functions; this._character = character; this._options = options;
         this._clock = clock;
         // Action 1002 unlocks at base level 50 (PersonalPerformanceConfig, condition 18000001).
-        character.ProgressHandlers.Add(RefreshAsync);
+        character.ProgressHandlers.Subscribe(RefreshAsync);
         character.RegisterItemAction(UnlockDecorationAction, UseDecorationItemAsync);
     }
 
@@ -311,7 +311,7 @@ public sealed class PersonalService
     /// re-arms a like. The liked role gets no notice; its card shows the count and Like History (UserDataService).
     /// </summary>
     /// <summary>After a committed like (quest target 106902); listeners post their work.</summary>
-    public List<Action<GameSession>> Upvoted { get; } = [];
+    public SyncHook<GameSession> Upvoted { get; } = new("PersonalService.Upvoted");
 
     public async Task UpvoteAsync(GameSession s, UpvotePersonalReq req)
     {
@@ -338,7 +338,7 @@ public sealed class PersonalService
         }
         await s.SendGameAsync(Upvote, new UpvotePersonalResp { Result = result, Req = req });
         if (result == 0) await SyncAsync(s);
-        if (result == 0) foreach (var handler in Upvoted) handler(s);
+        if (result == 0) foreach (var handler in Upvoted.Handlers) handler(s);
     }
 
     /// <summary>The likes a card received (liker id to unix ms), as stored; null when none.</summary>

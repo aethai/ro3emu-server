@@ -516,8 +516,7 @@ public sealed class TowerTests : IAsyncLifetime
             if (ReferenceEquals(monster, final)) staged.TrySetResult();
             return Task.CompletedTask;
         };
-        var hooks = Service<CombatService>().BeforeKilled;
-        hooks.Insert(hooks.FindIndex(h => h.Target is RewardService), stageNotice);
+        using var stageSub = Service<CombatService>().BeforeKilled.Subscribe(stageNotice, order: -1);
         FailTowerWrites(true);
         await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
@@ -535,7 +534,7 @@ public sealed class TowerTests : IAsyncLifetime
             if (await Service<GameLoop>().InvokeAsync(() => Task.FromResult(final.Hp == 1 || final.Dead))) break;
             Assert.True(DateTime.UtcNow < until, "the refused kill never restored the monster's HP");
         }
-        hooks.Remove(stageNotice);
+        stageSub.Dispose();
         Assert.False(final.Dead);
         Assert.Equal(1, final.Hp);
         Assert.False(await Service<CharacterService>().RewardSourceCommittedAsync(final.RewardSource!.Key));
@@ -602,23 +601,19 @@ public sealed class TowerTests : IAsyncLifetime
                 }
                 return Task.CompletedTask;
             };
-            var hooks = Service<CombatService>().BeforeKilled;
-            hooks.Insert(hooks.FindIndex(h => h.Target is RewardService), failApply);
+            using var failSub = Service<CombatService>().BeforeKilled.Subscribe(failApply, order: -1);
             // Held from here on: the fault closes the connection, after which the registry may already have dropped it.
             var session = Session(alice);
-            try
-            {
-                await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
-                await alice.SendGameAsync(CombatService.UseSkill,
-                    new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
-                Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-                await staged.Task.WaitAsync(Wait);
-                await faulted.Task.WaitAsync(Wait);
-                // The child reward permit aborts first; the parent cast then finalizes the paid death.
-                for (int i = 0; i < 100 && (!session.Channel.PeerClosed || !final.Dead); i++) await Task.Delay(20);
-                Assert.True(session.Channel.PeerClosed);
-            }
-            finally { hooks.Remove(failApply); }
+            await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
+            await alice.SendGameAsync(CombatService.UseSkill,
+                new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
+            Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+            await staged.Task.WaitAsync(Wait);
+            await faulted.Task.WaitAsync(Wait);
+            // The child reward permit aborts first; the parent cast then finalizes the paid death.
+            for (int i = 0; i < 100 && (!session.Channel.PeerClosed || !final.Dead); i++) await Task.Delay(20);
+            Assert.True(session.Channel.PeerClosed);
+            failSub.Dispose();
             Assert.Equal(1, applyFaults);
             Assert.True(final.Dead);
             Assert.True(final.RewardSettlement!.Committed);

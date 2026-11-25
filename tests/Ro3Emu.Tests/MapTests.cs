@@ -528,7 +528,7 @@ public sealed partial class MapTests : IAsyncLifetime
             RecordRollbackAndStopRepeat(monster, before, after, damageRestored);
         Func<GameSession, MonsterUnit, long, Task> failDamage = (_, monster, _) =>
             monster.Uid == (long)angeling.Uuid ? Task.FromException(new IOException("Injected MVP damage callback refusal.")) : Task.CompletedTask;
-        combat.EventDamageRecorded.Add(failDamage);
+        using var failSub = combat.EventDamageRecorded.Subscribe(failDamage);
         try
         {
             await SwingWait.UntilDoneAsync(_app.Services.GetRequiredService<GameLoop>(), _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null), (long)angeling.Uuid);
@@ -537,7 +537,7 @@ public sealed partial class MapTests : IAsyncLifetime
             Assert.Equal((1L, 1L, false), await damageRestored.Task.WaitAsync(TimeSpan.FromSeconds(10)));
             Assert.Equal(0, ReceiptCount("event/mvp-settlement"));
         }
-        finally { combat.EventDamageRecorded.Remove(failDamage); combat.LethalRollbackObservedForTest = null; }
+        finally { combat.LethalRollbackObservedForTest = null; }
 
         // A failed source probe is an unknown outcome. Retain its original source and resolve it
         // on the next MVP tick; do not roll a second settlement while its result is unknown.
@@ -849,9 +849,9 @@ public sealed partial class MapTests : IAsyncLifetime
                 if (monster.Uid == uid) finalized.TrySetResult();
                 return Task.CompletedTask;
             };
-            combat.Killed.Insert(0, genericObserver); // before loot and quest callbacks
-            rewards.KillDropsGranted.Add(dropObserver);
-            combat.AfterLethalPublication.Add(afterLethal);
+            using var killedSub = combat.Killed.Subscribe(genericObserver, order: -1000); // before loot and quest callbacks
+            using var dropSub = rewards.KillDropsGranted.Subscribe(dropObserver);
+            using var afterSub = combat.AfterLethalPublication.Subscribe(afterLethal);
             mvp.AfterSettlementCommitForTest = _ => Task.FromException(new IOException("Injected committed MVP acknowledgement fault."));
             mvp.BeforeSettlementProbeForTest = _ =>
             {
@@ -920,9 +920,6 @@ public sealed partial class MapTests : IAsyncLifetime
                 mvp.AfterSettlementCommitForTest = null;
                 mvp.BeforeSettlementProbeForTest = null;
                 mvp.BeforeRetainedPublicationForTest = null;
-                combat.Killed.Remove(genericObserver);
-                combat.AfterLethalPublication.Remove(afterLethal);
-                rewards.KillDropsGranted.Remove(dropObserver);
             }
         }
     }

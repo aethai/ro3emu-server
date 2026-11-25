@@ -808,7 +808,7 @@ public sealed partial class CardRulesTests
     {
         await Service<GameLoop>().InvokeAsync(async () =>
         {
-            Service<CharacterService>().ExtraAttributes.Add(s => s == session ? [(103L, atk)] : []);
+            Service<CharacterService>().ExtraAttributes.Subscribe(s => s == session ? [(103L, atk)] : []);
             await Service<CharacterService>().RefreshStatsAsync(session);
         });
     }

@@ -11,7 +11,7 @@ public sealed partial class CombatService
     /// Synchronous monster damage modifiers (TowerService.PowerSuppress): a pet's hit on a monster (false), a monster's hit
     /// on a pet or a player (true), after the monster's DamageRatio. A player's hit on a monster uses DamageAdjusters.
     /// </summary>
-    internal List<Func<MonsterUnit, long, bool, long>> MonsterDamageAdjusters { get; } = [];
+    internal OrderedHook<Func<MonsterUnit, long, bool, long>> MonsterDamageAdjusters { get; } = new("Combat.MonsterDamageAdjusters");
 
     /// <summary>(inferred) Use the existing attribute-group calculator for a pet's configured stats and live buffs.</summary>
     internal StatSheet TowerPetStats(TowerPetUnit pet)
@@ -124,8 +124,8 @@ public sealed partial class CombatService
                     await _character.SetHpSpAsync(owner, current[2000] + actual, null);
                 }
                 hit.Dsts.Add(new DamageInfo { DstID = recipient.Id, Damage = actual, DamageType = DamageType.Heal });
-                foreach (var handler in Healed) handler(owner, actual);
-                foreach (var handler in HealedAsync) await handler(owner, actual);
+                Healed.Invoke(owner, actual);
+                await HealedAsync.InvokeAsync(owner, actual);
             }
             if (hit.Dsts.Count > 0)
                 foreach (var viewer in pet.Viewers.Append(owner).Distinct()) await viewer.SendGameAsync(SkillHit, hit);

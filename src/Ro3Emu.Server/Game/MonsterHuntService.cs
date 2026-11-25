@@ -54,8 +54,8 @@ public sealed class MonsterHuntService
         foreach (var monster in Rows("AreaConcurMonsterConfig"))
             _monsterByMapNpc.TryAdd((GameData.Int(monster, "_iMap"), (int)GameData.Int(monster, "_iNpc")), monster);
         rewards.StageHuntKill = StageKill;
-        rewards.ExtraKillDrops.Add(AreaDrops);
-        rewards.KillDropsGranted.Add(KilledAsync);
+        rewards.ExtraKillDrops.Subscribe(AreaDrops);
+        rewards.KillDropsGranted.Subscribe(KilledAsync);
     }
 
     /// <summary>The rows of this playbook (all are _kMultiverseArray [101]).</summary>

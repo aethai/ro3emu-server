@@ -16,7 +16,7 @@ public sealed class AppraisalService(GameData data, CharacterService character, 
 
     /// <summary>After a committed appraisal and its reply: the appraised instances (achievements 302006/302008).
     /// Listeners must not take the character lock synchronously (it is held); they post their work.</summary>
-    public List<Action<GameSession, IReadOnlyList<InvItem>>> Appraised { get; } = [];
+    public SyncHook<GameSession, IReadOnlyList<InvItem>> Appraised { get; } = new("AppraisalService.Appraised");
 
     /// <summary>
     /// (inferred) Validate the whole distinct, nonempty batch before changing any item; no additional batch cap or
@@ -78,7 +78,7 @@ public sealed class AppraisalService(GameData data, CharacterService character, 
         log.LogInformation("{Name} appraises {Count} items: {Result}", session.Role!.Name, req.ItemGuids.Count, result);
         await session.SendGameAsync(Appraise, resp);
         if (result == 0)
-            foreach (var handler in Appraised)
+            foreach (var handler in Appraised.Handlers)
                 try { handler(session, targets); }
                 catch (Exception e) { log.LogError(e, "Appraised hook failed for {Name}", session.Role!.Name); }
     }

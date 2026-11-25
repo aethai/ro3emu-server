@@ -21,7 +21,7 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>A loaded siege participant's dungeon task tracker changed (TaskService.OnDungeonRun): scene, instance,
     /// step. Listeners post their work.</summary>
-    public List<Action<GameSession, long, long, int>> SiegeTracked { get; } = [];
+    public SyncHook<GameSession, long, long, int> SiegeTracked { get; } = new("TerritoryWarsService.SiegeTracked");
 
     /// <summary>106609: the season points of the role's guild, 0 without a guild.</summary>
     public long GuildWarPoints(GameSession s) =>
@@ -51,6 +51,6 @@ public sealed partial class TerritoryWarsService
     {
         int step = battle.State.Stage >= SiegeGateStage ? SiegeFightStep : 0;
         foreach (var member in battle.Room.ActiveMembers.Where(m => m.Session.Role is { } role && roles.Contains(role.Id)))
-            foreach (var handler in SiegeTracked) handler(member.Session, SiegeScene, battle.Room.Id, step);
+            foreach (var handler in SiegeTracked.Handlers) handler(member.Session, SiegeScene, battle.Room.Id, step);
     }
 }

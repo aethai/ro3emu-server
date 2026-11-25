@@ -26,13 +26,13 @@ public sealed partial class DungeonService
     public const uint PlotSceneEvent = 84012;
 
     /// <summary>Committed clears only; consumers receive the scene entry and whether an actual personal award was paid.</summary>
-    public List<Func<GameSession, int, bool, Task>> Completed { get; } = [];
+    public AsyncHook<GameSession, int, bool> Completed { get; } = new("DungeonService.Completed");
     /// <summary>After <see cref="Completed"/> for a TenGameplay run: the boss (TenGameplayBossConfig._iBoss) and the
     /// run's settled participants (quest target 106602).</summary>
-    public List<Func<GameSession, long, IReadOnlyCollection<GameSession>, Task>> MultiBossCleared { get; } = [];
+    public AsyncHook<GameSession, long, IReadOnlyCollection<GameSession>> MultiBossCleared { get; } = new("DungeonService.MultiBossCleared");
     /// <summary>A loaded member's dungeon task tracker (TaskService.OnDungeonRun): scene, instance and the scripted steps
     /// the run has passed. Listeners post their work.</summary>
-    public List<Action<GameSession, long, long, int>> RunTracked { get; } = [];
+    public SyncHook<GameSession, long, long, int> RunTracked { get; } = new("DungeonService.RunTracked");
     /// <summary>Guild Challenge owns admission and rewards; this engine retains scenes, combat and cleanup.</summary>
     internal Func<GameSession, EnterDungeonReq, Task<bool>>? GuildChallengeEnter { get; set; }
     /// <summary>Another private-room owner whose 30402 exit revives a dead member on return (the guild home).</summary>
@@ -96,24 +96,24 @@ public sealed partial class DungeonService
         // A rider's client reports the carrier's walk; a sliding client moves faster than it walks (DungeonService.Slide).
         scene.WalkOnRide = s => vehicles.IsSeatedOnSceneActor(s) || Sliding(s);
         vehicles.ExitHeld = RideHolds;
-        combat.GrantedSkill.Add(FiresCannon);
+        combat.GrantedSkill.Subscribe(FiresCannon);
         combat.AimsFromSeat = FiresCannon;
         gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
         WireRaidTrials(combat, gm);
         teams.MultiDungeonInfo = TeamDungeonInfo;
-        combat.DamageAdjusters.Add((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
-        combat.IncomingDamageAdjusters.Add((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
-        scene.Loaded.Add(LoadedAsync);
-        scene.Leaving.Add(AbandonAsync);
-        scene.Leaving.Add(StopSlideAsync);
-        combat.Killed.Add(KilledAsync);
-        combat.BeforeKilled.Insert(0, FreezeTerminalKillAsync);
-        combat.PlayerDied.Add(PlayerDiedAsync);
-        combat.ReviveInfoOwners.Add(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
-        combat.Dealt.Add((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
-        combat.Taken.Add((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
-        combat.Healed.Add((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
-        character.ProgressHandlers.Add(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
+        combat.DamageAdjusters.Subscribe((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
+        combat.IncomingDamageAdjusters.Subscribe((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(AbandonAsync);
+        scene.Leaving.Subscribe(StopSlideAsync);
+        combat.Killed.Subscribe(KilledAsync);
+        combat.BeforeKilled.Subscribe(FreezeTerminalKillAsync, order: CombatService.BeforeKilledOrderDungeon);
+        combat.PlayerDied.Subscribe(PlayerDiedAsync);
+        combat.ReviveInfoOwners.Subscribe(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
+        combat.Dealt.Subscribe((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
+        combat.Taken.Subscribe((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
+        combat.Healed.Subscribe((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
+        character.ProgressHandlers.Subscribe(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
     }
 
     public sealed class Attempt
@@ -438,7 +438,7 @@ public sealed partial class DungeonService
     internal void TrackRun(Attempt a, IEnumerable<GameSession> members, int step)
     {
         foreach (var s in members)
-            foreach (var handler in RunTracked) handler(s, a.Plan.SceneEntry, a.Room.Id, step);
+            foreach (var handler in RunTracked.Handlers) handler(s, a.Plan.SceneEntry, a.Room.Id, step);
     }
 
     // Waiting for all remaining members before starting the encounter clock is (inferred).
@@ -1016,13 +1016,13 @@ public sealed partial class DungeonService
             if (!committed) continue;
             if (committed && success)
             {
-                foreach (var handler in Completed)
+                foreach (var handler in Completed.Handlers)
                     try { await handler(s, (int)a.Plan.SceneEntry, goods.Count > 0); }
                     catch (Exception e) { _log.LogError(e, "Dungeon clear callback failed for {Role}, instance {Instance}", roleId, a.Room.Id); }
                 if (a.Plan.Boss is { } boss)
                 {
                     var party = participants.Select(p => p.Session).ToArray();
-                    foreach (var handler in MultiBossCleared)
+                    foreach (var handler in MultiBossCleared.Handlers)
                         try { await handler(s, GameData.Int(boss, "_iBoss"), party); }
                         catch (Exception e) { _log.LogError(e, "Dungeon boss clear callback failed for {Role}, instance {Instance}", roleId, a.Room.Id); }
                 }

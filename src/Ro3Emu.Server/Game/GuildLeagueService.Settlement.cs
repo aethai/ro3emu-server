@@ -38,7 +38,7 @@ public sealed partial class GuildLeagueService
         await CommitAsync(next, "match");
         m.Committed = true;
         var scores = outcome.Players.ToDictionary(p => p.Key, p => p.Value[1]);
-        foreach (var handler in MatchCommitted)
+        foreach (var handler in MatchCommitted.Handlers)
             try { handler(m.Round, scores); }
             catch (Exception e) { _log.LogError(e, "Guild League match hook failed for {Match}", m.Key); }
         await SendAllAsync(Present(m), ResultNotify, new GuildLeagueDungeonResultNtf { History = history });

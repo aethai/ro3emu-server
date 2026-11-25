@@ -50,7 +50,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
         await OnLoop(() =>
         {
             Service<RewardService>().QualifiesForBonus = null;
-            Service<RewardService>().KillDropsGranted.Clear();
+            Service<RewardService>().KillDropsGranted.ClearForTest();
             Service<RewardService>().ResolveKillForTest = (_, _) => ([(1000000, 3), (1, 7), (2010121, 1)], 3, 4);
             Service<CharacterService>().AutoDecomposeReturns = (_, item) => item.Entry == 2010121 ? [(1, 11L)] : [];
             return Task.CompletedTask;
@@ -64,7 +64,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
             false, 0, 1000, 5, 10, 0, 1000, .1f, 1000, 1, 500),
         Group = new SpawnGroup(-1, false, 1, 0, [], []), Home = new SpawnPoint(-1, 0, 0, 0, 0, 10001), Hp = 0
     };
-    private Task Reward(GameSession player, MonsterUnit monster) => Service<CombatService>().Killed
+    private Task Reward(GameSession player, MonsterUnit monster) => Service<CombatService>().Killed.Handlers
         .Single(h => h.Target == Service<RewardService>())(player, monster);
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);
     private long ReceiptCount()
@@ -135,9 +135,9 @@ public sealed class KillEconomyTests : IAsyncLifetime
         });
         var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int observerCalls = 0;
-        Service<CombatService>().DealtAsync.Add((_, target, _, _) => target == monster
+        Service<CombatService>().DealtAsync.Subscribe((_, target, _, _) => target == monster
             ? throw new IOException("postcommit effect failure") : Task.CompletedTask);
-        Service<CombatService>().Killed.Add((_, target) =>
+        Service<CombatService>().Killed.Subscribe((_, target) =>
         {
             if (target == monster) { observerCalls++; observed.TrySetResult(); }
             return Task.CompletedTask;
@@ -237,7 +237,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
     {
         await using var bot = await Enter(); var player = Session; var monster = Monster();
         Service<AccountStore>().FailNextEconomyAcknowledgementForTest();
-        Service<RewardService>().KillDropsGranted.Add((_, _, _) => throw new IOException("postcommit observer"));
+        Service<RewardService>().KillDropsGranted.Subscribe((_, _, _) => throw new IOException("postcommit observer"));
         await Assert.ThrowsAsync<IOException>(() => OnLoop(() => Reward(player, monster)));
         Assert.True(monster.RewardSettlement!.Committed); Assert.Equal(1, ReceiptCount());
         var committed = Service<RoleStore>().LoadProgress(player.Role!.Id);

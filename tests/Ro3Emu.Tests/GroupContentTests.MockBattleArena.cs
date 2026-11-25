@@ -111,7 +111,7 @@ public sealed partial class GroupContentTests
         await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Vehicle && n.DataInfo.ActiveObjId == madogear.Uid);
         Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
-            Service<CombatService>().GrantedSkill.Any(granted => granted(Session(alice), 16301001))))); // Hammer Strike
+            Service<CombatService>().GrantedSkill.Handlers.Any(granted => granted(Session(alice), 16301001))))); // Hammer Strike
 
         await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq { NpcUid = madogear.Uid, InteractionId = 4900025 });
         Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser,

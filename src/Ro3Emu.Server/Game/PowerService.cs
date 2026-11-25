@@ -97,10 +97,10 @@ public sealed class PowerService : IGameTicker
         this._seasonRefine = seasonRefine; this._roles = roles; this._sessions = sessions; this._loop = loop; this._log = log;
         emblems.PublishPower = s => PublishAsync(s, always: true);
         // Hooks only mark the role: several fire inside the character lock or a commit's apply.
-        character.StateChanged.Add(Queue);
-        character.ProgressHandlers.Add(s => { Queue(s); return Task.CompletedTask; });
-        character.JobChanged.Add(s => { Queue(s); return Task.CompletedTask; });
-        skills.Learned.Add(s => { Queue(s); return Task.CompletedTask; });
+        character.StateChanged.Subscribe(Queue);
+        character.ProgressHandlers.Subscribe(s => { Queue(s); return Task.CompletedTask; });
+        character.JobChanged.Subscribe(s => { Queue(s); return Task.CompletedTask; });
+        skills.Learned.Subscribe(s => { Queue(s); return Task.CompletedTask; });
         gm.Register("power", "(this role's power package, 31502/31503 and the history)", GmAsync);
     }
 

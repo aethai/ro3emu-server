@@ -245,7 +245,7 @@ public sealed partial class TerritoryEscortService : IGameTicker
     private bool _ticking, _reconciledOnce; // the first reconciliation runs on the loop's first tick (startup), not 1 s later
     public Func<int, long>? OwnerOf { get; set; }
     /// <summary>After a committed cart start, its escort (the member who took it). Listeners post their work.</summary>
-    public List<Action<GameSession>> CartStarted { get; } = [];
+    public SyncHook<GameSession> CartStarted { get; } = new("TerritoryEscortService.CartStarted");
     public Func<long, int>? GuildPoint { get; set; }
 
     public TerritoryEscortService(AccountStore accounts, GuildStore guilds, GuildService guildService, RoleStore roles, GameData data,
@@ -275,13 +275,13 @@ public sealed partial class TerritoryEscortService : IGameTicker
                 rounds[play.Round] = play.Score;
             }
         PublishSnapshots();
-        scene.Loaded.Add(SceneLoadedAsync);
-        scene.LoadedKeys.Add(SceneKeys);
-        scene.Leaving.Add(SceneLeavingAsync);
-        combat.Killed.Add(CartKilledAsync);
-        combat.MonsterDamageApplied.Add(CartDamagedAsync);
-        combat.PvpDealt.Add(PvpRecorded);
-        combat.PlayerKilled.Add(PlayerKilledAsync);
+        scene.Loaded.Subscribe(SceneLoadedAsync);
+        scene.LoadedKeys.Subscribe(SceneKeys);
+        scene.Leaving.Subscribe(SceneLeavingAsync);
+        combat.Killed.Subscribe(CartKilledAsync);
+        combat.MonsterDamageApplied.Subscribe(CartDamagedAsync);
+        combat.PvpDealt.Subscribe(PvpRecorded);
+        combat.PlayerKilled.Subscribe(PlayerKilledAsync);
     }
 
     private static long RoleId(GameSession s) => s.Role?.Id ?? 0;

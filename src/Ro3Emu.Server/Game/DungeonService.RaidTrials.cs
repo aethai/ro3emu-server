@@ -65,10 +65,10 @@ public sealed partial class DungeonService
 
     private void WireRaidTrials(CombatService combat, GmCommands gm)
     {
-        combat.DamageAdjusters.Add(TrialDamage);
-        combat.Killed.Add(TrialObjectKilledAsync);
-        combat.DealtAsync.Add(TrialBossHitAsync);
-        combat.BossAreaLanded.Add(TrialBreakersAsync);
+        combat.DamageAdjusters.Subscribe(TrialDamage);
+        combat.Killed.Subscribe(TrialObjectKilledAsync);
+        combat.DealtAsync.Subscribe(TrialBossHitAsync);
+        combat.BossAreaLanded.Subscribe(TrialBreakersAsync);
         gm.Register("raidtrial", "[list | <n> | stop] (raid test aid: the raid boss's scripted trials; start trial n now, or end the "
             + "running one without a verdict)", RaidTrialGmAsync);
     }

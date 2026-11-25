@@ -59,12 +59,12 @@ public sealed partial class GuildCampfireService : IGameTicker
 
     /// <summary>A member in the guild home while the Bonfire Party runs, once per event day (quest target 106018);
     /// listeners post their work.</summary>
-    public List<Action<GameSession>> Joined { get; } = [];
+    public SyncHook<GameSession> Joined { get; } = new("GuildCampfireService.Joined");
 
     private void MarkJoined(GameSession session)
     {
         if (session.Role is { } role && _joined.Add((role.Id, Today())))
-            foreach (var handler in Joined) handler(session);
+            foreach (var handler in Joined.Handlers) handler(session);
     }
 
     public GuildCampfireService(GameData data, AccountStore accounts, CharacterService character, BuffService buffs,
@@ -77,8 +77,8 @@ public sealed partial class GuildCampfireService : IGameTicker
         this._functions = functions; this._schedule = schedule; this._clock = clock; this._time = time;
         this._instances = instances; this._maps = maps; this._combat = combat;
         this._loop = loop; this._home = home;
-        scene.Loaded.Add(LoadedAsync);
-        combat.Killed.Add(KilledAsync);
+        scene.Loaded.Subscribe(LoadedAsync);
+        combat.Killed.Subscribe(KilledAsync);
     }
 
     private sealed class StateData

@@ -550,7 +550,7 @@ public sealed class AchievementTests : IAsyncLifetime
         await Full(alice);
         var loop = Service<GameLoop>();
         // MVP settlement: once per online participant.
-        await OnLoop("Alice", s => { foreach (var handler in Service<MvpService>().ParticipantSettled) handler(s); });
+        await OnLoop("Alice", s => Service<MvpService>().ParticipantSettled.Invoke(s));
         await ReachedIncrement(alice, Mvp1);
         Assert.Equal([1], (await Info("Alice", 101100101))!.Scores);
 
@@ -560,7 +560,7 @@ public sealed class AchievementTests : IAsyncLifetime
         await OnLoop("Alice", s =>
         {
             s.Tower!.LayerConfID = floor20;
-            foreach (var handler in Service<TowerService>().FloorCleared) handler(s);
+            Service<TowerService>().FloorCleared.Invoke(s);
         });
         await ReachedIncrement(alice, Tower20);
         Assert.Equal(AchievementStatusType.Complete, (await Info("Alice", Tower5))!.Status);
@@ -572,7 +572,7 @@ public sealed class AchievementTests : IAsyncLifetime
             var s = Session("Alice");
             foreach (string key in new[] { "50101:1", "50101:2", "100101:1" })
                 s.Dungeons!.Records[key] = new DungeonService.Record { Passed = true };
-            foreach (var handler in Service<DungeonService>().Completed) await handler(s, 0, false);
+            await Service<DungeonService>().Completed.InvokeAsync(s, 0, false);
         });
         await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(TeamBoss)?.Scores.SequenceEqual([1, 1, 0]) == true,
             "two of three bosses");

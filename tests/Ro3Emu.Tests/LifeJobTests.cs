@@ -578,9 +578,8 @@ public sealed class LifeJobTests : IAsyncLifetime
                 if (ReferenceEquals(changed, s) && ReferenceEquals(loop.CurrentWork, itemUseWork)
                     && ++calls == failOnCall) throw new InvalidOperationException("post-commit hook test");
             }
-            character.StateChanged.Add(FailAfterCommit);
-            try { await character.UseItemAsync(s, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }); }
-            finally { character.StateChanged.Remove(FailAfterCommit); }
+            using (character.StateChanged.Subscribe(FailAfterCommit))
+                await character.UseItemAsync(s, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         }));
         Assert.Equal("post-commit hook test", failure.Message);
         var state = await OnLoop("alice", s => (Cd: s.ItemCds.GetValueOrDefault(1001801), BagCd: s.BagState.Info.ItemCds?.Data.GetValueOrDefault(1001801) ?? 0,

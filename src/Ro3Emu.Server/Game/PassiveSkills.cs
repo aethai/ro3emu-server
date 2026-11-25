@@ -66,22 +66,22 @@ public sealed class PassiveSkills : IGameTicker
         _buffs = buffs;
         _character = character;
         _loop = loop;
-        combat.CastResolved.Add(OnCastResolvedAsync);
-        buffs.ControlResisted.Add(OnControlResistedAsync);
-        combat.TakenAsync.Add(OnTakenAsync);
-        combat.Killed.Add(OnKilledAsync);
-        combat.DamageAdjusters.Add(PreyOnTheWeakDamage);
+        combat.CastResolved.Subscribe(OnCastResolvedAsync);
+        buffs.ControlResisted.Subscribe(OnControlResistedAsync);
+        combat.TakenAsync.Subscribe(OnTakenAsync);
+        combat.Killed.Subscribe(OnKilledAsync);
+        combat.DamageAdjusters.Subscribe(PreyOnTheWeakDamage);
         buffs.PassiveLethalSave = WoodSpiritsBlessingAsync;
         // It touches only the loaded session's own buffs, inside the scene load's scope: no hook scope of its own.
         scenes.AddOwnedAfterLoaded(StandingBuffsAsync);
-        skills.Learned.Add(StandingBuffsAsync);
-        character.JobChanged.Add(StandingBuffsAsync);
+        skills.Learned.Subscribe(StandingBuffsAsync);
+        character.JobChanged.Subscribe(StandingBuffsAsync);
         // A roster or member card change runs in the party's scope; each member's Union is set in a work item of its own,
         // under that member's role only: it reads the roster and changes only the member's own buff. As a realm-wide
         // timer it fired for every member of every party on each card change and held the whole realm each time
         // (LoadTest S8: 366 runs waited 87 s in 4 minutes; a live realm saw 192 s). A member without the passive or its
         // buff has nothing to update.
-        teams.RosterChanged.Add(roles =>
+        teams.RosterChanged.Subscribe(roles =>
         {
             foreach (long role in roles)
                 if (_sessions.All().FirstOrDefault(p => p.Role?.Id == role) is { } member

@@ -98,8 +98,8 @@ public sealed partial class WorldCoreService : IGameTicker
         this._personal = personal;
         _serverOpenSeconds = (ulong)seasons.StartTime;
         scene.AddOwnedAfterLoaded(LoadedAsync);
-        scene.Leaving.Add(LeavingAsync);
-        monsters.TargetChanged.Add(TargetChangedAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
+        monsters.TargetChanged.Subscribe(TargetChangedAsync);
         combat.ReviveOffer = OfferReviveAsync;
         combat.ReviveCheck = dungeons.ExternalReviveError;
         dungeons.SetCustomData = SetCustomAsync;
@@ -110,11 +110,11 @@ public sealed partial class WorldCoreService : IGameTicker
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;
         scene.PreferredLine = PreferredLine;
-        lines.HasPendingWork.Add(monsters.HasPendingWork);
-        lines.HasPendingWork.Add(combat.HasPendingMapWork);
-        lines.Retiring.Add(monsters.RetireRuntimeAsync);
-        lines.Retiring.Add(chat.RetireLineAsync);
-        lines.Retiring.Add(key => { _sceneVariables.Remove(key.WorldScene); return Task.CompletedTask; });
+        lines.HasPendingWork.Subscribe(monsters.HasPendingWork);
+        lines.HasPendingWork.Subscribe(combat.HasPendingMapWork);
+        lines.Retiring.Subscribe(monsters.RetireRuntimeAsync);
+        lines.Retiring.Subscribe(chat.RetireLineAsync);
+        lines.Retiring.Subscribe(key => { _sceneVariables.Remove(key.WorldScene); return Task.CompletedTask; });
         gm.Register("line", "[n|new|info] (TEST AID)", scene.LineCommandAsync);
         gm.Register("worldcustom", "id value", async (s, a) => await SetCustomAsync(s, new CustomData
         { Id = long.Parse(a[0]), CustomParam = new CustomParam { Tp = (CustomParam.Types.ParamType)3, LongParam = long.Parse(a[1]) } }));
