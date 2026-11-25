@@ -6,7 +6,8 @@ namespace Ro3Emu.Server.Accounts.Persistence;
 internal sealed record EconomyLedgerCommit(string OperationId, string ActorAccount, long ActorRoleId,
     string CommandKind, string RequestFingerprint, string IntentHash, byte[] IntentPayload,
     string SourceKey, long EffectiveUtcMs, byte[] Outcome, byte[] ChildReceipts,
-    string BeforeRevisions, string AfterRevisions, IReadOnlyList<EconomyLeg> Legs);
+    string BeforeRevisions, string AfterRevisions, IReadOnlyList<EconomyLeg> Legs,
+    bool UseLegNumber = false);
 
 /// <summary>Appends a complete semantic outcome inside the caller's existing writer transaction.</summary>
 internal static class EconomyLedgerWrite
@@ -71,7 +72,7 @@ internal static class EconomyLedgerWrite
                 """);
             entry.Parameters.AddWithValue("$seq", sequence);
             entry.Parameters.AddWithValue("$op", commit.OperationId);
-            entry.Parameters.AddWithValue("$no", index);
+            entry.Parameters.AddWithValue("$no", commit.UseLegNumber ? leg.LegNumber : index);
             entry.Parameters.AddWithValue("$recorded", recorded);
             entry.Parameters.AddWithValue("$effective", commit.EffectiveUtcMs);
             entry.Parameters.AddWithValue("$ownerKind", (int)leg.Location.Owner.Kind);

@@ -427,6 +427,24 @@ public sealed class PersistenceRoutingTests : IDisposable
         finally { await loop.StopAsync(default); loop.Dispose(); }
     }
 
+    [Fact]
+    public void EconomyLedgerWritesUseSinglePath()
+    {
+        string root = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server");
+        string[] allowed = ["EconomyLedgerWrite.cs", "EconomySchemaPlan.cs"];
+        string[] patterns = ["INSERT INTO economy_entry", "INSERT INTO operation_receipt", "INSERT INTO operation_source"];
+        var violations = new List<string>();
+        foreach (string file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        {
+            if (allowed.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase)) continue;
+            string text = File.ReadAllText(file);
+            foreach (string pattern in patterns)
+                if (text.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    violations.Add($"{Path.GetRelativePath(root, file)}: {pattern}");
+        }
+        Assert.Empty(violations);
+    }
+
     private sealed class HoldWritePlan(ManualResetEventSlim entered, ManualResetEventSlim release) : DbPlan
     {
         internal override int Bytes => 64;

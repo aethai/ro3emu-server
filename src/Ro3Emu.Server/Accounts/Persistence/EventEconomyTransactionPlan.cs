@@ -96,14 +96,6 @@ internal sealed class EventEconomyTransactionPlan(RoleItemPlan child, EventEcono
         var after = EconomySnapshotReader.ReadEventHoldings(db, tx, mutation.Catalog, RoleWrites, entities);
         var legs = BuildLegs(before, after, mutation);
         if (legs.Count == 0) throw new InvalidOperationException("Event economy envelope must explain an economic movement.");
-        string realm;
-        using (var query = DbSql.Command(db, tx, "SELECT realm_id FROM economy_meta WHERE singleton=1"))
-            realm = query.ExecuteScalar() as string ?? throw new InvalidDataException("Missing economy realm.");
-        long sequence;
-        using (var advance = DbSql.Command(db, tx,
-            "UPDATE economy_meta SET next_sequence=next_sequence+1 WHERE singleton=1 RETURNING next_sequence"))
-            sequence = (long)advance.ExecuteScalar()!;
-        long recorded = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var mutated = MutatedRoleWrites(result).ToHashSet();
         var beforeVector = RoleWrites.Distinct().Select(key => new
         {
@@ -120,54 +112,13 @@ internal sealed class EventEconomyTransactionPlan(RoleItemPlan child, EventEcono
         var entityAfter = entityBefore.Select(value => new OwnerRevisionValue(value.Key,
             checked(value.Revision + (changedEntities.Contains(value.Key) ? 1 : 0)),
             value.Exists || changedEntities.Contains(value.Key))).ToArray();
-        using (var receipt = DbSql.Command(db, tx, """
-            INSERT INTO operation_receipt(operation_id,realm_id,commit_seq,actor_account,actor_role,command_kind,
-                request_fingerprint,intent_hash,intent_payload,source_key,recorded_utc_ms,effective_utc_ms,outcome,
-                child_receipts,before_revisions,after_revisions,leg_count)
-            VALUES($op,$realm,$seq,$account,$role,$kind,$fingerprint,$hash,$payload,$source,$recorded,$effective,
-                $outcome,$children,$before,$after,$count)
-            """))
-        {
-            receipt.Parameters.AddWithValue("$op", mutation.OperationId); receipt.Parameters.AddWithValue("$realm", realm);
-            receipt.Parameters.AddWithValue("$seq", sequence); receipt.Parameters.AddWithValue("$account", mutation.ActorAccount);
-            receipt.Parameters.AddWithValue("$role", mutation.ActorRoleId); receipt.Parameters.AddWithValue("$kind", mutation.CommandKind);
-            receipt.Parameters.AddWithValue("$fingerprint", mutation.RequestFingerprint); receipt.Parameters.AddWithValue("$hash", mutation.IntentHash);
-            receipt.Parameters.AddWithValue("$payload", mutation.IntentPayload); receipt.Parameters.AddWithValue("$source", mutation.SourceKey);
-            receipt.Parameters.AddWithValue("$recorded", recorded); receipt.Parameters.AddWithValue("$effective", mutation.EffectiveUtcMs);
-            receipt.Parameters.AddWithValue("$outcome", mutation.Outcome);
-            receipt.Parameters.AddWithValue("$children", EconomyTransactionPlan.EncodeChildReceipts(result));
-            receipt.Parameters.AddWithValue("$before", JsonSerializer.Serialize(new { Roles = beforeVector, Pins = pins, Entities = entityBefore }));
-            receipt.Parameters.AddWithValue("$after", JsonSerializer.Serialize(new { Roles = afterVector, Pins = pins, Entities = entityAfter }));
-            receipt.Parameters.AddWithValue("$count", legs.Count); receipt.ExecuteNonQuery();
-        }
-        using (var source = DbSql.Command(db, tx,
-            "INSERT INTO operation_source(realm_id,source_key,operation_id) VALUES($realm,$source,$op)"))
-        {
-            source.Parameters.AddWithValue("$realm", realm); source.Parameters.AddWithValue("$source", mutation.SourceKey);
-            source.Parameters.AddWithValue("$op", mutation.OperationId); source.ExecuteNonQuery();
-        }
-        foreach (var leg in legs)
-        {
-            using var insert = DbSql.Command(db, tx, """
-                INSERT INTO economy_entry(commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,
-                    owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,
-                    delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,source_key)
-                VALUES($seq,$op,$no,$recorded,$effective,$ownerKind,$owner,$part,$key,$instance,$assetKind,$asset,
-                    $epoch,$delta,$reason,$kind,$edge,$before,$after,$source)
-                """);
-            insert.Parameters.AddWithValue("$seq", sequence); insert.Parameters.AddWithValue("$op", mutation.OperationId);
-            insert.Parameters.AddWithValue("$no", leg.LegNumber); insert.Parameters.AddWithValue("$recorded", recorded);
-            insert.Parameters.AddWithValue("$effective", mutation.EffectiveUtcMs);
-            insert.Parameters.AddWithValue("$ownerKind", (int)leg.Location.Owner.Kind); insert.Parameters.AddWithValue("$owner", leg.Location.Owner.Id);
-            insert.Parameters.AddWithValue("$part", (int)leg.Location.Compartment); insert.Parameters.AddWithValue("$key", leg.Location.Key);
-            insert.Parameters.AddWithValue("$instance", leg.Location.Instance); insert.Parameters.AddWithValue("$assetKind", (int)leg.Asset.Kind);
-            insert.Parameters.AddWithValue("$asset", leg.Asset.Id); insert.Parameters.AddWithValue("$epoch", leg.Asset.Epoch);
-            insert.Parameters.AddWithValue("$delta", leg.Delta); insert.Parameters.AddWithValue("$reason", (int)leg.Reason);
-            insert.Parameters.AddWithValue("$kind", (int)leg.Kind); insert.Parameters.AddWithValue("$edge", leg.EdgeNumber);
-            insert.Parameters.AddWithValue("$before", (object?)leg.BeforeFingerprint ?? DBNull.Value);
-            insert.Parameters.AddWithValue("$after", (object?)leg.AfterFingerprint ?? DBNull.Value);
-            insert.Parameters.AddWithValue("$source", mutation.SourceKey); insert.ExecuteNonQuery();
-        }
+        EconomyLedgerWrite.Append(db, tx, new EconomyLedgerCommit(
+            mutation.OperationId, mutation.ActorAccount, mutation.ActorRoleId, mutation.CommandKind,
+            mutation.RequestFingerprint, mutation.IntentHash, mutation.IntentPayload, mutation.SourceKey,
+            mutation.EffectiveUtcMs, mutation.Outcome, EconomyTransactionPlan.EncodeChildReceipts(result),
+            JsonSerializer.Serialize(new { Roles = beforeVector, Pins = pins, Entities = entityBefore }),
+            JsonSerializer.Serialize(new { Roles = afterVector, Pins = pins, Entities = entityAfter }),
+            legs, UseLegNumber: true));
         return result;
     }
 
