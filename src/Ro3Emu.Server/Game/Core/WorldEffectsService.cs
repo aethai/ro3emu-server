@@ -90,8 +90,10 @@ public sealed class WorldEffectsService
     private static bool ValidRange(ShapeRange range) => range.Type switch
     {
         RangeType.Circle => range.CircleRange is { } circle && FiniteVec(circle.Center) && Finite(circle.Radius) && circle.Radius is > 0 and <= 100,
-        RangeType.Rect => range.RectRange is { } rect && FiniteVec(rect.Center) && Angle(rect.Angle) && Finite(rect.Length) && Finite(rect.Height) && rect.Length is > 0 and <= 200 && rect.Height is > 0 and <= 200,
-        RangeType.CircularSector => range.SectorRange is { } sector && FiniteVec(sector.Center) && Angle(sector.Face) && Finite(sector.Section) && sector.Section is > 0 and <= 360 && Finite(sector.Radius) && sector.Radius is > 0 and <= 100,
+        RangeType.Rect => range.RectRange is { } rect && FiniteVec(rect.Center) && Angle(rect.Angle)
+            && Finite(rect.Length) && Finite(rect.Height) && rect.Length is > 0 and <= 200 && rect.Height is > 0 and <= 200,
+        RangeType.CircularSector => range.SectorRange is { } sector && FiniteVec(sector.Center) && Angle(sector.Face)
+            && Finite(sector.Section) && sector.Section is > 0 and <= 360 && Finite(sector.Radius) && sector.Radius is > 0 and <= 100,
         _ => false,
     };
 

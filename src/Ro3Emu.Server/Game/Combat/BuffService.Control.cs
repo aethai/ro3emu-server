@@ -88,7 +88,9 @@ public sealed partial class BuffService
 
     /// <summary>SpecialStatusConfig 22 Endure "免疫击退、击飞、僵直" and 23 control immunity, whose text lists knockback and launch too: nothing moves a holder.</summary>
     private bool HoldsDisplacementImmunity(IEnumerable<ActiveBuff> active) => active.Any(b => b.ExpireMs > _loop.NowMs
-        && (b.ConfigId / 100 == EddgaGroup || BuffConfig.Get(_data, b.ConfigId) is { } row && row.BuffCategory.Any(c => c is DisplacementImmunityCategory or ControlImmunityCategory or AllNegativeImmunityCategory)));
+        && (b.ConfigId / 100 == EddgaGroup
+            || BuffConfig.Get(_data, b.ConfigId) is { } row
+                && row.BuffCategory.Any(c => c is DisplacementImmunityCategory or ControlImmunityCategory or AllNegativeImmunityCategory)));
 
     internal bool ResistsDisplacement(GameSession player) => HoldsDisplacementImmunity(player.Buffs);
 

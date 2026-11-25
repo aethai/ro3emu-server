@@ -20,7 +20,8 @@ public sealed partial class SkillCastingService
     private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; public JsonElement Row; }
     private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
 
-    /// <summary>High-Energy Impact: "become Flying and gain a Shield ... You can Move and have [Immunity] during this time. Tap the skill again or wait until the Flying duration ends to attack Below".
+    /// <summary>High-Energy Impact: "become Flying and gain a Shield ... You can Move and have [Immunity] during this
+    /// time. Tap the skill again or wait until the Flying duration ends to attack Below".
     /// The first row's damage is its landing's, whose mode row (ten up) the flight buff switches the skill to. The flight lasts the row's action time.
     /// Left alone, the take-off's own show lands: show 16307 plays the landing animation Skill16_3 at 2.983 s and its impact effects at 3.367 s, and its
     /// m_kAtkPoints [0, 3.2, 3.367] hit at 3.2 s of its 5.017 s. The landing hits at that second attack point (<see cref="LandingOffset"/>); at the

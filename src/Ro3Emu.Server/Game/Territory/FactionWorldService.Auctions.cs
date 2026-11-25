@@ -200,7 +200,8 @@ public sealed partial class FactionWorldService
         {
             var g = _guildStore.Get(e.GuildId);
             if (g == null) continue;
-            var entry = new TerritoryWarsAuctionGuildInfo { GuildId = g.Id, GuildInfo = _guilds.Snapshot(g), AuctionPrice = (long)Math.Ceiling(BidValue(e) / BidUnit(true)), AuctionTime = e.Time * 1000 };
+            var entry = new TerritoryWarsAuctionGuildInfo
+            { GuildId = g.Id, GuildInfo = _guilds.Snapshot(g), AuctionPrice = (long)Math.Ceiling(BidValue(e) / BidUnit(true)), AuctionTime = e.Time * 1000 };
             foreach (var point in state.Owners.Where(p => p.Value == g.Id && ZoneType(p.Key) == 3)) entry.OccupyPointId[point.Key] = 1;
             info.GuildInfos[g.Id] = entry;
         }

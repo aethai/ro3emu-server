@@ -52,6 +52,7 @@ internal static class DamageFormula
             ? 1 + c * Math.Max(0, level) / BasisPoints
             : Factor(skill, 0, stat);
 
-    /// <summary>(inferred) 114 is the percent part of ASPD on the sheet, and Ambush's "Every 1% Attack Speed" means the ASPD a player sees. Its text says 0.2%, its tuple 10 (0.1%): the tuple counts.</summary>
+    /// <summary>(inferred) 114 is the percent part of ASPD on the sheet, and Ambush's "Every 1% Attack Speed" means
+    /// the ASPD a player sees. Its text says 0.2%, its tuple 10 (0.1%): the tuple counts.</summary>
     private static long Stat(Func<int, long> stat, long attr) => Math.Max(0, stat(attr == AspdShare ? Aspd : (int)attr));
 }

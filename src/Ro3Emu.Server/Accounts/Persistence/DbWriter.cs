@@ -386,7 +386,8 @@ public sealed partial class DbWriter : IDisposable
                     string.Join(",", (_active is null ? Enumerable.Empty<DbPlan>() : [_active.Plan])
                         .Concat(_durable.Select(x => x.Plan)).Concat(_lazy.Select(x => x.Plan))
                         .Select(x => x.Label.Length > 64 ? x.Label[..64] : x.Label).Distinct().Take(8)));
-            _log?.LogError("Database writer shutdown timed out with durableJobs={DurableJobs}, durableBytes={DurableBytes}, lazyJobs={LazyJobs}, lazyBytes={LazyBytes}, labels={Labels}; worker retains its connection until accepted plans finish",
+            _log?.LogError("Database writer shutdown timed out with durableJobs={DurableJobs}, durableBytes={DurableBytes}, "
+                + "lazyJobs={LazyJobs}, lazyBytes={LazyBytes}, labels={Labels}; worker retains its connection until accepted plans finish",
                 debt.durableJobs, debt.durableBytes, debt.lazyJobs, debt.lazyBytes, debt.labels);
         }
     }

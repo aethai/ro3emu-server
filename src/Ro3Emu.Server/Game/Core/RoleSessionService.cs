@@ -8,8 +8,12 @@ namespace Ro3Emu.Server.Game;
 /// A role's session: create and select, the login -> world sequence, position and
 /// settings persistence, the handover cleanup and role switching. Its messages are mapped by CoreMessages.
 /// </summary>
-public sealed partial class RoleSessionService(RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends, SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines, Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions, Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems, ILogger<RoleSessionService> log,
-    Microsoft.Extensions.Options.IOptions<ServerOptions> options)
+public sealed partial class RoleSessionService(
+    RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends,
+    SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines,
+    Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions,
+    Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems,
+    ILogger<RoleSessionService> log, Microsoft.Extensions.Options.IOptions<ServerOptions> options)
 {
     /// <summary>Novice; JobConfig[1000] picks the male/female unit.</summary>
     private const int NoviceCareer = 1000;

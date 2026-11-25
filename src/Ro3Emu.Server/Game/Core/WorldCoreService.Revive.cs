@@ -86,7 +86,9 @@ public sealed partial class WorldCoreService
         var state = s.WorldState;
         var source = Player(req.SourceEntityID);
         int error = !s.Dead ? ErrorCodes.TargetAlive : state.ReviveSource != req.SourceEntityID || state.ReviveSource == 0 ? ErrorCodes.ReviveNotAwaited
-            : state.ReviveExpiresMs <= Now ? ErrorCodes.ReviveInvitationExpired : source == null || source.Dead || !Ready(source) || !Ready(s) || source.WorldScene != s.WorldScene ? ErrorCodes.SkillReviveNotAllowed : _dungeons.ExternalReviveError(s);
+            : state.ReviveExpiresMs <= Now ? ErrorCodes.ReviveInvitationExpired
+            : source == null || source.Dead || !Ready(source) || !Ready(s) || source.WorldScene != s.WorldScene
+                ? ErrorCodes.SkillReviveNotAllowed : _dungeons.ExternalReviveError(s);
         long hp = state.ReviveHpRate, sp = state.ReviveSpRate;
         bool claimed = false;
         if (error == 0 && req.IsAccept)

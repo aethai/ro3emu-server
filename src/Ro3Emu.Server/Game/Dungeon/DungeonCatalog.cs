@@ -279,7 +279,8 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         var explicitPoints = serverPoints.Where(p => GameData.Int(p, "npcId") > 0).ToArray();
         if (explicitPoints.Any(p => monsters.Template((int)GameData.Int(p, "npcId")) == null)) return [];
         if (explicitPoints.Length > 0)
-            return [.. explicitPoints.GroupBy(p => GameData.Int(p, "GroupId")).OrderBy(g => g.Key).Select((g, i) => new Wave(i + 1, [.. g.Select(p => new Spawn((int)GameData.Int(p, "npcId"), Point(p)))]))];
+            return [.. explicitPoints.GroupBy(p => GameData.Int(p, "GroupId")).OrderBy(g => g.Key)
+                .Select((g, i) => new Wave(i + 1, [.. g.Select(p => new Spawn((int)GameData.Int(p, "npcId"), Point(p)))]))];
 
         var mapped = new List<Spawn>();
         foreach (var row in data.Table("NpcLevelPointRespawnConfig").Values

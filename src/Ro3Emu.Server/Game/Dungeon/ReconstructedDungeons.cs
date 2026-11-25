@@ -37,7 +37,8 @@ public sealed partial class ReconstructedDungeons
         {
             long scene = long.Parse(entry.Name, System.Globalization.CultureInfo.InvariantCulture);
             var waves = entry.Value.GetProperty("waves").EnumerateArray()
-                .Select(w => new Wave(w.TryGetProperty("quest", out var q) ? q.GetInt32() : 0, [.. w.GetProperty("spawns").EnumerateArray().Select(s => new Spawn(s.GetProperty("point").GetInt64(), s.GetProperty("npc").GetInt32()))]))
+                .Select(w => new Wave(w.TryGetProperty("quest", out var q) ? q.GetInt32() : 0,
+                    [.. w.GetProperty("spawns").EnumerateArray().Select(s => new Spawn(s.GetProperty("point").GetInt64(), s.GetProperty("npc").GetInt32()))]))
                 .ToArray();
             _dungeons[scene] = new Dungeon(scene, entry.Value.GetProperty("name").GetString() ?? "",
                 entry.Value.GetProperty("confidence").GetString() ?? "", waves);

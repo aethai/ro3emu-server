@@ -745,7 +745,8 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             Owners?.LongHeld(StuckWorkAge) ?? "none");
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Game loop work stuck: {Count} item(s) older than {Age:0.#} s, oldest {Id}:{Name}:{Ms:F0}ms under {Scope}; by name {Names}; reservations held as long: {Held}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Game loop work stuck: {Count} item(s) older than {Age:0.#} s, "
+        + "oldest {Id}:{Name}:{Ms:F0}ms under {Scope}; by name {Names}; reservations held as long: {Held}")]
     private static partial void LogStuckWork(ILogger logger, int count, double age, long id, string name, double ms, string scope, string names, string held);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Stuck game loop work report failed")]

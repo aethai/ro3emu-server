@@ -10,7 +10,10 @@ namespace Ro3Emu.Server.Game;
 /// destroys all units on a map change). Also NPC interaction (32700: portals, Kafras, dialogs), 30012 / 30131 jumps and
 /// the walk check against the client's nav grid.
 /// </summary>
-public sealed partial class SceneService(IOptions<ServerOptions> options, World world, WorldData worldData, MonsterService monsters, BuffService buffs, Data.GameData data, ILogger<SceneService> log, PublicLineManager lines, TimeProvider clock, CheatMonitor cheats) : Messaging.INpcInteractionHandler
+public sealed partial class SceneService(
+    IOptions<ServerOptions> options, World world, WorldData worldData, MonsterService monsters, BuffService buffs,
+    Data.GameData data, ILogger<SceneService> log, PublicLineManager lines, TimeProvider clock, CheatMonitor cheats)
+    : Messaging.INpcInteractionHandler
 {
     int Messaging.INpcInteractionHandler.Order => 1000;
     async Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request)

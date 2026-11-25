@@ -213,7 +213,8 @@ public sealed partial class AdventureActivityService
         return true;
     }
 
-    [LoggerMessage(Level = LogLevel.Information, SkipEnabledCheck = true, Message = "Note Pillar {Point} rejected interaction {Action} on map {Map} (request map {RequestMap}): result {Result}, song pending {Pending}")]
+    [LoggerMessage(Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Note Pillar {Point} rejected interaction {Action} on map {Map} (request map {RequestMap}): result {Result}, song pending {Pending}")]
     private partial void LogPillarRejected(int point, int action, long map, long requestMap, int result, bool pending);
 
     private async Task RejectPillarAsync(GameSession session, NpcInteractionReq req, int result)

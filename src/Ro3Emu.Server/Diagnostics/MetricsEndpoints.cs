@@ -23,8 +23,11 @@ public static class MetricsEndpoints
             IEnumerable<IHostedService> hosted) => Results.Json(new
             {
                 snapshots = accounts.Snapshots.Snapshot(), skippedWrites = accounts.Snapshots.SkippedWrites,
-                positions = positions.Snapshot(), settings = settings.Snapshot(), wildAfk = wildAfk.Snapshot(), vectorCacheHits = accounts.VectorCacheHits, vectorCacheRetries = accounts.VectorCacheRetries,
-                unchangedSaves = accounts.Snapshots.PersistedSkips, standingEconomyIssues = accounts.StandingEconomyIssues, backup = hosted.OfType<Accounts.DatabaseBackup>().SingleOrDefault()?.Snapshot(), loopWaits = accounts.AccessMetrics.LoopWaits(40)
+                positions = positions.Snapshot(), settings = settings.Snapshot(), wildAfk = wildAfk.Snapshot(),
+                vectorCacheHits = accounts.VectorCacheHits, vectorCacheRetries = accounts.VectorCacheRetries,
+                unchangedSaves = accounts.Snapshots.PersistedSkips, standingEconomyIssues = accounts.StandingEconomyIssues,
+                backup = hosted.OfType<Accounts.DatabaseBackup>().SingleOrDefault()?.Snapshot(),
+                loopWaits = accounts.AccessMetrics.LoopWaits(40)
             })).RequireOperator();
         app.MapGet("/ro3emu/metrics/public-key", (GateCrypto crypto) =>
             Results.Text(crypto.PublicKeyPem, "text/plain")).RequireOperator();

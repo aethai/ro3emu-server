@@ -276,7 +276,8 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
         long self = s.Role!.Id;
         int code = !_byMember.TryGetValue(self, out var team) ? ErrorCodes.NotInParty
             : team!.Leader != self ? ErrorCodes.NoPermission
-            : req.TargetGuid == self || req.Oper is not (TeamOperationType.TeamOperTypeKick or TeamOperationType.TeamOperTypeChangeLeader or TeamOperationType.TeamOperTypeAppointViceLeader or TeamOperationType.TeamOperTypeRemovalViceLeader) ? ErrorCodes.Parameter
+            : req.TargetGuid == self || req.Oper is not (TeamOperationType.TeamOperTypeKick or TeamOperationType.TeamOperTypeChangeLeader
+                or TeamOperationType.TeamOperTypeAppointViceLeader or TeamOperationType.TeamOperTypeRemovalViceLeader) ? ErrorCodes.Parameter
             : !team.Members.Contains(req.TargetGuid) ? ErrorCodes.MemberLeft
             : req.Oper == TeamOperationType.TeamOperTypeAppointViceLeader && team.ViceLeaders.Count >= 7 && !team.ViceLeaders.Contains(req.TargetGuid) ? ErrorCodes.PartyFull
             : req.Oper == TeamOperationType.TeamOperTypeRemovalViceLeader && !team.ViceLeaders.Contains(req.TargetGuid) ? ErrorCodes.Parameter : 0;

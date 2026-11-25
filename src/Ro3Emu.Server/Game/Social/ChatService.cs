@@ -469,7 +469,10 @@ public sealed partial class ChatService
             }),
         });
         List<(string Id, GameSession[] Members)> channels;
-        lock (_sync) channels = [.. _groups.Where(p => p.Key.StartsWith("@TGS#_8_", StringComparison.Ordinal) || p.Key.StartsWith("8_", StringComparison.Ordinal)).Select(p => (p.Key, p.Value.ToArray()))];
+        lock (_sync)
+            channels = [.. _groups
+                .Where(p => p.Key.StartsWith("@TGS#_8_", StringComparison.Ordinal) || p.Key.StartsWith("8_", StringComparison.Ordinal))
+                .Select(p => (p.Key, p.Value.ToArray()))];
         foreach (var (id, recipients) in channels)
         {
             var message = new TextChatMessage

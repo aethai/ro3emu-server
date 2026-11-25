@@ -201,7 +201,11 @@ public sealed partial class WorldCoreService
         {
             float speed = FlightSpeed(s);
             move.MoveType = MovementType.MoveTypeMove; move.MoveDuration = 1000;
-            move.MovementMove = new MovementMove { StartVelocity = new Vec3 { X = direction.X / length * speed, Y = direction.Y / length * speed, Z = direction.Z / length * speed }, AccVelocity = new Vec3() };
+            move.MovementMove = new MovementMove
+            {
+                StartVelocity = new Vec3 { X = direction.X / length * speed, Y = direction.Y / length * speed, Z = direction.Z / length * speed },
+                AccVelocity = new Vec3()
+            };
         }
         s.WorldState.PreviousPosition = s.Position; s.Position = pos.Clone(); s.Face = face; s.WorldState.LastWalkUtc = _clock.GetUtcNow().UtcDateTime; s.WorldState.Walking = false;
         _combat.PlayerMoved(s);

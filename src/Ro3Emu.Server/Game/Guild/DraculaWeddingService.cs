@@ -133,7 +133,9 @@ public sealed class DraculaWeddingService : IGameTicker
         && _functions.IsOpen(s, GameData.Int(row, "_iFunction"));
 
     /// <summary>The eligible members loaded inside the guild's home room.</summary>
-    private GameSession[] InHome(InstanceService.Room room) => [.. room.ActiveMembers.Select(m => m.Session).Where(s => s.Role != null && s.InstanceId == room.Id && s.SceneEntry == _home.Scene && !s.SceneLoading && Eligible(s))];
+    private GameSession[] InHome(InstanceService.Room room) =>
+        [.. room.ActiveMembers.Select(m => m.Session)
+            .Where(s => s.Role != null && s.InstanceId == room.Id && s.SceneEntry == _home.Scene && !s.SceneLoading && Eligible(s))];
 
     private Run? Current(long guild) => _runs.TryGetValue(guild, out var run) && !run.Settled && !run.Closed && Now < run.End
         ? run : null;

@@ -156,7 +156,8 @@ public sealed partial class TeamService
     private async Task EditorCoreAsync(GameSession s, EditorTeamReq req)
     {
         int code = !TryLeader(s, out var team) ? ErrorCodes.NoPermission
-            : req.IndexFirst < 0 || req.IndexSecond < 0 || req.IndexFirst >= team!.Members.Count || req.IndexSecond >= team.Members.Count || req.IndexFirst == req.IndexSecond ? ErrorCodes.Parameter : 0;
+            : req.IndexFirst < 0 || req.IndexSecond < 0 || req.IndexFirst >= team!.Members.Count
+                || req.IndexSecond >= team.Members.Count || req.IndexFirst == req.IndexSecond ? ErrorCodes.Parameter : 0;
         await s.SendGameAsync(TeamEditor, new EditorTeamResp { Result = code, IndexFirst = req.IndexFirst, IndexSecond = req.IndexSecond, OperGuid = s.Role!.Id });
         if (code != 0) return;
         (team!.Members[req.IndexFirst], team.Members[req.IndexSecond]) = (team.Members[req.IndexSecond], team.Members[req.IndexFirst]);

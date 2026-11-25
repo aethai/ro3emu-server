@@ -23,13 +23,27 @@ public static partial class EconomySnapshotReader
         ["owner_revision"] = "kind id part revision",
         ["owner_operation_receipt"] = "operation_id family result",
         ["economy_meta"] = "singleton realm_id next_sequence retained_floor compacted_seq compacted_full_seq pruned_entry_seq compacted_mail_seq",
-        ["operation_receipt"] = "operation_id realm_id commit_seq actor_account actor_role command_kind request_fingerprint intent_hash intent_payload source_key recorded_utc_ms effective_utc_ms outcome child_receipts before_revisions after_revisions leg_count",
+        ["operation_receipt"] = "operation_id realm_id commit_seq actor_account actor_role command_kind request_fingerprint "
+            + "intent_hash intent_payload source_key recorded_utc_ms effective_utc_ms outcome child_receipts before_revisions "
+            + "after_revisions leg_count",
         ["operation_source"] = "realm_id source_key operation_id",
-        ["economy_entry"] = "entry_id commit_seq operation_id leg_no recorded_utc_ms effective_utc_ms owner_kind owner_id compartment_kind compartment_key instance_key asset_kind asset_id asset_epoch delta reason_code leg_kind edge_no counterparty_owner_kind counterparty_owner_id counterparty_compartment_kind counterparty_compartment_key counterparty_instance_key before_fingerprint after_fingerprint source_key",
+        ["economy_entry"] = "entry_id commit_seq operation_id leg_no recorded_utc_ms effective_utc_ms owner_kind owner_id "
+            + "compartment_kind compartment_key instance_key asset_kind asset_id asset_epoch delta reason_code leg_kind edge_no "
+            + "counterparty_owner_kind counterparty_owner_id counterparty_compartment_kind counterparty_compartment_key "
+            + "counterparty_instance_key before_fingerprint after_fingerprint source_key",
         ["economy_daily_aggregate"] = "day_utc asset_kind asset_id reason_code leg_kind entry_count net_delta abs_delta",
         ["mail_delivery_replay"] = "realm_id source_key operation_id role_id delivery_key semantic_hash letter_id",
         ["dungeon_reward_obligation"] = "source_key role_id room_id activated completed state",
-        ["role"] = "id account area name sex career level hair create_time last_login_time scene_entry pos_x pos_y pos_z face settings job_level exp job_exp stats bonus_points currency starter_kit skills skill_bar paragon_level paragon_exp skill_plans tasks task_runtime task_followup guides emoji_play achievements achievement_runtime adventure_group library card_plans shop trade_info stalls_info mailbox auction guild_info guild_challenge pet_books daily new_activities activity_runtime timed_activity timed_battle training lottery tower wild_afk dungeons territory_wars territory_escort lifejob life_restrict life_runtime season_talent season_page season_page_meta season_refine equip_levels equip_plans auto_decompose bag_state stat_plans world_state emblems pets mounts wardrobe totems totem_refine_epoch genre career_special heroic_spirit paragon title area_concur growth_class first_heart personal personal_upvote popularity social_outfit emoji_info gifts barroom deleted_time gm_state job_exp_catchup offline_buffs",
+        ["role"] = "id account area name sex career level hair create_time last_login_time scene_entry pos_x pos_y pos_z face "
+            + "settings job_level exp job_exp stats bonus_points currency starter_kit skills skill_bar paragon_level paragon_exp "
+            + "skill_plans tasks task_runtime task_followup guides emoji_play achievements achievement_runtime adventure_group "
+            + "library card_plans shop trade_info stalls_info mailbox auction guild_info guild_challenge pet_books daily "
+            + "new_activities activity_runtime timed_activity timed_battle training lottery tower wild_afk dungeons "
+            + "territory_wars territory_escort lifejob life_restrict life_runtime season_talent season_page season_page_meta "
+            + "season_refine equip_levels equip_plans auto_decompose bag_state stat_plans world_state emblems pets mounts wardrobe "
+            + "totems totem_refine_epoch genre career_special heroic_spirit paragon title area_concur growth_class first_heart "
+            + "personal personal_upvote popularity social_outfit emoji_info gifts barroom deleted_time gm_state job_exp_catchup "
+            + "offline_buffs",
         ["server_state"] = "key value", ["tower_first_pass"] = "floor record",
         ["item"] = "guid role_id entry stack pack sort grid attrs enchantments str_attrs is_locked bind_type bind_expire bind expire_time",
         ["friend"] = "owner other since intimacy", ["friend_apply"] = "target applicant time",
