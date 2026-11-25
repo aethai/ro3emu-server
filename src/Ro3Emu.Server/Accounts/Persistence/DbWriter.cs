@@ -6,7 +6,7 @@ using Ro3Emu.Server.Economy;
 namespace Ro3Emu.Server.Accounts.Persistence;
 
 /// <summary>One connection and one dedicated thread. Admission accounts for both queued and executing plans.</summary>
-public sealed class DbWriter : IDisposable
+public sealed partial class DbWriter : IDisposable
 {
     public const int MaxDurableJobs = 1024, MaxDurableBytes = 4 * 1024 * 1024, MaxLazyBytes = 4 * 1024 * 1024;
     private const int MaxLazyJobs = 1024;
@@ -151,11 +151,14 @@ public sealed class DbWriter : IDisposable
             if (TerminalFault is { } onTerminal)
             {
                 try { onTerminal(error); }
-                catch (Exception callbackError) { _log?.LogError(callbackError, "Terminal writer fault callback failed"); }
+                catch (Exception callbackError) { if (_log != null) LogTerminalFaultCallbackFailed(_log, callbackError); }
             }
         }
         finally { _exited.TrySetResult(); }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Terminal writer fault callback failed")]
+    private static partial void LogTerminalFaultCallbackFailed(ILogger logger, Exception exception);
 
     // Stage G group commit: jobs already queued behind the first one join its transaction, each inside its own
     // savepoint (a failing job rolls back only itself), and one FULL commit makes the group durable. Every job's

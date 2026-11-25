@@ -282,7 +282,7 @@ public sealed class DbWriterFaultTests : IDisposable
     [Fact]
     public async Task TerminalDiskFullAtCommitStopsApplicationAndRejectsSubsequentWrites()
     {
-        var lifetime = new FakeApplicationLifetime();
+        using var lifetime = new FakeApplicationLifetime();
         using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
             Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
             lifetime: lifetime);
@@ -300,7 +300,7 @@ public sealed class DbWriterFaultTests : IDisposable
         await accounts.PersistenceWorkersExited.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
-    private sealed class FakeApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
+    private sealed class FakeApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime, IDisposable
     {
         private readonly CancellationTokenSource _stopping = new();
         public ManualResetEventSlim Stopped { get; } = new();
@@ -308,6 +308,7 @@ public sealed class DbWriterFaultTests : IDisposable
         public CancellationToken ApplicationStopping => _stopping.Token;
         public CancellationToken ApplicationStopped => CancellationToken.None;
         public void StopApplication() { Stopped.Set(); _stopping.Cancel(); }
+        public void Dispose() { Stopped.Dispose(); _stopping.Dispose(); }
     }
 
     public void Dispose()
