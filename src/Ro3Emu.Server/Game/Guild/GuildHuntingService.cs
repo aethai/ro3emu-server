@@ -20,7 +20,7 @@ namespace Ro3Emu.Server.Game;
 /// Not done: the GuildBossRace AI and the boss's own skills are left to the ordinary monster AI; the personal joystick
 /// skills (SkillConfig 16320801-16321301, GveHunting_PersonalSkill1) have no server side here.
 /// </summary>
-public sealed class GuildHuntingService : IGameTicker, IStartupInitializer
+public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializer
 {
     public const uint Matched = 43510, LiveRank = 43511, SkillUsed = 43512, MatchResult = 43513,
         UseSkill = 43514, Skills = 43515, History = 43516;
@@ -178,7 +178,7 @@ public sealed class GuildHuntingService : IGameTicker, IStartupInitializer
                 }
                 catch (Exception e)
                 {
-                    _log.LogError(e, "Guild hunt week {Cycle} snapshot save failed", cycle);
+                    LogSnapshotSaveFailed(_log, e, cycle);
                     return false;
                 }
             });
@@ -188,6 +188,9 @@ public sealed class GuildHuntingService : IGameTicker, IStartupInitializer
             return false;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Guild hunt week {Cycle} snapshot save failed")]
+    private static partial void LogSnapshotSaveFailed(ILogger logger, Exception error, long cycle);
 
     private async Task<bool> SaveCoreAsync(Week week)
     {
