@@ -266,7 +266,7 @@ public sealed partial class TotemService
             plan.SetUpTotem[req.TotemPos] = req.TotemGuid;
             await CommitAsync(s, next);
         }
-        await s.SendGameAsync(82362, new SetUpTotemResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, OldTotemGuid = old });
+        await s.SendGameAsync(Setup, new SetUpTotemResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, OldTotemGuid = old });
     }
 
     private int TargetError(GameSession s, int pos, long guid)
@@ -310,7 +310,7 @@ public sealed partial class TotemService
                 error = await PayForUpdate(s, next, [(material, (long)count)]);
             }
         }
-        await s.SendGameAsync(82363, new RefineTotemAttrResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, AttrId = req.AttrId });
+        await s.SendGameAsync(Refine, new RefineTotemAttrResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, AttrId = req.AttrId });
     }
 
     private async Task<int> PayForUpdate(GameSession s, InvItem next, IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyDictionary<long, int>? instances = null)
@@ -373,7 +373,7 @@ public sealed partial class TotemService
                 error = await PayForUpdate(s, next, [], new Dictionary<long, int> { [book!.Guid] = 1 });
             }
         }
-        await s.SendGameAsync(82364, new RefineTotemSkillResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, SkillBookGuid = req.SkillBookGuid });
+        await s.SendGameAsync(Learn, new RefineTotemSkillResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, SkillBookGuid = req.SkillBookGuid });
     }
 
     internal async Task UpgradeAsync(GameSession s, UpgradeTotemSystemReq req)
@@ -437,7 +437,7 @@ public sealed partial class TotemService
         }
         var response = new UpgradeTotemSystemResp { Result = error };
         if (error == 0) foreach (var (entry, count) in refund) response.GainItems[entry] = count;
-        await s.SendGameAsync(82365, response);
+        await s.SendGameAsync(Upgrade, response);
     }
 
     internal int PlanSwitchCooldownError(GameSession s) => s.Profile.TotemSwitchUtc != default
@@ -453,7 +453,7 @@ public sealed partial class TotemService
             var next = s.Profile.Totems!.Clone(); next.CurrentPlan = req.TargetIndex;
             await CommitAsync(s, next); s.Profile.TotemSwitchUtc = _clock.GetUtcNow().UtcDateTime;
         }
-        await s.SendGameAsync(82367, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Profile.Totems!.CurrentPlan });
+        await s.SendGameAsync(SwitchPlan, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Profile.Totems!.CurrentPlan });
     }
 
     internal async Task RenameAsync(GameSession s, TotemChangeTotemNameReq req)
@@ -464,7 +464,7 @@ public sealed partial class TotemService
             || req.Name.EnumerateRunes().Count() > (Data.Config.PublicParams.Of(_data).SchemeNameNumMax ?? 8)
             || req.Name.Any(char.IsControl))) error = ErrorCodes.NameLengthInvalid;
         if (error == 0) { var next = s.Profile.Totems!.Clone(); next.TotemPlans[req.TargetIndex].PlanName = req.Name; await CommitAsync(s, next); }
-        await s.SendGameAsync(82368, new TotemChangeTotemNameResp { Result = error });
+        await s.SendGameAsync(Rename, new TotemChangeTotemNameResp { Result = error });
     }
 
     internal async Task SwapAsync(GameSession s, TotemSwapReq req)
@@ -481,7 +481,7 @@ public sealed partial class TotemService
             if (to != 0) p.SetUpTotem[to] = req.SwapFromGuid;
             await CommitAsync(s, next);
         }
-        await s.SendGameAsync(82369, new TotemSwapResp { Result = error });
+        await s.SendGameAsync(Swap, new TotemSwapResp { Result = error });
     }
 
     internal async Task AppraiseAsync(GameSession s, TotemAppraiseReq req)
@@ -503,7 +503,7 @@ public sealed partial class TotemService
             await CommitAsync(s, s.Profile.Totems!.Clone(), updates);
             foreach (var item in updates) resp.AppraiseResult.Add(_character.ItemInfoOf(item));
         }
-        await s.SendGameAsync(82370, resp);
+        await s.SendGameAsync(Appraise, resp);
     }
 
     internal async Task CombineAsync(GameSession s, CombineTotemReq req)
@@ -571,7 +571,7 @@ public sealed partial class TotemService
             await _character.ItemsChangedAsync(s, stats: true); await SyncAsync(s);
             foreach (var handler in Combined.Handlers) handler(s, next.Entry);
         }
-        await s.SendGameAsync(82366, new CombineTotemResp { Result = error, NewTotemGuid = newGuid });
+        await s.SendGameAsync(Combine, new CombineTotemResp { Result = error, NewTotemGuid = newGuid });
     }
 
     public Dictionary<int, long>? CreateAttributes(int entry) => _data.Row("TotemConfig", entry) is { } row ? Roll(row, GameData.Int(row, "_iIfAppraise") == 0) : null;

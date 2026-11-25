@@ -17,7 +17,7 @@ public sealed partial class SceneService
         if (valid)
             foreach (var line in lines.Snapshot(map)) response.LineInfo.Add(new SceneLineInfo
             { SceneID = line.Map.WorldScene, SceneEntry = map, Linenum = line.Map.LineNumber, Currolenum = line.Load });
-        return s.SendGameAsync(70009, response);
+        return s.SendGameAsync(MsgId.SceneLineInfo, response);
     }
 
     /// <summary>70010 has an explicit owner. A source enum is presentation metadata, never authority to bypass capacity.</summary>

@@ -509,7 +509,7 @@ public sealed partial class WorldCoreService : IGameTicker
     }
 
     /// <summary>Request-without-result errors use APIError, with a nonempty parameter list for the Lua decoder.</summary>
-    public static Task ErrorAsync(GameSession s, uint origin, int code) => s.SendGameAsync(99999, new APIErrorMsg
+    public static Task ErrorAsync(GameSession s, uint origin, int code) => s.SendGameAsync(MsgId.ApiError, new APIErrorMsg
     { ErrorCode = code, OriginMsgId = origin, ErrorParams = { new ErrorParam { ParamType = ErrorParamType.ErrorParamString, ParamValue = { "" } } } });
 
     internal static bool Finite(Vec3? p) => p != null && float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);

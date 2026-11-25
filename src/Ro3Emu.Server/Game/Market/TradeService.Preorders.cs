@@ -255,7 +255,7 @@ public sealed partial class TradeService
             if (succeeded.Contains(role.Id)) notice.PreTradeSuccessNtf = new PreTradeSuccessNtf();
             if (failed.Contains(role.Id)) notice.PreTradeNtf = new PreTradeFailNtf();
             if (notice.ExpireNtf == null && notice.PreTradeSuccessNtf == null && notice.PreTradeNtf == null) continue;
-            try { await session.SendGameAsync(32630, notice); }
+            try { await session.SendGameAsync(PreorderNotify, notice); }
             catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException or ObjectDisposedException)
             { log.LogDebug(e, "Trade reminder recipient disconnected after commit"); }
         }

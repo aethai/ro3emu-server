@@ -344,7 +344,7 @@ public sealed partial class GuildWartimeService
                                         if (Online(member.RoleId) is { } peer)
                                         {
                                             var packet = new BlackMarketSellRecordNtf();
-                                            notices.Add(peer, () => peer.SendGameAsync(83907, packet));
+                                            notices.Add(peer, () => peer.SendGameAsync(MarketSellRecordNtf, packet));
                                         }
                             }
                         }

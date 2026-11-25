@@ -31,7 +31,7 @@ public sealed class CodeShapeTests
     private const int NumericRouteMaps = 0;
     private const int PragmaCs1998InServer = 0;
     private const int LinearRoleScansInServer = 0;
-    private const int NumericSendGameCalls = 48;
+    private const int NumericSendGameCalls = 0;
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
     private const int PrivateRepoRootHelpersInTests = 0;

@@ -56,12 +56,12 @@ public sealed partial class GenreService
         await roles.CommitAsync(tx, "cd13b/genre-state", _ => session.Profile.Genre = next);
     }
 
-    internal Task MyRecommendationsAsync(GameSession session) => session.SendGameAsync(82808,
+    internal Task MyRecommendationsAsync(GameSession session) => session.SendGameAsync(MyRecs,
         new GenreGetAllMyRecommendResp { MyRecommend = session.Profile.Genre!.MyRecommend?.Clone() ?? new() });
 
     internal async Task QueryRecommendationsAsync(GameSession session)
     {
-        await session.SendGameAsync(82828, new GenreQueryAllOtherRecommendResp());
+        await session.SendGameAsync(QueryRecs, new GenreQueryAllOtherRecommendResp());
         await SyncAsync(session);
     }
 }
