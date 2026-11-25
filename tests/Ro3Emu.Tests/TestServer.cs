@@ -1,6 +1,7 @@
 using Google.Protobuf;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Game;
@@ -40,7 +41,18 @@ public sealed class TestServer : IAsyncDisposable
     public int MicroGatePort { get; private set; }
     public int GameGatePort { get; private set; }
     public TimeProvider Clock => Service<TimeProvider>();
+    public FakeTimeProvider? FakeClock => Clock as FakeTimeProvider;
     public GameLoop Loop => Service<GameLoop>();
+
+    public static FakeTimeProvider CreateFakeClock(DateTimeOffset? start = null) =>
+        new(start ?? new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+
+    /// <summary>Advances the server's <see cref="FakeTimeProvider"/> and executes due game-loop timers and tickers.</summary>
+    public Task AdvanceAsync(TimeSpan duration)
+    {
+        var fake = FakeClock ?? throw new InvalidOperationException("TestServer was not started with a FakeTimeProvider.");
+        return Loop.AdvanceAsync(duration, fake.Advance);
+    }
 
     /// <summary>Starts a server on the synthetic fixture (<see cref="SyntheticData.Dir"/>) so it runs in CI without client data.</summary>
     public static Task<TestServer> StartSyntheticAsync(Action<ServerOptions>? configure = null, TimeProvider? clock = null,

@@ -1,9 +1,7 @@
 using Google.Protobuf;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Romsg;
 using Ro3Emu.Bot;
-using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
 
@@ -16,71 +14,34 @@ namespace Ro3Emu.Tests;
 /// </summary>
 public sealed class AdventureGroupTests : IAsyncLifetime
 {
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "ro3emu-advguild-" + Guid.NewGuid().ToString("N"));
-    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private readonly TestClock _clock = new();
-    private WebApplication _app = null!;
-    private string _http = "";
+    private static readonly TimeSpan Wait = TestServer.DefaultWait;
+    private readonly FakeTimeProvider _clock = TestServer.CreateFakeClock(new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+    private TestServer _server = null!;
 
     private const long Ritual = 1010001, Prontera = 10100;
     private const int Sapling = 200033;
 
-    /// <summary>Thursday 2026-10-08 12:00 UTC.</summary>
-    private sealed class TestClock : TimeProvider
+    public async Task InitializeAsync()
     {
-        private long _seconds = new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds();
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeSeconds(Interlocked.Read(ref _seconds));
-        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
-        public void Advance(long count) => Interlocked.Add(ref _seconds, count);
-    }
-
-    public Task InitializeAsync() => StartServerAsync();
-
-    private async Task StartServerAsync()
-    {
-        var (web, micro, game) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o =>
+        _server = await TestServer.StartClientAsync(o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
-            o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.SeasonStart = "2026-10-05"; o.PlayBook = 101;
             o.OpenContent.Enabled = true; // function 1000000 is base level 9999 in the export
             o.GuildBlockedWords = ["ban"];
         }, _clock);
-        await _app.StartAsync();
-        _http = $"http://127.0.0.1:{web}";
     }
 
-    private async Task RestartAsync()
-    {
-        await _app.StopAsync(); await _app.DisposeAsync();
-        ClearOwnPool();
-        await StartServerAsync();
-    }
+    private Task RestartAsync() => _server.RestartAsync();
 
-    private void ClearOwnPool()
-    {
-        using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={Path.Combine(_dir, "ro3emu.db")}");
-        Microsoft.Data.Sqlite.SqliteConnection.ClearPool(db);
-    }
+    public Task DisposeAsync() => _server.DisposeAsync().AsTask();
 
-    public async Task DisposeAsync()
-    {
-        await _app.StopAsync(); await _app.DisposeAsync();
-        ClearOwnPool();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-
-    private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
-    private Task OnLoop(Func<Task> work) => Service<GameLoop>().InvokeAsync(work);
+    private T Service<T>() where T : notnull => _server.Service<T>();
+    private Task OnLoop(Func<Task> work) => _server.OnLoopAsync(work);
     private AdventureGroupStore Store => Service<AdventureGroupStore>();
 
     private async Task<BotClient> InWorld(string name, bool create = true, int level = 40)
     {
-        var bot = new BotClient(_http, File.ReadAllText(Path.Combine(_dir, "gate_rsa_public.pem")));
-        await bot.LoginAsync(name.ToLowerInvariant(), "pw"); await bot.EnterGateAsync();
-        long role = create ? (await bot.CreateRoleAsync(name)).RoleBaseInfo.Id : bot.Roles.Single().Id;
-        await bot.EnterWorldAsync(role);
+        var bot = await _server.InWorldAsync(name, create);
         if (create && level > 0)
         {
             await Gm(bot, $"!lvl {level}");
@@ -91,34 +52,14 @@ public sealed class AdventureGroupTests : IAsyncLifetime
 
     private static long Id(BotClient bot) => (long)bot.Self!.Uuid;
 
-    private static async Task<T> Next<T>(BotClient bot, uint id, MessageParser<T> parser, Func<T, bool>? match = null)
-        where T : IMessage<T>
-    {
-        var packet = await bot.Inbox.WaitAsync(e => e.IsGame(id) && (match == null || match(parser.ParseFrom(e.Body))), Wait);
-        return parser.ParseFrom(packet.Body);
-    }
+    private static Task<T> Next<T>(BotClient bot, uint id, MessageParser<T> parser, Func<T, bool>? match = null)
+        where T : IMessage<T> => TestServer.NextAsync(bot, id, parser, match);
 
-    private async Task Gm(BotClient bot, string command)
-    {
-        using var client = new HttpClient();
-        (await client.PostAsync($"{_http}/ro3emu/gm?account={bot.Account}", Operator.Command(command))).EnsureSuccessStatusCode();
-    }
+    private Task Gm(BotClient bot, string command) => _server.GmAsync(bot, command);
 
-    private GameSession Session(BotClient bot) => Service<SessionRegistry>()
-        .All().Single(s => s.Account == bot.Account && s.Role != null);
+    private GameSession Session(BotClient bot) => _server.Session(bot);
 
-    private async Task Until(Func<bool> condition, string what)
-    {
-        var deadline = DateTime.UtcNow + Wait;
-        while (true)
-        {
-            bool done = false;
-            await OnLoop(() => { done = condition(); return Task.CompletedTask; });
-            if (done) return;
-            if (DateTime.UtcNow > deadline) throw new TimeoutException(what);
-            await Task.Delay(20);
-        }
-    }
+    private Task Until(Func<bool> condition, string what) => _server.UntilAsync(condition, what);
 
     private static async Task<NormalAdventureGroupOpeRes> Ope(BotClient bot, OpeType op, NormalOpeData data)
     {
@@ -405,7 +346,7 @@ public sealed class AdventureGroupTests : IAsyncLifetime
         var refused = await Ope(alice, OpeType.OpeApply, new NormalOpeData { AdventureId = group });
         Assert.Equal(AdventureGroupService.ErrCooldown, refused.Result);
         Assert.InRange(refused.PunishTime, 1700, 1800);
-        _clock.Advance(1801);
+        _clock.Advance(TimeSpan.FromSeconds(1801));
         Assert.Equal(0, (await Ope(alice, OpeType.OpeApply, new NormalOpeData { AdventureId = group })).Result);
         // A kicked member has no cooldown (inferred).
         Assert.Equal(0, (await Ope(carol, OpeType.OpeApply, new NormalOpeData { AdventureId = group })).Result);
@@ -459,11 +400,14 @@ public sealed class AdventureGroupTests : IAsyncLifetime
         var tree = await Next(alice, AdventureGroupService.SaplingData, GetSaplingDataRes.Parser);
         Assert.Equal(1, Assert.Single(tree.SaplingDataList, x => x.AdventureId == group).WateringCount);
 
-        // Next day (05:00 boundary) the member may water again.
-        _clock.Advance(24 * 3600);
+        // Next day (05:00 boundary) the daily reset refreshes the watering quest and the member may water again.
+        _clock.Advance(TimeSpan.FromHours(24));
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(2));
+        await Until(() => Session(alice).Tasks!.Infos.TryGetValue(2000000, out var t) && t.Status == TaskState.Running, "day 2 watering quest");
         Assert.Equal(0, await Result(alice, AdventureGroupService.Water,
             new WateringSaplingReq { SaplingId = sapling }, body => WateringSaplingRes.Parser.ParseFrom(body).Result));
         Assert.Equal(2, Store.Get(group)!.SaplingWatering);
+        await Until(() => Store.Get(group)!.WeekMoney == 100, "day 2 watering group exp");
 
         // The weekly cap (AdventureGroupMoneyWeeklyLimit 1000) bounds what quests add.
         long gained = 0;
@@ -473,7 +417,7 @@ public sealed class AdventureGroupTests : IAsyncLifetime
                 Ro3Emu.Server.Game.Ownership.ReservationKey.Realm);
             gained = await Service<AdventureGroupService>().AddExpAsync(a, 5000);
         });
-        Assert.Equal(950, gained);
+        Assert.Equal(900, gained);
         Assert.Equal(5, Store.Get(group)!.Level);
     }
 
@@ -500,7 +444,7 @@ public sealed class AdventureGroupTests : IAsyncLifetime
 
         // The claim belongs to the role: in another group the same level is not paid twice.
         Assert.Equal(0, (await Ope(alice, OpeType.OpeLeave, new NormalOpeData { AdventureId = group })).Result);
-        _clock.Advance(1801);
+        _clock.Advance(TimeSpan.FromSeconds(1801));
         await GmCreate(alice, "Again");
         Assert.Equal(AdventureGroupService.ErrClaimed, (await Ope(alice, OpeType.OpeTakenLevelUpReward, new NormalOpeData { LevelReward = 1 })).Result);
     }
@@ -558,7 +502,7 @@ public sealed class AdventureGroupTests : IAsyncLifetime
         await Until(() => Store.Get(group)!.Level == 2, "level 2");
         Assert.Equal(AdventureGroupService.ErrRallyCooldown, await Result(alice, AdventureGroupService.Convene,
             new AdventureGroupConveneReq(), body => AdventureGroupConveneRes.Parser.ParseFrom(body).Result));
-        _clock.Advance(11);
+        _clock.Advance(TimeSpan.FromSeconds(11));
         Assert.Equal(0, await Result(alice, AdventureGroupService.Convene,
             new AdventureGroupConveneReq(), body => AdventureGroupConveneRes.Parser.ParseFrom(body).Result));
         await Next(bob, AdventureGroupService.ConveneNotify, AdventureGroupConveneNtf.Parser, n => n.Token != notice.Token);
@@ -570,7 +514,7 @@ public sealed class AdventureGroupTests : IAsyncLifetime
             body => AdventureGroupConfirmConveneRes.Parser.ParseFrom(body).Result));
         await Next(bob, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser, r => r.SceneEntry == Prontera);
         // The rally count resets with the day.
-        _clock.Advance(24 * 3600);
+        _clock.Advance(TimeSpan.FromHours(24));
         Assert.Equal(0, await Result(alice, AdventureGroupService.Convene,
             new AdventureGroupConveneReq(), body => AdventureGroupConveneRes.Parser.ParseFrom(body).Result));
     }
