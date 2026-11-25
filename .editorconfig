@@ -89,7 +89,7 @@ dotnet_diagnostic.CA1725.severity = suggestion
 dotnet_diagnostic.CA1805.severity = suggestion
 # 163: mark members as static
 dotnet_diagnostic.CA1822.severity = suggestion
-# 371: use LoggerMessage delegates
+# 370: use LoggerMessage delegates
 dotnet_diagnostic.CA1848.severity = suggestion
 # 59: use concrete types for performance
 dotnet_diagnostic.CA1859.severity = suggestion
