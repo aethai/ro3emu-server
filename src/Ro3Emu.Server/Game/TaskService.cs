@@ -101,6 +101,7 @@ public sealed partial class TaskService
         cards.RequiredCollectionRefresh = RefreshCollectionRequiredAsync;
         character.GetKillTaskParticipantKeys = GetKillTaskParticipantKeys;
         character.StageKillTaskObligations = StageKillTaskObligations;
+        _loop.Add(new PlotRegionTicker(this)); // TaskService.PlotRegions.cs
         ExtraTasks.Add(DungeonRunTasks); // TaskService.DungeonTasks.cs
         QuestDelivered.Add(AddFactionPoints); // 101022 (TaskService.FactionQuest.cs)
         combat.PlayerKilled.Add(OnFactionPlayerKilledAsync); // 101023

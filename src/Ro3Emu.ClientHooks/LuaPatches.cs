@@ -35,6 +35,7 @@ namespace Ro3Emu.ClientHooks
     /// <item>The Lua info logs that cost frames in Auto-Battle are off (LuaLogs).</item>
     /// <item>Refine Ascension rows 2 ("Basic Defense") and 12 ("Advanced Attack") swap their misconfigured PATK/MATK and PDEF/MDEF ids (SeasonRefineAttrs).</item>
     /// <item>Skill displacements keep m_kMovement's position in sync with LC_PerformEffect_Agent so the next skill does not snap back (SkillMoveSync).</item>
+    /// <item>LC_TriggerAreaManager_AreaData compares areaId, reason and callback object in addition to mapId so multi-area maps do not drop cutscene triggers (TriggerAreaFix).</item>
     /// </list>
     /// </summary>
     public static class LuaPatches
@@ -114,6 +115,8 @@ namespace Ro3Emu.ClientHooks
                 SeasonRefineAttrs.Install(Module(manager, global, "refiningseasonattrconfig"));
                 SkillMoveSync.Install(global.Obf_RuA<Obf_R.Obf_ff>("LC_PerformEffect_Agent")
                     ?? Module(manager, global, "lc_performeffect_agent"));
+                TriggerAreaFix.Install(global, global.Obf_RuA<Obf_R.Obf_ff>("LC_TriggerAreaManager")
+                    ?? Module(manager, global, "lc_triggerareamanager"));
                 Debug.Log("[Ro3Emu.LuaPatches] lc_itemshowfunc: " + added + " card show-func method(s) added; stall name limit "
                     + (param != null ? StallNameMaxLength.ToString() : "not set (publicparamconfig missing)"));
             }

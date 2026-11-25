@@ -31,6 +31,13 @@ public sealed partial class SceneService
         worldData.Map(s.SceneEntry)?.Regions.TryGetValue(areaId, out var region) != true || Near(s, region!);
 
     /// <summary>
+    /// Whether the player stands near a region <paramref name="areaId"/> that exists in this map's scene editor data.
+    /// Unlike <see cref="NearRegion"/>, returns false when the map has no such region.
+    /// </summary>
+    public bool NearKnownRegion(GameSession s, long areaId) =>
+        worldData.Map(s.SceneEntry)?.Regions.TryGetValue(areaId, out var region) == true && Near(s, region!);
+
+    /// <summary>
     /// Whether the player stands within <paramref name="reach"/> m of an NPC <paramref name="npcId"/> of its map; true when
     /// the map places none (a quest NPC the client spawns itself, inferred).
     /// </summary>
