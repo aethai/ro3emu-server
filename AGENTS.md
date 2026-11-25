@@ -43,7 +43,10 @@ client cannot establish is marked `(inferred)` where it is implemented. Never pr
   - result codes go in `ErrorCodes`, with the client's text in a comment;
   - a function, activity or condition id is a named `const` of the service that owns it
     (`AdventureGroupService.Function`).
-- Keep a method under about 40 lines and split it along the steps it performs; a longer one needs a reason.
+- Keep a method under about 40 lines and split it along the steps it performs; a longer one needs a reason. CI
+  enforces downward-only shape ratchets in `tests/Ro3Emu.Tests/CodeShapeTests.cs` (methods over 80 lines, classes
+  with 15+ constructor dependencies, `Role!` null-forgiving accesses, lines over 200 characters, and exposed
+  `List<Func/Action>` hook lists in `Game/`): do not raise them, and lower a constant when your change removes one.
 - Style: private fields are `_camelCase`, `const` and `static readonly` fields are PascalCase, collections are
   created with `[]`, and a class whose constructor only stores its parameters uses a primary constructor. CI
   enforces these (`.editorconfig` and its baseline). Match the surrounding file's comment style.
