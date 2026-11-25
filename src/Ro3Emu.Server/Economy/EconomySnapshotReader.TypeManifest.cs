@@ -145,7 +145,9 @@ public static partial class EconomySnapshotReader
                 foreach (var p in type.GetProperties(BindingFlags.Instance | BindingFlags.Public).OrderBy(x => x.Name, StringComparer.Ordinal))
                 {
                     if (p.GetIndexParameters().Length != 0 || p.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition == JsonIgnoreCondition.Always) continue;
-                    entries.Add($"json:{type.FullName}:{p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name}:{p.PropertyType.FullName}:{p.GetCustomAttribute<JsonConverterAttribute>()?.ConverterType?.FullName}");
+                    var jsonName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
+                    var converter = p.GetCustomAttribute<JsonConverterAttribute>()?.ConverterType?.FullName;
+                    entries.Add($"json:{type.FullName}:{jsonName}:{p.PropertyType.FullName}:{converter}");
                     TypeShape(p.PropertyType);
                 }
                 foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public).Where(x => x.IsDefined(typeof(JsonIncludeAttribute))))

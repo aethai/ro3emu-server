@@ -12,7 +12,9 @@ public static class AccountEndpoints
     /// role (id or name). A role that is in the world cannot be deleted.
     /// </summary>
     public static void Map(WebApplication app) =>
-        app.MapPost("/ro3emu/account/delete-role", async (HttpRequest request, CredentialLimiter limiter, AccountStore accounts, RoleStore roles, SessionRegistry sessions, GameLoop loop, OwnerRegistry owners, ILogger<RoleStore> log) =>
+        app.MapPost("/ro3emu/account/delete-role", async (
+            HttpRequest request, CredentialLimiter limiter, AccountStore accounts, RoleStore roles,
+            SessionRegistry sessions, GameLoop loop, OwnerRegistry owners, ILogger<RoleStore> log) =>
         {
             if (!limiter.TryAcquire(request.HttpContext)) return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             if (!request.HasFormContentType) return Results.StatusCode(StatusCodes.Status400BadRequest);

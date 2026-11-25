@@ -147,7 +147,9 @@ public sealed partial class CharacterInventoryService
                 blobs: new Dictionary<string, byte[]> { ["bag_state"] = cooldownBytes },
                 apply: PublishCooldown, costs: [(entry, count)]);
         }
-        if (reply) await session.SendGameAsync(ItemUse, new ItemUseResp { Result = 0, ItemGuid = item.Guid, ItemCount = count, ItemId = entry, ItemCd = itemCd, ShareCd = shareCd, ItemTimes = useTimes });
+        if (reply)
+            await session.SendGameAsync(ItemUse, new ItemUseResp
+            { Result = 0, ItemGuid = item.Guid, ItemCount = count, ItemId = entry, ItemCd = itemCd, ShareCd = shareCd, ItemTimes = useTimes });
         await SyncItemsAsync(session);
         if (itemCd > 0 || shareCd > 0)
         {

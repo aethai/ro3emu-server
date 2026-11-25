@@ -115,7 +115,9 @@ public sealed partial class SkillCastingService
         var stats = _character.Stats(s);
         int countdown = skill.Buff1 is [[_, _, var ms, ..], ..] ? (int)ms : 3000;
         await _buffs.AddAsync(s, ControlImmunity, countdown, s.Role!.Id);
-        await ApplySkillBuffAsync(stats, s, EnergyReleaseShield, skill.DescData.Length > 5 && int.TryParse(skill.DescData[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) ? seconds * 1000 : 5000, s.Role!.Id);
+        int shieldMs = skill.DescData.Length > 5
+            && int.TryParse(skill.DescData[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) ? seconds * 1000 : 5000;
+        await ApplySkillBuffAsync(stats, s, EnergyReleaseShield, shieldMs, s.Role!.Id);
         if (SkillConfig.Get(_data, EnergyReleaseRow) is not { } blast) return;
         ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(countdown), async () =>
         {

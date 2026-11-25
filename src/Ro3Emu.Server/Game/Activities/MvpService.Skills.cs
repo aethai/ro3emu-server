@@ -385,7 +385,9 @@ public sealed partial class MvpService
 
     private bool Frenzied(MonsterUnit m)
     {
-        _frenzyNpcs ??= [.. BossSkillIds.Keys.Where(boss => Plans(boss).Any(p => p.Kind == BossSkillKind.SelfBuff)).SelectMany(boss => Plans(boss).Where(p => p.Minions != null).Select(p => p.Minions!.Npc).Append(boss))];
+        _frenzyNpcs ??= [.. BossSkillIds.Keys
+            .Where(boss => Plans(boss).Any(p => p.Kind == BossSkillKind.SelfBuff))
+            .SelectMany(boss => Plans(boss).Where(p => p.Minions != null).Select(p => p.Minions!.Npc).Append(boss))];
         return _frenzyNpcs.Contains(m.Template.NpcId);
     }
 

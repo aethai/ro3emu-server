@@ -272,7 +272,8 @@ internal sealed class AuctionPrebuyWritePlan : DbPlan
     {
         var order = _order;
         using var cmd = DbSql.Command(db, tx, order.Id == 0
-            ? "INSERT INTO auction_prebuy(role_id,auction_type,src_type,item_id,quantity,unit_price,currency,revision,processed,requested_id,paused) VALUES ($role,$type,$src,$entry,$qty,$price,$cur,$revision,$done,$requested,$paused)"
+            ? "INSERT INTO auction_prebuy(role_id,auction_type,src_type,item_id,quantity,unit_price,currency,revision,processed,requested_id,paused) "
+                + "VALUES ($role,$type,$src,$entry,$qty,$price,$cur,$revision,$done,$requested,$paused)"
             : "UPDATE auction_prebuy SET quantity=$qty,unit_price=$price,revision=$revision,processed=$done,paused=$paused "
                 + "WHERE id=$id AND role_id=$oldRole AND auction_type=$oldType AND src_type=$oldSrc "
                 + "AND item_id=$oldEntry AND quantity=$oldQty AND unit_price=$oldPrice AND currency=$oldCur "

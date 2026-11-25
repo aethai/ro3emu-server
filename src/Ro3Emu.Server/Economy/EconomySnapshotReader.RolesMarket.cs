@@ -152,7 +152,13 @@ public static partial class EconomySnapshotReader
             ["equip_plans"] = DBEquipInfo.Descriptor, ["auto_decompose"] = AutoDecomposeSetting.Descriptor,
             ["bag_state"] = DBItemsInfo.Descriptor, ["stat_plans"] = BaseAttrInfo.Descriptor,
             ["pets"] = DBPetInfo.Descriptor, ["wardrobe"] = DBWardRobeInfo.Descriptor,
-            ["totems"] = DBTotemInfo.Descriptor, ["genre"] = DBGenre.Descriptor, ["career_special"] = DBCareerSpecial.Descriptor, ["paragon"] = DBParagonLevel.Descriptor, ["title"] = DBTitleInfo.Descriptor, ["heroic_spirit"] = DBOdinStatue.Descriptor, ["area_concur"] = DBAreaConcurInfo.Descriptor, ["growth_class"] = DBGrowthClassInfo.Descriptor, ["first_heart"] = DBFirstHeartTaskActivityData.Descriptor, ["personal"] = DBPersonalInfo.Descriptor, ["personal_upvote"] = PersonalUpvoteList.Descriptor, ["popularity"] = DBPopularityStar.Descriptor, ["social_outfit"] = DBSocialOutfit.Descriptor, ["emoji_info"] = DBEmojiInfo.Descriptor,
+            ["totems"] = DBTotemInfo.Descriptor, ["genre"] = DBGenre.Descriptor,
+            ["career_special"] = DBCareerSpecial.Descriptor, ["paragon"] = DBParagonLevel.Descriptor,
+            ["title"] = DBTitleInfo.Descriptor, ["heroic_spirit"] = DBOdinStatue.Descriptor,
+            ["area_concur"] = DBAreaConcurInfo.Descriptor, ["growth_class"] = DBGrowthClassInfo.Descriptor,
+            ["first_heart"] = DBFirstHeartTaskActivityData.Descriptor, ["personal"] = DBPersonalInfo.Descriptor,
+            ["personal_upvote"] = PersonalUpvoteList.Descriptor, ["popularity"] = DBPopularityStar.Descriptor,
+            ["social_outfit"] = DBSocialOutfit.Descriptor, ["emoji_info"] = DBEmojiInfo.Descriptor,
             ["new_activities"] = DBNewActivityInfo.Descriptor, ["training"] = DBTrainingGroundInfo.Descriptor
         };
 
@@ -255,7 +261,8 @@ public static partial class EconomySnapshotReader
             int index = 0;
             foreach (var letter in Elements(letters))
             {
-                Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
+                Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId "
+                    + "ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
                 string id = String(letter, "Id", "index-" + index++);
                 string path = key + "/" + id;
                 _mailDeliveryKeys.Add(role + "/" + id); // Legacy migration preserves row id, even after claim.
@@ -356,7 +363,8 @@ public static partial class EconomySnapshotReader
                                 if (status == 0) Currency(Long(row, "Currency"), checked(count * price), Role(Long(row, "BuyerId"), key),
                                     EconomyCompartment.TradePreorder, key); break;
                             case "stall":
-                                Fields(row, "Key Owner SystemId Scene LineNumber Title OwnerName Career Sex Level Area Appearance X Y Z OpenTime Timeout RestockTime MaxGrid NextItemId Ended EndMailId Stock Records Gains TaxRate");
+                                Fields(row, "Key Owner SystemId Scene LineNumber Title OwnerName Career Sex Level Area Appearance "
+                                    + "X Y Z OpenTime Timeout RestockTime MaxGrid NextItemId Ended EndMailId Stock Records Gains TaxRate");
                                 long ownerId = Long(row, "Owner"), system = Long(row, "SystemId");
                                 if (ownerId <= 0 && system <= 0) throw new FormatException("Stall has no owner identity.");
                                 var owner = ownerId > 0 ? Role(ownerId, key) : new EconomyOwner(EconomyOwnerKind.System, Id(system));

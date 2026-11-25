@@ -208,7 +208,8 @@ public static class EconomyLedgerReader
                 ValidateEconomicChildren(commandKind, family, typedChildren);
                 return ValidateEconomicReceipt(row, seq, op, source, commandKind, typedChildren);
             }
-            catch (Exception error) when (error is InvalidDataException or JsonException or EndOfStreamException or KeyNotFoundException or OverflowException or FormatException or ArgumentException or InvalidOperationException)
+            catch (Exception error) when (error is InvalidDataException or JsonException or EndOfStreamException
+                or KeyNotFoundException or OverflowException or FormatException or ArgumentException or InvalidOperationException)
             {
                 issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + op, "Invalid typed child result or revision evidence: " + error.Message));
                 return (null, null, null);
@@ -1093,7 +1094,9 @@ public static class EconomyLedgerReader
             "dungeon-reward" => [.. required, "auction_order", "library", "task_followup"],
             // The Job EXP catch-up commits its marker with its EXP (CharacterService.JobExpCatchUp).
             "cd13e/grant" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts", "job_exp_catchup"],
-            "cd13e/tower-milestone" or "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+            "cd13e/tower-milestone" or "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+                or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+                or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/gm-grant" or "cd13e/character-exp" or
                 "cd13e/journey-victory" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts"],
             _ => required

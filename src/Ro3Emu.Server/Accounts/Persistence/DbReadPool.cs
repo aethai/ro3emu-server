@@ -145,7 +145,8 @@ public sealed class DbReadPool : IDisposable
                     string.Join(",", _active.Where(x => x != null).Cast<DbReadPlan>()
                     .Concat(_queue.Select(x => x.Plan))
                     .Select(x => x.Label.Length > 64 ? x.Label[..64] : x.Label).Distinct().Take(8)));
-            _log?.LogError("Database reader shutdown timed out with activeJobs={ActiveJobs}, queuedJobs={QueuedJobs}, pendingBytes={PendingBytes}, labels={Labels}; active snapshots retain worker connections until completion",
+            _log?.LogError("Database reader shutdown timed out with activeJobs={ActiveJobs}, queuedJobs={QueuedJobs}, "
+                + "pendingBytes={PendingBytes}, labels={Labels}; active snapshots retain worker connections until completion",
                 debt.active, debt.waiting, debt.bytes, debt.labels);
         }
     }

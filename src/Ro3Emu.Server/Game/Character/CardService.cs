@@ -574,7 +574,8 @@ public sealed partial class CardService
             level++;
             await _character.ItemsChangedAsync(session, stats: card.Grid < 0);
         }
-        await session.SendGameAsync(LevelUp, new CardLevelUpResp { Result = error, SourceType = req.SourceType, Guid = req.Guid, SlotIndex = req.SlotIndex, GridType = req.GridType, NewLevel = level });
+        await session.SendGameAsync(LevelUp, new CardLevelUpResp
+        { Result = error, SourceType = req.SourceType, Guid = req.Guid, SlotIndex = req.SlotIndex, GridType = req.GridType, NewLevel = level });
     }
 
     private static bool Pristine(InvItem item) => (item.Attrs?.GetValueOrDefault(501) ?? 0) == 0

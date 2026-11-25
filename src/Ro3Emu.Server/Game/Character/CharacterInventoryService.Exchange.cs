@@ -188,7 +188,9 @@ public sealed partial class CharacterInventoryService
         var picked = new List<(InvItem Item, int Count)>();
         foreach (var (guid, count) in instances ?? new Dictionary<long, int>())
         {
-            if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is not { } item || EmblemService.IsReserved(session, item) || TotemService.IsReserved(session, item) || count < 1 || count > item.Stack - (guid == reservedGuid ? 1 : 0)) return null;
+            if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is not { } item
+                || EmblemService.IsReserved(session, item) || TotemService.IsReserved(session, item)
+                || count < 1 || count > item.Stack - (guid == reservedGuid ? 1 : 0)) return null;
             picked.Add((item, count));
         }
         // Explicit GUID costs and entry costs share the same bag: reserve both before consuming either.
@@ -601,7 +603,10 @@ public sealed partial class CharacterInventoryService
                 else
                 {
                     long left = count;
-                    foreach (var item in session.Items.Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i)).OrderBy(i => i.Stack).ToList())
+                    var stacks = session.Items
+                        .Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i))
+                        .OrderBy(i => i.Stack).ToList();
+                    foreach (var item in stacks)
                     {
                         if (left == 0) break;
                         int take = (int)Math.Min(left, item.Stack);

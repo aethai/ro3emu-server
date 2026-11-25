@@ -231,8 +231,13 @@ public sealed partial class ScriptedDungeonService
             ? (GameData.Number(row.GetProperty("_iInteractDistance")) ?? 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) : "?";
         if (args.Length == 0)
         {
-            var actors = a.SceneActors.Select(u => FormattableString.Invariant(
-                $"{u.NpcId} (entity type {u.EntityType}, uid {u.Uid}) at {u.X:0.0},{u.Y:0.0},{u.Z:0.0} reach {Reach(u)} m interactions [{string.Join(',', _catalog.Interactions(u.NpcId))}] buffs [{string.Join(',', u.Buffs.Select(b => b.ConfigId))}]"));
+            var actors = a.SceneActors.Select(u =>
+            {
+                string interactions = string.Join(',', _catalog.Interactions(u.NpcId));
+                string buffs = string.Join(',', u.Buffs.Select(b => b.ConfigId));
+                return FormattableString.Invariant(
+                    $"{u.NpcId} (entity type {u.EntityType}, uid {u.Uid}) at {u.X:0.0},{u.Y:0.0},{u.Z:0.0} reach {Reach(u)} m interactions [{interactions}] buffs [{buffs}]");
+            });
             await GmCommands.ReplyAsync(s, $"Step {a.Wave + 1}/{a.Plan.Waves.Count} '{step.Stage}' completes on "
                 + string.Join(" or ", step.Complete.Select(t => $"{t.Kind} {t.Id}")) + ". Actors: "
                 + (a.SceneActors.Count == 0 ? "none" : string.Join("; ", actors)));

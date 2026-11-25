@@ -99,33 +99,124 @@ public sealed partial class AdventureActivityService
     /// <summary>CommonActivityReq's adventure oneofs. The core holds ActivityGate and validates activity state.</summary>
     internal async Task<bool> HandleAdventureCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
     {
-        if (req.SeasonEveSelectWish != null || req.SeasonEveFindClue != null || req.SeasonEvePlayChapter != null
-            || req.SeasonEveClaimAward != null || req.SeasonEveGetInfo != null)
+        if (await HandleFragmentGatherCommonAsync(session, req, res)) return true;
+        if (req.FillPhaseNodeReq != null)
         {
-            int eveError = req.ActivityId != 117 ? ErrorCodes.Parameter : ActivityError(session, req.ActivityId, 19);
-            if (eveError != 0)
-            {
-                res.Result = eveError;
-                return true;
-            }
-            await ReconcileEveGlobalAsync(session, req.ActivityId);
+            res.FillPhaseNodeRes = new();
+            res.Result = await WorldFillCoreAsync(session, req.ActivityId, req.FillPhaseNodeReq);
+            res.FillPhaseNodeRes.Err = res.Result;
+            return true;
         }
-        if (req.FragmentGatherAsk != null) { res.FragmentGatherAsk = new(); res.Result = await FragmentAskCoreAsync(session, req.ActivityId, req.FragmentGatherAsk, res.FragmentGatherAsk); return true; }
-        if (req.FragmentGatherAskFinished != null) { res.FragmentGatherAskFinished = new(); res.Result = await FragmentAskFinishedCoreAsync(session, req.ActivityId, req.FragmentGatherAskFinished, res.FragmentGatherAskFinished); return true; }
-        if (req.FragmentGatherSend != null) { res.FragmentGatherSend = new(); res.Result = await FragmentSendCoreAsync(session, req.ActivityId, req.FragmentGatherSend); return true; }
-        if (req.FragmentGatherCraft != null) { res.FragmentGatherCraft = new(); res.Result = await FragmentCraftCoreAsync(session, req.ActivityId, res.FragmentGatherCraft); return true; }
-        if (req.FragmentGatherProgress != null) { res.FragmentGatherProgress = new(); res.Result = await FragmentProgressCoreAsync(session, req.ActivityId, req.FragmentGatherProgress); return true; }
-        if (req.FillPhaseNodeReq != null) { res.FillPhaseNodeRes = new(); res.Result = await WorldFillCoreAsync(session, req.ActivityId, req.FillPhaseNodeReq); res.FillPhaseNodeRes.Err = res.Result; return true; }
-        if (req.SeasonEveSelectWish != null) { res.SeasonEveSelectWish = new() { Req = req.SeasonEveSelectWish.Clone() }; res.Result = await SelectWishAsync(session, req.ActivityId, req.SeasonEveSelectWish); return true; }
-        if (req.SeasonEveFindClue != null) { res.SeasonEveFindClue = new() { Req = req.SeasonEveFindClue.Clone() }; res.Result = await FindClueAsync(session, req.ActivityId, req.SeasonEveFindClue, res.SeasonEveFindClue); return true; }
-        if (req.SeasonEvePlayChapter != null) { res.SeasonEvePlayChapter = new() { Req = req.SeasonEvePlayChapter.Clone() }; res.Result = await PlayChapterAsync(session, req.ActivityId, req.SeasonEvePlayChapter); res.SeasonEvePlayChapter.Reason = res.Result; return true; }
-        if (req.SeasonEveClaimAward != null) { res.SeasonEveClaimAward = new() { Req = req.SeasonEveClaimAward.Clone() }; res.Result = await ClaimEveAsync(session, req.ActivityId, req.SeasonEveClaimAward); return true; }
-        if (req.SeasonEveGetInfo != null) { res.SeasonEveGetInfo = EveGlobalInfo(session); return true; }
-        if (req.JourneyComplete != null) { res.JourneyComplete = new() { Req = req.JourneyComplete.Clone() }; res.Result = await CompleteJourneyAsync(session, req.ActivityId, req.JourneyComplete); return true; }
-        if (req.JourneyReportEnterTime != null) { res.JourneyReportEnterTime = new() { Req = req.JourneyReportEnterTime.Clone() }; res.Result = await JourneyEnterAsync(session, req.ActivityId); return true; }
-        if (req.JourneyReportOpenCompletePanel != null) { res.JourneyReportOpenCompletePanel = new() { Req = req.JourneyReportOpenCompletePanel.Clone() }; res.Result = await JourneyPanelAsync(session, req.ActivityId); return true; }
-        if (req.JourneyGetPlayerComplete != null) { res.JourneyGetPlayerComplete = JourneyPlayerComplete(session, req.JourneyGetPlayerComplete.PlayerId); return true; }
-        if (req.JourneyDungeonRestart != null) { res.JourneyDungeonRestart = new(); res.Result = await JourneyRestartAsync(session, req.ActivityId); return true; }
+        if (await HandleSeasonEveCommonAsync(session, req, res)) return true;
+        return await HandleJourneyCommonAsync(session, req, res);
+    }
+
+    private async Task<bool> HandleFragmentGatherCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    {
+        if (req.FragmentGatherAsk != null)
+        {
+            res.FragmentGatherAsk = new();
+            res.Result = await FragmentAskCoreAsync(session, req.ActivityId, req.FragmentGatherAsk, res.FragmentGatherAsk);
+            return true;
+        }
+        if (req.FragmentGatherAskFinished != null)
+        {
+            res.FragmentGatherAskFinished = new();
+            res.Result = await FragmentAskFinishedCoreAsync(session, req.ActivityId, req.FragmentGatherAskFinished, res.FragmentGatherAskFinished);
+            return true;
+        }
+        if (req.FragmentGatherSend != null)
+        {
+            res.FragmentGatherSend = new();
+            res.Result = await FragmentSendCoreAsync(session, req.ActivityId, req.FragmentGatherSend);
+            return true;
+        }
+        if (req.FragmentGatherCraft != null)
+        {
+            res.FragmentGatherCraft = new();
+            res.Result = await FragmentCraftCoreAsync(session, req.ActivityId, res.FragmentGatherCraft);
+            return true;
+        }
+        if (req.FragmentGatherProgress != null)
+        {
+            res.FragmentGatherProgress = new();
+            res.Result = await FragmentProgressCoreAsync(session, req.ActivityId, req.FragmentGatherProgress);
+            return true;
+        }
+        return false;
+    }
+
+    private async Task<bool> HandleSeasonEveCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    {
+        if (req.SeasonEveSelectWish == null && req.SeasonEveFindClue == null && req.SeasonEvePlayChapter == null
+            && req.SeasonEveClaimAward == null && req.SeasonEveGetInfo == null) return false;
+        int eveError = req.ActivityId != 117 ? ErrorCodes.Parameter : ActivityError(session, req.ActivityId, 19);
+        if (eveError != 0)
+        {
+            res.Result = eveError;
+            return true;
+        }
+        await ReconcileEveGlobalAsync(session, req.ActivityId);
+        if (req.SeasonEveSelectWish != null)
+        {
+            res.SeasonEveSelectWish = new() { Req = req.SeasonEveSelectWish.Clone() };
+            res.Result = await SelectWishAsync(session, req.ActivityId, req.SeasonEveSelectWish);
+            return true;
+        }
+        if (req.SeasonEveFindClue != null)
+        {
+            res.SeasonEveFindClue = new() { Req = req.SeasonEveFindClue.Clone() };
+            res.Result = await FindClueAsync(session, req.ActivityId, req.SeasonEveFindClue, res.SeasonEveFindClue);
+            return true;
+        }
+        if (req.SeasonEvePlayChapter != null)
+        {
+            res.SeasonEvePlayChapter = new() { Req = req.SeasonEvePlayChapter.Clone() };
+            res.Result = await PlayChapterAsync(session, req.ActivityId, req.SeasonEvePlayChapter);
+            res.SeasonEvePlayChapter.Reason = res.Result;
+            return true;
+        }
+        if (req.SeasonEveClaimAward != null)
+        {
+            res.SeasonEveClaimAward = new() { Req = req.SeasonEveClaimAward.Clone() };
+            res.Result = await ClaimEveAsync(session, req.ActivityId, req.SeasonEveClaimAward);
+            return true;
+        }
+        res.SeasonEveGetInfo = EveGlobalInfo(session);
+        return true;
+    }
+
+    private async Task<bool> HandleJourneyCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    {
+        if (req.JourneyComplete != null)
+        {
+            res.JourneyComplete = new() { Req = req.JourneyComplete.Clone() };
+            res.Result = await CompleteJourneyAsync(session, req.ActivityId, req.JourneyComplete);
+            return true;
+        }
+        if (req.JourneyReportEnterTime != null)
+        {
+            res.JourneyReportEnterTime = new() { Req = req.JourneyReportEnterTime.Clone() };
+            res.Result = await JourneyEnterAsync(session, req.ActivityId);
+            return true;
+        }
+        if (req.JourneyReportOpenCompletePanel != null)
+        {
+            res.JourneyReportOpenCompletePanel = new() { Req = req.JourneyReportOpenCompletePanel.Clone() };
+            res.Result = await JourneyPanelAsync(session, req.ActivityId);
+            return true;
+        }
+        if (req.JourneyGetPlayerComplete != null)
+        {
+            res.JourneyGetPlayerComplete = JourneyPlayerComplete(session, req.JourneyGetPlayerComplete.PlayerId);
+            return true;
+        }
+        if (req.JourneyDungeonRestart != null)
+        {
+            res.JourneyDungeonRestart = new();
+            res.Result = await JourneyRestartAsync(session, req.ActivityId);
+            return true;
+        }
         return false;
     }
 

@@ -313,7 +313,8 @@ public sealed partial class CombatEffectsService
                             catch (Exception ex) { _log.LogError(ex, "Monster damage callback failed for {Uid}", target.Uid); }
                         }
                     if (field is { TouchesLeft: > 0 } && result != DamageHitResult.Miss) field.TouchesLeft--;
-                    hit.Dsts.Add(new DamageInfo { DstID = target.Uid, Damage = amount, SheildDamage = shieldDamage, HitResult = result, DstElement = target.Template.Element, IsDead = target.Hp == 0 });
+                    hit.Dsts.Add(new DamageInfo
+                    { DstID = target.Uid, Damage = amount, SheildDamage = shieldDamage, HitResult = result, DstElement = target.Template.Element, IsDead = target.Hp == 0 });
                 }
                 if (CanApplyMoreEffects())
                     foreach (var tuple in Tuples(row, "_kBuff2"))
@@ -721,7 +722,8 @@ public sealed partial class CombatEffectsService
     {
         if (Script(row) != "PinpointAttack2") return null;
         var (effect, ms) = MovementEffectById(_data, 1162411);
-        float distance = new SkillConfig(row).DescData is [var metres, ..] && float.TryParse(metres, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float read) ? read : 0;
+        float distance = new SkillConfig(row).DescData is [var metres, ..]
+            && float.TryParse(metres, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float read) ? read : 0;
         return effect != 0 && distance > 0 ? (DisplaceKind.CasterForward, distance, effect, ms) : null;
     }
 
@@ -885,7 +887,8 @@ public sealed partial class CombatEffectsService
         var logic = Numbers(row, "_kLogicData");
         int npc = 0, duration = 0, interval = 1000, protection = 0, charges = 0, waves = -1, touches = -1, atOnce = 0;
         var described = new SkillConfig(row).DescData;
-        double Desc(int index) => index < described.Length && double.TryParse(described[index], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
+        double Desc(int index) => index < described.Length
+            && double.TryParse(described[index], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
         bool trap = false;
         float radius = (float)(Numbers(row, "_kRange").FirstOrDefault(150) / 100);
         switch (script)
