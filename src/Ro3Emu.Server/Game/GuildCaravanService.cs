@@ -433,7 +433,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 if (current == null || current.Day == Day || current.GuildId != snapshot.GuildId) continue;
                 await RolloverAsync(roleId, current, _roles.LoadProgress(roleId));
                 sinceRest++;
-                if (_sessions.All().FirstOrDefault(x => x.Role?.Id == roleId) is { } online && Guild(online) is { } guild)
+                if (_sessions.ByRole(roleId) is { } online && Guild(online) is { } guild)
                 {
                     var today = await EnsureAsync(online, guild);
                     await ShowCoreAsync(online, today);
@@ -917,7 +917,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                                 var targetNext = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(target))!;
                                 var slot = targetNext.Skus.Single(x => x.Index == req.SkuIndex);
                                 slot.Status = 1; slot.HelperName = helperName; slot.HelperId = helperId; slot.ReqHelpTime = 0;
-                                var targetOnline = _sessions.All().FirstOrDefault(x => x.Role?.Id == req.PlayerID);
+                                var targetOnline = _sessions.ByRole(req.PlayerID);
                                 var targetPlan = _awards.ResolveForProgress(targetOnline?.Progress ?? _roles.LoadProgress(req.PlayerID), targetAward);
                                 // The helper books the recipient's configured award now; personal grants remain pending.
                                 targetNext.PendingAwards.Add(new PendingAward
@@ -971,7 +971,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 }
                 // Delivery is intentionally outside the helper's two-role reservation and old guild gate.
                 // A guild migration may replace the recipient's order while its StateLock is unavailable.
-                if (_sessions.All().FirstOrDefault(x => x.Role?.Id == req.PlayerID) is { } online
+                if (_sessions.ByRole(req.PlayerID) is { } online
                     && online.Attachment?.Cancelled != true && online.Owner?.State != RoleOwnerState.Quiescing
                     && Guild(online)?.Id == guild.Id)
                 {

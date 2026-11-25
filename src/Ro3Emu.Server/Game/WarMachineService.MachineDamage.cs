@@ -79,7 +79,7 @@ public sealed partial class WarMachineService
     /// <summary>SiegeSettled, per loaded participant: the settled siege's machines end once (the first call finds them).</summary>
     private void SiegeMachinesSettled(long role, long score, bool won)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == role)?.SiegeBattle is { } battle)
+        if (_sessions.ByRole(role)?.SiegeBattle is { } battle)
             _loop.PostLegacy(() => EndWarMachinesAsync(battle.Room));
     }
 

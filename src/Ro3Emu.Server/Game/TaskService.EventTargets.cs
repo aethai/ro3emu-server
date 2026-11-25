@@ -41,6 +41,6 @@ public sealed partial class TaskService
     /// <summary>TerritoryWarsService.BattleSettled: the guild's season points moved (106609).</summary>
     public void OnGuildWarScored(long role)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == role) is { } session) QueueRefresh(session);
+        if (_sessions.ByRole(role) is { } session) QueueRefresh(session);
     }
 }

@@ -299,7 +299,7 @@ public sealed partial class AdventureActivityService
         if (!_treasureHelpers.TryRemove(monsterUid, out var helpers)) return;
         foreach (long roleId in helpers.Keys.Where(id => id != ownerRole))
         {
-            var helper = _sessions.All().FirstOrDefault(s => s.Role?.Id == roleId);
+            var helper = _sessions.ByRole(roleId);
             if (helper == null) continue;
             var role = helper.Role;
             var attachment = helper.Attachment;

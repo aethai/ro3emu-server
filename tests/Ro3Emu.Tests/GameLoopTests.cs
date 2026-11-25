@@ -71,6 +71,17 @@ public sealed class GameLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AssertOnLoopPassesOnLoopAndThrowsOffLoop()
+    {
+        Assert.Throws<InvalidOperationException>(() => _loop.AssertOnLoop());
+        await _loop.InvokeAsync(() =>
+        {
+            _loop.AssertOnLoop();
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
     public async Task LateUntrackedContinuationRunsOnTheLoopInsteadOfThrowing()
     {
         var resumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

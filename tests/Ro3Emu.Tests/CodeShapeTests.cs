@@ -30,6 +30,7 @@ public sealed class CodeShapeTests
     private const int NumericStatIndexers = 0;
     private const int NumericRouteMaps = 0;
     private const int PragmaCs1998InServer = 0;
+    private const int LinearRoleScansInServer = 0;
     private const int NumericSendGameCalls = 48;
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
@@ -97,6 +98,10 @@ public sealed class CodeShapeTests
     [Fact]
     public void NoPragmaCs1998InServer() =>
         AssertRatchet(nameof(PragmaCs1998InServer), PragmaCs1998InServer, ServerSnapshot.Value.PragmaCs1998);
+
+    [Fact]
+    public void NoLinearRoleScansInServer() =>
+        AssertRatchet(nameof(LinearRoleScansInServer), LinearRoleScansInServer, ServerSnapshot.Value.LinearRoleScans);
 
     [Fact]
     public void NumericSendGameCallsOnlyGoDown() =>
@@ -167,6 +172,7 @@ public sealed class CodeShapeTests
                     var now = DateTime.UtcNow;
                     var ticks = Environment.TickCount64;
                     var gameDay = now.AddHours(-5).Date;
+                    var scanned = routes.All().FirstOrDefault(s => s.Role?.Id == x);
             {{body}}
                 }
                 public void TooWide(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, int a10, int a11) { }
@@ -188,6 +194,7 @@ public sealed class CodeShapeTests
         Assert.Single(snapshot.NumericSendGame);
         Assert.Equal(2, snapshot.SystemClockCalls.Count);
         Assert.Single(snapshot.AdHocResetOffsets);
+        Assert.Single(snapshot.LinearRoleScans);
     }
 
     private static void AssertRatchet(string name, int ceiling, IReadOnlyList<string> items)
@@ -232,6 +239,7 @@ public sealed class CodeShapeTests
         List<string> numericStatIndexers = [];
         List<string> numericRouteMaps = [];
         List<string> pragmaCs1998 = [];
+        List<string> linearRoleScans = [];
         List<string> numericSendGame = [];
         List<string> systemClockCalls = [];
         List<string> adHocResetOffsets = [];
@@ -253,6 +261,7 @@ public sealed class CodeShapeTests
             if (inGame) CollectNumericIsOpen(relPath, root, numericIsOpen);
             if (inGame) CollectNumericStatIndexers(relPath, root, numericStatIndexers);
             CollectNumericRouteMaps(relPath, root, numericRouteMaps);
+            CollectLinearRoleScans(relPath, root, linearRoleScans);
             CollectNumericSendGame(relPath, root, numericSendGame);
             if (inGame) CollectSystemClockCalls(relPath, root, systemClockCalls);
             if (inGame && !string.Equals(relPath, "Game/GameCalendar.cs", StringComparison.Ordinal))
@@ -291,7 +300,7 @@ public sealed class CodeShapeTests
 
         return new(longMethods, wideGameMethods, heavyClasses, overloadedClasses, oversizedGameClasses,
             roleBangs, longLines, hookLists, numericIsOpen, numericStatIndexers, numericRouteMaps, pragmaCs1998,
-            numericSendGame, systemClockCalls, adHocResetOffsets);
+            linearRoleScans, numericSendGame, systemClockCalls, adHocResetOffsets);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -507,6 +516,25 @@ public sealed class CodeShapeTests
         }
     }
 
+    private static void CollectLinearRoleScans(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (call.Expression is not MemberAccessExpressionSyntax ma
+                || !string.Equals(ma.Name.Identifier.ValueText, "FirstOrDefault", StringComparison.Ordinal))
+                continue;
+            if (ma.Expression is not InvocationExpressionSyntax allCall
+                || allCall.Expression is not MemberAccessExpressionSyntax allMa
+                || !string.Equals(allMa.Name.Identifier.ValueText, "All", StringComparison.Ordinal))
+                continue;
+            if (call.ArgumentList.Arguments.Count != 1) continue;
+            string arg = call.ArgumentList.Arguments[0].ToString();
+            if (!arg.Contains(".Role?.Id ==", StringComparison.Ordinal)) continue;
+            int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+        }
+    }
+
     private static void CollectNumericSendGame(string relPath, SyntaxNode root, List<string> target)
     {
         foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
@@ -664,6 +692,7 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> NumericStatIndexers,
         IReadOnlyList<string> NumericRouteMaps,
         IReadOnlyList<string> PragmaCs1998,
+        IReadOnlyList<string> LinearRoleScans,
         IReadOnlyList<string> NumericSendGame,
         IReadOnlyList<string> SystemClockCalls,
         IReadOnlyList<string> AdHocResetOffsets);

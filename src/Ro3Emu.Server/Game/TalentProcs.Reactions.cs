@@ -169,7 +169,7 @@ public sealed partial class TalentProcs
         {
             var healed = new List<(GameSession Ally, long Amount)>();
             foreach (var dst in hit.Dsts)
-                if (dst.DamageType == DamageType.Heal && _sessions.All().FirstOrDefault(p => p.Role?.Id == dst.DstID) is { } ally)
+                if (dst.DamageType == DamageType.Heal && _sessions.ByRole(dst.DstID) is { } ally)
                     healed.Add((ally, dst.Damage));
             if (healed.Count == 0) return;
             if (Talent(s, SacredDivineLight) != null && BuffConfig.Get(_data, SacredDivineLight)?.LogicData is [var below, var extra, ..]

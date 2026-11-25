@@ -84,7 +84,7 @@ public sealed class PassiveSkills : IGameTicker
         teams.RosterChanged.Subscribe(roles =>
         {
             foreach (long role in roles)
-                if (_sessions.All().FirstOrDefault(p => p.Role?.Id == role) is { } member
+                if (_sessions.ByRole(role) is { } member
                     && (Learned(member, Union) != null || member.Buffs.Any(b => b.ConfigId == UnionBuff)))
                     loop.PostOwned(member, () => UnionAsync(member), "union stacks");
             return Task.CompletedTask;
@@ -140,7 +140,7 @@ public sealed class PassiveSkills : IGameTicker
     private async Task OnControlResistedAsync(WorldUnit unit, long sourceId, JsonElement control)
     {
         if (unit is not MonsterUnit monster || monster.Hp <= 0
-            || _sessions.All().FirstOrDefault(p => p.Role?.Id == sourceId) is not { Dead: false } s
+            || _sessions.ByRole(sourceId) is not { Dead: false } s
             || Learned(s, ElementControl) is null) return;
         foreach (long category in new BuffConfig(control).BuffCategory)
             if (ElementControlBlasts.TryGetValue(category, out int blast) && SkillConfig.Get(_data, blast) is { } row)
@@ -236,7 +236,7 @@ public sealed class PassiveSkills : IGameTicker
         int stacks = 0;
         if (Learned(s, Union) is { Skill: var union })
             stacks = Math.Min((int)Value(union.DescData, 1), _teams.MembersOf(role.Id).Count(id => id != role.Id
-                && _sessions.All().FirstOrDefault(p => p.Role?.Id == id) is { Progress: { } progress } && IsCrusader(progress.Career)));
+                && _sessions.ByRole(id) is { Progress: { } progress } && IsCrusader(progress.Career)));
         var live = s.Buffs.FirstOrDefault(b => b.ConfigId == UnionBuff && b.ExpireMs > _loop.NowMs);
         if (stacks > 0 && live?.PileCount != stacks) await _buffs.SetPileCountAsync(s, UnionBuff, PermanentMs, role.Id, stacks);
         else if (stacks == 0 && live != null) await _buffs.RemoveAsync(s, live);

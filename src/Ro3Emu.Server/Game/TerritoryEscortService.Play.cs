@@ -179,14 +179,14 @@ public sealed partial class TerritoryEscortService
     {
         var ntf = new TerritoryWarsEscortAllNtf();
         foreach (var c in ledger.Carts.Values.Where(c => EscortLine(s) &&
-            (_sessions.All().FirstOrDefault(owner => owner.Role?.Id == c.Owner)?.SceneEntry ?? c.Scene) == s.SceneEntry))
+            (_sessions.ByRole(c.Owner)?.SceneEntry ?? c.Scene) == s.SceneEntry))
             ntf.CartInfo.Add(CartWire(c));
         await s.SendGameAsync(AllCartsNtf, ntf);
     }
 
     private TerritoryWarEscortCartInfo CartWire(CartState c)
     {
-        var owner = _sessions.All().FirstOrDefault(x => x.Role?.Id == c.Owner);
+        var owner = _sessions.ByRole(c.Owner);
         return new TerritoryWarEscortCartInfo
         {
             CartId = c.Id, OwnerPlayerId = c.Owner,

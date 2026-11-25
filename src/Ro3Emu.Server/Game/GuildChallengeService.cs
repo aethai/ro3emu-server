@@ -604,7 +604,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     {
         foreach (var (role, goods) in clear.Personal.Where(p => !clear.Delivered.Contains(p.Key)).ToArray())
         {
-            var s = _sessions.All().FirstOrDefault(s => s.Role?.Id == role && s.GuildChallenge != null);
+            var s = _sessions.ByRole(role) is { GuildChallenge: not null } found ? found : null;
             if (s == null) continue; // durable earned entitlement is delivered on next login, even after leaving the guild
             using (await CharacterService.Lock(s))
             {

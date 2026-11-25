@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Phonest.Proto;
 
 namespace Ro3Emu.Server.Game;
@@ -113,6 +114,26 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
         if (roleId == 0) return null;
         lock (_sync)
             return _byRole.TryGetValue(roleId, out var s) && s.Role?.Id == roleId ? s : null;
+    }
+
+    /// <summary>O(1) lookup of an online session by its signed-in account name.</summary>
+    public GameSession? ByAccount(string? account)
+    {
+        if (string.IsNullOrEmpty(account)) return null;
+        lock (_sync)
+            return _byAccount.TryGetValue(account, out var s) && string.Equals(s.Account, account, StringComparison.Ordinal) ? s : null;
+    }
+
+    /// <summary>Serializes a message once and sends it to every registered session matching <paramref name="predicate"/>.</summary>
+    public async Task BroadcastAsync(uint msgId, IMessage body, Func<GameSession, bool>? predicate = null)
+    {
+        var prepared = new PreparedMessage(msgId, body);
+        foreach (var session in _snapshot)
+        {
+            if (predicate != null && !predicate(session)) continue;
+            try { await session.SendPreparedAsync(prepared); }
+            catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
+        }
     }
 
     /// <summary>The registered sessions; an immutable snapshot (callers must not cast and mutate it).</summary>

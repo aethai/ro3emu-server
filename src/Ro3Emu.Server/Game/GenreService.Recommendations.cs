@@ -19,7 +19,7 @@ public sealed partial class GenreService
         }
         throw new InvalidOperationException("Unable to reserve a unique Build share code");
     }
-    private GameSession? Online(long roleId) => sessions.All().FirstOrDefault(s => s.Role?.Id == roleId);
+    private GameSession? Online(long roleId) => sessions.ByRole(roleId);
     private DBGenre? Stored(long roleId) => roles.Get(roleId) == null ? null
         : Online(roleId)?.Genre?.Clone() ?? (roles.LoadGenre(roleId) is { } bytes ? DBGenre.Parser.ParseFrom(bytes) : null);
 

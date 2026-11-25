@@ -173,7 +173,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     // The injected clock, as WeekStart: membership times compared with the guild week must share its calendar.
     internal long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
     internal long NowSec() => clock.GetUtcNow().ToUnixTimeSeconds();
-    internal GameSession? Online(long id) => sessions.All().FirstOrDefault(s => s.Role?.Id == id);
+    internal GameSession? Online(long id) => sessions.ByRole(id);
     internal GuildStore.State? Own(GameSession session) => session.Role == null ? null : store.ForRole(session.Role.Id);
 
     private async Task LoginCoreAsync(GameSession session)

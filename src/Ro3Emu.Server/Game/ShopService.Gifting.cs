@@ -287,13 +287,13 @@ public sealed partial class ShopService
 
     private void PushReceivedIfOnline(long roleId)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == roleId) is { } recipient)
+        if (_sessions.ByRole(roleId) is { } recipient)
             _loop.PostOwned(recipient, () => recipient.Role != null ? PushReceivedAsync(recipient) : Task.CompletedTask);
     }
 
     private void PushSentIfOnline(long roleId)
     {
-        if (_sessions.All().FirstOrDefault(s => s.Role?.Id == roleId) is { } sender)
+        if (_sessions.ByRole(roleId) is { } sender)
             _loop.PostOwned(sender, () => sender.Role != null ? PushSentAsync(sender) : Task.CompletedTask);
     }
 

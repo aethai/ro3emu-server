@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Ro3Emu.Server.Diagnostics;
 
 namespace Ro3Emu.Server.Game;
@@ -123,6 +124,14 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     internal WorkPermit? CurrentWork => IsOnLoop && SynchronizationContext.Current is LoopContext context ? context.Permit : null;
 
     public bool IsOnLoop => Thread.CurrentThread == _thread;
+
+    /// <summary>Throws if called from any thread other than the game loop thread.</summary>
+    public void AssertOnLoop([CallerMemberName] string? caller = null)
+    {
+        if (!IsOnLoop)
+            throw new InvalidOperationException($"{caller ?? "Operation"} must run on the game loop thread.");
+    }
+
     public Task WorkerExited => _workerExited.Task;
     public bool IsWorkerActive => _started && !_workerExited.Task.IsCompleted;
 

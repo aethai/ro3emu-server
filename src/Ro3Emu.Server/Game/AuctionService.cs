@@ -107,8 +107,8 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
         if (auto.Length > 0) await s.SendGameAsync(HasAuto, new HasAutoBiddingAuctionNtf { AuctionIds = { auto } });
     }
 
-    private GameSession? Online(long role) => sessions.All().FirstOrDefault(s => s.Role?.Id == role
-        && s.Attachment?.Cancelled != true && ReferenceEquals(s.Owner?.Attachment, s.Attachment));
+    private GameSession? Online(long role) => sessions.ByRole(role) is { } s
+        && s.Attachment?.Cancelled != true && ReferenceEquals(s.Owner?.Attachment, s.Attachment) ? s : null;
     private static DBAuction Personal(RoleStore roles, long role) =>
         roles.LoadAuction(role) is { } saved
             ? DBAuction.Parser.ParseFrom(saved) : new DBAuction();

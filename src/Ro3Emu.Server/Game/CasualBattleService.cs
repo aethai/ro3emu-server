@@ -818,7 +818,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         }
     }
 
-    private GameSession? Online(long roleId) => _sessions.All().FirstOrDefault(s => s.Role?.Id == roleId);
+    private GameSession? Online(long roleId) => _sessions.ByRole(roleId);
 
     /// <summary>
     /// One player's rating, record, best/lifetime numbers and DungeonAwardModule reward in one receipt

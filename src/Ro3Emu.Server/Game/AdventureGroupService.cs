@@ -165,7 +165,7 @@ public sealed partial class AdventureGroupService : IGameTicker
 
     // ---------------------------------------------------------------- sessions
 
-    private GameSession? Online(long id) => _sessions.All().FirstOrDefault(s => s.Role?.Id == id && s.Progress != null);
+    private GameSession? Online(long id) => _sessions.ByRole(id) is { Progress: not null } s ? s : null;
     private AdventureGroupStore.State? Own(GameSession s) => s.Role == null ? null : _store.ForRole(s.Role.Id);
     private bool Open(GameSession s) => _functions.IsOpen(s, Function);
     private static bool Normal(AdventureGroupStore.State? g) => g?.Status == StatusNormal;

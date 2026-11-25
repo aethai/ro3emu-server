@@ -477,7 +477,7 @@ public sealed class CardEffects
             List<GameSession> allies = [];
             foreach (long target in DivineLightTargets(s.Role!.Id, hit.Dsts).Take((int)Math.Max(1, row.TargetMax)))
                 if (target == s.Role.Id) allies.Add(s);
-                else if (_sessions.All().FirstOrDefault(p => p.Role?.Id == target) is { } ally) allies.Add(ally);
+                else if (_sessions.ByRole(target) is { } ally) allies.Add(ally);
             await _combat.CastExtraOnAlliesAsync(s, row.Row, allies);
         }
     }
