@@ -145,6 +145,7 @@ public sealed class DailyTests : IAsyncLifetime
                         entry INTEGER NOT NULL, stack INTEGER NOT NULL, pack INTEGER NOT NULL, sort INTEGER NOT NULL,
                         grid INTEGER NOT NULL DEFAULT 0, attrs TEXT, bind INTEGER NOT NULL DEFAULT 0);
                     INSERT INTO item (role_id, entry, stack, pack, sort, bind) VALUES ($role, 1250001, 1, 1, 1, 1);
+                    PRAGMA user_version = 0;
                     """, ("$role", roleId));
         }
         using var accounts = new AccountStore(options); // opening the old database migrates its item table

@@ -32,7 +32,7 @@ public sealed class RoleRevisionTests : IDisposable
         {
             db.Open();
             using var remove = db.CreateCommand();
-            remove.CommandText = "DELETE FROM owner_revision; DELETE FROM role_lifecycle";
+            remove.CommandText = "DELETE FROM owner_revision; DELETE FROM role_lifecycle; PRAGMA user_version = 0";
             remove.ExecuteNonQuery();
         }
         using var restarted = new AccountStore(Options.Create(new ServerOptions { DataDir = _dir }));

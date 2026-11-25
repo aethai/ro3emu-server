@@ -398,7 +398,7 @@ public sealed class EconomyEnvelopeTests : IDisposable
             Assert.NotEqual(definition.Replace("operation_receipt", "operation_receipt_legacy", StringComparison.Ordinal), legacy);
             using var rebuild = db.CreateCommand();
             rebuild.CommandText = legacy + "; INSERT INTO operation_receipt_legacy SELECT * FROM operation_receipt; " +
-                "DROP TABLE operation_receipt; ALTER TABLE operation_receipt_legacy RENAME TO operation_receipt;";
+                "DROP TABLE operation_receipt; ALTER TABLE operation_receipt_legacy RENAME TO operation_receipt; PRAGMA user_version = 0;";
             rebuild.ExecuteNonQuery();
         }
         using (var migrated = new AccountStore(Options.Create(new ServerOptions { DataDir = upgradeDir, GameDataDir = _gameData })))

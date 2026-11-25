@@ -32,7 +32,7 @@ public sealed class RoleIdFloorTests : IDisposable
         using (var legacy = new AccountStore(options))
         {
             // An older realm counted from 100000, so its first role took id 100001 (NPCConfig "Kafra Staff").
-            FixtureSql.Execute(legacy, "UPDATE sqlite_sequence SET seq = 100000 WHERE name = 'role'");
+            FixtureSql.Execute(legacy, "UPDATE sqlite_sequence SET seq = 100000 WHERE name = 'role'; PRAGMA user_version = 0;");
             old = new RoleStore(legacy).Create("legacy", 1, "Legacy", 1, 1000, 1)!.Id;
             Assert.Equal(100001, old);
         }
