@@ -16,6 +16,7 @@ namespace Ro3Emu.Server.Game;
 public sealed class TotemService
 {
     public const uint Sync = 5032;
+    public const int Function = 29; // FunctionConfig: Divine Totem
     private readonly GameData _data;
     private readonly CharacterService _character;
     private readonly RoleStore _roles;
@@ -245,7 +246,7 @@ public sealed class TotemService
         await SyncAsync(s);
     }
 
-    private int Gate(GameSession s) => _functions.IsOpen(s, 29) ? 0 : ErrorCodes.FunctionLocked;
+    private int Gate(GameSession s) => _functions.IsOpen(s, Function) ? 0 : ErrorCodes.FunctionLocked;
 
     internal async Task SetupAsync(GameSession s, SetUpTotemReq req)
     {

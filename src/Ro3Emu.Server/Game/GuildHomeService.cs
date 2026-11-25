@@ -16,8 +16,6 @@ public sealed class GuildHomeService : IGameTicker
 {
     public const uint EnterHome = 32256;
     public const long DefaultScene = 4000101;
-    /// <summary>GuildHomepageShowConfig[1]._iFunction (Guild, condition 2000010 = Lv21).</summary>
-    private const int GuildFunction = 13;
     /// <summary>SwitchSceneReason_EnterDungeon, as 30400 (inferred for 32256).</summary>
     private const int EnterReason = 3;
 
@@ -83,7 +81,7 @@ public sealed class GuildHomeService : IGameTicker
         if (s.Role == null || s.Progress == null) return ErrorCodes.Parameter;
         if (GuildId(s) is not { } id) return ErrorCodes.NotInGuild;
         guild = id;
-        if (!_functions.IsOpen(s, GuildFunction)) return ErrorCodes.FeatureUnavailable;
+        if (!_functions.IsOpen(s, GuildService.Function)) return ErrorCodes.FeatureUnavailable;
         if (s.SceneLoading || s.Handoff is { Completing: false } || s.SceneRecoveryRequired
             || s.SceneTransitionGate.CurrentCount == 0) return ErrorCodes.SwitchingScenes;
         if (s.InstanceId != 0 && s.SceneEntry == Scene && RoomOf(id)?.Id == s.InstanceId)

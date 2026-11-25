@@ -40,18 +40,18 @@ public sealed class TowerPetUnit : WorldUnit
     internal IReadOnlyDictionary<int, double> BaseAttributes { get; private init; } = new Dictionary<int, double>();
     internal HashSet<int> PublishedAttributeIds { get; } = [];
     public StatSheet CombatStats => _combat.TowerPetStats(this);
-    public int SpeedCm => (int)CombatStats[113];
+    public int SpeedCm => (int)CombatStats[AttributeId.Speed];
     public int SearchIntervalMs { get; private init; }
     public float AttackRange { get; private init; }
-    public long MaxHp => CombatStats[101];
-    public long MaxSp => CombatStats[102];
-    public long Atk => CombatStats[103];
-    public long Matk => CombatStats[104];
-    public long Def => CombatStats[105];
-    public long Mdef => CombatStats[106];
-    public long Hit => CombatStats[109];
-    public long Flee => CombatStats[110];
-    public long Cri => CombatStats[111];
+    public long MaxHp => CombatStats[AttributeId.MaxHp];
+    public long MaxSp => CombatStats[AttributeId.MaxSp];
+    public long Atk => CombatStats[AttributeId.Atk];
+    public long Matk => CombatStats[AttributeId.Matk];
+    public long Def => CombatStats[AttributeId.Def];
+    public long Mdef => CombatStats[AttributeId.Mdef];
+    public long Hit => CombatStats[AttributeId.Hit];
+    public long Flee => CombatStats[AttributeId.Flee];
+    public long Cri => CombatStats[AttributeId.Cri];
     public long Hp { get; set; }
     public bool Dead { get; set; }
     public long BornTimeMs { get; private init; }
@@ -129,7 +129,7 @@ public sealed class TowerPetUnit : WorldUnit
 
     /// <summary>(inferred) Apply the configured attack-speed influence using the shared 100-based ASPD root.</summary>
     internal int ActionMsFor(AttackSkill skill) => skill.AttackSpeedInfluenced
-        ? (int)Math.Max(200, Math.Ceiling(skill.ActionMs * 100.0 / Math.Max(1, CombatStats[115]))) : skill.ActionMs;
+        ? (int)Math.Max(200, Math.Ceiling(skill.ActionMs * 100.0 / Math.Max(1, CombatStats[AttributeId.BaseAspd]))) : skill.ActionMs;
 
     public override void Tick(MapInstance map, GameTime time)
     {

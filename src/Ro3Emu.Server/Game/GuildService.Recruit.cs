@@ -32,9 +32,9 @@ public sealed partial class GuildService
         resp.Result = s.Role == null || g == null ? ErrorCodes.NotInGuild
             : req.Label == RecommendLabel.InviteJoinGuild
                 ? g.Status != (int)GuildStatus.Normal ? ErrorCodes.FeatureUnavailable
-                : !HasRight(g, s.Role.Id, 7) ? ErrorCodes.GuildPermission : 0
+                : !HasRight(g, s.Role.Id, GuildRight.Recruit) ? ErrorCodes.GuildPermission : 0
             : req.Label == RecommendLabel.InviteJoinGuildHelper
-                ? g.Status != (int)GuildStatus.PreCreate || g.Members[s.Role.Id].Official != 1 ? ErrorCodes.GuildPermission : 0
+                ? g.Status != (int)GuildStatus.PreCreate || g.Members[s.Role.Id].Official != GuildOfficial.Leader ? ErrorCodes.GuildPermission : 0
             : ErrorCodes.Parameter;
         if (resp.Result == 0 && _lastRecommendMs.TryGetValue(s.Role!.Id, out long last) && now - last < RecommendCooldownMs)
             resp.Result = ErrRecommendTooFrequent;

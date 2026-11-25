@@ -5,6 +5,7 @@ namespace Ro3Emu.Server.Game;
 internal static class AttributeId
 {
     internal const int MaxHp = 101; // maxhp
+    internal const int MaxSp = 102; // maxsp
     internal const int Atk = 103; // atk
     internal const int Matk = 104; // matk
     internal const int Def = 105; // def
@@ -14,6 +15,7 @@ internal static class AttributeId
     internal const int Cri = 111; // cri
     internal const int ResCri = 112; // rescri
     internal const int Speed = 113; // speed
+    internal const int BaseAspd = 115; // baseaspd
     internal const int CastSpeed = 116; // cspd
     internal const int VarChant = 201; // varchant
     internal const int PerVarChant = 202; // per_varchant
@@ -46,4 +48,5 @@ internal static class AttributeId
     internal const int PerSpDedution = 1232; // per_sp_dedution
     internal const int Hp = 2000; // hp
     internal const int Sp = 2001; // sp
+    internal const int Level = 2002; // lv
 }

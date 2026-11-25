@@ -16,6 +16,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class TerritoryWarsService : IGameTicker
 {
+    public const int Function = 72, SiegeFunction = 67;
     public const uint MapQuery = 83001, MapNotify = 83002, GuildNotify = 83003, Camp = 83007, GuildQuery = 83008,
         LegacyBid = 83010, LegacyQuery = 83011, StageQuery = 83012, StageNotify = 83013, History = 83014,
         ResultNotify = 83015, AuctionTimeNotify = 83016, MarkerNotify = 83017, Minimap = 83018,

@@ -23,6 +23,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
 {
     public const uint Show = 32247, Submit = 32249, WantHelp = 32250, HelpOther = 32251,
         HelpList = 32252, Depart = 32255, Refresh = 32288, HelpNotify = 32289;
+    public const int Function = 1320; // FunctionConfig: Guild Caravan
 
     private readonly GameData _data = data;
     private readonly GuildStore _guilds = guilds;
@@ -225,7 +226,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
     private bool Eligible(GameSession s) => s.Progress is { } progress
         && _data.Row("DailyActivityConfig", 101) is { } row
         && progress.Level >= GameData.Int(row, "_iiLv")
-        && _functions.IsOpen(s, 1320);
+        && _functions.IsOpen(s, Function);
 
     private State? Read(long roleId) => _accounts.ReadSync<State?>(new CaravanMemberReadPlan<State>(roleId));
 

@@ -20,7 +20,7 @@ public sealed partial class TradeService
         int code = await market.RunAsync(s, tx =>
         {
             saleMs = 0;
-            if (!functions.IsOpen(s, 2)) return ErrorCodes.FunctionLocked;
+            if (!functions.IsOpen(s, Function)) return ErrorCodes.FunctionLocked;
             if (req.TotalQuantity < 1 || req.Price < 1 || (long)req.Price * req.TotalQuantity != req.TotalPrice)
                 return ErrorCodes.TradeRequest;
             var listing = tx.Get<Listing>(Listings, req.SkuId);

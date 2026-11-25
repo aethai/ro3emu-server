@@ -286,7 +286,7 @@ public sealed class CardEffects
                 long heal = Math.Min((long)desc[2], (long)Math.Floor(damage * desc[1] / 100));
                 if (heal <= 0) continue;
                 var stats = _character.Stats(s);
-                await _character.SetHpSpAsync(s, stats[2000] + heal, null);
+                await _character.SetHpSpAsync(s, stats[AttributeId.Hp] + heal, null);
             }
             else if (logic.Length == 3 && logic[0] == 0 && logic[2] > 0 && _data.Row("BuffConfig", logic[1]) is not null)
             {
@@ -306,7 +306,7 @@ public sealed class CardEffects
             long sp = (long)Math.Floor(damage * desc[1] / 100);
             if (sp <= 0) continue;
             var stats = _character.Stats(s);
-            await _character.SetHpSpAsync(s, null, stats[2001] + sp);
+            await _character.SetHpSpAsync(s, null, stats[AttributeId.Sp] + sp);
         }
     }
 

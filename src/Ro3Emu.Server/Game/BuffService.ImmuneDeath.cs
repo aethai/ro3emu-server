@@ -40,7 +40,7 @@ public sealed partial class BuffService
             int percent = automatic.ConfigId == 16340401 ? 100 : 30;
             await RemoveAsync(p, automatic); // one fatal hit uses one charge (inferred from descriptions).
             var stats = _character.Stats(p);
-            await _character.SetHpSpAsync(p, Math.Max(1, stats[101] * percent / 100), null);
+            await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100), null);
             return true;
         }
 
@@ -102,8 +102,8 @@ public sealed partial class BuffService
         }
         else
         {
-            await _character.SetHpSpAsync(p, Math.Max(1, stats[101] * percent / 100),
-                Math.Max(1, stats[102] * percent / 100));
+            await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100),
+                Math.Max(1, stats[AttributeId.MaxSp] * percent / 100));
             await ReduceDamageAfterReviveAsync(p, new BuffConfig(row));
         }
         await RefreshControlAsync(p);
@@ -169,8 +169,8 @@ public sealed partial class BuffService
     {
         if (p.Role == null || p.Dead) return;
         var stats = _character.Stats(p);
-        await _character.SetHpSpAsync(p, Math.Max(1, stats[101] * percent / 100),
-            Math.Max(1, stats[102] * percent / 100));
+        await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100),
+            Math.Max(1, stats[AttributeId.MaxSp] * percent / 100));
         await RefreshControlAsync(p);
     }
 }

@@ -145,7 +145,7 @@ public sealed partial class TerritoryWarsService
         if (zone == 0 || !BattleZones(st.Round).Contains(zone)) return ErrorCodes.TerritoryInvalidPoint;
         if (st.Type is not (5 or 6 or 9 or 10 or 13 or 14)) return ErrorCodes.TerritoryWarClosed;
         if (s.Role == null || s.Progress == null || s.Dead || s.SceneLoading) return ErrorCodes.Parameter;
-        if (!_functions.IsOpen(s, 72)) return ErrorCodes.FeatureUnavailable;
+        if (!_functions.IsOpen(s, Function)) return ErrorCodes.FeatureUnavailable;
         if (guild == null) return ErrorCodes.TerritoryGuild;
         if (!QualifiedFor(zone).Contains(guild.Id)) return ErrorCodes.TerritoryNotQualified;
         if (state.Battles.GetValueOrDefault(BattleKey(st.Round, zone))?.Settled == true) return ErrorCodes.TerritoryWarClosed;

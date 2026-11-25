@@ -78,7 +78,7 @@ public sealed partial class CombatService
             if (s.Role?.Id == sourceId && s.Progress != null)
             {
                 var stats = _character.Stats(s);
-                return new(sourceId, stats[103], stats[104], s.Progress.Level, 1, s);
+                return new(sourceId, stats[AttributeId.Atk], stats[AttributeId.Matk], s.Progress.Level, 1, s);
             }
         var units = _world.Map(worldScene).Units;
         for (int i = 0; i < units.Count; i++)
@@ -112,7 +112,11 @@ public sealed partial class CombatService
         if (role == null || role.Id != effect.TargetId || p.Dead || p.SceneLoading || p.Progress == null) return;
         long scene = p.WorldScene, generation = p.SceneGeneration;
         var stats = _character.Stats(p);
-        var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p)) { Def = stats[105], Mdef = stats[106], Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize };
+        var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
+        {
+            Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef],
+            Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize
+        };
         var rule = effect.Rule;
         long damage = PeriodicAmount(attacker, defender, rule, buff.PileCount);
         var committed = await CommitPlayerDamageAsync(p, damage, rule.Row,
@@ -223,9 +227,9 @@ public sealed partial class CombatService
         amount *= Math.Max(1, buff.PileCount);
         // The healer who put it on, when still here (a talent or potion puts it on the player itself).
         amount = ModifiedHealing(HealerAttributes(FindPlayer(p, buff.SourceId) ?? p), stats, amount);
-        long actual = Math.Min(amount, Math.Max(0, stats[101] - stats[2000]));
+        long actual = Math.Min(amount, Math.Max(0, stats[AttributeId.MaxHp] - stats[AttributeId.Hp]));
         if (actual <= 0) return;
-        await _character.SetHpSpAsync(p, stats[2000] + actual, null);
+        await _character.SetHpSpAsync(p, stats[AttributeId.Hp] + actual, null);
         await ToPlayerAndViewersAsync(p, SkillHit, new SkillHitInfo
         {
             SrcID = p.Role.Id, SessionId = ++_sessionIds,

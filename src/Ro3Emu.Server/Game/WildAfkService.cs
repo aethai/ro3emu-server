@@ -23,6 +23,7 @@ public sealed class WildAfkService : IGameTicker
     public const uint Sync = 5035, Info = 43401, Notify = 43402, SaveCharge = 43403, Collection = 43404,
         OfflineReward = 43405, Magnification = 43406, DungeonStart = 43408, Start = 43409, Pause = 43410,
         Snapshot = 43411, SuspendReason = 43412;
+    public const int Function = 18; // FunctionConfig: Bonus Time / OnHook
 
     private readonly GameData _data;
     private readonly RoleStore _roles;
@@ -97,7 +98,7 @@ public sealed class WildAfkService : IGameTicker
         catch { scope.Dispose(); throw; }
         return scope;
     }
-    private bool Unlocked(GameSession s) => s.Progress != null && _functions.IsOpen(s, 18);
+    private bool Unlocked(GameSession s) => s.Progress != null && _functions.IsOpen(s, Function);
     /// <summary>
     /// The maps the OnHook panel recommends monsters on (OnHookMonsterRecommendConfig._iMapID). Pharos Lighthouse (10537) has _iSceneType 0 like the towns, yet the
     /// panel recommends six of its monsters, so it is a hunting field for Bonus Time (inferred). Every other listed map is a field (1) or a cave (6).

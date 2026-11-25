@@ -24,6 +24,7 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
         QueryBonus = 82006, GetBonus = 82007, Get = 82009, Cancel = 82010, Quit = 82011, DungeonDone = 82012,
         DungeonChanged = 82013, BatchBid = 82014, HasAuto = 82015, Resume = 82016, PreStack = 82017,
         BatchCancel = 82018, Count = 82019, Reddot = 82020;
+    public const int Function = 4, DungeonFunction = 401, WorldFunction = 402; // FunctionConfig: auction
 
     private readonly ConcurrentDictionary<long, byte> _pendingReady = new();
     internal Func<Task>? BeforeNoticeForTest { get; set; }
@@ -274,8 +275,8 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
     private bool Visible(GameSession s, AuctionStore.Item r, long? roleGuildId)
     {
         // (inferred) FunctionConfig 402 "World Auction" (parent 4) gates World rows as 401 gates Dungeon rows.
-        if (s.Role == null || !functions.IsOpen(s, 4) || r.Type == AuctionType.Dungeon && !functions.IsOpen(s, 401)
-            || r.Type == AuctionType.World && !functions.IsOpen(s, 402))
+        if (s.Role == null || !functions.IsOpen(s, Function) || r.Type == AuctionType.Dungeon && !functions.IsOpen(s, DungeonFunction)
+            || r.Type == AuctionType.World && !functions.IsOpen(s, WorldFunction))
             return false;
         if (r.Type == AuctionType.Dungeon) return r.Eligible.Contains(s.Role.Id);
         if (r.Type == AuctionType.Guild) return (roleGuildId ?? guilds.GuildIdOf(s.Role.Id)) == r.GuildId && r.GuildId != 0;

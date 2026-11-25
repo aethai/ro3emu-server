@@ -17,6 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class PetService
 {
+    public const int Function = 33, IncubationFunction = 3301, IncubationRoomFunction = 3302;
     public const uint PetSync = 5017, LevelUp = 33302, ProgressUp = 33303, StarUp = 33304, Combine = 33308,
         Rebirth = 33310, StateUpdate = 33311, FragmentsBroken = 33312, SwitchPlan = 33314, ChangePlanName = 33315,
         RoomLevelUp = 33316, OpenRoom = 33317, GenerateEgg = 33318, EggReward = 33319, SetSkipAnim = 33320,
@@ -108,8 +109,8 @@ public sealed partial class PetService
         await PublishGuardianChangeAsync(session);
     }
 
-    private int Gate(GameSession s, bool incubation = false) => s.Pets == null || !_functions.IsOpen(s, PetFunction)
-        || incubation && (!_functions.IsOpen(s, 3301) || !_functions.IsOpen(s, 3302)) ? ErrorCodes.FeatureUnavailable : 0;
+    private int Gate(GameSession s, bool incubation = false) => s.Pets == null || !_functions.IsOpen(s, Function)
+        || incubation && (!_functions.IsOpen(s, IncubationFunction) || !_functions.IsOpen(s, IncubationRoomFunction)) ? ErrorCodes.FeatureUnavailable : 0;
 
     private int Owned(GameSession s, int id) => Gate(s) is var gate and not 0 ? gate
         : _data.Row("PetBaseConfig", id) == null ? ErrorCodes.PetNoConfig
@@ -512,7 +513,7 @@ public sealed partial class PetService
     /// </summary>
     private IEnumerable<(long Id, double Value)> Attributes(GameSession s)
     {
-        if (s.Pets == null || !_functions.IsOpen(s, PetFunction)) yield break;
+        if (s.Pets == null || !_functions.IsOpen(s, Function)) yield break;
         foreach (var pet in s.Pets.ListPet.Values.Where(p => p.IsActiveCollect))
             if (StarRow(pet) is { } row)
                 foreach (var attr in GameData.Pairs(row, "_kCollectAttr")) yield return attr;

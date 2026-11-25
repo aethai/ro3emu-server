@@ -486,7 +486,7 @@ public sealed partial class TimedBattleService
     {
         if (session.Dead || amount <= 0) return;
         var stats = _character.Stats(session);
-        long before = stats[2000], after = Math.Min(stats[101], before + amount);
+        long before = stats[AttributeId.Hp], after = Math.Min(stats[AttributeId.MaxHp], before + amount);
         if (after <= before) return;
         me.Cure += after - before;
         await _character.SetHpSpAsync(session, after, null);

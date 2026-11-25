@@ -5,14 +5,13 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class PetService
 {
-    private const int PetFunction = 33; // FunctionConfig: pet system.
     private const int LineUpSlots = 1; // SlotOpen source: 1 the lineup (PetSetLimitConfig._iCondition1), 2 support
     /// <summary>Observers of a committed pet state (including plan and star changes).</summary>
     internal List<Func<GameSession, Task>> Changed { get; } = [];
 
     internal IEnumerable<GuardianPetRules.Skill> Guardians(GameSession s)
     {
-        if (s.Pets is not { } state || s.Progress == null || s.TowerAttempt != null || !_functions.IsOpen(s, PetFunction)
+        if (s.Pets is not { } state || s.Progress == null || s.TowerAttempt != null || !_functions.IsOpen(s, Function)
             || !state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan)) yield break;
         var seen = new HashSet<int>();
         bool coreSelected = false;
@@ -33,7 +32,7 @@ public sealed partial class PetService
     }
 
     internal bool GuardianEquipped(GameSession s, GuardianPetRules.Skill skill) =>
-        s.Pets is { } state && s.Progress != null && s.TowerAttempt == null && _functions.IsOpen(s, PetFunction)
+        s.Pets is { } state && s.Progress != null && s.TowerAttempt == null && _functions.IsOpen(s, Function)
         && state.CurrentPlan == skill.Plan && SlotOpen(s, LineUpSlots, skill.Slot)
         && state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan) && plan.SetUpPets.GetValueOrDefault(skill.Slot) == skill.PetId
         && state.ListPet.TryGetValue(skill.PetId, out var pet) && pet.Star == skill.Star && pet.StarProgress == skill.Stage

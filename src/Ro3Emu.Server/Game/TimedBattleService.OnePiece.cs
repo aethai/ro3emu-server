@@ -19,6 +19,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class TimedBattleService
 {
+    public const int RiftFunction = 95;
     /// <summary>
     /// PublicParamConfig.OnePieceExtraRewardRestric: RestrictConfig 1020, 10 with _iRecoverType 1 (PBRestrictRecoverType
     /// Daily). Its count is what is left: the dialog, vault and prepare panel show it as "Reward Count"; at 0 the clear
@@ -85,7 +86,7 @@ public sealed partial class TimedBattleService
             : !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
             : MonsterService.Distance(session.Position.X, session.Position.Z, stone.Point.X, stone.Point.Z) > 10f
                 ? ErrorCodes.NpcTooFar
-            : session.Progress?.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, 95)
+            : session.Progress?.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, RiftFunction)
                 ? ErrorCodes.FeatureUnavailable
             : session.InstanceId != 0 || _treasure.ContainsKey(session) || _riftVotes.ContainsKey(session) ? ErrorCodes.DungeonBusy
             : stone.Challenger != null ? ErrorCodes.RiftStoneTaken : 0;
@@ -101,7 +102,7 @@ public sealed partial class TimedBattleService
             ? await owners.EnterAsync("timed battle onepiece info", [ReservationKey.Role(session.Role.Id)]) : null;
         if (session.Owner != null) scope?.Context.Pin(session.Owner);
         var (start, end) = TreasureWindow();
-        bool open = session.Progress?.Level >= 44 && _schedule.IsOpen(200) && _functions.IsOpen(session, 95) && _riftRound >= 0;
+        bool open = session.Progress?.Level >= 44 && _schedule.IsOpen(200) && _functions.IsOpen(session, RiftFunction) && _riftRound >= 0;
         var response = new HiddenTreasureRoundInfoResp
         {
             Result = session.Role == null ? ErrorCodes.Parameter : 0,
@@ -185,7 +186,7 @@ public sealed partial class TimedBattleService
     /// <summary>83350 for the player's current map: the tracker's "Remaining on the current channel" and its countdown.</summary>
     private async Task SendOnePieceMapAsync(GameSession session)
     {
-        bool open = session.Progress?.Level >= 44 && _schedule.IsOpen(200) && _functions.IsOpen(session, 95) && _riftRound >= 0;
+        bool open = session.Progress?.Level >= 44 && _schedule.IsOpen(200) && _functions.IsOpen(session, RiftFunction) && _riftRound >= 0;
         await session.SendGameAsync(OnePieceMap, new HiddenTreasureMapInfoNotify
         {
             RoundState = open ? EHiddenTreasureRoundState.Open : EHiddenTreasureRoundState.NotOpen,
@@ -241,7 +242,7 @@ public sealed partial class TimedBattleService
         var stone = _riftStones.GetValueOrDefault(named) ?? NearestRiftStone(session, req.SceneEntry);
         int error = session.Role == null || session.Progress == null || session.TimedBattle == null ? ErrorCodes.Parameter
             : !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
-            : session.Progress.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, 95)
+            : session.Progress.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, RiftFunction)
                 ? ErrorCodes.FeatureUnavailable
             : stone == null || session.SceneEntry != stone.Map ? ErrorCodes.NpcMissing
             : MonsterService.Distance(session.Position.X, session.Position.Z, stone.Point.X, stone.Point.Z) > 10f
@@ -303,7 +304,7 @@ public sealed partial class TimedBattleService
             ? ErrorCodes.RiftMemberInVault
         : member.SceneLoading || member.InstanceId != 0 ? ErrorCodes.DungeonBusy
         : !member.ActivitiesReady || member.Progress == null || member.TimedBattle == null || member.Progress.Level < 44
-            || !_functions.IsOpen(member, 95) ? ErrorCodes.RiftMemberLocked
+            || !_functions.IsOpen(member, RiftFunction) ? ErrorCodes.RiftMemberLocked
         : member.Dead || member.SceneEntry != stone.Map ? ErrorCodes.RiftMemberIneligible : 0;
 
     private static HiddenTreasureInitData RiftInit(RiftStone stone, IEnumerable<GameSession> members, long waveEnd)

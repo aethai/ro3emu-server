@@ -22,12 +22,14 @@ public sealed partial class GuildService
             amount, EconomyReason.GuildMarketCapDiscard);
     }
 
+    private const int MarketFunction = 78; // FunctionConfig: Guild Black Market
+
     private int MarketGate(GameSession s, GuildStore.State? guild, bool mutation)
     {
         if (guild == null) return ErrorCodes.NotInGuild;
         if (guild.Status != (int)GuildStatus.Normal) return ErrorCodes.FeatureUnavailable;
-        if (!functions.IsOpen(s, 78)) return ErrorCodes.FeatureUnavailable;
-        return mutation && !HasRight(guild, s.Role!.Id, 25) ? ErrorCodes.GuildPermission : 0;
+        if (!functions.IsOpen(s, MarketFunction)) return ErrorCodes.FeatureUnavailable;
+        return mutation && !HasRight(guild, s.Role!.Id, GuildRight.BlackMarket) ? ErrorCodes.GuildPermission : 0;
     }
 
     private int CheckMarketPrice(long price, GuildStore.MarketState market)
