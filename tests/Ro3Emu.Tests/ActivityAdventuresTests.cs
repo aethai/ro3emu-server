@@ -725,7 +725,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         var loop = _app.Services.GetRequiredService<GameLoop>();
         var owners = _app.Services.GetRequiredService<Ro3Emu.Server.Game.Ownership.OwnerRegistry>();
         var combat = _app.Services.GetRequiredService<CombatService>();
-        var award = combat.Killed.Handlers.Single(h => h.Target is NewActivityService);
+        var award = combat.Killed.Handlers.Single(h => h.Target is AdventureActivityService);
         var monster = _app.Services.GetRequiredService<Ro3Emu.Server.Maps.World>().Map(session.WorldScene)
             .Units.OfType<Ro3Emu.Server.Maps.MonsterUnit>().First();
         long guid = session.Items.Single(i => i.Entry == 1112001).Guid;
@@ -965,7 +965,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             Assert.Equal(0, (await Next(alice, CharacterService.ShortcutBarUse, ShortcutBarUseRes.Parser)).Result);
             var cooldown = Assert.Single((await Next(alice, CharacterService.ItemsCdNotify, ItemsCDNotify.Parser)).Items);
             Assert.Equal(1112001, cooldown.ItemId);
-            Assert.True(cooldown.ItemCd > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            Assert.True(cooldown.ItemCd > _clock.GetUtcNow().ToUnixTimeMilliseconds());
             Assert.Equal(directReplies, alice.Inbox.Snapshot().Count(p => p.IsGame(CharacterService.ItemUse)));
             Assert.True(firstHookSawCommit, firstObservation);
             var roles = _app.Services.GetRequiredService<Ro3Emu.Server.Accounts.RoleStore>();

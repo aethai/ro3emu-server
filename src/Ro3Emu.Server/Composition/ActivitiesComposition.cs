@@ -14,6 +14,8 @@ internal static class ActivitiesComposition
         services.AddSingleton<TestingSwitches>();
         services.AddSingleton<ActivityClock>();
         services.AddSingleton<NewActivityService>();
+        services.AddSingleton<ActivityPassService>();
+        services.AddSingleton<AdventureActivityService>();
         services.AddSingleton<TimedEventService>();
         services.AddSingleton<TimedTodoSchedule>();
         services.AddSingleton<PronteraDefenseService>();
@@ -48,7 +50,14 @@ internal static class ActivitiesComposition
     public static void WireActivities(WebApplication app)
     {
         app.Services.GetRequiredService<DailyActivityService>(); // quest settlement and online rollover
-        app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
+        app.Services.GetRequiredService<DungeonService>(); // keep DungeonService hooks ahead of LifeJobService
+        var activities = app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
+        var rewards = app.Services.GetRequiredService<RewardService>();
+        var life = app.Services.GetRequiredService<LifeJobService>();
+        rewards.ExplorationNotes = activities.NoteDrops;
+        rewards.SyncExplorationRestriction = life.SyncRestrictionsAsync;
+        activities.BindPass(app.Services.GetRequiredService<ActivityPassService>());
+        activities.BindAdventures(app.Services.GetRequiredService<AdventureActivityService>());
         app.Services.GetRequiredService<TimedEventService>();
         app.Services.GetRequiredService<PronteraDefenseService>();
         var timedBattles = app.Services.GetRequiredService<TimedBattleService>();

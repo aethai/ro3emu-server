@@ -7,14 +7,15 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
-    private const int ExplorationActivity = 111, ConchInteraction = 7000006, SpecialConchInteraction = 7000008;
+    internal const int ExplorationActivity = 111;
+    private const int ConchInteraction = 7000006, SpecialConchInteraction = 7000008;
     private const string ConchDeadline = "exploration-conch";
     private const long ConchUidBase = 3L << 42;
     private const int PillarFinishInteraction = 7000100, EnterMusicGameAction = 350;
     // NewActivityConfig._iActivityType of World Exploration (111).
-    private const int WorldExplorationType = 14;
+    internal const int WorldExplorationType = 14;
     // NPCConfig _iNPCType/_iNPCSubType of the Genesis pickups (8000002-8000004, 8000301-8000315, 8100004).
     private const int ConchNpcType = 2, ConchNpcSubType = 12;
     // LC_ConditionDefine: CheckArea, the exploration chapter's activity time and function open.
@@ -127,7 +128,7 @@ public sealed partial class NewActivityService
         await InterruptConchAsync(session);
     }
 
-    private async Task SyncConchesAsync(GameSession session)
+    internal async Task SyncConchesAsync(GameSession session)
     {
         if (session.SceneLoading) return;
         bool open = ConchMapOpen(session);
@@ -314,7 +315,7 @@ public sealed partial class NewActivityService
             var activity = next.ActivityInfo[ExplorationActivity];
             if (activity.CycleStartTime != session.ConchCycle || !RecordConch(activity.ActivityParam.WorldExploration, session.SceneEntry, point!.Id)) return;
             long award = NPCConfig.Get(_data, point.ConfigId)!.Value.CAward;
-            int result = await CommitAsync(session, next, [award],
+            int result = await _activities.CommitAsync(session, next, [award],
                 source: $"conch/{activity.CycleStartTime}/{session.SceneEntry}/{point.Id}");
             success = result == 0;
             if (!success) await WorldCoreService.ErrorAsync(session, SceneService.NpcInteraction, result);

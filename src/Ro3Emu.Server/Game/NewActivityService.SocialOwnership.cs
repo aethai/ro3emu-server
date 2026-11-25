@@ -48,9 +48,9 @@ public sealed partial class NewActivityService
     // Every activity path settles an ended cycle before RefreshCalendar replaces its timestamps, and it reads the
     // clock for that after admission and after awaits. So the key is exclusive from EveWriteLeadSeconds before the
     // cycle end: an operation admitted with the shared key cannot reach a due settlement.
-    private const long EveWriteLeadSeconds = 300;
+    internal const long EveWriteLeadSeconds = 300;
     private bool EveSettlementNear(PlayerActivityInfo eve) => eve.CycleEndTime > 0 && Now >= eve.CycleEndTime - EveWriteLeadSeconds;
-    private static ReservationKey EveKey(long cycle, bool writes) => writes
+    internal static ReservationKey EveKey(long cycle, bool writes) => writes
         ? ReservationKey.Entity("activity_eve_global", $"117:{cycle}")
         : ReservationKey.SharedEntity("activity_eve_global", $"117:{cycle}");
     private bool EveWrites(GameSession session, CommonActivityReq? request, bool? loadedEnded) =>
@@ -64,7 +64,7 @@ public sealed partial class NewActivityService
         return cycle > 0 ? EveKey(cycle, EveWrites(session, request, loadedEnded)) : null;
     }
 
-    private async Task<LegacyOwnerScope> EnterLocalWithGateAsync(GameSession session, string origin,
+    internal async Task<LegacyOwnerScope> EnterLocalWithGateAsync(GameSession session, string origin,
         CommonActivityReq? request = null, long? loadedEveCycle = null, bool? loadedEveEnded = null)
     {
         var owners = _loop.Owners ?? throw new InvalidOperationException("Activity owner registry is unavailable.");
@@ -103,7 +103,7 @@ public sealed partial class NewActivityService
         }
     }
 
-    private async Task<LegacyOwnerScope> EnterSocialWithGateAsync(GameSession sender, long recipient,
+    internal async Task<LegacyOwnerScope> EnterSocialWithGateAsync(GameSession sender, long recipient,
         string origin, long ask = 0)
     {
         var owners = _loop.Owners ?? throw new InvalidOperationException("Activity owner registry is unavailable.");
@@ -148,13 +148,13 @@ public sealed partial class NewActivityService
     }
 
     /// <summary>SessionRegistry supplies only a presentation endpoint; RoleOwner remains the durable identity.</summary>
-    private GameSession? AttachedSocialSession(RoleOwner owner) =>
+    internal GameSession? AttachedSocialSession(RoleOwner owner) =>
         owner.State == RoleOwnerState.Attached && owner.Attachment is { } attachment
             ? _sessions.All().FirstOrDefault(session => ReferenceEquals(session.Owner, owner)
                 && ReferenceEquals(session.Attachment, attachment) && session.Role?.Id == owner.RoleId)
             : null;
 
-    private async Task<RoleOwner?> PinSocialRecipientAsync(long roleId)
+    internal async Task<RoleOwner?> PinSocialRecipientAsync(long roleId)
     {
         var owners = _loop.Owners ?? throw new InvalidOperationException("Activity owner registry is unavailable.");
         var context = owners.Current ?? throw new InvalidOperationException("Activity gift needs an owner reservation.");

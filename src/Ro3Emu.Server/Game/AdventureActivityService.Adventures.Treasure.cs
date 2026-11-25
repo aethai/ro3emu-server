@@ -23,7 +23,7 @@ public sealed partial class ActivityRuntimeState
     public AdventureTreasureCursor AdventureTreasure { get; set; } = new();
 }
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
     /// <summary>ChatConfig 401 marquee: "${1} disturbed a terrifying BOSS while treasure hunting in ${2}! Help Defeat it
     /// to receive a Support Chest!"</summary>
@@ -96,7 +96,7 @@ public sealed partial class NewActivityService
         return 0;
     }
 
-    private async Task SyncTreasureAsync(GameSession session, DeadlineLease lease)
+    internal async Task SyncTreasureAsync(GameSession session, DeadlineLease lease)
     {
         var c = session.ActivityRuntime.AdventureTreasure;
         if (c.PointId != 0 && c.Began + 10800 <= Now)

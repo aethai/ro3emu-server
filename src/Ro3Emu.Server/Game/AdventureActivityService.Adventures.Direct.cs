@@ -23,7 +23,7 @@ public sealed partial class ActivityRuntimeState
     public Dictionary<long, AdventureFragmentAsk> AdventureFragmentAsks { get; set; } = [];
 }
 
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
     private const int PreCrystal = 1350001;
     private const int PreCrystalScore = 50_000;
@@ -383,6 +383,6 @@ public sealed partial class NewActivityService
     }
 
     /// <summary>82975 is used by SevenDays; other adventure rewards have subtype-specific requests.</summary>
-    private Task<int> ClaimAdventureAsync(GameSession session, NewActivityGetRewardCommonReq req) =>
+    internal Task<int> ClaimAdventureAsync(GameSession session, NewActivityGetRewardCommonReq req) =>
         Task.FromResult(ActivityError(session, req.ActivityID) is var error and not 0 ? error : ErrorCodes.Parameter);
 }

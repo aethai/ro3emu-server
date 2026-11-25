@@ -143,7 +143,7 @@ CombatService.DealtAsync (8)
   StealthEffects.<.ctor> lambda
 CombatService.EventDamageRecorded (7)
   MvpService.<.ctor> lambda
-  NewActivityService.OnTreasureMonsterDamagedAsync
+  AdventureActivityService.OnTreasureMonsterDamagedAsync
   TrainingService.<.ctor> lambda
   TerritoryWarsService.DamageRecordedAsync
   WarMachineService.MachineDamageRecordedAsync
@@ -179,7 +179,7 @@ CombatService.Killed (21)
   DungeonService.KilledAsync
   PronteraDefenseService.OnKilledAsync
   MvpService.OnKilledAsync
-  NewActivityService.OnTreasureMonsterKilledAsync
+  AdventureActivityService.OnTreasureMonsterKilledAsync
   RiftBattleService.OnePieceKilledAsync
   TimedBattleService.DragonBossKilledAsync
   CasualBattleService.MonsterKilledAsync
@@ -204,7 +204,7 @@ CombatService.PlayerDamageAdjusters (1)
   CardEffects.AdjustDamageTaken
 CombatService.PlayerDied (15)
   DungeonService.PlayerDiedAsync
-  NewActivityService.InterruptConchAsync
+  AdventureActivityService.InterruptConchAsync
   ChickenBattleService.ChickenDiedAsync
   RiftBattleService.OnePieceDiedAsync
   CasualBattleService.DiedAsync
@@ -360,7 +360,7 @@ SceneService.Leaving (28)
   DungeonService.AbandonAsync
   DungeonService.StopSlideAsync
   LifeJobService.CancelAsync
-  NewActivityService.LeaveConchesAsync
+  AdventureActivityService.LeaveConchesAsync
   TimedBattleService.LeavingAsync
   CasualBattleService.LeavingAsync
   CasualBattleService.<HookArena> lambda
@@ -384,8 +384,8 @@ SceneService.LineSwitchChecks (1)
 SceneService.Loaded (25)
   DungeonService.LoadedAsync
   PronteraDefenseService.ApplyPrepBuffAsync
-  NewActivityService.OnTreasureSceneLoadedAsync
-  NewActivityService.ReloadConchesAsync
+  AdventureActivityService.OnTreasureSceneLoadedAsync
+  AdventureActivityService.ReloadConchesAsync
   TimedBattleService.LoadedAsync
   CasualBattleService.LoadedAsync
   FestivalService.LoadedAsync
@@ -414,7 +414,7 @@ SceneService.PublicLineOpened (2)
   MvpService.ActivateLine
   StallsService.ActivateLine
 SceneService.Resync (2)
-  NewActivityService.ReloadConchesAsync
+  AdventureActivityService.ReloadConchesAsync
   WorldEffectsService.ReplayAsync
 SeasonService.ScheduleChanged (1)
   NewActivityService.InvalidateAllSchedules
@@ -434,7 +434,7 @@ TaskService.ExtraTasks (1)
 TaskService.GuildActivityJoined (0)
 TaskService.QuestDelivered (5)
   TaskService.AddFactionPoints
-  NewActivityService.OnExplorationQuestDelivered
+  AdventureActivityService.OnExplorationQuestDelivered
   AdventureGroupService.OnTaskDelivered
   SocialComposition.AchievementTaskDelivered
   TaskService.OnConnectDelivered

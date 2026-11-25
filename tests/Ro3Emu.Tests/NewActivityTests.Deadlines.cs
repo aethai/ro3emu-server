@@ -219,9 +219,9 @@ public sealed partial class NewActivityTests
         await WaitForActivityRefreshDrain(session);
         long oldRole = session.Role!.Id;
         Assert.True(session.NewActivities!.ActivityTypeState[19].ActivityState[117].EnterTime > 0);
-        var gate = (SemaphoreSlim)typeof(NewActivityService)
+        var gate = (SemaphoreSlim)typeof(AdventureActivityService)
             .GetField("_adventureSocialGate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(Service<NewActivityService>())!;
+            .GetValue(Service<AdventureActivityService>())!;
         var socialWaiter = typeof(SemaphoreSlim).GetField("m_asyncHead",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         Assert.NotNull(socialWaiter);

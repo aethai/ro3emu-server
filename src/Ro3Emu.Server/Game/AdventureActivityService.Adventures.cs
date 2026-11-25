@@ -14,11 +14,11 @@ namespace Ro3Emu.Server.Game;
 /// Configured IDs and all oneof response cases are authoritative; transition ordering without original
 /// server code is (inferred). See docs/systems/activities-adventures.md.
 /// </summary>
-public sealed partial class NewActivityService
+public sealed partial class AdventureActivityService
 {
     private static readonly int[] FragmentItems = [1111001, 1111002, 1111003, 1111004, 1111005];
 
-    private void InitializeAdventure(GameSession session, JsonElement row, PlayerActivityInfo info)
+    internal void InitializeAdventure(GameSession session, JsonElement row, PlayerActivityInfo info)
     {
         info.ActivityParam ??= new PlayerActivityParam();
         switch (GameData.Int(row, "_iActivityType"))
@@ -97,7 +97,7 @@ public sealed partial class NewActivityService
     }
 
     /// <summary>CommonActivityReq's adventure oneofs. The core holds ActivityGate and validates activity state.</summary>
-    private async Task<bool> HandleAdventureCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
+    internal async Task<bool> HandleAdventureCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
     {
         if (req.SeasonEveSelectWish != null || req.SeasonEveFindClue != null || req.SeasonEvePlayChapter != null
             || req.SeasonEveClaimAward != null || req.SeasonEveGetInfo != null)
@@ -161,7 +161,7 @@ public sealed partial class NewActivityService
 
     // The rules credit story quests, and MovementPlay_CellWidgetCtrl checks the delivered finish quest.
     // The export supplies no weights: one unit per note slot and one per completed measure's final quest (inferred).
-    private bool UpdateChapterProgress(GameSession session, DBWorldExplorationPhase phase)
+    internal bool UpdateChapterProgress(GameSession session, DBWorldExplorationPhase phase)
     {
         if (session.Tasks == null || ExplorePhaseConfig.Get(_data, phase.PhaseCfgId) is not { } chapter) return false;
         int total = 0, earned = 0;
@@ -187,7 +187,7 @@ public sealed partial class NewActivityService
         WorldPhaseWindow(session, row, out long start, out long end)
         && (_seasons.OpenContent.Enabled && _seasons.OpenContent.PerpetualWindows || start <= Now && Now <= end);
 
-    private bool WorldPhaseWindow(GameSession session, JsonElement row, out long start, out long end)
+    internal bool WorldPhaseWindow(GameSession session, JsonElement row, out long start, out long end)
     {
         end = 0;
         var stages = _seasons.Clock(Playbook(session)).StageTimeInfo;

@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 /// behind the season pace, and past the last level a bonus chest every 2000. The novice pass 9201 (currency 920132)
 /// levels from main story quests. Players read their challenges with /pass and /pass week.
 /// </summary>
-public sealed partial class NewActivityService
+public sealed partial class ActivityPassService
 {
     internal const int PassExpCurrency = 132, NovicePassExpCurrency = 920132, Liveness = 5;
     private const long PassDailyReward = 300, PassWeeklyReward = 1000;
@@ -307,7 +307,7 @@ public sealed partial class NewActivityService
         }
         play.Unsaved = 0;
         play.Sequence++;
-        int result = await CommitAsync(session, session.NewActivities!.Clone(), extra: grants, runtime: runtime,
+        int result = await _activities.CommitAsync(session, session.NewActivities!.Clone(), extra: grants, runtime: runtime,
             source: string.Create(CultureInfo.InvariantCulture, $"pass/play/{role}/{play.Day}/{play.Sequence}"));
         if (result != 0) { _log.LogWarning("Pass progress for role {Role} not saved: {Result}", role, result); return; }
         if (grants.Count > 0) await ReconcilePassAsync(session);
