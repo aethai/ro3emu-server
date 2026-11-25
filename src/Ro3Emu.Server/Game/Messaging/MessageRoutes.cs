@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using Google.Protobuf;
 
 namespace Ro3Emu.Server.Game.Messaging;
+
+public enum RouteAdmission { Default, Role, Account, Economic, Runtime }
 
 public delegate Task MessageHandler(GameSession session, uint msgId, ReadOnlyMemory<byte> body);
 
@@ -17,11 +20,15 @@ public delegate Task<bool> MessageInterceptor(GameSession session, uint msgId, R
 /// </summary>
 public sealed class MessageRoutes
 {
-    public sealed class Route(uint from, uint to, string owner, MessageHandler handler)
+    public sealed class Route(uint from, uint to, string owner, MessageHandler handler,
+        RouteAdmission admission = RouteAdmission.Default, string? runtimeOrigin = null, AdmissionTest? economicWhen = null)
     {
         public uint From { get; } = from;
         public uint To { get; } = to;
         public string Owner { get; } = owner;
+        public RouteAdmission Admission { get; } = admission;
+        public string? RuntimeOrigin { get; } = runtimeOrigin;
+        public AdmissionTest? EconomicWhen { get; } = economicWhen;
         private long _calls, _failures, _ticks;
         public long Calls => Interlocked.Read(ref _calls);
         public long Failures => Interlocked.Read(ref _failures);
@@ -92,19 +99,26 @@ public sealed class MessageRoutes
     /// </summary>
     public Admission Admit(GameSession session, uint msgId, ReadOnlyMemory<byte> body, Func<uint, bool> unknown)
     {
+        bool found = TryGet(msgId, out var route);
         foreach (var economic in _economic)
             if (economic(session, msgId, body)) return Admission.Economic;
+        if (found && (route.Admission == RouteAdmission.Economic || route.EconomicWhen?.Invoke(session, msgId, body) == true))
+            return Admission.Economic;
         foreach (var (ids, origin) in _runtime)
             if (ids(msgId)) return Admission.Runtime(origin);
+        if (found && route.Admission == RouteAdmission.Runtime)
+            return Admission.Runtime(route.RuntimeOrigin ?? $"dispatcher/{msgId}");
         if (unknown(msgId)) return Admission.Runtime("dispatcher/unknown message");
-        return Admission.Session(SessionKeys(session, msgId),
-            TryGet(msgId, out _) ? $"dispatcher/{msgId}" : "dispatcher/unrouted");
+        return Admission.Session(SessionKeys(session, msgId, found ? route : null),
+            found ? $"dispatcher/{msgId}" : "dispatcher/unrouted");
     }
 
-    private Ownership.ReservationKey[] SessionKeys(GameSession session, uint msgId)
+    private Ownership.ReservationKey[] SessionKeys(GameSession session, uint msgId, Route? route)
     {
-        if (_account.Any(ids => ids(msgId))) return [Ownership.ReservationKey.Account(session.Account ?? "unbound")];
-        if (session.Role is { } role && _role.Any(ids => ids(msgId))) return [Ownership.ReservationKey.Role(role.Id)];
+        if (route?.Admission == RouteAdmission.Account || _account.Any(ids => ids(msgId)))
+            return [Ownership.ReservationKey.Account(session.Account ?? "unbound")];
+        if (session.Role is { } role && (route?.Admission == RouteAdmission.Role || _role.Any(ids => ids(msgId))))
+            return [Ownership.ReservationKey.Role(role.Id)];
         return [Ownership.ReservationKey.Realm];
     }
 
@@ -120,15 +134,50 @@ public sealed class MessageRoutes
     public IReadOnlyCollection<Route> Exact => _exact.Values;
     public IReadOnlyList<Route> Ranges => _ranges;
 
-    public void Map(uint id, string owner, MessageHandler handler)
+    public void Map(uint id, string owner, MessageHandler handler) =>
+        Map(id, owner, RouteAdmission.Default, handler);
+
+    public void Map(uint id, string owner, RouteAdmission admission, MessageHandler handler,
+        string? runtimeOrigin = null, AdmissionTest? economicWhen = null)
     {
         if (_exact.TryGetValue(id, out var existing))
             throw new InvalidOperationException($"Message {id} is routed twice ({existing.Owner}, {owner}).");
         if (_ranges.FirstOrDefault(r => id >= r.From && id <= r.To) is { } range)
             throw new InvalidOperationException($"Message {id} ({owner}) falls in {range.Owner}'s range {range.From}-{range.To}.");
-        _exact.Add(id, new Route(id, id, owner, handler));
+        _exact.Add(id, new Route(id, id, owner, handler, admission, runtimeOrigin, economicWhen));
         Diagnostics.MessageCoverage.Route(id, id, owner);
     }
+
+    public void Map<TReq>(uint id, string owner, RouteAdmission admission, Func<GameSession, TReq, Task> handler,
+        string? runtimeOrigin = null, AdmissionTest? economicWhen = null) where TReq : IMessage<TReq>, new() =>
+        Map(id, owner, admission, (session, _, body) =>
+        {
+            var req = new TReq();
+            req.MergeFrom(body.Span);
+            return handler(session, req);
+        }, runtimeOrigin, economicWhen);
+
+    public void Map<TReq>(uint id, string owner, RouteAdmission admission, Action<GameSession, TReq> handler,
+        string? runtimeOrigin = null, AdmissionTest? economicWhen = null) where TReq : IMessage<TReq>, new() =>
+        Map(id, owner, admission, (session, _, body) =>
+        {
+            var req = new TReq();
+            req.MergeFrom(body.Span);
+            handler(session, req);
+            return Task.CompletedTask;
+        }, runtimeOrigin, economicWhen);
+
+    public void Map(uint id, string owner, RouteAdmission admission, Func<GameSession, Task> handler,
+        string? runtimeOrigin = null, AdmissionTest? economicWhen = null) =>
+        Map(id, owner, admission, (session, _, _) => handler(session), runtimeOrigin, economicWhen);
+
+    public void Map(uint id, string owner, RouteAdmission admission, Action<GameSession> handler,
+        string? runtimeOrigin = null, AdmissionTest? economicWhen = null) =>
+        Map(id, owner, admission, (session, _, _) =>
+        {
+            handler(session);
+            return Task.CompletedTask;
+        }, runtimeOrigin, economicWhen);
 
     public void MapRange(uint from, uint to, string owner, MessageHandler handler)
     {

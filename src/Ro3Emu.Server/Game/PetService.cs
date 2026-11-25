@@ -21,7 +21,8 @@ public sealed partial class PetService
     public const uint PetSync = 5017, LevelUp = 33302, ProgressUp = 33303, StarUp = 33304, Combine = 33308,
         Rebirth = 33310, StateUpdate = 33311, FragmentsBroken = 33312, SwitchPlan = 33314, ChangePlanName = 33315,
         RoomLevelUp = 33316, OpenRoom = 33317, GenerateEgg = 33318, EggReward = 33319, SetSkipAnim = 33320,
-        AccelerateEgg = 33322, Break = 33323, CollectActive = 33324, FastEgg = 33325;
+        AccelerateEgg = 33322, Break = 33323, CollectActive = 33324, FastEgg = 33325,
+        Unsupported33305 = 33305, Unsupported33307 = 33307;
 
     private readonly GameData _data;
     private readonly CharacterService _character;
