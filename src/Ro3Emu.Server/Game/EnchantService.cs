@@ -66,8 +66,10 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
                 // No sync inside the exchange: the paid bag and updated item are published together below.
                 try
                 {
-                    if (await character.ExchangeLockedAsync(session, cost, [], new Dictionary<long, int> { [scroll!.Guid] = 1 }, popup: false, sync: false,
-                        persist: transaction =>
+                    if (await character.ExchangeLockedAsync(session, new ExchangeRequest
+                    {
+                        Cost = cost, Instances = new Dictionary<long, int> { [scroll!.Guid] = 1 }, Popup = false, Sync = false,
+                        Persist = transaction =>
                         {
                             transaction.WithEconomy(character.FamilyEconomy(session, "cd13a/enchant-apply",
                                 [.. cost, (scroll.Entry, 1L)], [],
@@ -76,7 +78,9 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
                                     Equip = equip.Guid, Scroll = scroll.Guid, Installed = installed,
                                     Replaced = replacement.Value, Attr = rolled.Attr, Time = rolled.GetTime
                                 }));
-                        }, stageItems: staged => staged.Single(i => i.Guid == equip.Guid).Enchantments = candidate.Enchantments) == null)
+                        },
+                        StageItems = staged => staged.Single(i => i.Guid == equip.Guid).Enchantments = candidate.Enchantments,
+                    }) == null)
                         result = ErrorCodes.EnchantMaterials;
                 }
                 catch (SqliteException e)

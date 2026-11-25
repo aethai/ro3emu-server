@@ -90,16 +90,21 @@ public sealed partial class CombatService
         int show = HitEffect(GameData.Int(skill.Row, "_iScriptShow"));
         for (int i = 0; i < skill.HitMs.Length; i++)
         {
-            bool first = i == 0;
+            var hit = new BossSkillHit(boss, player, role, pet, skill, serial, session, origin, center, face, show,
+                i == 0, options);
             ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, skill.HitMs[i] + chant - skill.ChantMs)), () =>
-                BossSkillHitAsync(boss, player, role, pet, skill, serial, session, origin, center, face, show, first, options));
+                BossSkillHitAsync(hit));
         }
         _log.LogDebug("Boss {Npc} casts {Skill} (phase {Phase})", boss.Template.NpcId, skill.Id, rt.Phase);
     }
 
-    private async Task BossSkillHitAsync(MonsterUnit boss, GameSession? player, Role? role, TowerPetUnit? pet, BossSkill skill,
-        long serial, long session, Vec3 origin, Vec3 center, float face, int show, bool first, BossSkillOptions options)
+    private readonly record struct BossSkillHit(MonsterUnit Boss, GameSession? Player, Role? Role, TowerPetUnit? Pet,
+        BossSkill Skill, long Serial, long Session, Vec3 Origin, Vec3 Center, float Face, int Show, bool First,
+        BossSkillOptions Options);
+
+    private async Task BossSkillHitAsync(BossSkillHit hit)
     {
+        var (boss, player, role, pet, skill, serial, session, origin, center, face, show, first, options) = hit;
         if (!BossCastCurrent(boss, serial)) return;
         var rt = boss.BossSkills!;
         if (first)

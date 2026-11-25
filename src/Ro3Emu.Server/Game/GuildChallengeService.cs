@@ -618,15 +618,21 @@ public sealed partial class GuildChallengeService : IGameTicker
                 var persisted = JsonSerializer.Deserialize<Clear>(JsonSerializer.SerializeToUtf8Bytes(clear))!;
                 persisted.Delivered = paid;
                 if (claimed) persisted.Personal[role] = []; // recovery/replay result reports only actual grants
-                var granted = await _character.ExchangeLockedAsync(s, [], [], popup: false, sync: false,
-                    boundGoods: claimed ? [] : goods.Select(g => (g.Entry, g.Count, g.Bind)).ToList(), persist: tx =>
+                var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+                {
+                    Popup = false,
+                    Sync = false,
+                    BoundGoods = claimed ? [] : goods.Select(g => (g.Entry, g.Count, g.Bind)).ToList(),
+                    Persist = tx =>
                     {
                         tx.RoleBlob(role, "guild_challenge", JsonSerializer.SerializeToUtf8Bytes(next));
                         tx.Add(new Ro3Emu.Server.Accounts.Persistence.GuildChallengeClearPlan(persisted));
                         tx.WithEconomy(Envelope(role, "guild-challenge-delivery",
                             $"guild-challenge:deliver:{clear.Id}:{role}", DeliveryEffects(role, goods, claimed)));
-                    }, committed: () => { s.GuildChallenge = next; clear.Delivered = paid; clear.Personal = persisted.Personal; },
-                    asyncCommit: true);
+                    },
+                    Committed = () => { s.GuildChallenge = next; clear.Delivered = paid; clear.Personal = persisted.Personal; },
+                    AsyncCommit = true,
+                });
                 if (granted == null) throw new InvalidOperationException("Guild Challenge personal award refused");
             }
             await _character.ItemsChangedAsync(s, stats: false);

@@ -297,9 +297,15 @@ public sealed partial class SeasonTalentService
                             Node = node, Oath = isOath, Level = isOath ? next.BattleOathLevel
                             : next.Plan[next.CurPlanId].TalentNodes[node].CurrentLevel, Plan = next.CurPlanId
                         });
-                    paid = await _character.ExchangeLockedAsync(s, cost!, [], popup: false, sync: false,
-                        persist: tx => { tx.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray()); tx.WithEconomy(economy); },
-                        committed: () => s.SeasonTalent = next, asyncCommit: true);
+                    paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+                    {
+                        Cost = cost!,
+                        Popup = false,
+                        Sync = false,
+                        Persist = tx => { tx.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray()); tx.WithEconomy(economy); },
+                        Committed = () => s.SeasonTalent = next,
+                        AsyncCommit = true,
+                    });
                 }
                 catch (Exception e) when (e is SqliteException or Accounts.Persistence.PersistenceException
                     or InvalidOperationException)

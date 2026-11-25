@@ -415,8 +415,11 @@ public sealed class MountService : IGameTicker
             next.Mounts[id] = mount;
             // The wardrobe Mount tab lights only from 5034, so the appearance commits with the ownership.
             var look = _wardrobe.WithMount(s, mount);
-            if (await _character.ExchangeLockedAsync(s, [], [], new Dictionary<long, int> { [item.Guid] = 1 }, popup: false,
-                persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Instances = new Dictionary<long, int> { [item.Guid] = 1 },
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role!.Id, "mounts", Encode(s, next));
                     if (look != null) tx.RoleBlob(s.Role!.Id, "wardrobe", look.ToByteArray());
@@ -426,11 +429,14 @@ public sealed class MountService : IGameTicker
                             Item = item.Entry, Mount = id,
                             StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, next)))
                         }));
-                }, committed: () =>
+                },
+                Committed = () =>
                 {
                     s.Mounts = next; ArmExpiry(s);
                     if (look != null) _wardrobe.AdoptCommitted(s, look);
-                }, asyncCommit: true) == null) error = ErrorCodes.ItemsShort;
+                },
+                AsyncCommit = true,
+            }) == null) error = ErrorCodes.ItemsShort;
             else
             {
                 await PublishOwnedAsync(s);
@@ -501,7 +507,11 @@ public sealed class MountService : IGameTicker
             foreach (var row in candidates) if ((roll -= GameData.Int(row, "_iWeight")) < 0) { selected = (int)GameData.Int(row, "_iID"); break; }
             var state = JsonSerializer.Deserialize<SavedState>(Encode(s))!;
             state.Previews[PreviewKey(req.MountId, req.PlanId, req.Part)] = selected;
-            if (await _character.ExchangeLockedAsync(s, cost, [], popup: false, persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = cost,
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role!.Id, "mounts", Encode(s, state: state));
                     tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/mount-etchant-refresh", cost, [],
@@ -510,7 +520,10 @@ public sealed class MountService : IGameTicker
                             Mount = req.MountId, Part = req.Part, Selected = selected,
                             StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, state: state)))
                         }));
-                }, committed: () => s.MountState = state, asyncCommit: true) == null)
+                },
+                Committed = () => s.MountState = state,
+                AsyncCommit = true,
+            }) == null)
                 error = _character.ShortageOf(s, cost);
         }
         await s.SendGameAsync(EtchantRefresh, new MountEtchantRefreshResp { Result = error, CfgId = error == 0 ? selected : 0, Req = req });
@@ -566,7 +579,10 @@ public sealed class MountService : IGameTicker
         {
             var state = JsonSerializer.Deserialize<SavedState>(Encode(s))!;
             state.Claimed.UnionWith(req.Index);
-            if (await _character.ExchangeLockedAsync(s, [], goods, persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Goods = goods,
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role!.Id, "mounts", Encode(s, state: state));
                     tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/mount-score", [], goods,
@@ -575,7 +591,10 @@ public sealed class MountService : IGameTicker
                             Indices = req.Index.ToArray(),
                             StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, state: state)))
                         }));
-                }, committed: () => s.MountState = state, asyncCommit: true) == null)
+                },
+                Committed = () => s.MountState = state,
+                AsyncCommit = true,
+            }) == null)
                 resp.Result = ErrorCodes.ItemNoConfig;
             else resp.Index.Add(req.Index);
         }

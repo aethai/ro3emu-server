@@ -119,27 +119,19 @@ public sealed partial class CharacterService
     }
 
     /// <summary>
-    /// Pays costs and grants goods in one transaction. With <paramref name="persist"/>, caller state joins the same
-    /// commit. Auxiliary ItemGained hooks and packets follow commit. Returns null without mutation for a short payment.
+    /// Pays costs and grants goods in one transaction. With <see cref="ExchangeRequest.Persist"/>, caller state joins
+    /// the same commit. Auxiliary ItemGained hooks and packets follow commit. Returns null without mutation for a short payment.
     /// </summary>
-    public async Task<List<InvItem>?> ExchangeAsync(GameSession session, IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyList<(int Entry, int Count)> goods,
-        IReadOnlyDictionary<long, int>? instances = null, bool popup = true, bool sync = true,
-        Action<RoleItemPlanBuilder>? persist = null, Action? committed = null, RewardSettlement? rewardSettlement = null,
-        EconomyMutation? economy = null)
+    public async Task<List<InvItem>?> ExchangeAsync(GameSession session, ExchangeRequest request)
     {
         using var _ = await LockAsync(session);
-        return await ExchangeLockedAsync(session, cost, goods, instances, popup, sync, persist, committed: committed,
-            rewardSettlement: rewardSettlement, economy: economy);
+        return await ExchangeLockedAsync(session, request);
     }
 
-    /// <summary>
-    /// The emblem upgrade's exchange: item-only payment and the target's new attrs committed together, before either is
-    /// published to the session.
-    /// </summary>
-    internal Task<List<InvItem>?> ExchangeUnderLockAsync(GameSession session, IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyList<(int Entry, int Count)> goods,
-        IReadOnlyDictionary<long, int>? instances = null, bool popup = true, bool sync = true,
-        (InvItem Item, Dictionary<int, long> Attrs)? itemUpdate = null) =>
-        ExchangeLockedAsync(session, cost, goods, instances, popup, sync, itemUpdate: itemUpdate);
+    /// <summary>Shorthand for a plain cost/goods exchange without extra persistence hooks.</summary>
+    public Task<List<InvItem>?> ExchangeAsync(GameSession session, IReadOnlyList<(int Entry, long Count)> cost,
+        IReadOnlyList<(int Entry, int Count)> goods) =>
+        ExchangeAsync(session, new ExchangeRequest { Cost = cost, Goods = goods });
 
     /// <summary>A paid/refunded card cost with the original item's binding and card type.</summary>
     internal readonly record struct AttributedGood(int Entry, int Count, int BindType, long BindExpire, int CardType);
@@ -147,43 +139,46 @@ public sealed partial class CharacterService
     /// <summary>
     /// ExchangeAsync with StateLock already held. Costs, grants and an optional caller mutation share one transaction;
     /// in-memory payment state is restored on failure, before any sync.
-    /// Card operations reserve their target (<paramref name="reservedGuid"/>) from material consumption and return
-    /// refunded copies with their recorded binding (<paramref name="attributedGoods"/>).
-    /// Dungeon <paramref name="boundGoods"/> use normal item generation while preserving DropGroupConfig binding.
-    /// Virtual mail rewards 100/101 use <paramref name="baseExp"/>/<paramref name="jobExp"/>:
+    /// Card operations reserve their target (<see cref="ExchangeRequest.ReservedGuid"/>) from material consumption and
+    /// return refunded copies with their recorded binding (<see cref="ExchangeRequest.AttributedGoods"/>).
+    /// Dungeon <see cref="ExchangeRequest.BoundGoods"/> use normal item generation while preserving DropGroupConfig binding.
+    /// Virtual mail rewards 100/101 use <see cref="ExchangeRequest.BaseExp"/>/<see cref="ExchangeRequest.JobExp"/>:
     /// stage progression before payment, persist it with the mailbox claim, and publish only after commit.
     /// </summary>
-    internal async Task<List<InvItem>?> ExchangeLockedAsync(GameSession session, IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyList<(int Entry, int Count)> goods,
-        IReadOnlyDictionary<long, int>? instances = null, bool popup = true, bool sync = true, Action<RoleItemPlanBuilder>? persist = null,
-        long reservedGuid = 0, IReadOnlyList<AttributedGood>? attributedGoods = null,
-        (InvItem Item, Dictionary<int, long> Attrs)? itemUpdate = null,
-        IReadOnlyList<(int Entry, int Count, int Bind)>? boundGoods = null,
-        IReadOnlyList<InvItem>? exactGoods = null, IReadOnlyDictionary<int, long>? currencyGoods = null,
-        long baseExp = 0, long jobExp = 0, Action? committed = null,
-        bool asyncCommit = false, Action? appliedBeforeNotify = null, RewardSettlement? rewardSettlement = null,
-        Action<List<InvItem>>? stageItems = null, Action<List<InvItem>>? stageAfterGoods = null,
-        EconomyMutation? economy = null)
-        => await ExchangeOwnedCoreAsync(session, RequireOwnedRole(session), cost, goods, instances, popup, sync,
-            persist, reservedGuid, attributedGoods, itemUpdate, boundGoods, exactGoods, currencyGoods, baseExp, jobExp, committed,
-            asyncCommit, appliedBeforeNotify, rewardSettlement, stageItems, stageAfterGoods, economy);
+    internal async Task<List<InvItem>?> ExchangeLockedAsync(GameSession session, ExchangeRequest request) =>
+        await ExchangeOwnedCoreAsync(session, RequireOwnedRole(session), request);
 
     /// <summary>Checked owned Core for the complete payment, grant and optional caller plan.</summary>
     private async Task<List<InvItem>?> ExchangeOwnedCoreAsync(GameSession session, Ownership.OwnerContext context,
-        IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyList<(int Entry, int Count)> goods,
-        IReadOnlyDictionary<long, int>? instances, bool popup, bool sync, Action<RoleItemPlanBuilder>? persist,
-        long reservedGuid, IReadOnlyList<AttributedGood>? attributedGoods,
-        (InvItem Item, Dictionary<int, long> Attrs)? itemUpdate,
-        IReadOnlyList<(int Entry, int Count, int Bind)>? boundGoods,
-        IReadOnlyList<InvItem>? exactGoods, IReadOnlyDictionary<int, long>? currencyGoods,
-        long baseExp, long jobExp, Action? committed, bool asyncCommit, Action? appliedBeforeNotify, RewardSettlement? rewardSettlement,
-        Action<List<InvItem>>? stageItems, Action<List<InvItem>>? stageAfterGoods, EconomyMutation? economy)
+        ExchangeRequest request)
     {
+        var cost = request.Cost;
+        var goods = request.Goods;
+        var instances = request.Instances;
+        bool popup = request.Popup;
+        bool sync = request.Sync;
+        var persist = request.Persist;
+        long reservedGuid = request.ReservedGuid;
+        var attributedGoods = request.AttributedGoods;
+        var itemUpdate = request.ItemUpdate;
+        var boundGoods = request.BoundGoods;
+        var exactGoods = request.ExactGoods;
+        var currencyGoods = request.CurrencyGoods;
+        long baseExp = request.BaseExp;
+        long jobExp = request.JobExp;
+        var committed = request.Committed;
+        bool asyncCommit = request.AsyncCommit;
+        var appliedBeforeNotify = request.AppliedBeforeNotify;
+        var rewardSettlement = request.RewardSettlement;
+        var stageItems = request.StageItems;
+        var stageAfterGoods = request.StageAfterGoods;
+        var economy = request.Economy;
         context.AssertRole(session.Role!.Id);
         context.BindPresentation(session);
         var attachment = session.Attachment;
         var lifeUse = LifeItemExchange.Value;
         if (lifeUse is null || !lifeUse.Active || !ReferenceEquals(lifeUse.Session, session) || lifeUse.Committed) lifeUse = null;
-        if (baseExp < 0 || jobExp < 0) throw new ArgumentOutOfRangeException(nameof(baseExp));
+        if (baseExp < 0 || jobExp < 0) throw new ArgumentOutOfRangeException(nameof(request));
         var nextProgress = CloneProgress(session.Progress!);
         if (baseExp > 0 || jobExp > 0) ApplyExp(nextProgress, baseExp, jobExp);
         var need = cost.GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => c.Count))).ToList();

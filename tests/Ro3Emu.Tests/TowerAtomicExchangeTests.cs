@@ -82,12 +82,18 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
 
         await OnLoop(async () =>
         {
-            var granted = await character.ExchangeAsync(session, [(1, 100)], [(Token, 2), (OtherReward, 3)],
-                popup: false, sync: false, persist: tx =>
+            var granted = await character.ExchangeAsync(session, new ExchangeRequest
+            {
+                Cost = [(1, 100)],
+                Goods = [(Token, 2), (OtherReward, 3)],
+                Popup = false,
+                Sync = false,
+                Persist = tx =>
                 {
                     roles.SaveTower(role, tower, tx);
                     roles.RecordTowerFirstPass(10, firstPass, tx);
-                });
+                },
+            });
             Assert.NotNull(granted);
             Assert.Equal(2, granted!.Count);
         });
@@ -110,7 +116,12 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
         var roles = Service<RoleStore>();
         var items = Service<ItemStore>();
         var character = Service<CharacterService>();
-        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, [], [(Token, 1)], popup: false, sync: false)));
+        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, new ExchangeRequest
+        {
+            Goods = [(Token, 1)],
+            Popup = false,
+            Sync = false,
+        })));
         var existing = session.Items.Single(i => i.Entry == Token);
         existing.IsLocked = true;
         existing.Attrs = new Dictionary<int, long> { [777] = 9 };
@@ -121,8 +132,14 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
         items.Update(existing);
         byte[] tower = new DBClimTower { LayerConfID = 10 }.ToByteArray();
 
-        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, [(1, 100)], [(Token, 2)],
-            popup: false, sync: false, persist: tx => roles.SaveTower(role, tower, tx))));
+        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, new ExchangeRequest
+        {
+            Cost = [(1, 100)],
+            Goods = [(Token, 2)],
+            Popup = false,
+            Sync = false,
+            Persist = tx => roles.SaveTower(role, tower, tx),
+        })));
 
         var stored = items.Load(role).Where(i => i.Entry == Token).ToArray();
         Assert.Equal(2, stored.Length);
@@ -150,7 +167,12 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
         long role = session.Role!.Id;
         var roles = Service<RoleStore>();
         var character = Service<CharacterService>();
-        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, [], [(Token, 1)], popup: false, sync: false)));
+        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, new ExchangeRequest
+        {
+            Goods = [(Token, 1)],
+            Popup = false,
+            Sync = false,
+        })));
         var existing = session.Items.Single(i => i.Entry == Token);
         var originalItems = session.Items.ToArray();
         var originalNewItems = session.NewItems.ToHashSet();
@@ -165,12 +187,16 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
         try
         {
             await OnLoop(async () =>
-                await Assert.ThrowsAsync<SqliteException>(() => character.ExchangeAsync(session, [(1, 100)], [(Token, 2), (OtherReward, 3)],
-                    persist: tx =>
+                await Assert.ThrowsAsync<SqliteException>(() => character.ExchangeAsync(session, new ExchangeRequest
+                {
+                    Cost = [(1, 100)],
+                    Goods = [(Token, 2), (OtherReward, 3)],
+                    Persist = tx =>
                     {
                         roles.RecordTowerFirstPass(10, firstPass, tx);
                         roles.SaveTower(role, towerAfter, tx);
-                    })));
+                    },
+                })));
 
             Assert.Equal(1, Count(role, Token));
             Assert.Equal(0, Count(role, OtherReward));
@@ -189,12 +215,18 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
             FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_tower");
         }
 
-        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, [(1, 100)], [(Token, 2), (OtherReward, 3)],
-            popup: false, sync: false, persist: tx =>
+        await OnLoop(async () => Assert.NotNull(await character.ExchangeAsync(session, new ExchangeRequest
+        {
+            Cost = [(1, 100)],
+            Goods = [(Token, 2), (OtherReward, 3)],
+            Popup = false,
+            Sync = false,
+            Persist = tx =>
             {
                 roles.RecordTowerFirstPass(10, firstPass, tx);
                 roles.SaveTower(role, towerAfter, tx);
-            })));
+            },
+        })));
         Assert.Same(existing, session.Items.Single(i => i.Entry == Token));
         Assert.Equal(3, existing.Stack);
         Assert.Equal(3, Count(role, Token));

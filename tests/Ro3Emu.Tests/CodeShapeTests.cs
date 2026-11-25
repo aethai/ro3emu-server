@@ -12,10 +12,12 @@ namespace Ro3Emu.Tests;
 public sealed class CodeShapeTests
 {
     private const int MaxMethodLines = 80;
+    private const int MaxGameMethodParams = 10;
     private const int ManyDependencies = 15;
     private const int MaxLineLength = 200;
 
     private const int MethodsOver80Lines = 97;
+    private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 29;
     private const int RoleNullForgiving = 961;
     private const int LinesOver200Chars = 96;
@@ -31,6 +33,11 @@ public sealed class CodeShapeTests
     [Fact]
     public void MethodsOver80LinesOnlyGoDown() =>
         AssertRatchet(nameof(MethodsOver80Lines), MethodsOver80Lines, ServerSnapshot.Value.LongMethods);
+
+    [Fact]
+    public void GameMethodsStayWithin10Parameters() =>
+        AssertRatchet(nameof(MethodsOver10ParamsInGame), MethodsOver10ParamsInGame,
+            ServerSnapshot.Value.WideGameMethods);
 
     [Fact]
     public void ClassesWith15OrMoreDependenciesOnlyGoDown() =>
@@ -69,11 +76,13 @@ public sealed class CodeShapeTests
                     int x = session.Role!.Id;
             {{body}}
                 }
+                public void TooWide(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, int a10, int a11) { }
             }
             """;
 
         var snapshot = ScanTexts([("Game/Sample.cs", sample)]);
         Assert.Single(snapshot.LongMethods);
+        Assert.Single(snapshot.WideGameMethods);
         Assert.Single(snapshot.HeavyClasses);
         Assert.Single(snapshot.RoleBangs);
         Assert.Single(snapshot.LongLines);
@@ -112,6 +121,7 @@ public sealed class CodeShapeTests
     private static ShapeSnapshot ScanTexts(IEnumerable<(string RelPath, string Text)> files)
     {
         List<string> longMethods = [];
+        List<string> wideGameMethods = [];
         Dictionary<string, (int Params, string Location)> maxDepsByType = new(StringComparer.Ordinal);
         List<string> roleBangs = [];
         List<string> longLines = [];
@@ -125,6 +135,7 @@ public sealed class CodeShapeTests
             bool inGame = relPath.StartsWith("Game/", StringComparison.Ordinal);
 
             CollectLongMethods(relPath, root, longMethods);
+            if (inGame) CollectWideMethods(relPath, root, wideGameMethods);
             CollectHeavyTypes(relPath, root, maxDepsByType);
             CollectRoleBangs(relPath, root, roleBangs);
             if (inGame) CollectHookLists(relPath, root, hookLists);
@@ -140,7 +151,7 @@ public sealed class CodeShapeTests
                     "{0} ({1} deps) at {2}", kv.Key, kv.Value.Params, kv.Value.Location)),
         ];
 
-        return new(longMethods, heavyClasses, roleBangs, longLines, hookLists);
+        return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -172,6 +183,30 @@ public sealed class CodeShapeTests
             target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2} ({3} lines)", relPath, startLine, name, lines));
         }
     }
+
+    private static void CollectWideMethods(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+        {
+            if (HasAttribute(method, "LoggerMessage")) continue;
+            int count = method.ParameterList.Parameters.Count;
+            if (count <= MaxGameMethodParams) continue;
+            int line = method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture,
+                "{0}:{1} {2} ({3} params)", relPath, line, method.Identifier.ValueText, count));
+        }
+    }
+
+    private static bool HasAttribute(MemberDeclarationSyntax member, string name) =>
+        member.AttributeLists.SelectMany(list => list.Attributes)
+            .Any(attr =>
+            {
+                string raw = attr.Name.ToString();
+                int dot = raw.LastIndexOf('.');
+                string shortName = dot >= 0 ? raw[(dot + 1)..] : raw;
+                return string.Equals(shortName, name, StringComparison.Ordinal)
+                    || string.Equals(shortName, name + "Attribute", StringComparison.Ordinal);
+            });
 
     private static void CollectHeavyTypes(string relPath, SyntaxNode root,
         Dictionary<string, (int Params, string Location)> maxDepsByType)
@@ -269,6 +304,7 @@ public sealed class CodeShapeTests
 
     private sealed record ShapeSnapshot(
         IReadOnlyList<string> LongMethods,
+        IReadOnlyList<string> WideGameMethods,
         IReadOnlyList<string> HeavyClasses,
         IReadOnlyList<string> RoleBangs,
         IReadOnlyList<string> LongLines,

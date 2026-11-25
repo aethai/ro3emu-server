@@ -363,18 +363,25 @@ public sealed partial class TerritoryWarsService
                         unit.DropId == 0 ? [new EventEconomyOwnerDelta(beneficiary, asset, unit.Amount)] :
                             [new(escrow, asset, -unit.Amount), new(beneficiary, asset, unit.Amount)],
                         JsonSerializer.SerializeToUtf8Bytes(new { unit.Uid, unit.DropId, unit.Amount, Role = s.Role.Id }));
-                    if (await _character.ExchangeLockedAsync(s, [], [(SupplyCurrency, unit.Amount)],
-                        sync: false, popup: false, persist: tx =>
+                    if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+                    {
+                        Goods = [(SupplyCurrency, unit.Amount)],
+                        Sync = false,
+                        Popup = false,
+                        Persist = tx =>
                         {
                             tx.Add(new Ro3Emu.Server.Accounts.Persistence.RealmStatePlan(
                                 Ro3Emu.Server.Accounts.Persistence.RealmStateKind.TerritoryWars,
                                 JsonSerializer.SerializeToUtf8Bytes(next)));
                             tx.WithEventEconomy(movement);
-                        }, asyncCommit: true, appliedBeforeNotify: () =>
+                        },
+                        AsyncCommit = true,
+                        AppliedBeforeNotify = () =>
                         {
                             BeforeWorldPickupApplyForTest?.Invoke();
                             PublishCommitted(next);
-                        }) == null)
+                        },
+                    }) == null)
                     { unit.Taken = false; return ErrorCodes.BagFull; }
                 }
                 catch
@@ -506,15 +513,18 @@ public sealed partial class TerritoryWarsService
                         JsonSerializer.SerializeToUtf8Bytes(new { drop.Id, drop.Amount, Role = victim.Role.Id }));
                     try
                     {
-                        if (await _character.ExchangeLockedAsync(victim, [(SupplyCurrency, (long)lost)], [],
-                            sync: false, popup: false, persist: tx =>
+                        if (await _character.ExchangeLockedAsync(victim, new ExchangeRequest
+                        {
+                            Cost = [(SupplyCurrency, (long)lost)], Sync = false, Popup = false, AsyncCommit = true,
+                            Persist = tx =>
                             {
                                 tx.Add(new Ro3Emu.Server.Accounts.Persistence.RealmStatePlan(
                                     Ro3Emu.Server.Accounts.Persistence.RealmStateKind.TerritoryWars,
                                     JsonSerializer.SerializeToUtf8Bytes(next)));
                                 tx.WithEventEconomy(movement);
-                            }, asyncCommit: true, appliedBeforeNotify: () =>
-                            { BeforeWorldDeathApplyForTest?.Invoke(); PublishCommitted(next); }) == null) return;
+                            },
+                            AppliedBeforeNotify = () => { BeforeWorldDeathApplyForTest?.Invoke(); PublishCommitted(next); },
+                        }) == null) return;
                     }
                     catch
                     {

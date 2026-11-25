@@ -75,9 +75,12 @@ public sealed partial class NewActivityService
         };
         // Use the canonical bag transaction and the selected GUID; publish the hunt and cooldown
         // together before any StateChanged observer can see the consumed map.
-        var consumed = await _character.ExchangeLockedAsync(session, [], [],
-            instances: new Dictionary<long, int> { [item.Guid] = 1 }, popup: false, sync: false,
-            persist: tx =>
+        var consumed = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Instances = new Dictionary<long, int> { [item.Guid] = 1 },
+            Popup = false,
+            Sync = false,
+            Persist = tx =>
             {
                 tx.RoleBlob(session.Role!.Id, "activity_runtime", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(runtime));
                 persistCooldown(tx);
@@ -85,7 +88,8 @@ public sealed partial class NewActivityService
                 tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/character-treasure-use",
                     [(item.Entry, 1L)], [], new { ItemGuid = item.Guid, Hunt = runtime.AdventureTreasure }));
             },
-            committed: () => { session.ActivityRuntime = runtime; publishCooldown(); });
+            Committed = () => { session.ActivityRuntime = runtime; publishCooldown(); },
+        });
         if (consumed == null) return ErrorCodes.ItemsShort;
         await SyncAsync(session);
         await _scene.SpawnTreasureNpcAsync(session);

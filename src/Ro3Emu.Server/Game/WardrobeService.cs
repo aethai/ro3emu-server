@@ -202,8 +202,11 @@ public sealed partial class WardrobeService
         {
             var next = current.Clone();
             next.AllLightUpAppearances[req.AppearanceId] = new DBAppearanceInfo { AppearanceId = req.AppearanceId };
-            var paid = await _character.ExchangeLockedAsync(session, costs, [], popup: false,
-                persist: tx =>
+            var paid = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+            {
+                Cost = costs,
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(session.Role!.Id, "wardrobe", next.ToByteArray());
                     tx.WithEconomy(_character.FamilyEconomy(session, "cd13b/wardrobe-redeem", costs, [],
@@ -212,7 +215,10 @@ public sealed partial class WardrobeService
                             Appearance = req.AppearanceId,
                             StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray()))
                         }));
-                }, committed: () => { session.Wardrobe = next; ArmExpiry(session); }, asyncCommit: true);
+                },
+                Committed = () => { session.Wardrobe = next; ArmExpiry(session); },
+                AsyncCommit = true,
+            });
             if (paid == null) result = _character.ShortageOf(session, costs);
             else
             {
@@ -250,8 +256,11 @@ public sealed partial class WardrobeService
         {
             var next = session.Wardrobe!.Clone();
             next.AllLightUpAppearances[appearanceId] = new DBAppearanceInfo { AppearanceId = appearanceId };
-            var spent = await _character.ExchangeLockedAsync(session, [], [], new Dictionary<long, int> { [item.Guid] = 1 },
-                popup: false, persist: tx =>
+            var spent = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+            {
+                Instances = new Dictionary<long, int> { [item.Guid] = 1 },
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(session.Role!.Id, "wardrobe", next.ToByteArray());
                     tx.WithEconomy(_character.FamilyEconomy(session, "cd13b/wardrobe-item", [(item.Entry, 1L)], [],
@@ -260,7 +269,10 @@ public sealed partial class WardrobeService
                             Appearance = appearanceId, Item = item.Entry,
                             StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray()))
                         }));
-                }, committed: () => { session.Wardrobe = next; ArmExpiry(session); }, asyncCommit: true);
+                },
+                Committed = () => { session.Wardrobe = next; ArmExpiry(session); },
+                AsyncCommit = true,
+            });
             if (spent == null) result = ErrorCodes.ItemsShort;
             else
             {
@@ -330,15 +342,20 @@ public sealed partial class WardrobeService
                 StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray())),
                 Mounts = ride?.Mounts ?? [], MountStateHash = ride?.StateHash,
             });
-        var paid = await _character.ExchangeLockedAsync(session, cost, [], boundGoods: goods,
-            persist: tx =>
+        var paid = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = cost,
+            BoundGoods = goods,
+            Persist = tx =>
             {
                 persistShop(tx);
                 tx.RoleBlob(session.Role!.Id, "wardrobe", next.ToByteArray());
                 ride?.Persist(tx);
                 tx.WithEconomy(economy);
             },
-            committed: () => { committedShop(); session.Wardrobe = next; ArmExpiry(session); ride?.Committed(); }, asyncCommit: true);
+            Committed = () => { committedShop(); session.Wardrobe = next; ArmExpiry(session); ride?.Committed(); },
+            AsyncCommit = true,
+        });
         if (paid == null) return _character.ShortageOf(session, cost);
         await CharacterService.SyncAsync(session, WardrobeSync, next.Clone());
         // 5012 only: 31189 below is the purchase's one unlock tip; 32747 would pop a second (LC_DAL_Mount.lua:186-218).

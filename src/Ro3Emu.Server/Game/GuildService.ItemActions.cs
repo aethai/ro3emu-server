@@ -203,9 +203,12 @@ public sealed partial class GuildService
             bool ok = false;
             try
             {
-                ok = await character.ExchangeLockedAsync(s, [], [(item, count)],
-                    persist: tx => { store.EnlistSave(g, tx, "guild disappeared during store purchase"); tx.WithEconomy(economy); },
-                    asyncCommit: true) != null;
+                ok = await character.ExchangeLockedAsync(s, new ExchangeRequest
+                {
+                    Goods = [(item, count)],
+                    Persist = tx => { store.EnlistSave(g, tx, "guild disappeared during store purchase"); tx.WithEconomy(economy); },
+                    AsyncCommit = true,
+                }) != null;
             }
             catch (RowMissingException e) when (e.Is(GuildStore.Table, g.Id)) { }
             finally

@@ -140,20 +140,28 @@ public sealed class RewardService
             StageAfkKill?.Invoke(player, monster, settlement, items, outcome.BaseExp, outcome.JobExp);
             StageHuntKill?.Invoke(player, monster, settlement);
             settlement.LibraryMonster = monster.Template.NpcId;
-            outcome.Granted = await _character.ExchangeLockedAsync(player, [], items, popup: false,
-                sync: items.Count > 0, baseExp: outcome.BaseExp, jobExp: outcome.JobExp, rewardSettlement: settlement,
-                persist: tx =>
+            outcome.Granted = await _character.ExchangeLockedAsync(player, new ExchangeRequest
+            {
+                Goods = items,
+                Popup = false,
+                Sync = items.Count > 0,
+                BaseExp = outcome.BaseExp,
+                JobExp = outcome.JobExp,
+                RewardSettlement = settlement,
+                Persist = tx =>
                 {
                     settlement.Enlist?.Invoke(tx);
                     if (restrict != null) tx.RoleBlob(role.Id, "life_restrict", restrict.ToByteArray());
-                }, committed: () =>
+                },
+                Committed = () =>
                 {
                     settlement.Applied?.Invoke();
                     if (restrict == null) return;
                     player.Restrictions = restrict;
                     outcome.NoteGranted = true;
                     outcome.Items = items;
-                }) ?? [];
+                },
+            }) ?? [];
             if (settlement.Committed) PostShares(outcome);
         }
         catch

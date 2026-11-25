@@ -150,11 +150,16 @@ public sealed partial class ShopService
         senderGifts.Sent[order.OrderId] = order;
         recipientGifts.Received[order.OrderId] = order;
         var cost = currency > 0 && unit > 0 ? new[] { (currency, (long)unit) } : [];
-        var paid = await _character.ExchangeLockedAsync(session, cost, [], persist: tx =>
+        var paid = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = cost,
+            Persist = tx =>
         {
             tx.RoleBlob(session.Role.Id, "gifts", JsonSerializer.SerializeToUtf8Bytes(senderGifts));
             tx.RoleBlob(recipientId, "gifts", JsonSerializer.SerializeToUtf8Bytes(recipientGifts));
-        }, asyncCommit: true);
+        },
+            AsyncCommit = true,
+        });
         if (paid == null) return (_character.ShortageOf(session, cost), 0);
 
         LogGifted(_log, session.Role.Name, appearance, buy.CommodityId, recipient.Name, order.OrderId);

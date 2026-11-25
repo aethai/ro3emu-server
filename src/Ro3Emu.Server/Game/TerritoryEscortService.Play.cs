@@ -476,12 +476,17 @@ public sealed partial class TerritoryEscortService
                 [new(new(EconomyOwnerKind.Role, roleId.ToString(System.Globalization.CultureInfo.InvariantCulture)), item, -count),
                  new(new(EconomyOwnerKind.Guild, guildId.ToString(System.Globalization.CultureInfo.InvariantCulture)), materials, materialCount)],
                 JsonSerializer.SerializeToUtf8Bytes(new { Role = roleId, Guild = guildId, Count = count }));
-            granted = await _character.ExchangeLockedAsync(s, [(1258002, count)], [], persist: tx =>
+            granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = [(1258002, count)],
+                Persist = tx =>
             {
                 if (s.Dead || s.SceneLoading || !Playing) throw new InvalidOperationException("Escort submitter unavailable");
                 _guilds.EnlistMaterialContribution(roleId, guildId, materialCount, tx);
                 tx.WithEventEconomy(mutation);
-            }, asyncCommit: true);
+            },
+                AsyncCommit = true,
+            });
         }
         finally { _gate.Release(); reservation?.Dispose(); }
         if (granted != null) await _guildService.RefreshResourceAsync(guildId);
@@ -513,14 +518,20 @@ public sealed partial class TerritoryEscortService
             var mutation = EventEconomy.ForRole(_data, s, "escort-claim",
                 $"escort-claim:{Epoch}:{round}:{roleId}:{index}", [], plan.Grants,
                 new { Round = round, Role = roleId, Index = index });
-            var granted = await _character.ExchangeLockedAsync(s, [], grants, persist: tx =>
+            var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Goods = grants,
+                Persist = tx =>
             {
                 tx.RoleBlob(roleId, "territory_escort", JsonSerializer.SerializeToUtf8Bytes(stagedRoleState));
                 tx.WithEventEconomy(mutation);
-            }, asyncCommit: true, appliedBeforeNotify: () =>
+            },
+                AsyncCommit = true,
+                AppliedBeforeNotify = () =>
             {
                 if (s.Role?.Id == roleId && ReferenceEquals(s.Attachment, attachment))
                     s.TerritoryEscort = stagedRoleState;
+            },
             });
             accepted = granted != null && s.Role?.Id == roleId && ReferenceEquals(s.Attachment, attachment);
         }

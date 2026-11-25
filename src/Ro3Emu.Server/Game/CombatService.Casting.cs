@@ -284,8 +284,13 @@ public sealed partial class CombatService
                 s.WorldScene, s.SceneGeneration, AttributeCosts = costs.Attrs, BuffCosts = costs.Buffs,
                 EnergyCosts = costs.Energy, Outcome = "admitted"
             });
-        return await _character.ExchangeLockedAsync(s, costs.Items, [], popup: false,
-            persist: tx => tx.WithEconomy(mutation), asyncCommit: true) != null;
+        return await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = costs.Items,
+            Popup = false,
+            Persist = tx => tx.WithEconomy(mutation),
+            AsyncCommit = true,
+        }) != null;
     }
 
     private Task RefuseCastAsync(GameSession s, CastSkillReq req, int error, long parameter) => RefuseCoreAsync(s, req, error, parameter);

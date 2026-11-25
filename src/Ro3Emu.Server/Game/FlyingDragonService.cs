@@ -173,9 +173,13 @@ public sealed class FlyingDragonService : IGameTicker
         long packet = PacketPrice(index) * Param("DragonTaskHelpTimes", 10);
         if (packet > 0) cost.Add(((int)Param("DragonTaskResortItem", 1), packet));
         if (cost.Count == 0) return ErrorCodes.DragonConfig;
-        var paid = await _character.ExchangeLockedAsync(s, cost, [], popup: false,
-            persist: tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-start", cost, [],
-                new { Index = index, Packet = packet })));
+        var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Popup = false,
+            Persist = tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-start", cost, [],
+                new { Index = index, Packet = packet })),
+        });
         if (paid == null) return ErrorCodes.DragonItems;
         var next = State.Clone();
         next.ProductInfo = new DBProductInfo
@@ -210,9 +214,12 @@ public sealed class FlyingDragonService : IGameTicker
         var goods = HelpReward();
         long share = PacketPrice(p.ExtraRewardIndex);
         if (share > 0) goods.Add(((int)Param("DragonTaskReturnItem", 2), (int)share));
-        var paid = await _character.ExchangeLockedAsync(s, [], goods, popup: true,
-            persist: tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-assist", [], goods,
-                new { Ritual = State.ProcessUniqueId })));
+        var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Goods = goods,
+            Persist = tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-assist", [], goods,
+                new { Ritual = State.ProcessUniqueId })),
+        });
         if (paid == null) return ErrorCodes.BagFull;
         var next = State.Clone();
         next.ProductInfo.AssistantRoles[role] = true;
@@ -242,9 +249,13 @@ public sealed class FlyingDragonService : IGameTicker
         int left = ProgressFull - Progress();
         if (left <= 0) return ErrorCodes.DragonDone;
         var cost = new List<(int Entry, long Count)> { ((int)Param("DragonTaskSpUPItem", 2), left * Param("DragonTaskSpUPEffi", 10)) };
-        var paid = await _character.ExchangeLockedAsync(s, cost, [], popup: false,
-            persist: tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-accelerate", cost, [],
-                new { Ritual = State.ProcessUniqueId, Left = left })));
+        var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Popup = false,
+            Persist = tx => tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-dragon-accelerate", cost, [],
+                new { Ritual = State.ProcessUniqueId, Left = left })),
+        });
         if (paid == null) return ErrorCodes.DragonItems;
         var next = State.Clone();
         next.ProductInfo.HasSelfAccelerate = true;

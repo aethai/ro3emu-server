@@ -94,13 +94,17 @@ public sealed class TitleService
         var saved = new DBTitleInfo { TitleId = next.Id };
         byte[] bytes = saved.ToByteArray();
         long role = s.Role!.Id;
-        var paid = await _character.ExchangeLockedAsync(s, cost, [], popup: false,
-            persist: tx =>
+        var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Popup = false,
+            Persist = tx =>
             {
                 tx.RoleBlob(role, "title", bytes);
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-title", cost, [], new { Title = next.Id }));
             },
-            committed: () => s.TitleInfo = saved);
+            Committed = () => s.TitleInfo = saved,
+        });
         if (paid == null) return ErrorCodes.ItemsShort;
         await CharacterService.SyncAsync(s, Sync, s.TitleInfo.Clone()); // an increment after the login's full sync
         await _character.RefreshStatsAsync(s);

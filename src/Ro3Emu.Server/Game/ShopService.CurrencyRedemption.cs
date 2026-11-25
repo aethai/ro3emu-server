@@ -39,8 +39,14 @@ public sealed partial class ShopService
         using var guard = await CharacterService.Lock(session);
         var economy = _character.FamilyEconomy(session, "cd13a/shop-currency-redemption", cost, goods,
             new { Paid = req.ItemId, req.Count, row.Rate, Goods = row.TargetId, Gained = gained, row.Function });
-        bool paid = await _character.ExchangeLockedAsync(session, cost, goods, popup: false,
-            persist: tx => tx.WithEconomy(economy), asyncCommit: true) != null;
+        bool paid = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+        {
+            Cost = cost,
+            Goods = goods,
+            Popup = false,
+            Persist = tx => tx.WithEconomy(economy),
+            AsyncCommit = true,
+        }) != null;
         return paid ? 0 : _character.ShortageOf(session, cost);
     }
 }

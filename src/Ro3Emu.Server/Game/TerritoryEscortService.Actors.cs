@@ -96,19 +96,24 @@ public sealed partial class TerritoryEscortService
                     [new(new(EconomyOwnerKind.Escrow, "escort-cargo:" + id), item, -1),
                      new(new(EconomyOwnerKind.Role, session.Role.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)), item, 1)],
                     JsonSerializer.SerializeToUtf8Bytes(new { Cargo = id, Role = session.Role.Id }));
-                var granted = await _character.ExchangeLockedAsync(session, [], [(1258002, 1)],
-                    persist: tx =>
+                var granted = await _character.ExchangeLockedAsync(session, new ExchangeRequest
+                {
+                    Goods = [(1258002, 1)],
+                    Persist = tx =>
                     {
                         tx.Add(new Ro3Emu.Server.Accounts.Persistence.RealmStatePlan(
                             Ro3Emu.Server.Accounts.Persistence.RealmStateKind.TerritoryEscort,
                             JsonSerializer.SerializeToUtf8Bytes(ledger)));
                         tx.WithEventEconomy(mutation);
-                    }, asyncCommit: true, appliedBeforeNotify: () =>
+                    },
+                    AsyncCommit = true,
+                    AppliedBeforeNotify = () =>
                     {
                         BeforeCargoApplyForTest?.Invoke();
                         _committedLedger = CopyLedger(ledger);
                         PublishSnapshots();
-                    });
+                    },
+                });
                 if (granted == null) { cargo.Picked = false; return ErrorCodes.BagFull; }
             }
             catch

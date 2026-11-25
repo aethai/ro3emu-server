@@ -316,11 +316,18 @@ public sealed class TotemService
         var original = s.Items.Single(i => i.Guid == next.Guid);
         var semanticCost = cost.Concat((instances ?? new Dictionary<long, int>()).Select(p =>
             (s.Items.Single(i => i.Guid == p.Key).Entry, (long)p.Value))).ToList();
-        if (await _character.ExchangeLockedAsync(s, cost, [], instances, popup: false, sync: false,
-            itemUpdate: (original, next.Attrs!), persist: tx =>
+        if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Instances = instances,
+            Popup = false,
+            Sync = false,
+            ItemUpdate = (original, next.Attrs!),
+            Persist = tx =>
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/totem-item-update", semanticCost, [],
                     new { Target = next.Entry, Guid = next.Guid, Attrs = next.Attrs })),
-            asyncCommit: true) == null)
+            AsyncCommit = true,
+        }) == null)
             return cost.Count > 0 ? _character.ShortageOf(s, cost) : ErrorCodes.ItemsShort;
         await _character.ItemsChangedAsync(s, stats: true);
         await SyncAsync(s);
@@ -404,8 +411,13 @@ public sealed class TotemService
             var next = s.Totems!.Clone(); next.TotemTotalExp = Math.Min(cap, next.TotemTotalExp + exp);
             var cost = req.ConsumeItems.Select(p => (p.Key, (long)p.Value)).ToList();
             var semanticCost = cost.Concat(req.TotemGuids.Select(g => (Find(s, g)!.Entry, 1L))).ToList();
-            if (await _character.ExchangeLockedAsync(s, cost, refund, req.TotemGuids.ToDictionary(g => g, _ => 1), popup: false,
-                persist: tx =>
+            if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = cost,
+                Goods = refund,
+                Instances = req.TotemGuids.ToDictionary(g => g, _ => 1),
+                Popup = false,
+                Persist = tx =>
                 {
                     tx.RoleBlob(s.Role!.Id, "totems", next.ToByteArray());
                     tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/totem-upgrade", semanticCost, refund,
@@ -414,7 +426,10 @@ public sealed class TotemService
                             Experience = next.TotemTotalExp,
                             StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray()))
                         }));
-                }, committed: () => s.Totems = next, asyncCommit: true) == null) error = _character.ShortageOf(s, cost);
+                },
+                Committed = () => s.Totems = next,
+                AsyncCommit = true,
+            }) == null) error = _character.ShortageOf(s, cost);
             else { await SyncAsync(s); await _character.RefreshStatsAsync(s); }
         }
         var response = new UpgradeTotemSystemResp { Result = error };

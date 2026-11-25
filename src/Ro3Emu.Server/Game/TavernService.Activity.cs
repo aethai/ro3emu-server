@@ -138,12 +138,17 @@ public sealed partial class TavernService
         next.DrinkOwed = 0;
         byte[] saved = JsonSerializer.SerializeToUtf8Bytes(next);
         string source = $"tavern/day/{s.Role.Id}/{state.DayStartMs}/{state.ActDays}";
-        await _character.ExchangeAsync(s, [], [(drink, 1)], persist: tx =>
+        await _character.ExchangeAsync(s, new ExchangeRequest
+        {
+            Goods = [(drink, 1)],
+            Persist = tx =>
         {
             tx.RoleBlob(s.Role.Id, "barroom", saved);
             tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "tavern-day", source, [], [new AwardGrant(drink, 1)],
                 new { Drink = drink, state.ActDays }));
-        }, committed: () => s.Tavern = next);
+        },
+            Committed = () => s.Tavern = next,
+        });
     }
 
     /// <summary>Star Power from a gift, on the receiver's owner: total and this week's (the week as friend-gift

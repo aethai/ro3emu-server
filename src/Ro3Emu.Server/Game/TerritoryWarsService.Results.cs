@@ -215,7 +215,12 @@ public sealed partial class TerritoryWarsService
         role.Donated = checked(role.Donated + count); role.Donations[_clock.Now] = checked(role.Donations.GetValueOrDefault(_clock.Now) + count);
         next.Donations[s.Role.Id] = role.Donated;
         guild.Materials = checked(guild.Materials + count); // carried supply -> guild material 126, one-to-one (inferred).
-        if (await _character.ExchangeLockedAsync(s, [(133, count)], [], sync: false, popup: false, persist: tx =>
+        if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = [(133, count)],
+            Sync = false,
+            Popup = false,
+            Persist = tx =>
         {
             _guildStore.EnlistSave(guild, tx); SaveRole(s.Role.Id, role, tx); Save(next, tx);
             tx.WithEventEconomy(new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
@@ -227,7 +232,9 @@ public sealed partial class TerritoryWarsService
                 [new(new(EconomyOwnerKind.Role, s.Role.Id.ToString()), new(EconomyAssetKind.Currency, 133), -count),
                  new(new(EconomyOwnerKind.Guild, guild.Id.ToString()), new(EconomyAssetKind.GuildResource, 3), count)],
                 JsonSerializer.SerializeToUtf8Bytes(new { Kind = "submit-drop", Role = s.Role.Id, Guild = guild.Id, Count = count })));
-        }, asyncCommit: true) == null) { await Error(s, SubmitDrop, ErrorCodes.Parameter); return; }
+        },
+            AsyncCommit = true,
+        }) == null) { await Error(s, SubmitDrop, ErrorCodes.Parameter); return; }
         PublishCommitted(next); s.TerritoryWars = role;
         await _character.ItemsChangedAsync(s, false);
         await _guilds.RefreshResourceAsync(guild.Id);

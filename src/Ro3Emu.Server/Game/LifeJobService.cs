@@ -669,8 +669,13 @@ public sealed partial class LifeJobService
             (s.Items.Single(item => item.Guid == pair.Key).Entry, (long)pair.Value))).ToArray();
         var goods = itemGrants.Select(g => (g.Entry, g.Count)).ToArray();
         // Only gathering passes a settlement. The client shows a gained item only from 31322, its bag sync shows none (LC_DAL_Reward).
-        var received = await _character.ExchangeLockedAsync(s, payment, [], instances, popup: rewardSettlement != null, sync: false,
-            persist: tx =>
+        var received = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = payment,
+            Instances = instances,
+            Popup = rewardSettlement != null,
+            Sync = false,
+            Persist = tx =>
             {
                 tx.RoleBlob(s.Role!.Id, "lifejob", life.ToByteArray());
                 tx.RoleBlob(s.Role.Id, "life_restrict", restrict.ToByteArray());
@@ -689,14 +694,17 @@ public sealed partial class LifeJobService
                             Result = result
                         }));
             },
-            boundGoods: [.. itemGrants.Select(g => (g.Entry, g.Count, g.BindType))],
-            baseExp: baseExp, jobExp: jobExp,
-            rewardSettlement: rewardSettlement,
-            committed: () =>
+            BoundGoods = [.. itemGrants.Select(g => (g.Entry, g.Count, g.BindType))],
+            BaseExp = baseExp,
+            JobExp = jobExp,
+            RewardSettlement = rewardSettlement,
+            Committed = () =>
             {
                 s.LifeJob = life; s.Restrictions = restrict; s.LifeRuntime = runtime;
                 gatherCommitted?.Invoke();
-            }, asyncCommit: true);
+            },
+            AsyncCommit = true,
+        });
         if (received == null) return null;
         await _character.ItemsChangedAsync(s, stats: false);
         await SyncAsync(s);

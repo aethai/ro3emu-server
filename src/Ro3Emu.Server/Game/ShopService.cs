@@ -183,13 +183,18 @@ public sealed partial class ShopService(GameData data, CharacterService characte
                             Payment = currency, Goods = entry, Before = bought, Counter = next.Bought[commodityId]
                         });
                 // The new-cycle allowance and its payment must commit together; a failed save cannot grant a free retry.
-                if (await _character.ExchangeLockedAsync(session, cost, [(entry, perUnit * count)],
-                    persist: tx =>
+                if (await _character.ExchangeLockedAsync(session, new ExchangeRequest
+                {
+                    Cost = cost,
+                    Goods = [(entry, perUnit * count)],
+                    Persist = tx =>
                     {
                         tx.RoleBlob(session.Role!.Id, "shop", JsonSerializer.SerializeToUtf8Bytes(next));
                         tx.WithEconomy(economy);
                     },
-                    committed: () => session.Shop = next, asyncCommit: true) == null)
+                    Committed = () => session.Shop = next,
+                    AsyncCommit = true,
+                }) == null)
                     error = new(_character.ShortageOf(session, cost), "payment short");
             }
         }

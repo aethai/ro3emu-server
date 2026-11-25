@@ -148,18 +148,26 @@ public sealed partial class PetService
     {
         UpdatePower(next);
         var grants = goods ?? [];
-        bool done = await _character.ExchangeLockedAsync(s, cost, grants, popup: false, sync: false,
-            persist: tx =>
+        bool done = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Goods = grants,
+            Popup = false,
+            Sync = false,
+            Persist = tx =>
             {
                 tx.RoleBlob(s.Role!.Id, "pets", next.ToByteArray());
                 if (lottery != null) tx.RoleBlob(s.Role.Id, "lottery", LotteryService.Pack(lottery, s.LotteryDay));
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/pet-" + kind, cost, grants,
                     new { StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray())) }));
-            }, committed: () =>
+            },
+            Committed = () =>
             {
                 s.Pets = next;
                 if (lottery != null) s.Lottery = lottery;
-            }, asyncCommit: true) != null;
+            },
+            AsyncCommit = true,
+        }) != null;
         if (done && lottery != null) await CharacterService.SyncAsync(s, LotteryService.LotterySync, lottery.Clone());
         return done;
     }
@@ -186,7 +194,13 @@ public sealed partial class PetService
         IReadOnlyList<(int, int)> goods, Dictionary<int, Dictionary<int, long>> books)
     {
         UpdatePower(next);
-        var paid = await _character.ExchangeLockedAsync(s, cost, goods, popup: false, sync: false, persist: tx =>
+        var paid = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = cost,
+            Goods = goods,
+            Popup = false,
+            Sync = false,
+            Persist = tx =>
         {
             tx.RoleBlob(s.Role!.Id, "pets", next.ToByteArray());
             tx.RoleBlob(s.Role.Id, "pet_books", JsonSerializer.SerializeToUtf8Bytes(books));
@@ -196,7 +210,10 @@ public sealed partial class PetService
                     StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray())),
                     BooksHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(books)))
                 }));
-        }, committed: () => s.Pets = next, asyncCommit: true);
+        },
+            Committed = () => s.Pets = next,
+            AsyncCommit = true,
+        });
         if (paid == null) return false;
         return true;
     }

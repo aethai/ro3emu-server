@@ -699,18 +699,25 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
         List<InvItem>? committed;
         try
         {
-            committed = await _character.ExchangeLockedAsync(s, cost, goods, boundGoods: bound,
-            baseExp: plan.Grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
-            jobExp: plan.Grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count)
+            committed = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Cost = cost,
+                Goods = goods,
+                BoundGoods = bound,
+                BaseExp = plan.Grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
+                JobExp = plan.Grants.Where(g => g.Entry == 101).Sum(g => (long)g.Count)
                 + _character.JobExpFromBase(plan.Grants.Where(g => g.Entry == 100).Sum(g => (long)g.Count)),
-            popup: false, persist: tx =>
+                Popup = false,
+                Persist = tx =>
             {
                 EnlistMemberSave(tx, s.Role!.Id, guildId, next, fixedPlan == null);
                 if (!guildBooked && (funds > 0 || contribute > 0))
                     _guilds.EnlistCaravanReward(guildId, s.Role.Id, funds, contribute, tx);
                 additional?.Invoke(tx);
                 tx.WithEconomy(economy);
-            }, asyncCommit: true);
+            },
+                AsyncCommit = true,
+            });
         }
         catch (CaravanMembershipChangedException) { return null; }
         if (committed == null) return null;

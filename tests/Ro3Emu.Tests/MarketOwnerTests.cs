@@ -292,9 +292,14 @@ public sealed class MarketOwnerTests(ITestOutputHelper output) : IAsyncLifetime
             [ReservationKey.Role(role)], async () =>
             {
                 using var state = await CharacterService.Lock(session);
-                await _app.Services.GetRequiredService<CharacterService>().ExchangeLockedAsync(session, [], [],
-                    popup: false, sync: false, currencyGoods: new Dictionary<int, long> { [1] = 7 }, asyncCommit: true,
-                    appliedBeforeNotify: () => throw new InvalidOperationException("injected publication failure"));
+                await _app.Services.GetRequiredService<CharacterService>().ExchangeLockedAsync(session, new ExchangeRequest
+                {
+                    Popup = false,
+                    Sync = false,
+                    CurrencyGoods = new Dictionary<int, long> { [1] = 7 },
+                    AsyncCommit = true,
+                    AppliedBeforeNotify = () => throw new InvalidOperationException("injected publication failure"),
+                });
             })));
         Assert.Equal("injected publication failure", error.Message);
         Assert.Equal(before + 7, Roles.LoadProgress(role).Currency[1]);

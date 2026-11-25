@@ -291,9 +291,14 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
             var economy = character.ProgressionEconomy(session, "cd13c/season-page-claim", [],
                 [.. grants.Select(g => (g.Entry, g.Count))],
                 new { Season = seasons.SeasonId, Claims = request.RankReward.OrderBy(x => x.Key).ToArray() }, source);
-            if (await character.ExchangeLockedAsync(session, [], [], popup: true, sync: false, attributedGoods: grants,
-                    persist: tx => { tx.RoleBlob(session.Role!.Id, "season_page", next!.ToByteArray()); tx.WithEconomy(economy); },
-                    committed: () => session.SeasonPage = next, asyncCommit: true) == null)
+            if (await character.ExchangeLockedAsync(session, new ExchangeRequest
+            {
+                Sync = false,
+                AttributedGoods = grants,
+                Persist = tx => { tx.RoleBlob(session.Role!.Id, "season_page", next!.ToByteArray()); tx.WithEconomy(economy); },
+                Committed = () => session.SeasonPage = next,
+                AsyncCommit = true,
+            }) == null)
                 error = ErrorCodes.BagFull;
             else
             {

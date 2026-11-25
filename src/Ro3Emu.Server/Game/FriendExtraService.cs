@@ -253,7 +253,11 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
                 EconomyCompartment.Inventory, -req.Count, EconomyLegKind.Sink, EconomyReason.FriendGiftCost)],
             record.ToByteArray());
         using var characterLock = await CharacterService.Lock(s, owners.Current);
-        var paid = await character.ExchangeLockedAsync(s, [(item, (long)req.Count)], [], popup: false, persist: tx =>
+        var paid = await character.ExchangeLockedAsync(s, new ExchangeRequest
+        {
+            Cost = [(item, (long)req.Count)],
+            Popup = false,
+            Persist = tx =>
         {
             tx.ExpectRole(recipientVector);
             tx.FriendMetadata(self, senderBlob);
@@ -261,7 +265,9 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
             tx.FriendIntimacy(self, receiverId, intimacy);
             tx.FriendIntimacy(receiverId, self, intimacy);
             tx.WithEconomy(envelope);
-        }, asyncCommit: true);
+        },
+            AsyncCommit = true,
+        });
         if (paid == null) { await s.SendGameAsync(GiveGift, new GiveFriendGiftResp { Result = ErrorCodes.ItemsShort }); return; }
         committed(intimacy);
         // (inferred) Popularity is no asset: credited in its own commit once the gift is paid.

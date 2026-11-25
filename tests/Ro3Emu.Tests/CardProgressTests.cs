@@ -108,7 +108,12 @@ public sealed class CardProgressTests : IAsyncLifetime
         try
         {
             var exchange = loop.InvokeAsync(() => _app.Services.GetRequiredService<CharacterService>()
-                .ExchangeAsync(session, [], [(Lunatic, 1)], popup: false, sync: false));
+                .ExchangeAsync(session, new ExchangeRequest
+                {
+                    Goods = [(Lunatic, 1)],
+                    Popup = false,
+                    Sync = false,
+                }));
             Assert.True(await Task.Run(() => entered.Wait(Wait)));
             Assert.False(exchange.IsCompleted);
             Assert.False(await loop.InvokeAsync(() => Task.FromResult(session.Items.Any(i => i.Entry == Lunatic))));

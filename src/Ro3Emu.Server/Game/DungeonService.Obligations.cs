@@ -335,18 +335,25 @@ public sealed partial class DungeonService
             if (s.Role?.Id != row.RoleId || s.Dungeons == null) return (false, []);
             var next = ApplyFrozenState(s.Dungeons, row);
             var oldStacks = s.Items.ToDictionary(item => item.Guid, item => item.Stack);
-            var granted = await _character.ExchangeLockedAsync(s, [], [], popup: false, sync: false,
-                boundGoods: [.. row.Goods.Where(g => g.Entry is not (100 or 101)).Select(g => (g.Entry, g.Count, g.Bind))],
-                baseExp: row.Goods.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
-                jobExp: row.Goods.Where(g => g.Entry == 101).Sum(g => (long)g.Count),
-                persist: tx =>
+            var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+            {
+                Popup = false,
+                Sync = false,
+                BoundGoods = [.. row.Goods.Where(g => g.Entry is not (100 or 101)).Select(g => (g.Entry, g.Count, g.Bind))],
+                BaseExp = row.Goods.Where(g => g.Entry == 100).Sum(g => (long)g.Count),
+                JobExp = row.Goods.Where(g => g.Entry == 101).Sum(g => (long)g.Count),
+                Persist = tx =>
                 {
                     tx.RoleBlob(row.RoleId, "dungeons", JsonSerializer.SerializeToUtf8Bytes(next));
                     if (row.Success && row.AuctionSourceType != 0 && row.AuctionTiers.Count > 0)
                         _auctions.RecordDungeonClear(tx, row.RoomId, row.RoleId, row.GuildId,
                             row.AuctionSourceType, row.PlayBook, row.AuctionTiers);
                     _obligations.EnlistComplete(row.Key, tx);
-                }, rewardSettlement: settlement, asyncCommit: true, committed: () => s.Dungeons = next);
+                },
+                RewardSettlement = settlement,
+                AsyncCommit = true,
+                Committed = () => s.Dungeons = next,
+            });
             if (granted == null || !settlement.Committed)
                 throw new InvalidOperationException("Validated dungeon obligation was refused.");
             foreach (var item in granted.DistinctBy(item => item.Guid))

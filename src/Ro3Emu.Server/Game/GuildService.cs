@@ -394,12 +394,16 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                 if (charged)
                 {
                     // Payment and uniqueness commit together.
-                    if (await character.ExchangeLockedAsync(s, [((int)cost[0], cost[1])], [],
-                            persist: tx =>
+                    if (await character.ExchangeLockedAsync(s, new ExchangeRequest
+                    {
+                        Cost = [((int)cost[0], cost[1])],
+                        Persist = tx =>
                             {
                                 store.EnlistSave(guild, tx); EnlistViews(guild, tx);
                                 tx.WithEconomy(GuildPayment(s, "guild-create", (int)cost[0], cost[1]));
-                            }, asyncCommit: true) == null)
+                            },
+                        AsyncCommit = true,
+                    }) == null)
                         code = ErrorCodes.ItemsShort;
                 }
                 else if (!await SaveGuildAsync(guild)) code = store.NameExists(req.Name) ? ErrorCodes.GuildNameTaken : ErrorCodes.AlreadyInGuild;
@@ -877,12 +881,16 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                                 {
                                     if (cost.Length >= 2 && cost[0] > 0 && cost[1] > 0)
                                     {
-                                        if (await character.ExchangeLockedAsync(s, [((int)cost[0], cost[1])], [],
-                                            persist: tx =>
+                                        if (await character.ExchangeLockedAsync(s, new ExchangeRequest
+                                        {
+                                            Cost = [((int)cost[0], cost[1])],
+                                            Persist = tx =>
                                             {
                                                 store.EnlistSave(g, tx, "guild disappeared during rename"); EnlistViews(g, tx);
                                                 tx.WithEconomy(GuildPayment(s, "guild-rename", (int)cost[0], cost[1]));
-                                            }, asyncCommit: true) == null)
+                                            },
+                                            AsyncCommit = true,
+                                        }) == null)
                                             code = ErrorCodes.ItemsShort;
                                         else storedWithPayment = true;
                                     }

@@ -685,9 +685,15 @@ public sealed partial class TowerService
                 var economy = _character.EconomyForOwnedExchange(s, "cd13e/tower-milestone",
                     $"tower-milestone/{s.Role!.Id}/{previousWatermark}/{watermark}", [], goods,
                     new { Previous = previousWatermark, Claimed = watermark, Goods = goods.Select(g => new { g.Entry, g.Count }).ToArray() });
-                var granted = await _character.ExchangeLockedAsync(s, [], goods, popup: false, sync: false,
-                    persist: tx => tx.RoleBlob(s.Role.Id, "tower", next.ToByteArray()),
-                    committed: () => s.Tower = next, economy: economy);
+                var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
+                {
+                    Goods = goods,
+                    Popup = false,
+                    Sync = false,
+                    Persist = tx => tx.RoleBlob(s.Role.Id, "tower", next.ToByteArray()),
+                    Committed = () => s.Tower = next,
+                    Economy = economy,
+                });
                 if (granted == null) error = ErrorCodes.ItemsShort;
                 else
                 {
