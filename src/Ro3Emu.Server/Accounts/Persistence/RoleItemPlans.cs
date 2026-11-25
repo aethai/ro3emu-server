@@ -213,7 +213,7 @@ public sealed class RoleItemPlanBuilder
             CaptureEntity(key);
     }
 
-    // C/D 16: an attached role's vector comes from its owner, which records every commit made on the loop (exact for
+    // An attached role's vector comes from its owner, which records every commit made on the loop (exact for
     // parts written under a reservation: legacy captures saw 6500 hits and 0 stale vectors in S1; commits made off the loop mark their roles, see
     // AccountStore.RecordResolvedCommit). Parts the writer's
     // lazy lane commits outside reservations (public position, settings) are still read from SQL.
@@ -298,7 +298,7 @@ public sealed class RoleItemPlanBuilder
         return this;
     }
 
-    /// <summary>Bind a copied E03 intent after all nested append/purge plans have staged their exact sinks.</summary>
+    /// <summary>Bind a copied escrow economy intent after all nested append/purge plans have staged their exact sinks.</summary>
     public RoleItemPlanBuilder WithEscrowEconomy(EscrowEconomyIntent intent)
     {
         ArgumentNullException.ThrowIfNull(intent);
@@ -312,7 +312,7 @@ public sealed class RoleItemPlanBuilder
         return this;
     }
 
-    /// <summary>Capture an expired attachment removed by a nested mail helper before its parent binds E03.</summary>
+    /// <summary>Capture an expired attachment removed by a nested mail helper before its parent binds escrow economics.</summary>
     public void EscrowSink(EconomyAsset asset, long quantity, EconomyReason reason,
         EconomyCompartment? compartment = null, EconomyOwner? owner = null)
     {
@@ -322,7 +322,7 @@ public sealed class RoleItemPlanBuilder
         _escrowSinks.Add((asset, quantity, reason, compartment, owner));
     }
 
-    /// <summary>Bind E05d semantic effects to already-staged typed owner children.</summary>
+    /// <summary>Bind semantic economy effects to already-staged typed owner children.</summary>
     public RoleItemPlanBuilder WithEconomy(EconomyEnvelope envelope)
     {
         if (HasEconomy || _escrowSinks.Count != 0) throw new InvalidOperationException("Economy envelope is already set.");
@@ -338,7 +338,7 @@ public sealed class RoleItemPlanBuilder
         _escrowEconomy is not null || _eventEconomy is not null;
     internal bool HasCharacterFamilyEconomy => _economy is not null && CharacterFamilyEconomy.IsKind(_economy.CommandKind);
 
-    /// <summary>E05e opts in only converted event commands; remaining families keep their existing guarded route.</summary>
+    /// <summary>Opts in only converted event economy commands; remaining families keep their existing guarded route.</summary>
     public RoleItemPlanBuilder WithEventEconomy(EventEconomyMutation mutation)
     {
         if (HasEconomy || _escrowSinks.Count != 0) throw new InvalidOperationException("Economy envelope is already set.");
@@ -388,8 +388,8 @@ public sealed class RoleItemPlanBuilder
             Apply(plain);
             return plain;
         }
-        // E01: the economy envelope carries the captured vectors and resolves an unknown outcome from its receipt.
-        // Envelopes: E05d semantic, 13c progression, E05b/13a family, E04 reward, 13e owned exchange and E01 NPC.
+        // The economy envelope carries the captured vectors and resolves an unknown outcome from its receipt.
+        // Envelopes: semantic, progression, family, reward, owned exchange, and NPC purchase.
         DbPlan submitted = _economyEnvelope is { } envelope
             ? new EconomyEnvelopePlan(plan, envelope, accounts.EconomyCatalog,
                 accounts.ConsumeEconomyAcknowledgementFaultForTest())
@@ -432,7 +432,7 @@ public sealed class RoleItemPlanBuilder
 
     /// <summary>All captured participants, including read guards. WholeRole preserves legacy
     /// hook compatibility while removing unrelated roles from market/auction operations. An entity that is only a
-    /// read guard is held shared (C/D 16, S3: market queries serialized behind each other on the collection key);
+    /// read guard is held shared (otherwise market queries serialize behind each other on the collection key);
     /// a written one exclusively. The guard's revision check still refuses a read that a writer overtook.</summary>
     internal Game.Ownership.ReservationKey[] ReservationKeys
     {
@@ -475,7 +475,7 @@ public sealed class RoleItemPlanBuilder
             }
             else if (_economyEnvelope is { } envelope)
             {
-                // E05d semantic envelope on the owned path; an ambiguous outcome resolves from its receipt.
+                // Semantic economy envelope on the owned path; an ambiguous outcome resolves from its receipt.
                 submitted = new EconomyEnvelopePlan(Build(accounts, label, expect: false), envelope, accounts.EconomyCatalog,
                     accounts.ConsumeEconomyAcknowledgementFaultForTest());
                 if (_expected.Count != 0) submitted.Expect(_expected.Values);
@@ -502,7 +502,7 @@ public sealed class RoleItemPlanBuilder
             }
             else if (_eventEconomy is not null)
             {
-                // E05e is a further envelope; it retains its own typed replay and source validation.
+                // Event economy envelope; it retains its own typed replay and source validation.
                 submitted = new EventEconomyTransactionPlan(Build(accounts, label, expect: false), _eventEconomy,
                     accounts.ConsumeEconomyAcknowledgementFaultForTest());
                 if (_expected.Count != 0) submitted.Expect(_expected.Values);
@@ -527,7 +527,7 @@ public sealed class RoleItemPlanBuilder
             }
             else if (_economy.IsFamily || _economy.CommandKind == "npc-shop-buy")
             {
-                // E05a/b and E01 keep their original receipt shapes and resolve ambiguous acknowledgements.
+                // Family and NPC economy envelopes keep their original receipt shapes and resolve ambiguous acknowledgements.
                 var child = Build(accounts, label, expect: false);
                 bool fault = accounts.ConsumeEconomyAcknowledgementFaultForTest();
                 submitted = _economy.IsFamily
@@ -540,7 +540,7 @@ public sealed class RoleItemPlanBuilder
             }
             else
             {
-                // E04 reward envelope on the owned asynchronous path.
+                // Reward economy envelope on the owned asynchronous path.
                 submitted = new EconomyTransactionPlan(Build(accounts, label, expect: false), _economy,
                     accounts.ConsumeEconomyAcknowledgementFaultForTest(), owned: true);
                 if (_expected.Count != 0) submitted.Expect(_expected.Values);

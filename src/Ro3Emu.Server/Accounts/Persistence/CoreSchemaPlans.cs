@@ -29,7 +29,7 @@ internal sealed class RoleSchemaPlan : DbPlan
         AddRoleCoreColumns(db, tx);
         AddRoleFeatureColumns(db, tx);
         InitializeRoleRevisions(db, tx);
-        // E01 shares this schema transaction; legacy balances become the opening cut at sequence zero.
+        // The economy ledger shares this schema transaction; legacy balances become the opening cut at sequence zero.
         new EconomySchemaPlan().Execute(db, tx);
         return 1;
     }

@@ -75,7 +75,7 @@ public sealed partial class FactionWorldService
     private bool WorldScene(GameSession s) => s.Role != null && !s.SceneLoading && s.InstanceId == 0 && s.LineNumber == 1
         && IsWorldTerritory(s.SceneEntry);
 
-    /// <summary>The territory gate's keys, for a scene load whose hooks write territory state (C/D 15): a world
+    /// <summary>The territory gate's keys, for a scene load whose hooks write territory state: a world
     /// territory scene, or the loaded instance of the role's territory or siege battle (participant loaded flag).</summary>
     internal Ownership.ReservationKey[] SceneKeys(GameSession s) =>
         WorldScene(s) || s.Instances.TerritoryBattle is { } battle && s.InstanceId == battle.Room.Id

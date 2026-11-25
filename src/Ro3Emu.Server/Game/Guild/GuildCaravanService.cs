@@ -111,7 +111,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                 ReservationKey.Entity("guild_caravan_member", id.ToString(System.Globalization.CultureInfo.InvariantCulture)) })];
     }
 
-    /// <summary>C/D 15: the caravan login's gate keys (the role's guild or its pending order's guild, every member,
+    /// <summary>The caravan login's gate keys (the role's guild or its pending order's guild, every member,
     /// the caravan rows), reserved up front by the role select.</summary>
     internal ReservationKey[] LoginKeys(long roleId)
     {
@@ -394,7 +394,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
     {
         if (time.Now - _lastTick < TimeSpan.FromMinutes(1)) return;
         _lastTick = time.Now;
-        // C/D 16: each role's rollover admits its own guild gate; the sweep needs no Realm (as Realm it waited behind
+        // Each role's rollover admits its own guild gate; the sweep needs no Realm (as Realm it waited behind
         // owned work for up to 16 s in S3). One sweep at a time: at 05:00 a sweep can outlast the minute.
         if (_sweeping) return;
         _sweeping = true;

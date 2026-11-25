@@ -46,7 +46,7 @@ public sealed partial class AccountStore : IDisposable
     private int _failNextEconomyAcknowledgementForTest;
     private int _failNextEconomyResolutionForTest;
     public DbAccessMetrics AccessMetrics { get; } = new();
-    /// <summary>Role snapshots installed for logins (C/D 14); every committed role write invalidates its parts.</summary>
+    /// <summary>Role snapshots installed for logins; every committed role write invalidates its parts.</summary>
     public RoleSnapshots Snapshots { get; } = new();
 
     private readonly Diagnostics.ServerMetrics? _metrics;
@@ -59,7 +59,7 @@ public sealed partial class AccountStore : IDisposable
         _loop = loop;
         _log = log;
         _lifetime = lifetime;
-        // A half-done restore may have moved the live file away; opening now would create an empty realm (C/D 19).
+        // A half-done restore may have moved the live file away; opening now would create an empty realm.
         DatabaseRestore.ThrowIfUnfinished(options.Value.DataDir);
         PrivateFiles.Directory(options.Value.DataDir);
         _databasePath = Path.Combine(options.Value.DataDir, "ro3emu.db");
@@ -190,7 +190,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Test barrier: a lazy write's capture is taken, its submission to the writer has not happened yet.</summary>
     internal Func<string, Task>? BeforeLazyWriteForTest { get; set; }
-    /// <summary>The writer's lazy lane for a plan whose expectations the caller captured (C/D 18 position).</summary>
+    /// <summary>The writer's lazy lane for a plan whose expectations the caller captured (for example, lazy position writes).</summary>
     internal async Task<T> WriteLazyAsync<T>(DbPlan plan)
     {
         if (BeforeLazyWriteForTest is { } beforeLazy) await beforeLazy(plan.Label);
@@ -230,7 +230,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Family envelopes resolve their own retained receipt after an ambiguous writer ACK.</summary>
     internal Func<string, Task>? BeforeEconomyResolveForTest { get; set; }
-    /// <summary>Resolve E03's retained typed result before owner Apply when the writer ACK is lost.</summary>
+    /// <summary>Resolve an escrow plan's retained typed result before owner Apply when the writer ACK is lost.</summary>
     internal async Task<object?[]> WriteEscrowEconomyAsync(DbPlan plan, EscrowEconomyIntent intent, RoleItemPlan child)
     {
         plan = Prepare(plan);
@@ -350,7 +350,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Keep the owners' committed vectors exact: a commit resolved on the loop is recorded; one resolved
     /// elsewhere (a test, an HTTP endpoint, a micro service thread) marks its roles, whose owner vectors are then not
-    /// served until a SQL read resynchronizes them (C/D 16).</summary>
+    /// served until a SQL read resynchronizes them.</summary>
     internal void RecordResolvedCommit(DbPlan plan, object? result)
     {
         if (plan.IsReplay) return;
@@ -363,7 +363,7 @@ public sealed partial class AccountStore : IDisposable
     }
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, long> _unrecordedCommits = new();
 
-    /// <summary>C/D 16: a role's expected vector for a plan - the owner's when it is exact, else SQL (which also
+    /// <summary>A role's expected vector for a plan - the owner's when it is exact, else SQL (which also
     /// resynchronizes an attached owner whose commits were made off the loop).</summary>
     internal RoleRevisionVector RoleVector(long role, bool sqlOnly = false)
     {
@@ -424,7 +424,7 @@ public sealed partial class AccountStore : IDisposable
     internal long VectorCacheHits, VectorCacheRetries;
 
     /// <summary>
-    /// C/D 16: an attached role's committed vector from its owner, or null (then read it from SQL). A legacy write of
+    /// An attached role's committed vector from its owner, or null (then read it from SQL). A legacy write of
     /// an attached role captures its expected vector here instead of a synchronous SQL read on the loop. The owner
     /// records every commit made on the loop; should the cache ever be behind, the writer refuses the capture and
     /// the legacy write recaptures from SQL and retries once, which is exactly the old read-then-write behaviour

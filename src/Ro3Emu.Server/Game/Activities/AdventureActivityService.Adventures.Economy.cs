@@ -12,7 +12,7 @@ public sealed partial class AdventureActivityService
         ? new(GameData.Int(row, "_iType") == 1 ? EconomyAssetKind.Currency : EconomyAssetKind.Item, entry)
         : throw new InvalidOperationException($"Adventure economy entry {entry} is not configured.");
 
-    /// <summary>Bind the resolved adventure outcome and its durable marker to one E03 receipt.</summary>
+    /// <summary>Bind the resolved adventure outcome and its durable marker to one escrow receipt.</summary>
     private Task<int> CommitAdventureAsync(GameSession session, DBNewActivityInfo next,
         IEnumerable<long>? awardIds = null, IReadOnlyList<(int Entry, int Count)>? costs = null,
         IEnumerable<AwardGrant>? extra = null, ActivityRuntimeState? runtime = null,

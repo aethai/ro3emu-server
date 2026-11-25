@@ -86,7 +86,7 @@ public sealed partial class GmCommands(
     /// <param name="loopbackTool">The loopback HTTP /ro3emu/gm: an empty GmAccounts still means everyone.</param>
     public Task RunAsync(GameSession session, string line, bool loopbackTool = false)
     {
-        // A GM line typed in chat arrives inside the chat message's role scope (C/D 16). GM admits its own scope (Realm
+        // A GM line typed in chat arrives inside the chat message's role scope. GM admits its own scope (Realm
         // or an economic request), so it runs as its own operation right after instead of expanding the chat's.
         if (session.Owners is { Current: { RuntimeOnly: false } })
         {

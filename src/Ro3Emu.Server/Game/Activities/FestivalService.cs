@@ -221,7 +221,7 @@ public sealed partial class FestivalService : IGameTicker, IStartupInitializer
 
     public async Task LoginAsync(GameSession session)
     {
-        // C/D 15: the round is realm state; the one-second Tick ensures and settles it from startup, so the login no
+        // The round is realm state; the one-second Tick ensures and settles it from startup, so the login no
         // longer reserves the festival runtime. It only delivers this role's own committed entitlements.
         if (session.Role != null) await RoleFanout.EachAsync([session], DeliverAsync);
         await _daily.SyncEventsAsync(session);

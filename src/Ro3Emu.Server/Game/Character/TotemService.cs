@@ -100,7 +100,7 @@ public sealed partial class TotemService
             if (resetRefinements && item.Attrs != null) item.Attrs[270] = 0;
         }
         ApplyMarkers(copies, s.Profile.Totems, Now);
-        // Stage G: only what this normalization changed is written. A transaction at every login (even with nothing
+        // Only what this normalization changed is written. A transaction at every login (even with nothing
         // to change) was a third of a role's initialization in a login storm.
         var changed = copies.Where((item, i) => IsTotem(_data, item.Entry) && !SameTotemState(s.Items[i], item)).ToList();
         var totems = s.Profile.Totems.ToByteArray();

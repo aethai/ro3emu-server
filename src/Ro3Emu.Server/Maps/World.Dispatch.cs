@@ -13,7 +13,7 @@ public sealed partial class World
     private sealed class SceneDispatch
     {
         public readonly SemaphoreSlim Gate = new(1, 1);
-        // MoveCoreAsync runs only under its map's gate (not reentrant), so its per-walk lists are reused (stage G: they
+        // MoveCoreAsync runs only under its map's gate (not reentrant), so its per-walk lists are reused (they
         // were 238 MB a minute of garbage at 500 players).
         public readonly List<(GameSession Viewer, GameSession Subject, Change Kind)> MoveWork = [];
         public readonly List<GameSession> MoveEdges = [], MoveMovers = [];

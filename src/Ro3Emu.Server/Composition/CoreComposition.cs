@@ -16,12 +16,12 @@ internal static partial class CoreComposition
     public static void AddCoreInfrastructure(WebApplicationBuilder builder, ServerOptions options, TimeProvider? clock, HttpConnectionReaper httpConnections)
     {
         var services = builder.Services;
-        // Stage G: the default host on Windows also writes Warning and above to the Windows Event Log, synchronously on
+        // The default host on Windows also writes Warning and above to the Windows Event Log, synchronously on
         // the logging thread - the game loop included (a quarter of a walk's cost at 500 players). The console logger
         // queues to a background writer; the metrics provider registered below stays.
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
-        // One server per data dir (C/D 19): taken before anything opens the database, released when the app is disposed.
+        // One server per data dir: taken before anything opens the database, released when the app is disposed.
         services.AddSingleton(_ => RealmLock.Acquire(options.DataDir));
         services.AddSingleton(Options.Create(options));
         services.AddSingleton(clock ?? TimeProvider.System);

@@ -5,7 +5,7 @@ namespace Ro3Emu.Server.Economy;
 
 public static partial class EconomySnapshotReader
 {
-    /// <summary>E05e reads only captured participants on the writer's existing transaction, using the audit decoders.</summary>
+    /// <summary>Event economy reads only captured participants on the writer's existing transaction, using the audit decoders.</summary>
     internal static Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> ReadEventHoldings(
         SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, IReadOnlyList<RoleRevisionKey> roleParts,
         IReadOnlyList<OwnerRevisionKey> entities)

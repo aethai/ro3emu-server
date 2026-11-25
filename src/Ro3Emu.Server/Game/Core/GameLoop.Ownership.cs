@@ -64,7 +64,7 @@ public sealed partial class GameLoop
         if (ticker is FestivalService or MvpService or TrainingService or PronteraDefenseService
             or TimedEventService or TimedBattleService or TerritoryWarsService or TerritoryEscortService)
         { ticker.Tick(time); return; }
-        // C/D 16 (S3): every other ticker runs under a runtime scope. Ticks enqueue or simulate in memory and durable
+        // Every other ticker runs under a runtime scope. Ticks enqueue or simulate in memory and durable
         // work admits its own keys. As Realm a tick was deferred behind every reservation (map ticks up to 2.8 s,
         // service ticks up to 16 s). A runtime scope cannot authorize a persistence write, so a write made synchronously
         // inside Tick throws: the owner audit over the full suite with every ticker under runtime found none. Work a tick

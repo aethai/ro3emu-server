@@ -23,7 +23,7 @@ public sealed partial class DbWriter : IDisposable
     private int _durableJobs, _durableBytes, _lazyJobs, _lazyBytes;
     private bool _stopping, _lastWasOverdueLazy;
     private Exception? _terminalError;
-    /// <summary>C/D 19 fairness: a lazy job older than this alternates with durable work instead of waiting for an
+    /// <summary>Fairness limit: a lazy job older than this alternates with durable work instead of waiting for an
     /// idle writer, so sustained durable load cannot starve lazy parts (position/settings).</summary>
     internal TimeSpan LazyMaxWait { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -160,7 +160,7 @@ public sealed partial class DbWriter : IDisposable
     [LoggerMessage(Level = LogLevel.Error, Message = "Terminal writer fault callback failed")]
     private static partial void LogTerminalFaultCallbackFailed(ILogger logger, Exception exception);
 
-    // Stage G group commit: jobs already queued behind the first one join its transaction, each inside its own
+    // Group commit: jobs already queued behind the first one join its transaction, each inside its own
     // savepoint (a failing job rolls back only itself), and one FULL commit makes the group durable. Every job's
     // completion is still released only after that commit, so durability and per-job outcomes are unchanged; jobs
     // execute in the same order as before, each seeing the earlier ones' writes. On the realm's disk a commit was

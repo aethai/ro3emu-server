@@ -11,7 +11,7 @@ public static partial class EconomySnapshotReader
     /// protobuf cannot silently classify a new balance as progression. Review the decoder and bump this pin when
     /// the persisted format changes; a matching runtime type alone is not a reviewed economic classification.
     /// </summary>
-    // C/D 13e: Dungeon.State.PendingJourney names a captured act/cycle, not a second holding of
+    // Dungeon.State.PendingJourney names a captured act/cycle, not a second holding of
     // its dungeon loot. Authored Journey boss acts have no direct goods; later node claims stay separate.
     // Emotes: role.emoji_play is DBEmojiPlayInfo (emote ids: favourites, unlocks, idle emote); no balance, no asset.
     // Achievements: role.achievements is DBRoleAchievementInfo (statuses, score counters, points, claimed reward and

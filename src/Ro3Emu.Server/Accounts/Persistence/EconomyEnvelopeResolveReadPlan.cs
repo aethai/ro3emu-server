@@ -3,7 +3,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>Resolve a lost E05d commit acknowledgement from the durable receipt and natural source.</summary>
+/// <summary>Resolve a lost semantic-envelope commit acknowledgement from the durable receipt and natural source.</summary>
 internal sealed class EconomyEnvelopeResolveReadPlan(EconomyEnvelope envelope, int childCount) : DbReadPlan
 {
     internal override int Bytes => 512 + envelope.OperationId.Length * 2;

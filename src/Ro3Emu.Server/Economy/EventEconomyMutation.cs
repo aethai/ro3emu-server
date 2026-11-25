@@ -7,7 +7,7 @@ using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>E05e semantic change per beneficiary, independently checked against the persisted holdings.</summary>
+/// <summary>Event economy semantic change per beneficiary, independently checked against the persisted holdings.</summary>
 public readonly record struct EventEconomyOwnerDelta(EconomyOwner Owner, EconomyAsset Asset, long Delta);
 
 /// <summary>A frozen event result and its authorized faucets, sinks and beneficiaries. No gameplay callback enters SQL.</summary>

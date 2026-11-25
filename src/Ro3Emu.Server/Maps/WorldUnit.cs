@@ -66,7 +66,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
 
     private readonly List<WorldUnit> _units = [];
     // Membership for Contains: every walk's unit refresh asks it per candidate, and a field map holds ~1500 units
-    // (as a list scan it was 13% of the loop's work at 500 players, stage G).
+    // (as a list scan it was 13% of the loop's work at 500 players).
     private readonly HashSet<WorldUnit> _members = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(int, int), List<WorldUnit>> _cells = [];
     private readonly List<WorldUnit> _far = [];

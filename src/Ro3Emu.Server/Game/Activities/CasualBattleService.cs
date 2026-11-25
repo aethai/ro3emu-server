@@ -869,7 +869,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         return true;
     }
 
-    /// <summary>C/D 15: the role's pending payouts, read before the role select admits so it can reserve them.</summary>
+    /// <summary>The role's pending payouts, read before the role select admits so it can reserve them.</summary>
     internal Task<ReservationKey[]> LoginKeysAsync(long roleId) => _obligations.LoginKeysAsync(roleId);
 
     /// <summary>Login pays what a failure, a disconnect or a restart left pending (after the timed-battle state).</summary>

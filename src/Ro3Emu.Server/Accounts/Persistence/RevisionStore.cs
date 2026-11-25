@@ -16,7 +16,7 @@ public sealed record RoleRevisionVector(long RoleId, long Epoch, bool Deleted, I
         => WithRevision(part, checked(Revision(part) + 1));
     internal RoleRevisionVector WithRevision(string part, long revision)
     {
-        // Stage G: binding a source part the vector already holds at that revision copies nothing; a change copies
+        // Binding a source part the vector already holds at that revision copies nothing; a change copies
         // once into a plain dictionary (freezing ~80 parts per bound part was a top allocation of a login storm).
         if (Parts.TryGetValue(part, out long current) && current == revision) return this;
         var values = new Dictionary<string, long>(Parts, StringComparer.Ordinal) { [part] = revision };

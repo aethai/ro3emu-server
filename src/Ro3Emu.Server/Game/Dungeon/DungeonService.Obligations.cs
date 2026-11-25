@@ -373,7 +373,7 @@ public sealed partial class DungeonService
         if (row.Success && row.AuctionSourceType != 0 && _obligations.PendingRoom(row.RoomId).Count == 0)
         {
             // The publication reserves every participant of the run. Inside a narrower durable scope (the role select
-            // delivering the last pending obligation, C/D 15) it runs as its own operation right after.
+            // delivering the last pending obligation) it runs as its own operation right after.
             if (_loop.Owners is { } owners && !owners.CurrentCovers(Ownership.ReservationKey.Realm))
                 _loop.TrackRuntimeDetached("dungeon auction publication", () => PublishAuctionAsync(row.RoomId));
             else await PublishAuctionAsync(row.RoomId);
@@ -394,7 +394,7 @@ public sealed partial class DungeonService
     private static Ownership.ReservationKey RunKey(long room) =>
         Ownership.ReservationKey.Entity("auction_run", room.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-    /// <summary>C/D 15: the auction runs of the role's pending obligations, read before the role select admits so it
+    /// <summary>The auction runs of the role's pending obligations, read before the role select admits so it
     /// can reserve them up front.</summary>
     internal async Task<Ownership.ReservationKey[]> LoginKeysAsync(long roleId) =>
         [.. (await _obligations.PendingAsync(roleId)).Select(row => RunKey(row.RoomId)).Distinct()];

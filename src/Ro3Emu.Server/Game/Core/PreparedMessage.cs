@@ -27,6 +27,6 @@ public sealed class PreparedMessage
     public byte[] Body { get; }
     /// <summary>The serialized EntityMessage frame body (Phonest index <see cref="GameGateServer.EntityMessageOut"/>).</summary>
     public byte[] Envelope { get; }
-    /// <summary>The whole wire frame, shared by every recipient (stage G: one copy per viewer was 40% of a walk).</summary>
+    /// <summary>The whole wire frame, shared by every recipient (avoiding one copy per viewer on every walk).</summary>
     public byte[] Frame { get; }
 }

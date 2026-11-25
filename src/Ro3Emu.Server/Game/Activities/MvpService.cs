@@ -366,7 +366,7 @@ public sealed partial class MvpService : IGameTicker
                     foreach (var p in _sessions.All().Where(p => p.Role != null && p.WorldScene == st.Runtime.WorldScene))
                         _loop.PostOwned(p, () => p.SendGameAsync(PreNotice, new MVPP2SNotice { CfgId = st.Def.CfgId, SceneId = st.Def.MapId }), "MVP notice");
                 }
-                // The event source may be durable while E04 has restored an unpublished
+                // The event source may be durable while reward settlement has restored an unpublished
                 // boss to 1 HP. Do not replace that actor until both barriers publish it.
                 if (now >= respawn && !st.Transitioning && st.Unit is not { Dead: false })
                 {
@@ -973,7 +973,7 @@ public sealed partial class MvpService : IGameTicker
     private static MvpCounterRow CounterRow(MVPPlayerInfo info) =>
         new(info.FirstNum, info.EndNum, info.JoinNum, info.TeamNum, info.LastTime);
 
-    /// <summary>C/D 15: the role's pending obligations, read before the role select admits so it can reserve them.</summary>
+    /// <summary>The role's pending obligations, read before the role select admits so it can reserve them.</summary>
     internal Task<ReservationKey[]> LoginKeysAsync(long roleId) => _awardObligations.LoginKeysAsync(roleId);
 
     /// <summary>On login and after a kill, complete frozen rewards without rolling again.</summary>

@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class CharacterInventoryService
 {
-    /// <summary>E05a/b: capture the family's resolved payment/result before writer admission. The original wire
+    /// <summary>Family economy: capture the resolved payment/result before writer admission. The original wire
     /// has no retry token; each server-admitted intent gets one source, retained across receipt recovery.</summary>
     internal EconomyMutation FamilyEconomy(GameSession session, string kind,
         IReadOnlyList<(int Entry, long Count)> costs, IReadOnlyList<(int Entry, int Count)> goods, object outcome)

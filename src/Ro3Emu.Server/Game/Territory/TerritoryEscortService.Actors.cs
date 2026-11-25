@@ -163,7 +163,7 @@ public sealed partial class TerritoryEscortService
         return a != null && b != null && a.Id != b.Id;
     }
 
-    /// <summary>The escort actors' keys, for a scene load that refreshes them (C/D 15).</summary>
+    /// <summary>The escort actors' keys, for a scene load that refreshes them.</summary>
     private Ownership.ReservationKey[] SceneKeys(GameSession session) =>
         session.Role != null && session.Instances.TerritoryEscort != null && EscortLine(session) ? MutationKeys(null, false) : [];
 

@@ -13,7 +13,7 @@ public static class ServerHost
             ContentRootPath = AppContext.BaseDirectory,
         });
         var options = Resolve(builder.Configuration, configure);
-        // Fail fast, before any service is built, if an offline restore of this data dir did not finish (C/D 19).
+        // Fail fast, before any service is built, if an offline restore of this data dir did not finish.
         DatabaseRestore.ThrowIfUnfinished(options.DataDir);
         // Kestrel stops first and waits for every HTTP connection (a half-sent request holds it for the 30 s header timeout),
         // and the gates, loop and database stop only after it. The reaper aborts what is left a moment after stop begins.

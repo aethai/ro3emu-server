@@ -594,7 +594,7 @@ public sealed partial class WildAfkService : IGameTicker
     internal Action? KillGateWaitingForTest { get; set; }
 
     /// <summary>Freeze the granted field-kill record under the killer's role reservation and write it
-    /// with the parent E04 reward. The already reconciled clock state stays intact, including fractions.</summary>
+    /// with the parent reward settlement. The already reconciled clock state stays intact, including fractions.</summary>
     private void StageAfkKill(GameSession s, MonsterUnit monster, RewardSettlement settlement,
         IReadOnlyList<(int Entry, int Count)> items, long baseExp, long jobExp)
     {

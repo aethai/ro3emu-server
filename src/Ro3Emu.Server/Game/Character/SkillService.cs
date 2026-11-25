@@ -386,7 +386,7 @@ public sealed partial class SkillService
         }
     }
 
-    /// <summary>C/D 13c: frozen plan and its active progress publish together after the owned receipt.</summary>
+    /// <summary>Frozen plan and its active progress publish together after the owned receipt.</summary>
     private async Task CommitAsync(GameSession session, DBSkillData next, RoleProgress? progress = null,
         string kind = "cd13c/skill-plan", Action? applied = null)
     {

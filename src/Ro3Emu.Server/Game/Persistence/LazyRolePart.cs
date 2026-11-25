@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace Ro3Emu.Server.Game.Persistence;
 
 /// <summary>
-/// A lazily persisted role part (C/D 17/18). A change only marks the part dirty; this ticker captures the latest
+/// A lazily persisted role part. A change only marks the part dirty; this ticker captures the latest
 /// value and writes it on the writer's lazy lane, so the loop never waits on SQLite for it.
 /// - **When:** an urgent change is written on the next tick; otherwise at most one <see cref="Interval"/> after the
 ///   first unpersisted change. Sustained changes never postpone it.

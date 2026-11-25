@@ -2,7 +2,7 @@ namespace Ro3Emu.Server.Economy;
 
 public static partial class EconomySnapshotReader
 {
-    // Asserted against CoreSchemaPlans and every CREATE TABLE in Accounts/Persistence and Game (E00).
+    // Asserted against CoreSchemaPlans and every CREATE TABLE in Accounts/Persistence and Game.
     // An added table/column, including non-BLOB assets, is an inventory change requiring review.
     private static readonly Dictionary<string, string> KnownColumns = new(StringComparer.Ordinal)
     {

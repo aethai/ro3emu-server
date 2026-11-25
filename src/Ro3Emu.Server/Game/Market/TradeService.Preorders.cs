@@ -147,7 +147,7 @@ public sealed partial class TradeService
     /// <summary>Advance publicity and timed listings. The host also invokes this once per second.</summary>
     public Task TickAsync(GameSession s) => TickMaintenanceAsync();
 
-    // Stage G: every trade message and the 1 s stall maintenance call this. As a full market transaction each time it
+    // Every trade message and the 1 s stall maintenance call this. As a full market transaction each time it
     // put two transactions on every trade request (p50 0.5-0.9 s at 500 players). It now runs only when a listing can
     // have matured or expired: a market commit since the last pass, or the earliest due time reached.
     private long _maintainedVersion = -1, _nextDueMs;

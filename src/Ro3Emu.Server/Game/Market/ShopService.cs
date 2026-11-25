@@ -219,9 +219,9 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         session.SendGameAsync(CommodityGetInfo, new CommodityGetInfoResp());
 
     /// <summary>
-    /// E01: one server-admitted NPC purchase (ShopConfig type 3) authorizes its exact payment and
+    /// One server-admitted NPC purchase (ShopConfig type 3) authorizes its exact payment and
     /// goods. The existing wire has no retry token: equal client requests remain distinct purchases. The captured
-    /// operation/source survives an internal retry of the detached plan; other shops use the E05a family envelope.
+    /// operation/source survives an internal retry of the detached plan; other shops use the family economy envelope.
     /// </summary>
     private EconomyMutation? NpcPurchase(GameSession session, JsonElement row, int commodity, int count,
         int unit, int payment, int entry, int perUnit, int priorCount, Counter next)

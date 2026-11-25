@@ -143,7 +143,7 @@ public sealed partial class SkillCastingService
         long id = NextSessionId();
         var lease = s.Attachment;
         long scene = s.SceneGeneration, worldScene = s.WorldScene;
-        // E05c: the receipt is the paid action's admission. Repeating a protocol request
+        // The progression receipt is the paid action's admission. Repeating a protocol request
         // is a new intent and pays again; a lost writer ACK resolves this exact source.
         if (!await AdmitCastCostAsync(s, row!.Value, req, costs, id))
         {

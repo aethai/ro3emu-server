@@ -106,7 +106,7 @@ public sealed partial class GuildService
     public Task CancelCreateAsync(GameSession s) => RunGuildAsync(s, [], [], () => CancelCreateCoreAsync(s), disband: true);
     public Task HelperOpeAsync(GameSession s, GuildCreateHelperOpeReq req) => RunGuildAsync(s, req.GuildIds, [], () => HelperOpeCoreAsync(s, req));
     public Task HelperLeaveAsync(GameSession s, GuildCreateHelperLeaveReq req) => RunGuildAsync(s, [], [], () => HelperLeaveCoreAsync(s, req));
-    // C/D 15: realm-wide guild maintenance runs on the heartbeat (at most once a second), not in the login. Inside
+    // Realm-wide guild maintenance runs on the heartbeat (at most once a second), not in the login. Inside
     // the role select the login only reads guild state and writes the role's own guild blob, which the select's role
     // reservation covers; elsewhere it admits its own guild scope.
     public Task LoginAsync(GameSession s) => ownerRegistry.Current is { RuntimeOnly: false }

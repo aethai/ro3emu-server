@@ -174,9 +174,9 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>Speed attribute (idx 113) of the role; the client moves at Speed/100 units per second.</summary>
     public long Speed { get; set; } = RoleSessionService.DefaultSpeed;
 
-    /// <summary>C/D 18 lazy public-position state (PositionPersistence).</summary>
+    /// <summary>Lazy public-position state (PositionPersistence).</summary>
     internal Persistence.LazyRolePart.State? PositionPart { get; set; }
-    /// <summary>C/D 17: the role's client settings, merged in memory and written lazily (SettingsPersistence).</summary>
+    /// <summary>The role's client settings, merged in memory and written lazily (SettingsPersistence).</summary>
     internal Romsg.DBSettingInfo? Settings { get; set; }
     internal Persistence.LazyRolePart.State? SettingsPart { get; set; }
     /// <summary>The Bonus Time clock's lazy save (WildAfkPersistence).</summary>
@@ -381,7 +381,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
         return Channel.SendFrameAsync(prepared.Frame);
     }
 
-    // The closure lives here so that the common path (no notices) does not allocate it on every send (stage G).
+    // The closure lives here so that the common path (no notices) does not allocate it on every send.
     private void DeferPrepared(Ownership.OwnerNotices notices, PreparedMessage prepared) =>
         notices.Add(this, () => SendPreparedAsync(prepared));
 

@@ -417,7 +417,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
         if (_restore.Remove(monster.Uid, out long restore)) await RestoreAsync(monster.SceneEntry, restore);
     }
 
-    /// <summary>C/D 15: the role's own round settlement entities, reserved up front by the role select (the season
+    /// <summary>The role's own round settlement entities, reserved up front by the role select (the season
     /// comes from the role's blob, served by the login snapshot).</summary>
     internal Ownership.ReservationKey[] LoginKeys(long roleId)
     {

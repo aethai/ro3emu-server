@@ -928,7 +928,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         else await OnePieceLeavingAsync(session);
     }
 
-    /// <summary>C/D 15: what the handover cleanup's leave writes - the leave keys and, when the leaver can end its
+    /// <summary>What the handover cleanup's leave writes - the leave keys and, when the leaver can end its
     /// match, the match settlement keys.</summary>
     internal ReservationKey[] CleanupKeys(GameSession session) =>
         [.. LeaveKeys(session), .. _active.TryGetValue(session, out var match) && match is { Settled: false, Room: { } room }
