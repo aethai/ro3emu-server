@@ -3,6 +3,8 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data.Config;
 
+using TaskDef = Ro3Emu.Server.Game.TaskService.TaskDef;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -21,16 +23,11 @@ namespace Ro3Emu.Server.Game;
 /// met; 200001 and 210003 read the member's battle score and assists (<see cref="DungeonRunValue"/>, the siege).
 /// Without a run, or once the member leaves its instance, nothing is shown.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
     private const int TDungeonStage = 200000, TDungeonRating = 200001, TWeakValue = 200003, TDungeonAssists = 210003,
         TDungeonBoss = 210004, TDungeonStep = 210005;
     private const int DungeonTaskType = 4, RingTaskType = 24;
-
-    /// <summary><see cref="OnDungeonRun"/> step: the run is at its chain's last step (a stage rebuilt as one fight).</summary>
-    public const int FinalStep = int.MaxValue - 1;
-    /// <summary><see cref="OnDungeonRun"/> step: the run is settled, its tracker leaves.</summary>
-    public const int RunOver = int.MaxValue;
 
     private sealed class DungeonRun(long scene, long instance)
     {
@@ -41,9 +38,6 @@ public sealed partial class TaskService
 
     private Dictionary<long, TaskDef[]>? _dungeonChains;
     private readonly ConditionalWeakTable<Ownership.AttachmentLease, DungeonRun> _dungeonRuns = [];
-
-    /// <summary>200001 / 210003: the member's score and assists in the battle it is loaded into, -1 when none.</summary>
-    public Func<GameSession, int, long>? DungeonRunValue { get; set; }
 
     /// <summary>
     /// A member's run of <paramref name="scene"/> (instance <paramref name="instance"/>) has passed <paramref name="step"/>

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Ro3Emu.Server.Data.Config;
 
+using TaskDef = Ro3Emu.Server.Game.TaskService.TaskDef;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,22 +15,18 @@ namespace Ro3Emu.Server.Game;
 /// every week. Its target reads today's time in a room (TavernService.TodaySeconds), so a relog loses nothing; the guild
 /// To-Do tasks that reuse 106010 as an event counter (TaskService.GuildEvents) are not touched.
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    internal const int BarRoomTaskType = 9;
     private const long TavernFunction = 2410;
 
     private long[]? _tavernTasks;
-
-    /// <summary>Today's seconds in a Tavern room, from TavernService (which depends on this service).</summary>
-    public Func<GameSession, long>? TavernSeconds { get; set; }
 
     private long[] TavernTasks() => _tavernTasks ??= [.. _data.Table("TaskConfig").Values
         .Where(r => r.ValueKind == JsonValueKind.Object).Select(r => new TaskConfig(r))
         .Where(t => t.TaskType == BarRoomTaskType && Defs().ContainsKey(t.TaskId)).Select(t => t.TaskId).Order()];
 
     /// <summary>Accepts today's Tavern quest once the function is open; a copy from an earlier day starts over.</summary>
-    private int AcceptTavernTasks(GameSession session)
+    internal int AcceptTavernTasks(GameSession session)
     {
         if (TavernTasks().Length == 0 || !_functions.IsOpen(session, TavernFunction)) return 0;
         long day = (session.Daily?.DailyEpoch ?? 0) * 1000;
@@ -48,10 +46,10 @@ public sealed partial class TaskService
     }
 
     /// <summary>The Tavern quest has no delivery of its own: it is handed in as an Auto quest.</summary>
-    private static bool DeliversItself(TaskDef def) => def.Type == BarRoomTaskType && def.Deliver == 0;
+    internal static bool DeliversItself(TaskDef def) => def.Type == BarRoomTaskType && def.Deliver == 0;
 
     /// <summary>106010 of a Tavern quest: today's time in a room; -1 (not passive) for any other quest's 106010.</summary>
-    private long TavernStay(GameSession session, TaskDef def, long[] t) =>
+    internal long TavernStay(GameSession session, TaskDef def, long[] t) =>
         t[0] == TBarroomActTime && def.Type == BarRoomTaskType ? TavernSeconds?.Invoke(session) ?? 0 : -1;
 
     /// <summary>Time in a Tavern room was written: today's quest re-reads it on the owner loop.</summary>

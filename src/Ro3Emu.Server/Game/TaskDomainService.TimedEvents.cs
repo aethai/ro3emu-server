@@ -1,6 +1,6 @@
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
     /// <summary>One actual server-settled OnePiece dungeon reward, not a client-uploaded treasure count.</summary>
     public Task OnOnePieceRewardAsync(GameSession session) =>
@@ -16,7 +16,7 @@ public sealed partial class TaskService
         : Task.CompletedTask;
 
     /// <summary>106509 and 210012 count both Kafra Survivor (2) and Dragon Coffin Island (6); 210009 only the latter.</summary>
-    private static bool TimedBattleTarget(long[] target, int matchEntry) =>
+    internal static bool TimedBattleTarget(long[] target, int matchEntry) =>
         target is [TTimedBattle or TCoffinOrSurvivor, _] || matchEntry == 6 && target is [TDragonCoffin, _];
 
     /// <summary>One Wedding Crashers clear by the guild this member took part in (target 210010).</summary>

@@ -43,22 +43,9 @@ namespace Ro3Emu.Server.Game;
 /// share for a delivered 1101000 ("provide Guild Coins to the guild", its _iBeforeDescribe) is paid by
 /// <see cref="FactionGuildAward"/> (GuildCaravanService.FactionAward.cs, inferred).
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    /// <summary>LC_ConditionDefine CheckTerritoryWarzoneTaskPoint; 107102 and 101023 have no client name.</summary>
-    private const int TFactionPoints = 101022, TFactionCrystal = 107102, TRivalKill = 101023;
-
     private const int FactionSubTaskType = 25;
-    public const int FactionFunction = 7202;
-
-    /// <summary>The role's territory camp (EPvpRoleCampNum), set by the host from TerritoryWarsService.</summary>
-    public Func<GameSession, int>? FactionCamp { get; set; }
-
-    /// <summary>The killer earns 101023 for this victim (TerritoryWarsService.WorldRivals), set by the host.</summary>
-    public Func<GameSession, GameSession, bool>? FactionRivals { get; set; }
-
-    /// <summary>The guild's share of a delivered 1101000: (role, game day); the owner posts its own work. Set by the host.</summary>
-    public Action<GameSession, long>? FactionGuildAward { get; set; }
 
     private Dictionary<long, long>? _factionPoints;
     private Dictionary<long, int>? _factionTiers;
@@ -96,7 +83,7 @@ public sealed partial class TaskService
     /// 101022: a delivered sub-task adds its points to the running faction quest and to the day's count, up to the day's
     /// cap (QuestDelivered, inside the quest lock; the settlement that delivered it saves and sends the change).
     /// </summary>
-    private void AddFactionPoints(GameSession s, long taskId, AwardPlan _)
+    internal void AddFactionPoints(GameSession s, long taskId, AwardPlan _)
     {
         if (taskId == FactionQuest) FactionGuildAward?.Invoke(s, s.Daily?.DailyEpoch ?? 0);
         if (s.Tasks == null || !FactionPoints().TryGetValue(taskId, out long points)) return;
@@ -143,7 +130,7 @@ public sealed partial class TaskService
     /// The day's faction tasks: a new game day starts over; with function 7202 open, 1101000 once a day and, below the
     /// day's cap, the camp tier's sub-tasks (a delivered one again). Returns how many tasks were accepted or dropped.
     /// </summary>
-    private int AcceptFactionTasks(GameSession session)
+    internal int AcceptFactionTasks(GameSession session)
     {
         if (!Defs().ContainsKey(FactionQuest)) return 0;
         int moved = StartFactionDay(session);

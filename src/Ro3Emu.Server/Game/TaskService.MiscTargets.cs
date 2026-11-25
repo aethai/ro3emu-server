@@ -142,7 +142,7 @@ public sealed partial class TaskService
 
     /// <summary>The role runs a quest with a <paramref name="type"/> target: a chat line or a purchase does not post
     /// quest work for everyone.</summary>
-    private bool Holds(GameSession s, int type)
+    internal bool Holds(GameSession s, int type)
     {
         _eventTasks ??= Defs().Values.SelectMany(d => d.Targets.Select(t => (Type: (int)t[0], d.Id))).Distinct()
             .GroupBy(p => p.Type).ToDictionary(g => g.Key, g => g.Select(p => p.Id).ToArray());

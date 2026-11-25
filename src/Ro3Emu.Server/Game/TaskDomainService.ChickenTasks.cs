@@ -13,9 +13,8 @@ namespace Ro3Emu.Server.Game;
 /// (Monday 05:00, DailyActivityService). A task that turns Finished pops UI_Sys_Chicken_TaskFinishPanel through 31211
 /// TaskRewardNotify{rewardType 1 Chicken, taskId} (LC_DAL_Task._dealTaskRewardNotify).
 /// </summary>
-public sealed partial class TaskService
+public sealed partial class TaskDomainService
 {
-    internal const int ChickenTaskType = 10;
     private const long ChickenFunction = 65;
     private const int RewardTypeChicken = 1; // ETaskRewardNum_Chicken
 
@@ -26,7 +25,7 @@ public sealed partial class TaskService
         .Where(t => t.TaskType == ChickenTaskType && Defs().ContainsKey(t.TaskId)).Select(t => t.TaskId).Order()];
 
     /// <summary>Accepts the week's Survivor tasks the rank allows; returns how many.</summary>
-    private int AcceptChickenTasks(GameSession session)
+    internal int AcceptChickenTasks(GameSession session)
     {
         if (ChickenTasks().Length == 0 || !_functions.IsOpen(session, ChickenFunction)) return 0;
         long week = (session.Daily?.WeeklyEpoch ?? 0) * 1000;
@@ -46,7 +45,7 @@ public sealed partial class TaskService
     }
 
     /// <summary>31211 after the save that made these Survivor tasks Finished.</summary>
-    private static async Task NotifyChickenFinishedAsync(GameSession session, IEnumerable<long> finished)
+    internal static async Task NotifyChickenFinishedAsync(GameSession session, IEnumerable<long> finished)
     {
         foreach (long id in finished)
             await session.SendGameAsync(TaskRewardNotice,
