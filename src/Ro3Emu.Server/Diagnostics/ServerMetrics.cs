@@ -83,6 +83,14 @@ public sealed class ServerMetrics : IDisposable
     public void RecordTicker(string type, double durationMs) =>
         Current.Tickers.GetOrAdd(type, static _ => new()).Record(durationMs);
 
+    /// <summary>Isolated hook subscriber exceptions, keyed by hook and subscriber name (bounded to 256 keys).</summary>
+    public void RecordHookError(string hook, string subscriber)
+    {
+        var key = string.IsNullOrEmpty(hook) ? subscriber : hook + "/" + subscriber;
+        var counts = Current.HookErrors;
+        counts.AddOrUpdate(counts.Count < 256 ? key : "(other)", 1, static (_, n) => n + 1);
+    }
+
     public void RecordTimer(double latenessMs, double durationMs)
     {
         var e = Current;
@@ -227,7 +235,12 @@ public sealed class ServerMetrics : IDisposable
                 workingSetBytes = process.WorkingSet64, threadPoolQueueLength = ThreadPool.PendingWorkItemCount,
                 processCpuSeconds = (process.TotalProcessorTime - e.Cpu).TotalSeconds,
             },
-            errors = new { exceptions = Volatile.Read(ref e.Exceptions), errorLogs = Volatile.Read(ref e.ErrorLogs) },
+            errors = new
+            {
+                exceptions = Volatile.Read(ref e.Exceptions),
+                errorLogs = Volatile.Read(ref e.ErrorLogs),
+                hookErrors = e.HookErrors.ToDictionary(x => x.Key, x => x.Value),
+            },
         };
     }
 
@@ -260,6 +273,7 @@ public sealed class ServerMetrics : IDisposable
         public readonly ConcurrentDictionary<string, FixedHistogram> Tickers = new();
         public readonly ConcurrentDictionary<string, FixedHistogram> SlowItems = new();
         public readonly ConcurrentDictionary<string, long> DbCallSites = new();
+        public readonly ConcurrentDictionary<string, long> HookErrors = new();
         public long BusyTicks, Overruns, FramesIn, FramesOut, SocketSends, BytesIn, BytesOut, PartialSends, WriterErrors, Commits, Exceptions, ErrorLogs, DatabaseProfileErrors;
         public int QueueLengthCurrent;
         public InboundMetrics Message(uint id) => Inbound.TryGetValue(id, out var found) ? found : Inbound.GetOrAdd(Inbound.Count < 4096 ? id : uint.MaxValue, static _ => new());
