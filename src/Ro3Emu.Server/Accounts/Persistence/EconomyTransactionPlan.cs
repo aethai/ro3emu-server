@@ -7,14 +7,14 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>One E01 NPC purchase: existing typed children plus semantic receipt and exact role asset legs.</summary>
+/// <summary>One NPC economy transaction: existing typed children plus semantic receipt and exact role asset legs.</summary>
 internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation mutation,
     bool failAcknowledgementForTest = false, bool owned = false) : DbPlan
 {
     private int pendingAcknowledgementFault = failAcknowledgementForTest ? 1 : 0;
     private bool isReplay;
-    // E04 owned rewards retain their generic writer acknowledgement after economic replay validation.
-    // E01 resolves through EconomyReceiptResolveReadPlan; semantic E05d has its own envelope plan.
+    // Owned reward envelopes retain their generic writer acknowledgement after economic replay validation.
+    // NPC economy plans resolve through EconomyReceiptResolveReadPlan; semantic envelopes have their own plan.
     internal override bool OwnsOperationReceipt => !owned;
     internal override bool IsReplay => isReplay;
     internal override string? OperationId => owned ? mutation.OperationId : null;

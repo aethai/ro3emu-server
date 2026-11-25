@@ -416,8 +416,8 @@ public sealed partial class CharacterInventoryService
             // converted family envelopes enlist bag_state; ordinary Life exchanges stay guarded.
             if (request.AsyncCommit && s.LifeUse != null && !s.Builder.HasAsyncFamilyEconomy)
                 throw new InvalidOperationException("Life exchange is not an asynchronous owner family.");
-            // Converted family envelopes, E04 rewards and 13e owned grants use owned admission. E05a shops opt the original
-            // E01 receipt shape into that path with asyncCommit; other legacy callers retain the sync adapter.
+            // Converted family envelopes, reward settlements, and owned grants use owned admission. Shops opt the original
+            // NPC receipt shape into that path with asyncCommit; other legacy callers retain the sync adapter.
             if (s.Builder.HasEconomy && !s.Builder.HasAsyncFamilyEconomy && !request.AsyncCommit
                 && request.RewardSettlement == null && request.Economy == null)
             {
@@ -437,7 +437,7 @@ public sealed partial class CharacterInventoryService
         }
         catch (EconomyOutcomeUnknownException error)
         {
-            // E01: neither snapshot is safe to publish/save if durable receipt recovery is unavailable.
+            // Economy invariant: neither snapshot is safe to publish/save if durable receipt recovery is unavailable.
             if (session.Owner is { } owner) owner.State = Ownership.RoleOwnerState.RecoveryRequired;
             session.CancelPendingCharacterIntents();
             session.AbortForRecovery();

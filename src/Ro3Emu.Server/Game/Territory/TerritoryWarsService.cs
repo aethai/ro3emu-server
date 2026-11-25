@@ -566,7 +566,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule, ISt
         return true;
     }
 
-    /// <summary>C/D 15: the current season entity the login's own projection alignment needs, reserved up front by
+    /// <summary>The current season entity the login's own projection alignment needs, reserved up front by
     /// the role select.</summary>
     internal Ownership.ReservationKey[] LoginKeys() =>
         Epoch.Length > 0 ? [Ownership.ReservationKey.SharedEntity("territory_season", Epoch)] : [];
@@ -576,7 +576,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule, ISt
         s.Instances.TerritoryBattle = null;
         s.Instances.SiegeBattle = null;
         s.Instances.TerritoryMinimapOpen = false;
-        // C/D 15: no realm reconciliation inside the login (it reserved Realm-wide territory state and every
+        // No realm reconciliation inside the login (it reserved Realm-wide territory state and every
         // participant). The one-second Tick runs it from startup; a stage change it publishes reaches this session
         // once its TerritoryWars projection is set below.
         if (s.Role is not { } role) return;

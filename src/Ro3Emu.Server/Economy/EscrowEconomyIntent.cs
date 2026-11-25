@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>E03: resolved external changes authorized by the command; transfers require no external leg.</summary>
+/// <summary>Escrow intent: resolved external changes authorized by the command; transfers require no external leg.</summary>
 public sealed class EscrowEconomyIntent
 {
     private readonly List<EscrowExternalChange> changes = [];
@@ -14,7 +14,7 @@ public sealed class EscrowEconomyIntent
     private EscrowRolePart[][]? childRoleWrites;
     private bool frozen;
 
-    /// <summary>Persisted E03 command namespaces; never infer a family from a reason number or payload shape.</summary>
+    /// <summary>Persisted escrow command namespaces; never infer a family from a reason number or payload shape.</summary>
     internal static bool IsKind(string kind) =>
         kind.StartsWith("market/", StringComparison.Ordinal) ||
         kind.StartsWith("auction/", StringComparison.Ordinal) ||

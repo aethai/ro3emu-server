@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>Independent, read-only baseline decoder for the E00 persisted compartments.</summary>
+/// <summary>Independent, read-only baseline decoder for the persisted economy compartments.</summary>
 public static partial class EconomySnapshotReader
 {
     public const string CoverageVersion = "e03-e05e-reader-1";
@@ -59,7 +59,7 @@ public static partial class EconomySnapshotReader
     private enum BlobFormat { Json, Protobuf, Mailbox, TerritoryRole, RawEpoch, StringSet }
     private sealed class UnknownPersistedFieldException(string message) : Exception(message);
 
-    /// <summary>Remaining unqualified families. E05e event envelopes do not imply whole-realm coverage.</summary>
+    /// <summary>Remaining unqualified families. Event economy envelopes do not imply whole-realm coverage.</summary>
     public static IReadOnlyList<string> UncoveredFamilies { get; } = [
         "role/item identity, reset, migration and snapshot replacement", "character exchange, direct grants and GM",
         "monster drops, gathering, static pickup and world interaction", "shop, card, equipment, appraisal and enchant",
@@ -81,7 +81,7 @@ public static partial class EconomySnapshotReader
         using (var only = db.CreateCommand()) { only.CommandText = "PRAGMA query_only=ON"; only.ExecuteNonQuery(); }
         using var tx = db.BeginTransaction(deferred: true);
         // The first read (this schema check) pins the WAL view; the persisted watermark is read from that same view.
-        // A legacy baseline without E01 has no cut, and none is fabricated.
+        // A legacy baseline without an economy ledger has no cut, and none is fabricated.
         string? persistedRealm = null;
         long? commitSequence = null;
         if (EconomySchema.Has(db, tx, "economy_meta"))
@@ -185,7 +185,7 @@ public static partial class EconomySnapshotReader
         return result;
     }
 
-    /// <summary>Read the same persisted compartments inside the writer's transaction for E05d delta verification.</summary>
+    /// <summary>Read the same persisted compartments inside the writer's transaction for semantic delta verification.</summary>
     internal static (IReadOnlyList<EconomyHolding> Holdings, IReadOnlyList<EconomyIssue> Issues) ReadTransaction(
         SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog)
     {

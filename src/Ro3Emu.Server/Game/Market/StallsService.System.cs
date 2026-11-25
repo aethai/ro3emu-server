@@ -108,7 +108,7 @@ public sealed partial class StallsService
         return RefreshWorldMaintenanceAsync();
     }
 
-    /// <summary>Ask the realm maintenance to keep this session's scene populated (login and scene load, C/D 15). Visited
+    /// <summary>Ask the realm maintenance to keep this session's scene populated (login and scene load). Visited
     /// scenes stay in the set: the maintenance also replaces their expired system stalls and restocks them.</summary>
     internal bool RequestScene(GameSession s) => s.InstanceId == 0 && s.SceneEntry > 0 && _maintenanceScenes.Add(s.SceneEntry);
 

@@ -25,7 +25,7 @@ public sealed partial class TimedBattleService
             RoleObligations<TimedBattleObligationRow>.PendingAsync(accounts, role);
     }
 
-    /// <summary>C/D 15: the role's undelivered settlement grants, read before the role select admits so it can reserve
+    /// <summary>The role's undelivered settlement grants, read before the role select admits so it can reserve
     /// them for <see cref="DeliverPendingAsync"/>.</summary>
     internal Task<ReservationKey[]> LoginKeysAsync(long roleId) =>
         RoleObligations<TimedBattleObligationRow>.LoginKeysAsync(_accounts, roleId);

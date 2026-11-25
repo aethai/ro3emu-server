@@ -145,7 +145,7 @@ public sealed partial class MarketStore(AccountStore accounts, ItemStore items, 
                     await boundaryOwners.Reservations.Changed;
                     continue;
                 }
-                // Stage G: a successful capture that writes nothing (a query) is final as read. Its reads were
+                // A successful capture that writes nothing (a query) is final as read. Its reads were
                 // synchronous on the loop, so they saw one committed state; reserving and committing guards for it only
                 // queued queries behind market writers and the writer (32602 p99 0.9 s at 500 players). A refusal still
                 // takes the reservation below: it may rest on live state a predecessor's Apply has not published yet.

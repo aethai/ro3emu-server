@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
-/// Offline restore of a backup made by <see cref="DatabaseBackup"/> (C/D 19): <c>Ro3Emu.Server --restore-backup &lt;file&gt;</c>.
+/// Offline restore of a backup made by <see cref="DatabaseBackup"/>: <c>Ro3Emu.Server --restore-backup &lt;file&gt;</c>.
 /// - The backup must pass <c>PRAGMA quick_check</c> and hold the realm's core tables. A compressed copy
 ///   (<c>.db.gz</c>) is unpacked into the prepared copy and checked there.
 /// - The realm must not be open: the restore takes the data dir's <see cref="RealmLock"/>, which a running server holds.
@@ -164,7 +164,7 @@ public static class DatabaseRestore
     }
 
     /// <summary>
-    /// Refuses to open the realm while a restore is unfinished (C/D 19): the live database may be missing or be the old
+    /// Refuses to open the realm while a restore is unfinished: the live database may be missing or be the old
     /// one, and opening it would create an empty realm or hide the half-done restore.
     /// </summary>
     public static void ThrowIfUnfinished(string dataDir)

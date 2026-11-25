@@ -42,7 +42,7 @@ public sealed partial class SeasonService : IGameTicker
     private readonly SessionRegistry _sessions;
     private readonly ILogger<SeasonService> _log;
     private SeasonTimeInfoNotify? _timing;
-    // Stage G: the clock of a playbook is a pure function of the season start and the tables, yet logins and activity
+    // The clock of a playbook is a pure function of the season start and the tables, yet logins and activity
     // windows rebuilt it each time (290 MB per 500 logins). Shared and read-only; cleared with timing.
     private readonly Dictionary<int, SeasonTimeInfoNotify> _clocks = [];
 
@@ -297,7 +297,7 @@ public sealed partial class SeasonService : IGameTicker
         // A batch whose operation was neither run nor discarded (an admission fault) cannot stall the clock for good.
         if (_checking && time.Now - _checkingSince < TimeSpan.FromSeconds(10) || time.Now - _lastTick < TimeSpan.FromSeconds(1)) return;
         _lastTick = time.Now;
-        // C/D 16: only roles whose season state moved reconcile, each as its own role-owned operation. One Realm
+        // Only roles whose season state moved reconcile, each as its own role-owned operation. One Realm
         // operation for all sessions every second waited behind owned work for up to 16 s (S3).
         var changed = _sessions.All().Where(session => session.Role != null && session.SeasonState is { } state
             && state.SeasonId == _seasonId && !state.Equals(State((int)state.PlayBookId))).ToArray();

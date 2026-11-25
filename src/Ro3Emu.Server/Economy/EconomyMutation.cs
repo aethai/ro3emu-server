@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Economy;
 /// <summary>A caller-authorized, positive change to one denomination.</summary>
 public readonly record struct EconomyQuantity(EconomyAsset Asset, long Quantity);
 
-/// <summary>Frozen progression and conversion result for an E04 reward.</summary>
+/// <summary>Frozen progression and conversion result for a reward settlement.</summary>
 public sealed record EconomyRewardEvidence(
     int BeforeBaseLevel, long BeforeBaseExp, int AfterBaseLevel, long AfterBaseExp,
     int BeforeJobLevel, long BeforeJobExp, int AfterJobLevel, long AfterJobExp,
@@ -21,7 +21,7 @@ public sealed record EconomyRewardEvidence(
 /// <summary>Detached semantic intent for one admitted transaction. IDs are stable across internal retry.</summary>
 public sealed class EconomyMutation
 {
-    // Stage G: one options instance; a new one per mutation rebuilt the JSON type metadata every time.
+    // Shared options instance: a new one per mutation rebuilt the JSON type metadata every time.
     private static readonly JsonSerializerOptions CanonicalJson =
         new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
     // The shipped item catalog has 3,190 denominations. Allow both cost and goods for

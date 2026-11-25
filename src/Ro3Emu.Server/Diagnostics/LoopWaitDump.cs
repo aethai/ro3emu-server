@@ -4,7 +4,7 @@ namespace Ro3Emu.Server.Diagnostics;
 
 /// <summary>
 /// Appends one server's loop-wait counts ("R|W label", count) as tab-separated lines to a shared file, so a run
-/// of many servers (the test suite) yields one C/D 16 inventory: <c>tools/loopwaits.js</c> sums it.
+/// of many servers (the test suite) yields one loop-wait inventory: <c>tools/loopwaits.js</c> sums it.
 /// </summary>
 internal static class LoopWaitDump
 {

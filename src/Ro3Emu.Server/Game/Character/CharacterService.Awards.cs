@@ -21,7 +21,7 @@ public sealed partial class CharacterService
         if (entry == JobExpItem) return await AddExpAsync(session, 0, count);
         using var _ = await LockAsync(session);
         count = Math.Clamp(count, 1, GameData.Int(row, "_iType") == ItemTypeCurrency ? int.MaxValue : 999);
-        // C/D 13a: an exchange keeps the live InvItem instances (the award path would replace them).
+        // An exchange keeps the live InvItem instances (the award path would replace them).
         await ExchangeLockedAsync(session, new ExchangeRequest
         {
             Goods = [(entry, count)],
@@ -356,7 +356,7 @@ public sealed partial class CharacterService
         }
         if (s.FamilyEconomy != null)
         {
-            // E05b pet-lottery seam. Ordinary award/EXP families retain their own migration boundary.
+            // Pet-lottery economy seam. Ordinary award/EXP families retain their own receipt boundary.
             if (s.FamilyEconomy.CommandKind != "cd13b/pet-lottery" || s.DeliveredTaskState != null ||
                 s.TaskRuntimeState != null || s.ExpectedDaily != null || s.ExpectedTasks != null || s.BaseExp != 0 || s.JobExp != 0)
                 throw new InvalidOperationException("The pet lottery envelope cannot enlist unrelated award boundaries.");

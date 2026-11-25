@@ -4,7 +4,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E05e value-only event command. Assets, source, result, revisions and accounting share BEGIN/COMMIT.</summary>
+/// <summary>Value-only event economy command. Assets, source, result, revisions and accounting share BEGIN/COMMIT.</summary>
 internal sealed class EventEconomyTransactionPlan(RoleItemPlan child, EventEconomyMutation semanticMutation,
     bool failAcknowledgementForTest = false) : DbPlan
 {

@@ -71,7 +71,7 @@ public sealed partial class CharacterService
         // Without the exported ItemConfig nothing is known about items: no kit yet (it comes on a later login).
         if (!progress.StarterKit && data.Row("ItemConfig", ZenyId) != null)
         {
-            // Stage G: the kit (its items and the progress flag and zeny) is one asynchronous transaction; an insert
+            // The starter kit (its items and the progress flag and zeny) is one asynchronous transaction; an insert
             // per item plus a progress write blocked the loop four times per new role. The selection's reservation
             // holds the role's other paths meanwhile. Item-gained hooks follow the commit, as before.
             var before = session.Items.Select(i => i.Clone()).ToList();

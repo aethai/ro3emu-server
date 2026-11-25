@@ -1,6 +1,6 @@
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>E05a's bounded command/part/reason policy. Existing E01, E04 and E05b receipts retain their schemas.</summary>
+/// <summary>Bounded family command/part/reason policy. Existing NPC, reward, and pet receipts retain their schemas.</summary>
 internal static class CharacterFamilyEconomy
 {
     internal static bool IsKind(string kind) => kind.StartsWith("cd13a/", StringComparison.Ordinal) &&

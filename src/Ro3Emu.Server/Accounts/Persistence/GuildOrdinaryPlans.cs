@@ -42,7 +42,7 @@ internal sealed class GuildRoleViewWritePlan(long role, DBRoleGuildInfo view, bo
     }
 }
 
-/// <summary>E05d accepted terminal policy: keep treasury ownership durably recoverable on disband.
+/// <summary>Accepted terminal policy: keep treasury ownership durably recoverable on disband.
 /// Pending caravan/challenge obligations remain in their source journals. No implicit asset burn.</summary>
 internal sealed class GuildRecoverDeletePlan(long guild, long escrowMaterials) : DbPlan
 {

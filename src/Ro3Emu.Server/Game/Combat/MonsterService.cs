@@ -323,7 +323,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         if (ready != null) foreach (var state in ready) RunDue(state, time.Now);
     }
 
-    // Stage G: monster timers (deadlines, swings, target changes, speed and health broadcasts) run in runtime scopes.
+    // Monster timers (deadlines, swings, target changes, speed and health broadcasts) run in runtime scopes.
     // As Realm (1484 target changes, 2009 swings in 5 min of S3 at 500 players) each waited for every reservation to
     // drain and then stopped all owned work, players' walks included. Durable consequences admit their own keys.
     private void RunDue(SpawnState state, TimeSpan now)

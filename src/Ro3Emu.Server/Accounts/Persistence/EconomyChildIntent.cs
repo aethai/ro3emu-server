@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Ro3Emu.Server.Accounts.Persistence;
 
 /// <summary>
-/// E05d's audited typed-plan inventory. The capture is made while the caller still owns the builder,
+/// Audited typed-plan inventory for semantic economy envelopes. The capture is made while the caller still owns the builder,
 /// before revision checks or replay; callbacks and later writer-generated IDs are never part of intent.
 /// Unknown executor kinds fail closed until their detached fields have been reviewed for inclusion.
 /// </summary>

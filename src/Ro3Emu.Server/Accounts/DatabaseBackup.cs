@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
 /// Copies ro3emu.db to &lt;data&gt;/backups at startup and every <c>Backup:IntervalHours</c> (6), keeping the newest
-/// <c>Backup:Keep</c> (20) (C/D 19).
+/// <c>Backup:Keep</c> (20).
 /// - **Cut:** one SQLite online backup step reads a single WAL snapshot, so a copy holds exactly the transactions
 ///   committed before it started, however fast the writer advances meanwhile.
 /// - **Atomic:** the copy is written as <c>.partial</c>, checked with <c>PRAGMA quick_check</c> and only then renamed

@@ -364,7 +364,7 @@ public sealed partial class LotteryService
         next.DailyRecord[request.PoolId] = new LotteryModuleDailyCount { Count = next.LotteryPool[request.PoolId].DailyCount };
         _pets.FinalizeLotteryPets(petState);
         byte[] saved = Pack(next, day), petBytes = petState.ToByteArray();
-        // A draw with a pet result is the E05b pet family envelope (pet legs and refunds); any other draw is the
+        // A draw with a pet result uses the pet family envelope (pet legs and refunds); any other draw uses the
         // 13f event envelope. One builder carries one envelope.
         bool petDraw = response.ItemList.Any(result => result.IsPet);
         var familyEconomy = petDraw

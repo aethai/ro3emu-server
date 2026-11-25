@@ -280,7 +280,7 @@ public sealed partial class CombatService : IGameTicker
 
     /// <summary>A monster died by this player: rewards (RewardService), quest kill targets (TaskService).</summary>
     public AsyncHook<GameSession, MonsterUnit> Killed { get; } = new("Combat.Killed");
-    /// <summary>E04: freeze and commit the lethal source/entitlement before publishing a lethal hit or corpse.</summary>
+    /// <summary>Freeze and commit the lethal reward source/entitlement before publishing a lethal hit or corpse.</summary>
     public AsyncHook<GameSession, MonsterUnit> BeforeKilled { get; } = new("Combat.BeforeKilled");
     private sealed class InstanceDeathGate
     {
@@ -387,7 +387,7 @@ public sealed partial class CombatService : IGameTicker
                 return;
             }
             await BeforeLethalPublication.InvokeAsync(player, monster, previousHp);
-            // Event settlement may await a writer. It cannot transfer the separate E04
+            // Event settlement may await a writer. It cannot transfer the separate reward
             // source to a later role or attachment that did not land this hit.
             if (!OriginalRecipient())
                 throw new OperationCanceledException("Kill recipient changed before the ordinary reward barrier.");
@@ -397,7 +397,7 @@ public sealed partial class CombatService : IGameTicker
         catch (EventSettlementOutcomeUnknownException) { throw; } // retain the frozen event source and unpublished actor
         catch
         {
-            // A proven E04 refusal restores HP inside CommitMonsterDeathAsync. An already
+            // A proven reward refusal restores HP inside CommitMonsterDeathAsync. An already
             // committed event source remains frozen and is retried without another event hit.
             if (monster.Hp == 0 && !monster.DeathDurable && monster.RewardSettlement?.OutcomeUnknown != true)
                 RestoreUnpublishedLethalHit(monster, previousHp);

@@ -7,7 +7,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E03: one existing typed cross-owner plan, observed against explicit external economics.</summary>
+/// <summary>Escrow economy plan: one typed cross-owner plan, observed against explicit external economics.</summary>
 internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEconomyIntent intent,
     EconomyCatalog catalog, bool failAcknowledgementForTest = false) : DbPlan
 {

@@ -72,7 +72,7 @@ public sealed partial class GuildWartimeService
             if (!Attached()) throw new OperationCanceledException("Guild market requester attachment changed.");
             var staged = store.LoadMarket();
             long now = MarketNowMs();
-            // E03 §8: a missing guild has no authorized refund/burn destination. Retain its escrow
+            // Escrow invariant: a missing guild has no authorized refund/burn destination. Retain its escrow
             // for recovery (the economic decoder reports that debt); never silently delete the stock.
             var expired = staged.Stalls.Where(x => x.ExpiresMs <= now || store.Get(x.GuildId) == null).ToArray();
             // Expiry commits first. A subsequent request stages against the refunded balance.

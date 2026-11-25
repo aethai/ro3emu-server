@@ -414,7 +414,7 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule, I
 
     public async Task LoginAsync(GameSession s)
     {
-        // C/D 15: no escort reconciliation inside the login (it reserved the realm escort ledger, every guild and the
+        // No escort reconciliation inside the login (it reserved the realm escort ledger, every guild and the
         // online roles). The one-second Tick runs it from startup and re-aligns online roles on a season change.
         var bytes = _roles.LoadTerritoryEscort(s.Role!.Id);
         var current = bytes == null ? new RoleState() : JsonSerializer.Deserialize<RoleState>(bytes) ?? new RoleState();

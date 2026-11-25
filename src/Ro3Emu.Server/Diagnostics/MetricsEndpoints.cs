@@ -16,7 +16,7 @@ public static class MetricsEndpoints
         // Slowest game messages by total loop time (MessageRoutes, audit F4.1).
         app.MapGet("/ro3emu/metrics/routes", (GameMessageHandler handler) =>
             Results.Json(handler.Routes.Snapshot(40))).RequireOperator();
-        // Login snapshots (C/D 14/16), lazy position (C/D 18) and the owner vector cache (C/D 16).
+        // Login snapshots, lazy position persistence, and the owner vector cache.
         app.MapGet("/ro3emu/metrics/persistence", (Accounts.AccountStore accounts,
             Game.Persistence.PositionPersistence positions, Game.Persistence.SettingsPersistence settings,
             Game.Persistence.WildAfkPersistence wildAfk,

@@ -175,7 +175,7 @@ public sealed partial class CharacterInventoryService
 
     /// <summary>
     /// The same for an action whose state is not the role's (a guild's unlocked badges, an Adventure Group's card
-    /// backgrounds): <paramref name="persist"/> enlists the shared record, and the item leaves as an E05d ItemUse sink
+    /// backgrounds): <paramref name="persist"/> enlists the shared record, and the item leaves as a semantic ItemUse sink
     /// (<paramref name="kind"/>, e.g. "item-action/guild-badge"). The item-use scope must hold the record's keys.
     /// </summary>
     internal async Task<bool> CommitSharedItemActionAsync(ItemActionUse use, string kind, Action<RoleItemPlanBuilder> persist,
@@ -190,7 +190,7 @@ public sealed partial class CharacterInventoryService
         string operation = Guid.NewGuid().ToString("N");
         var envelope = new EconomyEnvelope(operation, s.Account!, s.Role.Id, kind, kind, kind + ":" + operation,
             s.NowMs, [sink], []);
-        // E05d freezes the staged children when it binds, so the item use's cooldown (the 31323 scope's bag_state) is
+        // The semantic envelope freezes the staged children when it binds, so the item use's cooldown (the 31323 scope's bag_state) is
         // staged here, before it, and the scope is published with the commit instead of by the exchange.
         var scope = LifeItemExchange.Value is { Active: true, Committed: false } live && ReferenceEquals(live.Session, s) ? live : null;
         if (scope != null) scope.Active = false;

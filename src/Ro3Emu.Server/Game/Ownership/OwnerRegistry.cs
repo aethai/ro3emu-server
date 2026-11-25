@@ -26,7 +26,7 @@ public sealed partial class OwnerRegistry
     public OwnerRegistry(GameLoop loop, RoleStore roles, ILogger<OwnerRegistry>? log = null)
     {
         _loop = loop; _roles = roles; _log = log; loop.Owners = this;
-        // Diagnostics (C/D 15 inventories): RO3EMU_OWNER_AUDIT=<file> appends every uncovered expansion to the file
+        // Ownership diagnostics: RO3EMU_OWNER_AUDIT=<file> appends every uncovered expansion to the file
         // and lets it proceed under its parent, so one full test run lists every dependency of a narrowed scope.
         if (Environment.GetEnvironmentVariable("RO3EMU_OWNER_AUDIT") is { Length: > 0 } auditFile)
             UncoveredForTest = line => { lock (AuditFileLock) File.AppendAllText(auditFile, line + Environment.NewLine); };
@@ -159,7 +159,7 @@ public sealed partial class OwnerRegistry
     }
     internal void AssertLoop()
     { if (!_loop.IsOnLoop) throw new InvalidOperationException("Owner state must run on its game loop."); }
-    // Deferred admissions by origin (C/D 16 diagnostics): count, total and max queued time, and which origin held a
+    // Deferred admissions by origin (diagnostics): count, total and max queued time, and which origin held a
     // conflicting key when the admission first had to wait. Read off the loop by the metrics endpoint, hence the lock.
     private readonly Dictionary<long, string> _origins = [];
     // Admission time of each keyed operation and the gate it waits at while keeping its keys, for the stuck-work report.
@@ -275,7 +275,7 @@ public sealed partial class OwnerRegistry
         if (!context.Active || context.Registry != this || !ReferenceEquals(Current, context))
             throw new InvalidOperationException("Owner capability is inactive or belongs to another operation.");
     }
-    /// <summary>C/D 15 audit (tests only): when set, a nested request or write its scope does not cover is reported
+    /// <summary>Ownership audit (tests only): when set, a nested request or write its scope does not cover is reported
     /// here and proceeds under the parent instead of throwing, so one run lists every expansion.</summary>
     internal Action<string>? UncoveredForTest { get; set; }
     internal bool AuditUncovered(string what)

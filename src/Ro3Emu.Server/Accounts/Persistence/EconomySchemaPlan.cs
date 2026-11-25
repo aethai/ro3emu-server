@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E01 additive receipt/ledger, separate from C/D's role lifecycle and owner revisions.</summary>
+/// <summary>Additive economy receipt/ledger schema, separate from role lifecycle and owner revisions.</summary>
 internal sealed class EconomySchemaPlan : DbPlan
 {
     internal override int Bytes => 4096;

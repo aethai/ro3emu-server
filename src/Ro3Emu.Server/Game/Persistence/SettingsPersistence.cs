@@ -4,7 +4,7 @@ using Ro3Emu.Server.Accounts;
 namespace Ro3Emu.Server.Game.Persistence;
 
 /// <summary>
-/// C/D 17: the role's client settings (DBSettingInfo) are kept on the session and written lazily (see
+/// The role's client settings (DBSettingInfo) are kept on the session and written lazily (see
 /// <see cref="LazyRolePart"/>), within one second of the first unsaved change. A settings change coupled to AFK
 /// accounting (SettingType.WildAfk) stays durable at once together with its reconciliation; leaving the world
 /// flushes synchronously.

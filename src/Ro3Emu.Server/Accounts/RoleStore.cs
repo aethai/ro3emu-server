@@ -72,13 +72,13 @@ public sealed class RoleStore(AccountStore accounts)
 
     public RoleItemPlanBuilder NewTransaction() => new(_accounts);
 
-    /// <summary>Stage G: the selection of <paramref name="role"/> stages its login blobs (see AccountStore.Staging).</summary>
+    /// <summary>The selection of <paramref name="role"/> stages its login blobs (see AccountStore.Staging).</summary>
     internal void BeginLoginStaging(long role) => _accounts.BeginStaging(role);
     internal Task CommitLoginStagingAsync(long role) => _accounts.CommitStagedAsync(role);
     internal void FlushLoginStaging(long role) => _accounts.FlushStaged(role);
     internal bool IsLoginStaging(long role) => _accounts.StagedCount(role) >= 0;
 
-    /// <summary>Stage G: true when the role's blob column already holds exactly <paramref name="value"/> (a valid
+    /// <summary>True when the role's blob column already holds exactly <paramref name="value"/> (a valid
     /// snapshot column or the hash of this process's last save of it; any commit of the part invalidates both), so
     /// a transaction writing only it would change nothing. A staged column is never reported unchanged.</summary>
     internal bool BlobUnchanged(long id, string column, byte[] value)
@@ -165,7 +165,7 @@ public sealed class RoleStore(AccountStore accounts)
     }
 
     /// <summary>
-    /// C/D 18 lazy public position: written on the writer's lazy lane against the caller's expected revision of
+    /// Lazy public position: written on the writer's lazy lane against the caller's expected revision of
     /// the position part (a CAS chain), so an overtaken capture is refused instead of overwriting a newer position.
     /// Returns false on that refusal. Never waits on the loop.
     /// </summary>
@@ -177,7 +177,7 @@ public sealed class RoleStore(AccountStore accounts)
         catch (RolePlanConflictException) { return false; }
     }
 
-    /// <summary>C/D 17 lazy blob part: the same CAS chain as the position, on the column's own revision part.</summary>
+    /// <summary>Lazy blob part: the same CAS chain as the position, on the column's own revision part.</summary>
     public async Task<bool> SaveBlobLazyAsync(long id, long epoch, long expectedRevision, string column, byte[] value)
     {
         var plan = new RoleBlobWritePlan(id, column, value);
@@ -521,7 +521,7 @@ public sealed class RoleStore(AccountStore accounts)
 
     private void SaveBlob(long id, string column, byte[] value, RoleItemPlanBuilder? transaction = null, bool force = false)
     {
-        // Stage G: during the role's selection its default blobs are staged and committed together at the end.
+        // During the role's selection its default blobs are staged and committed together at the end.
         if (transaction == null && !force && _accounts.TryStage(id, column, value,
             () => _accounts.Snapshots.Unchanged(id, column, value) || _accounts.Snapshots.PersistedEqual(id, column, value)))
             return;
@@ -532,7 +532,7 @@ public sealed class RoleStore(AccountStore accounts)
             return;
         }
         if (transaction != null) { transaction.RoleBlob(id, column, value); return; }
-        // C/D 16 part 3: a runtime save of the bytes this process last persisted for the part (no other commit since).
+        // A runtime save of the bytes this process last persisted for the part (no other commit since).
         if (!force && _accounts.Snapshots.PersistedEqual(id, column, value))
         {
             SnapshotVerify.Same(value, () => _accounts.ReadSync<byte[]?>(new RoleBlobReadPlan(id, column)), $"role {id} {column} unchanged save");
@@ -659,7 +659,7 @@ public sealed class RoleStore(AccountStore accounts)
     }
 
     /// <summary>
-    /// C/D 14: reads the role at one read snapshot on a reader worker and installs it for this login (only for the
+    /// Reads the role at one read snapshot on a reader worker and installs it for this login (only for the
     /// owning account). Returns false when nothing was installed; the store reads then simply go to SQL.
     /// </summary>
     public async Task<bool> PrepareLoginSnapshotAsync(long id, string account)
@@ -676,7 +676,7 @@ public sealed class RoleStore(AccountStore accounts)
     }
 
     public void ReleaseLoginSnapshot(long id) => _accounts.Snapshots.Remove(id);
-    /// <summary>Measurement/rollback switch: false = every login read goes to SQL as before C/D 14.</summary>
+    /// <summary>Measurement/rollback switch: false = every login read goes directly to SQL without snapshot caching.</summary>
     internal bool LoginSnapshots { get; set; } = true;
     internal (long Bytes, double ReadMs) LastLoginSnapshot { get; private set; }
 

@@ -5,7 +5,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E05c: one C/D 13c typed family commit and its retained exact economic evidence.</summary>
+/// <summary>One typed progression family economy commit and its retained exact economic evidence.</summary>
 internal sealed class ProgressionEconomyTransactionPlan(RoleItemPlan child, EconomyMutation mutation,
     bool failAcknowledgementForTest = false) : DbPlan
 {

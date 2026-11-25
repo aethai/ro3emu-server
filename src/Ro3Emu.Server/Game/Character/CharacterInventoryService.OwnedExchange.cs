@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class CharacterInventoryService
 {
-    /// <summary>Stage E02/13e: freeze one owned payment and result before the writer is admitted.
+    /// <summary>Owned exchange economy: freeze one owned payment and result before the writer is admitted.
     /// The natural source names a world or activity occurrence, while the operation ID identifies this attempt.</summary>
     internal EconomyMutation EconomyForOwnedExchange(GameSession session, string kind, string sourceKey,
         IReadOnlyList<(int Entry, long Count)> costs, IReadOnlyList<(int Entry, int Count)> goods, object outcome)

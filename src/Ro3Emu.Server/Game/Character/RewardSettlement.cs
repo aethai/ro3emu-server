@@ -4,7 +4,7 @@ using Ro3Emu.Server.Accounts.Persistence;
 
 namespace Ro3Emu.Server.Game;
 
-/// <summary>E04 staged death identity. Restart creates a new run and every new actor a new generation
+/// <summary>Staged reward death identity. Restart creates a new run and every new actor a new generation
 /// (inferred spawn policy); neither a recycled UID nor a reattached player can reopen the old source.</summary>
 public sealed record RewardSourceId(string Realm, string Run, string Generation)
 {

@@ -139,7 +139,7 @@ public sealed partial class AuctionService
                         || openDay != (rewardOpenDay ?? Math.Max(1, (clock.GetLocalNow().Date - seasons.Start.Date).Days + 1)))
                         continue; // Release every key before rerolling and staging the new source-row set.
                     var transaction = roles.NewTransaction();
-                    // E05d's challenge source shares the existing auction transaction; generated lot identities
+                    // The semantic challenge source shares the existing auction transaction; generated lot identities
                     // are bound to their staged source keys and writer receipts by the economy envelope.
                     if (economicChallenge && transaction.CaptureEntity(RevisionStore.Entity("auction_source", source)).Exists)
                         return 0;

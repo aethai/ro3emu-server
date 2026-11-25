@@ -51,7 +51,7 @@ public sealed partial class SceneService(
     /// here when it registers).</summary>
     public OrderedHook<Func<GameSession, Ownership.ReservationKey[]>> LoadedKeys { get; } = new("Scene.LoadedKeys");
 
-    /// <summary>C/D 15: the loaded hooks and unowned after-loaded hooks reserve the role's own keys plus what the hooks
+    /// <summary>The loaded hooks and unowned after-loaded hooks reserve the role's own keys plus what the hooks
     /// declare, not Realm. SceneHookScopeAuditTests guards that nothing else is needed.</summary>
     private Ownership.ReservationKey[] HookKeys(GameSession s) =>
         [.. s.Role is { } role ? new[] { Ownership.ReservationKey.Role(role.Id), Ownership.ReservationKey.Lifecycle(role.Id) } : [],

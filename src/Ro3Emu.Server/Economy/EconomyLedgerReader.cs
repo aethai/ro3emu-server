@@ -327,7 +327,7 @@ public static class EconomyLedgerReader
 
         private void VerifyCountsAndSources()
         {
-            // No-prune E01: certify the entire retained prefix, not just the requested window.
+            // No-prune mode: certify the entire retained prefix, not just the requested window.
             using (var counts = Command(db, tx, """
                 SELECT r.operation_id,r.leg_count,COUNT(e.entry_id),MIN(e.leg_no),MAX(e.leg_no)
                 FROM operation_receipt r LEFT JOIN economy_entry e ON e.operation_id=r.operation_id
@@ -634,7 +634,7 @@ public static class EconomyLedgerReader
                 location.Compartment is < EconomyCompartment.Inventory or > EconomyCompartment.Recovery))
                 issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
                     "E03 leg has a noncanonical holding location."));
-            if (!economic && !isEvent && !escrow && _allReceipts.ContainsKey(seq)) // E05d semantic receipts only
+            if (!economic && !isEvent && !escrow && _allReceipts.ContainsKey(seq)) // Semantic envelope receipts only
             {
                 var key = (op, asset, location.Owner, location.Compartment, leg.Kind, leg.Reason);
                 _e05Ledger[key] = _e05Ledger.GetValueOrDefault(key) + leg.Delta;
@@ -1343,9 +1343,9 @@ public static class EconomyLedgerReader
         ], evidence);
     }
 
-    /// <summary>Receipts of an EconomyMutation (E01 NPC, cd13a/cd13b families, E04 rewards and obligations, 13e
+    /// <summary>Receipts of an EconomyMutation (NPC purchases, family commands, rewards and obligations, owned exchanges,
     /// owned exchanges) keep their command rules. Event and escrow envelopes are separate families;
-    /// remaining commands use E05d semantic validation.</summary>
+    /// remaining commands use semantic-envelope validation.</summary>
     private static bool Economic(string kind) => kind == "npc-shop-buy" || EconomyMutation.IsFamilyKind(kind) ||
         EconomyMutation.IsProgressionKind(kind) ||
         EconomyMutation.IsRewardCommand(kind) || kind == "dungeon-obligation-earn" || EconomyMutation.IsOwnedExchangeCommand(kind);

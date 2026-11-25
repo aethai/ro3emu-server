@@ -94,7 +94,7 @@ public sealed partial class TradeService(
     /// <summary>5033 full trade preferences, sent after role/base/item state.</summary>
     public async Task LoginAsync(GameSession s)
     {
-        // C/D 15: no market maintenance inside the login (it reserved the market collections and every participant).
+        // No market maintenance inside the login (it reserved the market collections and every participant).
         // The realm's own maintenance runs every second from startup (StallsService.MaintainAsync), so escrow that
         // matured during downtime settles independently of who logs in.
         var saved = roles.LoadTrade(s.Role!.Id);

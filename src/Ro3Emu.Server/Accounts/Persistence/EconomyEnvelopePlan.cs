@@ -6,7 +6,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E05d typed owner plan, semantic value authorization, receipt and exact legs in one transaction.</summary>
+/// <summary>Semantic economy envelope: typed owner plan, value authorization, receipt and exact legs in one transaction.</summary>
 internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope envelope, EconomyCatalog catalog,
     bool failAcknowledgementForTest = false) : DbPlan
 {

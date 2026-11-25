@@ -84,7 +84,7 @@ public sealed partial class AdventureActivityService
             {
                 tx.RoleBlob(session.Role!.Id, "activity_runtime", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(runtime));
                 persistCooldown(tx);
-                // E05a owns map consumption and the resolved hunt source; later hunt rewards stay in the activity family.
+                // The family economy envelope owns map consumption and the resolved hunt source; later hunt rewards stay in the activity family.
                 tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/character-treasure-use",
                     [(item.Entry, 1L)], [], new { ItemGuid = item.Guid, Hunt = runtime.AdventureTreasure }));
             },

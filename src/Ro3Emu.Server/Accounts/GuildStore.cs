@@ -140,7 +140,7 @@ public sealed class GuildStore(AccountStore accounts)
         public List<long> RecentPrices { get; set; } = [];
         public List<MarketPrice> PriceHistory { get; set; } = [];
         public List<MarketStall> Stalls { get; set; } = [];
-        /// <summary>E03: no refund/burn policy is implied by guild deletion; keep orphan stock out of the public book.</summary>
+        /// <summary>Escrow invariant: no refund/burn policy is implied by guild deletion; keep orphan stock out of the public book.</summary>
         public List<MarketStall> RecoveryStalls { get; set; } = [];
         public List<MarketTrade> Trades { get; set; } = [];
         public Dictionary<long, long> LastListedMs { get; set; } = [];
@@ -228,7 +228,7 @@ public sealed class GuildStore(AccountStore accounts)
         return state;
     }
 
-    // C/D 16: committed guild aggregates and role membership served from memory instead of a synchronous SQL read on
+    // Committed guild aggregates and role membership served from memory instead of a synchronous SQL read on
     // the loop per call (S1: 18k ForRole reads, 2.9 s of loop waits). Every caller still gets its own copy to
     // mutate. Any writer job that touches the guild tables bumps the generation after it ends (DbWriter.AfterJob);
     // a read during which the generation changed is returned but not cached. A read that began before a commit and
