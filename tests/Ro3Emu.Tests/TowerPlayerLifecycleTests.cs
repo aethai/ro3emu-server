@@ -150,8 +150,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var failed = await Next(bot, TowerService.End, ClimTowerEndNotify.Parser);
         Assert.False(failed.ClimTowerResult);
         await entered.Task.WaitAsync(Wait);
-        Assert.True(Session.Dead);
-        Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+        await OnLoop(() =>
+        {
+            Assert.True(Session.Dead);
+            Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+            return Task.CompletedTask;
+        });
         try
         {
             // A stale attempt with the wrong room identity must not become a free field revive.
@@ -159,9 +163,13 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
             Assert.Equal(ErrorCodes.SceneMissing,
                 (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
-            Assert.True(Session.Dead);
-            Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
-            await OnLoop(() => { Session.InstanceId = floor.Instance; return Task.CompletedTask; });
+            await OnLoop(() =>
+            {
+                Assert.True(Session.Dead);
+                Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+                Session.InstanceId = floor.Instance;
+                return Task.CompletedTask;
+            });
 
             await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
             Assert.Equal(0, (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
@@ -172,8 +180,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             Assert.Equal(0, (await Next(bot, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
             await Task.Delay(100);
             Assert.Equal(priorSelf, bot.Inbox.Snapshot().Count(e => e.IsGame(MsgId.EntitySelf)));
-            Assert.True(Session.Dead);
-            Assert.DoesNotContain(Session.Buffs, b => b.IsTotemOwned && b.ConfigId == 2500201);
+            await OnLoop(() =>
+            {
+                Assert.True(Session.Dead);
+                Assert.DoesNotContain(Session.Buffs, b => b.IsTotemOwned && b.ConfigId == 2500201);
+                return Task.CompletedTask;
+            });
         }
         finally { release.TrySetResult(); }
 
@@ -182,18 +194,26 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(EntityState.Alive, self.Base.State);
         Assert.Equal(maxHp, self.Base.Property.Single(p => p.Idx == 2000).Data);
         Assert.Equal(self.Base.Property.Single(p => p.Idx == 102).Data, self.Base.Property.Single(p => p.Idx == 2001).Data);
-        Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
-        Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == 990001 && b.ConfigId == 2500201);
-        Assert.Equal(Service<CharacterService>().Stats(Session)[103], self.Base.Property.Single(p => p.Idx == 103).Data);
-        Assert.False(Session.Dead);
-        Assert.Equal(0, Session.InstanceId);
-        Assert.Null(Session.TowerAttempt);
+        await OnLoop(() =>
+        {
+            Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+            Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == 990001 && b.ConfigId == 2500201);
+            Assert.Equal(Service<CharacterService>().Stats(Session)[103], self.Base.Property.Single(p => p.Idx == 103).Data);
+            Assert.False(Session.Dead);
+            Assert.Equal(0, Session.InstanceId);
+            Assert.Null(Session.TowerAttempt);
+            return Task.CompletedTask;
+        });
         await Next(bot, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => !info.BDead);
 
         await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
         Assert.Equal(ErrorCodes.SceneMissing,
             (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
-        Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+        await OnLoop(() =>
+        {
+            Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+            return Task.CompletedTask;
+        });
     }
 
     [ClientDataFact]
@@ -206,7 +226,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         await OnLoop(async () =>
         {
             foreach (var monster in Session.TowerAttempt!.Monsters) monster.Dead = true;
-            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Session.LastCombatMs = Service<GameLoop>().NowMs;
             Session.StatusBits |= 1L << 15; // suppress out-of-combat regen during the return assertion
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(Session, wounded, spentSp);

@@ -69,7 +69,13 @@ public sealed class DbWriterFaultTests : IDisposable
         var metrics = new DbAccessMetrics();
         using var writer = new DbWriter($"Data Source={Database}", metrics) { LazyMaxWait = TimeSpan.FromSeconds(30) };
         using var hold = new ManualResetEventSlim();
-        var blocker = writer.ExecuteAsync<int>(new Plan("block", _executed, () => hold.Wait(TimeSpan.FromSeconds(10))));
+        using var blocking = new ManualResetEventSlim();
+        var blocker = writer.ExecuteAsync<int>(new Plan("block", _executed, () =>
+        {
+            blocking.Set();
+            hold.Wait(TimeSpan.FromSeconds(10));
+        }));
+        Assert.True(blocking.Wait(TimeSpan.FromSeconds(10)));
         var lazy = writer.ExecuteAsync<int>(new Plan("lazy", _executed), lazy: true);
         var durable = Enumerable.Range(0, 5).Select(i => writer.ExecuteAsync<int>(new Plan("d" + i, _executed))).ToList();
         hold.Set();
