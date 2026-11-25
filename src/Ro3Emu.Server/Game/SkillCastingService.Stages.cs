@@ -8,7 +8,7 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Skills with a first press and a second: High-Energy Impact's flight and landing, Move back Shadow Echo's shadow and return.</summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     private const int FlyingBuff = 1632901, ImpactShieldBuff = 1633301, PulseBuff = 1633501, PulseGroup = 16335, TornadoEnhanceBuff = 1633601, TornadoEnhanceGroup = 16336;
     private const int ShadowEchoGroup = 15329, ShadowReturnBuffGroup = 115334;
@@ -42,7 +42,7 @@ public sealed partial class CombatService
             request.TargetPos = s.Position.Clone();
             var fall = new ActiveSkillCast
             {
-                Id = ++_sessionIds, OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration, Attachment = s.Attachment,
+                Id = NextSessionId(), OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration, Attachment = s.Attachment,
                 Request = request, Row = new SkillConfig(landing.WithoutBuff1()).Row, Origin = s.Position.Clone(), StartMs = Now, ChantMs = 0, ActionMs = 1,
             };
             await ApplyEffectsAsync(s, fall, s.Position.Clone());

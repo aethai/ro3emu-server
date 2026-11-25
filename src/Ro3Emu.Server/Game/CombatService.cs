@@ -83,6 +83,122 @@ public sealed partial class CombatService : IGameTicker
     internal void BindPets(PetCombatService pets) => PetCombat = pets;
     internal CombatEffectsService Effects { get; private set; } = null!;
     internal void BindEffects(CombatEffectsService effects) => Effects = effects;
+    internal SkillCastingService Casting { get; private set; } = null!;
+    internal void BindCasting(SkillCastingService casting) => Casting = casting;
+
+    // ---- casting, protocol, channel, and stage facades (owned by SkillCastingService) ----
+
+    public const uint SkillMove = SkillCastingService.SkillMove, TrapDamage = SkillCastingService.TrapDamage;
+    public const uint SkillSlotModify = SkillCastingService.SkillSlotModify;
+    public const uint UseInSkillHigh = SkillCastingService.UseInSkillHigh, ExtraUseInSkillHigh = SkillCastingService.ExtraUseInSkillHigh;
+    public const uint SkillBulletHigh = SkillCastingService.SkillBulletHigh, SkillEffectHigh = SkillCastingService.SkillEffectHigh;
+    public const uint SkillAffectedLegacy = SkillCastingService.SkillAffectedLegacy, SkillEffect = SkillCastingService.SkillEffect, SkillBullet = SkillCastingService.SkillBullet;
+    public const uint ExtraUseInSkill = SkillCastingService.ExtraUseInSkill, SkillSelectionChange = SkillCastingService.SkillSelectionChange;
+    public const uint BossSkillCd = SkillCastingService.BossSkillCd, BossClearSkillCds = SkillCastingService.BossClearSkillCds, BossAllSkillCds = SkillCastingService.BossAllSkillCds;
+    public const uint DamageStatistics = SkillCastingService.DamageStatistics, SkillAffectedEx = SkillCastingService.SkillAffectedEx, TrainingOperation = SkillCastingService.TrainingOperation;
+    internal const int DisplayGfx = SkillCastingService.DisplayGfx;
+    internal const int SwingJitterMs = SkillCastingService.SwingJitterMs;
+    internal const double MaxWalkSlackSeconds = SkillCastingService.MaxWalkSlackSeconds;
+    internal const float LegJitter = SkillCastingService.LegJitter;
+    internal const int ReadingBuff = SkillCastingService.ReadingBuff, BookPages = SkillCastingService.BookPages;
+
+    /// <summary>Per-session protocol state for temporary skill slots, parameter sync signatures, modes and selection.</summary>
+    public sealed class ProtocolState
+    {
+        public Dictionary<int, int> TemporarySlotRows { get; } = [];
+        public string ParameterSignature { get; set; } = "";
+        /// <summary>Current mode per skill group (0 = default, 1+ = alternate mode).</summary>
+        public Dictionary<int, int> GroupModes { get; } = [];
+        public bool TrainingPaused { get; set; }
+        public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = [];
+    }
+
+    public Task CastAsync(GameSession s, CastSkillReq request) => Casting.CastAsync(s, request);
+    public Task InterruptAsync(GameSession s, SkillInterruptReq? req = null) => Casting.InterruptAsync(s, req);
+    internal Task RefuseCastAsync(GameSession s, CastSkillReq req, int error, long parameter) => Casting.RefuseCastAsync(s, req, error, parameter);
+    internal static bool CastYields(long interruptedType, bool sameSkill, long elapsedMs, int? interruptOffsetMs) =>
+        SkillCastingService.CastYields(interruptedType, sameSkill, elapsedMs, interruptOffsetMs);
+    internal static bool HitPrecedesYield(long interruptedType, int impactMs, int? interruptMs, long elapsedMs) =>
+        SkillCastingService.HitPrecedesYield(interruptedType, impactMs, interruptMs, elapsedMs);
+    internal MonsterUnit? FindMonster(long sceneId, long uid) => Casting.FindMonster(sceneId, uid);
+    internal GameSession? FindPlayer(GameSession s, long uid, bool dead = false) => Casting.FindPlayer(s, uid, dead);
+    internal static bool Finite(Vec3 p) => SkillCastingService.Finite(p);
+    internal static float Distance(Vec3 a, Vec3 b) => SkillCastingService.Distance(a, b);
+    internal static float Range(JsonElement row) => SkillCastingService.Range(row);
+    internal static string Script(JsonElement row) => SkillCastingService.Script(row);
+    internal static bool IsResurrection(JsonElement row) => SkillCastingService.IsResurrection(row);
+    internal static double[] Numbers(JsonElement row, string key) => SkillCastingService.Numbers(row, key);
+    internal static IEnumerable<JsonElement> Tuples(JsonElement row, string key) => SkillCastingService.Tuples(row, key);
+    internal bool Relation(JsonElement row, bool friendly, bool self = false, int race = 0, bool dead = false) =>
+        Casting.Relation(row, friendly, self, race, dead);
+    internal int ValidateTarget(GameSession s, JsonElement row, CastSkillReq req, Vec3 origin, float slack = 0, float askedRange = 0) =>
+        Casting.ValidateTarget(s, row, req, origin, slack, askedRange);
+    internal static Task ResetCooldownAsync(GameSession s, int group) => SkillCastingService.ResetCooldownAsync(s, group);
+    internal static Task CutCooldownAsync(GameSession s, int group, long ms) => SkillCastingService.CutCooldownAsync(s, group, ms);
+    internal Task StartCooldownAsync(GameSession s, JsonElement row, int? askedMode = null) => Casting.StartCooldownAsync(s, row, askedMode);
+    internal static long ReducedCooldown(long ms, long percent) => SkillCastingService.ReducedCooldown(ms, percent);
+    internal static long NextSwing(long planned, long now, int skillMs) => SkillCastingService.NextSwing(planned, now, skillMs);
+    internal static int ImpactOffset(JsonElement? template, double point, int chantMs, int actionMs) =>
+        SkillCastingService.ImpactOffset(template, point, chantMs, actionMs);
+    internal static bool Live(GameSession s, ActiveSkillCast action) => SkillCastingService.Live(s, action);
+    internal Task BreakForbiddenCastAsync(GameSession s) => Casting.BreakForbiddenCastAsync(s);
+    internal Task CancelCastAsync(GameSession s, SkillInterruptedInfo.Types.SkillInterruptType cause) => Casting.CancelCastAsync(s, cause);
+    internal void CastOnNextWalk(GameSession s, int row) => Casting.CastOnNextWalk(s, row);
+    internal void PlayerWalked(GameSession s, WalkReq walk) => Casting.PlayerWalked(s, walk);
+    public void PlayerMoved(GameSession s) => Casting.PlayerMoved(s);
+    public JsonElement? EffectiveSkillRow(GameSession session, int requestedRowId) => Casting.EffectiveSkillRow(session, requestedRowId);
+    internal JsonElement? ModeRow(GameSession session, int group, int level) => Casting.ModeRow(session, group, level);
+    public bool SkillModeAllowed(GameSession session, JsonElement row) => Casting.SkillModeAllowed(session, row);
+    public bool CanQueueSkill(GameSession session, int group) => Casting.CanQueueSkill(session, group);
+    public Task RefreshSkillParametersAsync(GameSession session) => Casting.RefreshSkillParametersAsync(session);
+    internal static long CooldownEnd(GameSession session, int group, int mode) => SkillCastingService.CooldownEnd(session, group, mode);
+    public Task SendCastTimelineAsync(GameSession caster, UseInSkillInfo info, bool highLevel = false, bool extra = false) =>
+        Casting.SendCastTimelineAsync(caster, info, highLevel, extra);
+    public Task PlaySkillAnimationAsync(GameSession s, int skillId) => Casting.PlaySkillAnimationAsync(s, skillId);
+    public Task SendMonsterTimelineAsync(MonsterUnit monster, UseInSkillInfo info, bool highLevel = false, bool extra = false) =>
+        Casting.SendMonsterTimelineAsync(monster, info, highLevel, extra);
+    public Task SendSkillEffectAsync(GameSession source, SkillEffectDisplayNotify effect, bool highLevel = false) =>
+        Casting.SendSkillEffectAsync(source, effect, highLevel);
+    internal Task SendGfxAtAsync(GameSession owner, MonsterUnit at, long effect, long skill) => Casting.SendGfxAtAsync(owner, at, effect, skill);
+    public Task SendSkillBulletAsync(GameSession source, SkillFixTimeBulletNotify bullet, bool highLevel = false) =>
+        Casting.SendSkillBulletAsync(source, bullet, highLevel);
+    internal Task SendHitBulletsAsync(IEnumerable<GameSession> viewers, JsonElement row, SkillHitInfo hit, long masterId) =>
+        Casting.SendHitBulletsAsync(viewers, row, hit, masterId);
+    internal static bool FalconHigh(JsonElement row) => SkillCastingService.FalconHigh(row);
+    internal Task CastAutoFalconAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets) =>
+        Casting.CastAutoFalconAsync(s, row, targets);
+    internal static bool WargStrikeHigh(JsonElement row) => SkillCastingService.WargStrikeHigh(row);
+    internal int HitShowPoint(JsonElement row) => Casting.HitShowPoint(row);
+    internal static bool IsArrowStorm(JsonElement row) => SkillCastingService.IsArrowStorm(row);
+    internal Task CastAutoWolfAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets) =>
+        Casting.CastAutoWolfAsync(s, row, targets);
+    public Task SetSkillTargetSelectionAsync(GameSession viewer, WorldUnit target, int skillTag, bool white, bool enabled) =>
+        Casting.SetSkillTargetSelectionAsync(viewer, target, skillTag, white, enabled);
+    public Task BossCooldownStartedAsync(MonsterUnit boss, int skillId, long endMs) => Casting.BossCooldownStartedAsync(boss, skillId, endMs);
+    public Task BossCooldownSnapshotAsync(GameSession viewer, BossAllSkillShowCdReq request) => Casting.BossCooldownSnapshotAsync(viewer, request);
+    public Task ClearSceneSkillProtocolAsync(GameSession viewer) => Casting.ClearSceneSkillProtocolAsync(viewer);
+    public Task RecordDamageStatisticAsync(GameSession source, DamageStatistics entry) => Casting.RecordDamageStatisticAsync(source, entry);
+    public Task TrainingOperationAsync(GameSession session, BattleTrainingGroundOpReq request) => Casting.TrainingOperationAsync(session, request);
+    internal static (double Point, JsonElement Row)[] ChannelHits(JsonElement row, JsonElement? show) => SkillCastingService.ChannelHits(row, show);
+    internal Task<bool> StartChannelAsync(GameSession s, ActiveSkillCast action) => Casting.StartChannelAsync(s, action);
+    internal static int ReadingCost(JsonElement row) => SkillCastingService.ReadingCost(row);
+    internal Task EndReadingAsync(GameSession s, ActiveSkillCast action) => Casting.EndReadingAsync(s, action);
+    internal static bool ComesFromALoop(string script, int buff) => SkillCastingService.ComesFromALoop(script, buff);
+    internal Task<JsonElement> CrossRipperRowAsync(GameSession s, JsonElement row) => Casting.CrossRipperRowAsync(s, row);
+    internal static ActiveSkillCast WithRow(ActiveSkillCast action, JsonElement row) => SkillCastingService.WithRow(action, row);
+    internal Task EnergyReleaseAsync(GameSession s, ActiveSkillCast action) => Casting.EnergyReleaseAsync(s, action);
+    internal Task HighEnergyTakeOffAsync(GameSession s, ActiveSkillCast action) => Casting.HighEnergyTakeOffAsync(s, action);
+    internal bool ReturnsToShadow(GameSession s, JsonElement row) => Casting.ReturnsToShadow(s, row);
+    internal void LeaveShadow(GameSession s, ActiveSkillCast action) => Casting.LeaveShadow(s, action);
+    internal Task ReturnToShadowAsync(GameSession s, ActiveSkillCast action) => Casting.ReturnToShadowAsync(s, action);
+    internal int SkillMs(GameSession s, JsonElement row) => Casting.SkillMs(s, row);
+    internal bool SwingPlayedOut(ActiveSkillCast? active, long nowMs) => Casting.SwingPlayedOut(active, nowMs);
+    internal Task<bool> AdmitAutomaticCostAsync(GameSession s, JsonElement row, CastSkillReq req, long sessionId) =>
+        Casting.AdmitAutomaticCostAsync(s, row, req, sessionId);
+    internal bool Learned(GameSession s, JsonElement row) => Casting.Learned(s, row);
+    internal Task StartCastAsync(GameSession s, JsonElement row, CastSkillReq req, long id, SkillObject? actor = null, int leadMs = 0) =>
+        Casting.StartCastAsync(s, row, req, id, actor, leadMs);
+    internal Task SwingAsync(GameSession s, MonsterUnit target, int skillId, long castId) => Casting.SwingAsync(s, target, skillId, castId);
     internal static bool SkillAreaContains(JsonElement row, Vec3 origin, Vec3 requested, float face, Vec3 point) =>
         PetCombatService.SkillAreaContains(row, origin, requested, face, point);
     internal static bool RaisesDamage(long attribute, int element) => PetCombatService.RaisesDamage(attribute, element);
@@ -383,8 +499,7 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, GameSession, JsonElement, Task<bool>>? ReviveItemSkill { get; set; }
 
     public CombatService(World world, MonsterService monsters, CharacterService character, SkillService skills, SceneService scene, BuffService buffs,
-        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log,
-        SeasonTalentService talents)
+        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log)
     {
         this._world = world;
         this._monsters = monsters;
@@ -408,19 +523,11 @@ public sealed partial class CombatService : IGameTicker
         character.ExtraAttributes.Subscribe(PassiveAttributes);
         character.ExtraAttributes.Subscribe(ResonanceAttributes); // Job Resonance stats (CombatService.Restraint)
         world.UnitRemoved.Add(unit => { if (unit is MonsterUnit m) _fightingMonsters.Remove(m); return Task.CompletedTask; });
-        skills.Learned.Subscribe(RefreshSkillParametersAsync);
         skills.Learned.Subscribe(character.RefreshStatsAsync);
-        buffs.Changed.Subscribe(RefreshSkillParametersAsync);
         buffs.Changed.Subscribe(skills.RefreshFollowUpsAsync);
         GrantedSkill.Subscribe((s, id) => SkillConfig.Get(_data, id) is { } row && skills.FollowUpStatus(s, row) != null);
-        talents.EffectsChanged.Subscribe(RefreshSkillParametersAsync);
-        scene.Loaded.Subscribe(RefreshSkillParametersAsync);
-        scene.Leaving.Subscribe(ClearSceneSkillProtocolAsync, order: SceneService.LeaveOrderCombat);
-        skills.QueueEligibility = CanQueueSkill;
         character.ProgressHandlers.Subscribe(buffs.ReconcileEnergyAsync);
         CastResolved.Subscribe(AutoCounterOnCastAsync, order: GuardianHookOrder);
-        CastResolved.Subscribe(ReadingExtraCastAsync);
-        CastResolved.Subscribe(ClassLoopsOnCastAsync);
     }
 
     private long Now => _loop.NowMs;

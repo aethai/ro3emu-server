@@ -3,8 +3,8 @@ AppraisalService.Appraised (1)
 AuctionService.GuildBid (1)
   TaskService.OnGuildAuctionBid
 BuffService.Changed (4)
-  CombatService.RefreshSkillParametersAsync
   SkillService.RefreshFollowUpsAsync
+  SkillCastingService.RefreshSkillParametersAsync
   TalentProcs.OnBuffsChangedAsync
   StealthEffects.PublishAsync
 BuffService.ControlResisted (1)
@@ -110,8 +110,8 @@ CombatService.CastLanded (4)
 CombatService.CastResolved (7)
   CombatService.AutoCounterOnCastAsync
   CombatEffectsService.SupportSkillOnCastAsync
-  CombatService.ReadingExtraCastAsync
-  CombatService.ClassLoopsOnCastAsync
+  SkillCastingService.ReadingExtraCastAsync
+  SkillCastingService.ClassLoopsOnCastAsync
   CardEffects.OnCastResolvedAsync
   TalentProcs.OnCastResolvedAsync
   PassiveSkills.OnCastResolvedAsync
@@ -353,7 +353,7 @@ SceneService.BeforeSelf (3)
 SceneService.Leaving (28)
   CombatService.ClearSkillsAsync
   BuffService.ClearOnSceneAsync
-  CombatService.ClearSceneSkillProtocolAsync
+  SkillCastingService.ClearSceneSkillProtocolAsync
   TowerService.AbandonAsync
   InstanceService.AbandonAsync
   WorldInteractionService.LeaveAsync
@@ -382,7 +382,6 @@ SceneService.Leaving (28)
 SceneService.LineSwitchChecks (1)
   WorldInteractionService.<.ctor> lambda
 SceneService.Loaded (25)
-  CombatService.RefreshSkillParametersAsync
   DungeonService.LoadedAsync
   PronteraDefenseService.ApplyPrepBuffAsync
   NewActivityService.OnTreasureSceneLoadedAsync
@@ -402,6 +401,7 @@ SceneService.Loaded (25)
   TerritoryEscortService.SceneLoadedAsync
   GuildLeagueService.LoadedAsync
   PetCombatService.SyncGuardianWheelAsync
+  SkillCastingService.RefreshSkillParametersAsync
   PetFollowerService.RefreshAsync
   TowerService.LoadedAsync
   CardEffects.RefreshAsync
@@ -419,11 +419,11 @@ SceneService.Resync (2)
 SeasonService.ScheduleChanged (1)
   NewActivityService.InvalidateAllSchedules
 SeasonTalentService.EffectsChanged (1)
-  CombatService.RefreshSkillParametersAsync
+  SkillCastingService.RefreshSkillParametersAsync
 SkillService.Learned (8)
-  CombatService.RefreshSkillParametersAsync
   CharacterService.RefreshStatsAsync
   TaskService.<.ctor> lambda
+  SkillCastingService.RefreshSkillParametersAsync
   CharacterService.NotifyCareerCapacityAsync
   PassiveSkills.StandingBuffsAsync
   RidingEffects.SyncAsync

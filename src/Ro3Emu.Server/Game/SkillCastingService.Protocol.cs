@@ -8,7 +8,7 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Client presentation and dynamic parameters for actual combat events.</summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     public const uint SkillSlotModify = 31027;
     public const uint UseInSkillHigh = 31106, ExtraUseInSkillHigh = 31107;
@@ -17,17 +17,6 @@ public sealed partial class CombatService
     public const uint ExtraUseInSkill = 31121, SkillSelectionChange = 31122;
     public const uint BossSkillCd = 31125, BossClearSkillCds = 31126, BossAllSkillCds = 31127;
     public const uint DamageStatistics = 31129, SkillAffectedEx = 31132, TrainingOperation = 31133;
-
-    /// <summary>Transient state is scoped to a role/connection; never leaks to another selected role.</summary>
-    public sealed class ProtocolState
-    {
-        public Dictionary<int, int> TemporarySlotRows { get; } = [];
-        public string ParameterSignature { get; set; } = "";
-        /// <summary>Skill mode (BuffConfig type 15) last told per group, for the cooldown entries the client needs when a mode starts or ends.</summary>
-        public Dictionary<int, int> GroupModes { get; } = [];
-        public bool TrainingPaused { get; set; }
-        public Dictionary<(long Target, bool White, int Tag), bool> SkillSelection { get; } = [];
-    }
 
     private Dictionary<(int Group, int Level, int Mode), int>? _configuredModeRows;
 
@@ -231,7 +220,7 @@ public sealed partial class CombatService
         return SendCastTimelineAsync(s, new UseInSkillInfo
         {
             SrcID = s.Role.Id, SkillID = skillId, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face,
-            SessionId = ++_sessionIds, SkillMs = (int)skill.ActionTime, StartTime = Now, PlayAct = true,
+            SessionId = NextSessionId(), SkillMs = (int)skill.ActionTime, StartTime = Now, PlayAct = true,
         });
     }
 
@@ -352,7 +341,7 @@ public sealed partial class CombatService
     {
         if (s.Role == null || targets.Count == 0) return;
         var target = targets[0];
-        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
+        long skillId = new SkillConfig(row).Id, id = NextSessionId();
         await SendCastTimelineAsync(s, new UseInSkillInfo
         {
             SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,
@@ -453,7 +442,7 @@ public sealed partial class CombatService
     {
         if (s.Role == null || targets.Count == 0) return;
         var target = targets[0];
-        long skillId = new SkillConfig(row).Id, id = ++_sessionIds;
+        long skillId = new SkillConfig(row).Id, id = NextSessionId();
         await SendCastTimelineAsync(s, new UseInSkillInfo
         {
             SrcID = s.Role.Id, SkillID = (int)skillId, TargetId = target.Uid, TargetPos = target.Pos.Clone(), Face = s.Face,

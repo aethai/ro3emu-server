@@ -3,7 +3,7 @@ using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     /// <summary>
     /// Skills that keep dealing damage while their caster walks: the description's total is the row's ratio times the show's

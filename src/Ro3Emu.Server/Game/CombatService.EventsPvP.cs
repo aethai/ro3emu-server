@@ -11,8 +11,9 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class CombatService
 {
-    private sealed record EventAttack(GameSession Target, int SkillId, long NextSwing, float StartX, float StartZ);
+    internal sealed record EventAttack(GameSession Target, int SkillId, long NextSwing, float StartX, float StartZ);
     private readonly Dictionary<GameSession, EventAttack> _eventAttacks = [];
+    internal Dictionary<GameSession, EventAttack> EventAttacks => _eventAttacks;
 
     private bool CanEventHit(GameSession source, GameSession target) => source != target
         && source.Role != null && target.Role != null && !source.Dead && !target.Dead
@@ -35,7 +36,7 @@ public sealed partial class CombatService
         return [.. _sessions.All().Where(p => CanPlayerHit(source, p) && PlayerDistance(source, p) <= radius + .5f)];
     }
 
-    private async Task SwingEventAsync(GameSession source, GameSession target, int skillId, long session)
+    internal async Task SwingEventAsync(GameSession source, GameSession target, int skillId, long session)
     {
         if (source.Role == null || source.Progress == null) return;
         using var held = await CharacterService.Lock(source);

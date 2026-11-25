@@ -43,7 +43,7 @@ public sealed class ActiveSkillCast
     public long SourceId => Operator?.Uid ?? OwnerId;
 }
 
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     public const uint SkillMove = 31112, TrapDamage = 31128;
 
@@ -140,7 +140,7 @@ public sealed partial class CombatService
             return;
         }
 
-        long id = ++_sessionIds;
+        long id = NextSessionId();
         var lease = s.Attachment;
         long scene = s.SceneGeneration, worldScene = s.WorldScene;
         // E05c: the receipt is the paid action's admission. Repeating a protocol request
@@ -154,7 +154,7 @@ public sealed partial class CombatService
             s.SceneGeneration != scene || s.WorldScene != worldScene || s.SceneLoading) return;
         int turn = owned == null ? SwingLeft(s.SkillCast, row!.Value) : 0;
         await CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Skill);
-        _eventAttacks.Remove(s);
+        EventAttacks.Remove(s);
         await PayCostsAsync(s, costs);
         if (!unlimited) await _buffs.SpendEnergyAsync(s, row!.Value);
         int lead = turn;
@@ -179,7 +179,7 @@ public sealed partial class CombatService
         // _iIfAutoAtk 1 (NotInterrupt, LC_Skill_RunTimeContext): the running attack goes on after this cast.
         else if (new SkillConfig(row.Value).IfAutoAtk != 1) s.Attack = null;
         if (GameData.Int(row.Value, "_iIfAutoAtk") == 2 && owned == null && playerTarget != null)
-            _eventAttacks[s] = new EventAttack(playerTarget, loopSkill,
+            EventAttacks[s] = new CombatService.EventAttack(playerTarget, loopSkill,
                 Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value) + 1,
                 s.Position.X, s.Position.Z);
         if (own is { Rule: var ownRule }) await ownRule.CastOwnSkillAsync(s, req.SkillId);
@@ -399,7 +399,7 @@ public sealed partial class CombatService
     internal static bool HitPrecedesYield(long interruptedType, int impactMs, int? interruptMs, long elapsedMs) =>
         interruptedType == 2 && interruptMs is { } yield && impactMs <= yield && elapsedMs >= yield - SwingJitterMs;
 
-    private bool Learned(GameSession s, JsonElement row)
+    internal bool Learned(GameSession s, JsonElement row)
     {
         if (GameData.Int(row, "_iID") == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0)) return true; // paid item skill, LC_ReviveHelper.
         // A Survivor Battle career owns the match skill set (TimedBattleService.Chicken), not the job tree.
@@ -698,7 +698,7 @@ public sealed partial class CombatService
     /// after its time, so waiting for that added a whole tick to every swing (500 ms became 550). A normal attack within a tick
     /// of its end has played out; anything else holds to its end.
     /// </summary>
-    private bool SwingPlayedOut(ActiveSkillCast? cast, long now) => cast is not { Cancelled: false }
+    internal bool SwingPlayedOut(ActiveSkillCast? cast, long now) => cast is not { Cancelled: false }
         || new SkillConfig(cast.Row).IsNormalAttack(_data)
             && now + GameLoop.TickInterval.Milliseconds > cast.StartMs + cast.ChantMs + cast.ActionMs;
 
@@ -707,7 +707,7 @@ public sealed partial class CombatService
     internal static long NextSwing(long planned, long now, int skillMs) =>
         Math.Max(planned + skillMs, now + skillMs - GameLoop.TickInterval.Milliseconds);
 
-    private async Task SwingAsync(GameSession s, MonsterUnit? target, int skillId, long id)
+    internal async Task SwingAsync(GameSession s, MonsterUnit? target, int skillId, long id)
     {
         if (s.Role == null || s.Progress == null) return;
         using var held = await CharacterService.Lock(s);
@@ -724,7 +724,7 @@ public sealed partial class CombatService
         await StartCastAsync(s, row, request, id);
     }
 
-    private async Task<bool> AdmitAutomaticCostAsync(GameSession s, JsonElement row, CastSkillReq request, long id)
+    internal async Task<bool> AdmitAutomaticCostAsync(GameSession s, JsonElement row, CastSkillReq request, long id)
     {
         var costs = ResolveCosts(s, row);
         if (costs.Items.Count == 0) return true;
@@ -741,7 +741,7 @@ public sealed partial class CombatService
 
     /// <param name="leadMs">How long the cast waits before it starts (<see cref="BeforeCast"/>): its timeline is sent and its
     /// impact lands that much later, and an interrupt in between cancels it like any cast.</param>
-    private async Task StartCastAsync(GameSession s, JsonElement row, CastSkillReq req, long id, SkillObject? actor = null, int leadMs = 0)
+    internal async Task StartCastAsync(GameSession s, JsonElement row, CastSkillReq req, long id, SkillObject? actor = null, int leadMs = 0)
     {
         var origin = actor?.Pos ?? s.Position.Clone();
         var target = FindMonster(s.WorldScene, req.TargetId);
@@ -810,7 +810,7 @@ public sealed partial class CombatService
         && !s.Dead && !s.SceneLoading && s.Role?.Id == action.OwnerId && s.WorldScene == action.WorldScene
         && (action.Operator == null || !action.Operator.Removing && action.Operator.ExpiresMs > s.NowMs);
 
-    private int SkillMs(GameSession s, JsonElement row)
+    internal int SkillMs(GameSession s, JsonElement row)
     {
         double aspd = Math.Clamp(_character.Stats(s)[115] / 100.0, 0.1, 5);
         double influence = GameData.Int(row, "_iActionTimeInfluence") / 100.0;
@@ -845,12 +845,12 @@ public sealed partial class CombatService
             else
             {
                 bool valid = req == null || req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId
-                    || req.InterruptSkillId == s.Attack?.SkillId || _eventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
-                bool interrupted = valid && (s.SkillCast != null || s.Attack != null || _eventAttacks.ContainsKey(s));
+                    || req.InterruptSkillId == s.Attack?.SkillId || EventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
+                bool interrupted = valid && (s.SkillCast != null || s.Attack != null || EventAttacks.ContainsKey(s));
                 if (interrupted)
                 {
                     s.Attack = null;
-                    _eventAttacks.Remove(s);
+                    EventAttacks.Remove(s);
                     if (req?.NxtSkill != null) await LandShownHitAsync(s, Now);
                     await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
                 }
@@ -940,8 +940,8 @@ public sealed partial class CombatService
 
     public void PlayerMoved(GameSession s)
     {
-        if (_eventAttacks.TryGetValue(s, out var eventAttack)
-            && MonsterService.Distance(eventAttack.StartX, eventAttack.StartZ, s.Position.X, s.Position.Z) > 1.5f) _eventAttacks.Remove(s);
+        if (EventAttacks.TryGetValue(s, out var eventAttack)
+            && MonsterService.Distance(eventAttack.StartX, eventAttack.StartZ, s.Position.X, s.Position.Z) > 1.5f) EventAttacks.Remove(s);
         // A position correction of a few cm is no step away (inferred): a real walk, or past 1.5 m as event attacks use, ends the loop.
         if (s.Attack is { } a && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 0.1f
             && (s.Walking || a.StartedWalking || MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 1.5f))

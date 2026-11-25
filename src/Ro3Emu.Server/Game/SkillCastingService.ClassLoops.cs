@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// Counters and meters a class skill's text names and no row's cost does: Warg Strike's swings, the Guillotine's blades, the Mechanic's Firepower, Joint Beat's
 /// shattered parts, Energy Release's countdown. Buffs that switch a skill's mode (SkillAttributeList type 15) reach the client by themselves.
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     private const int EmpoweredWargStrikeBuff = 1333101, BladeMeter = 540002, DarkIllusionMarkGroup = 15301, CrossRipperGroup = 15302;
     private const int FirepowerPilesGroup = 16313, FirepowerGroup = 16317, FirepowerBuff = 1631701, CannonEnhanceBuff = 1632001;

@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// Each listed group has a copy group at the same offset, whose rows are the extra cast; _kSkillHighParam names the cost and only the client reads it,
 /// "0:1231001:1&amp;2:240001:3". The copies' marker buffs last about 500 ms, so the extra cast comes that long after the first (inferred).
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     internal const int ReadingBuff = 1231001, BookPages = 240001;
     private const int ReadingExtraDelayMs = 500;
@@ -61,7 +61,7 @@ public sealed partial class CombatService
             ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(due), () =>
                 s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene ? Task.CompletedTask : ApplyEffectsAsync(s, new ActiveSkillCast
                 {
-                    Id = ++_sessionIds, OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration,
+                    Id = NextSessionId(), OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration,
                     Attachment = s.Attachment, Request = request, Row = strike, Origin = action.Origin.Clone(), StartMs = Now, ChantMs = 0, ActionMs = 1,
                 }, at));
         }
