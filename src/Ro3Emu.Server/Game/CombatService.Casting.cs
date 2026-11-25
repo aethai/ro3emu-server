@@ -73,7 +73,7 @@ public sealed partial class CombatService
             // Complete the runtime admission before any socket send can suspend. Frozen packets
             // retain the original order; an obsolete attachment cannot start a committed cast.
             if (s.Owners?.Current is { Notices: null } context) notices = new OwnerNotices(context);
-            if (IsGuardianRequest(request)) await CastGuardianAsync(s, request.Clone());
+            if (IsGuardianRequest(request)) await PetCombat.CastGuardianAsync(s, request.Clone());
             else await CastCoreAsync(s, request, arrivedMs, lineup);
         }
         finally { notices?.Dispose(); s.SkillCastGate.Release(); admission?.Dispose(); }
@@ -295,7 +295,7 @@ public sealed partial class CombatService
         }) != null;
     }
 
-    private Task RefuseCastAsync(GameSession s, CastSkillReq req, int error, long parameter) => RefuseCoreAsync(s, req, error, parameter);
+    internal Task RefuseCastAsync(GameSession s, CastSkillReq req, int error, long parameter) => RefuseCoreAsync(s, req, error, parameter);
 
     // Refusal must not interrupt a different accepted cast: the client does not compare 31103.sessionId.
     private async Task RefuseCoreAsync(GameSession s, CastSkillReq req, int error, long parameter)
@@ -408,17 +408,17 @@ public sealed partial class CombatService
         return _skills.Level(s.Progress!, (int)GameData.Int(row, "_iSkillID")) >= GameData.Int(row, "_iLevel");
     }
 
-    private MonsterUnit? FindMonster(long sceneId, long uid) => _world.Map(sceneId).Units.OfType<MonsterUnit>().FirstOrDefault(m => m.Uid == uid && !m.Dead);
+    internal MonsterUnit? FindMonster(long sceneId, long uid) => _world.Map(sceneId).Units.OfType<MonsterUnit>().FirstOrDefault(m => m.Uid == uid && !m.Dead);
     private GameSession? FindPlayer(GameSession s, long uid, bool dead = false) => _world.PlayersIn(s.WorldScene).FirstOrDefault(p => p.Role?.Id == uid && p.Dead == dead);
-    private static bool Finite(Vec3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
-    private static float Distance(Vec3 a, Vec3 b) => MonsterService.Distance(a.X, a.Z, b.X, b.Z);
-    private static float Range(JsonElement row) => Math.Max(0, GameData.Int(row, "_iDistanceMax") / 100f);
-    private static string Script(JsonElement row) => row.TryGetProperty("_kScriptLogic", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    internal static bool Finite(Vec3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);
+    internal static float Distance(Vec3 a, Vec3 b) => MonsterService.Distance(a.X, a.Z, b.X, b.Z);
+    internal static float Range(JsonElement row) => Math.Max(0, GameData.Int(row, "_iDistanceMax") / 100f);
+    internal static string Script(JsonElement row) => row.TryGetProperty("_kScriptLogic", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
     // AcolyteBD4 is Resurrection's mode row under Revive [Buff Effect] (SkillConfig 1411211-1411214), with the same text.
     private static bool IsResurrection(JsonElement row) => Script(row) is "Resurrection" or "AcolyteBD4";
-    private static double[] Numbers(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
+    internal static double[] Numbers(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
         ? [.. list.EnumerateArray().Select(v => GameData.Number(v) ?? 0)] : [];
-    private static IEnumerable<JsonElement> Tuples(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
+    internal static IEnumerable<JsonElement> Tuples(JsonElement row, string key) => row.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array
         ? list.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Array) : [];
 
     private bool Relation(JsonElement row, bool friendly, bool self = false, int race = 0, bool dead = false)
@@ -472,7 +472,7 @@ public sealed partial class CombatService
 
     /// <param name="askedRange">The range of the row the client asked for: it walks into that range, not into the
     /// range of a mode row a talent or a mount selects (Arrow Smash 18 m, its wolf row 5 m; issue #62).</param>
-    private int ValidateTarget(GameSession s, JsonElement row, CastSkillReq req, Vec3 origin, float slack = 0, float askedRange = 0)
+    internal int ValidateTarget(GameSession s, JsonElement row, CastSkillReq req, Vec3 origin, float slack = 0, float askedRange = 0)
     {
         int release = (int)GameData.Int(row, "_iRelease");
         if (AimsFromSeat?.Invoke(s, (int)new SkillConfig(row).Id) == true)
@@ -652,7 +652,7 @@ public sealed partial class CombatService
         if (notice.Infos.Count > 0) await s.SendGameAsync(SkillCdUpdate, notice);
     }
 
-    private async Task StartCooldownAsync(GameSession s, JsonElement row, int? askedMode = null)
+    internal async Task StartCooldownAsync(GameSession s, JsonElement row, int? askedMode = null)
     {
         if (ShadowEchoWaits(s, row)) return;
         if ((s.GmCombat & GmCombatSwitches.NoCooldown) != 0) return; // GmNoCD / GmUnlimit 1: no skill cooldown starts
@@ -819,34 +819,48 @@ public sealed partial class CombatService
 
     public async Task InterruptAsync(GameSession s, SkillInterruptReq? req = null)
     {
-        // 31124 with a normal attack as nxtSkill during a swing: at the same target it is the click burst the cast rule refuses
-        // (SwingInFlight), at another the turn CastCoreAsync paces (SwingTurnLeft), which needs the swing still in flight.
-        if (req?.NxtSkill is { } nextSwing && s.SkillCast is { Cancelled: false } swinging
-            && EffectiveSkillRow(s, nextSwing.SkillId) is { } nextRow && SwingTurnLeft(swinging, nextRow) > 0)
+        CastSkillReq? nextCast = null;
+        LegacyOwnerScope? admission = null;
+        OwnerNotices? notices = null;
+        if (s.Owners is { } owners && s.Role is { } role)
+            admission = await owners.EnterWithGateAsync("combat/interrupt", s.SkillCastGate, [ReservationKey.Role(role.Id)]);
+        else await s.SkillCastGate.WaitAsync();
+        try
         {
-            bool same = SwingInFlight(swinging, nextRow, nextSwing);
-            await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = !same });
-            if (same) await RefuseCastAsync(s, nextSwing, ErrorCodes.SkillBusy, 0);
-            else await CastAsync(s, nextSwing);
-            return;
+            if (s.Owners?.Current is { Notices: null } context) notices = new OwnerNotices(context);
+            // 31124 with a normal attack as nxtSkill during a swing: at the same target it is the click burst the cast rule refuses
+            // (SwingInFlight), at another the turn CastCoreAsync paces (SwingTurnLeft), which needs the swing still in flight.
+            if (req?.NxtSkill is { } nextSwing && s.SkillCast is { Cancelled: false } swinging
+                && EffectiveSkillRow(s, nextSwing.SkillId) is { } nextRow && SwingTurnLeft(swinging, nextRow) > 0)
+            {
+                bool same = SwingInFlight(swinging, nextRow, nextSwing);
+                await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = !same });
+                if (same) await RefuseCastAsync(s, nextSwing, ErrorCodes.SkillBusy, 0);
+                else nextCast = nextSwing;
+            }
+            else if (DropsWaitingRequest(s, req))
+            {
+                await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = false });
+            }
+            else
+            {
+                bool valid = req == null || req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId
+                    || req.InterruptSkillId == s.Attack?.SkillId || _eventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
+                bool interrupted = valid && (s.SkillCast != null || s.Attack != null || _eventAttacks.ContainsKey(s));
+                if (interrupted)
+                {
+                    s.Attack = null;
+                    _eventAttacks.Remove(s);
+                    if (req?.NxtSkill != null) await LandShownHitAsync(s, Now);
+                    await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
+                }
+                await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = interrupted });
+                if (interrupted && req?.NxtSkill is { } next) nextCast = next;
+            }
         }
-        if (DropsWaitingRequest(s, req))
-        {
-            await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = false });
-            return;
-        }
-        bool valid = req == null || req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId
-            || req.InterruptSkillId == s.Attack?.SkillId || _eventAttacks.TryGetValue(s, out var eventAttack) && req.InterruptSkillId == eventAttack.SkillId;
-        bool interrupted = valid && (s.SkillCast != null || s.Attack != null || _eventAttacks.ContainsKey(s));
-        if (interrupted)
-        {
-            s.Attack = null;
-            _eventAttacks.Remove(s);
-            if (req?.NxtSkill != null) await LandShownHitAsync(s, Now);
-            await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
-        }
-        await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = interrupted });
-        if (interrupted && req?.NxtSkill is { } next) await CastAsync(s, next);
+        finally { notices?.Dispose(); s.SkillCastGate.Release(); admission?.Dispose(); }
+        if (notices != null) await notices.FlushAsync();
+        if (nextCast != null) await CastAsync(s, nextCast);
     }
 
     /// <summary>

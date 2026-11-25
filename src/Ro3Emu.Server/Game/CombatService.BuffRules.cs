@@ -28,7 +28,7 @@ public sealed partial class CombatService
     /// Silence, Fear, Immobilize, Freeze, Petrify), formula 2 the duration (Poisoned, Bleeding, Burn, Paralyze, Sleep,
     /// Stun, Slow), the split the attributes' own tips state. A duration scaled to nothing does not land.
     /// </summary>
-    private bool RollHostileBuff(JsonElement tuple, GameSession? sourcePlayer, WorldUnit? sourceUnit,
+    internal bool RollHostileBuff(JsonElement tuple, GameSession? sourcePlayer, WorldUnit? sourceUnit,
         GameSession? targetPlayer, WorldUnit? targetUnit, out int id, out int duration)
     {
         id = duration = 0;

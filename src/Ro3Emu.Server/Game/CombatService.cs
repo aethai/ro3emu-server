@@ -74,6 +74,22 @@ public sealed partial class CombatService : IGameTicker
 
     public const int BeforeKilledOrderTower = -200;
     public const int BeforeKilledOrderDungeon = -100;
+    internal const int GuardianHookOrder = -100;
+    /// <summary>EffectData 1000002, the hit effect a monster's normal swing shows on players and tower pets too.</summary>
+    internal const int DefaultHitEffect = 1000002;
+
+    internal long NextSessionId() => ++_sessionIds;
+    internal PetCombatService PetCombat { get; private set; } = null!;
+    internal void BindPets(PetCombatService pets) => PetCombat = pets;
+    internal static bool SkillAreaContains(JsonElement row, Vec3 origin, Vec3 requested, float face, Vec3 point) =>
+        PetCombatService.SkillAreaContains(row, origin, requested, face, point);
+    internal static bool RaisesDamage(long attribute, int element) => PetCombatService.RaisesDamage(attribute, element);
+
+    /// <summary>
+    /// Synchronous monster damage modifiers (TowerService.PowerSuppress): a pet's hit on a monster (false), a monster's hit
+    /// on a pet or a player (true), after the monster's DamageRatio. A player's hit on a monster uses DamageAdjusters.
+    /// </summary>
+    internal OrderedHook<Func<MonsterUnit, long, bool, long>> MonsterDamageAdjusters { get; } = new("Combat.MonsterDamageAdjusters");
 
     /// <summary>A monster died by this player: rewards (RewardService), quest kill targets (TaskService).</summary>
     public AsyncHook<GameSession, MonsterUnit> Killed { get; } = new("Combat.Killed");
@@ -89,7 +105,7 @@ public sealed partial class CombatService : IGameTicker
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MonsterUnit, LethalFinalization>
         _finalizedLethalPublications = [];
 
-    private async Task FinalizeLethalPublicationAsync(MonsterUnit monster)
+    internal async Task FinalizeLethalPublicationAsync(MonsterUnit monster)
     {
         if (!monster.Dead) return;
         var state = _finalizedLethalPublications.GetValue(monster, _ => new LethalFinalization());
@@ -160,7 +176,7 @@ public sealed partial class CombatService : IGameTicker
         }
     }
 
-    private async Task SettleMonsterHitAsync(GameSession player, MonsterUnit monster, long previousHp, long damage)
+    internal async Task SettleMonsterHitAsync(GameSession player, MonsterUnit monster, long previousHp, long damage)
     {
         var role = player.Role;
         var attachment = player.Attachment;
@@ -202,7 +218,7 @@ public sealed partial class CombatService : IGameTicker
         }
     }
 
-    private async Task PublishDurableKillAsync(GameSession player, MonsterUnit monster, Func<bool> current)
+    internal async Task PublishDurableKillAsync(GameSession player, MonsterUnit monster, Func<bool> current)
     {
         // Cancellation stops further effects; the original healthy owner still observes paid kills.
         bool CanPublish() => current() && player.Owner?.State != Ownership.RoleOwnerState.RecoveryRequired;
@@ -296,7 +312,7 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, GameSession, JsonElement, Task<bool>>? ReviveItemSkill { get; set; }
 
     public CombatService(World world, MonsterService monsters, CharacterService character, SkillService skills, SceneService scene, BuffService buffs,
-        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log, PetService pets,
+        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log,
         SeasonTalentService talents)
     {
         this._world = world;
@@ -311,8 +327,9 @@ public sealed partial class CombatService : IGameTicker
         this._loop = loop;
         this._log = log;
         AfterLethalPublication = new("Combat.AfterLethalPublication", log, isolateErrors: true);
-        _pets = pets;
-        WireGuardians();
+        _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
+        _monsters.Forbidden = _buffs.UnitForbidden;
+        _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
         monsters.Attack = MonsterAttackAsync;
         buffs.ImmuneDeathDeclined = PlayerDiesAsync;
         scene.Leaving.Subscribe(ClearSkillsAsync, order: SceneService.LeaveOrderCombat);
@@ -330,13 +347,12 @@ public sealed partial class CombatService : IGameTicker
         scene.Leaving.Subscribe(ClearSceneSkillProtocolAsync, order: SceneService.LeaveOrderCombat);
         skills.QueueEligibility = CanQueueSkill;
         character.ProgressHandlers.Subscribe(buffs.ReconcileEnergyAsync);
+        CastResolved.Subscribe(AutoCounterOnCastAsync, order: GuardianHookOrder);
+        CastResolved.Subscribe(SupportSkillOnCastAsync, order: GuardianHookOrder);
         CastResolved.Subscribe(ReadingExtraCastAsync);
         CastResolved.Subscribe(ClassLoopsOnCastAsync);
-        monsters.AttackPet = MonsterAttackPetAsync;
-        buffs.UnitChanged.Subscribe(PublishTowerPetStatsAsync);
         WireBuffRules();
         WireBossSkills();
-        WireCompanions();
     }
 
     private long Now => _loop.NowMs;
@@ -350,7 +366,7 @@ public sealed partial class CombatService : IGameTicker
     }
 
     /// <summary>A heal's show point (player, guardian and tower pet heals): <see cref="SkillEffectData.HealPoint"/> over HitEffect's pick.</summary>
-    private int HealEffect(long scriptShow) =>
+    internal int HealEffect(long scriptShow) =>
         (int)SkillEffectData.HealPoint(_data.SkillTemplateTable("Lua_Config_EffectData"), scriptShow, HitEffect(scriptShow));
 
     /// <summary>
@@ -360,7 +376,7 @@ public sealed partial class CombatService : IGameTicker
     /// Bolt 1200411, Lightning Bolt 1200503, Double Strafe 1300304) showed no hit; the bullet goes in 31120 instead
     /// (<see cref="BulletEffect"/>).
     /// </summary>
-    private int HitEffect(long scriptShow)
+    internal int HitEffect(long scriptShow)
     {
         var effects = _data.SkillTemplateTable("Lua_Config_EffectData");
         int first = 0;
@@ -392,184 +408,23 @@ public sealed partial class CombatService : IGameTicker
     /// </summary>
     private static int HitSplit(JsonElement row) => (int)Math.Max(1, new SkillConfig(row).ShowDmg.FirstOrDefault(1));
 
-    // ---- monsters hitting players ----
+    // ---- pet & companion facades (owned by PetCombatService) ----
 
-    /// <summary>
-    /// Tower pet skills use configured damaging PetStarConfig._kActiveSkill entries and the shared
-    /// damage formula. Target choice and skill rotation are (inferred); 31100 source is the actor UUID,
-    /// while petConfigId and 32809 keys remain the owned PetBaseConfig ID.
-    /// </summary>
-    public async Task TowerPetAttackAsync(GameSession owner, TowerPetUnit pet, MonsterUnit target, int skillId)
-    {
-        if (!ReferenceEquals(owner, pet.Owner) || pet.Dead || pet.Hp <= 0 || target.Dead || target.Hp <= 0 || owner.Role == null || owner.Dead || owner.SceneLoading
-            || owner.TowerAttempt is not { Loaded: true, Settled: false } attempt
-            || attempt.InstanceId != pet.InstanceId || target.InstanceId != pet.InstanceId
-            || !attempt.Pets.Contains(pet) || !pet.AttackSkills.Any(s => s.Id == skillId)
-            || MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) > pet.AttackSkills.First(s => s.Id == skillId).Range + 1f
-            || _data.Row("SkillConfig", skillId) is not { } row
-            || owner.WorldScene != pet.WorldScene || target.WorldScene != pet.WorldScene
-            || !pet.TryBeginCast(pet.AttackSkills.First(s => s.Id == skillId), Now)) return;
-        var castingRole = owner.Role;
-        var castingAttachment = owner.Attachment;
-        long castingSceneGeneration = owner.SceneGeneration;
-        long castId = ++_sessionIds;
-        long now = Now;
-        int duration = pet.ActionMsFor(pet.AttackSkills.First(s => s.Id == skillId));
-        var use = new UseInSkillInfo
-        {
-            SrcID = pet.Uid, SkillID = skillId, TargetId = target.Uid, TargetPos = target.Pos,
-            Face = pet.Face, SessionId = castId, SkillMs = duration, StartTime = now, PetConfigId = pet.PetId,
-        };
-        await _world.ToUnitViewersAsync(pet, UseInSkill, use);
-        if (!pet.Viewers.Contains(owner)) await owner.SendGameAsync(UseInSkill, use);
-        // The exact server pet hit point is unavailable. Schedule at 40% of the configured action (inferred).
-        ScheduleRuntime(pet.WorldScene, TimeSpan.FromMilliseconds(duration * 0.4), async () =>
-        {
-            if (pet.Dead || pet.Hp <= 0 || owner.Dead || owner.SceneLoading || !ReferenceEquals(owner.Role, castingRole)
-                || owner.TowerAttempt is not { Loaded: true, Settled: false } a
-                || a.InstanceId != pet.InstanceId || !a.Pets.Contains(pet)) return;
-            float radius = row.TryGetProperty("_kRange", out var area) && area.ValueKind == JsonValueKind.Array
-                && area.GetArrayLength() > 0 ? (float)(GameData.Number(area[0]) ?? 0) / 100f : 0f;
-            int limit = (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
-            var targets = GameData.Int(row, "_iRangeType") == 2 && radius > 0
-                ? _world.Map(pet.WorldScene).Near(pet.X, pet.Z, radius + 1).OfType<MonsterUnit>()
-                    .Where(m => !m.Dead && m.Hp > 0 && m.InstanceId == pet.InstanceId
-                        && MonsterService.Distance(pet.X, pet.Z, m.X, m.Z) <= radius + 0.5f)
-                    .OrderBy(m => MonsterService.Distance(pet.X, pet.Z, m.X, m.Z)).Take(limit).ToList()
-                : !target.Dead && target.Hp > 0 && target.InstanceId == pet.InstanceId
-                    && MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) <= pet.AttackSkills.First(s => s.Id == skillId).Range + 2f
-                    ? [target] : [];
-            if (targets.Count == 0) return;
-            var stats = pet.CombatStats;
-            var attacker = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], pet.Level, pet.Element);
-            var hit = new SkillHitInfo
-            {
-                SrcID = pet.Uid, SkillId = skillId, ShowPoint = HitEffect(GameData.Int(row, "_iScriptShow")),
-                SessionId = castId, SrcElement = pet.Element,
-            };
-            var processed = new List<MonsterUnit>();
-            var killed = new List<MonsterUnit>();
-            try
-            {
-                foreach (var monster in targets)
-                {
-                    if (monster.Dead || monster.Hp <= 0) continue; // another cast may have reserved this actor while we awaited
-                    processed.Add(monster);
-                    var defender = MonsterFighter(monster);
-                    var (damage, result) = Damage(attacker, defender, row);
-                    foreach (var adjust in MonsterDamageAdjusters.Handlers) damage = adjust(monster, damage, false);
-                    long previousHp = monster.Hp;
-                    monster.Hp = Math.Max(0, monster.Hp - damage);
-                    if (monster.Hp == 0) killed.Add(monster); // reserve before awaited callbacks
-                    await SettleMonsterHitAsync(owner, monster, previousHp, damage);
-                    hit.Dsts.Add(new DamageInfo
-                    {
-                        DstID = monster.Uid, Damage = damage, HitResult = result,
-                        DstElement = monster.Template.Element, IsDead = monster.Hp == 0
-                    });
-                }
-                foreach (var viewer in processed.SelectMany(m => m.Viewers).Append(owner).Distinct())
-                    await viewer.SendGameAsync(SkillHit, hit);
-                foreach (var monster in processed)
-                {
-                    if (a.Settled || owner.Dead) return;
-                    if (monster.Hp == 0 && !monster.DeathDurable) continue; // another cast's uncommitted death
-                    await _world.ToUnitViewersAsync(monster, AoiAttrChange, MonsterService.Hp(monster));
-                    if (monster.Hp > 0)
-                    {
-                        _monsters.Engage(monster, pet);
-                        await FightingAsync(monster);
-                        continue;
-                    }
-                    if (!killed.Contains(monster)) continue; // a concurrent player/pet owns that lethal resolution
-                    await _monsters.KillAsync(monster);
-                    foreach (var other in _sessions.All().Where(o => o.Attack?.Target == monster))
-                    {
-                        other.Attack = null;
-                        await other.SendGameAsync(SkillEnd, new SkillEndNotify
-                        {
-                            SrcID = other.Role!.Id, SessionId = castId, Type = SkillEndNotify.Types.SkillEndType.Interrupted,
-                            InterruptedInfo = new SkillInterruptedInfo { Type = SkillInterruptedInfo.Types.SkillInterruptType.LockerInvalid },
-                        });
-                    }
-                    await PublishDurableKillAsync(owner, monster, () => ReferenceEquals(owner.Role, castingRole)
-                        && ReferenceEquals(owner.Attachment, castingAttachment) && !owner.SceneLoading
-                        && owner.SceneGeneration == castingSceneGeneration && owner.WorldScene == monster.WorldScene);
-                }
-            }
-            finally
-            {
-                foreach (var monster in killed.Where(m => m.Hp == 0 && m.DeathDurable))
-                {
-                    if (!monster.Dead)
-                        try { await _monsters.KillAsync(monster); }
-                        catch (Exception e) { _log.LogError(e, "Could not publish durable pet kill {Source}", monster.RewardSource?.Key); }
-                    await PublishDurableKillAsync(owner, monster, () => ReferenceEquals(owner.Role, castingRole)
-                        && ReferenceEquals(owner.Attachment, castingAttachment) && !owner.SceneLoading
-                        && owner.SceneGeneration == castingSceneGeneration && owner.WorldScene == monster.WorldScene);
-                    if (monster.Dead) await FinalizeLethalPublicationAsync(monster);
-                }
-            }
-        });
-    }
-
-    private async Task MonsterAttackPetAsync(MonsterUnit monster, TowerPetUnit pet)
-    {
-        if (pet.Dead || pet.Hp <= 0 || monster.Dead || monster.Hp <= 0
-            || pet.Owner.TowerAttempt is not { Loaded: true, Settled: false } attempt
-            || !attempt.Pets.Contains(pet)) return;
-        long castId = ++_sessionIds;
-        var use = new UseInSkillInfo
-        {
-            SrcID = monster.Uid, SkillID = monster.Template.NormalSkill, TargetId = pet.Uid, TargetPos = pet.Pos,
-            Face = monster.Face, SessionId = castId, SkillMs = monster.Template.SkillMs, StartTime = Now,
-        };
-        await _world.ToUnitViewersAsync(monster, UseInSkill, use);
-        ScheduleRuntime(monster.WorldScene, TimeSpan.FromSeconds(monster.Template.HitPointSeconds), async () =>
-        {
-            if (pet.Dead || pet.Hp <= 0 || monster.Dead || monster.Hp <= 0 || monster.WorldScene != pet.WorldScene
-                || pet.Owner.TowerAttempt is not { Loaded: true, Settled: false } current || !current.Pets.Contains(pet)
-                || MonsterService.Distance(monster.X, monster.Z, pet.X, pet.Z) > monster.Template.AttackRange + 2f) return;
-            await DamageTowerPetAsync(monster, pet, _data.Row("SkillConfig", monster.Template.NormalSkill), monster.Template.NormalSkill, castId, 1000002);
-        });
-    }
-
-    /// <summary>A monster's hit on a tower pet: the row's damage, pet support resistance, shields, HP and its death.</summary>
-    private async Task DamageTowerPetAsync(MonsterUnit monster, TowerPetUnit pet, JsonElement? row, int skillId, long castId,
-        int showPoint, int damagePercent = 100)
-    {
-        var attacker = MonsterFighter(monster);
-        var stats = pet.CombatStats;
-        var defender = new Fighter(0, 0, 0, 0, pet.Level, pet.Element)
-        { Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri] };
-        var (damage, result) = row is { } r ? Damage(attacker, defender, r)
-            : (Math.Max(1, monster.Template.Atk), DamageHitResult.Normal);
-        damage = ScaleMonsterDamage(damage, monster.DamageRatio);
-        damage = MonsterBuffDamage(monster, row, damage);
-        if (damagePercent != 100) damage = damagePercent <= 0 ? 0 : ScaleMonsterDamage(damage, damagePercent * 100);
-        foreach (var adjust in MonsterDamageAdjusters.Handlers) damage = adjust(monster, damage, true);
-        damage = ApplyPetSupportResistance(damage, _buffs.UnitAttributes(pet), row, monster.Template.Element);
-        long beforeShield = damage;
-        damage = await _buffs.AbsorbAsync(pet, damage);
-        pet.Hp = Math.Max(0, pet.Hp - damage);
-        // Reserve death before any awaited broadcasts: neither the pet nor another pending swing
-        // may act on zero HP while the death notification and substitution are being delivered.
-        pet.Dead = pet.Hp == 0;
-        var hit = new SkillHitInfo
-        {
-            SrcID = monster.Uid, SkillId = skillId, ShowPoint = showPoint,
-            SessionId = castId, SrcElement = monster.Template.Element,
-            Dsts = { new DamageInfo { DstID = pet.Uid, Damage = damage, SheildDamage = beforeShield - damage, HitResult = result,
-                DstElement = pet.Element, IsDead = pet.Hp == 0 } },
-        };
-        await _world.ToUnitViewersAsync(monster, SkillHit, hit);
-        await _world.ToUnitViewersAsync(pet, AoiAttrChange, pet.HpChange());
-        if (!pet.Dead) return;
-        await _buffs.ClearUnitAsync(pet);
-        if (ReferenceEquals(monster.PetTarget, pet)) monster.PetTarget = null;
-        await _world.ToUnitViewersAsync(pet, EntityBaseChange, pet.StateChange());
-        await TowerPetDied.InvokeAsync(pet);
-    }
+    public Task TowerPetAttackAsync(GameSession owner, TowerPetUnit pet, MonsterUnit target, int skillId) =>
+        PetCombat.TowerPetAttackAsync(owner, pet, target, skillId);
+    public Task TowerPetSupportAsync(GameSession owner, TowerPetUnit pet, int skillId) =>
+        PetCombat.TowerPetSupportAsync(owner, pet, skillId);
+    internal StatSheet TowerPetStats(TowerPetUnit pet) => PetCombat.TowerPetStats(pet);
+    internal void PopulateTowerPetBuffs(TowerPetUnit pet, EntityBase entity) => PetCombat.PopulateTowerPetBuffs(pet, entity);
+    internal Task CompanionAttackAsync(CompanionUnit companion, MonsterUnit target, CompanionUnit.Skill skill) =>
+        PetCombat.CompanionAttackAsync(companion, target, skill);
+    internal double CompanionDps(CompanionUnit.Kit kit, MonsterTemplate target) => PetCombat.CompanionDps(kit, target);
+    private Task DamageTowerPetAsync(MonsterUnit monster, TowerPetUnit pet, JsonElement? row, int skillId, long castId,
+        int showPoint, int damagePercent = 100) =>
+        PetCombat.DamageTowerPetAsync(monster, pet, row, skillId, castId, showPoint, damagePercent);
+    private Task DamageCompanionAsync(MonsterUnit monster, CompanionUnit companion, JsonElement? row, int skillId,
+        long castId, int showPoint, int damagePercent = 100) =>
+        PetCombat.DamageCompanionAsync(monster, companion, row, skillId, castId, showPoint, damagePercent);
 
     /// <summary>
     /// A rider in mount flight (WorldState.Flying, eObjectStateFly) is out of every monster's reach: monsters do not take
@@ -670,9 +525,9 @@ public sealed partial class CombatService : IGameTicker
         // GmUnlimit's invincibility (inferred): the hit lands as 0, like a Safety Wall.
         if (damage > 0 && ((target.GmCombat & GmCombatSwitches.Unlimited) != 0 || _buffs.HasForbidden(target, ForbiddenState.Damage)
             || await GroundProtectsAsync(target, row))) damage = 0;
-        if (row is { } incomingSkill) damage = GuardianNormalAttackResistance(target, incomingSkill, damage);
+        if (row is { } incomingSkill) damage = PetCombat.GuardianNormalAttackResistance(target, incomingSkill, damage);
         // (inferred) Support damage reductions precede the finite shield and lethal-hit handling.
-        damage = ApplyPetSupportResistance(damage, target.Buffs.Where(b => b.ExpireMs > Now
+        damage = PetCombatService.ApplyPetSupportResistance(damage, target.Buffs.Where(b => b.ExpireMs > Now
                 && (b.SourceId is >= TowerPetUnit.UidBase and < TowerPetUnit.UidLimit || b.IsGuardianOwned))
             .SelectMany(b => b.Changes).Select(c => (c.Attr, c.Value)), row, sourceElement);
         long beforeShield = damage;
@@ -680,7 +535,7 @@ public sealed partial class CombatService : IGameTicker
         long shieldDamage = beforeShield - damage;
         if (!ReferenceEquals(target.Role, targetRole) || target.SceneLoading || valid?.Invoke() == false) return null;
         long before = _character.Stats(target)[2000];
-        long floor = GuardianHpFloor(target, before);
+        long floor = PetCombat.GuardianHpFloor(target, before);
         if (floor > 0) damage = Math.Min(damage, Math.Max(0, before - floor));
         long hp = Math.Max(0, before - damage);
         if (hp == 0 && await _buffs.TryPreventLethalAsync(target)) hp = _character.Stats(target)[2000];
@@ -700,7 +555,7 @@ public sealed partial class CombatService : IGameTicker
 
     // ---- damage formula (inferred) ----
 
-    private sealed record Fighter(long Atk, long Matk, long Hit, long Cri, int Level, int Element)
+    internal sealed record Fighter(long Atk, long Matk, long Hit, long Cri, int Level, int Element)
     {
         public long Def { get; init; }
         public long Mdef { get; init; }
@@ -726,7 +581,7 @@ public sealed partial class CombatService : IGameTicker
         return id => stats[id] - own[id];
     }
 
-    private (long Damage, DamageHitResult Result) Damage(Fighter a, Fighter b, JsonElement skill, int branch = 0,
+    internal (long Damage, DamageHitResult Result) Damage(Fighter a, Fighter b, JsonElement skill, int branch = 0,
         double bonusCrit = 0, bool forceCrit = false)
     {
         if (!NeverMisses(skill) && Rolls.Hit() >= HitRate(a, b, skill)) return (0, DamageHitResult.Miss);
@@ -822,7 +677,7 @@ public sealed partial class CombatService : IGameTicker
     }
 
     /// <summary>The expected damage of one hit (hit rate, mean float, crit share) from the same formula.</summary>
-    private double ExpectedDamage(Fighter a, Fighter b, JsonElement skill)
+    internal double ExpectedDamage(Fighter a, Fighter b, JsonElement skill)
     {
         double dmg = Math.Max(1, BaseDamage(a, b, skill, 0, out _));
         return HitRate(a, b, skill) * dmg * (1 + (CritMultiplier(a, b) - 1) * Math.Min(1, CritRate(a, b, skill)));
@@ -873,7 +728,7 @@ public sealed partial class CombatService : IGameTicker
         await ToPlayerAndViewersAsync(p, AoiAttrChange, Status(p.Role!.Id, p.StatusBits));
     }
 
-    private async Task FightingAsync(MonsterUnit m)
+    internal async Task FightingAsync(MonsterUnit m)
     {
         m.LastCombatMs = Now;
         if ((m.StatusBits & FightBit) != 0) return;
@@ -1194,7 +1049,7 @@ public sealed partial class CombatService : IGameTicker
         await _character.SetHpSpAsync(s, st[2000] + Math.Max(1, rehp), st[2001] + Math.Max(1, resp));
     }
 
-    private async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, IMessage body)
+    internal async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, IMessage body)
     {
         var viewers = _world.Viewers(p);
         if (viewers.Count == 0) { await p.SendGameAsync(msgId, body); return; }

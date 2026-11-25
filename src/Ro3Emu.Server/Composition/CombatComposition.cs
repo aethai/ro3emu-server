@@ -11,6 +11,7 @@ internal static class CombatComposition
         services.AddSingleton<PublicLineManager>();
         services.AddSingleton<BuffService>();
         services.AddSingleton<CombatService>();
+        services.AddSingleton<PetCombatService>();
         services.AddSingleton<CombatGmCommands>();
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<CombatService>());
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<BuffService>());
@@ -18,7 +19,9 @@ internal static class CombatComposition
 
     public static void WireCombat(WebApplication app)
     {
-        app.Services.GetRequiredService<CombatService>().BindRules(app.Services.GetServices<ICombatRule>());
+        var combat = app.Services.GetRequiredService<CombatService>();
+        combat.BindPets(app.Services.GetRequiredService<PetCombatService>());
+        combat.BindRules(app.Services.GetServices<ICombatRule>());
     }
 
     public static void RegisterCombatGm(WebApplication app)

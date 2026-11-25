@@ -29,7 +29,7 @@ public sealed partial class CombatService
         return StatCalculator.Compute(raw, _data);
     }
 
-    private Fighter MonsterFighter(MonsterUnit unit)
+    internal Fighter MonsterFighter(MonsterUnit unit)
     {
         var t = unit.Template;
         // The template as it was, without the per-hit attribute pass when nothing overlays it.
@@ -41,7 +41,7 @@ public sealed partial class CombatService
         { Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri], Race = t.Race, Size = t.Size, Kind = KindOf(t) };
     }
 
-    private long MonsterBuffDamage(MonsterUnit monster, JsonElement? skill, long amount)
+    internal long MonsterBuffDamage(MonsterUnit monster, JsonElement? skill, long amount)
     {
         if (!_buffs.HasUnitCombatBuffs(monster)) return amount;
         int element = skill is { } row && GameData.Int(row, "_iEleType") > 1

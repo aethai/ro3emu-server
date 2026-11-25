@@ -3,7 +3,7 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     /// <summary>Internal reaction cooldowns of the connection's current role: a role switch on the same connection
     /// starts with none, like its skill cooldowns (RoleSessionService clears those on entry).</summary>

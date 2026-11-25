@@ -11,7 +11,7 @@ BuffService.ControlResisted (1)
   PassiveSkills.OnControlResistedAsync
 BuffService.UnitChanged (2)
   CombatService.PublishMonsterAttributesAsync
-  CombatService.PublishTowerPetStatsAsync
+  PetCombatService.PublishTowerPetStatsAsync
 CardService.CollectionChanged (2)
   AchievementService.<.ctor> lambda
   FirstHeartService.<.ctor> lambda
@@ -25,12 +25,12 @@ CharacterService.DynamicProperties (4)
 CharacterService.ExpCredited (1)
   CheatMonitor.ExpGained
 CharacterService.ExtraAttributes (11)
-  PetService.Attributes
   CombatService.PassiveAttributes
   CombatService.ResonanceAttributes
   MountService.Attributes
   LifeJobService.FoodAttributes
   EmblemService.ResonanceAttributes
+  PetService.Attributes
   SeasonRefineService.ActiveAttributes
   TotemService.Attributes
   TalentProcs.SoulReaperAttributes
@@ -68,9 +68,9 @@ CharacterService.ProgressHandlers (12)
   EmojiService.RefreshUnlocksAsync
 CharacterService.SpecialItemUse (5)
   WardrobeService.TryUseAppearanceItemAsync
-  PetService.TryUseSelfChooseAsync
-  CharacterService.UseItemActionAsync
   MountService.TryUseItemAsync
+  CharacterService.UseItemActionAsync
+  PetService.TryUseSelfChooseAsync
   ItemBoxService.TryOpenAsync
 CharacterService.StateChanged (9)
   TaskService.QueueRefresh
@@ -116,8 +116,8 @@ CombatService.CastResolved (7)
   TalentProcs.OnCastResolvedAsync
   PassiveSkills.OnCastResolvedAsync
 CombatService.DamageAdjusters (10)
-  CombatService.<WireGuardians> lambda
-  CombatService.<WireGuardians> lambda
+  PetCombatService.<WireGuardians> lambda
+  PetCombatService.<WireGuardians> lambda
   DungeonService.TrialDamage
   DungeonService.<.ctor> lambda
   MvpService.<.ctor> lambda
@@ -133,9 +133,9 @@ CombatService.Dealt (5)
   CasualBattleService.BossDealt
   GuildHuntingService.Dealt
 CombatService.DealtAsync (8)
-  CombatService.GuardianDamageReactionAsync
-  CombatService.GuardianWindowMonsterHitAsync
-  CombatService.<WireGuardians> lambda
+  PetCombatService.GuardianDamageReactionAsync
+  PetCombatService.GuardianWindowMonsterHitAsync
+  PetCombatService.<WireGuardians> lambda
   DungeonService.TrialBossHitAsync
   TotemEffects.OnDealtAsync
   CardEffects.OnDealtAsync
@@ -251,7 +251,7 @@ CombatService.Taken (2)
   DungeonService.<.ctor> lambda
   MvpService.OnTaken
 CombatService.TakenAsync (6)
-  CombatService.<WireGuardians> lambda
+  PetCombatService.<WireGuardians> lambda
   TotemEffects.OnTakenAsync
   CardEffects.<.ctor> lambda
   TalentProcs.OnTakenAsync
@@ -318,7 +318,7 @@ NewActivityService.ProjectionChanged (1)
 PersonalService.Upvoted (1)
   TaskService.OnProfileLiked
 PetService.Changed (1)
-  CombatService.SyncGuardianWheelAsync
+  PetCombatService.SyncGuardianWheelAsync
 PublicLineManager.HasPendingWork (5)
   MvpService.HasPendingWork
   MonsterService.HasPendingWork
@@ -382,7 +382,6 @@ SceneService.Leaving (28)
 SceneService.LineSwitchChecks (1)
   WorldInteractionService.<.ctor> lambda
 SceneService.Loaded (25)
-  CombatService.SyncGuardianWheelAsync
   CombatService.RefreshSkillParametersAsync
   DungeonService.LoadedAsync
   PronteraDefenseService.ApplyPrepBuffAsync
@@ -402,6 +401,7 @@ SceneService.Loaded (25)
   TerritoryWarsService.WorldLoadedAsync
   TerritoryEscortService.SceneLoadedAsync
   GuildLeagueService.LoadedAsync
+  PetCombatService.SyncGuardianWheelAsync
   PetFollowerService.RefreshAsync
   TowerService.LoadedAsync
   CardEffects.RefreshAsync

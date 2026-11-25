@@ -9,7 +9,7 @@ public sealed partial class CombatService
     /// <summary>Scheduled hit/end work and suspended hit settlement pin their original public line.</summary>
     public bool HasPendingMapWork(RuntimeMapKey map) => _pendingSceneWork.GetValueOrDefault(map.WorldScene) != 0;
 
-    private void ScheduleRuntime(long map, TimeSpan delay, Func<Task> callback)
+    internal void ScheduleRuntime(long map, TimeSpan delay, Func<Task> callback)
     {
         _pendingSceneWork[map] = _pendingSceneWork.GetValueOrDefault(map) + 1;
         _loop.ScheduleRuntime(delay, async () =>
@@ -22,7 +22,7 @@ public sealed partial class CombatService
         });
     }
 
-    private static bool CurrentCastMap(GameSession session, ActiveSkillCast cast) => !cast.Cancelled
+    internal static bool CurrentCastMap(GameSession session, ActiveSkillCast cast) => !cast.Cancelled
         && !session.SceneLoading && !session.SceneRecoveryRequired && !session.Dead
         && session.Role?.Id == cast.OwnerId && session.WorldScene == cast.WorldScene
         && ReferenceEquals(session.Attachment, cast.Attachment) && cast.Attachment?.Cancelled != true

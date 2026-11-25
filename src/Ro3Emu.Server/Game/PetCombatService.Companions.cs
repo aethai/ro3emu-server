@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// participant of the run (inferred: the original credited its own script). A monster answers with its normal attack;
 /// a companion at 0 HP dies and its owner removes it. Separate from the tower pet paths (CombatService.TowerPets).
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     /// <summary>(inferred) A hit lands at 40% of the cast's action, as for tower pets: the server hit point is not in the client.</summary>
     private const double CompanionHitShare = 0.4;
@@ -26,7 +26,7 @@ public sealed partial class CombatService
     internal async Task CompanionAttackAsync(CompanionUnit companion, MonsterUnit target, CompanionUnit.Skill skill)
     {
         if (!Reaches(companion, target, skill, 1f) || SkillConfig.Get(_data, skill.Id) is not { } config) return;
-        long castId = ++_sessionIds;
+        long castId = NextSessionId();
         await _world.ToUnitViewersAsync(companion, UseInSkill, new UseInSkillInfo
         {
             SrcID = companion.Uid, SkillID = skill.Id, TargetId = target.Uid, TargetPos = target.Pos, Face = companion.Face,
@@ -41,7 +41,7 @@ public sealed partial class CombatService
         && target.InstanceId == companion.InstanceId && target.WorldScene == companion.WorldScene
         && MonsterService.Distance(companion.X, companion.Z, target.X, target.Z) <= skill.Range + slack;
 
-    private static Fighter CompanionFighter(MonsterTemplate t) =>
+    private static CombatService.Fighter CompanionFighter(MonsterTemplate t) =>
         new(t.Atk, t.Matk, t.Hit, t.Cri, t.Level, t.Element) { Def = t.Def, Mdef = t.Mdef, Flee = t.Flee };
 
     private async Task CompanionHitAsync(CompanionUnit companion, MonsterUnit target, CompanionUnit.Skill skill, JsonElement row, long castId)
@@ -102,7 +102,7 @@ public sealed partial class CombatService
     private async Task MonsterAttackCompanionAsync(MonsterUnit monster, CompanionUnit companion)
     {
         if (companion.Dead || companion.Hp <= 0 || monster.Dead || monster.Hp <= 0) return;
-        long castId = ++_sessionIds;
+        long castId = NextSessionId();
         await _world.ToUnitViewersAsync(monster, UseInSkill, new UseInSkillInfo
         {
             SrcID = monster.Uid, SkillID = monster.Template.NormalSkill, TargetId = companion.Uid, TargetPos = companion.Pos,
@@ -120,11 +120,11 @@ public sealed partial class CombatService
 
     /// <summary>A monster's hit on a companion (its normal attack, or a boss area skill at the boss skills' damage
     /// percent): the row's damage against the companion's template, its HP and death.</summary>
-    private async Task DamageCompanionAsync(MonsterUnit monster, CompanionUnit companion, JsonElement? row, int skillId,
+    internal async Task DamageCompanionAsync(MonsterUnit monster, CompanionUnit companion, JsonElement? row, int skillId,
         long castId, int showPoint, int damagePercent = 100)
     {
         var t = companion.Template;
-        var defender = new Fighter(0, 0, 0, 0, t.Level, t.Element) { Def = t.Def, Mdef = t.Mdef, Flee = t.Flee };
+        var defender = new CombatService.Fighter(0, 0, 0, 0, t.Level, t.Element) { Def = t.Def, Mdef = t.Mdef, Flee = t.Flee };
         var (damage, result) = row is { } r ? Damage(MonsterFighter(monster), defender, r)
             : (Math.Max(1, monster.Template.Atk), DamageHitResult.Normal);
         damage = MonsterBuffDamage(monster, row, ScaleMonsterDamage(damage, monster.DamageRatio));
@@ -153,7 +153,7 @@ public sealed partial class CombatService
     internal double CompanionDps(CompanionUnit.Kit kit, MonsterTemplate target)
     {
         var attacker = CompanionFighter(kit.Template);
-        var defender = new Fighter(0, 0, target.Flee, 0, target.Level, target.Element) { Def = target.Def, Mdef = target.Mdef, Flee = target.Flee };
+        var defender = new CombatService.Fighter(0, 0, target.Flee, 0, target.Level, target.Element) { Def = target.Def, Mdef = target.Mdef, Flee = target.Flee };
         var ready = new Dictionary<int, long>();
         double total = 0;
         for (long now = 0; now < CompanionDpsWindowMs;)

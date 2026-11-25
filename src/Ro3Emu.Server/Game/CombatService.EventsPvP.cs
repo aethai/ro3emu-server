@@ -19,16 +19,16 @@ public sealed partial class CombatService
         && !source.SceneLoading && !target.SceneLoading && source.InstanceId != 0
         && source.InstanceId == target.InstanceId && CanEventFight(source, target);
 
-    private bool CanPlayerHit(GameSession source, GameSession target) =>
+    internal bool CanPlayerHit(GameSession source, GameSession target) =>
         CanEventHit(source, target) || CanTerritoryHit(source, target);
 
-    private GameSession? EventTarget(GameSession source, long id) => _sessions.All()
+    internal GameSession? EventTarget(GameSession source, long id) => _sessions.All()
         .FirstOrDefault(target => target.Role?.Id == id && CanPlayerHit(source, target) && CanSee(source, target));
 
-    private static float PlayerDistance(GameSession a, GameSession b) =>
+    internal static float PlayerDistance(GameSession a, GameSession b) =>
         MonsterService.Distance(a.Position.X, a.Position.Z, b.Position.X, b.Position.Z);
 
-    private GameSession[] EventAreaTargets(GameSession source, JsonElement row)
+    internal GameSession[] EventAreaTargets(GameSession source, JsonElement row)
     {
         float radius = (row.TryGetProperty("_kRange", out var range) && range.ValueKind == JsonValueKind.Array
             && range.GetArrayLength() > 0 ? (float)(Data.GameData.Number(range[0]) ?? 300) : 300) / 100f;
@@ -130,7 +130,7 @@ public sealed partial class CombatService
     /// (GuardianPlayerDebuffsAsync). After the hit, so the hit does not break a Sleep it brought itself.</summary>
     private async Task PvpHitDebuffsAsync(GameSession source, GameSession target, JsonElement row, Func<bool> current)
     {
-        if (IsGuardianEffect(row) || Script(row) == "HolyLight2") return; // Signum Crucis reaches Undead and Demons, and players are Demi-Human
+        if (PetCombatService.IsGuardianEffect(row) || Script(row) == "HolyLight2") return; // Signum Crucis reaches Undead and Demons, and players are Demi-Human
         foreach (var tuple in HostileBuffs(row))
             if (current() && CanPlayerHit(source, target) && RollHostileBuff(tuple, source, null, target, null, out int id, out int duration))
                 await _buffs.AddAsync(target, id, duration, source.Role!.Id);
@@ -144,7 +144,7 @@ public sealed partial class CombatService
             await _buffs.AddAsync(target, buff, duration, source.Role!.Id);
     }
 
-    private static IEnumerable<JsonElement> HostileBuffs(JsonElement row) => Tuples(row, "_kBuff2");
+    internal static IEnumerable<JsonElement> HostileBuffs(JsonElement row) => Tuples(row, "_kBuff2");
 
     private void TickEventPvP(long now)
     {
@@ -167,10 +167,10 @@ public sealed partial class CombatService
         long effective, bool killed, Func<bool> current)
     {
         if (effective <= 0 || !ReferenceEquals(target.Role, targetRole)) return;
-        await GuardianTakenAsync(target, effective);
+        await PetCombat.GuardianTakenAsync(target, effective);
         if (!current()) return;
-        await GuardianWindowHitAsync(source, targetRole.Id, target.Position, row, effective, killed);
-        if (current()) await GuardianPlayerDamageReactionAsync(source, target, row, effective, current);
+        await PetCombat.GuardianWindowHitAsync(source, targetRole.Id, target.Position, row, effective, killed);
+        if (current()) await PetCombat.GuardianPlayerDamageReactionAsync(source, target, row, effective, current);
     }
 
     /// <summary>One player's damage from another's skill: the hit with a guardian's crit rules, the guardian factors and
@@ -190,8 +190,8 @@ public sealed partial class CombatService
         var (damage, result) = Damage(a, b, row, DamageBranch(source, null, row), bonusCrit: GuardianPetRules.CriticalChance(row),
             forceCrit: GuardianPetRules.CriticalAtHp(row, defend[AttributeId.Hp], defend[AttributeId.MaxHp]));
         damage = GuardianPetRules.DirectDamage(row, damage);
-        damage = GuardianOutgoingDamage(source, row, damage);
-        damage = GuardianControlledDamage(source, GuardianControlTarget(target), damage);
+        damage = PetCombatService.GuardianOutgoingDamage(source, row, damage);
+        damage = PetCombat.GuardianControlledDamage(source, PetCombat.GuardianControlTarget(target), damage);
         if (result != DamageHitResult.Miss) damage = ApplyPlayerRestraints(source, target, damage);
         return row.TryGetProperty("_ro3GuardianFixedHit", out var fixedValue)
             ? (fixedValue.GetInt64(), DamageHitResult.Normal) : (damage, result);

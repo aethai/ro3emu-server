@@ -5,7 +5,7 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     private async Task GuardianFinalReactionAsync(GameSession source, GuardianPetRules.Skill pet, ActiveSkillCast action)
     {
