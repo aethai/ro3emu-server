@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Server.Net;
 
@@ -23,7 +22,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
     internal TimeSpan EncryptDeadline { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>...and signs in right after that; a connection that has done neither by then is dropped.</summary>
     internal TimeSpan SignInDeadline { get; init; } = TimeSpan.FromMinutes(2);
-    private readonly AsyncLocal<GameLoop.CompletionReservation?> _serveCompletion = new();
+    private readonly AsyncLocal<IDisposable?> _serveCompletion = new();
     private long _nextServeId;
     private bool _stopping;
     public bool DrainSucceeded { get; private set; } = true;
@@ -38,9 +37,9 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
     protected virtual ValueTask OnDisconnectedAsync(PhonestChannel channel) => ValueTask.CompletedTask;
     /// <summary>True once the connection belongs to an account (see <see cref="SignInDeadline"/>).</summary>
     protected virtual bool IsSignedIn(PhonestChannel channel) => true;
-    protected virtual GameLoop.CompletionReservation? ReserveServeCompletion() => null;
+    protected virtual IDisposable? ReserveServeCompletion() => null;
     protected virtual void OnCleanupFailed(PhonestChannel channel, Exception error) { }
-    protected GameLoop.CompletionReservation? CurrentServeCompletion => _serveCompletion.Value;
+    protected IDisposable? CurrentServeCompletion => _serveCompletion.Value;
 
     private Socket? _listener;
 
@@ -91,7 +90,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                         continue;
                     }
                     long id = ++_nextServeId;
-                    GameLoop.CompletionReservation? completion;
+                    IDisposable? completion;
                     try { completion = ReserveServeCompletion(); }
                     catch (InvalidOperationException)
                     {
@@ -143,7 +142,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         }
     }
 
-    private async Task ServeAsync(Socket socket, GameLoop.CompletionReservation? completion, CancellationToken ct)
+    private async Task ServeAsync(Socket socket, IDisposable? completion, CancellationToken ct)
     {
         _serveCompletion.Value = completion;
         try

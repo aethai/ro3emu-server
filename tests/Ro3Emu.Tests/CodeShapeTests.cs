@@ -167,6 +167,42 @@ public sealed class CodeShapeTests
     }
 
     [Fact]
+    public void NoLooseSourceFilesInGameRoot()
+    {
+        string gameRoot = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server", "Game");
+        string[] loose = [.. Directory.EnumerateFiles(gameRoot, "*.cs", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .OrderBy(n => n, StringComparer.Ordinal)!];
+        Assert.True(loose.Length == 0,
+            $"Found {loose.Length} loose .cs file(s) directly in src/Ro3Emu.Server/Game/: {string.Join(", ", loose.Take(10))}. Place new files in a domain subfolder.");
+    }
+
+    [Fact]
+    public void CoreLayersRespectGameBoundaries()
+    {
+        string serverRoot = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server");
+        AssertLayerGameRefs(serverRoot, "Data", maxAllowed: 0);
+        AssertLayerGameRefs(serverRoot, "Net", maxAllowed: 0);
+        AssertLayerGameRefs(serverRoot, "Maps", maxAllowed: 6);
+        AssertLayerGameRefs(serverRoot, "Accounts", maxAllowed: 6);
+        AssertLayerGameRefs(serverRoot, "Economy", maxAllowed: 4);
+    }
+
+    private static void AssertLayerGameRefs(string serverRoot, string layer, int maxAllowed)
+    {
+        string layerRoot = Path.Combine(serverRoot, layer);
+        List<string> offending = [];
+        foreach (string path in Directory.EnumerateFiles(layerRoot, "*.cs", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.Ordinal))
+        {
+            string text = File.ReadAllText(path);
+            if (text.Contains("Ro3Emu.Server.Game", StringComparison.Ordinal))
+                offending.Add(Path.GetRelativePath(serverRoot, path).Replace('\\', '/'));
+        }
+        AssertRatchet(layer + "FilesReferencingGame", maxAllowed, offending);
+    }
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));
@@ -283,7 +319,7 @@ public sealed class CodeShapeTests
             CollectLinearRoleScans(relPath, root, linearRoleScans);
             CollectNumericSendGame(relPath, root, numericSendGame);
             if (inGame) CollectSystemClockCalls(relPath, root, systemClockCalls);
-            if (inGame && !string.Equals(relPath, "Game/GameCalendar.cs", StringComparison.Ordinal))
+            if (inGame && !string.Equals(relPath, "Game/Core/GameCalendar.cs", StringComparison.Ordinal))
                 CollectAdHocResetOffsets(relPath, root, adHocResetOffsets);
         }
 

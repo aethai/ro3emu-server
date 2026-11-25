@@ -34,7 +34,7 @@ public sealed class GameGateServer(
 
     protected override string Name => "GameGate";
 
-    protected override GameLoop.CompletionReservation ReserveServeCompletion()
+    protected override IDisposable ReserveServeCompletion()
         => loop.ReserveCompletion("game connection")
            ?? throw new InvalidOperationException("Game loop has no connection cleanup capacity.");
 
@@ -200,7 +200,7 @@ public sealed class GameGateServer(
     {
         if (channel.Session is GameSession session)
         {
-            await loop.InvokeCleanupAsync(CurrentServeCompletion
+            await loop.InvokeCleanupAsync((CurrentServeCompletion as GameLoop.CompletionReservation)
                 ?? throw new InvalidOperationException("Game connection has no cleanup reservation."), async () =>
             {
                 // Swapped out by a reconnect (the half-open old socket): the session lives on the newer one.
