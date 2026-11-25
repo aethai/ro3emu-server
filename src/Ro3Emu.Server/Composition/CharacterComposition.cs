@@ -49,6 +49,7 @@ internal static class CharacterComposition
         services.AddSingleton<GrowthClassService>();
         services.AddSingleton<ParagonService>();
         services.AddSingleton<FlyingDragonService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<FlyingDragonService>());
         services.AddSingleton<TitleService>();
         services.AddSingleton<FirstHeartService>();
         services.AddSingleton<AppraisalService>();

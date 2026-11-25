@@ -24,7 +24,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class RankRewardService(GameData data, RankService ranks, MailService mail, AwardService awards,
     RoleStore roles, AccountStore accounts, SeasonService seasons, GameLoop loop, TimeProvider clock,
-    ILogger<RankRewardService> log) : IGameTicker
+    ILogger<RankRewardService> log) : IGameTicker, IStartupInitializer
 {
     private const long Daily = 1, Weekly = 2;
     private const string StateKey = "rank_rewards";
@@ -61,6 +61,8 @@ public sealed partial class RankRewardService(GameData data, RankService ranks, 
             finally { _running = false; }
         });
     }
+
+    public void Initialize() => _settled ??= Load();
 
     private Dictionary<long, string> Load() =>
         accounts.ReadSync<string?>(new SeasonStateReadPlan(StateKey)) is { Length: > 0 } saved

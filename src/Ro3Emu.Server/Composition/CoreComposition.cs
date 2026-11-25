@@ -45,6 +45,8 @@ internal static partial class CoreComposition
             services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<Diagnostics.RecentLogBuffer>());
         services.AddSingleton<GameLoop>();
         services.AddSingleton<Deadlines>();
+        // Startup initializers run persisted state loads and migrations before tickers, loop, and gates open.
+        services.AddHostedService<RealmStartupService>();
         // Starts before the loop: by then the host has built every hosted service and, through them, every ticker.
         services.AddHostedService<GameLoopTickers>();
         services.AddHostedService(sp => sp.GetRequiredService<GameLoop>());
@@ -328,6 +330,18 @@ internal static partial class CoreComposition
     [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:RefuseUnknownAccounts is on but the web panel's sign-up is " +
         "off: no new account can be created. Turn on Ro3Emu:Panel:Enabled and Ro3Emu:Panel:Registration (docs/guide/hosting.md).")]
     private static partial void LogNoSignUp(ILogger logger);
+}
+
+internal sealed class RealmStartupService(IEnumerable<IStartupInitializer> initializers) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        foreach (var initializer in initializers)
+            initializer.Initialize();
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 /// <summary>

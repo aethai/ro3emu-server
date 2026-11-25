@@ -16,26 +16,23 @@ namespace Ro3Emu.Server.Game;
 /// Capture selects every role/mailbox and listing collection before one all-or-none reservation.
 /// SQL guards revalidate the detached capture; publication precedes releasing keys and sending notices.
 /// </summary>
-public sealed partial class MarketStore
+public sealed partial class MarketStore(AccountStore accounts, ItemStore items, RoleStore roles, SessionRegistry sessions,
+    OwnerRegistry owners, CharacterService character, MailService mail, TimeProvider clock, ILogger<MarketStore> log) : IStartupInitializer
 {
-    private readonly AccountStore _accounts;
-    private readonly SessionRegistry _sessions;
-    private readonly OwnerRegistry _owners;
-    private readonly CharacterService _character;
-    private readonly MailService _mail;
-    private readonly ILogger<MarketStore> _log;
-    private readonly TimeProvider _clock;
+    private readonly AccountStore _accounts = accounts;
+    private readonly SessionRegistry _sessions = sessions;
+    private readonly OwnerRegistry _owners = owners;
+    private readonly CharacterService _character = character;
+    private readonly MailService _mail = mail;
+    private readonly ILogger<MarketStore> _log = log;
+    private readonly TimeProvider _clock = clock;
+    private bool _initialized;
 
-    public MarketStore(AccountStore accounts, ItemStore items, RoleStore roles, SessionRegistry sessions, OwnerRegistry owners, CharacterService character,
-        MailService mail, TimeProvider clock, ILogger<MarketStore> log)
+    public void Initialize()
     {
-        this._accounts = accounts;
-        this._sessions = sessions;
-        this._owners = owners;
-        this._character = character;
-        this._mail = mail;
-        this._log = log;
-        this._clock = clock;
+        _ = (items, roles);
+        if (_initialized) return;
+        _initialized = true;
         MigrateLegacyMail();
     }
 

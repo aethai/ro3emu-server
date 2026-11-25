@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// question ordering, a 30-second answer / 5-second reveal cadence, tied ranks and automatic reward delivery
 /// are (inferred). Position at the deadline is authoritative; a client event cannot answer or award the quiz.
 /// </summary>
-public sealed partial class FestivalService : IGameTicker
+public sealed partial class FestivalService : IGameTicker, IStartupInitializer
 {
     public const int ActivityId = 3301;
     public const int Function = 5901; // FunctionConfig: Festival Invitation
@@ -37,7 +37,13 @@ public sealed partial class FestivalService : IGameTicker
     private readonly GameLoop _loop;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<int, Zone> _zones = [];
-    private Round? _current;
+    private bool _loaded;
+    private Round? _currentState;
+    private Round? _current
+    {
+        get { EnsureLoaded(); return _currentState; }
+        set { _loaded = true; _currentState = value; }
+    }
     private InstanceService.Room? _room;
     private TimeSpan _lastTick;
     private bool _queued;
@@ -88,8 +94,6 @@ public sealed partial class FestivalService : IGameTicker
         this._data = data; this._accounts = accounts; this._roles = roles; this._character = character; this._functions = functions;
         this._awards = awards; this._clock = clock; this._schedule = schedule; this._daily = daily;
         this._instances = instances; this._sessions = sessions; this._loop = loop;
-        if (accounts.ReadSync<byte[]?>(new FestivalReadPlan(FestivalReadKind.LatestRound)) is { } bytes)
-            _current = JsonSerializer.Deserialize<Round>(bytes);
         if (data.Row("DungeonConfig", Dungeon) is { } config
             && config.TryGetProperty("_kResSceneEditorName", out var editor))
         {
@@ -110,6 +114,16 @@ public sealed partial class FestivalService : IGameTicker
         daily.EventProjections.Subscribe(Project);
         scene.Loaded.Subscribe(LoadedAsync);
         scene.Leaving.Subscribe(LeavingAsync);
+    }
+
+    public void Initialize() => EnsureLoaded();
+
+    private void EnsureLoaded()
+    {
+        if (_loaded) return;
+        _loaded = true;
+        if (_accounts.ReadSync<byte[]?>(new FestivalReadPlan(FestivalReadKind.LatestRound)) is { } bytes)
+            _currentState = JsonSerializer.Deserialize<Round>(bytes);
     }
 
     private ActivityClock.Window? Segment => _clock.Segments(1083, Now).FirstOrDefault(w => w.Contains(Now));
