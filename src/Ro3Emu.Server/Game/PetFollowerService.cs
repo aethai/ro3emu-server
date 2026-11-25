@@ -31,7 +31,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
                 if (!pets.ListPet.ContainsKey(slot.Value)) continue;
                 // Function 33 opens on delivered quest 10104330.
                 // A persisted lineup cannot bypass the live function gate.
-                if (session.Progress == null || !functions.IsOpen(session, 33)) break;
+                if (session.Progress == null || !functions.IsOpen(session, PetService.Function)) break;
                 if (data.Row("PetBaseConfig", slot.Value) is not { } pet) continue;
                 int npcId = (int)GameData.Int(pet, "_iMonster");
                 if (data.Row("NPCConfig", npcId) is not { } npc || GameData.Int(npc, "_iNPCType") != 7) continue;

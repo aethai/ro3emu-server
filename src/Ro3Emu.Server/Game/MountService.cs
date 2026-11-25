@@ -18,6 +18,7 @@ public sealed class MountService : IGameTicker
 {
     public const uint Sync = 5012, SetConfig = 32743, ScoreAward = 32744, Ride = 32745, Unlock = 32747;
     public const uint EtchantRefresh = 32748, EtchantSave = 32749, EtchantPlan = 32750;
+    public const int Function = 27; // FunctionConfig: Mount
     private readonly GameData _data;
     private readonly CharacterService _character;
     private readonly RoleStore _roles;
@@ -235,7 +236,7 @@ public sealed class MountService : IGameTicker
     {
         using var gate = await CharacterService.Lock(s);
         int slot = (int)req.Tp == 0 ? 1 : (int)req.Tp;
-        int error = !_functions.IsOpen(s, 27) ? ErrorCodes.FunctionLocked : slot is < 1 or > 2 ? ErrorCodes.Parameter
+        int error = !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked : slot is < 1 or > 2 ? ErrorCodes.Parameter
             : s.WorldState.Flying ? ErrorCodes.MountFlying
             : req.MountId != 0 && Slot(req.MountId) != slot ? ErrorCodes.MountConfig
             : req.MountId != 0 ? OwnedError(s, req.MountId) : 0;
@@ -258,7 +259,7 @@ public sealed class MountService : IGameTicker
         bool on = tp is 1 or 3;
         var selected = s.Mounts!.MountIds.GetValueOrDefault(slot);
         int error = tp is < 0 or > 3 ? ErrorCodes.Parameter : s.WorldState.Flying ? ErrorCodes.MountFlying
-            : on && !_functions.IsOpen(s, 27) ? ErrorCodes.FunctionLocked
+            : on && !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked
             : on ? OwnedError(s, selected?.MountId ?? 0) : 0;
         if (error == 0 && on) error = RidingError(s, selected!.MountId, slot);
         if (error == 0)

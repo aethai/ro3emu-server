@@ -306,10 +306,10 @@ public sealed partial class TimedBattleService
             if (mate.Progress != null && mate.Role != null)
             {
                 var stats = _character.Stats(mate);
-                member.BattleAttr[101] = stats[101];
-                member.BattleAttr[2000] = mate.Dead ? 0 : stats[2000];
+                member.BattleAttr[AttributeId.MaxHp] = stats[AttributeId.MaxHp];
+                member.BattleAttr[AttributeId.Hp] = mate.Dead ? 0 : stats[AttributeId.Hp];
             }
-            else member.BattleAttr[101] = 0;
+            else member.BattleAttr[AttributeId.MaxHp] = 0;
             info.TeamMemberInfo[id] = member;
         }
         foreach (var (entry, until) in me.ItemCd) if (until > now) info.ItemCdExpireTime[entry] = until;

@@ -19,10 +19,10 @@ public sealed partial class CombatService
         var raw = pet.BaseAttributes.ToDictionary(p => p.Key, p => p.Value);
         foreach (var (id, value) in _buffs.UnitAttributes(pet)) raw[(int)id] = raw.GetValueOrDefault((int)id) + value;
         var stats = StatCalculator.Compute(raw, _data);
-        stats[101] = Math.Max(1, stats[101]);
-        stats[2000] = pet.Hp;
-        stats[2001] = stats[102];
-        stats[2002] = pet.Level;
+        stats[AttributeId.MaxHp] = Math.Max(1, stats[AttributeId.MaxHp]);
+        stats[AttributeId.Hp] = pet.Hp;
+        stats[AttributeId.Sp] = stats[AttributeId.MaxSp];
+        stats[AttributeId.Level] = pet.Level;
         return stats;
     }
 
@@ -103,13 +103,13 @@ public sealed partial class CombatService
                 long amount = support.Kind switch
                 {
                     PetCombatRules.SupportKind.AttributeHeal => PetCombatRules.AttributeAmount(row, casterStats, stats),
-                    PetCombatRules.SupportKind.MagicHeal => Math.Max(0, (long)Math.Floor(casterStats[104]
+                    PetCombatRules.SupportKind.MagicHeal => Math.Max(0, (long)Math.Floor(casterStats[AttributeId.Matk]
                         * Numbers(row, "_kDamageParam1").FirstOrDefault() / 10000
                         + Numbers(row, "_kDamageParam2").FirstOrDefault())),
                     _ => 0,
                 };
                 if (support.Kind == PetCombatRules.SupportKind.Buff) continue;
-                long actual = Math.Min(amount, Math.Max(0, stats[101] - stats[2000]));
+                long actual = Math.Min(amount, Math.Max(0, stats[AttributeId.MaxHp] - stats[AttributeId.Hp]));
                 if (recipient.Pet is { } healed)
                 {
                     healed.Hp += actual;

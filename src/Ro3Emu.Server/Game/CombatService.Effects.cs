@@ -264,7 +264,7 @@ public sealed partial class CombatService
         }
         var stats = _character.Stats(s);
         int attackElement = AttackElement(s, row);
-        var attacker = new Fighter(stats[103], stats[104], stats[109], stats[111], s.Progress!.Level, attackElement)
+        var attacker = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], s.Progress!.Level, attackElement)
         { FixedDamage = (s.GmCombat & GmCombatSwitches.FixedDamage) != 0, Attributes = PlayerAttributes(s, stats), Race = PlayerRace, Size = PlayerSize };
         var hit = new SkillHitInfo
         {
@@ -353,7 +353,7 @@ public sealed partial class CombatService
                     double multiplier = HealRatio(s, recipient, row, script), flat = Numbers(row, "_kDamageParam2").FirstOrDefault();
                     // Heal's friendly branch is P1[0]/P2[0]; its enemy branch is [1] (description + select race mask).
                     double formula = DamageFormula.HealFactor(new SkillConfig(row), id => stats[id], s.Progress!.Level);
-                    long amount = (long)Math.Max(0, Math.Round(stats[104] * multiplier * formula / 10000 + flat));
+                    long amount = (long)Math.Max(0, Math.Round(stats[AttributeId.Matk] * multiplier * formula / 10000 + flat));
                     foreach (var modifier in ExtraHeal) amount = modifier(s, amount);
                     var healResult = DamageHitResult.Normal;
                     if (Rolls.Crit() < HealCritRate(stats[AttributeId.Cri], stats[DamageAttributes.CritChance], new SkillConfig(row).SkillCri))

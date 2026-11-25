@@ -9,7 +9,9 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class StallsService
 {
-    private int PlayerGate(GameSession s) => !_functions.IsOpen(s, 3) ? ErrorCodes.FunctionLocked
+    public const int Function = 3; // FunctionConfig: Stall
+
+    private int PlayerGate(GameSession s) => !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked
         : s.SceneLoading ? ErrorCodes.SwitchingScenes
         : s.Dead || (s.StatusBits & (1L << 15)) != 0 || s.InstanceId != 0 ? ErrorCodes.FeatureUnavailable : 0;
 
@@ -240,7 +242,7 @@ public sealed partial class StallsService
             }
             else
             {
-                if (!_functions.IsOpen(s, 3)) return ErrorCodes.FunctionLocked;
+                if (!_functions.IsOpen(s, Function)) return ErrorCodes.FunctionLocked;
                 if (SaleConfig(offer.Item.Entry) is not { } config) return ErrorCodes.NotForSale;
                 if (req.Num > GameData.Int(config, "_iBuyLimit")) return ErrorCodes.StallQuantity;
             }

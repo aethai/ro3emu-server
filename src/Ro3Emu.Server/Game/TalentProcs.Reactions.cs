@@ -177,7 +177,7 @@ public sealed partial class TalentProcs
                 foreach (var (ally, amount) in healed)
                 {
                     var stats = _character.Stats(ally);
-                    if ((stats[2000] - amount) * 100 < stats[101] * below) await _combat.CastExtraOnAlliesAsync(s, extraHeal.Row, [ally]);
+                    if ((stats[AttributeId.Hp] - amount) * 100 < stats[AttributeId.MaxHp] * below) await _combat.CastExtraOnAlliesAsync(s, extraHeal.Row, [ally]);
                 }
             if (Talent(s, HolyHealingLight) is { } splash && Roll(10000) < Value(splash, 0) * 100
                 && Ready(s, HolyHealingLight, (long)(Value(splash, 3) * 1000)))

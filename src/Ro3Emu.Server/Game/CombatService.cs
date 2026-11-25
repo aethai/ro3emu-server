@@ -457,7 +457,7 @@ public sealed partial class CombatService : IGameTicker
                     ? [target] : [];
             if (targets.Count == 0) return;
             var stats = pet.CombatStats;
-            var attacker = new Fighter(stats[103], stats[104], stats[109], stats[111], pet.Level, pet.Element);
+            var attacker = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], pet.Level, pet.Element);
             var hit = new SkillHitInfo
             {
                 SrcID = pet.Uid, SkillId = skillId, ShowPoint = HitEffect(GameData.Int(row, "_iScriptShow")),
@@ -557,7 +557,7 @@ public sealed partial class CombatService : IGameTicker
         var attacker = MonsterFighter(monster);
         var stats = pet.CombatStats;
         var defender = new Fighter(0, 0, 0, 0, pet.Level, pet.Element)
-        { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112] };
+        { Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri] };
         var (damage, result) = row is { } r ? Damage(attacker, defender, r)
             : (Math.Max(1, monster.Template.Atk), DamageHitResult.Normal);
         damage = ScaleMonsterDamage(damage, monster.DamageRatio);
@@ -627,7 +627,8 @@ public sealed partial class CombatService : IGameTicker
             var attacker = MonsterFighter(m);
             var defender = new Fighter(0, 0, 0, 0, p.Progress!.Level, ArmorElement(p))
             {
-                Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
+                Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee],
+                ResCri = stats[AttributeId.ResCri], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
                 Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize,
             };
             var row = _data.Row("SkillConfig", m.Template.NormalSkill);
@@ -853,15 +854,18 @@ public sealed partial class CombatService : IGameTicker
         var stats = _character.Stats(p);
         var playerSkill = _data.Row("SkillConfig", _skills.CurrentAttack(p))!.Value;
         var attributes = PlayerAttributes(p, stats);
-        var player = new Fighter(stats[103], stats[104], stats[109], stats[111], p.Progress!.Level, AttackElement(p, playerSkill))
+        var player = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], p.Progress!.Level, AttackElement(p, playerSkill))
         { Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
         var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size, Kind = KindOf(m) };
         double playerDps = ExpectedDamage(player, asTarget, playerSkill) * 1000.0 / Math.Max(1, SkillMs(p, playerSkill));
         var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element) { Race = m.Race, Size = m.Size, Kind = KindOf(m) };
         var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
-        { Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
+        {
+            Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee],
+            ResCri = stats[AttributeId.ResCri], Attributes = attributes, Race = PlayerRace, Size = PlayerSize
+        };
         double monsterHit = _data.Row("SkillConfig", m.NormalSkill) is { } row ? ExpectedDamage(monster, defender, row) : Math.Max(1, m.Atk);
-        return (playerDps, monsterHit * 1000.0 / Math.Max(1, m.SwingIntervalMs), stats[101]);
+        return (playerDps, monsterHit * 1000.0 / Math.Max(1, m.SwingIntervalMs), stats[AttributeId.MaxHp]);
     }
 
     private static double? FirstNumber(JsonElement row, string field) =>
@@ -1053,8 +1057,8 @@ public sealed partial class CombatService : IGameTicker
         {
             if (!_reviveClaims.Contains(p) || !p.Dead) return false;
             var stats = _character.Stats(p);
-            p.CurrentHp = Math.Max(1, stats[101] * Math.Clamp(hpRate, 0, 10000) / 10000);
-            p.CurrentSp = stats[102] * Math.Clamp(spRate, 0, 10000) / 10000;
+            p.CurrentHp = Math.Max(1, stats[AttributeId.MaxHp] * Math.Clamp(hpRate, 0, 10000) / 10000);
+            p.CurrentSp = stats[AttributeId.MaxSp] * Math.Clamp(spRate, 0, 10000) / 10000;
             p.Dead = false;
             p.WorldState.ReviveSource = 0;
             p.WorldState.ReviveExpiresMs = 0;

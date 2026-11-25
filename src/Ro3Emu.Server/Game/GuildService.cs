@@ -23,6 +23,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     TimeProvider clock, Ownership.OwnerRegistry ownerRegistry, AwardService awards, GameLoop loop, SceneService scene,
     TeamService teams, MailService mail, ILogger<GuildService> log)
 {
+    public const int Function = 13;
     public const uint GuildSync = 5047, Create = 32210, Recommend = 32211, HelperList = 32212, Full = 32213, MemberChange = 32214;
     public const uint CheckSensitive = 10003;
 
@@ -108,7 +109,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
 
     private static DBRoleGuildInfo RoleInfo(GuildStore.State guild, GuildStore.Member member, DBRoleGuildInfo? prior = null)
     {
-        var leader = guild.Members.Values.Single(m => m.Official == 1);
+        var leader = guild.Members.Values.Single(m => m.Official == GuildOfficial.Leader);
         return new DBRoleGuildInfo
         {
             GuildId = guild.Id, GuildName = guild.Name, Official = member.Official, Status = guild.Status,
@@ -155,7 +156,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     }
 
     internal bool HasRight(GuildStore.State g, long actor, int right) => g.Members.TryGetValue(actor, out var m)
-        && (m.Official == 1 || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
+        && (m.Official == GuildOfficial.Leader || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
 
     /// <summary>The committed guild's GuildPermissionConfig right for one member (e.g. 26 GuildHuntCommander).</summary>
     internal bool HasRight(long guildId, long actor, int right) => store.Get(guildId) is { } g && HasRight(g, actor, right);
@@ -185,7 +186,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
 
     internal GuildSnapInfo Snapshot(GuildStore.State g, long viewer = 0)
     {
-        var leader = g.Members.Values.Single(m => m.Official == 1);
+        var leader = g.Members.Values.Single(m => m.Official == GuildOfficial.Leader);
         var snap = new GuildSnapInfo
         {
             Guid = g.Id, ShortUid = g.Id, Name = g.Name, Level = g.Level, Announce = g.Announce,
@@ -220,7 +221,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         full.MemberInfo.AddRange(g.Members.Values.Select(m => MemberInfo(m)));
         if (g.Status == (int)GuildStatus.PreCreate)
             // Responders in join order, the founder last (GuildService.Responders).
-            full.CreateHelperInfo.AddRange(g.Members.Values.OrderBy(m => m.Official == 1).ThenBy(m => m.EnterTime)
+            full.CreateHelperInfo.AddRange(g.Members.Values.OrderBy(m => m.Official == GuildOfficial.Leader).ThenBy(m => m.EnterTime)
                 .Select(m => HelperInfo(m.RoleId, m.Name, m.Level, m.Career, m.EnterTime)));
         if (g.Status == (int)GuildStatus.PreCreate)
             full.CreateHelperApplyData.AddRange(LiveResponses(g).OrderBy(a => a.ApplyTime)
@@ -280,7 +281,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         var ntf = new GuildEnterApplyChangeNtf();
         ntf.Change.Add(new GuildEnterApplyChangeNtf.Types.ApplyChangeInfo { ChangeType = kind, Info = ApplyInfo(a) });
         foreach (var m in g.Members.Values)
-            if (HasRight(g, m.RoleId, 2) && Online(m.RoleId) is { } s) await s.SendGameAsync(ApplyChange, ntf);
+            if (HasRight(g, m.RoleId, GuildRight.ReviewApplications) && Online(m.RoleId) is { } s) await s.SendGameAsync(ApplyChange, ntf);
     }
 
     private async Task RefreshMembers(GuildStore.State g)
@@ -355,7 +356,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     private async Task CreateCoreAsync(GameSession s, GuildCreateReq req, bool instant = false)
     {
         int code = s.Role == null ? ErrorCodes.Parameter
-            : !functions.IsOpen(s, 13) ? ErrorCodes.GuildLevelCreate
+            : !functions.IsOpen(s, Function) ? ErrorCodes.GuildLevelCreate
             : Own(s) != null ? ErrorCodes.AlreadyInGuild
             : CheckName(req.Name);
         if (code == 0) code = CheckIcon(req.Icon);
@@ -599,7 +600,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         var resp = new GuildEnterApplyOpeResp { Agree = req.Agree, IsBatch = req.IsBatch };
         foreach (long id in req.PlayerIds.Distinct().Take(50))
         {
-            int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, 2) ? ErrorCodes.GuildPermission
+            int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.ReviewApplications) ? ErrorCodes.GuildPermission
                 : !g.Applications.ContainsKey(id) ? ErrorCodes.GuildApplicationMissing : 0;
             var target = roles.Get(id);
             if (code == 0 && req.Agree)
@@ -626,7 +627,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         foreach (long id in req.TarPlayerID.Distinct().Take(50))
         {
             var target = Online(id);
-            int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, 7) ? ErrorCodes.GuildPermission
+            int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.Recruit) ? ErrorCodes.GuildPermission
                 : target == null ? ErrorCodes.PlayerOffline : CanJoin(target, g);
             if (code == 0 && (target!.Guild?.CantBeInvited ?? Personal(id).CantBeInvited)) code = ErrorCodes.GuildInviteRefused;
             if (code == 0)
@@ -661,7 +662,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         var g = Own(s);
         int next = (int)req.TarOfficial;
         var row = data.Row("GuildPositionConfig", next);
-        int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, 1) ? ErrorCodes.GuildPermission
+        int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.ManageOfficial) ? ErrorCodes.GuildPermission
             : !g.Members.ContainsKey(req.TarPlayerID) ? ErrorCodes.GuildMemberMissing
             : row == null ? ErrorCodes.Parameter : 0;
         if (code == 0 && g != null)
@@ -669,13 +670,13 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             var actor = g.Members[s.Role!.Id];
             var target = g.Members[req.TarPlayerID];
             int previous = target.Official;
-            if (next == 1)
+            if (next == GuildOfficial.Leader)
             {
-                if (actor.Official != 1 || target.RoleId == actor.RoleId) code = ErrorCodes.GuildPermission;
+                if (actor.Official != GuildOfficial.Leader || target.RoleId == actor.RoleId) code = ErrorCodes.GuildPermission;
                 else if (Impeaching(g)) code = ErrorCodes.ImpeachInProgress;
-                else { actor.Official = 20; target.Official = 1; }
+                else { actor.Official = GuildOfficial.Member; target.Official = GuildOfficial.Leader; }
             }
-            else if (target.Official == 1 || (actor.Official != 1 && next <= actor.Official)) code = ErrorCodes.GuildPermission;
+            else if (target.Official == GuildOfficial.Leader || (actor.Official != GuildOfficial.Leader && next <= actor.Official)) code = ErrorCodes.GuildPermission;
             else
             {
                 int limit = (int)GameData.Int(row!.Value, "_iPositionNum");
@@ -703,7 +704,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     private async Task LeaveCoreAsync(GameSession s)
     {
         var g = Own(s);
-        int code = g == null ? ErrorCodes.NotInGuild : g.Members[s.Role!.Id].Official == 1 && g.Members.Count > 1
+        int code = g == null ? ErrorCodes.NotInGuild : g.Members[s.Role!.Id].Official == GuildOfficial.Leader && g.Members.Count > 1
             ? ErrorCodes.GuildPermission : HuntingBusy?.Invoke(g.Id) == true ? ErrorCodes.GuildHunting : 0;
         if (code == 0 && g != null)
         {
@@ -750,7 +751,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             {
                 if (!g.Members.TryGetValue(id, out var m)) { code = ErrorCodes.GuildMemberMissing; break; }
                 if (m.Official is not (20 or 21)) { code = ErrorCodes.GuildOfficerKick; break; }
-                if (g.Members[s.Role!.Id].Official != 1 && m.Official <= g.Members[s.Role.Id].Official)
+                if (g.Members[s.Role!.Id].Official != GuildOfficial.Leader && m.Official <= g.Members[s.Role.Id].Official)
                 { code = ErrorCodes.GuildPermission; break; }
                 removed.Add(m);
             }
@@ -856,7 +857,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
                         {
                             // Re-read under the payment lock: the guild may have dissolved while the request waited.
                             g = Own(s);
-                            code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, 9)
+                            code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.EditInfo)
                                 ? ErrorCodes.GuildPermission : req.GuildId != 0 && req.GuildId != g.Id
                                 ? ErrorCodes.GuildMissing : CheckName(req.Name, g.Id);
                             if (code == 0 && g!.LastChangeNameTime > 0 &&
@@ -1022,7 +1023,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         await ReconcileCoreAsync();
         var g = Own(s);
         long type = req.BuildingID;
-        int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, 11) ? ErrorCodes.GuildPermission
+        int code = g == null ? ErrorCodes.NotInGuild : !HasRight(g, s.Role!.Id, GuildRight.UpgradeBuilding) ? ErrorCodes.GuildPermission
             : !g.Buildings.TryGetValue(type, out _) ? ErrorCodes.Parameter
             : g.BuildingEndTimes.Values.Any(end => end > NowMs()) ? ErrorCodes.GuildBuildBusy : 0;
         JsonElement row = default;

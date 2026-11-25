@@ -16,6 +16,7 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
     SeasonService seasons, RoleStore roles, RewardService rewards, MailService mail, TimeProvider clock)
 {
     public const uint PageSync = 5022, GetData = 82901, ReceiveRankReward = 82902, PutOnHonorBadge = 82903;
+    public const int Function = 69; // FunctionConfig: Season Page
 
     /// <summary>
     /// ItemConfig/Localization identify 11..14 as MVP/WoE/league/life season rank points. Function 65 is
@@ -226,7 +227,7 @@ public sealed class SeasonPageService(GameData data, CharacterService character,
     private int AccessError(GameSession session) => session.Role == null || session.Progress == null || session.SeasonPage == null
         || session.SeasonState?.PlayBookId != 101 || session.SeasonState.SeasonId != seasons.SeasonId
         || FunctionIds(session).Length == 0 ? ErrorCodes.FeatureUnavailable
-        : !functions.IsOpen(session, 69) ? ErrorCodes.FunctionLocked : 0; // (inferred) server enforcement of the UI gate.
+        : !functions.IsOpen(session, Function) ? ErrorCodes.FunctionLocked : 0; // (inferred) server enforcement of the UI gate.
 
     public async Task GetDataAsync(GameSession session)
     {

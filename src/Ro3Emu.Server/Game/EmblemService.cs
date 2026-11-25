@@ -14,6 +14,7 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class EmblemService
 {
     public const uint PlanSync = 5005, SetUp = 82422, SetDown = 82423, Upgrade = 82424;
+    public const int Function = 55; // FunctionConfig: Soul Echo
     // Five physical slots: UI_Sys_SoulDetailsWidgetCtrl.lua:94-110 builds five widgets (:663-670 bounds the position).
     private const int FirstSlot = 1, LastSlot = 5, Source = 10001, Position = 10002;
     private const int Level = 1001, Exp = 1002, TotalExp = 1003;
@@ -354,7 +355,7 @@ public sealed partial class EmblemService
     }
 
     private int Gate(GameSession session) => session.Tasks != null && _data.Row("FunctionConfig", 55) != null
-        && TaskService.IsDelivered(session, 10103040) && _functions.IsOpen(session, 55) ? 0 : ErrorCodes.FunctionLocked;
+        && TaskService.IsDelivered(session, 10103040) && _functions.IsOpen(session, Function) ? 0 : ErrorCodes.FunctionLocked;
 
     /// <summary>82422: validate slot, owned generated item, current season, and active-plan uniqueness first.</summary>
     public async Task SetUpAsync(GameSession session, SetUpEmblemReq req)

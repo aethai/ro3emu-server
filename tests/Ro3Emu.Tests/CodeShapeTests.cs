@@ -20,8 +20,12 @@ public sealed class CodeShapeTests
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 29;
     private const int RoleNullForgiving = 961;
-    private const int LinesOver200Chars = 95;
+    private const int LinesOver200Chars = 94;
     private const int ExposedHookLists = 107;
+    private const int NumericIsOpenCalls = 0;
+    private const int NumericStatIndexers = 0;
+    private const int NumericRouteMaps = 105;
+    private const int NumericSendGameCalls = 48;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;
@@ -57,6 +61,22 @@ public sealed class CodeShapeTests
         AssertRatchet(nameof(ExposedHookLists), ExposedHookLists, ServerSnapshot.Value.HookLists);
 
     [Fact]
+    public void NumericIsOpenCallsInGameOnlyGoDown() =>
+        AssertRatchet(nameof(NumericIsOpenCalls), NumericIsOpenCalls, ServerSnapshot.Value.NumericIsOpen);
+
+    [Fact]
+    public void NumericStatIndexersInGameOnlyGoDown() =>
+        AssertRatchet(nameof(NumericStatIndexers), NumericStatIndexers, ServerSnapshot.Value.NumericStatIndexers);
+
+    [Fact]
+    public void NumericRouteMapsOnlyGoDown() =>
+        AssertRatchet(nameof(NumericRouteMaps), NumericRouteMaps, ServerSnapshot.Value.NumericRouteMaps);
+
+    [Fact]
+    public void NumericSendGameCallsOnlyGoDown() =>
+        AssertRatchet(nameof(NumericSendGameCalls), NumericSendGameCalls, ServerSnapshot.Value.NumericSendGame);
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));
@@ -71,9 +91,13 @@ public sealed class CodeShapeTests
                 internal List<Action<int>> OnTick = [];
                 private List<Func<Task>> _privateOnly = [];
             {{longLine}}
-                public void TooLong(dynamic session)
+                public void TooLong(dynamic session, dynamic functions, dynamic stats, dynamic routes)
                 {
                     int x = session.Role!.Id;
+                    bool open = functions.IsOpen(session, 13);
+                    long hp = stats[101];
+                    routes.Map(30400, (s, b) => Task.CompletedTask);
+                    session.SendGameAsync(30400, new object());
             {{body}}
                 }
                 public void TooWide(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9, int a10, int a11) { }
@@ -87,6 +111,10 @@ public sealed class CodeShapeTests
         Assert.Single(snapshot.RoleBangs);
         Assert.Single(snapshot.LongLines);
         Assert.Equal(2, snapshot.HookLists.Count);
+        Assert.Single(snapshot.NumericIsOpen);
+        Assert.Single(snapshot.NumericStatIndexers);
+        Assert.Single(snapshot.NumericRouteMaps);
+        Assert.Single(snapshot.NumericSendGame);
     }
 
     private static void AssertRatchet(string name, int ceiling, IReadOnlyList<string> items)
@@ -126,6 +154,10 @@ public sealed class CodeShapeTests
         List<string> roleBangs = [];
         List<string> longLines = [];
         List<string> hookLists = [];
+        List<string> numericIsOpen = [];
+        List<string> numericStatIndexers = [];
+        List<string> numericRouteMaps = [];
+        List<string> numericSendGame = [];
 
         foreach (var (relPath, text) in files)
         {
@@ -139,6 +171,10 @@ public sealed class CodeShapeTests
             CollectHeavyTypes(relPath, root, maxDepsByType);
             CollectRoleBangs(relPath, root, roleBangs);
             if (inGame) CollectHookLists(relPath, root, hookLists);
+            if (inGame) CollectNumericIsOpen(relPath, root, numericIsOpen);
+            if (inGame) CollectNumericStatIndexers(relPath, root, numericStatIndexers);
+            CollectNumericRouteMaps(relPath, root, numericRouteMaps);
+            CollectNumericSendGame(relPath, root, numericSendGame);
         }
 
         List<string> heavyClasses =
@@ -151,7 +187,8 @@ public sealed class CodeShapeTests
                     "{0} ({1} deps) at {2}", kv.Key, kv.Value.Params, kv.Value.Location)),
         ];
 
-        return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists);
+        return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists,
+            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -284,6 +321,90 @@ public sealed class CodeShapeTests
         return arg is IdentifierNameSyntax id && string.Equals(id.Identifier.ValueText, "Action", StringComparison.Ordinal);
     }
 
+    private static void CollectNumericIsOpen(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            string? method = call.Expression switch
+            {
+                MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+                IdentifierNameSyntax id => id.Identifier.ValueText,
+                _ => null,
+            };
+            if (!string.Equals(method, "IsOpen", StringComparison.Ordinal)) continue;
+            var args = call.ArgumentList.Arguments;
+            if (args.Count < 2 || !IsNumericLiteral(args[1].Expression)) continue;
+            int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, call.ToString()));
+        }
+    }
+
+    private static void CollectNumericStatIndexers(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var access in root.DescendantNodes().OfType<ElementAccessExpressionSyntax>())
+        {
+            if (access.ArgumentList.Arguments.Count != 1) continue;
+            if (!IsNumericLiteral(access.ArgumentList.Arguments[0].Expression)) continue;
+            string? name = access.Expression switch
+            {
+                IdentifierNameSyntax id => id.Identifier.ValueText,
+                MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+                _ => null,
+            };
+            if (name is not ("stats" or "CombatStats" or "casterStats" or "BattleAttr"
+                or "baseStats" or "targetStats" or "attackerStats" or "defenderStats")) continue;
+            int line = access.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, access.ToString()));
+        }
+    }
+
+    private static void CollectNumericRouteMaps(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (call.Expression is not MemberAccessExpressionSyntax ma) continue;
+            if (!string.Equals(ma.Name.Identifier.ValueText, "Map", StringComparison.Ordinal)) continue;
+            string? receiver = ma.Expression switch
+            {
+                IdentifierNameSyntax id => id.Identifier.ValueText,
+                MemberAccessExpressionSyntax inner => inner.Name.Identifier.ValueText,
+                _ => null,
+            };
+            if (receiver is not ("routes" or "router" or "Routes" or "Router")) continue;
+            var args = call.ArgumentList.Arguments;
+            if (args.Count < 2 || !IsNumericLiteral(args[0].Expression)) continue;
+            int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, call.ToString()));
+        }
+    }
+
+    private static void CollectNumericSendGame(string relPath, SyntaxNode root, List<string> target)
+    {
+        foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            string? method = call.Expression switch
+            {
+                MemberAccessExpressionSyntax ma => ma.Name.Identifier.ValueText,
+                IdentifierNameSyntax id => id.Identifier.ValueText,
+                _ => null,
+            };
+            if (!string.Equals(method, "SendGameAsync", StringComparison.Ordinal)) continue;
+            var args = call.ArgumentList.Arguments;
+            if (args.Count < 2) continue;
+            if (!IsNumericLiteral(args[0].Expression) && !IsNumericLiteral(args[1].Expression)) continue;
+            int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+            target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1} {2}", relPath, line, call.ToString()));
+        }
+    }
+
+    private static bool IsNumericLiteral(ExpressionSyntax expr) => expr switch
+    {
+        LiteralExpressionSyntax lit => lit.IsKind(SyntaxKind.NumericLiteralExpression),
+        PrefixUnaryExpressionSyntax unary => unary.Operand is LiteralExpressionSyntax l
+            && l.IsKind(SyntaxKind.NumericLiteralExpression),
+        _ => false,
+    };
+
     private static string QualifiedTypeName(TypeDeclarationSyntax type)
     {
         Stack<string> parts = [];
@@ -308,5 +429,9 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> HeavyClasses,
         IReadOnlyList<string> RoleBangs,
         IReadOnlyList<string> LongLines,
-        IReadOnlyList<string> HookLists);
+        IReadOnlyList<string> HookLists,
+        IReadOnlyList<string> NumericIsOpen,
+        IReadOnlyList<string> NumericStatIndexers,
+        IReadOnlyList<string> NumericRouteMaps,
+        IReadOnlyList<string> NumericSendGame);
 }

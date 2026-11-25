@@ -19,7 +19,7 @@ public sealed partial class GuildService
             ? (Data.Config.GuildSettings.Of(data).GuildResponseReleaseRecruitment ?? 300) : (Data.Config.GuildSettings.Of(data).GuildRecruitButtonCD ?? 300);
         long previous = guild?.LastRecruitMs ?? (s.Role == null ? 0 : _guildlessRecruitMs.GetValueOrDefault(s.Role.Id));
         int code = s.Role == null ? ErrorCodes.Parameter
-            : guild != null && !HasRight(guild, s.Role.Id, 7) ? ErrorCodes.GuildPermission
+            : guild != null && !HasRight(guild, s.Role.Id, GuildRight.Recruit) ? ErrorCodes.GuildPermission
             : string.IsNullOrWhiteSpace(req.Content) || req.Content.Length > (Data.Config.GuildSettings.Of(data).GuildRecruitNoticeMaxNum ?? 80)
             ? ErrorCodes.GuildTextLength : Sensitive(req.Content) ? ErrorCodes.TextSensitive
             : previous + delay * 1000 > now ? ErrorCodes.Cooldown : 0;
@@ -43,7 +43,7 @@ public sealed partial class GuildService
     {
         var guild = Own(s);
         int code = guild == null ? ErrorCodes.NotInGuild : guild.Status != (int)GuildStatus.PreCreate
-            || guild.Members[s.Role!.Id].Official != 1 ? ErrorCodes.GuildPermission : 0;
+            || guild.Members[s.Role!.Id].Official != GuildOfficial.Leader ? ErrorCodes.GuildPermission : 0;
         if (code == 0)
         {
             await EndFoundingAsync(guild!, s.Role!.Id);
@@ -84,7 +84,7 @@ public sealed partial class GuildService
     {
         var guild = Own(s);
         int code = guild == null || guild.Id != req.GuildId ? ErrorCodes.NotInGuild
-            : guild.Status != (int)GuildStatus.PreCreate || guild.Members[s.Role!.Id].Official == 1
+            : guild.Status != (int)GuildStatus.PreCreate || guild.Members[s.Role!.Id].Official == GuildOfficial.Leader
             ? ErrorCodes.GuildPermission : 0;
         if (code == 0)
         {
@@ -109,7 +109,7 @@ public sealed partial class GuildService
     {
         foreach (var guild in store.List().Where(g => g.Status == (int)GuildStatus.PreCreate && g.HelperDeadlineMs <= NowMs()))
         {
-            await EndFoundingAsync(guild, guild.Members.Values.First(m => m.Official == 1).RoleId);
+            await EndFoundingAsync(guild, guild.Members.Values.First(m => m.Official == GuildOfficial.Leader).RoleId);
             foreach (var member in guild.Members.Values)
             {
                 if (Online(member.RoleId) is { } online) await ClearMember(online, guild);

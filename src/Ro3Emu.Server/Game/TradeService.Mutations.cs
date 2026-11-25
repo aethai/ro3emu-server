@@ -25,7 +25,7 @@ public sealed partial class TradeService
             if (item == null) return ErrorCodes.TradeItemMissing;
             if (TransactionItemError(s, item) is var itemError and not 0) return itemError;
             var config = Eligible(item.Entry);
-            if (config == null || !functions.IsOpen(s, 2)) return ErrorCodes.TradeRequest;
+            if (config == null || !functions.IsOpen(s, Function)) return ErrorCodes.TradeRequest;
             var row = config.Value;
             if (req.CurrencyType != GameData.Int(row, "_iMoney")) return ErrorCodes.TradeRequest;
             if (req.Quantity < 1 || req.Quantity > item.Stack || req.Quantity > GameData.Int(row, "_iShelveLimit")
@@ -104,7 +104,7 @@ public sealed partial class TradeService
         {
             if (quantity < 1 || quote < 1 || (long)quantity * quote != total) return ErrorCodes.TradeRequest;
             var config = Eligible(entry);
-            if (config == null || !functions.IsOpen(s, 2)) return ErrorCodes.TradeRequest;
+            if (config == null || !functions.IsOpen(s, Function)) return ErrorCodes.TradeRequest;
             // TradeConfig class 1 is the individually addressed premium route; class 2 is
             // ordinary pooled stock. Keep the opcode from bypassing publicity or queue rules.
             if (GameData.Int(config.Value, "_iTradeType") != (premium ? 1 : 2)) return ErrorCodes.TradeRequest;

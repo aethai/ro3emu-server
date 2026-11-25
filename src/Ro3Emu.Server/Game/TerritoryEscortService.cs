@@ -287,9 +287,9 @@ public sealed partial class TerritoryEscortService : IGameTicker
     private static long RoleId(GameSession s) => s.Role?.Id ?? 0;
     private GuildStore.State? Own(GameSession s) => s.Role == null ? null : _guilds.ForRole(s.Role.Id);
     private static bool Right(GuildStore.State? g, long role, int right) => g != null && g.Members.TryGetValue(role, out var m)
-        && (m.Official == 1 || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
+        && (m.Official == GuildOfficial.Leader || g.Rights.GetValueOrDefault(right)?.Contains(m.Official) == true);
     private static int MarketPermission(GuildStore.State? g, long role) => g == null ? ErrorCodes.NotInGuild
-        : Right(g, role, 16) ? 0 : ErrorCodes.GuildPermission;
+        : Right(g, role, GuildRight.EscortMarket) ? 0 : ErrorCodes.GuildPermission;
     private int Round => _clock.Current.Round;
     private bool Trading => _clock.Current.Type == 1;
     private bool Playing => _clock.Current.Type == 2;

@@ -22,6 +22,7 @@ public sealed partial class GuildCampfireService : IGameTicker
     public const uint Lucky = 83240, Stage = 83241, Info = 83242, Accelerant = 83243,
         PlayerInfo = 83244, Fruit = 83245, Hurray = 83246, BossDead = 83247, Finish = 83248;
     public const long Dungeon = 4000101;
+    public const int Function = 1321; // FunctionConfig: Bonfire Party
     /// <summary>
     /// Guild seed NPC UIDs: [2^48, 2^49), below 2^53 because the client's interaction scan keeps unit ids in a double
     /// array (LC_InteractManager m_kShareMemory; see DungeonService.SceneActorUidBase). The room part is the low 24
@@ -183,7 +184,7 @@ public sealed partial class GuildCampfireService : IGameTicker
     private bool Eligible(GameSession session) => session.ActivitiesReady && GuildId(session) != null && session.Progress != null
         && _data.Row("DailyActivityConfig", 116) is { } daily
         && session.Progress.Level >= GameData.Int(daily, "_iiLv")
-        && _functions.IsOpen(session, 1321);
+        && _functions.IsOpen(session, Function);
 
     private static long Uid(InstanceService.Room room, int point) =>
         UidPrefix | ((room.Id & 0xFFFFFFL) << 12) | (uint)point;

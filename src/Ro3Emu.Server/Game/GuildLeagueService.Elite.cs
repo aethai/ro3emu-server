@@ -63,7 +63,7 @@ public sealed partial class GuildLeagueService
         var recipients = new List<long>();
         foreach (long id in CupGuilds(cup))
             if (_guilds.Get(id) is { } g && GuildService.LeagueElites(g).Count < wanted)
-                recipients.AddRange(g.Members.Keys.Where(role => _guildService.HasRight(g, role, 20) && _roles.Get(role) != null));
+                recipients.AddRange(g.Members.Keys.Where(role => _guildService.HasRight(g, role, GuildRight.LeagueElite) && _roles.Get(role) != null));
         if (recipients.Count == 0) return;
         using (await _mail.LockRecipientsAsync(recipients))
         {

@@ -101,7 +101,7 @@ public sealed partial class TerritoryWarsService
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.TerritoryWarClosed }); return true; }
             if (s.Role == null || s.Progress == null || s.Dead || s.SceneLoading || s.InstanceId != 0)
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.Parameter }); return true; }
-            if (!_functions.IsOpen(s, 67))
+            if (!_functions.IsOpen(s, SiegeFunction))
             { await Send(s, 30400, new EnterDungeonRsp { Result = ErrorCodes.FeatureUnavailable }); return true; }
             long guild = Own(s)?.Id ?? 0;
             if (guild == 0)

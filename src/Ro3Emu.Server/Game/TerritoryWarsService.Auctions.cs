@@ -82,8 +82,8 @@ public sealed partial class TerritoryWarsService
     private int BidEligibility(GameSession s, GuildStore.State? g, AuctionRound? round, int zone, bool legacy, bool setting = false)
     {
         if (g == null) return ErrorCodes.TerritoryGuild;
-        if (!Right(g, s.Role!.Id, 25)) return ErrorCodes.NoPermission;
-        if (!_functions.IsOpen(s, 72)) return ErrorCodes.FeatureUnavailable;
+        if (!Right(g, s.Role!.Id, GuildRight.BlackMarket)) return ErrorCodes.NoPermission;
+        if (!_functions.IsOpen(s, Function)) return ErrorCodes.FeatureUnavailable;
         if (round == null || !Bidding(_clock.Current.Type) && !(setting && _clock.Current.Type is 3 or 7 or 11)) return ErrorCodes.TerritoryAuctionClosed;
         if (round.Settled || _clock.Now >= round.FinalEnd) return ErrorCodes.TerritoryAuctionSettled;
         var zones = round.Zones;
@@ -277,7 +277,7 @@ public sealed partial class TerritoryWarsService
     private async Task AutoCancelAsync(GameSession s, TerritoryAutoBidCancelReq req)
     {
         var g = Own(s);
-        if (g == null || !Right(g, s.Role!.Id, 25)) { await Error(s, AutoCancel, ErrorCodes.NoPermission); return; }
+        if (g == null || !Right(g, s.Role!.Id, GuildRight.BlackMarket)) { await Error(s, AutoCancel, ErrorCodes.NoPermission); return; }
         if (Round()?.Auto.TryGetValue(g.Id, out var plan) == true && plan.Zone == req.ZoneId)
         {
             var next = Copy(state); next.Rounds[_clock.Current.Round].Auto[g.Id].State = 0; await CommitAsync(next);
@@ -323,7 +323,7 @@ public sealed partial class TerritoryWarsService
             long step = (Data.Config.PublicParams.Of(_data).TerritoryAuctionAutoBidSteps ?? []).FirstOrDefault(v => v >= amount && v <= original.Maximum);
             if (step > 0) amount = step;
             var guild = _guildStore.Get(guildId);
-            int error = guild == null ? ErrorCodes.TerritoryGuild : !Right(guild, original.Creator, 25) ? ErrorCodes.NoPermission
+            int error = guild == null ? ErrorCodes.TerritoryGuild : !Right(guild, original.Creator, GuildRight.BlackMarket) ? ErrorCodes.NoPermission
                 : guild.Members.Count < (Data.Config.PublicParams.Of(_data).TerritoryAuctionMinGuildMemberCount ?? 20) ? ErrorCodes.TerritoryGuildMembers : 0;
             long[] changed = [];
             if (error == 0 && existing == null)

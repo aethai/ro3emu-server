@@ -17,6 +17,7 @@ public sealed partial class TradeService(
     SeasonService seasons, MarketStore market, SessionRegistry sessions, TimeProvider clock, ILogger<TradeService> log)
 {
     public const uint TradeSync = 5033;
+    public const int Function = 2; // FunctionConfig: Trade House
     public const uint QueryProduct = 32602, QueryInventory = 32603, FindPrice = 32604, BuyHistory = 32605,
         SaleHistory = 32606, OwnBooth = 32607, Credit = 32608, RecentPrice = 32609, Search = 32610,
         BuyTop = 32612, PutOn = 32613, UnlockSlot = 32614, PutOff = 32615, Follow = 32616,

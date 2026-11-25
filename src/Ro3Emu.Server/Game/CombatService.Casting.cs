@@ -609,7 +609,9 @@ public sealed partial class CombatService
         if (costs.Attrs.Count > 0)
         {
             var stats = _character.Stats(s);
-            await _character.SetHpSpAsync(s, stats[2000] - costs.Attrs.GetValueOrDefault(2000), stats[2001] - costs.Attrs.GetValueOrDefault(2001));
+            await _character.SetHpSpAsync(s,
+            stats[AttributeId.Hp] - costs.Attrs.GetValueOrDefault(AttributeId.Hp),
+            stats[AttributeId.Sp] - costs.Attrs.GetValueOrDefault(AttributeId.Sp));
         }
         foreach (var (group, count) in costs.Buffs)
             await _buffs.ConsumeBuffPilesAsync(s, group, (int)count);

@@ -17,6 +17,7 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
 
     private readonly ItemStore _items = items;
     public const uint Enchant = 31415;
+    public const int Function = 83; // FunctionConfig: equipment enchant
 
     /// <summary>
     /// function 7/83, appraisal, slots, scroll type, equipment position and star/level checks.
@@ -32,7 +33,7 @@ public sealed class EnchantService(GameData data, CharacterService character, Fu
         var scrollRow = scroll == null ? null : data.Row("ItemConfig", scroll.Entry);
         var enchantRow = scroll == null ? default : data.Table("Enchantment").Values.FirstOrDefault(r => Flat(r, "_iItem").Contains(scroll.Entry));
         int slots = gearRow is { } gear ? (int)GameData.Int(gear, "_iEnchantSlot") : 0;
-        int result = !functions.IsOpen(session, 7) || !functions.IsOpen(session, 83) ? ErrorCodes.FeatureUnavailable
+        int result = !functions.IsOpen(session, AppraisalService.EquipFunction) || !functions.IsOpen(session, Function) ? ErrorCodes.FeatureUnavailable
             : equip == null || scroll == null ? ErrorCodes.ItemMissing
             : gearRow is not { } g || GameData.Int(g, "_iType") != 5 ? ErrorCodes.NotEquipment
             : equip.Grid < 0 || equip.Stack != 1 ? ErrorCodes.EnchantParameter

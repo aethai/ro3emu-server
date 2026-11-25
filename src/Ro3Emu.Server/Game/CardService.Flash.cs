@@ -8,6 +8,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class CardService
 {
+    public const int FlashFunction = 1504; // FunctionConfig: flash card synthesis
     /// <summary>
     /// 31469 The client submits four bag instance GUIDs, including repetitions
     /// from one stack (UI_Sys_CardCollectionSynthesisWidgetCtrl.lua:838-900,924-1055). Its selection
@@ -23,7 +24,7 @@ public sealed partial class CardService
         var selected = new Dictionary<long, int>();
         int quality = 0;
 
-        if (!_functions.IsOpen(session, 1504)) error = ErrorCodes.FeatureUnavailable;
+        if (!_functions.IsOpen(session, FlashFunction)) error = ErrorCodes.FeatureUnavailable;
         if (error == 0 && ((int)req.SourceType != 1 || req.Guids.Count != 4 || req.Guids.Any(guid => guid <= 0)))
             error = ErrorCodes.Parameter;
         if (error == 0)

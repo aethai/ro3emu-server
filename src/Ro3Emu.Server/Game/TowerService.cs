@@ -20,6 +20,7 @@ public sealed partial class TowerService
     public const uint TowerSync = 5065, Start = 32801, End = 32802, SetPets = 32803, Sweep = 32804, Info = 32805;
     public const uint PetDeadState = 32809;
     public const uint FirstPassRange = 32807, ClaimFirstPass = 32808, DungeonInfo = 30401, LeaveDungeon = 30402;
+    public const int Function = 89, HallFunction = 5001; // FunctionConfig: Spirit Tower
 
     private readonly GameData _data;
     private long _nextPetUid = TowerPetUnit.UidBase;
@@ -104,7 +105,7 @@ public sealed partial class TowerService
 
     private bool Open(GameSession s) => s.Role != null && s.Tower != null && s.Progress != null
         && s.SeasonState is { } state && state.SeasonId == _seasons.SeasonId && state.PlayBookId == _seasons.PlayBook
-        && _functions.IsOpen(s, 89) && _functions.IsOpen(s, 5001);
+        && _functions.IsOpen(s, Function) && _functions.IsOpen(s, HallFunction);
 
     /// <summary>PetFloorConfig is an array. Lookup and sorting use its explicit _iID / _iFloor domains. Built once per
     /// playbook (and per loaded table): achievements read a role's cleared floor on every probe, and filtering and sorting

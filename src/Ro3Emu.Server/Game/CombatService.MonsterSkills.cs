@@ -39,7 +39,8 @@ public sealed partial class CombatService
             var stats = _character.Stats(p);
             var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
             {
-                Def = stats[105], Mdef = stats[106], Flee = stats[110], ResCri = stats[112], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
+                Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee],
+                ResCri = stats[AttributeId.ResCri], FixedDamage = (p.GmCombat & GmCombatSwitches.FixedDamage) != 0,
                 Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize,
             };
             var (damage, result) = maxHpBasisPoints > 0 ? (Math.Max(1, stats[AttributeId.MaxHp] * maxHpBasisPoints / 10000), DamageHitResult.Normal)

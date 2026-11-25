@@ -19,7 +19,7 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class PronteraDefenseService : IGameTicker
 {
-    public const int ActivityId = 118, TimeLimitId = 1012, SupplyItem = 600;
+    public const int ActivityId = 118, TimeLimitId = 1012, SupplyItem = 600, Function = 68;
     private const int UnlockLevel = 99;
     /// <summary>(inferred) City Defense lost each minute = the current intensity / this (see DamageDefensesAsync).</summary>
     internal const long ErosionDivisor = 100;
@@ -164,7 +164,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
         if (session.Role == null || session.Progress == null || session.Defense == null || req.ActivityId != ActivityId)
         { response.Result = ErrorCodes.Parameter; return response; }
         long now = _clock.UtcNow.ToUnixTimeSeconds();
-        if (session.Progress.Level < UnlockLevel || !_functions.IsOpen(session, 68)
+        if (session.Progress.Level < UnlockLevel || !_functions.IsOpen(session, Function)
             || !_clock.IsOpen(TimeLimitId, _clock.UtcNow))
         { response.Result = ErrorCodes.FeatureUnavailable; return response; }
         if (req.PronteraDefenseDonate is { } donation) await DonateAsync(session, donation, response, now);
