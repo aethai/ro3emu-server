@@ -16,7 +16,8 @@ public sealed partial class SkillCastingService
     public const uint SkillAffectedLegacy = 31118, SkillEffect = 31119, SkillBullet = 31120;
     public const uint ExtraUseInSkill = 31121, SkillSelectionChange = 31122;
     public const uint BossSkillCd = 31125, BossClearSkillCds = 31126, BossAllSkillCds = 31127;
-    public const uint DamageStatistics = 31129, SkillAffectedEx = 31132, TrainingOperation = 31133;
+    public const uint DamageStatistics = 31129, TrainingOperation = 31133;
+    internal const uint SkillAffectedEx = 31132;
 
     private Dictionary<(int Group, int Level, int Mode), int>? _configuredModeRows;
 

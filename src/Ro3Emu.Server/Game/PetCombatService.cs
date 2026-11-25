@@ -84,7 +84,7 @@ public sealed partial class PetCombatService
     private int HealEffect(long scriptShow) => _combat.HealEffect(scriptShow);
     private Task RefuseCastAsync(GameSession s, CastSkillReq req, int error, long sessionId) => _combat.RefuseCastAsync(s, req, error, sessionId);
     private Task StartCooldownAsync(GameSession s, JsonElement row) => _combat.StartCooldownAsync(s, row);
-    private Task SendCastTimelineAsync(GameSession s, UseInSkillInfo info, bool extra = false) => _combat.SendCastTimelineAsync(s, info, extra);
+    private Task SendCastTimelineAsync(GameSession s, UseInSkillInfo info, bool extra = false) => _combat.SendCastTimelineAsync(s, info, extra: extra);
     private Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
         IReadOnlyList<MonsterUnit>? chosenTargets = null, IReadOnlyList<GameSession>? chosenAllies = null) =>
         _combat.ApplyEffectsAsync(s, action, center, field, chosenTargets, chosenAllies);
