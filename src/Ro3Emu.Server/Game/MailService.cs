@@ -24,6 +24,7 @@ public sealed partial class MailService(AccountStore accounts, RoleStore roles, 
 {
     public const uint ClaimMail = 31602;
     public string Name => "MailService";
+    public Micro.MicroAdmission Admission => Micro.MicroAdmission.SelfManaged;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private SemaphoreSlim Gate(long _) => _gate;

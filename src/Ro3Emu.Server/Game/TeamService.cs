@@ -22,7 +22,8 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     /// <summary>DungeonService supplies the authoritative role preference, allowances and Light of Bonds projection.</summary>
     public Func<GameSession, IReadOnlyList<long>, TeamMultiDungeonInfo>? MultiDungeonInfo { get; set; }
     public const uint TeamCreate = 42000, TeamLeave = 42001, TeamInvite = 42004, TeamNotifyInvitee = 42005, TeamInviteeResp = 42006,
-        TeamOperate = 42007, TeamOperateBroadcast = 42008, TeamInviteList = 42017, TeamNewMember = 42026, TeamChangeMemberState = 42036,
+        TeamOperate = 42007, TeamOperateBroadcast = 42008, TeamRallyResp = 42011, TeamInviteList = 42017, TeamApply = 42018,
+        TeamNewMember = 42026, TeamChangeMemberState = 42036,
         TeamBroadcastLeave = 42037, TeamAll = 42048, TeamMemberUpdate = 42050, TeamMemberBattleUpdate = 42051;
 
     /// <summary>PublicParamConfig.NoTargetID: a party without an activity target.</summary>

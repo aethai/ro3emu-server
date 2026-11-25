@@ -14,12 +14,14 @@ internal static class ActivitiesComposition
         services.AddSingleton<TestingSwitches>();
         services.AddSingleton<ActivityClock>();
         services.AddSingleton<NewActivityService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<NewActivityService>());
         services.AddSingleton<ActivityPassService>();
         services.AddSingleton<AdventureActivityService>();
         services.AddSingleton<TimedEventService>();
         services.AddSingleton<TimedTodoSchedule>();
         services.AddSingleton<PronteraDefenseService>();
         services.AddSingleton<TimedBattleService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<TimedBattleService>());
         services.AddSingleton<ChickenBattleService>();
         services.AddSingleton<ChickenEncounterService>();
         services.AddSingleton<RiftBattleService>();

@@ -29,6 +29,7 @@ public sealed class UserDataService(SocialOwnerCache cache, OwnerRegistry owners
     internal const int MaxRolesPerBatch = 50;
 
     public string Name => "UserDataService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public async ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args) =>
         method == "getAttributeBatchByVersion" ? await loop.InvokeAsync(() => GetAttributesAsync(args)) : null;

@@ -8,21 +8,19 @@ public sealed class CharacterMessages(
     CharacterService character,
     SkillService skills,
     CombatService combat,
-    SceneService scene,
     TaskService tasks,
     GuideService guides,
     EmojiService emoji,
     AchievementService achievements,
-    DungeonService dungeons,
     GatheringService gathering,
     TimedBattleService timedBattles,
-    GuildCampfireService campfire,
-    NewActivityService activities) : IMessageModule
+    NewActivityService activities,
+    IEnumerable<INpcInteractionHandler> npcHandlers) : IMessageModule
 {
+    private readonly INpcInteractionHandler[] _npcHandlers = [.. npcHandlers.OrderBy(h => h.Order)];
+
     public void Map(MessageRoutes routes)
     {
-        // Routes in other modules previously covered by CharacterMessages' ranges (moved to their routes in the next pass).
-        routes.AdmitRole(id => id is CombatService.SkillInterrupt or BuffService.ClientRemoveBuff or 31470 or 33509);
         MapCharacter(routes);
         MapSkillsAndCombat(routes);
         MapEmojiAndGuides(routes);
@@ -69,12 +67,8 @@ public sealed class CharacterMessages(
         });
         routes.Map<NpcInteractionReq>(SceneService.NpcInteraction, "gathering", RouteAdmission.Role, async (session, npcInteraction) =>
         {
-            if (await activities.TryConchAsync(session, npcInteraction)) return;
-            await activities.InterruptConchAsync(session);
-            if (!await dungeons.TryInteractAsync(session, npcInteraction) // scripted scene actors (own UID namespace)
-                && !await gathering.TryInteractAsync(session, npcInteraction)
-                && !await timedBattles.TryInteractAsync(session, npcInteraction)
-                && !await campfire.TryInteractAsync(session, npcInteraction)) await scene.InteractAsync(session, npcInteraction);
+            foreach (var handler in _npcHandlers)
+                if (await handler.TryInteractAsync(session, npcInteraction)) return;
         });
     }
 

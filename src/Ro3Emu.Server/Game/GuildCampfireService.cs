@@ -17,8 +17,11 @@ namespace Ro3Emu.Server.Game;
 /// placement/once-per-seed collection are (inferred) because the scene editor has no static NPCs and
 /// CampFirePosition is an empty export.
 /// </summary>
-public sealed partial class GuildCampfireService : IGameTicker
+public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcInteractionHandler
 {
+    int Messaging.INpcInteractionHandler.Order => 500;
+    Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request) =>
+        TryInteractAsync(session, request);
     public const uint Lucky = 83240, Stage = 83241, Info = 83242, Accelerant = 83243,
         PlayerInfo = 83244, Fruit = 83245, Hurray = 83246, BossDead = 83247, Finish = 83248;
     public const long Dungeon = 4000101;

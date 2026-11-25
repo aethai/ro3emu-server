@@ -24,6 +24,7 @@ internal static class CharacterComposition
         services.AddSingleton<WildAfkService>();
         services.AddSingleton<LifeJobService>();
         services.AddSingleton<GatheringService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<GatheringService>());
         services.AddSingleton<GuideService>();
         services.AddSingleton<CardService>();
         services.AddSingleton<CardEffects>();

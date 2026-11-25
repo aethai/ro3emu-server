@@ -17,6 +17,7 @@ internal static class GuildComposition
         services.AddSingleton<GuildStore>();
         services.AddSingleton<GuildHomeService>();
         services.AddSingleton<GuildCampfireService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<GuildCampfireService>());
         services.AddSingleton<GuildHuntingService>();
         services.AddSingleton<GuildChallengeStore>();
         services.AddSingleton<GuildChallengeService>();

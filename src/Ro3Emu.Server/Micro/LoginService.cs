@@ -10,6 +10,7 @@ namespace Ro3Emu.Server.Micro;
 public sealed partial class LoginService(AccountStore accounts, RoleStore roles, MicroSessions micro, ILogger<LoginService> log) : IMicroService
 {
     public string Name => "LoginService";
+    public MicroAdmission Admission => MicroAdmission.Account;
 
     private readonly LogThrottle _unknownTicketLog = new();
 

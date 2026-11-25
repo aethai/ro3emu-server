@@ -52,6 +52,7 @@ public sealed class RankService(GameData data, AccountStore accounts, GuildServi
     private DateTimeOffset _builtAt;
 
     public string Name => "RankService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public async ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args)
     {

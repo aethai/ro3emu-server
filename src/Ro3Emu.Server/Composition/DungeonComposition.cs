@@ -19,6 +19,7 @@ internal static class DungeonComposition
         services.AddSingleton<DungeonCatalog>();
         services.AddSingleton<DungeonObligationStore>();
         services.AddSingleton<DungeonService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<DungeonService>());
         services.AddSingleton<RaidTrialsService>();
         services.AddSingleton<ScriptedDungeonService>();
         services.AddSingleton<TowerService>();

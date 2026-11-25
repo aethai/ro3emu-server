@@ -362,6 +362,7 @@ public sealed class OwnerScopeTests : IAsyncLifetime
     {
         private int _calls;
         public string Name => "LoginService";
+        public Ro3Emu.Server.Micro.MicroAdmission Admission => Ro3Emu.Server.Micro.MicroAdmission.Account;
         public async ValueTask<object?> InvokeAsync(Ro3Emu.Server.Micro.MicroSession session, string method, object? args)
         {
             if (Interlocked.Increment(ref _calls) == 1) { firstEntered.SetResult(); await release; }
