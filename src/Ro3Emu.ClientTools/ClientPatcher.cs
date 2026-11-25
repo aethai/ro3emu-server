@@ -114,7 +114,7 @@ public static class ClientPatcher
     internal static Func<ModuleDefinition, string>? Extra(string file, string hooksDll, string locDll) => file switch
     {
         "Assembly-CSharp.dll" => m => RedirectChat(m, hooksDll) + "; " + VoiceStubPatch.Patch(m, hooksDll) + "; " + VoiceEnablePatch.Patch(m)
-            + "; " + TextSink.PatchLanguageGet(m, locDll),
+            + "; " + TextSink.PatchLanguageGet(m, locDll) + "; " + HudSpritePatch.Patch(m, hooksDll),
         "Happyengine.Base.Runtime.dll" when VerboseLogs => ForceShowLog,
         "Unity.TextMeshPro.dll" => m => TextSink.PatchTmp(m, locDll, hooksDll),
         "HUD.dll" => m => TextSink.PatchHud(m, locDll),
