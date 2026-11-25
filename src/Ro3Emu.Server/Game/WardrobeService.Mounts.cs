@@ -76,16 +76,16 @@ public sealed partial class WardrobeService
     /// <summary>The wardrobe that must commit together with a granted mount, or null when 5034 is already consistent.</summary>
     internal DBWardRobeInfo? WithMount(GameSession session, DBMount mount)
     {
-        if (session.Wardrobe == null) return null;
-        var next = session.Wardrobe.Clone();
+        if (session.Profile.Wardrobe == null) return null;
+        var next = session.Profile.Wardrobe.Clone();
         return LightMounts(next, [mount]) ? next : null;
     }
 
     /// <summary>The wardrobe with expired ownership removed (as RefreshExpiredAsync), for a mount expiry commit.</summary>
     internal DBWardRobeInfo? WithoutExpired(GameSession session)
     {
-        if (session.Wardrobe == null) return null;
-        var next = session.Wardrobe.Clone();
+        if (session.Profile.Wardrobe == null) return null;
+        var next = session.Profile.Wardrobe.Clone();
         if (!RemoveExpired(next)) return null;
         EnsureDefaults(session, next);
         return next;
@@ -94,14 +94,14 @@ public sealed partial class WardrobeService
     /// <summary>Adopt a wardrobe committed by another owner's transaction (call from its committed callback).</summary>
     internal void AdoptCommitted(GameSession session, DBWardRobeInfo next)
     {
-        session.Wardrobe = next;
+        session.Profile.Wardrobe = next;
         ArmExpiry(session);
     }
 
     /// <summary>Publish an adopted wardrobe: 5034, and the AOI look only when worn slots changed.</summary>
     internal async Task PublishCommittedAsync(GameSession session, DBWardRobeInfo before)
     {
-        await CharacterService.SyncAsync(session, WardrobeSync, session.Wardrobe!.Clone());
-        if (!before.CurUseAppearances.Equals(session.Wardrobe.CurUseAppearances)) await PublishAppearanceAsync(session);
+        await CharacterService.SyncAsync(session, WardrobeSync, session.Profile.Wardrobe!.Clone());
+        if (!before.CurUseAppearances.Equals(session.Profile.Wardrobe.CurUseAppearances)) await PublishAppearanceAsync(session);
     }
 }

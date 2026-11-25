@@ -86,7 +86,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var bot = await Enter(legacyCounter: true);
         await Gm("!quest done 10105020"); await Gm("!item 1 30000");
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(bot));
-        Assert.Equal("S1", Session(bot).Shop!.Bought[Offer].Period);
+        Assert.Equal("S1", Session(bot).Social.Shop!.Bought[Offer].Period);
         var season = Service<SeasonService>();
         var breakLocal = DateTimeOffset.FromUnixTimeSeconds(season.Times().SeasonBreakStartTime).LocalDateTime;
         var newStart = breakLocal.Date.AddDays(breakLocal.TimeOfDay == TimeSpan.Zero ? 0 : 1);
@@ -99,7 +99,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var sync = await Next(again, ShopService.ShopSync, DBShopInfoIncrement.Parser);
         Assert.False(sync.CommodityBuyTimes.ContainsKey(Offer));
         Assert.Equal(0, await Buy(again));
-        Assert.Equal("S2", Session(again).Shop!.Bought[Offer].Period);
+        Assert.Equal("S2", Session(again).Social.Shop!.Bought[Offer].Period);
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(again));
     }
 
@@ -118,7 +118,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
                 new BuyCommodityReq { CommodityId = Offer, Count = 1 })));
         Assert.Equal(money, character.CountOf(session, 1));
         Assert.Equal(tokens, character.CountOf(session, 1250709));
-        Assert.False(session.Shop!.Bought.ContainsKey(Offer));
+        Assert.False(session.Social.Shop!.Bought.ContainsKey(Offer));
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_shop");
         Assert.Equal(0, await Buy(bot));
     }
@@ -139,7 +139,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         }
         Assert.Equal(money - 7500, character.CountOf(session, 1));
         Assert.Equal(tokens + 5, character.CountOf(session, 1250709)); // "Pet Egg x5" (_iIsShowCount 5)
-        Assert.Equal(1, session.Shop!.Bought[Offer].Count);
+        Assert.Equal(1, session.Social.Shop!.Bought[Offer].Count);
         var persisted = JsonSerializer.Deserialize<ShopService.ShopState>(Service<RoleStore>().LoadShop(session.Role!.Id)!)!;
         Assert.Equal(1, persisted.Bought[Offer].Count);
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(bot));

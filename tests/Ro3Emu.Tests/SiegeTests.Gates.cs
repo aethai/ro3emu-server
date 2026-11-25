@@ -30,7 +30,7 @@ public sealed partial class SiegeTests
         return (attack, defense);
     }
 
-    private TerritoryWarsService.SiegeRun Run(BotClient bot) => Session(bot).SiegeBattle!;
+    private TerritoryWarsService.SiegeRun Run(BotClient bot) => Session(bot).Instances.SiegeBattle!;
 
     [ClientDataFact]
     public async Task TheCastleStandsAtItsPointsAndOnlyTheOtherCampHitsIt()

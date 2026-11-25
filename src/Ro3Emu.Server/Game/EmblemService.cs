@@ -132,27 +132,27 @@ public sealed partial class EmblemService
             await _roles.CommitAsync(builder, "emblem/login-reconcile", _ =>
             {
                 PublishItems(session, afterItems);
-                session.Emblems = next;
-                session.EmblemPower = current;
-                session.EmblemPlanSwitchUtc = default;
+                session.Profile.Emblems = next;
+                session.Profile.EmblemPower = current;
+                session.Profile.EmblemPlanSwitchUtc = default;
             });
         }
         else
         {
-            session.Emblems = next;
-            session.EmblemPower = current;
-            session.EmblemPlanSwitchUtc = default;
+            session.Profile.Emblems = next;
+            session.Profile.EmblemPower = current;
+            session.Profile.EmblemPlanSwitchUtc = default;
         }
     }
 
     /// <summary>5005 only: PowerService publishes the power once every power owner is loaded (RoleSystems).</summary>
     public async Task LoginAsync(GameSession session)
     {
-        session.EmblemPower = PlanPower(session, Active(session)).SeasonPower;
+        session.Profile.EmblemPower = PlanPower(session, Active(session)).SeasonPower;
         await SyncAsync(session);
     }
 
-    private static Plan Active(GameSession session) => session.Emblems.Plans[session.Emblems.CurrentPlan];
+    private static Plan Active(GameSession session) => session.Profile.Emblems.Plans[session.Profile.Emblems.CurrentPlan];
 
     private static EmblemState CopyState(EmblemState state) =>
         JsonSerializer.Deserialize<EmblemState>(JsonSerializer.SerializeToUtf8Bytes(state))!;
@@ -210,8 +210,8 @@ public sealed partial class EmblemService
         await _roles.CommitAsync(builder, "emblem/" + label, _ =>
         {
             PublishItems(session, afterItems);
-            session.Emblems = next;
-            session.EmblemPower = newPower;
+            session.Profile.Emblems = next;
+            session.Profile.EmblemPower = newPower;
             applied?.Invoke();
         });
     }
@@ -244,7 +244,7 @@ public sealed partial class EmblemService
     /// <summary>All active, extant GUIDs; the plan is authoritative for stat input.</summary>
     public static IEnumerable<InvItem> Worn(GameSession session)
     {
-        if (!session.Emblems.Plans.TryGetValue(session.Emblems.CurrentPlan, out var plan)) yield break;
+        if (!session.Profile.Emblems.Plans.TryGetValue(session.Profile.Emblems.CurrentPlan, out var plan)) yield break;
         foreach (var guid in plan.Slots.Values.Distinct())
             if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is { } item) yield return item;
     }
@@ -288,7 +288,7 @@ public sealed partial class EmblemService
     }
 
     public static bool IsReserved(GameSession session, InvItem item) =>
-        item.Attrs?.GetValueOrDefault(Source) == 2 || session.Emblems.Plans.Values.Any(p => p.Slots.ContainsValue(item.Guid));
+        item.Attrs?.GetValueOrDefault(Source) == 2 || session.Profile.Emblems.Plans.Values.Any(p => p.Slots.ContainsValue(item.Guid));
 
     public static bool IsEmblem(GameData data, int entry) =>
         data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 8 && GameData.Int(row, "_iSubType") == 800;
@@ -308,8 +308,8 @@ public sealed partial class EmblemService
 
     private DBEmblemInfo Build(GameSession session)
     {
-        var info = new DBEmblemInfo { CurrentPlan = session.Emblems.CurrentPlan, Inited = true };
-        foreach (var (index, saved) in session.Emblems.Plans)
+        var info = new DBEmblemInfo { CurrentPlan = session.Profile.Emblems.CurrentPlan, Inited = true };
+        foreach (var (index, saved) in session.Profile.Emblems.Plans)
         {
             var plan = new DBEmblemPlan { PlanName = saved.Name, Power = PlanPower(session, saved) };
             foreach (var (slot, guid) in saved.Slots) plan.SetUpEmblem[slot] = guid;
@@ -341,7 +341,7 @@ public sealed partial class EmblemService
     /// <summary>The Soul Echo part changed: PowerService republishes the whole package (31502, 31503, 5066).</summary>
     private async Task PowerAsync(GameSession session, long previous)
     {
-        session.EmblemPower = PlanPower(session, Active(session)).SeasonPower;
+        session.Profile.EmblemPower = PlanPower(session, Active(session)).SeasonPower;
         if (PublishPower != null) await PublishPower(session);
     }
 
@@ -371,10 +371,10 @@ public sealed partial class EmblemService
         long oldGuid = code == 0 ? plan.Slots.GetValueOrDefault(req.EmblemPos) : 0;
         if (code == 0)
         {
-            long previous = session.EmblemPower;
+            long previous = session.Profile.EmblemPower;
             var beforeItems = session.Items.Select(i => i.Clone()).ToArray();
             var afterItems = beforeItems.Select(i => i.Clone()).ToList();
-            var next = CopyState(session.Emblems);
+            var next = CopyState(session.Profile.Emblems);
             if (oldGuid != 0 && afterItems.FirstOrDefault(i => i.Guid == oldGuid) is { } old)
             {
                 old.Attrs ??= []; old.Attrs[Source] = 0; old.Attrs[Position] = 0;
@@ -402,10 +402,10 @@ public sealed partial class EmblemService
         long guid = code == 0 ? plan.Slots[req.EmblemPos] : 0;
         if (code == 0)
         {
-            long previous = session.EmblemPower;
+            long previous = session.Profile.EmblemPower;
             var beforeItems = session.Items.Select(i => i.Clone()).ToArray();
             var afterItems = beforeItems.Select(i => i.Clone()).ToList();
-            var next = CopyState(session.Emblems);
+            var next = CopyState(session.Profile.Emblems);
             next.Plans[next.CurrentPlan].Slots.Remove(req.EmblemPos);
             if (afterItems.FirstOrDefault(i => i.Guid == guid) is { } item)
             {
@@ -526,8 +526,8 @@ public sealed partial class EmblemService
                 var costs = req.ConsumeItems.Select(p => (Entry: p.Key, Count: (long)p.Value))
                     .Concat(feed.Select(i => (Entry: i.Entry, Count: 1L)))
                     .GroupBy(p => p.Entry).Select(g => (Entry: g.Key, Count: g.Sum(p => p.Count))).ToArray();
-                var next = CopyState(session.Emblems);
-                long previous = session.EmblemPower;
+                var next = CopyState(session.Profile.Emblems);
+                long previous = session.Profile.EmblemPower;
                 await CommitEmblemsAsync(session, "emblem-upgrade", next, beforeItems, afterItems, costs,
                     new
                     {

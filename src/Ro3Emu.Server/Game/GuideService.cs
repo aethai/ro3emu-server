@@ -24,22 +24,22 @@ public sealed partial class GuideService(RoleStore roles, Data.GameData data, IL
     public async Task LoginAsync(GameSession session)
     {
         var saved = roles.LoadGuides(session.Role!.Id);
-        session.Guides = saved != null ? DBGuideInfo.Parser.ParseFrom(saved) : new DBGuideInfo();
+        session.Activities.Guides = saved != null ? DBGuideInfo.Parser.ParseFrom(saved) : new DBGuideInfo();
         await SyncAsync(session);
     }
 
     public async Task UpdateAsync(GameSession session, UpdateGuideReq req)
     {
-        if (session.Guides == null) return;
+        if (session.Activities.Guides == null) return;
         foreach (var id in req.GuideIds.Take(MaxPerUpdate)) Finish(session, id);
         foreach (var (id, value) in req.Records.Take(MaxPerUpdate))
-            if (Known(id)) session.Guides.GuideFinishRecord[id] = value;
+            if (Known(id)) session.Activities.Guides.GuideFinishRecord[id] = value;
         await SaveAndSyncAsync(session);
     }
 
     public async Task CompleteAsync(GameSession session, ClientCompleteGuideReq req)
     {
-        if (session.Guides == null) return;
+        if (session.Activities.Guides == null) return;
         Finish(session, req.GuildId);
         await SaveAndSyncAsync(session);
     }
@@ -55,12 +55,12 @@ public sealed partial class GuideService(RoleStore roles, Data.GameData data, IL
 
     private void Finish(GameSession session, long id)
     {
-        if (id != Placeholder && Known(id) && !session.Guides!.FinishedGuideIds.Contains(id)) session.Guides.FinishedGuideIds.Add(id);
+        if (id != Placeholder && Known(id) && !session.Activities.Guides!.FinishedGuideIds.Contains(id)) session.Activities.Guides.FinishedGuideIds.Add(id);
     }
 
     private async Task SaveAndSyncAsync(GameSession session)
     {
-        var guides = session.Guides!;
+        var guides = session.Activities.Guides!;
         roles.SaveGuides(session.Role!.Id, guides.ToByteArray());
         log.LogInformation("{Name} guides done: {Guides}", session.Role.Name, string.Join(",", guides.FinishedGuideIds));
         await SyncAsync(session);
@@ -68,7 +68,7 @@ public sealed partial class GuideService(RoleStore roles, Data.GameData data, IL
 
     private static Task SyncAsync(GameSession session)
     {
-        var now = session.Guides!.Clone();
+        var now = session.Activities.Guides!.Clone();
         if (now.FinishedGuideIds.Count == 0) now.FinishedGuideIds.Add(Placeholder);
         if (now.GuideFinishRecord.Count == 0) now.GuideFinishRecord[Placeholder] = 0;
         return CharacterService.SyncAsync(session, GuideInfoSync, now);

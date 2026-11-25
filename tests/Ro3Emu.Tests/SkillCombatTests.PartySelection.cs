@@ -142,14 +142,14 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1201101, TargetPos = a.Position.Clone(), Face = a.Face });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var deadline = DateTime.UtcNow + Wait;
-        while (a.SkillObjects.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
-        Assert.NotEmpty(a.SkillObjects);
+        while (a.Combat.SkillObjects.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.NotEmpty(a.Combat.SkillObjects);
         var combat = _app.Services.GetRequiredService<CombatService>();
         await Loop.InvokeAsync(async () =>
         {
-            int charges = a.SkillObjects[0].Charges;
+            int charges = a.Combat.SkillObjects[0].Charges;
             Assert.False(await combat.GroundProtectsAsync(a, magic.Row));
-            Assert.Equal(charges, a.SkillObjects[0].Charges);
+            Assert.Equal(charges, a.Combat.SkillObjects[0].Charges);
             Assert.True(await combat.GroundProtectsAsync(a, physical.Row));
         });
     }

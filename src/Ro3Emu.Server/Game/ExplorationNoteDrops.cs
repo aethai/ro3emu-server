@@ -22,11 +22,11 @@ internal sealed class ExplorationNoteDrops(GameData data, SeasonService seasons,
 
     internal RestrictInfo? Remaining(GameSession s)
     {
-        if (s.Restrictions == null || !open(s)) return null;
+        if (s.Season.Restrictions == null || !open(s)) return null;
         int id = (int)(ActivityConstants.Of(data).ExploreNoteDropRestrict ?? 0);
         if (RestrictConfig.Get(data, id) is not { RecoverType: 1, MaxRestrictNum: > 0 } rule) return null;
         var (start, end) = Day();
-        var saved = s.Restrictions.RestrictCount.GetValueOrDefault(id);
+        var saved = s.Season.Restrictions.RestrictCount.GetValueOrDefault(id);
         long left = saved?.LastRecoverTime == start ? Math.Clamp(saved.Count, 0, rule.MaxRestrictNum) : rule.MaxRestrictNum;
         return new RestrictInfo
         {

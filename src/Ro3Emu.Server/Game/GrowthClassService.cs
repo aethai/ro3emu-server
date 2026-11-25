@@ -57,19 +57,19 @@ public sealed partial class GrowthClassService
     public void Load(GameSession s)
     {
         var bytes = _roles.LoadGrowthClass(s.Role!.Id);
-        s.GrowthClass = bytes is { Length: > 0 } ? DBGrowthClassInfo.Parser.ParseFrom(bytes) : new DBGrowthClassInfo();
+        s.Activities.GrowthClass = bytes is { Length: > 0 } ? DBGrowthClassInfo.Parser.ParseFrom(bytes) : new DBGrowthClassInfo();
     }
 
     public Task LoginAsync(GameSession s) => SyncAsync(s);
 
-    private Task SyncAsync(GameSession s) => s.GrowthClass == null || s.Tasks == null ? Task.CompletedTask
+    private Task SyncAsync(GameSession s) => s.Activities.GrowthClass == null || s.Tasks == null ? Task.CompletedTask
         : CharacterService.SyncAsync(s, Sync, Build(s));
 
     /// <summary>The 5045 view: the stored claims and what the delivered growth quests say.</summary>
     private DBGrowthClassInfo Build(GameSession s)
     {
         var info = new DBGrowthClassInfo();
-        foreach (var (rank, claimed) in s.GrowthClass!.RankReward) info.RankReward[rank] = claimed;
+        foreach (var (rank, claimed) in s.Activities.GrowthClass!.RankReward) info.RankReward[rank] = claimed;
         int total = 0;
         foreach (var module in _tasks.GrowthClassTasks().Values.Select(t => t.Module).Distinct().Order())
         {
@@ -92,10 +92,10 @@ public sealed partial class GrowthClassService
         using (await CharacterService.Lock(s))
         {
             int index = Ranks().FindIndex(r => r.Id == req.RankId);
-            result = s.GrowthClass == null || s.Tasks == null ? ErrorCodes.Unknown
+            result = s.Activities.GrowthClass == null || s.Tasks == null ? ErrorCodes.Unknown
                 : !_functions.IsOpen(s, TaskService.BecomeStrongerFunction) ? ErrorCodes.FunctionLocked
                 : index < 0 ? ErrorCodes.RewardMissing
-                : s.GrowthClass.RankReward.GetValueOrDefault(req.RankId) == 1 ? ErrorCodes.RewardClaimed
+                : s.Activities.GrowthClass.RankReward.GetValueOrDefault(req.RankId) == 1 ? ErrorCodes.RewardClaimed
                 : Ranks().Take(index + 1).Sum(r => r.Standard) > Progress(s) ? ErrorCodes.NoRankReward
                 : await CommitClaimAsync(s, req.RankId, Ranks()[index].Reward);
         }
@@ -106,7 +106,7 @@ public sealed partial class GrowthClassService
     private async Task<int> CommitClaimAsync(GameSession s, int rank, long group)
     {
         long role = s.Role!.Id;
-        var next = s.GrowthClass!.Clone();
+        var next = s.Activities.GrowthClass!.Clone();
         next.RankReward[rank] = 1;
         byte[] bytes = next.ToByteArray();
         int? playBook = s.Synced.GetValueOrDefault(SeasonService.SeasonSync) is DBSeasonInfo { Current: { } current }
@@ -131,11 +131,11 @@ public sealed partial class GrowthClassService
             if (plan.Grants.Count == 0)
             {
                 _roles.SaveGrowthClass(role, bytes);
-                s.GrowthClass = next;
+                s.Activities.GrowthClass = next;
                 ok = true;
             }
             else ok = await _character.ApplyAwardAsync(s, plan, persist: tx => _roles.SaveGrowthClass(role, bytes, tx),
-                stateLockHeld: true, committed: () => s.GrowthClass = next,
+                stateLockHeld: true, committed: () => s.Activities.GrowthClass = next,
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/growthclass-award", $"growthclass/{role}/{rank}",
                     new { Version = 1, Rank = rank, Award = group, plan.AwardId }));
             if (ok) _log.LogInformation("{Name} claims Growth Classroom rank {Rank} reward", s.Role.Name, rank);
@@ -175,7 +175,7 @@ public sealed partial class GrowthClassService
     private async Task GmAsync(GameSession s, string[] args)
     {
         string reply;
-        if (s.GrowthClass == null || s.Tasks == null) reply = "No Growth Classroom state.";
+        if (s.Activities.GrowthClass == null || s.Tasks == null) reply = "No Growth Classroom state.";
         else if (args is ["done", var moduleText, var stageText] && long.TryParse(moduleText, out long module)
             && int.TryParse(stageText, out int stage))
         {

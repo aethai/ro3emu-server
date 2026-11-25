@@ -75,23 +75,23 @@ public sealed class PassPlayTests : IAsyncLifetime
     private async Task Event(BotClient bot, (ActivityPassService.PassGoal, long)[] progress, long kills = 0, long dungeons = 0,
         long mvps = 0, long quest = 0)
     {
-        long before = await OnLoop(() => Session(bot).ActivityRuntime?.PassPlay?.Sequence ?? 0);
-        int unsaved = await OnLoop(() => Session(bot).ActivityRuntime?.PassPlay?.Unsaved ?? 0);
+        long before = await OnLoop(() => Session(bot).Activities.ActivityRuntime?.PassPlay?.Sequence ?? 0);
+        int unsaved = await OnLoop(() => Session(bot).Activities.ActivityRuntime?.PassPlay?.Unsaved ?? 0);
         await OnLoop(() => { Service<NewActivityService>().PassEvent(Session(bot), progress, kills, dungeons, mvps, quest); return 0; });
         // Owned work runs after this barrier; a second barrier lets a nested commit finish.
         for (int i = 0; i < 500; i++) // 10 s under suite load
         {
-            var (sequence, now) = await OnLoop(() => (Session(bot).ActivityRuntime?.PassPlay?.Sequence ?? 0,
-                Session(bot).ActivityRuntime?.PassPlay?.Unsaved ?? 0));
+            var (sequence, now) = await OnLoop(() => (Session(bot).Activities.ActivityRuntime?.PassPlay?.Sequence ?? 0,
+                Session(bot).Activities.ActivityRuntime?.PassPlay?.Unsaved ?? 0));
             if (sequence != before || now != unsaved) return;
             await Task.Delay(20);
         }
     }
 
     private Task<long> Currency(BotClient bot, int entry) => OnLoop(() => Session(bot).Progress!.Currency.GetValueOrDefault(entry));
-    private Task<PassPlayState> Play(BotClient bot) => OnLoop(() => Session(bot).ActivityRuntime!.PassPlay!);
+    private Task<PassPlayState> Play(BotClient bot) => OnLoop(() => Session(bot).Activities.ActivityRuntime!.PassPlay!);
     private Task<PlayerActivityBattlePass> Pass(BotClient bot) =>
-        OnLoop(() => Session(bot).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass);
+        OnLoop(() => Session(bot).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass);
 
     private static async Task<T> Next<T>(BotClient bot, uint id, Google.Protobuf.MessageParser<T> parser)
         where T : Google.Protobuf.IMessage<T> => parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(id), Wait)).Body);
@@ -120,7 +120,7 @@ public sealed class PassPlayTests : IAsyncLifetime
     /// world does not wait for it: under load a test read no pass state yet, or no draw.
     /// </summary>
     private Task Drawn(BotClient bot) =>
-        Until(() => OnLoop(() => (Session(bot).ActivityRuntime?.PassPlay?.Day ?? 0) != 0), "the day's challenges drawn");
+        Until(() => OnLoop(() => (Session(bot).Activities.ActivityRuntime?.PassPlay?.Day ?? 0) != 0), "the day's challenges drawn");
 
     [ClientDataFact]
     public async Task PremiumTrackIsFreeAndDailyActivityPaysPassExpAndProgress()
@@ -206,7 +206,7 @@ public sealed class PassPlayTests : IAsyncLifetime
         Assert.Equal(balance, pass.Level * 2000L + pass.Exp);
 
         // Saved with the role.
-        var saved = Session(alice).ActivityRuntime!.PassPlay!;
+        var saved = Session(alice).Activities.ActivityRuntime!.PassPlay!;
         await alice.DisposeAsync();
         await using var again = await InWorld("Alice", create: false);
         var reloaded = await Play(again);
@@ -226,12 +226,12 @@ public sealed class PassPlayTests : IAsyncLifetime
         Assert.Equal(60, (await Pass(alice)).Level);
         await OnLoop(() =>
         {
-            var p = Session(alice).ActivityRuntime!.PassPlay ??= new(); p.Earned = 120000;
-            p.Instance = Session(alice).NewActivities!.ActivityInfo[200].ActivityInstance; return 0;
+            var p = Session(alice).Activities.ActivityRuntime!.PassPlay ??= new(); p.Earned = 120000;
+            p.Instance = Session(alice).Activities.NewActivities!.ActivityInfo[200].ActivityInstance; return 0;
         });
         // Today's draw would add a daily challenge to some steps; this test checks the sources without it.
         await Event(alice, []);
-        await OnLoop(() => { Session(alice).ActivityRuntime!.PassPlay!.Daily.Clear(); return 0; });
+        await OnLoop(() => { Session(alice).Activities.ActivityRuntime!.PassPlay!.Daily.Clear(); return 0; });
 
         await Party(alice, bob);
         Assert.Equal(2, await OnLoop(() => Service<TeamService>().MembersOf(Session(alice).Role!.Id).Count));
@@ -261,8 +261,8 @@ public sealed class PassPlayTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99"); // Pass II's own condition
         await Service<NewActivityService>().ReconcileAsync(Session(alice));
-        Task<string> State(long id) => OnLoop(() => Session(alice).NewActivities!.ActivityInfo[id].State);
-        Task<PlayerActivityBattlePass> Second() => OnLoop(() => Session(alice).NewActivities!.ActivityInfo[201].ActivityParam.BattlePass);
+        Task<string> State(long id) => OnLoop(() => Session(alice).Activities.NewActivities!.ActivityInfo[id].State);
+        Task<PlayerActivityBattlePass> Second() => OnLoop(() => Session(alice).Activities.NewActivities!.ActivityInfo[201].ActivityParam.BattlePass);
         Assert.NotEqual("_close", await State(200));
         Assert.Equal("_close", await State(201)); // Pass I is not done: both would fill from the same currency
 

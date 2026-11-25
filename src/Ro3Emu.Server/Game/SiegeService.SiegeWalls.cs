@@ -88,6 +88,6 @@ public sealed partial class SiegeService
 
     /// <summary>SceneService.WalkBlocked: a siege member's walk into a standing wall.</summary>
     private bool SiegeWalkBlocked(GameSession s, Vec3 from, Vec3 to) =>
-        s.SiegeBattle is { Room.Closed: false } battle && s.SceneEntry == SiegeScene && _maps.Map(SiegeScene) is { } map
+        s.Instances.SiegeBattle is { Room.Closed: false } battle && s.SceneEntry == SiegeScene && _maps.Map(SiegeScene) is { } map
         && SiegeWallCrossed(battle.State, map, from, to, skill: false);
 }

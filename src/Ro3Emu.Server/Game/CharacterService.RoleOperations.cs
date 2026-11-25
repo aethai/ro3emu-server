@@ -39,7 +39,7 @@ public sealed partial class CharacterService
 
     private void LoadStatPlans(GameSession session)
     {
-        var info = session.StatPlans.Info;
+        var info = session.Profile.StatPlans.Info;
         if (info.CurPlanIndex is < 0 or >= StatPlanCount) info.CurPlanIndex = 0;
         for (int index = 0; index < StatPlanCount; index++)
         {
@@ -68,7 +68,7 @@ public sealed partial class CharacterService
 
     private void SaveStatPlans(GameSession session)
     {
-        var info = session.StatPlans.Info;
+        var info = session.Profile.StatPlans.Info;
         var current = CurrentPlan(session.Progress!, info.AllPlanBaseProperty[info.CurPlanIndex]);
         info.AllPlanBaseProperty[info.CurPlanIndex] = current;
         roles.SaveStatPlanProgress(session.Role!.Id, session.Progress!, info.ToByteArray());
@@ -78,7 +78,7 @@ public sealed partial class CharacterService
     public async Task ChangeStatPlanAsync(GameSession session, PlanAttrPointChangeReq req)
     {
         using var gate = await LockAsync(session);
-        var old = session.StatPlans.Info;
+        var old = session.Profile.StatPlans.Info;
         int dest = req.DestPlanIndex;
         old.AllPlanBaseProperty.TryGetValue(dest, out var plan);
         int result = dest is < 0 or >= StatPlanCount || plan == null ? ErrorCodes.Parameter : 0;
@@ -112,7 +112,7 @@ public sealed partial class CharacterService
     public async Task RenameStatPlanAsync(GameSession session, PlanAttrPointNameChangeReq req)
     {
         using var gate = await LockAsync(session);
-        bool indexOk = session.StatPlans.Info.AllPlanBaseProperty.TryGetValue(req.PlanIndex, out var plan);
+        bool indexOk = session.Profile.StatPlans.Info.AllPlanBaseProperty.TryGetValue(req.PlanIndex, out var plan);
         int result = !indexOk || string.IsNullOrWhiteSpace(req.PlanName) || req.PlanName.Any(char.IsControl)
             || req.PlanName.EnumerateRunes().Count() > StatPlanNameLimit ? ErrorCodes.Parameter : 0;
         if (!indexOk)
@@ -122,7 +122,7 @@ public sealed partial class CharacterService
         }
         if (result == 0)
         {
-            var next = session.StatPlans.Info.Clone();
+            var next = session.Profile.StatPlans.Info.Clone();
             next.AllPlanBaseProperty[req.PlanIndex].PlanName = req.PlanName;
             await CommitStatsAsync(session, "stat-rename", CloneProgress(session.Progress!), next);
             plan = next.AllPlanBaseProperty[req.PlanIndex];
@@ -151,9 +151,9 @@ public sealed partial class CharacterService
     {
         using var gate = await LockAsync(session);
         int size = CareerPackCapacity(session);
-        if (size <= 0 || size == session.BagState.LastNotifiedCartSize) return;
+        if (size <= 0 || size == session.Profile.BagState.LastNotifiedCartSize) return;
         await session.SendGameAsync(CareerSpecialSizeChange, new NotifyCareerSpecialPackSizeChange { Size = size });
-        session.BagState.LastNotifiedCartSize = size;
+        session.Profile.BagState.LastNotifiedCartSize = size;
         if (session.Items.Any(i => i.Grid == 0 && i.Pack == 100)) await SyncItemsAsync(session);
     }
 
@@ -168,13 +168,13 @@ public sealed partial class CharacterService
                 ? ErrorCodes.FeatureUnavailable : 0;
         if (result == 0)
         {
-            var next = session.BagState.Info.Clone();
+            var next = session.Profile.BagState.Info.Clone();
             next.QuickUseInfos.Clear();
             next.QuickUseInfos.Add(new QuickUseSaveInfo { LieQuickUse = 0, ItemEntry = req.EntryItem });
             await CommitBagAsync(session, "bag-setting", next);
         }
         var reply = new QuickUseSaveRes { Result = result };
-        reply.QuickSaveInfos.Add(session.BagState.Info.QuickUseInfos);
+        reply.QuickSaveInfos.Add(session.Profile.BagState.Info.QuickUseInfos);
         await session.SendGameAsync(QuickUseSave, reply);
         if (result == 0) await SyncItemsAsync(session);
     }
@@ -190,7 +190,7 @@ public sealed partial class CharacterService
         // 0 marks an empty slot: the window sends every slot, and Remove writes 0 into its slot.
         if (result == 0 && req.SetData!.ItemEntrys.Any(entry => entry < 0 || entry > 0 && (data.Row("ItemConfig", entry) is not { } row
             || GameData.Int(row, "_iIsUse") == 0))) result = ErrorCodes.ItemNoConfig;
-        var nextInfo = session.BagState.Info.Clone();
+        var nextInfo = session.Profile.BagState.Info.Clone();
         var saved = WithMedicineDefaults(nextInfo.MedicinesAutoUse);
         if (result == 0)
         {
@@ -243,12 +243,12 @@ public sealed partial class CharacterService
                 ? ErrorCodes.ItemNoConfig : count == 0 && !UnlimitedArrow(session, req.ItemId) ? ErrorCodes.ItemMissing : 0;
         if (result == 0)
         {
-            var next = session.BagState.Info.Clone();
+            var next = session.Profile.BagState.Info.Clone();
             next.CurrentArrowID = req.ItemId;
             await CommitBagAsync(session, "bag-setting", next);
         }
         // _processChangeArrowId writes the echoed id/count without inspecting result.
-        int echoed = result == 0 ? req.ItemId : (int)session.BagState.Info.CurrentArrowID;
+        int echoed = result == 0 ? req.ItemId : (int)session.Profile.BagState.Info.CurrentArrowID;
         int echoedCount = UnlimitedArrow(session, echoed) ? -1 : session.Items.Where(i => i.Grid == 0 && i.Entry == echoed).Sum(i => i.Stack);
         await session.SendGameAsync(ArrowSwitch, new ItemArrowSwitchResp { Result = result, ItemId = echoed, ItemCount = echoedCount });
         if (result == 0) await SyncItemsAsync(session);
@@ -348,7 +348,7 @@ public sealed partial class CharacterService
                 ? ErrorCodes.FeatureUnavailable : 0;
         if (result == 0)
         {
-            var next = session.BagState.Info.Clone();
+            var next = session.Profile.BagState.Info.Clone();
             var list = next.ShortcutBarInfos;
             // UI_Sys_Main_PropsItemWidgetCtrl._onDragIn marks the source with MarkSwap; its drag-end
             // consumes that marker without sending a clear. Move the binding in this commit (inferred).
@@ -367,7 +367,7 @@ public sealed partial class CharacterService
         using var owner = session.Owners is { } owners
             ? await owners.EnterAsync("character shortcut use", Ownership.ReservationKey.Role(session.Role!.Id)) : null;
         int result = req.SlotIndex is < 0 or >= ShortcutSlotLimit ? ErrorCodes.Parameter : 0;
-        long guid = session.BagState.Info.ShortcutBarInfos.FirstOrDefault(i => i.SlotIndex == req.SlotIndex)?.ItemGuid ?? 0;
+        long guid = session.Profile.BagState.Info.ShortcutBarInfos.FirstOrDefault(i => i.SlotIndex == req.SlotIndex)?.ItemGuid ?? 0;
         if (result == 0 && guid == 0) result = ErrorCodes.ItemMissing;
         if (result == 0) result = await UseItemCoreAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }, reply: false);
         await session.SendGameAsync(ShortcutBarUse, new ShortcutBarUseRes { Result = result, SlotIndex = req.SlotIndex });

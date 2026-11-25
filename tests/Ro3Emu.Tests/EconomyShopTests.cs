@@ -186,7 +186,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
                     Assert.Equal(revisions.Revision(part), current.Revision(part));
             }));
         Assert.Equal(balance, Service<CharacterService>().CountOf(session, 1));
-        Assert.DoesNotContain(114, session.Shop!.Bought.Keys);
+        Assert.DoesNotContain(114, session.Social.Shop!.Bought.Keys);
         Assert.Equal(opening.Cut.CommitSequence, Cut().Cut.CommitSequence);
         var rolledBack = Cut();
         Assert.Empty(Window(opening, rolledBack).Receipts);
@@ -209,7 +209,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
         Assert.Equal((0, 100, 1), (reply.Result, reply.Price, reply.BuyTimes));
         var closing = Cut();
         Assert.Single(Window(opening, closing).Receipts);
-        Assert.Equal(1, session.Shop!.Bought[114].Count);
+        Assert.Equal(1, session.Social.Shop!.Bought[114].Count);
         Assert.Equal(Service<RoleStore>().LoadProgress(session.Role!.Id).Currency[1], session.Progress!.Currency[1]);
         Assert.Equal(Service<ItemStore>().Load(session.Role.Id).Where(i => i.Entry == 1200201).Select(i => (i.Guid, i.Stack)),
             session.Items.Where(i => i.Entry == 1200201).Select(i => (i.Guid, i.Stack)));
@@ -262,7 +262,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
         }
         var closing = Cut();
         Assert.Single(Window(opening, closing).Receipts);
-        Assert.Equal(10, session.Shop!.Bought[114].Count);
+        Assert.Equal(10, session.Social.Shop!.Bought[114].Count);
         Assert.Equal(10, JsonSerializer.Deserialize<ShopService.ShopState>(Service<RoleStore>().LoadShop(session.Role!.Id)!)!.Bought[114].Count);
         Assert.Equal(ErrorCodes.PurchaseLimit, (await Buy(bot, 114)).Result);
         Assert.Equal(closing.Cut.CommitSequence, Cut().Cut.CommitSequence);

@@ -138,7 +138,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         await Task.WhenAll(gm!, timerDone.Task).WaitAsync(Wait);
         Assert.Same(dagger, s.Items.Single(i => i.Guid == dagger.Guid));
         Assert.Equal(1, dagger.Grid); Assert.Equal(oldPotions - 1, potion.Stack);
-        Assert.Equal(dagger.Guid, s.EquipmentPlans.EquipPlans[0].ItemsEquipGrid[1]);
+        Assert.Equal(dagger.Guid, s.Profile.EquipmentPlans.EquipPlans[0].ItemsEquipGrid[1]);
         Assert.Equal(3, s.Items.Where(i => i.Entry == 1200000).Sum(i => i.Stack));
         var closing = Cut(); var ledger = Window(opening, closing); Exact(opening, closing, ledger);
         Assert.Contains(ledger.Legs, x => x.Reason == EconomyReason.InventoryRelocation && x.Asset.Id == dagger.Entry);
@@ -150,7 +150,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
     {
         await using var bot = await Enter();
         var s = Alice; var item = s.Items.Single(i => i.Entry == 1000000);
-        int count = item.Stack; byte[] bag = s.BagState.Info.ToByteArray();
+        int count = item.Stack; byte[] bag = s.Profile.BagState.Info.ToByteArray();
         var beforeRevisions = Service<RoleStore>().ReadRevisionVector(s.Role!.Id);
         var opening = Cut();
         FixtureSql.Execute(Service<AccountStore>(), """
@@ -161,7 +161,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         {
             await Assert.ThrowsAsync<SqliteException>(() => Owned(owner => Service<CharacterService>().UseItemAsync(owner,
                 new ItemUseReq { ItemGuid = item.Guid, ItemCount = 1 })));
-            Assert.Equal(count, item.Stack); Assert.Equal(bag, s.BagState.Info.ToByteArray());
+            Assert.Equal(count, item.Stack); Assert.Equal(bag, s.Profile.BagState.Info.ToByteArray());
             Assert.Equal(count, Service<ItemStore>().Load(s.Role!.Id).Single(i => i.Guid == item.Guid).Stack);
             var rolledBack = Service<RoleStore>().ReadRevisionVector(s.Role.Id);
             foreach (string part in new[] { "inventory", "bag_state", "equip_plans", "stat_plans", "card_plans", "shop" })
@@ -210,7 +210,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         {
             await bot.SendGameAsync(ShopService.BuyCommodity, new BuyCommodityReq { CommodityId = offer, Count = 2 });
             await entered.Task.WaitAsync(Wait);
-            Assert.Equal(balance, s.Progress.Currency[1]); Assert.False(s.Shop!.Bought.ContainsKey(offer));
+            Assert.Equal(balance, s.Progress.Currency[1]); Assert.False(s.Social.Shop!.Bought.ContainsKey(offer));
             Assert.Equal(oldGoods, s.Items.Where(i => i.Entry == goods).Sum(i => i.Stack));
             Assert.Equal(balance - 2 * price, Service<RoleStore>().LoadProgress(s.Role!.Id).Currency[1]);
             Assert.Equal(oldGoods + 2, Service<ItemStore>().Load(s.Role.Id).Where(i => i.Entry == goods).Sum(i => i.Stack));
@@ -221,7 +221,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         Assert.Equal((0, 2, price), (reply.Result, reply.BuyTimes, reply.Price));
         var closing = Cut(); var ledger = Window(opening, closing);
         Assert.Equal(kind, Assert.Single(ledger.Receipts).CommandKind);
-        Assert.Equal(balance - 2 * price, s.Progress.Currency[1]); Assert.Equal(2, s.Shop!.Bought[offer].Count);
+        Assert.Equal(balance - 2 * price, s.Progress.Currency[1]); Assert.Equal(2, s.Social.Shop!.Bought[offer].Count);
         Exact(opening, closing, ledger);
     }
 }

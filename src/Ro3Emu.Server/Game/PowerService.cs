@@ -107,12 +107,12 @@ public sealed partial class PowerService : IGameTicker
     // ---------------------------------------------------------------- readers (5066, leaderboard, stage rewards)
 
     public static PowerUnit Current(GameSession s) => s.Power?.Current.Clone()
-        ?? (s.Emblems.Power is { } r ? new PowerUnit { NormalPower = r.CurrentNormal, SeasonPower = r.CurrentSeason }
-            : new PowerUnit { SeasonPower = s.EmblemPower });
+        ?? (s.Profile.Emblems.Power is { } r ? new PowerUnit { NormalPower = r.CurrentNormal, SeasonPower = r.CurrentSeason }
+            : new PowerUnit { SeasonPower = s.Profile.EmblemPower });
 
     public static PowerUnit History(GameSession s) => s.Power?.History.Clone()
-        ?? (s.Emblems.Power is { } r ? new PowerUnit { NormalPower = r.HistoryNormal, SeasonPower = r.HistorySeason }
-            : new PowerUnit { SeasonPower = s.Emblems.HistorySeasonPower });
+        ?? (s.Profile.Emblems.Power is { } r ? new PowerUnit { NormalPower = r.HistoryNormal, SeasonPower = r.HistorySeason }
+            : new PowerUnit { SeasonPower = s.Profile.Emblems.HistorySeasonPower });
 
     public static long Total(PowerUnit? unit) => unit == null ? 0 : unit.NormalPower + unit.SeasonPower;
 
@@ -137,7 +137,7 @@ public sealed partial class PowerService : IGameTicker
             CardSuitScore = new PowerUnit(),
             CardFillInEquipScore = Normal(s.Items.Where(i => i.Grid < 0).Sum(CardScore)),
             TotemScore = Normal(TotemScore(s)),
-            EmblemScore = _emblems.GenrePower(s, s.Emblems),
+            EmblemScore = _emblems.GenrePower(s, s.Profile.Emblems),
         };
         var total = new PowerUnit { NormalPower = BasePower(s.Progress.Level) + PetPower(s), SeasonPower = ParagonPower?.Invoke(s) ?? 0 };
         foreach (var unit in Units(package)) { total.NormalPower += unit.NormalPower; total.SeasonPower += unit.SeasonPower; }
@@ -233,13 +233,13 @@ public sealed partial class PowerService : IGameTicker
     private PowerUnit EquipRefine(GameSession s, IEnumerable<InvItem> worn) => new()
     {
         NormalPower = worn.Select(i => i.Grid).Distinct()
-            .Sum(g => _character.RefineRow(g, s.EquipLevels.Refine.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
+            .Sum(g => _character.RefineRow(g, s.Profile.EquipLevels.Refine.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
             + Resonance(s, "RefiningEffectTable"),
         SeasonPower = _seasonRefine.ActiveGroups(s).Sum(group => GameData.Int(group, "_iSeasonPower")),
     };
 
     private long EquipStrengthen(GameSession s, IEnumerable<InvItem> worn) => worn.Select(i => i.Grid).Distinct()
-        .Sum(g => _character.StrengthenRow(g, s.EquipLevels.Strength.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
+        .Sum(g => _character.StrengthenRow(g, s.Profile.EquipLevels.Strength.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
         + Resonance(s, "StrengthenEffectTable");
 
     /// <summary>The reached Strengthen/RefiningEffectTable row's _iPower (CharacterService.Resonance picks the row).</summary>
@@ -275,9 +275,9 @@ public sealed partial class PowerService : IGameTicker
 
     private long TotemScore(GameSession s)
     {
-        if (s.Totems == null) return 0;
-        long score = _totems.CurrentPlanPower(s, s.Totems).NormalPower;
-        int level = _totems.Level(s.Totems.TotemTotalExp);
+        if (s.Profile.Totems == null) return 0;
+        long score = _totems.CurrentPlanPower(s, s.Profile.Totems).NormalPower;
+        int level = _totems.Level(s.Profile.Totems.TotemTotalExp);
         if (level > 0) score += _data.Table("TotemLvConfig").Values.Where(r => GameData.Int(r, "_iLv") == level)
             .Select(r => GameData.Int(r, "_iPower")).FirstOrDefault();
         return score;
@@ -391,13 +391,13 @@ public sealed partial class PowerService : IGameTicker
             CurrentNormal = snapshot.Current.NormalPower, CurrentSeason = snapshot.Current.SeasonPower,
             HistoryNormal = snapshot.History.NormalPower, HistorySeason = snapshot.History.SeasonPower,
         };
-        if (s.Emblems.Power is { } saved && saved.CurrentNormal == record.CurrentNormal && saved.CurrentSeason == record.CurrentSeason
+        if (s.Profile.Emblems.Power is { } saved && saved.CurrentNormal == record.CurrentNormal && saved.CurrentSeason == record.CurrentSeason
             && saved.HistoryNormal == record.HistoryNormal && saved.HistorySeason == record.HistorySeason) return;
-        var next = JsonSerializer.Deserialize<EmblemService.EmblemState>(JsonSerializer.SerializeToUtf8Bytes(s.Emblems))!;
+        var next = JsonSerializer.Deserialize<EmblemService.EmblemState>(JsonSerializer.SerializeToUtf8Bytes(s.Profile.Emblems))!;
         next.Power = record;
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "emblems", JsonSerializer.SerializeToUtf8Bytes(next));
-        var echoes = s.Emblems;
+        var echoes = s.Profile.Emblems;
         await _roles.CommitAsync(transaction, "power/record", _ => echoes.Power = record);
     }
 

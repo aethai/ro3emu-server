@@ -78,20 +78,20 @@ public sealed partial class CardService
     public async Task LoginAsync(GameSession session)
     {
         var saved = _roles.LoadLibrary(session.Role!.Id);
-        session.Library = saved != null ? DBLibraryInfo.Parser.ParseFrom(saved) : new DBLibraryInfo();
+        session.Profile.Library = saved != null ? DBLibraryInfo.Parser.ParseFrom(saved) : new DBLibraryInfo();
         // An older/direct item grant may have committed before its legacy ItemGained callback.
         // First sight, the reached star and Flash ownership are derived from the durable bag and sockets on reconnect,
         // before publishing 5057.
         bool repaired = false;
-        foreach (var item in session.Items) repaired |= Observe(session.Library, item);
+        foreach (var item in session.Items) repaired |= Observe(session.Profile.Library, item);
         if (repaired) SaveLibrary(session);
         session.CardLibraryReadyAttachment = session.Attachment;
         var plans = _roles.LoadCardPlans(session.Role.Id);
-        session.CardPlans = plans != null ? DBStorageHoleInfo.Parser.ParseFrom(plans) : NewPlans(session);
-        if (!session.CardPlans.StoragePlans.ContainsKey(session.CardPlans.CurrentPlan)) session.CardPlans.CurrentPlan = 1;
+        session.Profile.CardPlans = plans != null ? DBStorageHoleInfo.Parser.ParseFrom(plans) : NewPlans(session);
+        if (!session.Profile.CardPlans.StoragePlans.ContainsKey(session.Profile.CardPlans.CurrentPlan)) session.Profile.CardPlans.CurrentPlan = 1;
         await SyncPlans(session);
-        if (session.Library.Cards.Count > 0 || session.Library.Monsters.Count > 0 || session.Library.Pages.Count > 0)
-            await CharacterService.SyncAsync(session, LibrarySync, session.Library.Clone());
+        if (session.Profile.Library.Cards.Count > 0 || session.Profile.Library.Monsters.Count > 0 || session.Profile.Library.Pages.Count > 0)
+            await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
         QueueCollection(session); // entries a crash, or an older server, left locked
     }
 
@@ -139,7 +139,7 @@ public sealed partial class CardService
 
     private async Task SyncPlans(GameSession session)
     {
-        var plans = session.CardPlans!;
+        var plans = session.Profile.CardPlans!;
         _roles.SaveCardPlans(session.Role!.Id, plans.ToByteArray());
         await CharacterService.SyncAsync(session, StorageHoleSync, plans.Clone());
     }
@@ -165,7 +165,7 @@ public sealed partial class CardService
             return;
         }
         var staged = session.Items.Select(i => i.Clone()).ToList();
-        var plans = session.CardPlans!.Clone();
+        var plans = session.Profile.CardPlans!.Clone();
         if (staged.FirstOrDefault(i => i.Grid == CharacterService.CardGrid(grid, socket)) is { } old)
             StageToBag(staged, old);
         var inserted = StageTakeOne(staged, staged.Single(i => i.Guid == card!.Guid));
@@ -200,7 +200,7 @@ public sealed partial class CardService
         }
         long guid = card.Guid;
         var staged = session.Items.Select(i => i.Clone()).ToList();
-        var plans = session.CardPlans!.Clone();
+        var plans = session.Profile.CardPlans!.Clone();
         var back = StageToBag(staged, staged.Single(i => i.Guid == card.Guid));
         var original = session.Items;
         session.Items = staged;
@@ -248,7 +248,7 @@ public sealed partial class CardService
             {
                 stagedDst.Grid = CharacterService.CardGrid(srcGrid, req.SrcEquipSlot);
             }
-            var plans = session.CardPlans!.Clone();
+            var plans = session.Profile.CardPlans!.Clone();
             var original = session.Items;
             session.Items = staged;
             try { CaptureActive(session, plans); }
@@ -360,7 +360,7 @@ public sealed partial class CardService
 
     internal async Task SyncGenrePlanAsync(GameSession session)
     {
-        await CharacterService.SyncAsync(session, StorageHoleSync, session.CardPlans!.Clone());
+        await CharacterService.SyncAsync(session, StorageHoleSync, session.Profile.CardPlans!.Clone());
         await NotifySocketsChangedAsync(session);
     }
 
@@ -368,7 +368,7 @@ public sealed partial class CardService
     public async Task SwitchPlanAsync(GameSession session, CardSwitchPlanReq req)
     {
         using var _ = await CharacterService.Lock(session);
-        var plans = session.CardPlans!.Clone();
+        var plans = session.Profile.CardPlans!.Clone();
         int error = !plans.StoragePlans.ContainsKey(req.TargetIndex) ? ErrorCodes.Parameter : 0; // (inferred) bad index.
         if (error == 0 && req.TargetIndex != plans.CurrentPlan)
         {
@@ -407,7 +407,7 @@ public sealed partial class CardService
                 await CharacterService.SyncAsync(session, StorageHoleSync, plans.Clone());
             }
         }
-        await session.SendGameAsync(SwitchPlan, new CardSwitchPlanResp { Result = error, CurrentPlan = session.CardPlans!.CurrentPlan });
+        await session.SendGameAsync(SwitchPlan, new CardSwitchPlanResp { Result = error, CurrentPlan = session.Profile.CardPlans!.CurrentPlan });
         if (error == 0) await NotifySocketsChangedAsync(session);
     }
 
@@ -421,11 +421,11 @@ public sealed partial class CardService
     public async Task ChangeNameAsync(GameSession session, StorageholeChangeNameReq req)
     {
         using var _ = await CharacterService.Lock(session);
-        int error = !session.CardPlans!.StoragePlans.TryGetValue(req.TargetIndex, out var plan) || string.IsNullOrWhiteSpace(req.Name)
+        int error = !session.Profile.CardPlans!.StoragePlans.TryGetValue(req.TargetIndex, out var plan) || string.IsNullOrWhiteSpace(req.Name)
             || req.Name.EnumerateRunes().Count() > NameMax ? ErrorCodes.Parameter : 0; // (inferred) name/index refusal.
         if (error == 0)
         {
-            var plans = session.CardPlans!.Clone();
+            var plans = session.Profile.CardPlans!.Clone();
             plans.StoragePlans[req.TargetIndex].PlanName = req.Name;
             await CommitCardStateAsync(session, [.. session.Items.Select(i => i.Clone())], plans,
                 "cd13a/card-rename", new { req.TargetIndex, req.Name });
@@ -599,12 +599,12 @@ public sealed partial class CardService
         // lit tier rows pay their Collection Points with it (inferred; 0 for every tier above 0 in this client).
         DBLibraryInfo? nextLibrary = null;
         List<(int Entry, int Count)> tierGains = [];
-        if (error == 0 && session.Library != null)
+        if (error == 0 && session.Profile.Library != null)
         {
             var starred = card!.Clone();
             starred.Attrs ??= [];
             starred.Attrs[502] = tier + 1;
-            var library = session.Library.Clone();
+            var library = session.Profile.Library.Clone();
             var before = library.Cards.GetValueOrDefault(card.Entry);
             int reached = before?.CardStar ?? 0;
             bool unlocked = before?.Unlock == true;
@@ -634,11 +634,11 @@ public sealed partial class CardService
                     throw new InvalidOperationException("Validated card star ledger changed during staging.");
                 if (target.Grid < 0)
                 {
-                    nextPlans = session.CardPlans!.Clone();
+                    nextPlans = session.Profile.CardPlans!.Clone();
                     CaptureActive(session, nextPlans);
                 }
             },
-            Committed = () => { if (nextPlans != null) session.CardPlans = nextPlans; if (nextLibrary != null) session.Library = nextLibrary; },
+            Committed = () => { if (nextPlans != null) session.Profile.CardPlans = nextPlans; if (nextLibrary != null) session.Profile.Library = nextLibrary; },
         }) == null) error = ErrorCodes.ItemsShort;
         var response = new CardStarUpResp
         {
@@ -653,7 +653,7 @@ public sealed partial class CardService
             tier++;
             await _character.ItemsChangedAsync(session, stats: card.Grid < 0);
             if (nextPlans != null) await CharacterService.SyncAsync(session, StorageHoleSync, nextPlans.Clone());
-            if (nextLibrary != null) await CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone());
+            if (nextLibrary != null) await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library!.Clone());
             if (card.Grid < 0) await NotifySocketsChangedAsync(session);
         }
         if (!replyBeforeSync) await session.SendGameAsync(StarUp, response);
@@ -761,14 +761,14 @@ public sealed partial class CardService
     /// star / Flash state from the committed copies (Observe).</summary>
     private void OnItemGained(GameSession session, int entry, int count)
     {
-        if (session.Library == null || !_character.IsCard(entry)) return;
+        if (session.Profile.Library == null || !_character.IsCard(entry)) return;
         bool changed = false;
-        if (!session.Library.Cards.ContainsKey(entry))
+        if (!session.Profile.Library.Cards.ContainsKey(entry))
         {
-            session.Library.Cards[entry] = new LibraryCardInfo { CardId = entry };
+            session.Profile.Library.Cards[entry] = new LibraryCardInfo { CardId = entry };
             changed = true;
         }
-        foreach (var item in session.Items.Where(i => i.Entry == entry)) changed |= Observe(session.Library, item);
+        foreach (var item in session.Items.Where(i => i.Entry == entry)) changed |= Observe(session.Profile.Library, item);
         if (changed)
         {
             SaveLibrary(session);
@@ -777,15 +777,15 @@ public sealed partial class CardService
             // Codex kill would otherwise queue one realm waiter behind unrelated role work.
             _loop.TrackRuntimeDetached("card library sync", () =>
                 attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)
-                    ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Library.Clone()));
+                    ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone()));
         }
         QueueCollection(session);
     }
 
     private CharacterService.FirstCardSightPlan? StageFirstCardSight(GameSession session, IReadOnlyList<int> entries, int monster)
     {
-        if (session.Library == null) return null;
-        var next = session.Library.Clone();
+        if (session.Profile.Library == null) return null;
+        var next = session.Profile.Library.Clone();
         bool changed = CountMonsterKill(next, monster);
         foreach (int entry in entries.Distinct())
             if (_character.IsCard(entry) && !next.Cards.ContainsKey(entry))
@@ -799,7 +799,7 @@ public sealed partial class CardService
         foreach (var item in session.Items.Where(i => gained.Contains(i.Entry))) changed |= Observe(next, item);
         if (!changed) return null;
         var attachment = session.Attachment;
-        var newCards = next.Cards.Keys.Except(session.Library.Cards.Keys).Order().ToArray();
+        var newCards = next.Cards.Keys.Except(session.Profile.Library.Cards.Keys).Order().ToArray();
         long role = session.Role!.Id;
         long epoch = session.Owner?.LifecycleEpoch ?? 0;
         return new(builder =>
@@ -814,11 +814,11 @@ public sealed partial class CardService
             },
             () =>
             {
-                session.Library = next;
+                session.Profile.Library = next;
                 if (attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
                     _loop.TrackRuntimeDetached("card library sync", () =>
                         attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)
-                            ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone()));
+                            ? Task.CompletedTask : CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library!.Clone()));
             });
     }
 
@@ -837,13 +837,13 @@ public sealed partial class CardService
         int error;
         using (await CharacterService.Lock(session, context))
         {
-            ok = session.Library != null && session.Library.Cards.TryGetValue(req.CardId, out var entry) && !(req.IsTreasure ? entry.TreasureUnlock : entry.Unlock);
+            ok = session.Profile.Library != null && session.Profile.Library.Cards.TryGetValue(req.CardId, out var entry) && !(req.IsTreasure ? entry.TreasureUnlock : entry.Unlock);
             if (ok)
             {
                 ok = await CommitUnlockAsync(session, req.CardId, req.IsTreasure, notice: true);
                 failed = !ok;
             }
-            error = session.Library == null || failed ? ErrorCodes.Unknown : !session.Library.Cards.ContainsKey(req.CardId) ? ErrorCodes.ItemMissing : ErrorCodes.AlreadyUnlocked;
+            error = session.Profile.Library == null || failed ? ErrorCodes.Unknown : !session.Profile.Library.Cards.ContainsKey(req.CardId) ? ErrorCodes.ItemMissing : ErrorCodes.AlreadyUnlocked;
         }
         if (ok) await PublishUnlockAsync(session, context, attachment);
         if (attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
@@ -855,7 +855,7 @@ public sealed partial class CardService
     /// False: the paid commit failed and nothing changed.</summary>
     private async Task<bool> CommitUnlockAsync(GameSession session, int card, bool treasure, bool notice)
     {
-        var next = session.Library!.Clone();
+        var next = session.Profile.Library!.Clone();
         var e = next.Cards[card];
         if (treasure) e.TreasureUnlock = true;
         else e.Unlock = true;
@@ -866,14 +866,14 @@ public sealed partial class CardService
         {
             await _roles.CommitCardUnlockAsync(role, epoch, card, treasure, bytes, session.Items,
                 _character.FamilyEconomy(session, "cd13a/card-unlock", [], [], new { CardId = card, IsTreasure = treasure }),
-                () => session.Library = next);
+                () => session.Profile.Library = next);
             return true;
         }
         try
         {
             bool ok = await _character.ApplyAwardAsync(session, new AwardPlan(0, 0, [new AwardGrant(item, points)]),
                 persist: tx => _roles.StageCardUnlock(tx, role, epoch, card, false, bytes),
-                stateLockHeld: true, committed: () => session.Library = next, suppressRewardNotice: !notice,
+                stateLockHeld: true, committed: () => session.Profile.Library = next, suppressRewardNotice: !notice,
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/library-award",
                     $"library-card/{role}/{card}",
                     new { Version = 1, Card = card, Item = item, Points = points }));
@@ -892,7 +892,7 @@ public sealed partial class CardService
     private async Task PublishUnlockAsync(GameSession session, OwnerContext context, AttachmentLease? attachment)
     {
         if (attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
-            await CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone());
+            await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library!.Clone());
         if (RequiredCollectionRefresh is { } refresh)
             try { await refresh(session, context); }
             catch (Exception e) { _log.LogError(e, "Mandatory card quest refresh remains pending for role {Role}", session.Role!.Id); }
@@ -914,7 +914,7 @@ public sealed partial class CardService
     /// </summary>
     private int CardUnlockPoints(int card, int reachedStar) => TierPoints(card, -1, reachedStar);
 
-    private void SaveLibrary(GameSession session) => _roles.SaveLibrary(session.Role!.Id, session.Library!.ToByteArray());
+    private void SaveLibrary(GameSession session) => _roles.SaveLibrary(session.Role!.Id, session.Profile.Library!.ToByteArray());
 
     /// <summary>
     /// 82405: the Codex overview theme. LC_DAL_Library._processLibraryChangeUI (lua:372-402) sets the dataset's
@@ -927,19 +927,19 @@ public sealed partial class CardService
         int code;
         using (await CharacterService.Lock(session))
         {
-            code = session.Library == null || session.Role == null ? ErrorCodes.FeatureUnavailable
+            code = session.Profile.Library == null || session.Role == null ? ErrorCodes.FeatureUnavailable
                 : _data.Row("LibraryThemeConfig", req.ThemeId) is not { } theme ? ErrorCodes.Parameter
                 : !_functions.ConditionMet(session, GameData.Int(theme, "_iUnlockCondition")) ? ErrorCodes.UnlockRequirement
                 : 0;
-            if (code == 0 && session.Library!.OverviewTheme != req.ThemeId)
+            if (code == 0 && session.Profile.Library!.OverviewTheme != req.ThemeId)
             {
-                var next = session.Library.Clone();
+                var next = session.Profile.Library.Clone();
                 next.OverviewTheme = req.ThemeId;
                 _roles.SaveLibrary(session.Role!.Id, next.ToByteArray());
-                session.Library = next;
-                await CharacterService.SyncAsync(session, LibrarySync, session.Library.Clone());
+                session.Profile.Library = next;
+                await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
             }
         }
-        await session.SendGameAsync(LibrarySwitchTheme, new LibrarySwitchThemeResp { Result = code, ThemeId = code == 0 ? req.ThemeId : session.Library?.OverviewTheme ?? 0 });
+        await session.SendGameAsync(LibrarySwitchTheme, new LibrarySwitchThemeResp { Result = code, ThemeId = code == 0 ? req.ThemeId : session.Profile.Library?.OverviewTheme ?? 0 });
     }
 }

@@ -50,7 +50,7 @@ public sealed partial class EmblemTests
         {
             await alice.SendGameAsync(EmblemService.SetUp, new SetUpEmblemReq { EmblemPos = 1, EmblemGuid = guid });
             await entered.Task.WaitAsync(Wait);
-            Assert.Empty(owner.Emblems.Plans[owner.Emblems.CurrentPlan].Slots);
+            Assert.Empty(owner.Profile.Emblems.Plans[owner.Profile.Emblems.CurrentPlan].Slots);
             Assert.Equal(0, owner.Items.Single(i => i.Guid == guid).Attrs!.GetValueOrDefault(10001));
             Assert.Equal(before, roles.LoadEmblems(owner.Role.Id));
             Assert.Equal(0, store.Load(owner.Role.Id).Single(i => i.Guid == guid).Attrs!.GetValueOrDefault(10001));
@@ -59,11 +59,11 @@ public sealed partial class EmblemTests
             await bob.SendGameAsync(EmblemService.RenamePlan,
                 new EmblemPlanChangeNameReq { TargetIndex = 1, Name = "Free" });
             Assert.Equal(0, (await Next(bob, EmblemService.RenamePlan, EmblemPlanChangeNameResp.Parser)).Result);
-            Assert.Equal("Free", other.Emblems.Plans[1].Name);
+            Assert.Equal("Free", other.Profile.Emblems.Plans[1].Name);
         }
         finally { accounts.BeforeOwnedCommitForTest = null; release.TrySetResult(); }
         Assert.Equal(0, (await Next(alice, EmblemService.SetUp, SetUpEmblemResp.Parser)).Result);
-        Assert.Equal(guid, owner.Emblems.Plans[owner.Emblems.CurrentPlan].Slots[1]);
+        Assert.Equal(guid, owner.Profile.Emblems.Plans[owner.Profile.Emblems.CurrentPlan].Slots[1]);
         Assert.Equal(2, store.Load(owner.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);
     }
 
@@ -88,7 +88,7 @@ public sealed partial class EmblemTests
             await Assert.ThrowsAsync<SqliteException>(() => loop.InvokeAsync(() =>
                 _app.Services.GetRequiredService<EmblemService>().SetUpAsync(session,
                     new SetUpEmblemReq { EmblemPos = 1, EmblemGuid = guid })));
-            Assert.Empty(session.Emblems.Plans[0].Slots);
+            Assert.Empty(session.Profile.Emblems.Plans[0].Slots);
             Assert.Equal(empty, roles.LoadEmblems(session.Role.Id));
             Assert.Equal(0, store.Load(session.Role.Id).Single(i => i.Guid == guid).Attrs!.GetValueOrDefault(10001));
         }
@@ -103,14 +103,14 @@ public sealed partial class EmblemTests
             await Assert.ThrowsAsync<SqliteException>(() => loop.InvokeAsync(() =>
                 _app.Services.GetRequiredService<EmblemService>().SetDownAsync(session,
                     new SetDownEmblemReq { EmblemPos = 1 })));
-            Assert.Equal(guid, session.Emblems.Plans[0].Slots[1]);
+            Assert.Equal(guid, session.Profile.Emblems.Plans[0].Slots[1]);
             Assert.Equal(deployed, roles.LoadEmblems(session.Role.Id));
             Assert.Equal(2, store.Load(session.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);
         }
         finally { FixtureSql.Execute(accounts, "DROP TRIGGER reject_emblem_slot"); }
         await alice.SendGameAsync(EmblemService.SetDown, new SetDownEmblemReq { EmblemPos = 1 });
         Assert.Equal(0, (await Next(alice, EmblemService.SetDown, SetDownEmblemResp.Parser)).Result);
-        Assert.Empty(session.Emblems.Plans[0].Slots);
+        Assert.Empty(session.Profile.Emblems.Plans[0].Slots);
         Assert.Equal(0, store.Load(session.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);
     }
 
@@ -153,7 +153,7 @@ public sealed partial class EmblemTests
         var check = EconomyExactnessChecker.Check(opening, closing, ledger);
         Assert.All(check.Assets, asset => Assert.Equal("0", asset.Residual));
         Assert.All(check.Locations, location => Assert.Equal("0", location.Residual));
-        Assert.Equal(target, session.Emblems.Plans[0].Slots[1]);
+        Assert.Equal(target, session.Profile.Emblems.Plans[0].Slots[1]);
         Assert.DoesNotContain(session.Items, i => i.Guid == feed);
     }
 }

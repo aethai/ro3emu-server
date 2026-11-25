@@ -43,7 +43,7 @@ public sealed partial class GenesisNoteDropTests
         clock.Set(start + 3);
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(music.Uuid));
         var player = host.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
-        Assert.Equal(1, player.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[scene].Sum);
+        Assert.Equal(1, player.Activities.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[scene].Sum);
 
         var marker = new SpawnPoint(60, born.X, born.Y, born.Z, 0, ordinary);
         var replacement = new MapWorld

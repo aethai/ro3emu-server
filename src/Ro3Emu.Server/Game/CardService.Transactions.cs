@@ -19,7 +19,7 @@ public sealed partial class CardService
         await _roles.CommitAsync(builder, kind, receipts =>
         {
             CharacterService.ApplyStagedItems(session, staged, (long[])receipts[itemReceipt]!);
-            if (plans != null) session.CardPlans = plans;
+            if (plans != null) session.Profile.CardPlans = plans;
         });
     }
 

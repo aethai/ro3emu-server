@@ -295,7 +295,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         Assert.Equal((long)alice.Self!.Uuid, field.Owner); Assert.Equal(point, field.MovementInfo.Pos);
         await Loop.InvokeAsync(() => _app.Services.GetRequiredService<CombatService>().ClearSkillsAsync(Session("alice")));
         await Next(bob, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, x => x.LeaveAoi.Contains(field.Uuid));
-        Assert.Empty(Session("alice").SkillObjects);
+        Assert.Empty(Session("alice").Combat.SkillObjects);
     }
 
     [ClientDataFact]
@@ -329,7 +329,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         await Loop.InvokeAsync(() => Character.SetHpSpAsync(Session("alice"), null, 0));
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1400101 });
         Assert.Equal(ErrorCodes.SkillCostShort, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        Assert.False(Session("alice").SkillCds.ContainsKey(14001));
+        Assert.False(Session("alice").Combat.SkillCds.ContainsKey(14001));
     }
 
     [ClientDataFact]
@@ -485,7 +485,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             b.NoRegenUntilMs = long.MaxValue; // the exact HP below must not meet a recovery tick
             await Character.SetHpSpAsync(b, 1, null);
             await Character.SetHpSpAsync(a, null, long.MaxValue);
-            a.SkillCds.Clear(); a.SkillModeCds.Clear();
+            a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear();
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1200401, TargetId = b.Role.Id });
         accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
@@ -494,7 +494,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var protectedHit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId);
         Assert.False(Assert.Single(protectedHit.Dsts).IsDead);
         Assert.False(b.Dead);
-        Assert.NotNull(b.ImmuneDeathOffer);
+        Assert.NotNull(b.Combat.ImmuneDeathOffer);
         Assert.Equal(1, Character.Stats(b)[2000]);
     }
 

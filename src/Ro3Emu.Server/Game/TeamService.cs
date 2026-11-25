@@ -133,8 +133,8 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     {
         if (s.Role is not { } role) return;
         long teamId = TeamOf(role.Id).TeamId;
-        if (s.UnitTeamId == teamId) return;
-        s.UnitTeamId = teamId;
+        if (s.WorldState.UnitTeamId == teamId) return;
+        s.WorldState.UnitTeamId = teamId;
         var change = new EntityBase { Uuid = (ulong)role.Id, TeamId = teamId, NotifyType = EntityBase.Types.NotifyType.TeamInfo };
         await s.SendGameAsync(CombatService.EntityBaseChange, change);
         foreach (var viewer in world.Viewers(s)) await viewer.SendGameAsync(CombatService.EntityBaseChange, change);

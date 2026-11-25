@@ -116,7 +116,7 @@ public sealed partial class TerritoryWarsService
         PublishCommitted(next);
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && roleChanges.ContainsKey(s.Role.Id)), s =>
         {
-            if (s.Role is { } current && roleChanges.TryGetValue(current.Id, out var role)) s.TerritoryWars = role;
+            if (s.Role is { } current && roleChanges.TryGetValue(current.Id, out var role)) s.Instances.TerritoryWars = role;
             return Task.CompletedTask;
         });
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && r.Players.ContainsKey(s.Role.Id)), async s =>
@@ -125,7 +125,7 @@ public sealed partial class TerritoryWarsService
             {
                 await DeliverAsync(s); await SyncSiegeAsync(s);
                 await Send(s, ResultNotify, new TerritoryWarsDungeonResultNotify { CommonResultInfo = result });
-                if (s.TerritoryBattle is { } b && b.Key == key) await Send(s, 30401, BaseInfo(b));
+                if (s.Instances.TerritoryBattle is { } b && b.Key == key) await Send(s, 30401, BaseInfo(b));
             }
             catch (Exception e) when (e is IOException or ObjectDisposedException or System.Net.Sockets.SocketException)
             { _log.LogDebug(e, "Territory settlement delivery deferred for disconnected role {Role}", s.Role?.Id); }
@@ -176,7 +176,7 @@ public sealed partial class TerritoryWarsService
             else msg.DungeonStatistics.AddRange(records.Select(StatisticsReport));
             await Send(s, id, msg); return true;
         }
-        if (s.TerritoryBattle is not { } b) return false;
+        if (s.Instances.TerritoryBattle is not { } b) return false;
         if (id == 30106) return true; // ClientDungeonEvent cannot author a capture, score or final result.
         if (id == 30117) await Send(s, id, new GetDungeonStatisticsInDungeonResp { DungeonStatistics = StatisticsReport(b.State) });
         else if (id == 30116)

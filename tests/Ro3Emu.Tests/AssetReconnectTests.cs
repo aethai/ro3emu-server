@@ -51,14 +51,14 @@ public sealed class AssetReconnectTests : IAsyncLifetime
 
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice" && s.Role != null);
         var roles = _app.Services.GetRequiredService<RoleStore>();
-        Assert.Empty(session.Daily!.Claims);
-        Assert.True(session.SeasonRefine!.EquipParts[1].RefineSlots[1].CanSelectedAttr.Count == 0);
-        var dailyBefore = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
-        var refineBefore = session.SeasonRefine.ToByteArray();
+        Assert.Empty(session.Activities.Daily!.Claims);
+        Assert.True(session.Season.SeasonRefine!.EquipParts[1].RefineSlots[1].CanSelectedAttr.Count == 0);
+        var dailyBefore = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
+        var refineBefore = session.Season.SeasonRefine.ToByteArray();
         var savedDailyBefore = roles.LoadDaily(id);
         var savedRefineBefore = roles.LoadSeasonRefine(id);
-        long claimVersion = session.SyncVersions[DailyActivityService.StageSync];
-        long refineVersion = session.SyncVersions[SeasonRefineService.SeasonRefineSync];
+        long claimVersion = session.Profile.SyncVersions[DailyActivityService.StageSync];
+        long refineVersion = session.Profile.SyncVersions[SeasonRefineService.SeasonRefineSync];
         int start = bot.Inbox.Snapshot().Count;
 
         var request = new PlayerAssetReq { AssetType = { 12, 54 } };
@@ -88,11 +88,11 @@ public sealed class AssetReconnectTests : IAsyncLifetime
         Assert.False(clear.SyncAllMark);
         Assert.True(clear.EquipParts[1].Inc.RefineSlots[1].Inc.CanSelectedAttr[0].Del);
 
-        Assert.True(dailyBefore.SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(session.Daily)));
-        Assert.True(refineBefore.SequenceEqual(session.SeasonRefine.ToByteArray()));
+        Assert.True(dailyBefore.SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily)));
+        Assert.True(refineBefore.SequenceEqual(session.Season.SeasonRefine.ToByteArray()));
         Assert.Equal(savedDailyBefore, roles.LoadDaily(id));
         Assert.Equal(savedRefineBefore, roles.LoadSeasonRefine(id));
-        Assert.True(session.SyncVersions[DailyActivityService.StageSync] > claimVersion);
-        Assert.True(session.SyncVersions[SeasonRefineService.SeasonRefineSync] > refineVersion);
+        Assert.True(session.Profile.SyncVersions[DailyActivityService.StageSync] > claimVersion);
+        Assert.True(session.Profile.SyncVersions[SeasonRefineService.SeasonRefineSync] > refineVersion);
     }
 }

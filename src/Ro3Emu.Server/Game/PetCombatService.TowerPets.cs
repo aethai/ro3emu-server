@@ -38,7 +38,7 @@ public sealed partial class PetCombatService
 
     private bool LiveTowerPet(GameSession owner, TowerPetUnit pet) => ReferenceEquals(owner, pet.Owner)
         && owner.Role != null && !owner.Dead && !owner.SceneLoading && !pet.Dead && pet.Hp > 0
-        && owner.WorldScene == pet.WorldScene && owner.TowerAttempt is { Loaded: true, Settled: false } a
+        && owner.WorldScene == pet.WorldScene && owner.Instances.TowerAttempt is { Loaded: true, Settled: false } a
         && a.InstanceId == pet.InstanceId && a.Pets.Contains(pet);
 
     /// <summary>
@@ -71,7 +71,7 @@ public sealed partial class PetCombatService
             // (verified) Choco's target count is ${2}=10 in its description, while _iTargetMax=1.
             // (inferred) Prefer the explicit allied count for this conflicting row, rather than self-only casting.
             if (Script(row) == "PetSkill_1_QiaoKeHou") maximum = (int)Numbers(row, "_kDescData").ElementAtOrDefault(1);
-            var recipients = owner.TowerAttempt!.Pets.Where(p => !p.Dead && p.Hp > 0 && p.WorldScene == pet.WorldScene
+            var recipients = owner.Instances.TowerAttempt!.Pets.Where(p => !p.Dead && p.Hp > 0 && p.WorldScene == pet.WorldScene
                     && (p == pet || !support.SelfOnly && MonsterService.Distance(pet.X, pet.Z, p.X, p.Z) <= radius))
                 .Select(p => (Id: p.Uid, Pet: (TowerPetUnit?)p, Distance: MonsterService.Distance(pet.X, pet.Z, p.X, p.Z))).ToList();
             if (!support.SelfOnly && MonsterService.Distance(pet.X, pet.Z, owner.Position.X, owner.Position.Z) <= radius)
@@ -160,7 +160,7 @@ public sealed partial class PetCombatService
     public async Task TowerPetAttackAsync(GameSession owner, TowerPetUnit pet, MonsterUnit target, int skillId)
     {
         if (!ReferenceEquals(owner, pet.Owner) || pet.Dead || pet.Hp <= 0 || target.Dead || target.Hp <= 0 || owner.Role == null || owner.Dead || owner.SceneLoading
-            || owner.TowerAttempt is not { Loaded: true, Settled: false } attempt
+            || owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } attempt
             || attempt.InstanceId != pet.InstanceId || target.InstanceId != pet.InstanceId
             || !attempt.Pets.Contains(pet) || !pet.AttackSkills.Any(s => s.Id == skillId)
             || MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) > pet.AttackSkills.First(s => s.Id == skillId).Range + 1f
@@ -184,7 +184,7 @@ public sealed partial class PetCombatService
         ScheduleRuntime(pet.WorldScene, TimeSpan.FromMilliseconds(duration * 0.4), async () =>
         {
             if (pet.Dead || pet.Hp <= 0 || owner.Dead || owner.SceneLoading || !ReferenceEquals(owner.Role, castingRole)
-                || owner.TowerAttempt is not { Loaded: true, Settled: false } a
+                || owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } a
                 || a.InstanceId != pet.InstanceId || !a.Pets.Contains(pet)) return;
             float radius = row.TryGetProperty("_kRange", out var area) && area.ValueKind == JsonValueKind.Array
                 && area.GetArrayLength() > 0 ? (float)(GameData.Number(area[0]) ?? 0) / 100f : 0f;
@@ -274,7 +274,7 @@ public sealed partial class PetCombatService
     private async Task MonsterAttackPetAsync(MonsterUnit monster, TowerPetUnit pet)
     {
         if (pet.Dead || pet.Hp <= 0 || monster.Dead || monster.Hp <= 0
-            || pet.Owner.TowerAttempt is not { Loaded: true, Settled: false } attempt
+            || pet.Owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } attempt
             || !attempt.Pets.Contains(pet)) return;
         long castId = NextSessionId();
         var use = new UseInSkillInfo
@@ -286,7 +286,7 @@ public sealed partial class PetCombatService
         ScheduleRuntime(monster.WorldScene, TimeSpan.FromSeconds(monster.Template.HitPointSeconds), async () =>
         {
             if (pet.Dead || pet.Hp <= 0 || monster.Dead || monster.Hp <= 0 || monster.WorldScene != pet.WorldScene
-                || pet.Owner.TowerAttempt is not { Loaded: true, Settled: false } current || !current.Pets.Contains(pet)
+                || pet.Owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } current || !current.Pets.Contains(pet)
                 || MonsterService.Distance(monster.X, monster.Z, pet.X, pet.Z) > monster.Template.AttackRange + 2f) return;
             await DamageTowerPetAsync(monster, pet, _data.Row("SkillConfig", monster.Template.NormalSkill), monster.Template.NormalSkill, castId, 1000002);
         });

@@ -518,14 +518,14 @@ public sealed class GuardianPetTests
         await f.Loop.InvokeAsync(() =>
         {
             if (fault == "dead") f.Session.Dead = true;
-            if (fault == "forbidden") f.Session.ForbiddenOrdinals.Add(ForbiddenState.CastSkill);
+            if (fault == "forbidden") f.Session.Combat.ForbiddenOrdinals.Add(ForbiddenState.CastSkill);
             return Task.CompletedTask;
         });
         await bot.SendGameAsync(CombatService.UseSkill, request);
         Assert.Equal(expected, (await Reply(bot)).Result);
         await f.Loop.InvokeAsync(() =>
         {
-            Assert.False(f.Session.SkillCds.ContainsKey(99)); // the wrapper's _iSkillID keeps no cooldown
+            Assert.False(f.Session.Combat.SkillCds.ContainsKey(99)); // the wrapper's _iSkillID keeps no cooldown
             Assert.DoesNotContain(f.Session.Buffs, b => b.ConfigId == Buff);
             return Task.CompletedTask;
         });

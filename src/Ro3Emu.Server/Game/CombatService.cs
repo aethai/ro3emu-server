@@ -536,7 +536,7 @@ public sealed partial class CombatService : IGameTicker
 
     public void Lock(GameSession s, LockEnemyReq req)
     {
-        s.LockTarget = req.EnemyId;
+        s.Combat.LockTarget = req.EnemyId;
         _log.LogDebug("{Name} locks {Target}", s.Role?.Name, req.EnemyId);
     }
 
@@ -693,7 +693,7 @@ public sealed partial class CombatService : IGameTicker
         if (target.Dead || targetRole == null || !ReferenceEquals(target.Role, targetRole) || target.SceneLoading
             || valid?.Invoke() == false) return null;
         // Owner's decision 2.11, deliberately past 1:1 (the client has no such rule): no damage during a cutscene, at most 120 s.
-        if (damage > 0 && target.InCutScene && target.CutSceneSinceMs > 0 && Now - target.CutSceneSinceMs <= CutSceneProtectionMs) damage = 0;
+        if (damage > 0 && target.Activities.InCutScene && target.Activities.CutSceneSinceMs > 0 && Now - target.Activities.CutSceneSinceMs <= CutSceneProtectionMs) damage = 0;
         if (damage > 0) foreach (var adjust in PlayerDamageAdjusters.Handlers) damage = adjust(target, row, directHit, damage);
         damage = ShareDevotedDamage(target, damage);
         // A missed/fully absorbed hit must not spend a finite Safety Wall charge.
@@ -795,7 +795,7 @@ public sealed partial class CombatService : IGameTicker
     internal int AttackElement(GameSession source, JsonElement row)
     {
         var skill = new Data.Config.SkillConfig(row);
-        if (skill.AffectByArrow != 0 && source.BagState.Info.CurrentArrowID is var arrowId and > 0
+        if (skill.AffectByArrow != 0 && source.Profile.BagState.Info.CurrentArrowID is var arrowId and > 0
             && Data.Config.ItemConfig.Get(_data, arrowId) is { } arrow && int.TryParse(arrow.Param1, out int element)
             && element is >= 1 and <= 10) return element;
         if (skill.IsNormalAttack(_data) && ElementFromBuff(source) is var buffed and > 0) return buffed;
@@ -897,7 +897,7 @@ public sealed partial class CombatService : IGameTicker
 
     internal async Task FightingAsync(GameSession p)
     {
-        p.LastCombatMs = Now;
+        p.Combat.LastCombatMs = Now;
         if ((p.StatusBits & FightBit) != 0) return;
         p.StatusBits |= FightBit;
         await ToPlayerAndViewersAsync(p, AoiAttrChange, Status(p.Role!.Id, p.StatusBits));
@@ -1005,7 +1005,7 @@ public sealed partial class CombatService : IGameTicker
     {
         Uuid = (ulong)p.Role!.Id,
         EntityTemplateID = (ulong)p.Role.Career,
-        EntityCamp = p.EventFaction > 0 ? p.EventFaction : 1,
+        EntityCamp = p.Instances.EventFaction > 0 ? p.Instances.EventFaction : 1,
         ElementType = 0,
         State = p.Dead ? EntityState.Dead : EntityState.Alive,
         // A same-group unit's status goes to the party frame (LC_Scene_Sync._syncEntityBaseViewChange); unset reads as Alive.
@@ -1143,8 +1143,8 @@ public sealed partial class CombatService : IGameTicker
         foreach (var s in _sessions.All())
         {
             if (s.Role == null || s.Progress == null) continue;
-            if (s.SkillObjects.Count > 0)
-                foreach (var unit in s.SkillObjects.ToArray()) _loop.TrackRuntimeDetached("skill object tick", () => TickSkillObjectAsync(unit));
+            if (s.Combat.SkillObjects.Count > 0)
+                foreach (var unit in s.Combat.SkillObjects.ToArray()) _loop.TrackRuntimeDetached("skill object tick", () => TickSkillObjectAsync(unit));
             if (s.Attack is { } a && !s.Dead && now >= a.NextSwingMs)
             {
                 bool gaveUp = false;
@@ -1172,7 +1172,7 @@ public sealed partial class CombatService : IGameTicker
                     _loop.TrackRuntimeDetached("combat swing", () => SwingAsync(s, a.Target, a.SkillId, ++_sessionIds));
                 }
             }
-            if ((s.StatusBits & FightBit) != 0 && now - s.LastCombatMs > OutOfCombatMs)
+            if ((s.StatusBits & FightBit) != 0 && now - s.Combat.LastCombatMs > OutOfCombatMs)
             {
                 s.StatusBits &= ~FightBit;
                 _loop.TrackRuntimeDetached("combat status send", () => ToPlayerAndViewersAsync(s, AoiAttrChange, Status(s.Role.Id, s.StatusBits)));

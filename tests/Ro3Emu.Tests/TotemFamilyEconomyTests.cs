@@ -77,7 +77,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var opening = Cut();
         await bot.SendGameAsync(82362, new SetUpTotemReq { TotemPos = 1, TotemGuid = guid });
         Assert.Equal(0, (await Next(bot, 82362, SetUpTotemResp.Parser)).Result);
-        Assert.Equal(guid, Session.Totems!.TotemPlans[0].SetUpTotem[1]);
+        Assert.Equal(guid, Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1]);
         Assert.Equal(1, Session.Items.Single(i => i.Guid == guid).Attrs![10001]);
         var up = Cut();
         // Growth Classroom quests (1700500 deploy, 1700518 combine) deliver their zero-leg awards beside these.
@@ -90,7 +90,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var receipt = EconomyReceiptReader.Read(Database, first.OperationId)!;
         Assert.Equal("cd13b/totem-state", receipt.CommandKind);
         Assert.Equal(receipt.RequestFingerprint, Convert.ToHexString(SHA256.HashData(receipt.Outcome)));
-        Assert.Equal(Session.Totems.ToByteArray(), Service<RoleStore>().LoadTotems(Session.Role!.Id));
+        Assert.Equal(Session.Profile.Totems.ToByteArray(), Service<RoleStore>().LoadTotems(Session.Role!.Id));
         Assert.Equal(1, Service<ItemStore>().Load(Session.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);
 
         await bot.SendGameAsync(82362, new SetUpTotemReq { TotemPos = 1, TotemGuid = 0 });

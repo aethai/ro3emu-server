@@ -121,7 +121,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetHpSpAsync(victim, 1, null);
             // This verifies effective damage against exactly 1 HP. Exclude the unrelated five-second
             // out-of-combat regeneration tick while the wire requests below are in flight.
-            victim.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            victim.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victim.StatusBits |= 1L << 15;
             victim.NoRegenUntilMs = long.MaxValue; // fighting does not pause regeneration
         });
@@ -193,7 +193,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             });
             Service<CharacterService>().ExtraAttributes.Subscribe(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
-            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<BuffService>().AddSupportAsync(target, 2354401, 30000, 1L << 51, shield);
@@ -258,7 +258,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             character.ExtraAttributes.Subscribe(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
             maximum = character.Stats(target)[101];
             await character.SetHpSpAsync(target, maximum, null);
-            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             var buffs = Service<BuffService>();
@@ -382,7 +382,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
                 if (p == target) deaths++;
                 return Task.CompletedTask;
             });
-            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
@@ -434,7 +434,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetLevelAsync(firstSession, 99, null); // defense counts the attacker's level (DefenseFactor)
             await Service<CharacterService>().SetLevelAsync(secondSession, 99, null);
             await Service<CharacterService>().SetHpSpAsync(victimSession, 300, null);
-            victimSession.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            victimSession.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victimSession.StatusBits |= 1L << 15;
             victimSession.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             Assert.Equal(300, victimSession.CurrentHp);
@@ -557,7 +557,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         MonsterUnit target = null!, untouched = null!;
         int attributedKills = 0;
-        long lastCombat = source.LastCombatMs;
+        long lastCombat = source.Combat.LastCombatMs;
         long untouchedCombat = 0, untouchedStatus = 0;
         await OnLoop(async () =>
         {
@@ -616,7 +616,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         Assert.Equal(untouchedCombat, untouched.LastCombatMs);
         Assert.Equal(untouchedStatus, untouched.StatusBits);
         Assert.DoesNotContain(source.Buffs, b => b.ConfigId == 1100201);
-        Assert.Equal(lastCombat, source.LastCombatMs);
+        Assert.Equal(lastCombat, source.Combat.LastCombatMs);
         Assert.Equal(0, attributedKills);
     }
 }

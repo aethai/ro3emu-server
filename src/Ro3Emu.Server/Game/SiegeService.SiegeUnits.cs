@@ -68,7 +68,7 @@ public sealed partial class SiegeService
     /// as targets.</summary>
     private bool SiegeSpares(MonsterUnit m, GameSession p) =>
         m.SceneEntry == SiegeScene && m.InstanceId != 0 && NPCConfig.Get(_data, m.Template.NpcId) is { Camp: 1 or 2 } npc
-        && !(p.SiegeBattle is { } battle && battle.Room.Id == m.InstanceId && CampOf(p) != npc.Camp);
+        && !(p.Instances.SiegeBattle is { } battle && battle.Room.Id == m.InstanceId && CampOf(p) != npc.Camp);
 
     /// <summary>Whether the castle object at <paramref name="point"/> comes back after its death: the ladders always, the
     /// ram while the gate stands (inferred: it has nothing to strike after).</summary>
@@ -216,7 +216,7 @@ public sealed partial class SiegeService
     /// </summary>
     private bool SiegeWalkBridged(GameSession s, Vec3 from, Vec3 to)
     {
-        if (s.SiegeBattle is not { Room.Closed: false } battle || s.SceneEntry != SiegeScene || _maps.Map(SiegeScene) is not { } map)
+        if (s.Instances.SiegeBattle is not { Room.Closed: false } battle || s.SceneEntry != SiegeScene || _maps.Map(SiegeScene) is not { } map)
             return false;
         foreach (var ladder in SiegeLadders)
         {

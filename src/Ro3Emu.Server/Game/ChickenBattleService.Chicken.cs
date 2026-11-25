@@ -450,7 +450,7 @@ public sealed partial class ChickenBattleService
         match.Absent.Add(player);
         match.Fallen.Add(player);
         _active.Remove(player);
-        player.EventFaction = 0;
+        player.Instances.EventFaction = 0;
         ClearChickenCustom(player);
         if (match.Room != null) await _instances.AbandonAsync(match.Room, player);
     }
@@ -516,7 +516,7 @@ public sealed partial class ChickenBattleService
     /// </summary>
     internal async Task<string> SetChickenRankAsync(GameSession session, int rank)
     {
-        if (session.TimedBattle is not { } state) return "No Survivor Battle state.";
+        if (session.Instances.TimedBattle is not { } state) return "No Survivor Battle state.";
         if (_data.Row("EatChickenLevelConfig", rank) == null) return $"No Survivor Battle rank {rank}.";
         var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
         next.ChickenRank = rank;

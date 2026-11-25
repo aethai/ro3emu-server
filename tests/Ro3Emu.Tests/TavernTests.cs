@@ -325,7 +325,7 @@ public sealed class TavernTests : IAsyncLifetime
         Assert.Equal(0, _app.Services.GetRequiredService<CharacterService>().CountOf(Session(aliceId), GrapeWine));
 
         // 102100600 "A Drink for a Story": 1000 Star Power (106008).
-        await Eventually(() => Session(bobId).Achievements?.Infos.GetValueOrDefault(102100600)?.Status == AchievementStatusType.Complete, "achievement 102100600");
+        await Eventually(() => Session(bobId).Activities.Achievements?.Infos.GetValueOrDefault(102100600)?.Status == AchievementStatusType.Complete, "achievement 102100600");
 
         Assert.Equal(ErrorCodes.Parameter, (await Ask(alice, TavernService.GiftMsg, new PresentGiftReq(gift) { GiftId = 1, GiftNum = 1 }, PresentGiftResp.Parser)).Result);
         Assert.Equal(0, (await Ask(bob, TavernService.ExitMsg, new ExitBarRoomReq { BarRoomGuid = room }, ExitBarRoomResp.Parser)).Result);
@@ -348,8 +348,8 @@ public sealed class TavernTests : IAsyncLifetime
         var character = _app.Services.GetRequiredService<CharacterService>();
         Assert.Equal(3, character.CountOf(session, HotCocoa)); // award 8000 -> 1008000
         // (inferred) The first active day's drink (ServerOptions.TavernDayDrinks).
-        await Eventually(() => character.CountOf(session, Gingerbread) == 1 && session.Tavern?.DrinkOwed == 0, "the active day's Gingerbread");
-        await Eventually(() => session.Achievements?.Infos.GetValueOrDefault(102100500)?.Status == AchievementStatusType.Complete, "achievement 102100500");
+        await Eventually(() => character.CountOf(session, Gingerbread) == 1 && session.Social.Tavern?.DrinkOwed == 0, "the active day's Gingerbread");
+        await Eventually(() => session.Activities.Achievements?.Infos.GetValueOrDefault(102100500)?.Status == AchievementStatusType.Complete, "achievement 102100500");
     }
 
     [ClientDataFact]

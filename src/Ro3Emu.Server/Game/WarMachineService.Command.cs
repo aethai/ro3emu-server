@@ -36,9 +36,9 @@ public sealed partial class WarMachineService
     {
         long guild = OwnId(s);
         if (guild == 0) return null;
-        if (s.SiegeBattle is { } siege && SiegeMember(s, siege))
+        if (s.Instances.SiegeBattle is { } siege && SiegeMember(s, siege))
             return new(siege.Command, guild, [.. siege.Room.ActiveMembers.Select(m => m.Session).Where(p => SiegeMember(p, siege) && OwnId(p) == guild)]);
-        if (s.TerritoryBattle is { } battle && Member(s, battle))
+        if (s.Instances.TerritoryBattle is { } battle && Member(s, battle))
             return new(battle.Command, guild, [.. battle.Room.ActiveMembers.Select(m => m.Session).Where(p => Member(p, battle) && OwnId(p) == guild)]);
         return null;
     }

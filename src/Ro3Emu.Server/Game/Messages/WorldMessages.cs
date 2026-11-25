@@ -108,7 +108,7 @@ public sealed class WorldMessages(
         routes.Map(TowerService.LeaveDungeon, "territory", RouteAdmission.Default, async session =>
         {
             if (await territory.LeaveAsync(session) || await league.LeaveAsync(session)) return;
-            if (session.TowerAttempt != null) await tower.LeaveAsync(session);
+            if (session.Instances.TowerAttempt != null) await tower.LeaveAsync(session);
             else await dungeons.LeaveAsync(session);
         });
         routes.Map<ChangeViewCfgReq>(ChangeViewCfg, "world", RouteAdmission.Default, async (session, view) =>

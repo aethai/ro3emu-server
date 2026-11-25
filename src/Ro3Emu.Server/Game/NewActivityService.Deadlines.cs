@@ -9,7 +9,7 @@ public sealed partial class NewActivityService
     /// <summary>Keep one replaceable wake-up at the earliest calendar or saved-state boundary.</summary>
     private void ScheduleDeadline(GameSession session)
     {
-        if (session.Role == null || session.NewActivities == null || session.ActivityRuntime == null)
+        if (session.Role == null || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null)
         {
             _deadlines.Cancel(session, DeadlineKey);
             return;
@@ -18,9 +18,9 @@ public sealed partial class NewActivityService
         long now = Now;
         long next = long.MaxValue;
         bool hasLocalDay = false;
-        bool needsRefresh = session.ActivityServerDay != (long)Math.Floor((now - _activityClock.ServerOpen) / 86400d) + 1;
+        bool needsRefresh = session.Activities.ActivityServerDay != (long)Math.Floor((now - _activityClock.ServerOpen) / 86400d) + 1;
         int book = Playbook(session);
-        if (session.NewActivities.ActivityInfo.ContainsKey(ExplorationActivity)) next = NoteDrops.Day().End;
+        if (session.Activities.NewActivities.ActivityInfo.ContainsKey(ExplorationActivity)) next = NoteDrops.Day().End;
         void Consider(long seconds)
         {
             if (seconds > now && seconds < next) next = seconds;
@@ -37,7 +37,7 @@ public sealed partial class NewActivityService
             Consider(window.End);
             if (Applies(session, row))
             {
-                if (!session.NewActivities.ActivityInfo.TryGetValue(id, out var info)) needsRefresh = true;
+                if (!session.Activities.NewActivities.ActivityInfo.TryGetValue(id, out var info)) needsRefresh = true;
                 else
                 {
                     bool active = window.Contains(now) && Gate(session, row);
@@ -77,14 +77,14 @@ public sealed partial class NewActivityService
         long serverDay = (long)Math.Floor((now - _activityClock.ServerOpen) / 86400d) + 1;
         Consider(_activityClock.ServerOpen + serverDay * 86400);
 
-        if (session.NewActivities.ActivityInfo.TryGetValue(117, out var eve)
-            && eve.CycleStartTime > 0 && session.ActivityRuntime.EveSettledCycleStart != eve.CycleStartTime)
+        if (session.Activities.NewActivities.ActivityInfo.TryGetValue(117, out var eve)
+            && eve.CycleStartTime > 0 && session.Activities.ActivityRuntime.EveSettledCycleStart != eve.CycleStartTime)
         {
             Consider(eve.CycleEndTime);
             if (eve.CycleEndTime <= now) needsRefresh = true;
         }
 
-        foreach (var card in session.NewActivities.ActivityInfo.Values
+        foreach (var card in session.Activities.NewActivities.ActivityInfo.Values
             .Select(info => info.ActivityParam?.MonthCard).OfType<Romsg.DBMonthCardInfo>()
             .SelectMany(cards => cards.Infos.Values))
         {
@@ -93,14 +93,14 @@ public sealed partial class NewActivityService
                 && ActivityError(session, 199, 21, allowInitializing: true) == 0) needsRefresh = true;
         }
 
-        var treasure = session.ActivityRuntime.AdventureTreasure;
+        var treasure = session.Activities.ActivityRuntime.AdventureTreasure;
         if (treasure.PointId != 0)
         {
             Consider(treasure.Began + 10800);
             if (treasure.Began + 10800 <= now) needsRefresh = true;
         }
 
-        if (session.NewActivities.ActivityInfo.ContainsKey(118)) Consider(_defense.NextProjectionBoundary(now));
+        if (session.Activities.NewActivities.ActivityInfo.ContainsKey(118)) Consider(_defense.NextProjectionBoundary(now));
 
         if (needsRefresh) next = now;
         if (next == long.MaxValue) _deadlines.Cancel(session, DeadlineKey);
@@ -117,7 +117,7 @@ public sealed partial class NewActivityService
         }
         var now = _clock.GetUtcNow();
         foreach (var session in _sessions.All())
-            if (session.ActivitiesReady && session.Role != null)
+            if (session.Activities.ActivitiesReady && session.Role != null)
                 _deadlines.Set(session, DeadlineKey, now, OnDeadlineAsync, callbackOwnsScope: true);
     }
 

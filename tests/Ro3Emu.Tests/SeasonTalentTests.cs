@@ -44,7 +44,7 @@ public sealed class SeasonTalentTests
             await Gm("alice", "!quest done 10103160");
             await Gm("alice", "!item 1250900 100000");
             await Gm("alice", "!item 2 1000000");
-            Assert.False(Session.SeasonTalent!.UnlockedNode[10102003]);
+            Assert.False(Session.Season.SeasonTalent!.UnlockedNode[10102003]);
             var data = _app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>();
             foreach (var row in data.Table("SeasonTalentConfig").Values
                 .OrderBy(r => Ro3Emu.Server.Data.GameData.Int(r, "_iId")))
@@ -177,15 +177,15 @@ public sealed class SeasonTalentTests
         await fixture.StartAsync();
         var alice = await fixture.InWorld("Alice");
         await fixture.PrepareFirstProfessionChoice(alice);
-        Assert.True(fixture.Session.SeasonTalent!.UnlockedNode[10102003]);
+        Assert.True(fixture.Session.Season.SeasonTalent!.UnlockedNode[10102003]);
         Assert.Equal(0, await Upgrade(alice, 10102102)); // Rapid Pierce; client submits the leaf.
-        var state = fixture.Session.SeasonTalent!;
+        var state = fixture.Session.Season.SeasonTalent!;
         Assert.Equal(1, state.Plan[0].TalentNodes[10102003].CurrentLevel);
         Assert.Equal(1, state.Plan[0].TalentNodes[10102101].CurrentLevel);
         Assert.Equal(1, state.Plan[0].TalentNodes[10102102].CurrentLevel);
         Assert.Equal(0, state.Plan[1].TalentNodes[10102102].CurrentLevel);
         Assert.Equal(0, await Upgrade(alice, 10102106)); // Switch to Swift Sword / Critical Attack.
-        state = fixture.Session.SeasonTalent!;
+        state = fixture.Session.Season.SeasonTalent!;
         Assert.Equal(0, state.Plan[0].TalentNodes[10102101].CurrentLevel);
         Assert.Equal(0, state.Plan[0].TalentNodes[10102102].CurrentLevel);
         Assert.Equal(1, state.Plan[0].TalentNodes[10102105].CurrentLevel);
@@ -195,7 +195,7 @@ public sealed class SeasonTalentTests
         await alice.DisposeAsync();
         await using var again = await fixture.InWorld("Alice", create: false);
         await Next(again, SeasonTalentService.TalentSync, DBSeasonTalentIncrement.Parser);
-        var restored = fixture.Session.SeasonTalent!.Plan[0];
+        var restored = fixture.Session.Season.SeasonTalent!.Plan[0];
         Assert.Equal(0, restored.TalentNodes[10102102].CurrentLevel);
         Assert.Equal(1, restored.TalentNodes[10102105].CurrentLevel);
         Assert.Equal(1, restored.TalentNodes[10102106].CurrentLevel);
@@ -254,7 +254,7 @@ public sealed class SeasonTalentTests
         {
             int before = alice.Inbox.Snapshot().Count;
             Assert.Equal(0, await Upgrade(alice, Root));
-            Assert.Equal(level, fixture.Session.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
+            Assert.Equal(level, fixture.Session.Season.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
             Assert.Equal(50 - 10 * level, fixture.Character.CountOf(fixture.Session, Remnant));
             Assert.Equal(500 - 100 * level, fixture.Character.CountOf(fixture.Session, MintedCoin));
             Assert.InRange(fixture.Character.Stats(fixture.Session)[101] - hp0, 100L * level, 100L * level + 3);
@@ -284,7 +284,7 @@ public sealed class SeasonTalentTests
 
         await alice.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(alice, SeasonTalentService.SetPlan, SeasonTalentSetCurPlanResp.Parser)).Result);
-        Assert.Equal(0, fixture.Session.SeasonTalent!.Plan[1].TalentNodes[Root].CurrentLevel);
+        Assert.Equal(0, fixture.Session.Season.SeasonTalent!.Plan[1].TalentNodes[Root].CurrentLevel);
         Assert.Equal(hp0, fixture.Character.Stats(fixture.Session)[101]);
         Assert.Equal(ErrorCodes.TalentLocked, await Upgrade(alice, Child));
         await alice.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 0 });
@@ -341,7 +341,7 @@ public sealed class SeasonTalentTests
             await using var bob = await wrong.InWorld("Bob");
             await wrong.Unlock("bob");
             await wrong.Gm("bob", "!item 2 500");
-            Assert.False(wrong.Session.SeasonTalent!.UnlockedTrees[10101]);
+            Assert.False(wrong.Session.Season.SeasonTalent!.UnlockedTrees[10101]);
             Assert.Equal(ErrorCodes.FeatureUnavailable, await Upgrade(bob, Root));
             Assert.Equal(50, wrong.Character.CountOf(wrong.Session, Remnant));
         }
@@ -363,7 +363,7 @@ public sealed class SeasonTalentTests
             .Any(m => m.Property.Propertys.Any(p => p.PropertyId == 1330 && p.Data == 0));
         for (int i = 0; i < 250 && !Cleared(); i++) await Task.Delay(20);
         Assert.True(Cleared());
-        Assert.Equal(1, fixture.Session.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel); // durable during gate loss
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel); // durable during gate loss
         await fixture.Gm("alice", "!job 1100");
         Assert.Equal(10, fixture.Character.Stats(fixture.Session)[1330]);
     }
@@ -399,17 +399,17 @@ public sealed class SeasonTalentTests
         await fixture.Gm("alice", "!quest done 10101170");
         await fixture.Gm("alice", "!quest done 10103160");
         await fixture.Gm("alice", "!item 1250901 10");
-        Assert.Equal(10, fixture.Session.SeasonTalent!.BattleOathMaxLevel);
+        Assert.Equal(10, fixture.Session.Season.SeasonTalent!.BattleOathMaxLevel);
         Assert.Equal(0, await Upgrade(alice, 10100000));
         Assert.Equal(0, fixture.Character.CountOf(fixture.Session, 1250901));
-        Assert.Equal(1, fixture.Session.SeasonTalent.BattleOathLevel);
-        Assert.Equal(1, fixture.Session.SeasonTalent.TalentNodes[10100000].CurrentLevel);
-        Assert.All(fixture.Session.SeasonTalent.Plan.Values, p => Assert.Equal(1, p.TalentNodes[10100000].CurrentLevel));
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent.BattleOathLevel);
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent.TalentNodes[10100000].CurrentLevel);
+        Assert.All(fixture.Session.Season.SeasonTalent.Plan.Values, p => Assert.Equal(1, p.TalentNodes[10100000].CurrentLevel));
         Assert.Equal(10, fixture.Character.Stats(fixture.Session)[1330]);
         Assert.Equal(10, fixture.Character.Stats(fixture.Session)[1331]);
         await alice.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(alice, SeasonTalentService.SetPlan, SeasonTalentSetCurPlanResp.Parser)).Result);
-        Assert.Equal(1, fixture.Session.SeasonTalent.Plan[1].TalentNodes[10100000].CurrentLevel);
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent.Plan[1].TalentNodes[10100000].CurrentLevel);
         Assert.Equal(10, fixture.Character.Stats(fixture.Session)[1330]);
         await alice.DisposeAsync();
 
@@ -450,15 +450,15 @@ public sealed class SeasonTalentTests
                 BEGIN SELECT RAISE(ABORT, 'deliberate talent write failure'); END;
                 """);
         Assert.Equal(ErrorCodes.Unknown, await Upgrade(alice, Root));
-        Assert.Equal(0, fixture.Session.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
+        Assert.Equal(0, fixture.Session.Season.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
         Assert.Equal(50, fixture.Character.CountOf(fixture.Session, Remnant));
         Assert.Equal(500, fixture.Character.CountOf(fixture.Session, MintedCoin));
         await alice.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 1 });
         Assert.Equal(ErrorCodes.Unknown, (await Next(alice, SeasonTalentService.SetPlan, SeasonTalentSetCurPlanResp.Parser)).Result);
-        Assert.Equal(0, fixture.Session.SeasonTalent.CurPlanId);
+        Assert.Equal(0, fixture.Session.Season.SeasonTalent.CurPlanId);
         await alice.SendGameAsync(SeasonTalentService.RenamePlan, new SeasonTalentSetPlanNameReq { PlanId = 1, PlanName = "Rejected" });
         Assert.Equal(ErrorCodes.Unknown, (await Next(alice, SeasonTalentService.RenamePlan, SeasonTalentSetPlanNameResp.Parser)).Result);
-        Assert.Empty(fixture.Session.SeasonTalent.Plan[1].PlanName);
+        Assert.Empty(fixture.Session.Season.SeasonTalent.Plan[1].PlanName);
         using (var db = new SqliteConnection($"Data Source={fixture.DatabaseFile}"))
         {
             db.Open();
@@ -479,10 +479,10 @@ public sealed class SeasonTalentTests
         Assert.Equal(400, fixture.Character.CountOf(fixture.Session, MintedCoin));
         await alice.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(alice, SeasonTalentService.SetPlan, SeasonTalentSetCurPlanResp.Parser)).Result);
-        Assert.Equal(1, fixture.Session.SeasonTalent!.CurPlanId); // failed switch did not start cooldown
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent!.CurPlanId); // failed switch did not start cooldown
         await alice.SendGameAsync(SeasonTalentService.RenamePlan, new SeasonTalentSetPlanNameReq { PlanId = 1, PlanName = "Saved" });
         Assert.Equal(0, (await Next(alice, SeasonTalentService.RenamePlan, SeasonTalentSetPlanNameResp.Parser)).Result);
-        Assert.Equal("Saved", fixture.Session.SeasonTalent.Plan[1].PlanName);
+        Assert.Equal("Saved", fixture.Session.Season.SeasonTalent.Plan[1].PlanName);
     }
 
     [ClientDataFact]
@@ -505,7 +505,7 @@ public sealed class SeasonTalentTests
             leg.Asset.Id == Remnant && leg.Delta == -10);
         Assert.Contains(window.Legs, leg => leg.Kind == EconomyLegKind.Sink &&
             leg.Asset.Id == MintedCoin && leg.Delta == -100);
-        Assert.Equal(1, fixture.Session.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
+        Assert.Equal(1, fixture.Session.Season.SeasonTalent!.Plan[0].TalentNodes[Root].CurrentLevel);
         Assert.Equal(40, fixture.Character.CountOf(fixture.Session, Remnant));
         Assert.Equal(400, fixture.Character.CountOf(fixture.Session, MintedCoin));
     }

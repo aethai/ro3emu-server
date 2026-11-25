@@ -50,7 +50,7 @@ public sealed partial class NewActivityTests
         _clock.SetLocal(2026, 10, 8, 23, 59, 59);
         await Reconcile(bot);
         var session = Session(bot);
-        Assert.Equal(1, session.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
+        Assert.Equal(1, session.Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
         long role = session.Role!.Id;
         // Move the fake clock between complete reconciliation passes. A queued GM refresh
         // can otherwise sample the old day before an await and the new day after it.
@@ -59,19 +59,19 @@ public sealed partial class NewActivityTests
             _clock.AdvanceSeconds(1);
             return Task.CompletedTask;
         }));
-        await Eventually(() => session.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 2
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 2
             && DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role))
                 .ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 2);
         Assert.Equal(2, DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role))
             .ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
-        Assert.Equal(5, session.ActivityServerDay);
+        Assert.Equal(5, session.Activities.ActivityServerDay);
 
         await OnLoop(() => Service<OwnerRegistry>().RunAsync("test/activity-clock", [ReservationKey.Realm], () =>
         {
             _clock.AdvanceDays(3);
             return Task.CompletedTask;
         }));
-        await Eventually(() => session.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 3
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 3
             && DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role))
                 .ActivityInfo[113].ActivityParam.SevenDay.LoginDays == 3);
         Assert.Equal(3, DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role))
@@ -92,24 +92,24 @@ public sealed partial class NewActivityTests
         long expiry = new DateTimeOffset(expiryLocal, _clock.LocalTimeZone.GetUtcOffset(expiryLocal)).ToUnixTimeSeconds();
         await OnLoop(() =>
         {
-            session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id] =
+            session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id] =
                 new MonthCardInfo { MonthCardId = id, ExpireTs = expiry, LastDays = 5, DayAward = true };
-            session.ActivityRuntime.MonthCards[id] = new MonthCardRuntime { ClaimedDay = today };
-            session.ActivityRuntime.AdventureTreasure = new AdventureTreasureCursor
+            session.Activities.ActivityRuntime.MonthCards[id] = new MonthCardRuntime { ClaimedDay = today };
+            session.Activities.ActivityRuntime.AdventureTreasure = new AdventureTreasureCursor
             { PointId = 1, GroupId = 1, ItemId = 1112001, Began = _clock.GetUtcNow().ToUnixTimeSeconds() - 10799 };
-            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.NewActivities.ToByteArray());
+            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.Activities.NewActivities.ToByteArray());
             Service<RoleStore>().SaveActivityRuntime(session.Role.Id,
-                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime));
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.Activities.ActivityRuntime));
             return Task.CompletedTask;
         });
         await Reconcile(bot); // re-arm from the committed state
         _clock.AdvanceSeconds(1);
-        await Eventually(() => session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays == 4
-            && !session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward
-            && session.ActivityRuntime.AdventureTreasure.PointId == 0,
-            () => $"card days={session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays}, "
-                + $"award={session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward}, "
-                + $"treasure={session.ActivityRuntime.AdventureTreasure.PointId}, day={session.ActivityServerDay}");
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays == 4
+            && !session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward
+            && session.Activities.ActivityRuntime.AdventureTreasure.PointId == 0,
+            () => $"card days={session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays}, "
+                + $"award={session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward}, "
+                + $"treasure={session.Activities.ActivityRuntime.AdventureTreasure.PointId}, day={session.Activities.ActivityServerDay}");
         long role = session.Role!.Id;
         var saved = DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role));
         Assert.Equal(4, saved.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays);
@@ -118,8 +118,8 @@ public sealed partial class NewActivityTests
         Assert.Equal(0, runtime.AdventureTreasure.PointId);
 
         _clock.SetLocal(2026, 10, 12, 0, 0);
-        await Eventually(() => session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays == 0
-            && session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward);
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays == 0
+            && session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward);
         saved = DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(role));
         Assert.Equal(0, saved.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays);
         Assert.True(saved.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].DayAward);
@@ -133,9 +133,9 @@ public sealed partial class NewActivityTests
         _clock.SetLocal(2026, 10, 19, 23, 59, 59);
         await Reconcile(bot);
         var session = Session(bot);
-        Assert.NotEqual("_close", session.NewActivities!.ActivityInfo[200].State);
+        Assert.NotEqual("_close", session.Activities.NewActivities!.ActivityInfo[200].State);
         _clock.AdvanceSeconds(1);
-        await Eventually(() => session.NewActivities!.ActivityInfo[200].State == "_close"
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[200].State == "_close"
             && DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(session.Role!.Id))
                 .ActivityInfo[200].State == "_close");
         Assert.Equal("_close", DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(session.Role!.Id))
@@ -150,9 +150,9 @@ public sealed partial class NewActivityTests
         _clock.SetLocal(2026, 10, 13, 23, 59, 59);
         await Reconcile(bot);
         var session = Session(bot);
-        Assert.Equal("_close", session.NewActivities!.ActivityInfo[118].State);
+        Assert.Equal("_close", session.Activities.NewActivities!.ActivityInfo[118].State);
         _clock.AdvanceSeconds(1);
-        await Eventually(() => session.NewActivities!.ActivityInfo[118].State == "Start"
+        await Eventually(() => session.Activities.NewActivities!.ActivityInfo[118].State == "Start"
             && DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(session.Role!.Id))
                 .ActivityInfo[118].State == "Start");
         Assert.Equal("Start", DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(session.Role!.Id))
@@ -170,13 +170,13 @@ public sealed partial class NewActivityTests
         int projections = 0;
         await OnLoop(() =>
         {
-            session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id] =
+            session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id] =
                 new MonthCardInfo
                 {
                     MonthCardId = id, ExpireTs = _clock.GetUtcNow().ToUnixTimeSeconds() - 1,
                     LastDays = 4, DayAward = false
                 };
-            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.NewActivities.ToByteArray());
+            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.Activities.NewActivities.ToByteArray());
             Service<NewActivityService>().ProjectionChanged.Subscribe(s =>
             {
                 if (ReferenceEquals(s, session)) Interlocked.Increment(ref projections);
@@ -195,7 +195,7 @@ public sealed partial class NewActivityTests
             await OnLoop(() => Task.CompletedTask); // process any callback posted by Tick
         }
         Assert.Equal(settled, Volatile.Read(ref projections));
-        Assert.Equal(4, session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays);
+        Assert.Equal(4, session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[id].LastDays);
     }
 
     [ClientDataFact]
@@ -218,7 +218,7 @@ public sealed partial class NewActivityTests
         // observing the expired Eve callback's own wait on the social gate.
         await WaitForActivityRefreshDrain(session);
         long oldRole = session.Role!.Id;
-        Assert.True(session.NewActivities!.ActivityTypeState[19].ActivityState[117].EnterTime > 0);
+        Assert.True(session.Activities.NewActivities!.ActivityTypeState[19].ActivityState[117].EnterTime > 0);
         var gate = (SemaphoreSlim)typeof(AdventureActivityService)
             .GetField("_adventureSocialGate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
             .GetValue(Service<AdventureActivityService>())!;
@@ -285,15 +285,15 @@ public sealed partial class NewActivityTests
         {
             if (!RefreshIdle()) return false;
             Assert.True(RefreshIdle());
-            var pass = session.NewActivities!.ActivityInfo[200];
-            session.ActivityRuntime.PassProgress[200] = new PassProgressRuntime
+            var pass = session.Activities.NewActivities!.ActivityInfo[200];
+            session.Activities.ActivityRuntime.PassProgress[200] = new PassProgressRuntime
             { Initialized = true, LastBalance = -1, ActivityInstance = pass.ActivityInstance };
-            session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId] =
+            session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId] =
                 new MonthCardInfo { MonthCardId = cardId, ExpireTs = expiry, LastDays = 5, DayAward = true };
-            session.ActivityRuntime.MonthCards[cardId] = new MonthCardRuntime { ClaimedDay = today };
-            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.NewActivities.ToByteArray());
+            session.Activities.ActivityRuntime.MonthCards[cardId] = new MonthCardRuntime { ClaimedDay = today };
+            Service<RoleStore>().SaveNewActivities(session.Role!.Id, session.Activities.NewActivities.ToByteArray());
             Service<RoleStore>().SaveActivityRuntime(session.Role.Id,
-                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime));
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.Activities.ActivityRuntime));
             FixtureSql.Execute(Service<AccountStore>(), """
                 CREATE TABLE activity_retry_counter(n INTEGER NOT NULL);
                 INSERT INTO activity_retry_counter(n) VALUES(0);
@@ -321,12 +321,12 @@ public sealed partial class NewActivityTests
             return true;
         });
         await Eventually(() => firstCompleted && RefreshIdle()
-            && session.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Exp == 1,
-            () => $"pass exp={session.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Exp}, "
-                + $"pass level={session.NewActivities.ActivityInfo[200].ActivityParam.BattlePass.Level}, "
-                + $"card award={session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward}, "
+            && session.Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Exp == 1,
+            () => $"pass exp={session.Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Exp}, "
+                + $"pass level={session.Activities.NewActivities.ActivityInfo[200].ActivityParam.BattlePass.Level}, "
+                + $"card award={session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward}, "
                 + $"activity gate={session.ActivityGate.CurrentCount}, callback completed={firstCompleted}");
-        Assert.True(session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward);
+        Assert.True(session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward);
         using (var db = Service<AccountStore>().Open())
         using (var cmd = db.CreateCommand())
         {
@@ -353,7 +353,7 @@ public sealed partial class NewActivityTests
             return Task.CompletedTask;
         });
         await Eventually(() => retryCompleted
-            && !session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward);
+            && !session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward);
         var saved = DBNewActivityInfo.Parser.ParseFrom(Service<RoleStore>().LoadNewActivities(session.Role!.Id));
         Assert.Equal(1, saved.ActivityInfo[200].ActivityParam.BattlePass.Exp);
         Assert.False(saved.ActivityInfo[199].ActivityParam.MonthCard.Infos[cardId].DayAward);
@@ -377,7 +377,7 @@ public sealed partial class NewActivityTests
             return key;
         }
         long end = 0;
-        await OnLoop(() => { end = session.NewActivities!.ActivityInfo[117].CycleEndTime; return Task.CompletedTask; });
+        await OnLoop(() => { end = session.Activities.NewActivities!.ActivityInfo[117].CycleEndTime; return Task.CompletedTask; });
         Assert.True(end > _clock.GetUtcNow().ToUnixTimeSeconds());
 
         Assert.Equal("shared", Key()!.Value.Part);

@@ -68,8 +68,8 @@ public sealed partial class MountService : IGameTicker
 
     public void Load(GameSession s)
     {
-        s.MountState = _roles.LoadMounts(s.Role!.Id) is { } bytes ? JsonSerializer.Deserialize<SavedState>(bytes) ?? new() : new();
-        s.Mounts = s.MountState.Info.Length > 0 ? DBMountsInfo.Parser.ParseFrom(s.MountState.Info) : new();
+        s.Profile.MountState = _roles.LoadMounts(s.Role!.Id) is { } bytes ? JsonSerializer.Deserialize<SavedState>(bytes) ?? new() : new();
+        s.Mounts = s.Profile.MountState.Info.Length > 0 ? DBMountsInfo.Parser.ParseFrom(s.Profile.MountState.Info) : new();
         Normalize(s);
         AdoptBoughtLooks(s);
         Save(s);
@@ -126,7 +126,7 @@ public sealed partial class MountService : IGameTicker
 
     private byte[] Encode(GameSession s, DBMountsInfo? info = null, SavedState? state = null)
     {
-        state ??= s.MountState;
+        state ??= s.Profile.MountState;
         // A copy prevents a failed payment from publishing a paid preview or ownership change.
         return JsonSerializer.SerializeToUtf8Bytes(new SavedState
         {
@@ -158,7 +158,7 @@ public sealed partial class MountService : IGameTicker
     /// <summary>WorldCoreService's landing of a flying rider, before a ride the server ends by itself (an expiry).</summary>
     internal Func<GameSession, Task>? LandFlyingRider { get; set; }
 
-    public static long Rider(GameSession s) => s.MountState.QuestMount != 0 ? s.MountState.QuestMount
+    public static long Rider(GameSession s) => s.Profile.MountState.QuestMount != 0 ? s.Profile.MountState.QuestMount
         : s.Mounts?.MountIds.OrderBy(p => p.Key).FirstOrDefault(p => p.Value.IsRiding).Value?.MountId ?? 0;
 
     /// <summary>
@@ -168,7 +168,7 @@ public sealed partial class MountService : IGameTicker
     /// </summary>
     public static (int Up, int Down)? FlySkills(GameData data, GameSession s)
     {
-        if (s.MountState.QuestMount != 0 || s.Mounts == null || !s.Mounts.MountIds.TryGetValue(SystemSlot, out var system)
+        if (s.Profile.MountState.QuestMount != 0 || s.Mounts == null || !s.Mounts.MountIds.TryGetValue(SystemSlot, out var system)
             || !system.IsRiding || MountsConfig.Get(data, system.MountId) is not { } mount) return null;
         var skills = mount.FlySwitchSkills;
         return skills is [> 0 and var up, > 0 and var down, ..] ? ((int)up, (int)down) : null;
@@ -304,8 +304,8 @@ public sealed partial class MountService : IGameTicker
     /// <param name="look">The linked wardrobe change (WardrobeService.Mounts.cs) committed in the same transaction.</param>
     private async Task CommitAsync(GameSession s, DBMountsInfo next, SavedState? state = null, DBWardRobeInfo? look = null)
     {
-        state ??= s.MountState;
-        var before = s.Wardrobe;
+        state ??= s.Profile.MountState;
+        var before = s.Profile.Wardrobe;
         var tx = _roles.NewTransaction();
         tx.ItemDelta(s.Role!.Id, s.Items, s.Items);
         tx.RoleBlob(s.Role.Id, "mounts", Encode(s, next, state));
@@ -314,7 +314,7 @@ public sealed partial class MountService : IGameTicker
             new { StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, next, state))) }));
         await _roles.CommitAsync(tx, "mount/state", _ =>
         {
-            s.Mounts = next; s.MountState = state;
+            s.Mounts = next; s.Profile.MountState = state;
             if (look != null) _wardrobe.AdoptCommitted(s, look);
         });
         await ChangedAsync(s);
@@ -441,7 +441,7 @@ public sealed partial class MountService : IGameTicker
             {
                 await PublishOwnedAsync(s);
                 // 5034 only: 32747 already pops the unlock tip; 31189 would show a second reward tip (LC_DAL_Fashion:253-265).
-                if (look != null) await CharacterService.SyncAsync(s, WardrobeService.WardrobeSync, s.Wardrobe!.Clone());
+                if (look != null) await CharacterService.SyncAsync(s, WardrobeService.WardrobeSync, s.Profile.Wardrobe!.Clone());
                 await s.SendGameAsync(Unlock, new PlayerMountUnLockNtf { RiderId = id, EndTime = expiry });
             }
         }
@@ -521,7 +521,7 @@ public sealed partial class MountService : IGameTicker
                             StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, state: state)))
                         }));
                 },
-                Committed = () => s.MountState = state,
+                Committed = () => s.Profile.MountState = state,
                 AsyncCommit = true,
             }) == null)
                 error = _character.ShortageOf(s, cost);
@@ -534,7 +534,7 @@ public sealed partial class MountService : IGameTicker
         using var gate = await CharacterService.Lock(s);
         int error = req.PlanId == 0 || req.Part <= 0 ? ErrorCodes.Parameter : EtchantError(s, req.MountId, req.PlanId, req.Part);
         var key = PreviewKey(req.MountId, req.PlanId, req.Part);
-        if (error == 0 && (!s.MountState.Previews.TryGetValue(key, out int id) || id != req.CfgId)) error = ErrorCodes.Parameter;
+        if (error == 0 && (!s.Profile.MountState.Previews.TryGetValue(key, out int id) || id != req.CfgId)) error = ErrorCodes.Parameter;
         if (error == 0)
         {
             var next = s.Mounts!.Clone(); var state = CopyState(s);
@@ -570,7 +570,7 @@ public sealed partial class MountService : IGameTicker
         {
             var row = _data.Table("MountsSpecialConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iSLev") == index);
             if (row.ValueKind != JsonValueKind.Object) { resp.Result = ErrorCodes.RewardMissing; break; }
-            if (s.MountState.Claimed.Contains(index)) { resp.Result = ErrorCodes.RewardClaimed; break; }
+            if (s.Profile.MountState.Claimed.Contains(index)) { resp.Result = ErrorCodes.RewardClaimed; break; }
             if (GameData.Int(row, "_iSValue") > score) { resp.Result = ErrorCodes.PurchaseRequirements; break; }
             goods.AddRange(GameData.Pairs(row, "_kAward").Select(p => ((int)p.Id, (int)p.Value)));
         }
@@ -592,7 +592,7 @@ public sealed partial class MountService : IGameTicker
                             StateHash = Convert.ToHexString(SHA256.HashData(Encode(s, state: state)))
                         }));
                 },
-                Committed = () => s.MountState = state,
+                Committed = () => s.Profile.MountState = state,
                 AsyncCommit = true,
             }) == null)
                 resp.Result = ErrorCodes.ItemNoConfig;
@@ -622,6 +622,6 @@ public sealed partial class MountService : IGameTicker
     internal void ApplyQuestRideCore(GameSession s, Ownership.OwnerContext context, int mount)
     {
         context.AssertRole(s.Role!.Id);
-        s.MountState.QuestMount = mount;
+        s.Profile.MountState.QuestMount = mount;
     }
 }

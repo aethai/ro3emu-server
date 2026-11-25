@@ -22,11 +22,11 @@ public sealed class WildAfkPersistence : LazyRolePart
     protected override string RevisionPart => "wild_afk";
     protected override State? Get(GameSession s) => s.WildAfkPart;
     protected override void Set(GameSession s, State state) => s.WildAfkPart = state;
-    protected override bool Eligible(GameSession s) => s.Role != null && s.WildAfk != null;
+    protected override bool Eligible(GameSession s) => s.Role != null && s.Activities.WildAfk != null;
 
     protected override Func<long, long, long, Task<bool>> Capture(GameSession s)
     {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(s.WildAfk!);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(s.Activities.WildAfk!);
         return (role, epoch, revision) => _roles.SaveBlobLazyAsync(role, epoch, revision, "wild_afk", bytes);
     }
 }

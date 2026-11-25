@@ -174,7 +174,7 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
         })));
         var existing = session.Items.Single(i => i.Entry == Token);
         var originalItems = session.Items.ToArray();
-        var originalNewItems = session.NewItems.ToHashSet();
+        var originalNewItems = session.Profile.NewItems.ToHashSet();
         long currencyBefore = session.Progress!.Currency[1];
         byte[] towerBefore = roles.LoadTower(role)!;
         byte[] towerAfter = new DBClimTower { LayerConfID = 10 }.ToByteArray();
@@ -206,7 +206,7 @@ public sealed class TowerAtomicExchangeTests : IAsyncLifetime
             Assert.Same(existing, session.Items.Single(i => i.Entry == Token));
             Assert.Equal(1, existing.Stack);
             Assert.Equal(currencyBefore, session.Progress!.Currency[1]);
-            Assert.True(session.NewItems.SetEquals(originalNewItems));
+            Assert.True(session.Profile.NewItems.SetEquals(originalNewItems));
             Assert.Equal(messagesBefore, ExchangesSent(alice)); // Default popup/sync were requested but nothing escaped precommit.
         }
         finally

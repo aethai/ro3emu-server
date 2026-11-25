@@ -137,8 +137,8 @@ public sealed partial class ChatService
         lock (_sync)
         {
             if (session.Role != null && _online.TryGetValue(session.Role.Id, out var s) && s == session) _online.Remove(session.Role.Id);
-            foreach (var group in session.ChatGroups) if (_groups.TryGetValue(group, out var members)) members.Remove(session);
-            session.ChatGroups.Clear();
+            foreach (var group in session.Social.ChatGroups) if (_groups.TryGetValue(group, out var members)) members.Remove(session);
+            session.Social.ChatGroups.Clear();
         }
     }
 
@@ -249,7 +249,7 @@ public sealed partial class ChatService
         {
             _recent.Remove((group, 0));
             if (_groups.Remove(group, out var members))
-                foreach (var member in members) member.ChatGroups.Remove(group);
+                foreach (var member in members) member.Social.ChatGroups.Remove(group);
         }
     }
 
@@ -271,7 +271,7 @@ public sealed partial class ChatService
             foreach (var key in _recent.Keys.Where(k => k.Runtime == map.WorldScene).ToArray()) _recent.Remove(key);
             foreach (string group in new[] { $"4_{map.WorldScene}", $"@TGS#_4_{map.WorldScene}" })
                 if (_groups.Remove(group, out var members))
-                    foreach (var member in members) member.ChatGroups.Remove(group);
+                    foreach (var member in members) member.Social.ChatGroups.Remove(group);
         }
         return Task.CompletedTask;
     }
@@ -310,7 +310,7 @@ public sealed partial class ChatService
 
             case Cmd.GetJoinedChannel:
                 var joined = new GetJoinedChannelResponse { ChatResult = true };
-                lock (_sync) joined.ChannelList.AddRange(session.ChatGroups);
+                lock (_sync) joined.ChannelList.AddRange(session.Social.ChatGroups);
                 await DownAsync(session, cmd, joined);
                 break;
 
@@ -517,7 +517,7 @@ public sealed partial class ChatService
         {
             if (!_groups.TryGetValue(group, out var members)) _groups[group] = members = [];
             bool added = members.Add(session);
-            session.ChatGroups.Add(group);
+            session.Social.ChatGroups.Add(group);
             return added;
         }
     }
@@ -527,7 +527,7 @@ public sealed partial class ChatService
         lock (_sync)
         {
             if (_groups.TryGetValue(group, out var members)) members.Remove(session);
-            session.ChatGroups.Remove(group);
+            session.Social.ChatGroups.Remove(group);
         }
     }
 

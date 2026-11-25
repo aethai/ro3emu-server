@@ -120,7 +120,7 @@ public sealed partial class DungeonTests
 
             // A shot past everything answers and hits nothing; the skill is the gunner's, not learned.
             long role = Session(alice).Role!.Id;
-            await OnLoop(() => { Session(alice).SkillCds.Clear(); Session(alice).SkillModeCds.Clear(); return Task.CompletedTask; });
+            await OnLoop(() => { Session(alice).Combat.SkillCds.Clear(); Session(alice).Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 5353001, OpUnitId = role, TargetPos = new Vec3 { X = 300, Y = 240, Z = 450 } });
             Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             Assert.All(ships, ship => Assert.Equal(ship.Template.MaxHp, ship.Hp));
@@ -129,7 +129,7 @@ public sealed partial class DungeonTests
             // takes about a dozen at the row's flat 3000 + 500 a shot and 500 ms, too long to wait for here). The tracker counts the ships.
             async Task Fire(MonsterUnit ship)
             {
-                await OnLoop(() => { Session(alice).SkillCds.Clear(); Session(alice).SkillModeCds.Clear(); Session(alice).SkillCast = null; return Task.CompletedTask; });
+                await OnLoop(() => { Session(alice).Combat.SkillCds.Clear(); Session(alice).Combat.SkillModeCds.Clear(); Session(alice).SkillCast = null; return Task.CompletedTask; });
                 await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 5353001, OpUnitId = role, TargetsId = { ship.Uid }, TargetPos = ship.Pos });
                 Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             }

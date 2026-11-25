@@ -54,7 +54,7 @@ public sealed partial class ParagonService
         this._options = options.Value;
         character.ExtraAttributes.Subscribe(Attributes);
         character.StateChanged.Subscribe(s => _ = SyncIfOpenAsync(s));
-        power.ParagonPower = s => s.Paragon == null || s.Progress == null ? 0 : Power(s, s.Paragon);
+        power.ParagonPower = s => s.Profile.Paragon == null || s.Progress == null ? 0 : Power(s, s.Profile.Paragon);
         rewards.ExtraKillDrops.Subscribe(StarCoreDrops);
         gm.Register("paragon", "exp <n> | level <n> | info (Astral Level test aid)", GmAsync);
     }
@@ -88,14 +88,14 @@ public sealed partial class ParagonService
     public void Load(GameSession s)
     {
         var bytes = _roles.LoadParagon(s.Role!.Id);
-        s.Paragon = bytes is { Length: > 0 } ? DBParagonLevel.Parser.ParseFrom(bytes) : new DBParagonLevel();
+        s.Profile.Paragon = bytes is { Length: > 0 } ? DBParagonLevel.Parser.ParseFrom(bytes) : new DBParagonLevel();
     }
 
     public Task LoginAsync(GameSession s) => SyncIfOpenAsync(s);
 
     private Task SyncIfOpenAsync(GameSession s) =>
-        s.Paragon == null || s.Progress == null || s.Role == null || !_functions.IsOpen(s, Function) ? Task.CompletedTask
-            : CharacterService.SyncAsync(s, Sync, Build(s, s.Paragon));
+        s.Profile.Paragon == null || s.Progress == null || s.Role == null || !_functions.IsOpen(s, Function) ? Task.CompletedTask
+            : CharacterService.SyncAsync(s, Sync, Build(s, s.Profile.Paragon));
 
     /// <summary>The 5015 view: the stored nodes (every configured one), the progress columns and the derived fields.</summary>
     private DBParagonLevel Build(GameSession s, DBParagonLevel stored)
@@ -158,7 +158,7 @@ public sealed partial class ParagonService
     /// <summary>The active groups' node attributes (_kTalentAttrIds at the node's level) and their cores' _kAttrs.</summary>
     private IEnumerable<(long Id, double Value)> Attributes(GameSession s)
     {
-        if (s.Paragon is not { } state || s.Progress == null || s.Progress.Level < _character.MaxLevel) yield break;
+        if (s.Profile.Paragon is not { } state || s.Progress == null || s.Progress.Level < _character.MaxLevel) yield break;
         var active = ActiveGroups(state).ToHashSet();
         foreach (var node in Nodes().Values.Where(n => active.Contains(n.Group)))
         {
@@ -186,7 +186,7 @@ public sealed partial class ParagonService
     private async Task<int> AllocateLockedAsync(GameSession s, int slot, int points)
     {
         if (Gate(s) is int closed and not 0) return closed;
-        var state = s.Paragon!;
+        var state = s.Profile.Paragon!;
         if (!Nodes().TryGetValue(slot, out var node) || points <= 0 || !ActiveGroups(state).Contains(node.Group)
             || Predecessors(slot).Any(pre => Points(state, pre) < Nodes()[pre].MaxLevel)
             || Points(state, slot) + points > node.MaxLevel || LeftPoints(s.Progress!, state) < points) return ErrorCodes.Parameter;
@@ -207,7 +207,7 @@ public sealed partial class ParagonService
     private async Task<int> InstallLockedAsync(GameSession s, int slot, long guid)
     {
         if (Gate(s) is int closed and not 0) return closed;
-        var state = s.Paragon!;
+        var state = s.Profile.Paragon!;
         if (!Nodes().TryGetValue(slot, out var node) || node.Type == 1 || Points(state, slot) <= 0
             || !ActiveGroups(state).Contains(node.Group)) return ErrorCodes.Parameter;
         if (s.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is not { } item
@@ -228,9 +228,9 @@ public sealed partial class ParagonService
         using (await CharacterService.Lock(s))
         {
             result = Gate(s) is int closed and not 0 ? closed
-                : !Nodes().ContainsKey(req.SlotId) || s.Paragon!.Runegroup.GetValueOrDefault(req.SlotId)?.Rune is not { ItemEntry: > 0 } core
+                : !Nodes().ContainsKey(req.SlotId) || s.Profile.Paragon!.Runegroup.GetValueOrDefault(req.SlotId)?.Rune is not { ItemEntry: > 0 } core
                     ? ErrorCodes.Parameter
-                    : await CommitCoresAsync(s, Without(s.Paragon!, [req.SlotId], keepPoints: true), "remove", null, [], [core]);
+                    : await CommitCoresAsync(s, Without(s.Profile.Paragon!, [req.SlotId], keepPoints: true), "remove", null, [], [core]);
         }
         await s.SendGameAsync(Remove, new ParagonLevelRuneRemoveResp { Result = result });
     }
@@ -242,7 +242,7 @@ public sealed partial class ParagonService
         using (await CharacterService.Lock(s))
         {
             if (Gate(s) is int closed and not 0) result = closed;
-            else if (!Nodes().ContainsKey(req.SlotId) || Points(s.Paragon!, req.SlotId) <= 0) result = ErrorCodes.Parameter;
+            else if (!Nodes().ContainsKey(req.SlotId) || Points(s.Profile.Paragon!, req.SlotId) <= 0) result = ErrorCodes.Parameter;
             else
             {
                 var subtree = new List<int>();
@@ -264,15 +264,15 @@ public sealed partial class ParagonService
         int result;
         using (await CharacterService.Lock(s))
             result = Gate(s) is int closed and not 0 ? closed
-                : s.Paragon!.Runegroup.Values.All(r => r.Points == 0) ? ErrorCodes.Parameter
+                : s.Profile.Paragon!.Runegroup.Values.All(r => r.Points == 0) ? ErrorCodes.Parameter
                 : await ResetAsync(s, [.. Nodes().Keys], "reset-all");
         await s.SendGameAsync(ResetAll, new ParagonLevelResetAllResp { Result = result });
     }
 
     private async Task<int> ResetAsync(GameSession s, IReadOnlyList<int> ids, string action)
     {
-        var cores = ids.Select(id => s.Paragon!.Runegroup.GetValueOrDefault(id)?.Rune).Where(c => c is { ItemEntry: > 0 }).Select(c => c!).ToList();
-        var next = Without(s.Paragon!, ids, keepPoints: false);
+        var cores = ids.Select(id => s.Profile.Paragon!.Runegroup.GetValueOrDefault(id)?.Rune).Where(c => c is { ItemEntry: > 0 }).Select(c => c!).ToList();
+        var next = Without(s.Profile.Paragon!, ids, keepPoints: false);
         if (cores.Count == 0)
         {
             await SaveAsync(s, next);
@@ -294,14 +294,14 @@ public sealed partial class ParagonService
     }
 
     private int? Gate(GameSession s) =>
-        s.Paragon == null || s.Progress == null ? ErrorCodes.Unknown
+        s.Profile.Paragon == null || s.Progress == null ? ErrorCodes.Unknown
         : !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked : 0;
 
     /// <summary>A points-only change: the blob alone, then 5015 and the stats.</summary>
     private async Task SaveAsync(GameSession s, DBParagonLevel next)
     {
         _roles.SaveParagon(s.Role!.Id, next.ToByteArray());
-        s.Paragon = next;
+        s.Profile.Paragon = next;
         await PublishAsync(s);
     }
 
@@ -323,7 +323,7 @@ public sealed partial class ParagonService
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/paragon-" + action, [.. costEntries.Select(e => (e, 1L))],
                     [.. returned.Select(c => (c.ItemEntry, 1))], new { Action = action, State = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)) }));
             },
-            Committed = () => s.Paragon = next,
+            Committed = () => s.Profile.Paragon = next,
         });
         if (result == null) return returned.Count > 0 ? ErrorCodes.BagFull : ErrorCodes.ItemsShort;
         await PublishAsync(s);
@@ -371,7 +371,7 @@ public sealed partial class ParagonService
             return;
         }
         var p = s.Progress!;
-        await GmCommands.ReplyAsync(s, $"Astral Level {p.ParagonLevel} ({p.ParagonExp} EXP), {LeftPoints(p, s.Paragon!)} points left, "
-            + $"groups [{string.Join(',', ActiveGroups(s.Paragon!))}], power {Power(s, s.Paragon!)}, open {_functions.IsOpen(s, Function)}");
+        await GmCommands.ReplyAsync(s, $"Astral Level {p.ParagonLevel} ({p.ParagonExp} EXP), {LeftPoints(p, s.Profile.Paragon!)} points left, "
+            + $"groups [{string.Join(',', ActiveGroups(s.Profile.Paragon!))}], power {Power(s, s.Profile.Paragon!)}, open {_functions.IsOpen(s, Function)}");
     }
 }

@@ -167,7 +167,7 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.ShopAppearanceOwned, batch.Result);
         Assert.Equal(ErrorCodes.ShopAppearanceOwned, Assert.Single(batch.Results).Result);
         Assert.Equal(crystals - 480, Crystals);
-        Assert.Equal(1, Alice.Shop!.Bought[Macaron].Count);
+        Assert.Equal(1, Alice.Social.Shop!.Bought[Macaron].Count);
         Assert.Equal(1, SavedShop.Bought[Macaron].Count);
         Assert.Single(bot.Inbox.Snapshot(), e => e.IsGame(WardrobeService.UnlockNotice));
 
@@ -175,7 +175,7 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         var many = await Buy(bot, Stroll, count: 2, price: 680);
         Assert.Equal(ErrorCodes.Parameter, many.Result);
         Assert.Equal(crystals - 480, Crystals);
-        Assert.False(Alice.Wardrobe!.AllLightUpAppearances.ContainsKey(StrollSuit));
+        Assert.False(Alice.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(StrollSuit));
     }
 
     [ClientDataFact]
@@ -192,7 +192,7 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         Assert.Equal(crystals - 680, Crystals);
         Assert.Equal(zeny - 2000, Service<CharacterService>().CountOf(Alice, 1));
         Assert.Equal(potions + 2, Bag(PotionItem));
-        Assert.True(Alice.Wardrobe!.AllLightUpAppearances.ContainsKey(StrollSuit));
+        Assert.True(Alice.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(StrollSuit));
         Assert.True(SavedWardrobe.AllLightUpAppearances.ContainsKey(StrollSuit));
         Assert.Equal((1, 2), (SavedShop.Bought[Stroll].Count, SavedShop.Bought[Potions].Count));
         var closing = Cut();
@@ -263,8 +263,8 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         // Non-zero: LC_DAL_Shop.CommodityPresentResp (the "gift sent" tip and chat card) never runs.
         Assert.Equal(ErrorCodes.Parameter, reply.Result);
         Assert.Equal(crystals, Crystals);
-        Assert.Empty(Alice.Shop!.Bought);
-        Assert.False(Alice.Wardrobe!.AllLightUpAppearances.ContainsKey(TeaPartySuit));
+        Assert.Empty(Alice.Social.Shop!.Bought);
+        Assert.False(Alice.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(TeaPartySuit));
         Assert.Equal(wardrobe, Service<RoleStore>().LoadWardrobe(Alice.Role!.Id));
         Assert.True(Service<RoleStore>().LoadShop(Alice.Role!.Id) is not { } shop
             || JsonSerializer.Deserialize<ShopService.ShopState>(shop)!.Bought.Count == 0);
@@ -301,8 +301,8 @@ public sealed class AppearanceShopTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.ShopNoConfig, (await Buy(bot, 9900001, price: 1880)).Result);
         Assert.Equal(ErrorCodes.ShopRewardMissing, (await Buy(bot, 9900004, price: 1880)).Result);
         Assert.Equal(crystals, Crystals);
-        Assert.False(Alice.Wardrobe!.AllLightUpAppearances.ContainsKey(TeaPartySuit));
-        Assert.Empty(Alice.Shop!.Bought);
+        Assert.False(Alice.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(TeaPartySuit));
+        Assert.Empty(Alice.Social.Shop!.Bought);
 
         // The same gate connection still serves a good purchase afterwards.
         var good = await Buy(bot, Macaron, price: 480);

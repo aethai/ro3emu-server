@@ -19,7 +19,7 @@ public sealed partial class DungeonService
     {
         if (members.Length == 0 || members.Distinct().Count() != members.Length
             || members.Any(s => s.Role == null || !_sessions.Contains(s))) return ErrorCodes.PlayerOffline;
-        if (members.Length < plan.MinPlayers && !(members.Length == 1 && members[0].DungeonSoloMatch))
+        if (members.Length < plan.MinPlayers && !(members.Length == 1 && members[0].Instances.DungeonSoloMatch))
             return ErrorCodes.DungeonTeamSize;
         if (members.Length > plan.MaxPlayers) return ErrorCodes.PartyFull;
         foreach (var member in members)

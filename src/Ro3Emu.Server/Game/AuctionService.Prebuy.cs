@@ -92,7 +92,7 @@ public sealed partial class AuctionService
         var matching = scoped.Where(r => r.Start <= Now).ToArray();
         if (matching.Length == 0 && scoped.Any(r => r.Start > Now)) return (order, null, true);
         var player = Online(order.Role);
-        if (player?.Auction == null) player = null;
+        if (player?.Social.Auction == null) player = null;
         if (player == null || order.Paused) return (order, null, false);
         var row = matching.Where(r => Visible(player, r) && !r.GiveUp.Contains(order.Role)
             && r.Owner != order.Role && (long)order.UnitPrice >= (long)r.Price
@@ -117,7 +117,7 @@ public sealed partial class AuctionService
             role = order.Role;
             var matching = store.OpenItems().Where(r => r.Type == order.Type && r.SrcType == order.SrcType
                 && r.Entry == order.Entry && r.End > Now && r.Start <= Now).ToArray();
-            if (Online(role)?.Auction == null && matching.Length > 0 && !order.Paused)
+            if (Online(role)?.Social.Auction == null && matching.Length > 0 && !order.Paused)
             {
                 var pause = roles.NewTransaction();
                 store.EnlistPrebuy(order with { Paused = true }, pause);

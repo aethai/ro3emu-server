@@ -213,7 +213,7 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
         {
             foreach (var cart in ledger.Carts.Values)
                 if (cart.Owner > 0) keys.Add(Ownership.ReservationKey.Role(cart.Owner));
-            foreach (var peer in _sessions.All().Where(s => s.Role != null && s.TerritoryEscort != null))
+            foreach (var peer in _sessions.All().Where(s => s.Role != null && s.Instances.TerritoryEscort != null))
                 keys.Add(Ownership.ReservationKey.Role(peer.Role!.Id));
         }
         foreach (long guild in (includeAllGuilds ? ledger.Goods.Keys.Concat(ledger.Listings.Values.SelectMany(x =>
@@ -387,7 +387,7 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
         await _roles.CommitAsync(transaction, "territory/escort-role");
     }
     private static void SaveRole(GameSession s, RoleItemPlanBuilder transaction) =>
-        SaveRole(s.Role!.Id, s.TerritoryEscort!, transaction);
+        SaveRole(s.Role!.Id, s.Instances.TerritoryEscort!, transaction);
     private static void SaveRole(long roleId, RoleState state, RoleItemPlanBuilder transaction) =>
         transaction.RoleBlob(roleId, "territory_escort", JsonSerializer.SerializeToUtf8Bytes(state));
     private static RoleState CopyRole(RoleState state) =>
@@ -405,7 +405,7 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
             SaveRole(s.Role.Id, current, transaction);
             await _roles.CommitAsync(transaction, "territory/escort-role");
         }
-        s.TerritoryEscort = current;
+        s.Instances.TerritoryEscort = current;
         await SendStageAsync(s);
         await SendCartsAsync(s);
         await SendScoreAsync(s);

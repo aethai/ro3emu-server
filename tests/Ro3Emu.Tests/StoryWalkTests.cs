@@ -865,8 +865,8 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         var refusals = new Dictionary<long, int>();
         for (int round = 0; round < 400 && !TargetDone(task, index); round++)
         {
-            var nodes = await OnLoop(s => s.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
-                .Select(id => (Id: id, Level: s.SeasonTalent.Plan[s.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0))
+            var nodes = await OnLoop(s => s.Season.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
+                .Select(id => (Id: id, Level: s.Season.SeasonTalent.Plan[s.Season.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0))
                 .ToList());
             bool any = false;
             foreach (var (id, level) in nodes)
@@ -941,7 +941,7 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         int cleared = 0;
         for (int attempt = 0; attempt < floor + 3 && !TargetDone(task, index); attempt++)
         {
-            int current = await OnLoop(s => s.Tower is { LayerConfID: > 0 } t
+            int current = await OnLoop(s => s.Instances.Tower is { LayerConfID: > 0 } t
                 ? (int)GameData.Int(floors.First(r => GameData.Int(r, "_iID") == t.LayerConfID), "_iFloor") : 0);
             var next = floors.FirstOrDefault(r => GameData.Int(r, "_iFloor") == current + 1);
             if (next.ValueKind != JsonValueKind.Object) throw new WalkBlocked($"no tower floor after {current}");
@@ -976,8 +976,8 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         int raised = 0;
         for (int i = 0; i < 400 && !TargetDone(task, index); i++)
         {
-            var (plan, str) = await OnLoop(s => (s.StatPlans.Info.CurPlanIndex,
-                s.StatPlans.Info.AllPlanBaseProperty[s.StatPlans.Info.CurPlanIndex].BaseProperty.GetValueOrDefault(1, 1)));
+            var (plan, str) = await OnLoop(s => (s.Profile.StatPlans.Info.CurPlanIndex,
+                s.Profile.StatPlans.Info.AllPlanBaseProperty[s.Profile.StatPlans.Info.CurPlanIndex].BaseProperty.GetValueOrDefault(1, 1)));
             var reply = await RequestAsync(CharacterService.AllocateAttrPoints,
                 new AllocateAttrPointReq { PlanIndex = plan, Points = { [1] = str + 1 } }, AllocateAttrPointRsp.Parser);
             if (reply.Result == 0) { raised++; continue; }

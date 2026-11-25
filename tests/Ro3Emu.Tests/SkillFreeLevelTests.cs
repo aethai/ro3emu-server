@@ -48,7 +48,7 @@ public sealed class SkillFreeLevelTests
 
         await alice.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 1 });
         Assert.Equal(0, (await Next(alice, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
-        Assert.Equal(1, session.SkillPlans!.CurrentPlanIndex);
+        Assert.Equal(1, session.Combat.SkillPlans!.CurrentPlanIndex);
         Assert.Equal(1, skills.Level(session.Progress!, Sprout));
         Assert.Equal(0, skills.Level(session.Progress!, Sight));
         Assert.Equal(0, await Update(alice, 1, (Bolt, 1)));

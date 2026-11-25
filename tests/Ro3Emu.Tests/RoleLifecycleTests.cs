@@ -129,9 +129,9 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
                 first.SeasonState!.StageId = long.MaxValue;
                 second.SeasonState!.StageId = long.MaxValue;
                 long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                firstAccounted = first.WildAfk!.AccountedAtMs = now - 1000;
-                first.WildAfk.Info.HighMultiplierTimeSeconds++;
-                secondAccounted = second.WildAfk!.AccountedAtMs = now - 1000;
+                firstAccounted = first.Activities.WildAfk!.AccountedAtMs = now - 1000;
+                first.Activities.WildAfk.Info.HighMultiplierTimeSeconds++;
+                secondAccounted = second.Activities.WildAfk!.AccountedAtMs = now - 1000;
                 _owners.BeginQuiescing(first.Owner!, first.Attachment!);
                 first.Attachment!.Cancelled = true;
                 season.TickBatchCompletedForTest = () => seasonDone.TrySetResult();
@@ -145,9 +145,9 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
             await _loop.InvokeAsync(() =>
             {
                 Assert.Equal(long.MaxValue, first.SeasonState!.StageId);
-                Assert.Equal(firstAccounted, first.WildAfk!.AccountedAtMs);
+                Assert.Equal(firstAccounted, first.Activities.WildAfk!.AccountedAtMs);
                 Assert.Equal(season.StageId, second.SeasonState!.StageId);
-                Assert.True(second.WildAfk!.AccountedAtMs > secondAccounted);
+                Assert.True(second.Activities.WildAfk!.AccountedAtMs > secondAccounted);
                 Assert.Equal(firstRevision, _roles.ReadRevisionVector(firstId).Revision("wild_afk"));
                 Assert.Equal(firstStored, _roles.LoadWildAfk(firstId));
                 return Task.CompletedTask;
@@ -206,7 +206,7 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
             await _loop.InvokeAsync(() =>
             {
                 session = _sessions.All().Single(s => s.Role?.Id == roleId);
-                state = session.WildAfk!;
+                state = session.Activities.WildAfk!;
                 Assert.True(state.Gate.Wait(0));
                 gateHeld = true;
                 accounted = state.AccountedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1000;
@@ -227,7 +227,7 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
             await completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
             await _loop.InvokeAsync(() =>
             {
-                Assert.Same(state, session.WildAfk);
+                Assert.Same(state, session.Activities.WildAfk);
                 Assert.Equal(accounted, state.AccountedAtMs);
                 Assert.Equal(stored, _roles.LoadWildAfk(roleId));
                 return Task.CompletedTask;
@@ -489,9 +489,9 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
         await _loop.InvokeAsync(() =>
         {
             var active = Assert.Single(_sessions.All());
-            Assert.NotNull(active.Daily);
-            active.Daily!.DailyEpoch = 0; // a stale A boundary would write a B daily row
-            active.Daily.WeeklyEpoch = 0;
+            Assert.NotNull(active.Activities.Daily);
+            active.Activities.Daily!.DailyEpoch = 0; // a stale A boundary would write a B daily row
+            active.Activities.Daily.WeeklyEpoch = 0;
             active.Progress!.Level = 77; // a stale A progress view would overwrite B's guild level
             active.Position = new Vec3 { X = 173, Y = 1.5f, Z = 201 };
             return Task.CompletedTask;
@@ -522,8 +522,8 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
             Assert.NotNull(failedSession);
             Assert.Null(failedSession.Role);
             Assert.Null(failedSession.Progress);
-            Assert.Null(failedSession.Daily);
-            Assert.Null(failedSession.WildAfk);
+            Assert.Null(failedSession.Activities.Daily);
+            Assert.Null(failedSession.Activities.WildAfk);
             Assert.Equal(RoleOwnerState.Detached, _owners.Get(second).State);
             return Task.CompletedTask;
         });
@@ -616,8 +616,8 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
         await _loop.InvokeAsync(() =>
         {
             session = Assert.Single(_sessions.All());
-            session.DungeonSoloMatch = true;
-            session.EventFaction = 7;
+            session.Instances.DungeonSoloMatch = true;
+            session.Instances.EventFaction = 7;
             _handler.CleanupFailureForTest = (step, _) => step == "festival" ? new IOException("injected festival unlink failure") : null;
             return Task.CompletedTask;
         });
@@ -630,8 +630,8 @@ public sealed class RoleLifecycleTests : IAsyncLifetime
         {
             Assert.Equal(RoleOwnerState.RecoveryRequired, _owners.Get(id).State);
             Assert.NotNull(_owners.Get(id).Attachment);
-            Assert.False(session.DungeonSoloMatch);
-            Assert.Equal(0, session.EventFaction);
+            Assert.False(session.Instances.DungeonSoloMatch);
+            Assert.Equal(0, session.Instances.EventFaction);
             return Task.CompletedTask;
         });
         Assert.Equal(409, await Delete("cleanup", "pw", "CleanupRole"));

@@ -376,7 +376,7 @@ public sealed partial class AdventureGroupService
     /// <summary>A member of a normal group gets the group quests (DailyActivityConfig 3200, 3210-3213) at once.</summary>
     private async Task RefreshGroupQuestsAsync(GameSession s)
     {
-        if (!s.DailyReady || s.Tasks == null) return;
+        if (!s.Activities.DailyReady || s.Tasks == null) return;
         Pin(s);
         await _tasks.EnsureDailyTrackingAsync(s, _daily.TrackingTasks(s));
     }

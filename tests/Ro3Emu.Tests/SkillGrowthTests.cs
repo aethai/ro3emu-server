@@ -258,7 +258,7 @@ public sealed class SkillGrowthTests : IAsyncLifetime
             int[] there = [1, 0];
             foreach (int plan in there)
             {
-                session.SkillPlanSwitchUtc = default;
+                session.Combat.SkillPlanSwitchUtc = default;
                 await sword.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = plan });
                 Assert.Equal(0, (await Next(sword, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
             }
@@ -346,7 +346,7 @@ public sealed class SkillGrowthTests : IAsyncLifetime
         Assert.Equal(0, await Update(0, (Sight, 1), (FireWall, 1)));
         await alice.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 1 });
         Assert.Equal(0, (await Next(alice, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
-        Assert.Equal(1, session.SkillPlans!.CurrentPlanIndex);
+        Assert.Equal(1, session.Combat.SkillPlans!.CurrentPlanIndex);
         Assert.Equal(1, skills.Level(session.Progress!, Sprout));
         Assert.Equal(0, skills.Level(session.Progress!, Sight));
         Assert.Equal(0, await Update(1, (FireBolt, 1)));
@@ -584,7 +584,7 @@ public sealed class SkillGrowthTests : IAsyncLifetime
         });
         Assert.Equal(0, (await Next(bot, SkillService.SkillLoad, SkillLoadResp.Parser)).Result);
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(x => x.Account == "auto");
-        Assert.Contains(session.SkillPlans!.SkillAssignPlans[0].AutoLoadSkill, load => load.SkillId == 11001);
+        Assert.Contains(session.Combat.SkillPlans!.SkillAssignPlans[0].AutoLoadSkill, load => load.SkillId == 11001);
 
         // Job 2100 has no Bash: the rebuilt plan must not leave it in the Auto-Battle list, where every cast would be
         // refused 3002 (Skill has not been learned).

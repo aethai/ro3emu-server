@@ -21,7 +21,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
         var pets = session.Pets;
         // (inferred) The tower's separate battle lineup replaces the passive follower projection, otherwise
         // the same pet can appear twice. Its ordinary 5017 plan is preserved and projected again on return.
-        if (options.Value.PetWorldFollower && session.TowerAttempt == null && session.Role is { } role && pets != null
+        if (options.Value.PetWorldFollower && session.Instances.TowerAttempt == null && session.Role is { } role && pets != null
             && pets.SetupPlans.TryGetValue(pets.CurrentPlan, out var plan))
         {
             // A support slot grants passive effects, not a world combat actor (inferred); the lowest valid owned
@@ -35,7 +35,7 @@ public sealed class PetFollowerService(World world, GameData data, FunctionServi
                 if (data.Row("PetBaseConfig", slot.Value) is not { } pet) continue;
                 int npcId = (int)GameData.Int(pet, "_iMonster");
                 if (data.Row("NPCConfig", npcId) is not { } npc || GameData.Int(npc, "_iNPCType") != 7) continue;
-                if (session.PetActor is { } old && old.OwnerId == role.Id && old.PetId == slot.Value && old.NpcTemplateId == npcId)
+                if (session.Profile.PetActor is { } old && old.OwnerId == role.Id && old.PetId == slot.Value && old.NpcTemplateId == npcId)
                     next = old;
                 else
                     next = new PetFollowerActor(
@@ -79,7 +79,7 @@ public sealed class PetFollowerActor(long uid, long ownerId, int petId, int npcT
     /// <summary>Translate the side/back offset with accepted owner movement; reversal stays on the same side (inferred).</summary>
     public void Follow(GameSession owner, WalkReq walk, bool forceTeleport = false)
     {
-        float dx = owner.Position.X - owner.PreviousPosition.X, dz = owner.Position.Z - owner.PreviousPosition.Z;
+        float dx = owner.Position.X - owner.WorldState.PreviousPosition.X, dz = owner.Position.Z - owner.WorldState.PreviousPosition.Z;
         PreviousPosition = Position.Clone();
         Teleported = forceTeleport || dx * dx + dz * dz > 100f; // same 10-unit transition as player AOI
         if (Teleported) SetOffset(walk.Face);

@@ -103,7 +103,7 @@ public sealed partial class TowerService
         public long StartTimeMs { get; set; }
     }
 
-    private bool Open(GameSession s) => s.Role != null && s.Tower != null && s.Progress != null
+    private bool Open(GameSession s) => s.Role != null && s.Instances.Tower != null && s.Progress != null
         && s.SeasonState is { } state && state.SeasonId == _seasons.SeasonId && state.PlayBookId == _seasons.PlayBook
         && _functions.IsOpen(s, Function) && _functions.IsOpen(s, HallFunction);
 
@@ -136,23 +136,23 @@ public sealed partial class TowerService
     }
 
     private JsonElement? Floor(long id) => FloorTable().ById.TryGetValue(id, out var row) ? row : null;
-    private int Cleared(GameSession s) => Floor(s.Tower!.LayerConfID) is { } f ? (int)GameData.Int(f, "_iFloor") : 0;
+    private int Cleared(GameSession s) => Floor(s.Instances.Tower!.LayerConfID) is { } f ? (int)GameData.Int(f, "_iFloor") : 0;
 
     /// <summary>The highest Spirit Tower floor this role has cleared (PetFloorConfig._iFloor of its record), 0 without one.</summary>
-    public int HighestClearedFloor(GameSession s) => s.Tower == null ? 0 : Cleared(s);
+    public int HighestClearedFloor(GameSession s) => s.Instances.Tower == null ? 0 : Cleared(s);
 
     /// <summary>After a committed floor clear is applied to the session (achievement 101014); listeners post their work.</summary>
     public SyncHook<GameSession> FloorCleared { get; } = new("TowerService.FloorCleared");
     /// <summary>After a floor attempt's 32802 result, won or lost (quest targets 101007 / 101010); listeners post.</summary>
     public SyncHook<GameSession, bool> Settled { get; } = new("TowerService.Settled");
-    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, TowerSync, s.Tower!.Clone());
+    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, TowerSync, s.Instances.Tower!.Clone());
     private async Task SaveAsync(GameSession s, DBClimTower next)
     {
         var bytes = next.ToByteArray();
-        if (_roles.BlobUnchanged(s.Role!.Id, "tower", bytes)) { s.Tower = next; return; } // a login's normalization
+        if (_roles.BlobUnchanged(s.Role!.Id, "tower", bytes)) { s.Instances.Tower = next; return; } // a login's normalization
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role.Id, "tower", bytes);
-        await _roles.CommitAsync(transaction, "tower/state", _ => s.Tower = next);
+        await _roles.CommitAsync(transaction, "tower/state", _ => s.Instances.Tower = next);
     }
 
     /// <summary>
@@ -198,7 +198,7 @@ public sealed partial class TowerService
     public Task InfoAsync(GameSession s)
     {
         var info = new ClimTowerInfoRsp { Result = Open(s) ? 0 : ErrorCodes.FeatureUnavailable };
-        if (s.Tower is { } t)
+        if (s.Instances.Tower is { } t)
         {
             info.Layer = Cleared(s);
             info.PetIds.Add(t.PetIds);
@@ -218,17 +218,17 @@ public sealed partial class TowerService
         using var held = await CharacterService.Lock(s);
         // Mid-fight edits would otherwise despawn/recreate an injured actor at full HP. The UI permits
         // formation requests, but a combat-time swap contract is unproven; reject until settlement (inferred).
-        int code = s.TowerAttempt is { Settled: false } ? ErrorCodes.PetOperation
+        int code = s.Instances.TowerAttempt is { Settled: false } ? ErrorCodes.PetOperation
             : FormationCode(s, [.. req.Pets]);
         if (code == 0)
         {
-            var next = s.Tower!.Clone();
+            var next = s.Instances.Tower!.Clone();
             next.PetIds.Clear();
             next.PetIds.Add(req.Pets);
             await SaveAsync(s, next);
         }
         var reply = new SetClimTowerPetsRes { Result = code };
-        if (s.Tower != null) reply.Pets.Add(s.Tower.PetIds);
+        if (s.Instances.Tower != null) reply.Pets.Add(s.Instances.Tower.PetIds);
         await s.SendGameAsync(SetPets, reply);
         if (code == 0)
         {
@@ -267,9 +267,9 @@ public sealed partial class TowerService
     /// The DAL's four saved positions remain unchanged when a substitute enters.</summary>
     private async Task ReconcilePetsAsync(GameSession s, Attempt a)
     {
-        if (!Active(s, a) || s.Pets == null || s.Tower == null) return;
+        if (!Active(s, a) || s.Pets == null || s.Instances.Tower == null) return;
         int capacity = Math.Clamp((int)GameData.Int(a.Floor, "_iPetOnBattle"), 0, 4);
-        var desired = s.Tower.PetIds.Where(id => id != 0 && !a.DeadPetIds.Contains(id)
+        var desired = s.Instances.Tower.PetIds.Where(id => id != 0 && !a.DeadPetIds.Contains(id)
             && s.Pets.ListPet.ContainsKey(id)).Take(capacity).ToArray();
         foreach (var pet in a.Pets.Where(p => !desired.Contains(p.PetId)).ToArray())
         {
@@ -292,7 +292,7 @@ public sealed partial class TowerService
     private async Task PetDiedAsync(TowerPetUnit pet)
     {
         var s = pet.Owner;
-        if (s.TowerAttempt is not { } a || !Active(s, a) || !a.Pets.Contains(pet)) return;
+        if (s.Instances.TowerAttempt is not { } a || !Active(s, a) || !a.Pets.Contains(pet)) return;
         a.DeadPetIds.Add(pet.PetId);
         await s.SendGameAsync(PetDeadState, new ClimbTowerSyncPetDeadStateRes
         {
@@ -312,16 +312,16 @@ public sealed partial class TowerService
     {
         var floor = Floor(req.Layer);
         // The Failed panel's Try Again is a continuation from the lost floor, where the challenger may lie dead.
-        bool deadRetry = s.Dead && s.TowerAttempt is { Settled: true } lost && s.InstanceId == lost.InstanceId;
+        bool deadRetry = s.Dead && s.Instances.TowerAttempt is { Settled: true } lost && s.InstanceId == lost.InstanceId;
         int error = !Open(s) ? ErrorCodes.FeatureUnavailable
             : s.SceneLoading ? ErrorCodes.SwitchingScenes
-            : s.Dead && !deadRetry || s.InstanceId != 0 && s.TowerAttempt == null ? ErrorCodes.FeatureUnavailable
+            : s.Dead && !deadRetry || s.InstanceId != 0 && s.Instances.TowerAttempt == null ? ErrorCodes.FeatureUnavailable
             : floor == null ? ErrorCodes.Parameter
             : s.Progress!.Level < GameData.Int(floor.Value, "_iLevelLimit") ? ErrorCodes.FeatureUnavailable
             : GameData.Int(floor.Value, "_iFloor") > Cleared(s) + 1 ? ErrorCodes.Parameter
-            : req.IsInClimTower != (s.TowerAttempt != null) || s.TowerAttempt is { Settled: false } ? ErrorCodes.Parameter : 0;
+            : req.IsInClimTower != (s.Instances.TowerAttempt != null) || s.Instances.TowerAttempt is { Settled: false } ? ErrorCodes.Parameter : 0;
         // A saved formation can outlive ownership/level changes; entry must apply the same slot rules as 32803.
-        if (error == 0) error = FormationCode(s, [.. s.Tower!.PetIds]);
+        if (error == 0) error = FormationCode(s, [.. s.Instances.Tower!.PetIds]);
         long mapId = floor is { } f ? GameData.Int(f, "_iMapID") : 0;
         var map = error == 0 ? _worldData.Map(mapId) : null;
         var spawns = error == 0 && map != null ? Expand(floor!.Value, map) : null;
@@ -341,7 +341,7 @@ public sealed partial class TowerService
 
         var room = InPlace(s, mapId) is { } kept ? kept : _instances.Create(mapId, [s]);
         bool nextFloor = GameData.Int(floor!.Value, "_iFloor") == Cleared(s) + 1;
-        long challengeMs = nextFloor ? s.Tower!.ChallengeTime : 0;
+        long challengeMs = nextFloor ? s.Instances.Tower!.ChallengeTime : 0;
         var now = _clock.GetUtcNow();
         int hpRatio = DifficultyRatio(floor.Value, 1011, challengeMs, now);
         var attempt = new Attempt
@@ -351,18 +351,18 @@ public sealed partial class TowerService
             DamageRatio = DifficultyRatio(floor.Value, 215, challengeMs, now),
             Suppressed = Suppress(s, floor.Value, hpRatio),
         };
-        if (ReferenceEquals(room, s.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt, map!.Born!.Value);
+        if (ReferenceEquals(room, s.Instances.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt, map!.Born!.Value);
         else
         {
             if (!await _instances.EnterAsync(room, s, reason: 4)) return;
-            s.TowerAttempt = attempt;
+            s.Instances.TowerAttempt = attempt;
         }
         _log.LogInformation("{Name} starts tower config {Floor} instance {Instance}", s.Role!.Name, req.Layer, attempt.InstanceId);
     }
 
     /// <summary>The settled floor's room when the next attempt is on the same map, which it then reuses.</summary>
     private InstanceService.Room? InPlace(GameSession s, long mapId) =>
-        s.TowerAttempt is { Settled: true } previous && s.InstanceId == previous.InstanceId && previous.Room.SceneEntry == mapId
+        s.Instances.TowerAttempt is { Settled: true } previous && s.InstanceId == previous.InstanceId && previous.Room.SceneEntry == mapId
         && s.SceneEntry == mapId && !previous.Room.Closed && ReferenceEquals(_instances.Find(previous.InstanceId), previous.Room)
             ? previous.Room : null;
 
@@ -383,7 +383,7 @@ public sealed partial class TowerService
     /// </summary>
     private async Task ResetFloorAsync(GameSession s, Attempt attempt, MapPoint born)
     {
-        s.TowerAttempt = attempt; // the settled floor's pending spawns and deadline lapse (Active)
+        s.Instances.TowerAttempt = attempt; // the settled floor's pending spawns and deadline lapse (Active)
         await s.SendGameAsync(DungeonService.Reset, new DungeonResetNtf());
         await _scene.TeleportInMapAsync(s, born);
         await LoadedAsync(s);
@@ -405,12 +405,12 @@ public sealed partial class TowerService
         return result;
     }
 
-    private bool Active(GameSession s, Attempt a) => ReferenceEquals(s.TowerAttempt, a) && !a.Settled && !a.Room.Closed
+    private bool Active(GameSession s, Attempt a) => ReferenceEquals(s.Instances.TowerAttempt, a) && !a.Settled && !a.Room.Closed
         && a.Loaded && !s.SceneLoading && s.InstanceId == a.InstanceId && s.Role != null;
 
     private async Task LoadedAsync(GameSession s)
     {
-        if (s.TowerAttempt is not { Loaded: false, Settled: false } a || s.InstanceId != a.InstanceId) return;
+        if (s.Instances.TowerAttempt is not { Loaded: false, Settled: false } a || s.InstanceId != a.InstanceId) return;
         a.Loaded = true;
         a.StartedAt = _loop.Now;
         a.StartTimeMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
@@ -460,19 +460,19 @@ public sealed partial class TowerService
 
     private Task KilledAsync(GameSession s, MonsterUnit monster)
     {
-        if (s.TowerAttempt is not { } a || !Active(s, a) || monster.InstanceId != a.InstanceId
+        if (s.Instances.TowerAttempt is not { } a || !Active(s, a) || monster.InstanceId != a.InstanceId
             || !a.Monsters.Contains(monster) || !a.Killed.Add(monster.Uid)) return Task.CompletedTask;
         if (_loop.Now - a.StartedAt >= TimeSpan.FromSeconds(GameData.Int(a.Floor, "_iTimeLimit"))) return SettleAsync(s, a, false);
         return a.Killed.Count == a.Spawns.Count ? SettleAsync(s, a, true) : Task.CompletedTask;
     }
 
-    private Task PlayerDiedAsync(GameSession s) => s.TowerAttempt is { } a && Active(s, a) ? SettleAsync(s, a, false) : Task.CompletedTask;
+    private Task PlayerDiedAsync(GameSession s) => s.Instances.TowerAttempt is { } a && Active(s, a) ? SettleAsync(s, a, false) : Task.CompletedTask;
 
     /// <summary>The final floor outcome shares its source receipt with goods, tower state and first-pass record
     /// before the monster's death can be published. Presentation waits for the ordinary killed callback.</summary>
     private Task BeforeTerminalKillAsync(GameSession s, MonsterUnit monster)
     {
-        if (s.TowerAttempt is not { } a || !Active(s, a) || a.ClearCommitted
+        if (s.Instances.TowerAttempt is not { } a || !Active(s, a) || a.ClearCommitted
             || monster.InstanceId != a.InstanceId || !a.Monsters.Contains(monster)
             || a.Killed.Contains(monster.Uid)
             || a.Killed.Count + a.Monsters.Count(m => !a.Killed.Contains(m.Uid)
@@ -483,7 +483,7 @@ public sealed partial class TowerService
         int floor = (int)GameData.Int(a.Floor, "_iFloor"), limit = (int)GameData.Int(a.Floor, "_iTimeLimit");
         long config = GameData.Int(a.Floor, "_iID"), now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         int duration = Math.Clamp((int)(_loop.Now - a.StartedAt).TotalSeconds, 0, limit);
-        var previous = s.Tower!;
+        var previous = s.Instances.Tower!;
         bool record = floor > Cleared(s);
         var goods = !previous.RewardRecord.TryGetValue(config, out bool paid) || !paid
             ? Award(GameData.Int(a.Floor, "_iFirstReward"))! : [];
@@ -524,7 +524,7 @@ public sealed partial class TowerService
         };
         settlement.Applied = () =>
         {
-            s.Tower = next;
+            s.Instances.Tower = next;
             foreach (var handler in FloorCleared.Handlers)
                 try { handler(s); }
                 catch (Exception e) { _log.LogError(e, "Tower clear hook failed for {Role}", s.Role.Id); }
@@ -591,7 +591,7 @@ public sealed partial class TowerService
         // curTime/completeTime use Unix milliseconds (inferred); challengeTime's millisecond units are client-proven.
         long now = a.ClearCommitted ? a.ClearNow : _clock.GetUtcNow().ToUnixTimeMilliseconds();
         int duration = a.ClearCommitted ? a.ClearDuration : Math.Clamp((int)(_loop.Now - a.StartedAt).TotalSeconds, 0, limit);
-        var t = s.Tower!;
+        var t = s.Instances.Tower!;
         bool record = won && (a.ClearCommitted ? a.ClearRecord : floor > Cleared(s));
         var reward = a.ClearCommitted ? a.ClearReward! : new GetRewardNotify { TargetUid = s.Role!.Id };
         int result = 0;
@@ -661,7 +661,7 @@ public sealed partial class TowerService
     {
         using var held = await CharacterService.Lock(s);
         int error = Open(s) ? 0 : ErrorCodes.FeatureUnavailable;
-        long watermark = s.Tower?.ServerFirstPassClaimedLayer ?? 0;
+        long watermark = s.Instances.Tower?.ServerFirstPassClaimedLayer ?? 0;
         long previousWatermark = watermark;
         var goods = new List<(int Entry, int Count)>();
         if (error == 0)
@@ -679,7 +679,7 @@ public sealed partial class TowerService
         }
         if (error == 0)
         {
-            var next = s.Tower!.Clone();
+            var next = s.Instances.Tower!.Clone();
             next.ServerFirstPassClaimedLayer = watermark;
             try
             {
@@ -692,7 +692,7 @@ public sealed partial class TowerService
                     Popup = false,
                     Sync = false,
                     Persist = tx => tx.RoleBlob(s.Role.Id, "tower", next.ToByteArray()),
-                    Committed = () => s.Tower = next,
+                    Committed = () => s.Instances.Tower = next,
                     Economy = economy,
                 });
                 if (granted == null) error = ErrorCodes.ItemsShort;
@@ -710,7 +710,7 @@ public sealed partial class TowerService
         }
         await s.SendGameAsync(ClaimFirstPass, new ClimbTowerClaimFirstPassRewardRes
         {
-            Result = error, ClaimedUpToLayer = s.Tower?.ServerFirstPassClaimedLayer ?? 0,
+            Result = error, ClaimedUpToLayer = s.Instances.Tower?.ServerFirstPassClaimedLayer ?? 0,
         });
     }
 
@@ -740,14 +740,14 @@ public sealed partial class TowerService
 
     public async Task LeaveAsync(GameSession s)
     {
-        var a = s.TowerAttempt;
+        var a = s.Instances.TowerAttempt;
         var member = a?.Room.MemberFor(s);
         var role = s.Role;
         bool valid = a != null && member != null && s.Role != null && !s.SceneLoading
             && s.InstanceId == a.InstanceId && s.SceneEntry == a.Room.SceneEntry
             && ReferenceEquals(_instances.Find(a.InstanceId), a.Room);
         await s.SendGameAsync(LeaveDungeon, new LeaveDungeonRsp { Result = valid ? 0 : ErrorCodes.SceneMissing });
-        if (!valid || !ReferenceEquals(s.TowerAttempt, a) || !ReferenceEquals(s.Role, role)
+        if (!valid || !ReferenceEquals(s.Instances.TowerAttempt, a) || !ReferenceEquals(s.Role, role)
             || s.InstanceId != a!.InstanceId || s.SceneEntry != a.Room.SceneEntry || s.SceneLoading
             || !ReferenceEquals(_instances.Find(a.InstanceId), a.Room) || a.Room.MemberFor(s) != member) return;
         // (inferred) Return recovery is armed before 70010 by the shared instance owner.
@@ -757,9 +757,9 @@ public sealed partial class TowerService
     /// <summary>Exit/disconnect/role switch cancels scheduled waves and clears the private map (inferred abandonment).</summary>
     public async Task AbandonAsync(GameSession s)
     {
-        if (s.TowerAttempt is not { } a) return;
+        if (s.Instances.TowerAttempt is not { } a) return;
         a.Settled = true;
-        s.TowerAttempt = null;
+        s.Instances.TowerAttempt = null;
         s.Attack = null;
         await RemovePetsAsync(a);
         await _instances.AbandonAsync(a.Room, s);

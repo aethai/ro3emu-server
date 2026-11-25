@@ -27,12 +27,12 @@ public sealed partial class BuffService
     {
         if (p.Role == null || p.Dead) return false;
         long now = _loop.NowMs;
-        if (p.ImmuneDeathOffer is { } pending)
+        if (p.Combat.ImmuneDeathOffer is { } pending)
         {
             if (pending.ExpiresMs > now) return true;
-            p.ImmuneDeathOffer = null;
+            p.Combat.ImmuneDeathOffer = null;
         }
-        if (p.ImmuneRecoveryUntilMs > now) return true;
+        if (p.Combat.ImmuneRecoveryUntilMs > now) return true;
         var live = p.Buffs.Where(b => b.ExpireMs > now).ToList();
         var automatic = live.FirstOrDefault(b => b.ConfigId is 1430501 or 16340401 or 15400401);
         if (automatic != null)
@@ -46,15 +46,15 @@ public sealed partial class BuffService
 
         var choice = live.FirstOrDefault(b => _data.Row("BuffConfig", b.ConfigId) is { } row
             && GameData.Int(row, "_iBuffID") is 20520 or 20521
-            && p.BuffEffectCds.GetValueOrDefault(b.Guid) <= now);
+            && p.Combat.BuffEffectCds.GetValueOrDefault(b.Guid) <= now);
         if (choice == null) return PassiveLethalSave != null && await PassiveLethalSave(p);
         long window = Data.Config.PublicParams.Of(_data).ImmuneDeadConfirmTimeMs ?? 5000;
         window = Math.Clamp(window, 1000, 30000);
-        p.ImmuneDeathOffer = new ImmuneDeathOffer(choice.Guid, choice.ConfigId, now + window);
+        p.Combat.ImmuneDeathOffer = new ImmuneDeathOffer(choice.Guid, choice.ConfigId, now + window);
         long cd = InternalCooldownMs(choice.ConfigId);
         if (cd > 0)
         {
-            p.BuffEffectCds[choice.Guid] = now + cd;
+            p.Combat.BuffEffectCds[choice.Guid] = now + cd;
             await p.SendGameAsync(BuffEffectCd, new BuffEffectCdNotify
             {
                 BuffGuid = choice.Guid, StartTimestampMs = now, EndTimestampMs = now + cd,
@@ -64,7 +64,7 @@ public sealed partial class BuffService
         await RefreshControlAsync(p);
         await p.SendGameAsync(ImmuneDeathNotify, new PlayerOnEnterImmuneDeadNotify
         {
-            BuffConfigId = choice.ConfigId, ExpireTimestampMs = p.ImmuneDeathOffer.ExpiresMs,
+            BuffConfigId = choice.ConfigId, ExpireTimestampMs = p.Combat.ImmuneDeathOffer.ExpiresMs,
         });
         return true;
     }
@@ -72,14 +72,14 @@ public sealed partial class BuffService
     /// <summary>31135 accepts a live 31134 offer; false or timeout resumes ordinary death.</summary>
     public async Task ConfirmImmuneDeathAsync(GameSession p, PlayerConfirmImmuneDeadReq req)
     {
-        var offer = p.ImmuneDeathOffer;
+        var offer = p.Combat.ImmuneDeathOffer;
         bool valid = offer != null && offer.ExpiresMs >= _loop.NowMs && !p.Dead;
         await p.SendGameAsync(ImmuneDeathConfirm, new PlayerConfirmImmuneDeadRsp
         {
             Result = valid ? 0 : ErrorCodes.Parameter,
         });
         if (!valid) return;
-        p.ImmuneDeathOffer = null;
+        p.Combat.ImmuneDeathOffer = null;
         if (!req.IsConfirm)
         {
             await DeclineImmuneDeathAsync(p);
@@ -96,8 +96,8 @@ public sealed partial class BuffService
         int percent = (int)Math.Clamp(DescriptionNumber(desc, 1, 100), 1, 100);
         if (group == 20520)
         {
-            p.ImmuneRecoveryUntilMs = _loop.NowMs + 3000;
-            p.ImmuneRecoveryPercent = (int)Math.Clamp(DescriptionNumber(desc, 4, 20), 1, 100);
+            p.Combat.ImmuneRecoveryUntilMs = _loop.NowMs + 3000;
+            p.Combat.ImmuneRecoveryPercent = (int)Math.Clamp(DescriptionNumber(desc, 4, 20), 1, 100);
             await _character.SetHpSpAsync(p, 1, null);
         }
         else
@@ -151,16 +151,16 @@ public sealed partial class BuffService
 
     private void TickImmuneDeath(GameSession p, long now)
     {
-        if (p.ImmuneDeathOffer is { } offer && offer.ExpiresMs < now)
+        if (p.Combat.ImmuneDeathOffer is { } offer && offer.ExpiresMs < now)
         {
-            p.ImmuneDeathOffer = null;
+            p.Combat.ImmuneDeathOffer = null;
             _loop.TrackLegacyDetached("immune death decline", () => DeclineImmuneDeathAsync(p));
         }
-        if (p.ImmuneRecoveryUntilMs > 0 && p.ImmuneRecoveryUntilMs <= now)
+        if (p.Combat.ImmuneRecoveryUntilMs > 0 && p.Combat.ImmuneRecoveryUntilMs <= now)
         {
-            p.ImmuneRecoveryUntilMs = 0;
-            int percent = p.ImmuneRecoveryPercent;
-            p.ImmuneRecoveryPercent = 0;
+            p.Combat.ImmuneRecoveryUntilMs = 0;
+            int percent = p.Combat.ImmuneRecoveryPercent;
+            p.Combat.ImmuneRecoveryPercent = 0;
             _loop.TrackLegacyDetached("immune recovery end", () => EndImmuneRecoveryAsync(p, percent));
         }
     }

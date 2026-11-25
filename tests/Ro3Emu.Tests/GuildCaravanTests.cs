@@ -359,8 +359,8 @@ public sealed class GuildCaravanTests : IAsyncLifetime
                 _app.Services.GetRequiredService<CharacterService>().CountOf(session, 5));
             if (round == 0)
             {
-                Assert.True(session.DailyRows!.ActivityData[101].TaskCompleteTimes == 1,
-                    $"daily={session.DailyRows.ActivityData[101].TaskCompleteTimes}; task={session.Tasks!.Infos.GetValueOrDefault(500080)}; completed={session.Tasks.CompleteTaskNum.GetValueOrDefault(500080)}; function={_app.Services.GetRequiredService<FunctionService>().IsOpen(session, 1320)}");
+                Assert.True(session.Activities.DailyRows!.ActivityData[101].TaskCompleteTimes == 1,
+                    $"daily={session.Activities.DailyRows.ActivityData[101].TaskCompleteTimes}; task={session.Tasks!.Infos.GetValueOrDefault(500080)}; completed={session.Tasks.CompleteTaskNum.GetValueOrDefault(500080)}; function={_app.Services.GetRequiredService<FunctionService>().IsOpen(session, 1320)}");
             }
         }
         Assert.Equal(5, show.CurRound);
@@ -369,7 +369,7 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         await alice.SendGameAsync(GuildCaravanService.Depart, new GuildCatShopDepartReq());
         Assert.Equal(ErrorCodes.CaravanDeparted,
             (await Next(alice, GuildCaravanService.Depart, GuildCatShopDepartResp.Parser)).Result);
-        Assert.Equal(1, session.DailyRows!.ActivityData[101].TaskCompleteTimes);
+        Assert.Equal(1, session.Activities.DailyRows!.ActivityData[101].TaskCompleteTimes);
     }
 
     [ClientDataFact]
@@ -419,7 +419,7 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         Assert.Equal(8, today.SkuData.Count);
         Assert.All(today.SkuData, x => Assert.Equal(0, (int)x.Status));
         Assert.Equal(0, _app.Services.GetRequiredService<SessionRegistry>().All()
-            .Single(x => x.Role?.Id == roleId).DailyRows!.ActivityData[101].TaskCompleteTimes);
+            .Single(x => x.Role?.Id == roleId).Activities.DailyRows!.ActivityData[101].TaskCompleteTimes);
     }
 
     [ClientDataFact]

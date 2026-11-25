@@ -31,7 +31,7 @@ public sealed partial class ActivityPassService
     internal bool PassTurnReached(GameSession session, long activityId, DBNewActivityInfo? state)
     {
         if (!_passPlay || PassBefore(activityId) is not long before || PassConfig(before) is not { } config) return true;
-        var infos = (state ?? session.NewActivities)?.ActivityInfo;
+        var infos = (state ?? session.Activities.NewActivities)?.ActivityInfo;
         return infos != null && infos.TryGetValue(before, out var info)
             && info.ActivityParam?.BattlePass is { } pass && pass.Level >= GameData.Int(config, "_iMaxLevel");
     }
@@ -89,7 +89,7 @@ public sealed partial class ActivityPassService
         if (req.RewardType is not (0 or 1)) return ErrorCodes.BattlePassRewardType;
         if (req.Levels.Count == 0) return ErrorCodes.BattlePassNoRewards;
         if (req.Levels.Count != req.Levels.Distinct().Count()) return ErrorCodes.BattlePassLevel;
-        var current = session.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass;
+        var current = session.Activities.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass;
         if (req.RewardType == 1 && !current.Premium) return ErrorCodes.BattlePassPremium;
         var claimed = req.RewardType == 1 ? current.ClaimedPremiumLevels : current.ClaimedFreeLevels;
         var groups = new List<long>();
@@ -102,7 +102,7 @@ public sealed partial class ActivityPassService
             if (award <= 0) return ErrorCodes.RewardMissing;
             groups.Add(award);
         }
-        var next = session.NewActivities.Clone();
+        var next = session.Activities.NewActivities.Clone();
         var updated = next.ActivityInfo[activityId].ActivityParam.BattlePass;
         foreach (int level in req.Levels)
         {
@@ -126,8 +126,8 @@ public sealed partial class ActivityPassService
     private async Task<int> MarkPassViewedAsync(GameSession session, long activityId)
     {
         if (ActivityError(session, activityId, 23) is var error and not 0) return error;
-        if (session.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass.UnlockPageViewed) return 0;
-        var next = session.NewActivities.Clone();
+        if (session.Activities.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass.UnlockPageViewed) return 0;
+        var next = session.Activities.NewActivities.Clone();
         next.ActivityInfo[activityId].ActivityParam.BattlePass.UnlockPageViewed = true;
         return await _activities.CommitAsync(session, next);
     }
@@ -136,7 +136,7 @@ public sealed partial class ActivityPassService
     {
         if (ActivityError(session, activityId, 23) is var error and not 0) return error;
         if (PassConfig(activityId) is not { } config || req.Count <= 0) return ErrorCodes.BattlePassLevel;
-        var pass = session.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass;
+        var pass = session.Activities.NewActivities!.ActivityInfo[activityId].ActivityParam.BattlePass;
         int max = checked((int)GameData.Int(config, "_iMaxLevel"));
         if (pass.Level >= max || req.Count > max - pass.Level) return ErrorCodes.BattlePassMaxLevel;
         var cost = GameData.Pairs(config, "_kBuyLevelConsume").ToArray();
@@ -144,7 +144,7 @@ public sealed partial class ActivityPassService
             return ErrorCodes.FeatureUnavailable;
         long amount = checked((long)cost[0].Value * req.Count);
         if (amount > int.MaxValue) return ErrorCodes.BattlePassCurrency;
-        var next = session.NewActivities.Clone();
+        var next = session.Activities.NewActivities.Clone();
         var updated = next.ActivityInfo[activityId].ActivityParam.BattlePass;
         updated.Level += req.Count;
         updated.BoughtLevelCount += req.Count;
@@ -187,7 +187,7 @@ public sealed partial class ActivityPassService
                     Recipient = req.TargetPlayerId, Activity = activityId, Token = token,
                     Entitlement = entitlement, Message = req.GiftMessage
                 });
-            result = await _activities.CommitAsync(session, session.NewActivities!.Clone(), costs: [(token, 1)],
+            result = await _activities.CommitAsync(session, session.Activities.NewActivities!.Clone(), costs: [(token, 1)],
                 persist: delivery.Persist, stateLockHeld: true, economy: economy);
             if (result == 0) delivered = delivery;
         }
@@ -209,13 +209,13 @@ public sealed partial class ActivityPassService
     /// <summary>Observe actual earned pass currency, keeping already credited EXP when a balance is spent elsewhere (inferred).</summary>
     internal async Task ReconcilePassAsync(GameSession session)
     {
-        if (session.NewActivities == null || session.ActivityRuntime == null) return;
+        if (session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null) return;
         foreach (long activityId in PassIds)
         {
             if (ActivityError(session, activityId, 23, allowInitializing: true) != 0 || PassConfig(activityId) is not { } config) continue;
-            var info = session.NewActivities.ActivityInfo[activityId];
+            var info = session.Activities.NewActivities.ActivityInfo[activityId];
             var current = info.ActivityParam.BattlePass;
-            var runtime = session.ActivityRuntime.PassProgress.GetValueOrDefault(activityId) ?? new PassProgressRuntime();
+            var runtime = session.Activities.ActivityRuntime.PassProgress.GetValueOrDefault(activityId) ?? new PassProgressRuntime();
             bool reset = runtime.Initialized && runtime.ActivityInstance != info.ActivityInstance;
             int expItem = checked((int)GameData.Int(config, "_iExpCurrencyId"));
             long balance = Owned(session, expItem);
@@ -244,7 +244,7 @@ public sealed partial class ActivityPassService
             bool activate = (reset || !current.Premium) && (_freePremiumPass || owned);
             changed |= activate;
             if (!changed) continue;
-            var next = session.NewActivities.Clone();
+            var next = session.Activities.NewActivities.Clone();
             if (reset) next.ActivityInfo[activityId].ActivityParam.BattlePass = new PlayerActivityBattlePass();
             var updated = next.ActivityInfo[activityId].ActivityParam.BattlePass;
             updated.Level = level;

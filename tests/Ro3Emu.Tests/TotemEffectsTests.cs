@@ -63,7 +63,7 @@ public sealed class TotemEffectsTests : IAsyncLifetime
             },
         };
         session.Items.Add(item);
-        session.Totems!.TotemPlans[0].SetUpTotem[1] = item.Guid;
+        session.Profile.Totems!.TotemPlans[0].SetUpTotem[1] = item.Guid;
         await effects.RefreshAsync(session);
         Assert.Contains(session.Buffs, b => b.IsPassive && b.SourceId == item.Guid && b.ConfigId == 2500201 && b.ExpireMs == long.MaxValue);
         Assert.Equal(1.01, effects.OutgoingMultiplier(session, magic, DamageHitResult.Normal), 3);
@@ -97,7 +97,7 @@ public sealed class TotemEffectsTests : IAsyncLifetime
         Assert.Contains(session.Buffs, b => b.ConfigId == 2500401 && b.IsTotemOwned && b.SourceId == item.Guid && b.PileCount == 3);
 
         // Switching away removes the exact source's passive registration and floor, leaving the ordinary buff.
-        session.Totems.CurrentPlan = 1;
+        session.Profile.Totems.CurrentPlan = 1;
         await effects.RefreshAsync(session);
         Assert.DoesNotContain(session.Buffs, b => b.SourceId == item.Guid);
         Assert.Contains(session.Buffs, b => b.ConfigId == 2500401 && !b.IsTotemOwned && b.SourceId == role);

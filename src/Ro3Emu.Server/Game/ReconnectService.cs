@@ -223,7 +223,7 @@ public sealed class ReconnectService
     {
         if (!_bySession.TryGetValue(session, out var ticket)) return false;
         bool eligible = !_closed && _loop.Phase == GameLoopPhase.Accepting && _options.ReconnectGraceSeconds > 0
-            && ticket.ClientReady && !session.ReconnectBlocked && !session.SceneRecoveryRequired
+            && ticket.ClientReady && !session.ReconnectBlocked && !session.WorldState.SceneRecoveryRequired
             && session.Role != null && session.Owner is { State: Ownership.RoleOwnerState.Attached, Detaching: null }
             && ticket.Attachment != null && ReferenceEquals(session.Attachment, ticket.Attachment) && !ticket.Attachment.Cancelled
             && _sessions.IsWinner(session) && session.AccountGeneration == ticket.AccountGeneration;
@@ -241,7 +241,7 @@ public sealed class ReconnectService
         session.TransportLost = true;
         // (inferred) Stop what would keep acting for an absent player; everything else waits as it is.
         session.Attack = null;
-        session.LockTarget = 0;
+        session.Combat.LockTarget = 0;
         _deadlines.SetGlobal(GraceKeyPrefix + ticket.EntityId, until, (_, _, _) =>
         {
             if (IsCurrent(ticket) && ticket.GraceUntil != null) Expire(ticket, "grace expired");
@@ -331,7 +331,7 @@ public sealed class ReconnectService
         ticket.GraceUntil = null;
         session.TransportLost = false;
         // The client destroyed every unit: what it was sent no longer counts (spec §4.4).
-        session.SentPropertyIds.Clear();
+        session.Profile.SentPropertyIds.Clear();
         ticket.Auth = RandomNumberGenerator.GetBytes(16);
         if (oldOpen) _ = Task.Run(() => CloseAsync(old, ReasonBeReconnected)); // half-open: the old socket never closed
         ticket.ResyncPending = true;
@@ -356,7 +356,7 @@ public sealed class ReconnectService
     {
         var session = ticket.Session;
         if (ticket.GraceUntil is { } until && now > until) return "grace expired";
-        if (session.ReconnectBlocked || session.SceneRecoveryRequired) return "recovery required";
+        if (session.ReconnectBlocked || session.WorldState.SceneRecoveryRequired) return "recovery required";
         if (session.Role == null || session.Owner is not { State: Ownership.RoleOwnerState.Attached, Detaching: null }
             || ticket.Attachment == null || !ReferenceEquals(session.Attachment, ticket.Attachment) || ticket.Attachment.Cancelled)
             return "role no longer attached";

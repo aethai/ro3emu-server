@@ -11,7 +11,7 @@ public sealed partial class PetService
 
     internal IEnumerable<GuardianPetRules.Skill> Guardians(GameSession s)
     {
-        if (s.Pets is not { } state || s.Progress == null || s.TowerAttempt != null || !_functions.IsOpen(s, Function)
+        if (s.Pets is not { } state || s.Progress == null || s.Instances.TowerAttempt != null || !_functions.IsOpen(s, Function)
             || !state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan)) yield break;
         var seen = new HashSet<int>();
         bool coreSelected = false;
@@ -32,7 +32,7 @@ public sealed partial class PetService
     }
 
     internal bool GuardianEquipped(GameSession s, GuardianPetRules.Skill skill) =>
-        s.Pets is { } state && s.Progress != null && s.TowerAttempt == null && _functions.IsOpen(s, Function)
+        s.Pets is { } state && s.Progress != null && s.Instances.TowerAttempt == null && _functions.IsOpen(s, Function)
         && state.CurrentPlan == skill.Plan && SlotOpen(s, LineUpSlots, skill.Slot)
         && state.SetupPlans.TryGetValue(state.CurrentPlan, out var plan) && plan.SetUpPets.GetValueOrDefault(skill.Slot) == skill.PetId
         && state.ListPet.TryGetValue(skill.PetId, out var pet) && pet.Star == skill.Star && pet.StarProgress == skill.Stage

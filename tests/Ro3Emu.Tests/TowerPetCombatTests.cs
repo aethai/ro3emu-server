@@ -93,7 +93,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         var entity = Assert.Single(aoi.Bases, e => e.EntityTemplateID == 2300130);
         foreach (var (id, value) in new (long, long)[] { (101, 3363), (103, 218), (104, 218), (105, 240), (106, 240), (2002, 12) })
             Assert.Equal(value, entity.Property.Single(p => p.Idx == id).Data);
-        var pet = Assert.Single(Session.TowerAttempt!.Pets);
+        var pet = Assert.Single(Session.Instances.TowerAttempt!.Pets);
         await Next(bot, CombatService.UseInSkill, UseInSkillInfo.Parser, c => c.SrcID == pet.Uid && c.SkillID == 2354301);
         var shield = await Next(bot, BuffService.BuffUpdate, BuffUpdateNotify.Parser,
             b => b.UnitId == pet.Uid && b.Buffs.Any(x => x.ConfigId == 2354401));
@@ -112,7 +112,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task ShieldHasFiniteBudgetAllyLimitRangeCooldownAndNoEnemyDamage()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         var added = new List<TowerPetUnit>();
         MonsterUnit attacker = null!;
         await Run(async () =>
@@ -186,7 +186,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task ChocoSupportChangesAllyAttackOnTheWireAndExpiresWithItsBuff()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         TowerPetUnit choco = null!, bobo = null!;
         await Run(async () =>
         {
@@ -224,7 +224,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task HealingUsesRecipientHpAndPendingSupportCannotLandAfterSettlement()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         TowerPetUnit healer = null!;
         await Run(async () =>
         {

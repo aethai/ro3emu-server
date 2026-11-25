@@ -97,7 +97,7 @@ public sealed class MountTests : IAsyncLifetime
         await UnlockMount(a, "alice", 1501013);
         await Gm("alice", "!item 1501013 1");
         long guid = Session("alice").Items.Single(i => i.Entry == 1501013).Guid;
-        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => { Session("alice").ItemCds.Clear(); return Task.CompletedTask; });
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => { Session("alice").Combat.ItemCds.Clear(); return Task.CompletedTask; });
         await a.SendGameAsync(31323, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         Assert.Equal(ErrorCodes.MountAlreadyOwned, (await Next(a, 31323, ItemUseResp.Parser)).Result);
         Assert.Contains(Session("alice").Items, i => i.Guid == guid);
@@ -346,7 +346,7 @@ public sealed class MountTests : IAsyncLifetime
         await a.SendGameAsync(WardrobeService.Use, use);
         Assert.Equal(0, (await Next(a, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
         var s = Session("alice");
-        Assert.Equal(costume, s.Wardrobe!.CurUseAppearances[4]);
+        Assert.Equal(costume, s.Profile.Wardrobe!.CurUseAppearances[4]);
 
         var wheel = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
             Task.FromResult(_app.Services.GetRequiredService<SkillService>().Build(s).SkillWheel.WhellSkills));
@@ -410,7 +410,7 @@ public sealed class MountTests : IAsyncLifetime
         var session = Session("alice");
         Assert.Equal(TaskState.Delivery, session.Tasks!.Infos[10101250].Status);
         Assert.True(session.Mounts!.Mounts.ContainsKey(mount));
-        Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
+        Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
         Assert.DoesNotContain(session.Items, i => i.Entry == voucher);
 
         await a.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { mount } });
@@ -440,7 +440,7 @@ public sealed class MountTests : IAsyncLifetime
             await Next(a, MountService.SetConfig, PlayerMountsSetCfgResp.Parser);
             var session = Session("alice");
             Assert.True(session.Mounts!.Mounts.ContainsKey(mount));
-            Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
+            Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
             // The second one is refused as already owned, not consumed.
             Assert.Equal(1, session.Items.Where(i => i.Entry == voucher).Sum(i => i.Stack));
         }
@@ -481,7 +481,7 @@ public sealed class MountTests : IAsyncLifetime
         var cooldown = Assert.Single((await Next(player, CharacterService.ItemsCdNotify, ItemsCDNotify.Parser)).Items);
         Assert.Equal(entry, cooldown.ItemId);
         Assert.True(cooldown.ItemCd > before);
-        Assert.Equal(cooldown.ItemCd, session.ItemCds[entry]);
+        Assert.Equal(cooldown.ItemCd, session.Combat.ItemCds[entry]);
         var saved = _app.Services.GetRequiredService<RoleStore>().LoadBagState(session.Role!.Id);
         Assert.NotNull(saved);
         Assert.Equal(cooldown.ItemCd, DBItemsInfo.Parser.ParseFrom(saved).ItemCds.Data[entry]);
@@ -490,7 +490,7 @@ public sealed class MountTests : IAsyncLifetime
         else Assert.Equal(originalStack - 1, session.Items.Single(i => i.Guid == guid).Stack);
         Assert.Equal(1, uses);
         if (mount) Assert.True(session.Mounts!.Mounts.ContainsKey(unlockedId));
-        else Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(unlockedId));
+        else Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(unlockedId));
         Assert.DoesNotContain(player.Inbox.Snapshot().Skip(start), e => e.IsGame(CharacterService.ItemUse));
         Assert.Single(player.Inbox.Snapshot().Skip(start), e => e.IsGame(CharacterService.ItemsCdNotify));
     }
@@ -512,7 +512,7 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Empty(session.Mounts!.Mounts);
         Assert.Equal(before, roles.LoadMounts(session.Role.Id));
         Assert.Equal(beforeBag, roles.LoadBagState(session.Role.Id));
-        Assert.False(session.ItemCds.ContainsKey(1501013));
+        Assert.False(session.Combat.ItemCds.ContainsKey(1501013));
     }
 
     // Mount ownership and its WardRobeConfig type-6 appearance (WardrobeService.Mounts.cs): the wardrobe Mount tab
@@ -538,7 +538,7 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(0, (await Next(a, MountService.Unlock, PlayerMountUnLockNtf.Parser)).EndTime);
         Assert.DoesNotContain(a.Inbox.Snapshot().Skip(start), e => e.IsGame(WardrobeService.UnlockNotice));
         var session = Session("alice"); var roles = _app.Services.GetRequiredService<RoleStore>();
-        Assert.Equal(0, session.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
+        Assert.Equal(0, session.Profile.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
         Assert.True(StoredWardrobe(roles, session.Role!.Id).AllLightUpAppearances.ContainsKey(BigPoring));
         Assert.True(StoredMounts(roles, session.Role.Id).Mounts.ContainsKey(BigPoring));
     }
@@ -557,7 +557,7 @@ public sealed class MountTests : IAsyncLifetime
             _app.Services.GetRequiredService<CharacterService>().UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 })));
         Assert.Contains(session.Items, i => i.Guid == guid && i.Stack == 1);
         Assert.Empty(session.Mounts!.Mounts);
-        Assert.False(session.Wardrobe!.AllLightUpAppearances.ContainsKey(BigPoring));
+        Assert.False(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(BigPoring));
         Assert.Equal(mounts, roles.LoadMounts(session.Role.Id));
         Assert.Equal(wardrobe, roles.LoadWardrobe(session.Role.Id));
     }
@@ -571,22 +571,22 @@ public sealed class MountTests : IAsyncLifetime
         var loop = _app.Services.GetRequiredService<GameLoop>();
         long due = session.Mounts!.Mounts[TimedMount].OverdueTimeMs;
         Assert.True(due > _clock.GetUtcNow().ToUnixTimeMilliseconds());
-        Assert.Equal(due, session.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+        Assert.Equal(due, session.Profile.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         Assert.Equal(due, (await Next(a, MountService.Unlock, PlayerMountUnLockNtf.Parser)).EndTime);
 
         await Gm("alice", "!item 1501023 1"); // a second timed unlock extends both from the current expiry
-        await loop.InvokeAsync(() => { session.ItemCds.Clear(); return Task.CompletedTask; });
+        await loop.InvokeAsync(() => { session.Combat.ItemCds.Clear(); return Task.CompletedTask; });
         await a.SendGameAsync(31323, new ItemUseReq { ItemGuid = session.Items.Single(i => i.Entry == 1501023).Guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(a, 31323, ItemUseResp.Parser)).Result); // the first reply was consumed by UnlockMount
         due += 600_000;
         Assert.Equal(due, session.Mounts!.Mounts[TimedMount].OverdueTimeMs);
-        Assert.Equal(due, session.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+        Assert.Equal(due, session.Profile.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         Assert.Equal(due, StoredWardrobe(roles, session.Role!.Id).AllLightUpAppearances[TimedMount].OverdueTimeMs);
 
         var wear = new WardRobeUseAppearanceReq(); wear.AppearanceIds.Add(TimedMount);
         await a.SendGameAsync(WardrobeService.Use, wear);
         Assert.Equal(0, (await Next(a, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
-        Assert.Equal(TimedMount, session.Wardrobe!.CurUseAppearances[MountSlot]);
+        Assert.Equal(TimedMount, session.Profile.Wardrobe!.CurUseAppearances[MountSlot]);
 
         await loop.InvokeAsync(() =>
         {
@@ -594,8 +594,8 @@ public sealed class MountTests : IAsyncLifetime
             return _app.Services.GetRequiredService<MountService>().ReconcileAsync(session);
         });
         Assert.False(session.Mounts!.Mounts.ContainsKey(TimedMount));
-        Assert.False(session.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedMount));
-        Assert.False(session.Wardrobe.CurUseAppearances.ContainsKey(MountSlot));
+        Assert.False(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedMount));
+        Assert.False(session.Profile.Wardrobe.CurUseAppearances.ContainsKey(MountSlot));
         await Next(a, MountService.Sync, DBMountsInfoIncrement.Parser, p => p.Mounts.TryGetValue(TimedMount, out var m) && m.Del);
         await Next(a, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
             p => p.AllLightUpAppearances.TryGetValue(TimedMount, out var look) && look.Del);
@@ -628,8 +628,8 @@ public sealed class MountTests : IAsyncLifetime
             });
             await Next(a, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
                 p => p.AllLightUpAppearances.ContainsKey(BigPoring) && p.AllLightUpAppearances.ContainsKey(TimedMount));
-            Assert.Equal(0, session.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
-            Assert.Equal(due, session.Wardrobe.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+            Assert.Equal(0, session.Profile.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
+            Assert.Equal(due, session.Profile.Wardrobe.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         }
         var saved = StoredWardrobe(roles, role);
         Assert.Equal(0, saved.AllLightUpAppearances[BigPoring].OverdueTimeMs);
@@ -655,7 +655,7 @@ public sealed class MountTests : IAsyncLifetime
             await loop.InvokeAsync(() =>
             {
                 // A role saved by the previous server: the Fashion shop lit the look in 5034 but wrote no 5012 ownership.
-                var looks = session.Wardrobe!.Clone();
+                var looks = session.Profile.Wardrobe!.Clone();
                 looks.AllLightUpAppearances[BigPoring] = new DBAppearanceInfo { AppearanceId = BigPoring };
                 looks.AllLightUpAppearances[DisabledLook] = new DBAppearanceInfo { AppearanceId = DisabledLook };
                 roles.SaveWardrobe(role, looks.ToByteArray());
@@ -696,7 +696,7 @@ public sealed class MountTests : IAsyncLifetime
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = (eRiderType)1 });
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
         var session = Session("alice");
-        Assert.Equal(BigPoring, session.Wardrobe!.CurUseAppearances[MountSlot]);
+        Assert.Equal(BigPoring, session.Profile.Wardrobe!.CurUseAppearances[MountSlot]);
         Assert.Equal(BigPoring, MountService.Rider(session));
         Assert.Equal(1050, session.Speed);
     }

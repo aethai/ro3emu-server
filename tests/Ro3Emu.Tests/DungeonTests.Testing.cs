@@ -25,7 +25,7 @@ public sealed partial class DungeonTests
         await Next(alice, DungeonService.ClientEvent, NullArg.Parser);
         await Kill(alice, await BossIn(await Load(alice)));
         Assert.True((await Next(alice, DungeonService.Result, DungeonResNotify.Parser, r => r.DungeonEntry == Scene)).Rewards.ContainsKey(2));
-        Assert.Equal(0, Session(alice).Dungeons!.Allowances[Key].Remaining); // the week's allowance is spent
+        Assert.Equal(0, Session(alice).Instances.Dungeons!.Allowances[Key].Remaining); // the week's allowance is spent
 
         // Off: the clear is won but pays no personal award.
         Assert.Equal(0, await Enter(alice));
@@ -44,6 +44,6 @@ public sealed partial class DungeonTests
         Assert.Equal((DungeonRes)1, paid.Res);
         Assert.Equal(90000, paid.Rewards[2]);
         Assert.Equal(zeny + 90000, Currency(alice, 2));
-        Assert.Equal(0, Session(alice).Dungeons!.Allowances[Key].Remaining); // paid without spending
+        Assert.Equal(0, Session(alice).Instances.Dungeons!.Allowances[Key].Remaining); // paid without spending
     }
 }

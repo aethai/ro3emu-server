@@ -110,7 +110,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         await Gm("alice", "!job 3200");
         Assert.Equal(CareerSpecialService.ErrLevel, await LeaseAsync(a, Falcon)); // _iUnlockBaseLv 30
         Assert.Equal(CareerSpecialService.ErrNotLeased, await CancelAsync(a, Falcon));
-        Assert.Equal(0, Session("alice").CareerSpecial!.PendantSlot.CartRemouldCfg);
+        Assert.Equal(0, Session("alice").Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
         var stored = _app.Services.GetRequiredService<RoleStore>().LoadCareerSpecial(Session("alice").Role!.Id);
         Assert.True(stored == null || DBCareerSpecial.Parser.ParseFrom(stored).PendantSlot?.CartRemouldCfg is null or 0);
     }
@@ -148,7 +148,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
             await a.SendGameAsync(CharacterService.CareerSpecialTransfer, move);
             Assert.Equal(0, (await Next(a, CharacterService.CareerSpecialTransfer, CareerSpecialTransferItemsRsp.Parser)).Result);
             Assert.Equal(CareerSpecialService.ErrCartNotEmpty, await CancelAsync(a, BirchCart));
-            Assert.Equal(BirchCart, Session("alice").CareerSpecial!.PendantSlot.CartRemouldCfg);
+            Assert.Equal(BirchCart, Session("alice").Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
             var back = new CareerSpecialTransferItemsReq { TransType = CareerSpecialTransferItemsType.ToNormal };
             back.ItemGuidCountMap[Session("alice").Items.Single(i => i.Pack == 100).Guid] = 2;
             await a.SendGameAsync(CharacterService.CareerSpecialTransfer, back);
@@ -179,7 +179,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Equal(GrandPeco, Session("alice").Mounts!.MountIds[2].MountId);
         Assert.False(Session("alice").Mounts!.MountIds[2].IsRiding);
         Assert.NotNull(slot);
-        Assert.Empty(Session("alice").CareerPendants); // a Peco has no pendant; it shows only when ridden
+        Assert.Empty(Session("alice").Profile.CareerPendants); // a Peco has no pendant; it shows only when ridden
 
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = (eRiderType)3 }); // on-battle
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
@@ -301,7 +301,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Null(riding.OriginSkillWheel); // unchanged: the client's base map keeps the career's own attack
 
         // It is sent, not kept in the plans.
-        Assert.NotEqual(WargStrike, Session("alice").SkillPlans!.CurrentAtkSkillId);
+        Assert.NotEqual(WargStrike, Session("alice").Combat.SkillPlans!.CurrentAtkSkillId);
 
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OffBattle });
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
@@ -395,8 +395,8 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         var start = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
         {
             var alice = Session("alice");
-            alice.SkillCds.Clear();
-            alice.SkillModeCds.Clear();
+            alice.Combat.SkillCds.Clear();
+            alice.Combat.SkillModeCds.Clear();
             alice.SkillCast = null;
             return Task.FromResult(alice.Position.Clone());
         });
@@ -528,7 +528,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
     {
         var alice = Session("alice");
         alice.Progress!.Skills[13326] = level;
-        alice.SkillCds[13326] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
+        alice.Combat.SkillCds[13326] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
         return Task.CompletedTask;
     });
 
@@ -537,7 +537,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         var loop = _app.Services.GetRequiredService<GameLoop>();
         for (var until = DateTime.UtcNow + Wait; ; await Task.Delay(20))
         {
-            if (!await loop.InvokeAsync(() => Task.FromResult(Session("alice").SkillCds.ContainsKey(13326)))) return;
+            if (!await loop.InvokeAsync(() => Task.FromResult(Session("alice").Combat.SkillCds.ContainsKey(13326)))) return;
             Assert.True(DateTime.UtcNow < until, "Swift Warg's cooldown was not reset");
         }
     }
@@ -704,11 +704,11 @@ public sealed class CareerSpecialTests : IAsyncLifetime
             await Become("alice", 1210, 30, 11407);
             Assert.Equal(0, await LeaseAsync(a, GrandPeco));
             await Gm("alice", "!job 1310"); // Paladin: still in _kProfessionID
-            Assert.Equal(GrandPeco, Session("alice").CareerSpecial!.MountsSlot.CartRemouldCfg);
+            Assert.Equal(GrandPeco, Session("alice").Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
             await Gm("alice", "!job 6100"); // Merchant
             await Next(a, CareerSpecialService.Sync, DBCareerSpecialIncrement.Parser,
                 p => p.MountsSlot?.Inc != null && p.MountsSlot.Inc.HasCartRemouldCfg && p.MountsSlot.Inc.CartRemouldCfg == 0);
-            Assert.Equal(0, Session("alice").CareerSpecial!.MountsSlot.CartRemouldCfg);
+            Assert.Equal(0, Session("alice").Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
             Assert.Equal(0, Session("alice").Mounts!.MountIds[2].MountId);
         }
         await using var again = await InWorld("Alice", create: false);

@@ -28,20 +28,20 @@ public sealed partial class ActivityPassService
         if (activityId != 199 || req.MonthCardId.Count == 0 || req.MonthCardId.Count != req.MonthCardId.Distinct().Count())
             return ErrorCodes.Parameter;
         long day = _activityClock.Day(Now);
-        var current = session.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
+        var current = session.Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
         var groups = new List<long>();
         foreach (long id in req.MonthCardId)
         {
             if (_data.Row("MonthCardConfig", id) is not { } config) return ErrorCodes.Parameter;
             if (!current.Infos.TryGetValue(id, out var card) || card.MonthCardId != id) return ErrorCodes.MonthCardNotOwned;
             if (card.ExpireTs <= Now) return ErrorCodes.MonthCardExpired;
-            if (card.DayAward || session.ActivityRuntime!.MonthCards.GetValueOrDefault(id)?.ClaimedDay == day)
+            if (card.DayAward || session.Activities.ActivityRuntime!.MonthCards.GetValueOrDefault(id)?.ClaimedDay == day)
                 return ErrorCodes.MonthCardClaimed;
             long group = GameData.Int(config, "_iDailyAward");
             if (group <= 0) return ErrorCodes.RewardMissing;
             groups.Add(group);
         }
-        var next = session.NewActivities.Clone();
+        var next = session.Activities.NewActivities.Clone();
         var nextRuntime = CloneRuntime(session);
         foreach (long id in req.MonthCardId)
         {
@@ -55,7 +55,7 @@ public sealed partial class ActivityPassService
     /// <summary>Convert owned 701/702 once and advance each card at the realm-local day boundary (inferred).</summary>
     internal async Task ReconcileMonthCardAsync(GameSession session)
     {
-        if (session.NewActivities == null || session.ActivityRuntime == null || ActivityError(session, 199, 21, allowInitializing: true) != 0) return;
+        if (session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null || ActivityError(session, 199, 21, allowInitializing: true) != 0) return;
         foreach (var row in _data.Table("MonthCardConfig").Values)
         {
             long id = GameData.Int(row, "_iId");
@@ -64,7 +64,7 @@ public sealed partial class ActivityPassService
             int maxDays = checked((int)GameData.Int(row, "_iDayLimit"));
             if (id <= 0 || token <= 0 || days <= 0 || maxDays < days) continue;
             long today = _activityClock.Day(Now);
-            var existing = session.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos.GetValueOrDefault(id);
+            var existing = session.Activities.NewActivities.ActivityInfo[199].ActivityParam.MonthCard.Infos.GetValueOrDefault(id);
             long expiryDay = existing?.ExpireTs > 0 ? _activityClock.Day(existing.ExpireTs - 1) + 1 : today;
             bool expired = existing == null || existing.ExpireTs <= Now;
             long baseDay = expired ? today : expiryDay;
@@ -73,13 +73,13 @@ public sealed partial class ActivityPassService
             long newExpiryDay = baseDay + (long)available * days;
             long newExpiry = available > 0 ? StartOfLocalDay(newExpiryDay) : existing?.ExpireTs ?? 0;
             long lastDays = newExpiry > Now ? Math.Max(1, _activityClock.Day(newExpiry - 1) - today + 2) : 0;
-            var oldRuntime = session.ActivityRuntime.MonthCards.GetValueOrDefault(id);
+            var oldRuntime = session.Activities.ActivityRuntime.MonthCards.GetValueOrDefault(id);
             long claimDay = oldRuntime?.ClaimedDay ?? (existing?.DayAward == true ? today : 0);
             bool dayAward = newExpiry <= Now || claimDay == today;
             bool changed = available > 0 || existing != null && (existing.LastDays != lastDays || existing.DayAward != dayAward)
                 || oldRuntime == null && existing?.DayAward == true;
             if (!changed) continue;
-            var next = session.NewActivities.Clone();
+            var next = session.Activities.NewActivities.Clone();
             var nextRuntime = CloneRuntime(session);
             nextRuntime.MonthCards[id] = new MonthCardRuntime { ClaimedDay = claimDay };
             next.ActivityInfo[199].ActivityParam.MonthCard.Infos[id] = new MonthCardInfo

@@ -216,15 +216,15 @@ public sealed partial class GuildLeagueService
         if (!joined) { await s.SendGameAsync(DungeonService.Enter, new EnterDungeonRsp { Result = ErrorCodes.Parameter }); return true; }
         await s.SendGameAsync(DungeonService.Enter, new EnterDungeonRsp());
         // The camp travels with the entity (EntityCamp, GetPlayerGuildLeagueCamp): GuildLeagueCamp [1, 2] blue/red.
-        int priorFaction = s.EventFaction;
-        s.EventFaction = match.Camp(guild);
+        int priorFaction = s.Instances.EventFaction;
+        s.Instances.EventFaction = match.Camp(guild);
         bool entered;
         // A move between the two battlefields keeps the camp through the old room's departure (LeavingAsync).
         if (current != null) _switching.Add(s);
         try { entered = await _instances.EnterAsync(field.Room!, s, 0); }
-        catch { s.EventFaction = priorFaction; throw; }
+        catch { s.Instances.EventFaction = priorFaction; throw; }
         finally { _switching.Remove(s); }
-        if (!entered) { s.EventFaction = Locate(s) is { } still ? still.Match.Camp(guild) : 0; return true; }
+        if (!entered) { s.Instances.EventFaction = Locate(s) is { } still ? still.Match.Camp(guild) : 0; return true; }
         Enlist(field, s, guild);
         await SpawnAsync(match, field);
         return true;
@@ -310,7 +310,7 @@ public sealed partial class GuildLeagueService
         var (match, field) = at;
         long guild = GuildOf(s);
         if (match.Camp(guild) == 0 || match.Ended && Now >= match.EndedAt + EndGrace) { await _instances.LeaveAsync(s); return; }
-        s.EventFaction = match.Camp(guild);
+        s.Instances.EventFaction = match.Camp(guild);
         Enlist(field, s, guild);
         await s.SendGameAsync(DungeonService.BaseInfo, BaseInfo(match, field));
         await s.SendGameAsync(SyncNotify, new SyncPlayerGuildLeagueDungeonNtf { Info = MatchInfo(match) });
@@ -332,7 +332,7 @@ public sealed partial class GuildLeagueService
     private async Task LeavingAsync(GameSession s)
     {
         if (Locate(s) is not { } at || s.Role == null) return;
-        if (!_switching.Contains(s)) s.EventFaction = 0;
+        if (!_switching.Contains(s)) s.Instances.EventFaction = 0;
         at.Match.Carriers.Remove(s.Role.Id); // (inferred) a carried flag is lost with its carrier
         s.WorldState.CustomData.Remove(FlagStateKey);
         foreach (var buff in s.Buffs.Where(b => MoraleBuffs.Contains(b.ConfigId)).ToArray()) await _buffs.RemoveAsync(s, buff);

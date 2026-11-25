@@ -93,7 +93,7 @@ public sealed partial class ScriptedDungeonService
     {
         if (inside(s.Position.X, s.Position.Z)) return true;
         if (!testLeg && !Sliding(s)) return false;
-        var from = s.PreviousPosition;
+        var from = s.WorldState.PreviousPosition;
         float dx = s.Position.X - from.X, dz = s.Position.Z - from.Z;
         int steps = Math.Min(SlideLegSamples, (int)MathF.Ceiling(MathF.Sqrt(dx * dx + dz * dz)));
         for (int i = 1; i < steps; i++)

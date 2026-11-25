@@ -128,7 +128,7 @@ public sealed class DraculaWeddingService : IGameTicker
     private TimedTodoSchedule.Occurrence? Window() => _schedule.CurrentOrNext(Activity);
 
     /// <summary>A guild member who may take part (DailyActivity 3400 _iiLv 30, function 1328: server day 2 or later).</summary>
-    private bool Eligible(GameSession s) => s.ActivitiesReady && s.Progress != null && _home.GuildId(s) != null
+    private bool Eligible(GameSession s) => s.Activities.ActivitiesReady && s.Progress != null && _home.GuildId(s) != null
         && _data.Row("DailyActivityConfig", Activity) is { } row && s.Progress.Level >= GameData.Int(row, "_iiLv")
         && _functions.IsOpen(s, GameData.Int(row, "_iFunction"));
 

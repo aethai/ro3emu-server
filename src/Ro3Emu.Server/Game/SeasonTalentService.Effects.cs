@@ -42,7 +42,7 @@ public sealed partial class SeasonTalentService
         t.Count >= 6 && t[0] is 0 or 1 && t[1] > 0 ? new BuffAttribute((long)t[1], (int)t[2], (int)t[3], t[4], (int)t[5], t[0] == 1) : null;
 
     /// <summary>The leased pendant's CartRemouldTable._iSubType (3: the falcon), 0 without one.</summary>
-    private long PendantSubType(GameSession s) => s.CareerSpecial?.PendantSlot is { CartRemouldCfg: > 0 } slot
+    private long PendantSubType(GameSession s) => s.Profile.CareerSpecial?.PendantSlot is { CartRemouldCfg: > 0 } slot
         && CartRemouldTable.Get(_data, slot.CartRemouldCfg) is { } row ? row.SubType : 0;
 
     private IEnumerable<BuffAttribute> BuffAttributes(long buff)

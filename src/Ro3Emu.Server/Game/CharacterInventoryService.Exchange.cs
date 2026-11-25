@@ -219,7 +219,7 @@ public sealed partial class CharacterInventoryService
         // admitting the writer command. Callers can retain references to surviving card/equipment items.
         var originalItems = session.Items;
         var originalItemReferences = originalItems.ToArray();
-        var originalNewItems = session.NewItems.ToArray();
+        var originalNewItems = session.Profile.NewItems.ToArray();
         var beforeProgress = CloneProgress(p);
         var beforeItems = originalItems.Select(item => item.Clone()).ToArray();
         var stagedItems = originalItems.Select(item => item.Clone()).ToList();
@@ -338,9 +338,9 @@ public sealed partial class CharacterInventoryService
                 CopyProgress(p, stagedProgress);
                 if (baseExp > 0 || jobExp > 0) foreach (var credited in ExpCredited.Handlers) credited(session, baseExp, jobExp);
                 if (rewardSettlement != null) rewardSettlement.Committed = true;
-                foreach (var item in granted) session.NewItems.Add(item.Guid);
+                foreach (var item in granted) session.Profile.NewItems.Add(item.Guid);
                 cardSight?.Apply();
-                if (prunedPlans != null) session.EquipmentPlans = prunedPlans;
+                if (prunedPlans != null) session.Profile.EquipmentPlans = prunedPlans;
                 if (lifeUse != null)
                 {
                     lifeUse.Committed = true;
@@ -361,8 +361,8 @@ public sealed partial class CharacterInventoryService
                     originalItems.Add(originalItemReferences[i]);
                 }
                 CopyProgress(p, beforeProgress);
-                session.NewItems.Clear();
-                foreach (long guid in originalNewItems) session.NewItems.Add(guid);
+                session.Profile.NewItems.Clear();
+                foreach (long guid in originalNewItems) session.Profile.NewItems.Add(guid);
                 throw;
             }
         }
@@ -622,7 +622,7 @@ public sealed partial class CharacterInventoryService
             throw;
         }
         session.Pets = nextPets;
-        foreach (var item in granted) session.NewItems.Add(item.Guid);
+        foreach (var item in granted) session.Profile.NewItems.Add(item.Guid);
         foreach (var (entry, count) in goods)
             foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
         return Task.FromResult<List<InvItem>?>(granted);

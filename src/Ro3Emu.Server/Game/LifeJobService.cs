@@ -97,26 +97,26 @@ public sealed partial class LifeJobService
                     runtime.EnergySpent, runtime.EnergyDay, runtime.PotionDay, runtime.FoodBook
                 }));
             await _roles.CommitAsync(tx, "life/load", _ =>
-            { s.LifeJob = life; s.Restrictions = restriction; s.LifeRuntime = runtime; });
+            { s.Season.LifeJob = life; s.Season.Restrictions = restriction; s.Season.LifeRuntime = runtime; });
         }
-        else { s.LifeJob = life; s.Restrictions = restriction; s.LifeRuntime = runtime; }
+        else { s.Season.LifeJob = life; s.Season.Restrictions = restriction; s.Season.LifeRuntime = runtime; }
     }
 
     public async Task LoginAsync(GameSession s)
     {
-        if (s.LifeJob == null) await LoadAsync(s);
+        if (s.Season.LifeJob == null) await LoadAsync(s);
         await SyncAsync(s);
         await HealthAsync(s);
     }
 
-    public static long ActiveLevel(GameSession s, long job) => s.LifeJob is { } life
+    public static long ActiveLevel(GameSession s, long job) => s.Season.LifeJob is { } life
         && life.ActiveLifejob.Values.Contains(job) && life.LifeJobInfoMap.TryGetValue(job, out var info) ? info.JobLevel : -1;
 
     private long NowSeconds => _clock.GetUtcNow().ToUnixTimeSeconds();
     private long Today => Day(_clock.GetLocalNow().DateTime);
     private static long Day(DateTime now) => GameCalendar.GameDayOf(now).DayNumber;
     public static long DailyEnergyUsed(GameSession s, long restriction) => restriction == VigorId
-        && s.LifeRuntime.EnergyDay == Day(s.Clock.GetLocalNow().DateTime) ? s.LifeRuntime.EnergySpent : 0;
+        && s.Season.LifeRuntime.EnergyDay == Day(s.Clock.GetLocalNow().DateTime) ? s.Season.LifeRuntime.EnergySpent : 0;
     private long RestrictMax(int id) => _data.Row("RestrictConfig", id) is { } r ? GameData.Int(r, "_iMaxRestrictNum") : 0;
     private static RuntimeState Copy(RuntimeState r) => new()
     { EnergyDay = r.EnergyDay, EnergySpent = r.EnergySpent, PotionDay = r.PotionDay, FoodBook = r.FoodBook };
@@ -145,7 +145,7 @@ public sealed partial class LifeJobService
 
     private DBRestrictInfo RestrictView(GameSession s)
     {
-        var view = s.Restrictions!.Clone();
+        var view = s.Season.Restrictions!.Clone();
         if (view.RestrictCount.TryGetValue(VigorId, out var vigor))
             vigor.Count = Energy(s);
         foreach (var project in ProjectedRestrictions.Handlers)
@@ -155,13 +155,13 @@ public sealed partial class LifeJobService
 
     /// <summary>5018 with the projected restrictions; the sync sends only what changed.</summary>
     public Task SyncRestrictionsAsync(GameSession s) =>
-        s.Restrictions == null ? Task.CompletedTask : CharacterService.SyncAsync(s, RestrictSync, RestrictView(s));
+        s.Season.Restrictions == null ? Task.CompletedTask : CharacterService.SyncAsync(s, RestrictSync, RestrictView(s));
 
     /// <summary>A reward or a claim that moves Vigor currency 407 changes the 5018 the client reads. A sent dataset is
     /// compared first, because this runs on every bag change.</summary>
     private void SyncVigorChange(GameSession s)
     {
-        if (s.Restrictions == null || s.Synced.GetValueOrDefault(RestrictSync) is not DBRestrictInfo sent
+        if (s.Season.Restrictions == null || s.Synced.GetValueOrDefault(RestrictSync) is not DBRestrictInfo sent
             || sent.RestrictCount.GetValueOrDefault(VigorId)?.Count == Energy(s)) return;
         _ = SyncRestrictionsAsync(s);
     }
@@ -172,8 +172,8 @@ public sealed partial class LifeJobService
         // LC_DAL_LifeJob:800 dereferences the old career asset when a new row arrives incrementally.
         // Rebuild all life assets when learning a previously unrecorded job; no fabricated inactive progress rows.
         if (s.Synced.GetValueOrDefault(LifeSync) is DBLifeJobInfo before
-            && s.LifeJob!.LifeJobInfoMap.Keys.Any(id => !before.LifeJobInfoMap.ContainsKey(id))) s.Synced.Remove(LifeSync);
-        await CharacterService.SyncAsync(s, LifeSync, s.LifeJob!.Clone(), PrepareWire);
+            && s.Season.LifeJob!.LifeJobInfoMap.Keys.Any(id => !before.LifeJobInfoMap.ContainsKey(id))) s.Synced.Remove(LifeSync);
+        await CharacterService.SyncAsync(s, LifeSync, s.Season.LifeJob!.Clone(), PrepareWire);
     }
 
     /// <summary>LC_PbHelper.ParseMapTypeIncrement materializes a table before removing a tombstone (wire only).</summary>
@@ -239,11 +239,11 @@ public sealed partial class LifeJobService
         long job = (long)req.NewLifejobId;
         var row = _data.Row("LifeJobConfig", job);
         int error = row == null ? ErrorCodes.LifeInvalidJob : req.OpJobType is not (1 or 2) ? ErrorCodes.Parameter
-            : s.LifeJob!.ActiveLifejob.Values.Contains(job) ? ErrorCodes.LifeAlreadyLearned
+            : s.Season.LifeJob!.ActiveLifejob.Values.Contains(job) ? ErrorCodes.LifeAlreadyLearned
             : !_functions.ConditionMet(s, GameData.Int(row.Value, "_iCondition")) ? ErrorCodes.LifeRequirements : 0;
         if (error == 0)
         {
-            var next = s.LifeJob!.Clone();
+            var next = s.Season.LifeJob!.Clone();
             var cost = Costs(row!.Value, "_iChangeConsume");
             next.ActiveLifejob[req.OpJobType] = job;
             if (!next.LifeJobInfoMap.TryGetValue(job, out var known) || known.JobLevel == 0) next.LifeJobInfoMap[job] = NewJob(job);
@@ -251,7 +251,7 @@ public sealed partial class LifeJobService
             foreach (var c in _data.Table("LifeCollectionConfig").Values.Where(c => Current(c) && GameData.Int(c, "_iJobId") == job && GameData.Int(c, "_iCondition") == 0))
                 UnlockCollection(s, next, c);
             UnlockEarnedCollections(s, next); // a profession learned again keeps the resources its level earned
-            if (await CommitAsync(s, "cd13c/life-switch", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
+            if (await CommitAsync(s, "cd13c/life-switch", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), cost, [],
                 result: new { Job = job, Slot = req.OpJobType }) == null)
                 error = _character.ShortageOf(s, cost);
             else _forging.Remove(s);
@@ -288,12 +288,12 @@ public sealed partial class LifeJobService
         if (error == 0)
         {
             long job = GameData.Int(row!.Value, "_iJobId");
-            if (s.LifeJob!.LifeJobInfoMap[job].BuildInfo.RecipeList.ContainsKey(req.FormulaID)) error = ErrorCodes.LifeAlreadyLearned;
+            if (s.Season.LifeJob!.LifeJobInfoMap[job].BuildInfo.RecipeList.ContainsKey(req.FormulaID)) error = ErrorCodes.LifeAlreadyLearned;
             else
             {
-                var next = s.LifeJob.Clone(); next.LifeJobInfoMap[job].BuildInfo.RecipeList[req.FormulaID] = true;
+                var next = s.Season.LifeJob.Clone(); next.LifeJobInfoMap[job].BuildInfo.RecipeList[req.FormulaID] = true;
                 var cost = Costs(row.Value, "_kUnlockCost");
-                if (await CommitAsync(s, "cd13c/life-recipe", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
+                if (await CommitAsync(s, "cd13c/life-recipe", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), cost, [],
                     result: new { Recipe = req.FormulaID }) == null) error = _character.ShortageOf(s, cost);
             }
         }
@@ -308,11 +308,11 @@ public sealed partial class LifeJobService
         if (error == 0)
         {
             long job = GameData.Int(row!.Value, "_iJobId");
-            if (s.LifeJob!.LifeJobInfoMap[job].GatherInfo.ItemDetails.ContainsKey(req.CollectionID)) error = ErrorCodes.LifeCollectionLearned;
+            if (s.Season.LifeJob!.LifeJobInfoMap[job].GatherInfo.ItemDetails.ContainsKey(req.CollectionID)) error = ErrorCodes.LifeCollectionLearned;
             else
             {
-                var next = s.LifeJob.Clone(); UnlockCollection(s, next, row.Value);
-                await CommitAsync(s, "cd13c/life-collection", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), [], [],
+                var next = s.Season.LifeJob.Clone(); UnlockCollection(s, next, row.Value);
+                await CommitAsync(s, "cd13c/life-collection", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), [], [],
                     result: new { Collection = req.CollectionID });
             }
         }
@@ -332,14 +332,14 @@ public sealed partial class LifeJobService
         var drop = _data.Row("LifeDropConfig", req.DropId);
         int error = DefinitionError(s, collection, "_iCondition");
         if (error == 0) error = drop == null || !Numbers(collection!.Value, "_iDropId").Contains(req.DropId) ? ErrorCodes.LifeConfig
-            : !s.LifeJob!.LifeJobInfoMap[GameData.Int(collection.Value, "_iJobId")].GatherInfo.ItemDetails.ContainsKey(req.CollectionID) ? ErrorCodes.LifeCollectionLocked
-            : s.LifeJob.LifeJobUnLockDrop.ContainsKey(req.DropId) ? ErrorCodes.LifeCollectionLearned
+            : !s.Season.LifeJob!.LifeJobInfoMap[GameData.Int(collection.Value, "_iJobId")].GatherInfo.ItemDetails.ContainsKey(req.CollectionID) ? ErrorCodes.LifeCollectionLocked
+            : s.Season.LifeJob.LifeJobUnLockDrop.ContainsKey(req.DropId) ? ErrorCodes.LifeCollectionLearned
             : !_functions.ConditionMet(s, GameData.Int(drop.Value, "_iCondition")) ? ErrorCodes.LifeRequirements : 0;
         if (error == 0)
         {
-            var next = s.LifeJob!.Clone(); next.LifeJobUnLockDrop[req.DropId] = 1;
+            var next = s.Season.LifeJob!.Clone(); next.LifeJobUnLockDrop[req.DropId] = 1;
             var cost = Costs(drop!.Value, "_kUnlockcost");
-            if (await CommitAsync(s, "cd13c/life-drop", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
+            if (await CommitAsync(s, "cd13c/life-drop", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), cost, [],
                 result: new { Drop = req.DropId, Collection = req.CollectionID }) == null) error = _character.ShortageOf(s, cost);
         }
         await s.SendGameAsync(StudyDrop, new StudyCollectionDropResp { Result = error, DropId = req.DropId });
@@ -354,7 +354,7 @@ public sealed partial class LifeJobService
         var row = _data.Row("LifeCollectionConfig", collectionId);
         int error = DefinitionError(s, row, "_iCondition");
         return error != 0 ? error
-            : !s.LifeJob!.LifeJobInfoMap[GameData.Int(row!.Value, "_iJobId")].GatherInfo.ItemDetails.ContainsKey(collectionId) ? ErrorCodes.LifeCollectionLocked
+            : !s.Season.LifeJob!.LifeJobInfoMap[GameData.Int(row!.Value, "_iJobId")].GatherInfo.ItemDetails.ContainsKey(collectionId) ? ErrorCodes.LifeCollectionLocked
             : Energy(s) < VigorCost(s, row.Value, false) ? ErrorCodes.LifeVigor : 0;
     }
 
@@ -366,7 +366,7 @@ public sealed partial class LifeJobService
     /// stays in the balance and counts again once vigor is spent.</summary>
     private long Energy(GameSession s)
     {
-        long held = s.Restrictions?.RestrictCount.GetValueOrDefault(VigorId)?.Count ?? 0;
+        long held = s.Season.Restrictions?.RestrictCount.GetValueOrDefault(VigorId)?.Count ?? 0;
         long currency = s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) ?? 0;
         return Math.Max(held, Math.Min((Data.Config.PublicParams.Of(_data).VitalityExtraLimit ?? 5000), checked(held + currency)));
     }
@@ -389,11 +389,11 @@ public sealed partial class LifeJobService
         internal required AwardGrant[] Grants { get; init; }
         internal required long CurrencyVigorCost { get; init; }
 
-        internal bool Matches(GameSession s) => s.Role?.Id == RoleId && s.LifeJob != null && s.Restrictions != null
-            && s.LifeJob.ToByteArray().AsSpan().SequenceEqual(BeforeLife)
-            && s.Restrictions.ToByteArray().AsSpan().SequenceEqual(BeforeRestrict)
+        internal bool Matches(GameSession s) => s.Role?.Id == RoleId && s.Season.LifeJob != null && s.Season.Restrictions != null
+            && s.Season.LifeJob.ToByteArray().AsSpan().SequenceEqual(BeforeLife)
+            && s.Season.Restrictions.ToByteArray().AsSpan().SequenceEqual(BeforeRestrict)
             && s.Progress?.Currency.GetValueOrDefault(VigorCurrencyId) == BeforeCurrencyVigor
-            && JsonSerializer.SerializeToUtf8Bytes(s.LifeRuntime).AsSpan().SequenceEqual(BeforeRuntime);
+            && JsonSerializer.SerializeToUtf8Bytes(s.Season.LifeRuntime).AsSpan().SequenceEqual(BeforeRuntime);
     }
 
     /// <summary>Resolve once under StateLock before the first writer admission; no result is exposed yet.</summary>
@@ -404,18 +404,18 @@ public sealed partial class LifeJobService
         if (error != 0) return (error, null);
         if (extraAwards is < 0 or > 100) return (ErrorCodes.Parameter, null);
         var row = _data.Row("LifeCollectionConfig", collectionId)!.Value;
-        var beforeLife = s.LifeJob!.ToByteArray();
-        var beforeRestrict = s.Restrictions!.ToByteArray();
-        var beforeRuntime = JsonSerializer.SerializeToUtf8Bytes(s.LifeRuntime);
+        var beforeLife = s.Season.LifeJob!.ToByteArray();
+        var beforeRestrict = s.Season.Restrictions!.ToByteArray();
+        var beforeRuntime = JsonSerializer.SerializeToUtf8Bytes(s.Season.LifeRuntime);
         long beforeCurrencyVigor = s.Progress!.Currency.GetValueOrDefault(VigorCurrencyId);
         var grants = new List<AwardGrant>();
         var mainGrants = new List<AwardGrant>();
-        var next = s.LifeJob!.Clone(); var restrict = s.Restrictions!.Clone(); var runtime = Copy(s.LifeRuntime);
+        var next = s.Season.LifeJob!.Clone(); var restrict = s.Season.Restrictions!.Clone(); var runtime = Copy(s.Season.LifeRuntime);
         try
         {
             // (inferred) Each eligible main/extra drop rolls independently in basis points; repeated pool groups remain intact.
             foreach (long id in Numbers(row, "_iDropId"))
-                if (s.LifeJob!.LifeJobUnLockDrop.ContainsKey(id) && _data.Row("LifeDropConfig", id) is { } drop
+                if (s.Season.LifeJob!.LifeJobUnLockDrop.ContainsKey(id) && _data.Row("LifeDropConfig", id) is { } drop
                     && _functions.ConditionMet(s, GameData.Int(drop, "_iCondition")) && Random.Shared.Next(10000) < DropChance(s, drop))
                 {
                     var output = _awards.Resolve(s, GameData.Int(drop, "_iMultiGroupIDId"), _seasons.PlayBook).Grants;
@@ -486,7 +486,7 @@ public sealed partial class LifeJobService
         var row = _data.Row("LifeFormulaConfig", id);
         int error = DefinitionError(s, row, "_iUnlockCondition");
         if (error != 0) return error;
-        return !s.LifeJob!.LifeJobInfoMap[GameData.Int(row!.Value, "_iJobId")].BuildInfo.RecipeList.ContainsKey(id) ? ErrorCodes.LifeRecipe : 0;
+        return !s.Season.LifeJob!.LifeJobInfoMap[GameData.Int(row!.Value, "_iJobId")].BuildInfo.RecipeList.ContainsKey(id) ? ErrorCodes.LifeRecipe : 0;
     }
 
     /// <summary>33510 reserves a session-local, single-use production presentation (duration is milliseconds).</summary>
@@ -532,7 +532,7 @@ public sealed partial class LifeJobService
                 var grants = new List<AwardGrant>();
                 var outcomes = new Dictionary<long, List<AwardGrant>>();
                 var actualCosts = new List<(int Entry, long Count)>();
-                var next = s.LifeJob!.Clone(); var restrict = s.Restrictions!.Clone(); var runtime = Copy(s.LifeRuntime);
+                var next = s.Season.LifeJob!.Clone(); var restrict = s.Season.Restrictions!.Clone(); var runtime = Copy(s.Season.LifeRuntime);
                 long currencyVigorAvailable = s.Progress!.Currency.GetValueOrDefault(VigorCurrencyId);
                 long currencyVigorCost = 0;
                 try
@@ -634,12 +634,12 @@ public sealed partial class LifeJobService
 
     private async Task OnLevelChangedAsync(GameSession s)
     {
-        if (s.LifeJob == null) return;
-        var next = s.LifeJob.Clone();
+        if (s.Season.LifeJob == null) return;
+        var next = s.Season.LifeJob.Clone();
         foreach (var job in next.LifeJobInfoMap.Keys) AddExp(s, next, job, 0);
-        if (!next.Equals(s.LifeJob))
+        if (!next.Equals(s.Season.LifeJob))
         {
-            await CommitAsync(s, "cd13c/life-level-reconcile", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), [], []);
+            await CommitAsync(s, "cd13c/life-level-reconcile", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), [], []);
         }
     }
 
@@ -698,7 +698,7 @@ public sealed partial class LifeJobService
             RewardSettlement = rewardSettlement,
             Committed = () =>
             {
-                s.LifeJob = life; s.Restrictions = restrict; s.LifeRuntime = runtime;
+                s.Season.LifeJob = life; s.Season.Restrictions = restrict; s.Season.LifeRuntime = runtime;
                 gatherCommitted?.Invoke();
             },
             AsyncCommit = true,

@@ -50,14 +50,14 @@ public sealed partial class EquipmentService
         if (result == 0 && !_functions.IsOpen(session, FunctionDecompose)) result = ErrorCodes.FeatureUnavailable;
         if (result == 0)
         {
-            var next = session.AutoDecompose.Clone();
+            var next = session.Profile.AutoDecompose.Clone();
             next.TabOptionSetting[req.TabId] = req.Clone();
             var tx = _roles.NewTransaction();
             tx.ItemDelta(session.Role!.Id, session.Items, session.Items);
             tx.RoleBlob(session.Role.Id, "auto_decompose", next.ToByteArray());
             tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/equipment-auto-decompose-setting", [], [],
                 new { req.TabId, State = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(next.ToByteArray())) }));
-            await _roles.CommitAsync(tx, "equipment/auto-decompose-setting", _ => session.AutoDecompose = next);
+            await _roles.CommitAsync(tx, "equipment/auto-decompose-setting", _ => session.Profile.AutoDecompose = next);
             await _character.ItemsChangedAsync(session, stats: false);
         }
         await session.SendGameAsync(ItemAutoDecomposeSetting, new ItemAutoDecomposeSettingResp { Result = result });
@@ -87,7 +87,7 @@ public sealed partial class EquipmentService
     {
         if (item.IsLocked || item.Grid != 0 || !_functions.IsOpen(session, FunctionDecompose)
             || _data.Row("ItemConfig", item.Entry) is not { } row) return [];
-        foreach (var setting in session.AutoDecompose.TabOptionSetting.Values)
+        foreach (var setting in session.Profile.AutoDecompose.TabOptionSetting.Values)
         {
             if (!setting.IsOpen || ValidateSetting(setting) != 0) continue;
             var tab = _data.Row("DecomposeConfig", setting.TabId)!.Value;

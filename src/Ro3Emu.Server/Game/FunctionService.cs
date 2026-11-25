@@ -44,7 +44,7 @@ public sealed partial class FunctionService
     public int ServerDay() =>
         (int)Math.Clamp(Math.Floor((_clock.GetUtcNow().ToUnixTimeSeconds() - _seasons.StartTime) / 86400d) + 1, int.MinValue, int.MaxValue);
 
-    public Task SyncAsync(GameSession session) => session.DeferFunctionSync ? Task.CompletedTask
+    public Task SyncAsync(GameSession session) => session.Profile.DeferFunctionSync ? Task.CompletedTask
         : CharacterService.SyncAsync(session, FunctionOpenSync, Build(session));
 
     public FunctionOpenInfo Build(GameSession session)
@@ -54,7 +54,7 @@ public sealed partial class FunctionService
         {
             long id = GameData.Int(row, "_iID");
             // To-Do/Dodo read 5004 and 5059 immediately on unlock; hold only these two until daily login sync.
-            if (id > 0 && (session.DailyReady || id is not (25 or 5902))
+            if (id > 0 && (session.Activities.DailyReady || id is not (25 or 5902))
                 && IsOpen(session, id)) info.FunctionOpenInfos[id] = true;
         }
         return info;
@@ -63,7 +63,7 @@ public sealed partial class FunctionService
     /// <summary>A FunctionConfig row's open condition holds (a function without a row is not gated).</summary>
     public bool IsOpen(GameSession session, long functionId)
     {
-        if (session.GmAllFunctionsOpen) return true; // GM panel openallfunc (GmCommands.Presets)
+        if (session.Profile.GmAllFunctionsOpen) return true; // GM panel openallfunc (GmCommands.Presets)
         // Function 1003 has parent 10 and delivered-task gate 10103160.
         // TaskService's no-quest fallback is permissive, so this feature specifically fails closed.
         if (functionId == SeasonTalentFunction && (session.Tasks == null
@@ -128,7 +128,7 @@ public sealed partial class FunctionService
                     && Compare(param, guild.Official, (long)(GameData.Number(d[2]) ?? 0)),
                 // LC_InteractCondition.CheckChickenRankLevel [6508, op, rank] (:2096-2119): the Survivor Battle rank
                 // (LC_ChickenHelper.GetCurRankInfo) against the rank, 1 >=, 2 <=, 3 ==.
-                CondChickenRank => d.GetArrayLength() >= 3 && session.TimedBattle is { } battle
+                CondChickenRank => d.GetArrayLength() >= 3 && session.Instances.TimedBattle is { } battle
                     && (long)(GameData.Number(d[2]) ?? 0) is var rank && param switch
                     {
                         1 => battle.ChickenRank >= rank,
@@ -158,7 +158,7 @@ public sealed partial class FunctionService
 
     private static bool JourneyAttributeMet(GameSession session, JsonElement values)
     {
-        if (values.GetArrayLength() < 4 || session.NewActivities?.ActivityInfo.GetValueOrDefault(112)?.ActivityParam?.Journey is not { } journey) return false;
+        if (values.GetArrayLength() < 4 || session.Activities.NewActivities?.ActivityInfo.GetValueOrDefault(112)?.ActivityParam?.Journey is not { } journey) return false;
         long attribute = (long)(GameData.Number(values[1]) ?? 0);
         long min = (long)(GameData.Number(values[2]) ?? 0), max = (long)(GameData.Number(values[3]) ?? 0);
         long current = journey.Attributes.GetValueOrDefault(attribute);
@@ -167,7 +167,7 @@ public sealed partial class FunctionService
 
     private static bool JourneyDialogueMet(GameSession session, JsonElement values)
     {
-        if (values.GetArrayLength() < 2 || session.NewActivities?.ActivityInfo.GetValueOrDefault(112)?.ActivityParam?.Journey is not { } journey) return false;
+        if (values.GetArrayLength() < 2 || session.Activities.NewActivities?.ActivityInfo.GetValueOrDefault(112)?.ActivityParam?.Journey is not { } journey) return false;
         for (int index = 1; index < values.GetArrayLength(); index++)
             if (journey.CompleteAct.ContainsKey((long)(GameData.Number(values[index]) ?? 0))) return true;
         return false;
@@ -178,6 +178,6 @@ public sealed partial class FunctionService
     /// DBClimTower.layerConfID is a PetFloorConfig key, never itself a floor number; a missing row means no clear.
     /// </summary>
     private long ClearedTowerFloor(GameSession session) =>
-        session.Tower is { LayerConfID: var configId } && _data.Row("PetFloorConfig", configId) is { } row
+        session.Instances.Tower is { LayerConfID: var configId } && _data.Row("PetFloorConfig", configId) is { } row
             ? GameData.Int(row, "_iFloor") : 0;
 }

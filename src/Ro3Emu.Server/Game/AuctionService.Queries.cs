@@ -69,7 +69,7 @@ public sealed partial class AuctionService
                         ? AuctionState.Public : AuctionState.Bidding
                 };
                 string key = PrebuyKey(req.AuctionType, RowSrc(req.AuctionType, (int)req.SrcType), (int)group.Key);
-                stack.PreBuyNum = s.Auction?.PreBuyNum.GetValueOrDefault(key) ?? 0;
+                stack.PreBuyNum = s.Social.Auction?.PreBuyNum.GetValueOrDefault(key) ?? 0;
                 foreach (var row in group)
                 {
                     bool queued = pending.TryGetValue(row.Id, out var reservation);

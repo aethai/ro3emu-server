@@ -159,7 +159,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         this._loop = loop; this._roles = roles; this._accounts = accounts; this._dungeons = dungeons; this._log = log;
         this._buffs = buffs; this._monsters = monsters; this._world = world;
         _obligations = new RoleObligations<CasualBattleObligationRow>("Mock Battle payout", accounts, loop, time, Online,
-            s => s.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
+            s => s.Instances.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
         scene.Loaded.Subscribe(LoadedAsync);
         scene.Leaving.Subscribe(LeavingAsync);
         dungeons.CurrentStatisticsOwner = s => Live(s) is { } m ? Statistics(m) : null;
@@ -186,7 +186,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
 
     private int Admission(GameSession s)
     {
-        if (s.Role == null || s.Progress == null || s.TimedBattle == null) return ErrorCodes.Parameter;
+        if (s.Role == null || s.Progress == null || s.Instances.TimedBattle == null) return ErrorCodes.Parameter;
         if (s.Progress.Level < GameData.Int(_data.Row("DailyActivityConfig", ActivityId)!.Value, "_iiLv") || !_functions.IsOpen(s, Function))
             return ErrorCodes.FeatureUnavailable;
         if (s.SceneLoading || s.InstanceId != 0 || s.Dead || _active.ContainsKey(s) || Queued(s)) return ErrorCodes.DungeonBusy;
@@ -264,7 +264,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
                     Career = member.Progress!.Career, Camp = camp
                 };
                 _active[member] = match;
-                member.EventFaction = camp;
+                member.Instances.EventFaction = camp;
             }
         _matches.Add(match);
         _praise.Remember(room.Id, Scene, everyone.Select(m => m.Role!.Id)); // likes on the report
@@ -273,7 +273,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
             bool entered = false;
             try { entered = await _instances.EnterAsync(room, member, 5); }
             catch (Exception e) { _log.LogWarning(e, "Mock Battle entry failed for {Role}", member.Role?.Id); }
-            if (!entered) { _active.Remove(member); member.EventFaction = 0; match.Players[member].Left = true; }
+            if (!entered) { _active.Remove(member); member.Instances.EventFaction = 0; match.Players[member].Left = true; }
         }
     }
 
@@ -333,7 +333,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         int camp = match.Players[s].Camp;
         match.Players[s].Left = true;
         if (match.Players[s].Battlefield != 0) _loop.PostLegacy(() => SpendAsync(s, match.Players[s]), "casual battle skill");
-        s.EventFaction = 0;
+        s.Instances.EventFaction = 0;
         // A camp with nobody left loses (inferred).
         if (match.Stage > 0 && match.Players.Values.Where(p => !p.Left).Select(p => p.Camp).Distinct().Count() < 2)
             RequestSettle(match);
@@ -730,7 +730,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         foreach (var p in match.Players.Values.Where(p => !p.Left).OrderBy(p => p.Id))
         {
             _active.Remove(p.Session);
-            p.Session.EventFaction = 0;
+            p.Session.Instances.EventFaction = 0;
             if (p.Battlefield != 0) _loop.PostLegacy(() => SpendAsync(p.Session, p), "casual battle skill");
             bool won = winCamp != 0 && p.Camp == winCamp;
             var payout = new Payout
@@ -807,7 +807,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         {
             var player = match.Players.Values.First(p => p.Id == row.RoleId);
             var s = player.Session.Role?.Id == row.RoleId ? player.Session : Online(row.RoleId);
-            if (s?.TimedBattle == null || s.Progress == null) { _obligations.Forget(row.SourceKey); continue; } // paid at login
+            if (s?.Instances.TimedBattle == null || s.Progress == null) { _obligations.Forget(row.SourceKey); continue; } // paid at login
             await _obligations.TryPayAsync(s, row);
             if (s.Role?.Id == row.RoleId && match.Notices.TryGetValue(row.RoleId, out var notice))
             {
@@ -832,9 +832,9 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         bool paid = false;
         using (await CharacterService.Lock(s, [RoleObligations<CasualBattleObligationRow>.Key(row.SourceKey)]))
         {
-            if (s.Role?.Id != row.RoleId || s.TimedBattle == null || s.Progress == null)
+            if (s.Role?.Id != row.RoleId || s.Instances.TimedBattle == null || s.Progress == null)
                 throw new OperationCanceledException("Mock Battle recipient left the game.");
-            var state = s.TimedBattle;
+            var state = s.Instances.TimedBattle;
             if (!state.CasualSettled.Contains(row.MatchId))
             {
                 var next = JsonSerializer.Deserialize<TimedBattleService.State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
@@ -860,7 +860,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
                         if (grants.Any(g => g.Entry is not (100 or 101)))
                             tx.WithEventEconomy(Economy.EventEconomy.ForRole(_data, s, "casual-battle", row.SourceKey, [], grants,
                                 new { Match = row.MatchId, payout.Won, Score = payout.Stats.PersonalScore }));
-                    }, stateLockHeld: true, committed: () => s.TimedBattle = next))
+                    }, stateLockHeld: true, committed: () => s.Instances.TimedBattle = next))
                     throw new InvalidOperationException("Mock Battle settlement refused.");
                 paid = true;
             }
@@ -875,7 +875,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
     /// <summary>Login pays what a failure, a disconnect or a restart left pending (after the timed-battle state).</summary>
     public async Task LoginAsync(GameSession s)
     {
-        if (s.Role == null || s.TimedBattle == null) return;
+        if (s.Role == null || s.Instances.TimedBattle == null) return;
         long roleId = s.Role.Id;
         await _obligations.DeliverPendingAsync(s, roleId, () => s.Role?.Id == roleId);
     }

@@ -161,7 +161,7 @@ public sealed partial class CharacterService
     {
         using var _ = await LockAsync(session);
         var p = CloneProgress(session.Progress!);
-        var plans = session.StatPlans.Info.Clone();
+        var plans = session.Profile.StatPlans.Info.Clone();
         if (!plans.AllPlanBaseProperty.TryGetValue(req.PlanIndex, out var selected))
         {
             await session.SendGameAsync(AllocateAttrPoints, new AllocateAttrPointRsp { Result = ErrorCodes.Parameter, PlanIndex = req.PlanIndex });
@@ -201,7 +201,7 @@ public sealed partial class CharacterService
     {
         using var _ = await LockAsync(session);
         var p = CloneProgress(session.Progress!);
-        var plans = session.StatPlans.Info.Clone();
+        var plans = session.Profile.StatPlans.Info.Clone();
         int index = req?.PlanIndex ?? plans.CurPlanIndex;
         if (!plans.AllPlanBaseProperty.TryGetValue(index, out var plan))
         {
@@ -324,8 +324,8 @@ public sealed partial class CharacterService
     public async Task<string> SetSpeedAsync(GameSession session, long speed)
     {
         using var _ = await LockAsync(session);
-        session.SpeedBonus = 0;
-        if (speed > 0) session.SpeedBonus = speed - Stats(session)[Speed];
+        session.Combat.SpeedBonus = 0;
+        if (speed > 0) session.Combat.SpeedBonus = speed - Stats(session)[Speed];
         await SendStatsAsync(session);
         return $"Speed {session.Speed} ({session.Speed / 100.0:F2} m/s); run animation from 875.";
     }

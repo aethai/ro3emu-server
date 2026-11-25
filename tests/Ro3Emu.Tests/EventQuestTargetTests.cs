@@ -186,11 +186,11 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
         tasks.GuildWarPoints = _ => 12000;
         await OnLoop(() =>
         {
-            s.NewActivities ??= new DBNewActivityInfo();
+            s.Activities.NewActivities ??= new DBNewActivityInfo();
             var world = new DBWorldExploration();
             foreach (var (phase, rate) in new[] { (101L, 10000), (102L, 5050), (103L, 0) })
                 world.PhaseInfos[phase] = new DBWorldExplorationPhase { PhaseCfgId = phase, TotalRate = rate };
-            s.NewActivities.ActivityInfo[111] = new PlayerActivityInfo { ActivityParam = new PlayerActivityParam { WorldExploration = world } };
+            s.Activities.NewActivities.ActivityInfo[111] = new PlayerActivityInfo { ActivityParam = new PlayerActivityParam { WorldExploration = world } };
             return Task.CompletedTask;
         });
         await QuestProbe.GmAsync(_http, "eventseason", "!quest accept 120006");

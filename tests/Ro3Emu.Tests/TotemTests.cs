@@ -54,7 +54,7 @@ public sealed class TotemTests : IAsyncLifetime
         {
             var initial = await Next(bot, 5032, DBTotemInfoIncrement.Parser);
             Assert.True(initial.SyncAllMark); Assert.Equal(5, initial.TotemPlans.Count);
-            Assert.All(Session.Totems!.TotemPlans.Values, p => Assert.Equal(3, p.SetUpTotem.Count));
+            Assert.All(Session.Profile.Totems!.TotemPlans.Values, p => Assert.Equal(3, p.SetUpTotem.Count));
             await Gm("!lvl 60"); a = await Give(17300001); b = await Give(17300002);
             long hp = Session.EntityProperties.Single(p => p.Id == 101).Value;
             Assert.Equal(0, (await Equip(bot, 1, a)).Result);
@@ -62,17 +62,17 @@ public sealed class TotemTests : IAsyncLifetime
             Assert.True(Session.EntityProperties.Single(p => p.Id == 101).Value > hp);
             await bot.SendGameAsync(82369, new TotemSwapReq { SwapFromGuid = a, SwapToGuid = b });
             Assert.Equal(0, (await Next(bot, 82369, TotemSwapResp.Parser)).Result);
-            Assert.Equal(b, Session.Totems.TotemPlans[0].SetUpTotem[1]); Assert.Equal(0, Item(a).Attrs![10001]);
+            Assert.Equal(b, Session.Profile.Totems.TotemPlans[0].SetUpTotem[1]); Assert.Equal(0, Item(a).Attrs![10001]);
             Assert.Equal(0, (await Equip(bot, 2, a)).Result);
             Assert.Equal(0, (await Equip(bot, 3, a)).Result);
-            Assert.Equal(0, Session.Totems.TotemPlans[0].SetUpTotem[2]);
+            Assert.Equal(0, Session.Profile.Totems.TotemPlans[0].SetUpTotem[2]);
             await bot.SendGameAsync(82368, new TotemChangeTotemNameReq { TargetIndex = 0, Name = "Boss" });
             Assert.Equal(0, (await Next(bot, 82368, TotemChangeTotemNameResp.Parser)).Result);
         }
         await using (var bot = await InWorld(false))
         {
-            Assert.Equal(b, Session.Totems!.TotemPlans[0].SetUpTotem[1]);
-            Assert.Equal(a, Session.Totems.TotemPlans[0].SetUpTotem[3]);
+            Assert.Equal(b, Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1]);
+            Assert.Equal(a, Session.Profile.Totems.TotemPlans[0].SetUpTotem[3]);
             Assert.Equal(3, Item(a).Attrs![10002]);
             await bot.SendGameAsync(82367, new TotemSwitchPlanReq { TargetIndex = 1 });
             Assert.Equal(0, (await Next(bot, 82367, TotemSwitchPlanResp.Parser)).Result);
@@ -106,7 +106,7 @@ public sealed class TotemTests : IAsyncLifetime
         {
             await Next(bot, 5032, DBTotemInfoIncrement.Parser);
             Assert.Equal(1, Item(a).Attrs![10001]);
-            Assert.Equal(a, Session.Totems!.TotemPlans[0].SetUpTotem[1]);
+            Assert.Equal(a, Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1]);
             var after = accounts.RoleVector(role, sqlOnly: true);
             foreach (var part in new[] { "totems", "totem_refine_epoch" })
                 Assert.True(before.Revision(part) == after.Revision(part), $"{part}: {before.Revision(part)} -> {after.Revision(part)}");
@@ -126,10 +126,10 @@ public sealed class TotemTests : IAsyncLifetime
         await bot.SendGameAsync(82364, new RefineTotemSkillReq { TotemPos = 1, TotemGuid = id, SkillBookGuid = book });
         Assert.Equal(ErrorCodes.TotemInvalid, (await Next(bot, 82364, RefineTotemSkillResp.Parser)).Result);
         Assert.NotNull(Item(book)); // Blue totems cannot learn, even through a forged direct request.
-        var exp = Session.Totems!.TotemTotalExp;
+        var exp = Session.Profile.Totems!.TotemTotalExp;
         await bot.SendGameAsync(82365, new UpgradeTotemSystemReq { TotemGuids = { id } });
         Assert.NotEqual(0, (await Next(bot, 82365, UpgradeTotemSystemResp.Parser)).Result);
-        Assert.Equal(exp, Session.Totems.TotemTotalExp); Assert.NotNull(Item(id));
+        Assert.Equal(exp, Session.Profile.Totems.TotemTotalExp); Assert.NotNull(Item(id));
         await bot.SendGameAsync(82365, new UpgradeTotemSystemReq { TotemGuids = { id, id } });
         Assert.NotEqual(0, (await Next(bot, 82365, UpgradeTotemSystemResp.Parser)).Result);
         await bot.SendGameAsync(82367, new TotemSwitchPlanReq { TargetIndex = 999 });
@@ -170,18 +170,18 @@ public sealed class TotemTests : IAsyncLifetime
         await Gm("!item 1256003 5");
         await bot.SendGameAsync(82365, new UpgradeTotemSystemReq { ConsumeItems = { [1256003] = 5 } });
         Assert.Equal(0, (await Next(bot, 82365, UpgradeTotemSystemResp.Parser)).Result);
-        Assert.Equal(50, Session.Totems!.TotemTotalExp); Assert.DoesNotContain(Session.Items, i => i.Entry == 1256003);
+        Assert.Equal(50, Session.Profile.Totems!.TotemTotalExp); Assert.DoesNotContain(Session.Items, i => i.Entry == 1256003);
         long cap = data.Table("TotemLvConfig").Values.Sum(row => GameData.Int(row, "_iExp"));
         await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
         {
-            Session.Totems.TotemTotalExp = cap - 5;
-            _app.Services.GetRequiredService<RoleStore>().SaveTotems(Session.Role!.Id, Session.Totems.ToByteArray());
+            Session.Profile.Totems.TotemTotalExp = cap - 5;
+            _app.Services.GetRequiredService<RoleStore>().SaveTotems(Session.Role!.Id, Session.Profile.Totems.ToByteArray());
             return Task.CompletedTask;
         });
         await Gm("!item 1256003 1");
         await bot.SendGameAsync(82365, new UpgradeTotemSystemReq { ConsumeItems = { [1256003] = 1 } });
         var capped = await Next(bot, 82365, UpgradeTotemSystemResp.Parser);
-        Assert.Equal(0, capped.Result); Assert.Equal(cap, Session.Totems.TotemTotalExp);
+        Assert.Equal(0, capped.Result); Assert.Equal(cap, Session.Profile.Totems.TotemTotalExp);
         Assert.Equal(1, capped.GainItems[1256002]); Assert.Equal(2, capped.GainItems[1256001]);
     }
 
@@ -232,7 +232,7 @@ public sealed class TotemTests : IAsyncLifetime
         await bot.SendGameAsync(StallsService.Start, stall);
         Assert.Equal(ErrorCodes.TradeRequest, (await Next(bot, StallsService.Start, PlayerStartStallsRsp.Parser)).Result);
         Assert.Equal(currency, Session.Progress.Currency[2]);
-        Assert.Equal(guid, Session.Totems!.TotemPlans[0].SetUpTotem[1]);
+        Assert.Equal(guid, Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1]);
         Assert.Contains(_app.Services.GetRequiredService<ItemStore>().Load(Session.Role!.Id), item => item.Guid == guid);
 
         // The same market gate still accepts a developed, unreserved copy.

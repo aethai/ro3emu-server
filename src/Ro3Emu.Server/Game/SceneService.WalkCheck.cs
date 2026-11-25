@@ -32,14 +32,14 @@ public sealed partial class SceneService
         if (problem == null)
         {
             s.WalkAllowance.Drain(now, speed, spend);
-            s.LastWalkUtc = now;
+            s.WorldState.LastWalkUtc = now;
             return true;
         }
         cheats.Refused(s, CheatMonitor.Walk, $"scene {s.SceneEntry} {from.X:F1},{from.Z:F1} -> {walk.Pos.X:F1},{walk.Pos.Y:F1},{walk.Pos.Z:F1}: {problem}");
         if (mode != "enforce" && Finite(walk.Pos))
         {
             s.WalkAllowance.Drain(now, speed, spend);
-            s.LastWalkUtc = now;
+            s.WorldState.LastWalkUtc = now;
             return true;
         }
         await TeleportInMapAsync(s, new MapPoint(from.X, from.Y, from.Z, s.Face));
@@ -48,7 +48,7 @@ public sealed partial class SceneService
 
     /// <summary>The player cannot walk until <paramref name="until"/> (a root, a stun, a cast that holds it in place).</summary>
     public static void HoldWalk(GameSession s, DateTime until, bool walking) =>
-        s.WalkAllowance.Hold(s.UtcNow, until, WalkSpeed(s), walking ? (s.UtcNow - s.LastWalkUtc).TotalSeconds : 0);
+        s.WalkAllowance.Hold(s.UtcNow, until, WalkSpeed(s), walking ? (s.UtcNow - s.WorldState.LastWalkUtc).TotalSeconds : 0);
 
     /// <summary>Metres a second the walk budget grows by: the speed attribute, at least 1 m/s (a slowed player still walks).</summary>
     internal static double WalkSpeed(GameSession s) => Math.Max(1, s.Speed / 100.0);

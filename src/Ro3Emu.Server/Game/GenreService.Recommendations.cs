@@ -21,7 +21,7 @@ public sealed partial class GenreService
     }
     private GameSession? Online(long roleId) => sessions.ByRole(roleId);
     private DBGenre? Stored(long roleId) => roles.Get(roleId) == null ? null
-        : Online(roleId)?.Genre?.Clone() ?? (roles.LoadGenre(roleId) is { } bytes ? DBGenre.Parser.ParseFrom(bytes) : null);
+        : Online(roleId)?.Profile.Genre?.Clone() ?? (roles.LoadGenre(roleId) is { } bytes ? DBGenre.Parser.ParseFrom(bytes) : null);
 
     private static PlanGenreConcreteAndInfo? FindMy(DBGenre state, long seeker, long response) =>
         state.MyRecommend?.MyRecommendPlans.TryGetValue(seeker, out var group) == true
@@ -52,8 +52,8 @@ public sealed partial class GenreService
         tx.RoleBlob(otherId, "genre", other.ToByteArray());
         await roles.CommitAsync(tx, "cd13b/genre-pair", _ =>
         {
-            sender.Genre = self;
-            if (target != null) target.Genre = other;
+            sender.Profile.Genre = self;
+            if (target != null) target.Profile.Genre = other;
         });
         await SyncAsync(sender);
         if (target != null)
@@ -74,7 +74,7 @@ public sealed partial class GenreService
                 try
                 {
                     share = int.Parse(NewShareCode(now));
-                    var next = s.Genre!.Clone();
+                    var next = s.Profile.Genre!.Clone();
                     next.SeekerId = checked((int)s.Role!.Id);
                     next.CodeInfo = new SeekerCodeInfo { CodeInfo = share.ToString(), ExpireTime = now + CodeLifetime };
                     await SaveGenreAsync(s, next);
@@ -103,7 +103,7 @@ public sealed partial class GenreService
                 {
                     long now = Now();
                     share = NewShareCode(now);
-                    var next = s.Genre!.Clone();
+                    var next = s.Profile.Genre!.Clone();
                     next.SeekerId = checked((int)s.Role!.Id);
                     next.CodeInfo = new SeekerCodeInfo { CodeInfo = share, ExpireTime = now + CodeLifetime };
                     await SaveGenreAsync(s, next);
@@ -130,7 +130,7 @@ public sealed partial class GenreService
             {
                 response = seeker!.ResponseId + 1;
                 seeker.ResponseId = response;
-                var mine = s.Genre!.Clone();
+                var mine = s.Profile.Genre!.Clone();
                 var record = new PlanGenreConcreteAndInfo
                 {
                     PlanBeginTime = Now(), RougeInfo = new GenreRougeRecommend
@@ -158,7 +158,7 @@ public sealed partial class GenreService
                 var seeker = Stored(seekerId)!;
                 response = seeker.ResponseId + 1;
                 seeker.ResponseId = response;
-                var mine = s.Genre!.Clone();
+                var mine = s.Profile.Genre!.Clone();
                 Put(seeker, mine, seekerId, s.Role!.Id, response,
                     new PlanGenreConcreteAndInfo
                     {
@@ -177,7 +177,7 @@ public sealed partial class GenreService
         {
             using var held = await CharacterService.Lock(s);
             var seeker = Stored(req.SeekUserId);
-            var mine = s.Genre!.Clone();
+            var mine = s.Profile.Genre!.Clone();
             var plan = FindMy(mine, req.SeekUserId, req.ResponseId);
             if (result == 0 && (seeker == null || plan == null || FindOther(seeker, s.Role!.Id, req.ResponseId) == null
                 || req.Plan == null || !OwnsConcrete(s, req.Plan))) result = ErrorCodes.Parameter;
@@ -296,7 +296,7 @@ public sealed partial class GenreService
         }
         if (concrete.SeasonTalentPlan != null && concrete.SeasonTalentPlan.TalentNodes.Any(kv =>
             kv.Value.CurrentLevel < 0 || data.Row("SeasonTalentConfig", kv.Key) == null
-            || kv.Value.CurrentLevel > (s.SeasonTalent?.Plan.Values.Select(p => p.TalentNodes.GetValueOrDefault(kv.Key)?.CurrentLevel ?? 0).DefaultIfEmpty().Max() ?? 0)))
+            || kv.Value.CurrentLevel > (s.Season.SeasonTalent?.Plan.Values.Select(p => p.TalentNodes.GetValueOrDefault(kv.Key)?.CurrentLevel ?? 0).DefaultIfEmpty().Max() ?? 0)))
             return ErrorCodes.TalentLocked;
         return 0;
     }
@@ -306,7 +306,7 @@ public sealed partial class GenreService
         int result = Gate(s);
         {
             var seeker = Stored(req.SeekUserId);
-            var mine = s.Genre!.Clone();
+            var mine = s.Profile.Genre!.Clone();
             var plan = FindMy(mine, req.SeekUserId, req.ResponseId);
             if (result == 0 && (seeker == null || plan == null || !ValidName(req.PlanName)
                 || req.PlanExplain.Any(char.IsControl) || req.PlanExplain.EnumerateRunes().Count() > 200)) result = ErrorCodes.Parameter;
@@ -327,7 +327,7 @@ public sealed partial class GenreService
         int result = Gate(s);
         {
             var seeker = Stored(req.SeekUserId);
-            var mine = s.Genre!.Clone();
+            var mine = s.Profile.Genre!.Clone();
             var plan = FindMy(mine, req.SeekUserId, req.ResponseId);
             if (result == 0 && (seeker == null || plan?.Plans == null || !OwnsConcrete(s, plan.Plans))) result = ErrorCodes.Parameter;
             if (result == 0)
@@ -346,7 +346,7 @@ public sealed partial class GenreService
         int result = Gate(s);
         {
             var seeker = Stored(req.SeekerUserId);
-            var mine = s.Genre!.Clone();
+            var mine = s.Profile.Genre!.Clone();
             if (result == 0 && (seeker == null || FindMy(mine, req.SeekerUserId, req.ResponseId) == null)) result = ErrorCodes.Parameter;
             if (result == 0)
             {
@@ -363,7 +363,7 @@ public sealed partial class GenreService
         int result = Gate(s);
         {
             var responder = Stored(req.ResponseUserId);
-            var mine = s.Genre!.Clone();
+            var mine = s.Profile.Genre!.Clone();
             if (result == 0 && (responder == null || FindOther(mine, req.ResponseUserId, req.ResponseId) == null)) result = ErrorCodes.Parameter;
             if (result == 0)
             {
@@ -378,7 +378,7 @@ public sealed partial class GenreService
     internal async Task OthersAsync(GameSession s, GenreGetAllOtherRecommendReq req)
     {
         int result = Gate(s);
-        if (result == 0 && FindOther(s.Genre!, req.ResponseUserID, req.ResponseId) == null) result = ErrorCodes.Parameter;
+        if (result == 0 && FindOther(s.Profile.Genre!, req.ResponseUserID, req.ResponseId) == null) result = ErrorCodes.Parameter;
         await s.SendGameAsync(82809, new GenreGetAllOtherRecommendResp { Result = result });
         if (result == 0) await SyncAsync(s);
     }
@@ -386,7 +386,7 @@ public sealed partial class GenreService
     internal async Task ConcreteAsync(GameSession s, GenreGetMyRecConcretePlanReq req)
     {
         int result = Gate(s);
-        var plan = FindMy(s.Genre!, req.SeekerUserId, req.ResponseId);
+        var plan = FindMy(s.Profile.Genre!, req.SeekerUserId, req.ResponseId);
         var seeker = roles.Get(req.SeekerUserId);
         if (result == 0 && (plan?.Plans == null || seeker == null)) result = ErrorCodes.Parameter;
         var response = new GenreGetMyRecConcretePlanResp { Result = result };
@@ -430,11 +430,11 @@ public sealed partial class GenreService
             int result = Gate(s);
             var reply = new GenreSeekerApplyPlanResp();
             reply.ChildType.Add(req.ChildType);
-            var record = FindOther(s.Genre!, req.ResponseUserId, req.ResponseId);
-            if (result == 0 && (!s.Genre!.GenreMap.SystemMap.ContainsKey(req.PlanId) || record?.HaveCommited != true
+            var record = FindOther(s.Profile.Genre!, req.ResponseUserId, req.ResponseId);
+            if (result == 0 && (!s.Profile.Genre!.GenreMap.SystemMap.ContainsKey(req.PlanId) || record?.HaveCommited != true
                 || record.Plans == null || record.RougeInfo?.SeekUserId != s.Role!.Id
                 || record.RougeInfo.ResponserUserId != req.ResponseUserId)) result = ErrorCodes.Parameter;
-            var selected = s.Genre!.GenreMap.SystemMap.TryGetValue(req.PlanId, out var current)
+            var selected = s.Profile.Genre!.GenreMap.SystemMap.TryGetValue(req.PlanId, out var current)
                 ? current.GenrePlans.ToDictionary(kv => kv.Key, kv => kv.Value) : [];
             var replacing = (req.ChildType.Count == 0 ? req.SystemType.Keys : req.ChildType.Where(kv => kv.Value == 1).Select(kv => kv.Key)).ToArray();
             if (result == 0 && (replacing.Length == 0 || replacing.Any(type => type is < Skill or > Talent
@@ -536,7 +536,7 @@ public sealed partial class GenreService
             if (result == 0) result = ApplyCooldownError(s, next);
             if (result == 0)
             {
-                var genre = s.Genre!.Clone();
+                var genre = s.Profile.Genre!.Clone();
                 var plan = genre.GenreMap.SystemMap[req.PlanId];
                 plan.GenrePlans.Clear();
                 foreach (var (type, index) in selected) plan.GenrePlans[type] = index;
@@ -546,7 +546,7 @@ public sealed partial class GenreService
                 genre.CurrentPlan = req.PlanId;
                 try
                 {
-                    bool changed = replacing.Contains(Skill) || next.Skills.CurrentPlanIndex != s.SkillPlans!.CurrentPlanIndex;
+                    bool changed = replacing.Contains(Skill) || next.Skills.CurrentPlanIndex != s.Combat.SkillPlans!.CurrentPlanIndex;
                     await CommitAsync(s, next, genre);
                     skillChanged = changed;
                 }

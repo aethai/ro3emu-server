@@ -35,7 +35,7 @@ public sealed partial class DungeonTests
                 stats[stat]++;
                 if (stats.Sum(character.StatCost) > character.TotalPoints(s.Progress!)) { stats[stat]--; break; }
             }
-            var req = new AllocateAttrPointReq { PlanIndex = s.StatPlans.Info.CurPlanIndex };
+            var req = new AllocateAttrPointReq { PlanIndex = s.Profile.StatPlans.Info.CurPlanIndex };
             for (int i = 0; i < 6; i++) req.Points[i + 1] = stats[i];
             await character.AllocateAsync(s, req);
         });

@@ -416,7 +416,7 @@ public sealed partial class DungeonTests
         Assert.Null(Service<InstanceService>().Find(instance));
         await Next(alice, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => !info.BDead && info.SceneEntry == outside);
-        Assert.Empty(session.Dungeons!.Records);
+        Assert.Empty(session.Instances.Dungeons!.Records);
         await alice.SendGameAsync(DungeonService.Leave, new LeaveDungeonReq());
         Assert.Equal(ErrorCodes.SceneMissing, (await Next(alice, DungeonService.Leave, LeaveDungeonRsp.Parser)).Result);
         _clock.Advance(TimeSpan.FromSeconds(10));
@@ -447,7 +447,7 @@ public sealed partial class DungeonTests
         await OnLoop(async () =>
         {
             foreach (var monster in session.DungeonAttempt!.Room.Monsters) monster.Dead = true;
-            session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             session.StatusBits |= 1L << 15;
             session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(session, hp, sp);

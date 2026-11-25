@@ -61,7 +61,7 @@ public sealed class LineupWheelTests
             await using var alice = await host.InWorldAsync("Alice");
             async Task<string> Queue() => await host.Service<GameLoop>().InvokeAsync(() =>
             {
-                var plans = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid).SkillPlans!;
+                var plans = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid).Combat.SkillPlans!;
                 return Task.FromResult(string.Join(",", plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillQueue
                     .OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}:{kv.Value.SkillId}")));
             });
@@ -101,7 +101,7 @@ public sealed class LineupWheelTests
             {
                 var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid);
                 var skills = host.Service<SkillService>();
-                Assert.All(session.SkillPlans!.SkillAssignPlans, plan => Assert.Equal(1, plan.SkillAssigns[QueueGroup].SkillLevel));
+                Assert.All(session.Combat.SkillPlans!.SkillAssignPlans, plan => Assert.Equal(1, plan.SkillAssigns[QueueGroup].SkillLevel));
                 session.Progress!.Career = 1100;
                 var state = skills.Build(session);
                 Assert.Equal(AdvancedQueueGroup, skills.QueueGroup(1100));

@@ -78,15 +78,15 @@ public sealed class GmPresetOpTests : IAsyncLifetime
 
         var s = Session(bot);
         Assert.Equal(1100, s.Progress!.Career);
-        Assert.True(s.GmAllFunctionsOpen);
+        Assert.True(s.Profile.GmAllFunctionsOpen);
         Assert.Equal([29, 29, 1, 1, 1, 1], s.Progress.Stats); // JobProfessPointConfig 101029
         Assert.Equal(10, s.Progress.Skills.GetValueOrDefault(11001)); // 1100110 in JobProfessSkillConfig 101240
         // The bar: 1100110 1100210 1100405 1109901 1100505, then the normal attack 1001001 as the Swordman's own (11000).
         Assert.Contains("Skill bar: 6 skills.", reply);
-        var bar = s.SkillPlans!.SkillAssignPlans[s.SkillPlans.CurrentPlanIndex].ManualLoadSkill;
+        var bar = s.Combat.SkillPlans!.SkillAssignPlans[s.Combat.SkillPlans.CurrentPlanIndex].ManualLoadSkill;
         Assert.Equal([11001, 11002, 11004, 11099, 11005, 11000], bar.Select(b => b.SkillId));
         Assert.Contains(s.Items, i => i.Entry == 90000722 && i.Grid > 0);
-        var plan = s.SeasonTalent!.Plan[s.SeasonTalent.CurPlanId];
+        var plan = s.Season.SeasonTalent!.Plan[s.Season.SeasonTalent.CurPlanId];
         Assert.Equal(3, plan.TalentNodes[10101001].CurrentLevel); // SeasonTalentConfig _iMaxLevel 3
     }
 
@@ -101,7 +101,7 @@ public sealed class GmPresetOpTests : IAsyncLifetime
         {
             // 5200 Assassin: levels, job, openallfunc, profession 503's skills, the bar.
             Assert.DoesNotContain("Not implemented", await PanelAsync(bot, new GeneralGMProcReq { GmListId = 5200 }));
-            Assert.True(Session(bot).GmAllFunctionsOpen);
+            Assert.True(Session(bot).Profile.GmAllFunctionsOpen);
         }
         await AssertBuildAfterLogin();
         await StopAsync();
@@ -121,7 +121,7 @@ public sealed class GmPresetOpTests : IAsyncLifetime
             Assert.Equal(10, skills.SkillAssignPlans.All.Value[(int)skills.CurrentPlanIndex].SkillAssigns[15111].SkillLevel);
             Assert.Equal(6, skills.SkillWheel.All.WhellSkills.Count(w => w.Key is >= 1 and <= 6 && w.Value.SkillConfigId > 0));
             // A learned skill still goes on the bar: Envenom (15005) over slot 6.
-            var plan = Session(bot).SkillPlans!.SkillAssignPlans[Session(bot).SkillPlans!.CurrentPlanIndex];
+            var plan = Session(bot).Combat.SkillPlans!.SkillAssignPlans[Session(bot).Combat.SkillPlans!.CurrentPlanIndex];
             await bot.SendGameAsync(SkillService.SkillLoad, new SkillLoadReq
             {
                 OpType = SkillLoadOperation.SkillLoadOpReplace, IsManual = true, SocketNum = 5,
@@ -140,11 +140,11 @@ public sealed class GmPresetOpTests : IAsyncLifetime
         Assert.DoesNotContain("Not implemented", reply);
 
         var s = Session(bot);
-        var echoes = s.Emblems.Plans[s.Emblems.CurrentPlan].Slots;
+        var echoes = s.Profile.Emblems.Plans[s.Profile.Emblems.CurrentPlan].Slots;
         Assert.Equal(5, echoes.Count);
         Assert.All(echoes.Values, guid => Assert.Equal(20, s.Items.Single(i => i.Guid == guid).Attrs![1001]));
-        Assert.Equal(1500205, s.CareerSpecial!.MountsSlot.CartRemouldCfg);
-        var queue = s.SkillPlans!.SkillAssignPlans[s.SkillPlans.CurrentPlanIndex].SkillQueue;
+        Assert.Equal(1500205, s.Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
+        var queue = s.Combat.SkillPlans!.SkillAssignPlans[s.Combat.SkillPlans.CurrentPlanIndex].SkillQueue;
         Assert.Equal([11314, 11201], queue.OrderBy(q => q.Key).Select(q => q.Value.SkillId));
     }
 
@@ -156,18 +156,18 @@ public sealed class GmPresetOpTests : IAsyncLifetime
         string reply = await PanelAsync(bot, new GeneralGMProcReq { GmListId = 3401 });
         Assert.DoesNotContain("Not implemented", reply);
         var s = Session(bot);
-        Assert.Equal(1500400, s.CareerSpecial!.MountsSlot.CartRemouldCfg);
+        Assert.Equal(1500400, s.Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
         Assert.True(s.Mounts!.MountIds[2].IsRiding);
 
         reply = await PanelAsync(bot, new GeneralGMProcReq { GmListId = 86 });
         Assert.DoesNotContain("Not implemented", reply);
         Assert.Contains("appearances unlocked", reply);
-        Assert.True(s.Wardrobe!.AllLightUpAppearances.Count > 100);
+        Assert.True(s.Profile.Wardrobe!.AllLightUpAppearances.Count > 100);
 
         // 3200 Hunter: the falcon in the pendant slot.
         reply = await PanelAsync(bot, new GeneralGMProcReq { GmListId = 3200 });
         Assert.DoesNotContain("Not implemented", reply);
-        Assert.Equal(1500100, s.CareerSpecial!.PendantSlot.CartRemouldCfg);
+        Assert.Equal(1500100, s.Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
     }
 
     [ClientDataFact]

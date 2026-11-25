@@ -85,8 +85,8 @@ internal static class DungeonComposition
             if (a.Length != 1 || a[0].ToLowerInvariant() is not ("on" or "off")) throw new ArgumentException("on|off");
             // Changing a test policy cancels any outstanding queue/vote before the next Enter Challenge.
             await match.LeaveRoleAsync(s, notifySelf: true);
-            s.DungeonSoloMatch = a[0].Equals("on", StringComparison.OrdinalIgnoreCase);
-            await GmCommands.ReplyAsync(s, $"Dungeon solo TEST AID {(s.DungeonSoloMatch ? "ON" : "OFF")} for this role session. "
+            s.Instances.DungeonSoloMatch = a[0].Equals("on", StringComparison.OrdinalIgnoreCase);
+            await GmCommands.ReplyAsync(s, $"Dungeon solo TEST AID {(s.Instances.DungeonSoloMatch ? "ON" : "OFF")} for this role session. "
                 + "Click Enter Challenge again. This is not original matchmaking behavior.");
         });
         gm.Register("dungeon", "<sceneEntry> (test aid: the client's 30400 Enter for a solo story dungeon)", async (s, a) =>

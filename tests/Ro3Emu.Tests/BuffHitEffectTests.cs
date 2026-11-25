@@ -77,7 +77,7 @@ public sealed class BuffHitEffectTests
             await host.Service<GameLoop>().InvokeAsync(() =>
             {
                 b.Position = a.Position.Clone();
-                a.Energy[Meter] = new PlayerEnergyState { Value = 10 };
+                a.Combat.Energy[Meter] = new PlayerEnergyState { Value = 10 };
                 a.GmCastSkill = skill;
                 return Task.CompletedTask;
             });
@@ -114,7 +114,7 @@ public sealed class BuffHitEffectTests
         await Task.Delay(300);
         Assert.Single(Hits(c.Alice, c.SessionId)); // the caster sees it too, once
         Assert.DoesNotContain(c.Alice.Inbox.Snapshot(), e => e.IsGame(CombatService.DamageStatistics)); // nothing recorded as damage or healing
-        Assert.Equal(c.EnergyBefore, c.A.Energy[Meter].Value); // no energy recovered on hit
+        Assert.Equal(c.EnergyBefore, c.A.Combat.Energy[Meter].Value); // no energy recovered on hit
     });
 
     [Theory]

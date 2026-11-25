@@ -105,7 +105,7 @@ public sealed partial class TradeService(
             StallsNum = 6, CreditScoreRatio = 1, // (inferred) initial six free TradeConfigUnlockPlace places.
         };
         if (state.LastRefreshTime == 0) state.LastRefreshTime = NowMs; // LC_DAL_Trade full sync divides this field.
-        s.Trade = state;
+        s.Social.Trade = state;
         if (saved == null) roles.SaveTrade(s.Role.Id, state.ToByteArray());
         await CharacterService.SyncAsync(s, TradeSync, state.Clone());
     }

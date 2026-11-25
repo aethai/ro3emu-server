@@ -40,6 +40,18 @@ public sealed class WorldSessionState
     public long TemporaryLeaveUntilMs { get; set; }
     public long TypingWindowStartMs { get; set; }
     public int TypingInWindow { get; set; }
+    public DateTime PositionSavedUtc { get; set; }
+    /// <summary>Time of the last accepted walk (speed check).</summary>
+    public DateTime LastWalkUtc { get; set; }
+    /// <summary>WalkReq.dir of the last accepted walk: degrees, 0 = +z, clockwise toward +x.</summary>
+    public float WalkDir { get; set; }
+    /// <summary>The last accepted walk was a move, not a stop: the client is somewhere along it now.</summary>
+    public bool Walking { get; set; }
+    /// <summary>EntityBase.teamId on this player's unit: its party (TeamService.SyncUnitTeamAsync), 0 when solo.</summary>
+    public long UnitTeamId { get; set; }
+    /// <summary>Position before the latest WALK, to tell walks from jumps.</summary>
+    public Romsg.Vec3 PreviousPosition { get; set; } = new();
+    public bool SceneRecoveryRequired { get; set; }
 }
 
 /// <summary>
@@ -477,7 +489,7 @@ public sealed partial class WorldCoreService : IGameTicker
         {
             var member = group.First();
             var leader = Player(_teams.TeamOf(member.Role!.Id).Leader);
-            var packet = new TeamTargetAndEnemy { LeaderTargetId = leader?.WorldScene == group.Key.Scene ? leader.LockTarget : 0 };
+            var packet = new TeamTargetAndEnemy { LeaderTargetId = leader?.WorldScene == group.Key.Scene ? leader.Combat.LockTarget : 0 };
             packet.TeamEnemyList.Add(group.SelectMany(s => s.WorldState.Hatred).Distinct().Order());
             string signature = Convert.ToBase64String(packet.ToByteArray());
             foreach (var s in group)

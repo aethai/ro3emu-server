@@ -42,7 +42,7 @@ public sealed partial class DailyActivityService
     /// <summary>Delivers every owed compensation letter; each one removes its day from the saved state in its own commit.</summary>
     private async Task SendCompensationAsync(GameSession session)
     {
-        if (session.Daily is not { Compensation.Count: > 0 } state || session.Role is not { } role || CompensationMail == 0) return;
+        if (session.Activities.Daily is not { Compensation.Count: > 0 } state || session.Role is not { } role || CompensationMail == 0) return;
         foreach (var (epoch, goods) in state.Compensation.OrderBy(kv => kv.Key).ToList())
         {
             var next = JsonSerializer.Deserialize<DailyState>(JsonSerializer.SerializeToUtf8Bytes(state))!;

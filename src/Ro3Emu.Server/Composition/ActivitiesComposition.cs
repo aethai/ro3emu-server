@@ -148,7 +148,7 @@ internal static class ActivitiesComposition
             else if (args.Length != 0) throw new ArgumentException("alwaysopen on|off | unlimited on|off | reset");
             if (args.Length != 0)
             {
-                await RoleFanout.EachAsync(sessions.All().Where(p => p.Role != null && p.DailyReady), async p =>
+                await RoleFanout.EachAsync(sessions.All().Where(p => p.Role != null && p.Activities.DailyReady), async p =>
                 {
                     await daily.SyncEventsAsync(p);
                     await dungeons.SyncAsync(p);

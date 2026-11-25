@@ -79,7 +79,7 @@ public sealed partial class WarMachineService
     /// <summary>SiegeSettled, per loaded participant: the settled siege's machines end once (the first call finds them).</summary>
     private void SiegeMachinesSettled(long role, long score, bool won)
     {
-        if (_sessions.ByRole(role)?.SiegeBattle is { } battle)
+        if (_sessions.ByRole(role)?.Instances.SiegeBattle is { } battle)
             _loop.PostLegacy(() => EndWarMachinesAsync(battle.Room));
     }
 
@@ -89,9 +89,9 @@ public sealed partial class WarMachineService
         try
         {
             if (s.Role == null) return null;
-            if (s.SiegeBattle is { } siege && m.InstanceId == siege.Room.Id && SiegeActive(siege) && SiegeMember(s, siege))
+            if (s.Instances.SiegeBattle is { } siege && m.InstanceId == siege.Room.Id && SiegeActive(siege) && SiegeMember(s, siege))
                 return siege.State.Players[s.Role.Id];
-            if (s.TerritoryBattle is { } battle && m.InstanceId == battle.Room.Id && Active(battle) && Member(s, battle))
+            if (s.Instances.TerritoryBattle is { } battle && m.InstanceId == battle.Room.Id && Active(battle) && Member(s, battle))
                 return battle.State.Players[s.Role.Id];
         }
         catch (InvalidOperationException) { }

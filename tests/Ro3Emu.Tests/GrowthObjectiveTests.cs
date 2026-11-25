@@ -310,7 +310,7 @@ public sealed class GrowthObjectiveTests : IAsyncLifetime
         await Feed(bot, Gm, echoes[2], 14);
         await Delivered(1700414);
         // Achievement 100101401 [316002,3,1] is no longer blocked.
-        await Until(s => s.Achievements?.Infos.TryGetValue(100101401, out var row) == true
+        await Until(s => s.Activities.Achievements?.Infos.TryGetValue(100101401, out var row) == true
             && row.Status == AchievementStatusType.Complete, "achievement 100101401");
         await bot.DisposeAsync();
     }

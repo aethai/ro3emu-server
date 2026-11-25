@@ -23,7 +23,7 @@ public sealed partial class TerritoryWarsService
                 var stagedRole = LoadRole(roleId);
                 await SaveRoleAsync(roleId, stagedRole);
                 if (s.Role?.Id != roleId || !ReferenceEquals(s.Attachment, attachment)) return;
-                s.TerritoryWars = stagedRole;
+                s.Instances.TerritoryWars = stagedRole;
                 await SyncSiegeAsync(s);
                 _seasonRoleProjectionPending.Remove(roleId);
             }
@@ -44,16 +44,16 @@ public sealed partial class TerritoryWarsService
                 var attachment = s.Attachment;
                 try
                 {
-                    if (ReferenceEquals(s.TerritoryBattle, b) && !await _instances.LeaveAsync(s))
+                    if (ReferenceEquals(s.Instances.TerritoryBattle, b) && !await _instances.LeaveAsync(s))
                         await _instances.AbandonAsync(b.Room, s);
-                    else if (!ReferenceEquals(s.TerritoryBattle, b))
+                    else if (!ReferenceEquals(s.Instances.TerritoryBattle, b))
                         await _instances.AbandonAsync(b.Room, s);
                 }
                 finally
                 {
                     if (ReferenceEquals(s.Role, role) && ReferenceEquals(s.Attachment, attachment)
                         && !b.Room.ActiveMembers.Any(m => ReferenceEquals(m.Session, s))
-                        && ReferenceEquals(s.TerritoryBattle, b)) s.TerritoryBattle = null;
+                        && ReferenceEquals(s.Instances.TerritoryBattle, b)) s.Instances.TerritoryBattle = null;
                 }
             });
             if (b.Room.ActiveMembers.Count == 0) _battles.Remove(b.Key);
@@ -66,16 +66,16 @@ public sealed partial class TerritoryWarsService
                 var attachment = s.Attachment;
                 try
                 {
-                    if (ReferenceEquals(s.SiegeBattle, b) && !await _instances.LeaveAsync(s))
+                    if (ReferenceEquals(s.Instances.SiegeBattle, b) && !await _instances.LeaveAsync(s))
                         await _instances.AbandonAsync(b.Room, s);
-                    else if (!ReferenceEquals(s.SiegeBattle, b))
+                    else if (!ReferenceEquals(s.Instances.SiegeBattle, b))
                         await _instances.AbandonAsync(b.Room, s);
                 }
                 finally
                 {
                     if (ReferenceEquals(s.Role, role) && ReferenceEquals(s.Attachment, attachment)
                         && !b.Room.ActiveMembers.Any(m => ReferenceEquals(m.Session, s))
-                        && ReferenceEquals(s.SiegeBattle, b)) s.SiegeBattle = null;
+                        && ReferenceEquals(s.Instances.SiegeBattle, b)) s.Instances.SiegeBattle = null;
                 }
             });
             if (b.Room.ActiveMembers.Count == 0) _siegeBattles.Remove(b.Key);
@@ -149,7 +149,7 @@ public sealed partial class TerritoryWarsService
             transaction.WithEventEconomy(economy);
         var committed = await _roles.CommitAsync(transaction, "territory/season-rollover");
         var next = JsonSerializer.Deserialize<WorldState>((byte[])committed[receipt]!)!;
-        foreach (var peer in _sessions.All().Where(s => s.Role != null && s.TerritoryWars != null))
+        foreach (var peer in _sessions.All().Where(s => s.Role != null && s.Instances.TerritoryWars != null))
             _seasonRoleProjectionPending.Add(peer.Role!.Id);
         _seasonCleanupState = state;
         try

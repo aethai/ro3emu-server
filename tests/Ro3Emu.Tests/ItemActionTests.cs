@@ -229,7 +229,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         Assert.Equal(PersonalService.ErrConfig, await Use(alice, 1960003)); // action 50004 has no row
         Assert.Equal(1, Count(alice, 1960003));
 
-        var plan = (await Read("alice", s => PersonalService.Current(s.Personal)!)).Clone();
+        var plan = (await Read("alice", s => PersonalService.Current(s.Social.Personal)!)).Clone();
         plan.ThemeId = 1003;
         var save = new UpdatePersonalAppearanceReq { PlanId = 1, Info = plan };
         Assert.Equal(0, (await Request(alice, PersonalService.UpdateAppearance, save, UpdatePersonalAppearanceResp.Parser)).Result);
@@ -254,7 +254,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         Assert.Equal(0, await Use(alice, 1910002)); // [349,10002]: head 100002, permanent
         var head = await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, m => m.SocialOutfitContainer.ContainsKey(1));
         Assert.Equal(1, Count(alice, 1910002));
-        Assert.Equal(3, (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos[100002].Status);
+        Assert.Equal(3, (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos[100002].Status);
         Assert.NotNull(head);
         Assert.Equal(SocialOutfitService.ErrAlreadyUnlocked, await Use(alice, 1910002));
         Assert.Equal(1, Count(alice, 1910002));
@@ -262,14 +262,14 @@ public sealed class ItemActionTests : IAsyncLifetime
         // 1910003 [[349,10003],[349,10004]]: 100003 for a male role, 100004 for a female one.
         int sex = await Read("alice", s => s.Role!.Sex);
         Assert.Equal(0, await Use(alice, 1910003));
-        var owned = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos;
+        var owned = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos;
         Assert.True(owned.ContainsKey(sex == 2 ? 100004 : 100003));
         Assert.False(owned.ContainsKey(sex == 2 ? 100003 : 100004));
 
         // 1950015 [349,50015]: honor 500015 for 86400 s; a second use extends it.
         long now = _clock.GetUtcNow().ToUnixTimeSeconds();
         Assert.Equal(0, await Use(alice, 1950015));
-        var timed = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500015];
+        var timed = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500015];
         Assert.Equal(2, timed.Status);
         Assert.Equal(now + 86400, timed.ExpireTimestamp);
 
@@ -291,7 +291,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         _clock.Advance(TimeSpan.FromSeconds(86401));
         await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser,
             m => m.SocialOutfitEquip.TryGetValue(5, out var worn) && (worn.All?.CfgId == 500000 || worn.Inc?.CfgId == 500000));
-        Assert.False((await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer.ContainsKey(5));
+        Assert.False((await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer.ContainsKey(5));
 
         await using var again = await Relogin(alice, "Alice");
         var full = await Next(again, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, m => m.SyncAllMark);
@@ -343,7 +343,7 @@ public sealed class ItemActionTests : IAsyncLifetime
 
         // Used in time it activates the honor for its own 24 hours.
         Assert.Equal(0, await Use(alice, 1950019));
-        var honor = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500019];
+        var honor = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500019];
         Assert.Equal(2, honor.Status);
         Assert.Equal(claimed + 86400, honor.ExpireTimestamp);
 

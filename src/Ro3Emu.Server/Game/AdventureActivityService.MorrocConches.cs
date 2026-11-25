@@ -59,7 +59,7 @@ public sealed partial class AdventureActivityService
 
     private bool MorrocFallbackQuotaReached(GameSession session) =>
         session.SceneEntry == SouthernMorroc &&
-        session.NewActivities?.ActivityInfo.GetValueOrDefault(ExplorationActivity)?.ActivityParam?.WorldExploration
+        session.Activities.NewActivities?.ActivityInfo.GetValueOrDefault(ExplorationActivity)?.ActivityParam?.WorldExploration
             ?.MapCollect.GetValueOrDefault(SouthernMorroc) is { } collected &&
         MorrocQuotaReached(collected, MorrocCollectLimit());
 

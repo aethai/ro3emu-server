@@ -124,7 +124,7 @@ public sealed partial class AuctionService
     {
         tx.Add(new AuctionPersonalCasPlan(role, before, state.ToByteArray()), _ =>
         {
-            if (Online(role) is { } session) session.Auction = state.Clone();
+            if (Online(role) is { } session) session.Social.Auction = state.Clone();
         });
     }
 }

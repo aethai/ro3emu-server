@@ -311,7 +311,7 @@ public sealed partial class ScriptedDungeonService
                 // A seated rider's client moves it with the seat, so a forced position would only shake it.
                 if (a.Riders.ContainsKey(member) && _vehicles.IsSeatedOnSceneActor(member))
                 {
-                    member.PreviousPosition = member.Position;
+                    member.WorldState.PreviousPosition = member.Position;
                     member.Position = new Vec3 { X = at.X, Y = at.Y, Z = at.Z };
                 }
                 else await WalkRiderAsync(member, at);
@@ -335,7 +335,7 @@ public sealed partial class ScriptedDungeonService
             Uid = member.Role!.Id, TransType = MovementTransitionType.MoveTransServerControl,
             MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = _loop.NowMs },
         });
-        member.PreviousPosition = member.Position;
+        member.WorldState.PreviousPosition = member.Position;
         member.Position = pos;
         member.Face = at.Face;
         await _world.MoveAsync(member, new WalkReq { Pos = pos, Face = at.Face, BStop = false, SpeedRate = 1 });

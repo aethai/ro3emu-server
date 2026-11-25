@@ -323,8 +323,8 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         lock (_sync)
         {
             RemoveLocked(session, out _);
-            session.PetActor?.AtOwner(session);
-            session.PetActor?.Viewers.Clear();
+            session.Profile.PetActor?.AtOwner(session);
+            session.Profile.PetActor?.Viewers.Clear();
             var members = Members(session.WorldScene);
             foreach (var other in ByDistance(session, NearLocked(session.WorldScene, session.Position.X, session.Position.Z)))
             {
@@ -337,7 +337,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         }
         log.LogInformation("{Name} joins scene {Scene}; sees {Count}", session.Role?.Name, session.SceneEntry, session.Visible.Count);
         foreach (var (viewer, subject) in enters) await EnterPlayerAsync(viewer, subject);
-        if (session.PetActor is { } pet) await EnterPetAsync(session, pet);
+        if (session.Profile.PetActor is { } pet) await EnterPetAsync(session, pet);
         await RefreshUnitsAsync(session, entered);
     }
 
@@ -363,7 +363,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         {
             if (!_scenes.TryGetValue(session.WorldScene, out var members) || !members.Contains(session)) return;
             players = [.. ByDistance(session, session.Visible)];
-            ownPet = session.PetActor is { } pet && pet.Viewers.Contains(session) ? pet : null;
+            ownPet = session.Profile.PetActor is { } pet && pet.Viewers.Contains(session) ? pet : null;
         }
         foreach (var other in players)
         {
@@ -406,11 +406,11 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         List<GameSession> oldViewers, newViewers;
         lock (_sync)
         {
-            previous = owner.PetActor;
+            previous = owner.Profile.PetActor;
             if (ReferenceEquals(previous, next)) return;
             oldViewers = previous?.Viewers.ToList() ?? [];
             previous?.Viewers.Clear();
-            owner.PetActor = next;
+            owner.Profile.PetActor = next;
             bool joined = _scenes.TryGetValue(owner.WorldScene, out var members) && members.Contains(owner);
             if (joined && next != null)
             {
@@ -431,7 +431,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
     {
         await Safe(viewer, () => sink.EnterAsync(viewer, subject));
         foreach (var handler in PlayerEntered) await Safe(viewer, () => handler(viewer, subject));
-        if (subject.PetActor is { } pet) await EnterPetAsync(viewer, pet);
+        if (subject.Profile.PetActor is { } pet) await EnterPetAsync(viewer, pet);
     }
 
     private async Task EnterPetAsync(GameSession viewer, PetFollowerActor pet)
@@ -442,7 +442,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
 
     private async Task LeavePlayerAsync(GameSession viewer, GameSession subject)
     {
-        if (subject.PetActor is { } pet)
+        if (subject.Profile.PetActor is { } pet)
         {
             lock (_sync) pet.Viewers.Remove(viewer);
             await Safe(viewer, () => sink.PetLeaveAsync(viewer, pet));
@@ -472,7 +472,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         lock (_sync)
         {
             if (!_scenes.TryGetValue(session.WorldScene, out var members) || !members.Contains(session)) return;
-            session.PetActor?.Follow(session, walk, forceTeleport);
+            session.Profile.PetActor?.Follow(session, walk, forceTeleport);
             Index(session);
             List<GameSession>? refill = null;
             const float leave2 = LeaveRadius * LeaveRadius, view2 = ViewRadius * ViewRadius;
@@ -533,10 +533,10 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
             {
                 log.LogDebug("AOI move fan-out from {Name} failed: {Error}", session.Role?.Name, e.Message);
             }
-            if (session.PetActor is { HasUpdate: true } movedPet)
+            if (session.Profile.PetActor is { HasUpdate: true } movedPet)
                 foreach (var viewer in movers) await Safe(viewer, () => sink.PetMoveAsync(viewer, session, movedPet, walk));
         }
-        if (session.PetActor is { HasUpdate: true } selfPet)
+        if (session.Profile.PetActor is { HasUpdate: true } selfPet)
             await Safe(session, () => sink.PetMoveAsync(session, session, selfPet, walk));
     }
 
@@ -555,7 +555,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         lock (_sync)
         {
             watchers = [.. session.Observers];
-            pet = session.PetActor;
+            pet = session.Profile.PetActor;
             petTurned = pet?.Turn(face) ?? false;
         }
         foreach (var viewer in watchers) await Safe(viewer, () => sink.TurnAsync(viewer, session, face));
@@ -581,7 +581,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         lock (_sync)
         {
             if (!RemoveLocked(session, out watchers)) return;
-            pet = session.PetActor;
+            pet = session.Profile.PetActor;
             petViewers = pet?.Viewers.ToList() ?? [];
             pet?.Viewers.Clear();
             foreach (var viewer in watchers)
@@ -763,7 +763,7 @@ public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> l
         foreach (var other in session.Visible)
         {
             other.Observers.Remove(session);
-            other.PetActor?.Viewers.Remove(session);
+            other.Profile.PetActor?.Viewers.Remove(session);
         }
         session.Visible.Clear();
         Unindex(session);

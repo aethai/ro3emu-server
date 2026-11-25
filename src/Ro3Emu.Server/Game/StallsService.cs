@@ -56,7 +56,7 @@ public sealed partial class StallsService
         // scene's hook scope, nor delays the scene handoff. A scene's first visit starts its system stall population
         // as its own operation; later loads of a visited scene leave it to the one-second maintenance.
         scenes.Loaded.Subscribe(s => { PopulateFirstVisit(s); return Task.CompletedTask; });
-        scenes.Leaving.Subscribe(s => { s.ViewedStall = s.ViewedSystemStall = 0; return Task.CompletedTask; });
+        scenes.Leaving.Subscribe(s => { s.Social.ViewedStall = s.Social.ViewedSystemStall = 0; return Task.CompletedTask; });
         scenes.PublicLineOpened.Subscribe(ActivateLine);
         lines.HasPendingWork.Subscribe(HasPendingWork);
         lines.Retiring.Subscribe(RetireLineAsync, order: PublicLineManager.RetireOrderStalls);
@@ -106,9 +106,9 @@ public sealed partial class StallsService
 
     public async Task LoginAsync(GameSession s)
     {
-        s.ViewedStall = s.ViewedSystemStall = 0;
-        s.Stalls = _roles.LoadStalls(s.Role!.Id) is { } saved ? DBStallsInfo.Parser.ParseFrom(saved) : NewMetadata();
-        await CharacterService.SyncAsync(s, Sync, s.Stalls.Clone());
+        s.Social.ViewedStall = s.Social.ViewedSystemStall = 0;
+        s.Social.Stalls = _roles.LoadStalls(s.Role!.Id) is { } saved ? DBStallsInfo.Parser.ParseFrom(saved) : NewMetadata();
+        await CharacterService.SyncAsync(s, Sync, s.Social.Stalls.Clone());
         // C/D 15: the login no longer runs the realm stall maintenance (it reserved the stall collection and its
         // participants, and published AOI actors under Realm). The one-second maintenance restores and settles the
         // stalls; the login's scene load populates a first-visited scene's system stalls.
@@ -129,7 +129,7 @@ public sealed partial class StallsService
             case Info: await InfoAsync(s); break;
             case View: await ViewAsync(s, PlayerStallsSyncBuyerStallsInfoReq.Parser.ParseFrom(body.Span)); break;
             case Rename: await RenameAsync(s, PlayerUpdateStallsNameReq.Parser.ParseFrom(body.Span)); break;
-            case Leave: s.ViewedStall = s.ViewedSystemStall = 0; break; // DAL sends this empty; no bound response.
+            case Leave: s.Social.ViewedStall = s.Social.ViewedSystemStall = 0; break; // DAL sends this empty; no bound response.
             case Prices: await PricesAsync(s, PlayerStallsQueryItemPriceReq.Parser.ParseFrom(body.Span)); break;
             case Top: await TopAsync(s, PlayerStallsTopItemReq.Parser.ParseFrom(body.Span)); break;
             case Share: await ShareAsync(s, PlayerStallsShareCheckReq.Parser.ParseFrom(body.Span)); break;
@@ -370,7 +370,7 @@ public sealed partial class StallsService
                 if (s.Role!.Id == row.Owner)
                 {
                     // Market Apply already published every seller's committed metadata before any notice.
-                    await CharacterService.SyncAsync(s, Sync, (s.Stalls ?? NewMetadata()).Clone());
+                    await CharacterService.SyncAsync(s, Sync, (s.Social.Stalls ?? NewMetadata()).Clone());
                     var info = SellerView(row);
                     if (row.Ended)
                     {
@@ -379,11 +379,11 @@ public sealed partial class StallsService
                     }
                     await s.SendGameAsync(Change, new PlayerStallsChangeNtf { LastAliveTime = Now, Info = info });
                 }
-                if ((row.Owner != 0 && s.ViewedStall == row.Owner) || (row.SystemId != 0 && s.ViewedSystemStall == row.SystemId))
+                if ((row.Owner != 0 && s.Social.ViewedStall == row.Owner) || (row.SystemId != 0 && s.Social.ViewedSystemStall == row.SystemId))
                 {
                     await s.SendGameAsync(BuyerChange, new PlayerStallsSyncBuyerStallsInfoNtf
                     { Info = BuyerView(row, row.SystemId > 0 && s.SceneEntry == row.Scene ? s.LineNumber : 0) });
-                    if (row.Ended) s.ViewedStall = s.ViewedSystemStall = 0;
+                    if (row.Ended) s.Social.ViewedStall = s.Social.ViewedSystemStall = 0;
                 }
             }
             catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException or ObjectDisposedException) { }

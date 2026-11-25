@@ -15,10 +15,10 @@ public sealed partial class SeasonTalentService
     internal async Task<string> GmUpgradeTreeAsync(GameSession s, long treeId)
     {
         using var held = await CharacterService.Lock(s);
-        if (s.SeasonTalent == null || s.Progress == null || !HasTalentGraph()) return "Season talents are not loaded for this role.";
+        if (s.Season.SeasonTalent == null || s.Progress == null || !HasTalentGraph()) return "Season talents are not loaded for this role.";
         var tree = Nodes().Where(n => n.Tree == treeId).ToArray();
         if (tree.Length == 0) return $"No season talent tree {treeId}.";
-        var next = s.SeasonTalent.Clone();
+        var next = s.Season.SeasonTalent.Clone();
         Seed(next);
         var plan = next.Plan[next.CurPlanId];
         int raised = 0, chosen = 0;
@@ -45,11 +45,11 @@ public sealed partial class SeasonTalentService
         }
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray());
-        await _roles.CommitAsync(transaction, "season-talent/gm-upgrade-tree", _ => s.SeasonTalent = next);
+        await _roles.CommitAsync(transaction, "season-talent/gm-upgrade-tree", _ => s.Season.SeasonTalent = next);
         await CharacterService.SyncAsync(s, TalentSync, next.Clone());
         await _character.RefreshStatsAsync(s);
         await RefreshEffectsAsync(s);
         return $"Talent tree {treeId}: {raised} nodes at their maximum, {chosen} profession choices, oath {next.BattleOathLevel}."
-            + (s.TalentEffectsEnabled ? "" : $" Inactive until quests {ParentTask} and {TalentTask} are done.");
+            + (s.Season.TalentEffectsEnabled ? "" : $" Inactive until quests {ParentTask} and {TalentTask} are done.");
     }
 }

@@ -135,7 +135,7 @@ internal static class EquipmentStunts
             else if (op.Length == 5 && op[0] == 4 && op[1] > 0)
                 yield return (op[3], Math.Min(count, op[2]) / op[1] * op[4]);
             else if (op.Length == 4 && op[0] == 5 && op[1] > 0)
-                yield return (op[2], session.EquipLevels.Refine.GetValueOrDefault(item.Grid) / op[1] * op[3]);
+                yield return (op[2], session.Profile.EquipLevels.Refine.GetValueOrDefault(item.Grid) / op[1] * op[3]);
         }
         foreach (var (_, op) in CardOperations(session, data))
             if (op.Length == 3 && op[0] == 1) yield return (op[1], op[2]);

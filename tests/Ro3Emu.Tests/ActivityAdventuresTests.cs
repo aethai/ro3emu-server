@@ -293,7 +293,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         }
         static long Notes(GameSession s) => s.Items.Where(i => i.Entry is >= 1113001 and <= 1113007).Sum(i => i.Stack);
         static long Collected(GameSession s) =>
-            s.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect.GetValueOrDefault(map)?.Sum ?? 0;
+            s.Activities.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect.GetValueOrDefault(map)?.Sum ?? 0;
         await Place(a, 15);
         Assert.Equal(ErrorCodes.NpcTooFar, await Use(alice));
         await Place(a);
@@ -369,14 +369,14 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(0, success.FillPhaseNodeRes.Err);
         await Next(alice, NewActivityService.WorldExplorationSync, DBWorldExplorationIncrement.Parser,
             m => m.PhaseInfos.ContainsKey(101));
-        Assert.Equal(454, session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
+        Assert.Equal(454, session.Activities.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
 
         fill.RequestId = 2;
         fill.FillPhaseNodeReq.Position = 2;
         fill.FillPhaseNodeReq.ItemId = 1113002;
         await alice.SendGameAsync(NewActivityService.Common, fill);
         Assert.Equal(0, (await Next(alice, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == 2)).Result);
-        Assert.Equal(909, session.NewActivities.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
+        Assert.Equal(909, session.Activities.NewActivities.ActivityInfo[111].ActivityParam.WorldExploration.PhaseInfos[101].TotalRate);
 
         fill.RequestId = 3;
         await alice.SendGameAsync(NewActivityService.Common, fill);
@@ -519,21 +519,21 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
 
         Assert.NotEqual(0, (await Complete(10102, EJourneyCompleteType.Act, 100)).Result);
         Assert.Equal(0, (await Complete(10101, EJourneyCompleteType.Act, 101)).Result);
-        Assert.True(session.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CurActIds.ContainsKey(10102));
+        Assert.True(session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CurActIds.ContainsKey(10102));
         Assert.NotEqual(0, (await Complete(10103, EJourneyCompleteType.Act, 102)).Result);
         Assert.Equal(0, (await Complete(10102, EJourneyCompleteType.Act, 103)).Result);
         var changed = await Next(alice, NewActivityService.Notify, CommonActivityNotify.Parser,
             n => n.ActivityId == 112 && n.JourneyAttrChange?.CompleteId == 10102);
         Assert.Equal(EJourneyCompleteType.Act, changed.JourneyAttrChange.Type);
         Assert.Equal(1, changed.JourneyAttrChange.AttrChange[1]);
-        var afterChoice = session.NewActivities!.ActivityInfo[112].ActivityParam.Journey;
+        var afterChoice = session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey;
         Assert.False(afterChoice.CurActIds.ContainsKey(10103));
         Assert.True(afterChoice.CurActIds.ContainsKey(10104));
         Assert.Equal(101, afterChoice.Attributes[1]);
         Assert.Equal(1, afterChoice.GainCoinCount);
         Assert.Equal(0, (await Complete(10104, EJourneyCompleteType.Act, 104)).Result);
         Assert.Equal(0, (await Complete(101, EJourneyCompleteType.Node, 105)).Result);
-        Assert.True(session.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteNode.ContainsKey(101));
+        Assert.True(session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteNode.ContainsKey(101));
         Assert.NotEqual(0, (await Complete(101, EJourneyCompleteType.Node, 106)).Result);
     }
 
@@ -564,7 +564,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             });
             return (await Next(alice, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == requestId)).Result;
         }
-        DBJourneyInfo State() => session.NewActivities!.ActivityInfo[112].ActivityParam.Journey;
+        DBJourneyInfo State() => session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey;
         async Task ResolveEvent()
         {
             var config = _app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>();
@@ -652,25 +652,25 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             session.Progress!.Level = 999; // The authored Journey gate, as in the other Journey fixtures.
             roles.SaveProgress(session.Role!.Id, session.Progress); // The economic receipt verifies its durable starting level.
             await _app.Services.GetRequiredService<NewActivityService>().ReconcileAsync(session);
-            var state = session.NewActivities!.Clone();
+            var state = session.Activities.NewActivities!.Clone();
             var activity = state.ActivityInfo[112];
             var journey = activity.ActivityParam.Journey;
             journey.CurNodeId = 107;
             journey.CurActIds.Clear(); journey.CurActIds[10114] = true;
             journey.CompleteAct.Remove(10114);
             roles.SaveNewActivities(session.Role!.Id, state.ToByteArray());
-            session.NewActivities = state;
+            session.Activities.NewActivities = state;
             // A frozen delivery fixture supplies the same durable marker as the dungeon recipient plan.
-            session.Dungeons!.PendingJourney[source] = new DungeonService.JourneyVictory(source,
+            session.Instances.Dungeons!.PendingJourney[source] = new DungeonService.JourneyVictory(source,
                 8100004, 10114, 107, activity.CurStartTime, activity.CurEndTime, activity.Playbook);
-            roles.SaveDungeons(session.Role.Id, JsonSerializer.SerializeToUtf8Bytes(session.Dungeons));
+            roles.SaveDungeons(session.Role.Id, JsonSerializer.SerializeToUtf8Bytes(session.Instances.Dungeons));
         }));
         FixtureSql.Execute(accounts, "CREATE TRIGGER fail_journey_receipt BEFORE INSERT ON operation_receipt WHEN NEW.command_kind='cd13e/journey-victory' BEGIN SELECT RAISE(ABORT,'journey rollback'); END");
         try
         {
             await loop.InvokeAsync(() => dungeons.DeliverJourneyPendingAsync(session));
-            Assert.Contains(source, session.Dungeons!.PendingJourney.Keys);
-            Assert.False(session.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteAct.ContainsKey(10114));
+            Assert.Contains(source, session.Instances.Dungeons!.PendingJourney.Keys);
+            Assert.False(session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteAct.ContainsKey(10114));
             Assert.Contains(source, JsonSerializer.Deserialize<DungeonService.State>(roles.LoadDungeons(session.Role!.Id)!)!.PendingJourney.Keys);
         }
         finally { FixtureSql.Execute(accounts, "DROP TRIGGER fail_journey_receipt"); }
@@ -680,15 +680,15 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             "journey continuation reload fixture", [ReservationKey.Realm], session, async () =>
         {
             // Reload both consumers from their durable snapshots before retrying the source.
-            session.Dungeons = JsonSerializer.Deserialize<DungeonService.State>(roles.LoadDungeons(session.Role!.Id)!)!;
-            session.NewActivities = DBNewActivityInfo.Parser.ParseFrom(roles.LoadNewActivities(session.Role.Id)!);
+            session.Instances.Dungeons = JsonSerializer.Deserialize<DungeonService.State>(roles.LoadDungeons(session.Role!.Id)!)!;
+            session.Activities.NewActivities = DBNewActivityInfo.Parser.ParseFrom(roles.LoadNewActivities(session.Role.Id)!);
             if (expiresBeforeRecovery) await _app.Services.GetRequiredService<NewActivityService>().ReconcileAsync(session);
             await dungeons.DeliverJourneyPendingAsync(session);
             await dungeons.DeliverJourneyPendingAsync(session);
         }));
         Assert.Null(recoveryFailure);
-        Assert.Empty(session.Dungeons!.PendingJourney);
-        Assert.True(session.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteAct.ContainsKey(10114));
+        Assert.Empty(session.Instances.Dungeons!.PendingJourney);
+        Assert.True(session.Activities.NewActivities!.ActivityInfo[112].ActivityParam.Journey.CompleteAct.ContainsKey(10114));
         Assert.Empty(JsonSerializer.Deserialize<DungeonService.State>(roles.LoadDungeons(session.Role!.Id)!)!.PendingJourney);
         using var db = accounts.Open(); using var command = db.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM operation_receipt WHERE command_kind='cd13e/journey-victory'";
@@ -742,7 +742,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
                 {
                     Assert.True(session.StateLock.Wait(0));
                     stateHeld = true;
-                    session.ActivityRuntime.AdventureTreasure = new AdventureTreasureCursor
+                    session.Activities.ActivityRuntime.AdventureTreasure = new AdventureTreasureCursor
                     { PendingMonsterUid = monster.Uid, PendingMonsterAward = 100001, GroupId = 1 };
                     owners.DeferredForTest = origin => { if (origin == "dispatcher") deferred.TrySetResult(); };
                 }
@@ -757,8 +757,8 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             await kill.WaitAsync(Wait);
             Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
             Assert.DoesNotContain(session.Items, i => i.Guid == guid);
-            Assert.True(session.ActivityRuntime.AdventureTreasure.PointId > 0);
-            Assert.Equal(0, session.ActivityRuntime.AdventureTreasure.PendingMonsterAward);
+            Assert.True(session.Activities.ActivityRuntime.AdventureTreasure.PointId > 0);
+            Assert.Equal(0, session.Activities.ActivityRuntime.AdventureTreasure.PendingMonsterAward);
         }
         finally
         {
@@ -830,12 +830,12 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         // Prontera has no TreasureHuntMapPointConfig row. LC_System_SeasonTreasure.StartHunt paths only on the current map.
         await Gm("alice", "!warp 10100");
         Assert.Equal(ErrorCodes.TreasurePointNotOnMap, await Use());
-        Assert.Equal(0, session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(0, session.Activities.ActivityRuntime.AdventureTreasure.PointId);
         Assert.Equal(2, session.Items.Single(i => i.Guid == guid).Stack);
 
         await Gm("alice", "!warp 10110");
         Assert.Equal(0, await Use());
-        long point = session.ActivityRuntime.AdventureTreasure.PointId;
+        long point = session.Activities.ActivityRuntime.AdventureTreasure.PointId;
         var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(point);
         Assert.Equal(10110, target!.Value.Scene);
 
@@ -843,7 +843,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.ItemCannotBeUsed, await Use());
         await Gm("alice", "!warp 10100");
         Assert.Equal(ErrorCodes.TreasurePointNotOnMap, await Use());
-        Assert.Equal(point, session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(point, session.Activities.ActivityRuntime.AdventureTreasure.PointId);
         Assert.Equal(1, session.Items.Single(i => i.Guid == guid).Stack);
     }
 
@@ -890,7 +890,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq
         { ItemGuid = session.Items.Single(i => i.Entry == 1112002).Guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
-        var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(session.ActivityRuntime.AdventureTreasure.PointId);
+        var target = _app.Services.GetRequiredService<SceneService>().TreasurePoint(session.Activities.ActivityRuntime.AdventureTreasure.PointId);
         Assert.Equal(10110, target!.Value.Scene);
     }
 
@@ -926,7 +926,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         Assert.Equal(ErrorCodes.ItemMissing, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
         Assert.Equal(2, session.Items.Single(i => i.Guid == guid).Stack);
-        Assert.Equal(0, session.ActivityRuntime.AdventureTreasure.PointId);
+        Assert.Equal(0, session.Activities.ActivityRuntime.AdventureTreasure.PointId);
 
         int observations = 0;
         bool firstHookSawCommit = false;
@@ -935,12 +935,12 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         {
             // StateChanged also reports queued quest/activity grants; inspect the shortcut's dispatcher callback.
             if (!ReferenceEquals(changed, session) || owners.Current?.Origin != "dispatcher" || ++observations != 1) return;
-            firstObservation = $"origin={owners.Current.Origin}, point={session.ActivityRuntime.AdventureTreasure.PointId}, stack={session.Items.Single(i => i.Guid == guid).Stack}, "
-                + $"cooldown={session.ItemCds.GetValueOrDefault(1112001)}, bag={session.BagState.Info.ItemCds?.Data.GetValueOrDefault(1112001)}";
-            firstHookSawCommit = session.ActivityRuntime.AdventureTreasure.PointId > 0
+            firstObservation = $"origin={owners.Current.Origin}, point={session.Activities.ActivityRuntime.AdventureTreasure.PointId}, stack={session.Items.Single(i => i.Guid == guid).Stack}, "
+                + $"cooldown={session.Combat.ItemCds.GetValueOrDefault(1112001)}, bag={session.Profile.BagState.Info.ItemCds?.Data.GetValueOrDefault(1112001)}";
+            firstHookSawCommit = session.Activities.ActivityRuntime.AdventureTreasure.PointId > 0
                 && session.Items.Single(i => i.Guid == guid).Stack == 1
-                && session.ItemCds.GetValueOrDefault(1112001) > 0
-                && session.ItemCds[1112001] == session.BagState.Info.ItemCds?.Data.GetValueOrDefault(1112001);
+                && session.Combat.ItemCds.GetValueOrDefault(1112001) > 0
+                && session.Combat.ItemCds[1112001] == session.Profile.BagState.Info.ItemCds?.Data.GetValueOrDefault(1112001);
         }
         IDisposable? observeSub = null;
         await FixtureOwned("treasure shortcut active fixture", () =>
@@ -971,7 +971,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             var roles = _app.Services.GetRequiredService<Ro3Emu.Server.Accounts.RoleStore>();
             Assert.Equal(cooldown.ItemCd, DBItemsInfo.Parser.ParseFrom(roles.LoadBagState(session.Role!.Id)!).ItemCds.Data[1112001]);
             var runtime = System.Text.Json.JsonSerializer.Deserialize<ActivityRuntimeState>(roles.LoadActivityRuntime(session.Role.Id)!)!;
-            Assert.Equal(session.ActivityRuntime.AdventureTreasure.PointId, runtime.AdventureTreasure.PointId);
+            Assert.Equal(session.Activities.ActivityRuntime.AdventureTreasure.PointId, runtime.AdventureTreasure.PointId);
 
             await alice.SendGameAsync(CharacterService.ShortcutBarUse, new ShortcutBarUseReq { SlotIndex = 0 });
             Assert.Equal(161, (await Next(alice, CharacterService.ShortcutBarUse, ShortcutBarUseRes.Parser)).Result);
@@ -1010,8 +1010,8 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
                     _app.Services.GetRequiredService<CharacterService>().UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 }));
                 Assert.Equal(1, session.Items.Single(i => i.Guid == guid).Stack);
                 Assert.Equal(1, _app.Services.GetRequiredService<Ro3Emu.Server.Accounts.ItemStore>().Load(role).Single(i => i.Guid == guid).Stack);
-                Assert.Equal(0, session.ActivityRuntime.AdventureTreasure.PointId);
-                Assert.Equal(0, session.ItemCds.GetValueOrDefault(1112001));
+                Assert.Equal(0, session.Activities.ActivityRuntime.AdventureTreasure.PointId);
+                Assert.Equal(0, session.Combat.ItemCds.GetValueOrDefault(1112001));
                 Assert.Equal(beforeRuntime, roles.LoadActivityRuntime(role));
                 Assert.Equal(beforeBag, roles.LoadBagState(role));
             }
@@ -1020,7 +1020,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
         Assert.DoesNotContain(session.Items, i => i.Guid == guid);
-        Assert.True(session.ActivityRuntime.AdventureTreasure.PointId > 0);
+        Assert.True(session.Activities.ActivityRuntime.AdventureTreasure.PointId > 0);
     }
 
     [ClientDataFact]
@@ -1036,7 +1036,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         await alice.SendGameAsync(82965, new NewActivityFragmentGatherCraftReq());
         Assert.Equal(ErrorCodes.ItemsShort, (await Next(alice, 2, CommonErrorNtf.Parser)).ErrorCode);
         Assert.Equal(0, (await Next(alice, 82965, NewActivityFragmentGatherCraftResp.Parser)).Level);
-        Assert.Equal(0, session.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.ProgressFinish);
+        Assert.Equal(0, session.Activities.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.ProgressFinish);
 
         await alice.SendGameAsync(NewActivityService.Common, new CommonActivityReq
         {
@@ -1045,7 +1045,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         var common = await Next(alice, NewActivityService.Common, CommonActivityRes.Parser, r => r.RequestId == 200);
         Assert.Equal(ErrorCodes.ItemsShort, common.Result);
         Assert.Equal(0, common.FragmentGatherCraft.Level);
-        Assert.Equal(0, session.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.ProgressFinish);
+        Assert.Equal(0, session.Activities.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.ProgressFinish);
     }
 
     [ClientDataFact]
@@ -1193,8 +1193,8 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         await Next(bob, 82964, NewActivityFragmentGatherSendResp.Parser);
         Assert.Equal(1, sender.Items.Sum(i => i.Entry == 1111001 ? i.Stack : 0));
         Assert.Equal(0, receiver.Items.Sum(i => i.Entry == 1111001 ? i.Stack : 0));
-        Assert.False(receiver.ActivityRuntime.AdventureFragmentAsks[ask.AskID].Finished);
-        Assert.Equal(0, receiver.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.DailyData.ReceiveTimes);
+        Assert.False(receiver.Activities.ActivityRuntime.AdventureFragmentAsks[ask.AskID].Finished);
+        Assert.Equal(0, receiver.Activities.NewActivities!.ActivityInfo[105].ActivityParam.FragmentGather.DailyData.ReceiveTimes);
     }
 
     [ClientDataFact]
@@ -1384,7 +1384,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         }
 
         var loop = _app.Services.GetRequiredService<GameLoop>();
-        long bossUid = finder.ActivityRuntime.AdventureTreasure.PendingMonsterUid;
+        long bossUid = finder.Activities.ActivityRuntime.AdventureTreasure.PendingMonsterUid;
         var boss = await loop.InvokeAsync(() => Task.FromResult(_app.Services.GetRequiredService<Ro3Emu.Server.Maps.World>()
             .Map(finder.WorldScene).Units.OfType<Ro3Emu.Server.Maps.MonsterUnit>().Single(u => u.Uid == bossUid)));
         Assert.Equal(80000002, boss.Template.NpcId);
@@ -1414,7 +1414,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.True(Mailed(helper, 11604, 1300089), "helper's Dig - Co-op Chest mail");
         Assert.DoesNotContain(Letters(finder), l => l.TemplateId == 11604);
         Assert.DoesNotContain(finder.Items, i => i.Entry == 1300088);
-        Assert.Equal(0, finder.ActivityRuntime.AdventureTreasure.PendingMonsterAward);
+        Assert.Equal(0, finder.Activities.ActivityRuntime.AdventureTreasure.PendingMonsterAward);
     }
 
     /// <summary>106802 counts a committed dig at the Treasure Map's point (growth title 4's 704090 [106802,20], the

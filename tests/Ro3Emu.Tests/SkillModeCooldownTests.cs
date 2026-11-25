@@ -20,8 +20,8 @@ public sealed class SkillModeCooldownTests
     {
         long end = await host.Service<GameLoop>().InvokeAsync(() =>
         {
-            session.SkillCds[Group] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000;
-            return Task.FromResult(session.SkillCds[Group]);
+            session.Combat.SkillCds[Group] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000;
+            return Task.FromResult(session.Combat.SkillCds[Group]);
         });
         var buffs = host.Service<BuffService>();
         await host.Service<GameLoop>().InvokeAsync(() => buffs.AddAsync(session, ModeBuff, 10_000, session.Role!.Id));

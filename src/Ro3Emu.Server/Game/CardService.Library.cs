@@ -57,7 +57,7 @@ public sealed partial class CardService
     /// </summary>
     private void QueueCollection(GameSession session)
     {
-        if (session.Library?.Cards.Values.Any(Uncollected) == true)
+        if (session.Profile.Library?.Cards.Values.Any(Uncollected) == true)
             _loop.PostOwned(session, () => CollectOwnedAsync(session), "card collection");
     }
 
@@ -86,12 +86,12 @@ public sealed partial class CardService
         bool collected = false;
         using (await CharacterService.Lock(session, context))
         {
-            foreach (int card in session.Library?.Cards.Values.Where(Uncollected).Select(entry => entry.CardId).ToList() ?? [])
+            foreach (int card in session.Profile.Library?.Cards.Values.Where(Uncollected).Select(entry => entry.CardId).ToList() ?? [])
                 try
                 {
                     // Read after each commit: it replaces the library. A failed commit keeps the entry for the next card or login.
-                    if (UncollectedNormal(session.Library!.Cards[card])) collected |= await CommitUnlockAsync(session, card, false, notice: false);
-                    if (UncollectedTreasure(session.Library!.Cards[card])) collected |= await CommitUnlockAsync(session, card, true, notice: false);
+                    if (UncollectedNormal(session.Profile.Library!.Cards[card])) collected |= await CommitUnlockAsync(session, card, false, notice: false);
+                    if (UncollectedTreasure(session.Profile.Library!.Cards[card])) collected |= await CommitUnlockAsync(session, card, true, notice: false);
                 }
                 catch (Exception fault) when (fault is not OperationCanceledException)
                 {

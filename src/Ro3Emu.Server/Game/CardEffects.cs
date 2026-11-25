@@ -151,8 +151,8 @@ public sealed class CardEffects
                 continue;
             statsChanged |= added.Changes.Count > 0;
             // A scene change cleared the previous registration; its internal cooldown stays with the card.
-            if (state.Registered.TryGetValue((source, id), out long previous) && s.BuffEffectCds.Remove(previous, out long readyAt))
-                s.BuffEffectCds[added.Guid] = readyAt;
+            if (state.Registered.TryGetValue((source, id), out long previous) && s.Combat.BuffEffectCds.Remove(previous, out long readyAt))
+                s.Combat.BuffEffectCds[added.Guid] = readyAt;
             state.Registered[(source, id)] = added.Guid;
         }
         await GrantSkillsAsync(s);
@@ -177,7 +177,7 @@ public sealed class CardEffects
         if (granted.Count == progress.GrantedSkills.Count && granted.All(g => progress.GrantedSkills.GetValueOrDefault(g.Key) == g.Value)) return;
         progress.GrantedSkills.Clear();
         foreach (var (group, level) in granted) progress.GrantedSkills[group] = level;
-        if (s.SkillPlans != null) await _skills.SyncAsync(s);
+        if (s.Combat.SkillPlans != null) await _skills.SyncAsync(s);
     }
 
     private static long[] Numbers(JsonElement row, string field) => row.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array
@@ -499,7 +499,7 @@ public sealed class CardEffects
         if (cast.Cd <= 0 || cast.IsNormalAttack(_data)) return;
         int group = (int)cast.SkillId;
         long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
-        if (!s.SkillModeCds.Any(c => c.Key.Group == group && c.Value > now)) return;
+        if (!s.Combat.SkillModeCds.Any(c => c.Key.Group == group && c.Value > now)) return;
         foreach (var passive in passives.DistinctBy(p => p.Id))
         {
             var buff = new BuffConfig(passive.Row);

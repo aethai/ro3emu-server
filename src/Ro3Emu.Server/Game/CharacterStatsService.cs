@@ -33,7 +33,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         session.StatsMemo = null; // a refresh publishes what changed: always from the inputs
         var stats = Stats(session);
         session.EntityProperties = EntityPropertiesOf(stats);
-        session.EquipLook = EquipInfo(session);
+        session.Profile.EquipLook = EquipInfo(session);
         session.Speed = stats[Speed];
     }
 
@@ -57,7 +57,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
             EquipInfo = character.BuildEquip(session),
             Selfproperty = new AllProperty { EntityID = role.Id },
         };
-        info.Rolebase.Appearances.Add(session.Wardrobe?.CurUseAppearances.ToDictionary(a => a.Key, a => a.Value) ?? RoleProto.Appearances(role));
+        info.Rolebase.Appearances.Add(session.Profile.Wardrobe?.CurUseAppearances.ToDictionary(a => a.Key, a => a.Value) ?? RoleProto.Appearances(role));
         foreach (var id in PropertyIds(stats))
             info.Selfproperty.Propertys.Add(new Property { PropertyId = id, Data = stats[id], BaseData = stats.Base.GetValueOrDefault(id, stats[id]), Vd64 = stats[id] });
         return info;
@@ -113,7 +113,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
             if (serial >= 0)
                 session.StatsMemo = new StatsMemoEntry(tick, p, p.Career, p.Level,
                     p.Stats[0], p.Stats[1], p.Stats[2], p.Stats[3], p.Stats[4], p.Stats[5],
-                    session.Items.Count, session.SpeedBonus, MountService.Rider(session),
+                    session.Items.Count, session.Combat.SpeedBonus, MountService.Rider(session),
                     session.CurrentHp, session.StatusBits, session.Dead, [.. session.Buffs],
                     sheet.Clone());
         }
@@ -137,7 +137,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
             || memo.S0 != p.Stats[0] || memo.S1 != p.Stats[1] || memo.S2 != p.Stats[2]
             || memo.S3 != p.Stats[3] || memo.S4 != p.Stats[4] || memo.S5 != p.Stats[5]
             || memo.ItemCount != session.Items.Count
-            || memo.SpeedBonus != session.SpeedBonus || memo.Mount != MountService.Rider(session)
+            || memo.SpeedBonus != session.Combat.SpeedBonus || memo.Mount != MountService.Rider(session)
             || memo.CurrentHp != session.CurrentHp || memo.StatusBits != session.StatusBits
             || memo.Dead != session.Dead || memo.Buffs.Length != session.Buffs.Count) return false;
         for (int i = 0; i < memo.Buffs.Length; i++)
@@ -163,7 +163,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         foreach (int grouped in GroupedAttributes)
             if (AttributeConversionConfig.Get(data, grouped) is { } conversion) AddGroupedConversion(raw, grouped, conversion);
         if (!raw.ContainsKey(Speed)) raw[Speed] = RoleSessionService.DefaultSpeed;
-        raw[Speed] += session.SpeedBonus;
+        raw[Speed] += session.Combat.SpeedBonus;
         if (!raw.ContainsKey(BaseAspd)) raw[BaseAspd] = 100;
 
         var sheet = EquipmentStunts.ApplyConversions(session, raw, data);
@@ -246,7 +246,7 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         // worn grid (inferred); resonance (§5) adds the reached Strengthen/RefiningEffectTable row's _kEffect.
         foreach (var item in CharacterInventoryService.Equipped(session).Where(i => i.Grid <= EquipInfoSlots))
         {
-            foreach (var row in new[] { inv.StrengthenRow(item.Grid, session.EquipLevels.Strength.GetValueOrDefault(item.Grid)), inv.RefineRow(item.Grid, session.EquipLevels.Refine.GetValueOrDefault(item.Grid)) })
+            foreach (var row in new[] { inv.StrengthenRow(item.Grid, session.Profile.EquipLevels.Strength.GetValueOrDefault(item.Grid)), inv.RefineRow(item.Grid, session.Profile.EquipLevels.Refine.GetValueOrDefault(item.Grid)) })
                 if (row is { } r)
                     foreach (var (id, v) in GameData.Pairs(r, "_kAttr")) Add(id, v);
         }
@@ -350,11 +350,11 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         Refresh(session);
         var stats = Stats(session);
         var all = new AllProperty { EntityID = session.Role!.Id };
-        foreach (var id in PropertyIds(stats).Union(oldIds).Union(session.SentPropertyIds).Order())
+        foreach (var id in PropertyIds(stats).Union(oldIds).Union(session.Profile.SentPropertyIds).Order())
         {
             long value = stats[id];
             all.Propertys.Add(new Property { PropertyId = id, Data = value, BaseData = stats.Base.GetValueOrDefault(id, value), Vd64 = value });
-            session.SentPropertyIds.Add(id);
+            session.Profile.SentPropertyIds.Add(id);
         }
         var change = new Romsg.OnePropertyChange { Property = all };
         if (showChange) change.AttrModTypes.Add(AttrModTypeBase);

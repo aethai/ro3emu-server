@@ -54,13 +54,13 @@ public sealed partial class NewActivityService
         ? ReservationKey.Entity("activity_eve_global", $"117:{cycle}")
         : ReservationKey.SharedEntity("activity_eve_global", $"117:{cycle}");
     private bool EveWrites(GameSession session, CommonActivityReq? request, bool? loadedEnded) =>
-        request?.ActivityId == 117 || (loadedEnded ?? (session.NewActivities?.ActivityInfo.TryGetValue(117, out var eve) == true
-            && EveSettlementNear(eve) && session.ActivityRuntime?.EveSettledCycleStart != eve.CycleStartTime));
+        request?.ActivityId == 117 || (loadedEnded ?? (session.Activities.NewActivities?.ActivityInfo.TryGetValue(117, out var eve) == true
+            && EveSettlementNear(eve) && session.Activities.ActivityRuntime?.EveSettledCycleStart != eve.CycleStartTime));
     /// <summary>The Eve key an activity operation of this session needs now; null without a saved cycle.</summary>
     internal ReservationKey? EveKeyFor(GameSession session, CommonActivityReq? request = null, long? loadedCycle = null,
         bool? loadedEnded = null)
     {
-        long cycle = loadedCycle ?? (session.NewActivities?.ActivityInfo.TryGetValue(117, out var eve) == true ? eve.CycleStartTime : 0);
+        long cycle = loadedCycle ?? (session.Activities.NewActivities?.ActivityInfo.TryGetValue(117, out var eve) == true ? eve.CycleStartTime : 0);
         return cycle > 0 ? EveKey(cycle, EveWrites(session, request, loadedEnded)) : null;
     }
 

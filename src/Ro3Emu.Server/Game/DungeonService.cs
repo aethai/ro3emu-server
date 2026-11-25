@@ -328,7 +328,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
 
     internal int Admission(GameSession s, DungeonCatalog.Plan plan, bool continuation = false)
     {
-        if (s.Role == null || s.Dungeons == null || s.Progress == null) return ErrorCodes.Parameter;
+        if (s.Role == null || s.Instances.Dungeons == null || s.Progress == null) return ErrorCodes.Parameter;
         if (s.SeasonState is not { } state || state.SeasonId != _seasons.SeasonId || state.PlayBookId != _seasons.PlayBook)
             return ErrorCodes.FeatureUnavailable;
         if (s.SceneLoading) return ErrorCodes.SwitchingScenes;
@@ -363,7 +363,7 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         var members = ids.Where(online.ContainsKey).Select(id => online[id]).ToArray();
         if (error == 0 && ids.Length > 1 && membership.Leader != s.Role!.Id) error = ErrorCodes.NoPermission;
         // GM "!dungeonsolo on" (test aid, not original behaviour): a lone role may also enter a team boss with 30400.
-        if (error == 0 && ids.Length < plan!.MinPlayers && !(ids.Length == 1 && s.DungeonSoloMatch && plan.Multi != null))
+        if (error == 0 && ids.Length < plan!.MinPlayers && !(ids.Length == 1 && s.Instances.DungeonSoloMatch && plan.Multi != null))
             error = ErrorCodes.DungeonTeamSize;
         if (error == 0 && ids.Length > plan!.MaxPlayers) error = ErrorCodes.PartyFull;
         if (error == 0 && members.Length != ids.Length) error = ErrorCodes.PlayerOffline;

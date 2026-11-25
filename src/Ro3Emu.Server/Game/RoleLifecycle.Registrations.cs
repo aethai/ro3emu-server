@@ -39,7 +39,7 @@ public sealed partial class FunctionService : IRoleLifecycle
     {
         builder.OnLogin(RoleLifecycleOrder.LoginFunctionsSync, "FunctionService.Sync", s =>
         {
-            s.DeferFunctionSync = false;
+            s.Profile.DeferFunctionSync = false;
             return SyncAsync(s);
         });
     }
@@ -78,7 +78,7 @@ public sealed partial class TaskService : IRoleLifecycle
         builder.OnLogin(RoleLifecycleOrder.LoginTasks, "TaskService.Login", LoginAsync);
         builder.OnLogin(RoleLifecycleOrder.LoginTasksRefresh, "TaskService.Refresh", s =>
         {
-            s.DeferTaskSync = false;
+            s.Profile.DeferTaskSync = false;
             return RefreshAsync(s);
         }, checkpointAfter: false);
     }
@@ -88,7 +88,7 @@ public sealed partial class DailyActivityService : IRoleLifecycle
 {
     void IRoleLifecycle.RegisterLifecycle(RoleLifecycleBuilder builder)
     {
-        builder.OnLoad(RoleLifecycleOrder.LoadDailyReset, "DailyActivityService.ResetReady", s => s.DailyReady = false);
+        builder.OnLoad(RoleLifecycleOrder.LoadDailyReset, "DailyActivityService.ResetReady", s => s.Activities.DailyReady = false);
         builder.OnLoad(RoleLifecycleOrder.LoadDaily, "DailyActivityService.Load", s => Load(s));
         builder.OnLogin(RoleLifecycleOrder.LoginDaily, "DailyActivityService.Login", s => LoginAsync(s));
         builder.OnLeave(RoleLifecycleOrder.LeaveDailyBoundary, "daily boundary", "DailyActivityService.Reconcile",
@@ -357,8 +357,8 @@ public sealed partial class DungeonMatchService : IRoleLifecycle
         builder.OnLeave(RoleLifecycleOrder.LeaveDungeonMatch, "dungeon match", "DungeonMatchService.LeaveRole", async s =>
         {
             await LeaveRoleAsync(s);
-            s.DungeonSoloMatch = false;
-            s.GmAllFunctionsOpen = false;
+            s.Instances.DungeonSoloMatch = false;
+            s.Profile.GmAllFunctionsOpen = false;
         });
     }
 }
@@ -418,7 +418,7 @@ public sealed partial class WildAfkService : IRoleLifecycle
             var s = ctx.Session;
             // AFK.Leave detaches its session state. A held old-day award still needs the old
             // daily/task rows on the next login, so the ordinary daily reset must wait for it.
-            ctx.DeferDailyBoundary = PendingDailyAward(s.WildAfk, s.Daily, s.Tasks, s.DailyRows);
+            ctx.DeferDailyBoundary = PendingDailyAward(s.Activities.WildAfk, s.Activities.Daily, s.Tasks, s.Activities.DailyRows);
             return LeaveAsync(s);
         });
     }
@@ -457,14 +457,14 @@ public sealed partial class NewActivityService : IRoleLifecycle
     {
         builder.OnLoad(RoleLifecycleOrder.LoadActivitiesReset, "NewActivityService.ResetReady", s =>
         {
-            s.ActivitiesReady = false;
-            s.NewActivities = null;
+            s.Activities.ActivitiesReady = false;
+            s.Activities.NewActivities = null;
         });
         builder.OnLogin(RoleLifecycleOrder.LoginNewActivities, "NewActivityService.Login", LoginAsync);
         builder.OnLoginKeys(RoleLifecycleOrder.LoginKeysActivities, "NewActivityService.LoginKeys", LoginKeys);
         builder.OnMove(RoleLifecycleOrder.MoveActivitiesConch, "NewActivityService.ConchMoved", ConchMovedAsync);
         builder.OnLeave(RoleLifecycleOrder.LeaveActivitiesReset, "activities-reset", "NewActivityService.ResetReady",
-            s => s.ActivitiesReady = false, kind: LeaveStepKind.StateReset);
+            s => s.Activities.ActivitiesReady = false, kind: LeaveStepKind.StateReset);
     }
 }
 
@@ -495,7 +495,7 @@ public sealed partial class TimedBattleService : IRoleLifecycle
         builder.OnLeave(RoleLifecycleOrder.LeaveTimedBattle, "timed battle", "TimedBattleService.LeaveRole", async s =>
         {
             await LeaveRoleAsync(s);
-            s.EventFaction = 0;
+            s.Instances.EventFaction = 0;
         });
     }
 }

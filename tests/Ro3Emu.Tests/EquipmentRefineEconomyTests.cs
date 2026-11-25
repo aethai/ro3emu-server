@@ -152,8 +152,8 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             Assert.False(command.IsCompleted);
             await Service<GameLoop>().InvokeAsync(() =>
             {
-                Assert.Equal(5, Session.EquipLevels.Refine[Grid]);
-                Assert.Equal(0, Session.EquipLevels.Luck.GetValueOrDefault(Grid));
+                Assert.Equal(5, Session.Profile.EquipLevels.Refine[Grid]);
+                Assert.Equal(0, Session.Profile.EquipLevels.Luck.GetValueOrDefault(Grid));
                 Assert.Equal(beforeMaterial, MaterialCount());
                 Assert.Equal(beforeCurrency, Currency());
                 return Task.CompletedTask;
@@ -184,7 +184,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
                 Service<OwnerRegistry>().RunSessionAsync("dispatcher", [ReservationKey.Role(session.Role!.Id)], session,
                     () => Service<EquipmentService>().RefineAsync(session,
                         new RefineEquipmentReq { EquipPos = (EquipGridType)Grid }))));
-            Assert.Equal((5, 0), (session.EquipLevels.Refine[Grid], session.EquipLevels.Luck.GetValueOrDefault(Grid)));
+            Assert.Equal((5, 0), (session.Profile.EquipLevels.Refine[Grid], session.Profile.EquipLevels.Luck.GetValueOrDefault(Grid)));
             Assert.Equal((5, 0), (Saved().Refine[Grid], Saved().Luck.GetValueOrDefault(Grid)));
             Assert.Equal(beforeMaterial, MaterialCount());
             Assert.Equal(beforeCurrency, Currency());
@@ -329,7 +329,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             await bot.LoginAsync("alice", "pw"); await bot.EnterGateAsync();
             await bot.EnterWorldAsync(record.Role);
             var session = restarted.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == record.Role);
-            Assert.Equal((5, 500), (session.EquipLevels.Refine[Grid], session.EquipLevels.Luck[Grid]));
+            Assert.Equal((5, 500), (session.Profile.EquipLevels.Refine[Grid], session.Profile.EquipLevels.Luck[Grid]));
             Assert.Equal(record.MaterialBefore - record.MaterialCost,
                 session.Items.Where(i => i.Entry == Material).Sum(i => (long)i.Stack));
         }

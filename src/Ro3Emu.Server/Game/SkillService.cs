@@ -292,15 +292,15 @@ public sealed partial class SkillService
             {
                 _log.LogWarning("{Name} rebuilds invalid saved plan {Plan} from authoritative progress: {Result}",
                     session.Role!.Name, state.CurrentPlanIndex, result);
-                session.SkillPlans = state;
+                session.Combat.SkillPlans = state;
                 state = Build(session);
                 var rebuilt = CharacterService.GenreCloneProgress(session.Progress!);
                 if (StageSkillPlan(session, state, rebuilt, state.CurrentPlanIndex) == 0)
                     CopySkills(rebuilt, session.Progress!);
             }
         }
-        session.SkillPlans = state;
-        session.SkillPlans = Build(session); // persist the selected plan's authoritative wheel after legacy import/job changes
+        session.Combat.SkillPlans = state;
+        session.Combat.SkillPlans = Build(session); // persist the selected plan's authoritative wheel after legacy import/job changes
     }
 
     private static bool LegacyJson(byte[] blob)
@@ -402,7 +402,7 @@ public sealed partial class SkillService
             }));
         await _roles.CommitAsync(tx, kind, _ =>
         {
-            session.SkillPlans = next;
+            session.Combat.SkillPlans = next;
             if (progress != null) CopySkills(progress, session.Progress!);
             applied?.Invoke();
         });
@@ -413,23 +413,23 @@ public sealed partial class SkillService
         using var held = await CharacterService.Lock(session);
         var saved = _roles.LoadSkillPlans(session.Role!.Id);
         var original = session.Progress!;
-        var priorPlans = session.SkillPlans;
+        var priorPlans = session.Combat.SkillPlans;
         var staged = CharacterService.GenreCloneProgress(original);
         DBSkillData next;
         session.Progress = staged;
-        try { StageLoad(session, saved); next = session.SkillPlans!; }
-        finally { session.Progress = original; session.SkillPlans = priorPlans; }
+        try { StageLoad(session, saved); next = session.Combat.SkillPlans!; }
+        finally { session.Progress = original; session.Combat.SkillPlans = priorPlans; }
         bool changedProgress = !staged.Skills.OrderBy(x => x.Key).SequenceEqual(original.Skills.OrderBy(x => x.Key)) ||
             !staged.SkillBar.OrderBy(x => x.Key).SequenceEqual(original.SkillBar.OrderBy(x => x.Key));
         if (saved == null || !saved.AsSpan().SequenceEqual(next.ToByteArray()) || changedProgress)
             await CommitAsync(session, next, changedProgress ? staged : null, "cd13c/skill-login-reconcile");
-        else session.SkillPlans = next;
+        else session.Combat.SkillPlans = next;
     }
 
     public DBSkillData Build(GameSession session)
     {
-        if (session.SkillPlans == null) throw new InvalidOperationException("Skill plans must be loaded before use.");
-        var state = session.SkillPlans!.Clone();
+        if (session.Combat.SkillPlans == null) throw new InvalidOperationException("Skill plans must be loaded before use.");
+        var state = session.Combat.SkillPlans!.Clone();
         var current = state.SkillAssignPlans[state.CurrentPlanIndex];
         current.SkillAssigns.Clear();
         var generated = BuildFresh(session);
@@ -646,7 +646,7 @@ public sealed partial class SkillService
     /// loop goes on with the new attack.</summary>
     internal Task AttackInputChangedAsync(GameSession session)
     {
-        if (session.SkillPlans == null || CurrentAttack(session) is var attack && attack == session.WheelAttack) return Task.CompletedTask;
+        if (session.Combat.SkillPlans == null || CurrentAttack(session) is var attack && attack == session.WheelAttack) return Task.CompletedTask;
         if (session.Attack is { } loop && SkillConfig.Get(_data, loop.SkillId) is { } running && running.IsNormalAttack(_data)) loop.SkillId = attack;
         return SyncAsync(session);
     }
@@ -662,7 +662,7 @@ public sealed partial class SkillService
 
     public async Task SyncAsync(GameSession session)
     {
-        if (session.SkillPlans == null) await LoadAsync(session);
+        if (session.Combat.SkillPlans == null) await LoadAsync(session);
         var state = Shown(session);
         // A granted skill (a socketed card's Skill(3)) is listed with its level in the current plan, where the skill panel's
         // card skills read it (UI_Sys_SkillPanelModel.GetCardSkillList: ServerAllSkills = skillList, then the plan's
@@ -708,7 +708,7 @@ public sealed partial class SkillService
             // A rank over its points refuses only what spends more than the plan already did. The GM grant (110) charges none,
             // so such a plan was refused here on every bar edit, plan switch and refund, its levels unchanged. (inferred) It
             // stays usable and can give levels back. At login the saved plan is not trusted: the role's progress decides.
-            var before = session.SkillPlans is { } saved && index < saved.SkillAssignPlans.Count
+            var before = session.Combat.SkillPlans is { } saved && index < saved.SkillAssignPlans.Count
                 ? PlanPoints(progress, saved.SkillAssignPlans[index]) : SkillPoints(session.Progress!);
             if (remaining.Any(rank => rank.Value < Math.Min(0, before.GetValueOrDefault(rank.Key)))) return ErrorCodes.SkillPointsShort;
         }
@@ -734,10 +734,10 @@ public sealed partial class SkillService
             int result = req.Plan is < 0 or >= PlanCount || !next.SkillAssignPlans[req.Plan].IsUnlock
                 ? ErrorCodes.Parameter : PlanSwitchCooldownError(session);
             if (result == 0) result = StageSkillPlan(session, next, progress, req.Plan);
-            if (result == 0 && req.Plan != session.SkillPlans!.CurrentPlanIndex)
+            if (result == 0 && req.Plan != session.Combat.SkillPlans!.CurrentPlanIndex)
             {
                 await CommitAsync(session, next, progress, "cd13c/skill-switch",
-                    () => session.SkillPlanSwitchUtc = _clock.GetUtcNow().UtcDateTime);
+                    () => session.Combat.SkillPlanSwitchUtc = _clock.GetUtcNow().UtcDateTime);
                 changed = true;
             }
             await session.SendGameAsync(SwitchPlan, new SwitchPlanResp { Result = result, Plan = req.Plan, Flag = 0 });
@@ -749,12 +749,12 @@ public sealed partial class SkillService
     public async Task RenamePlanAsync(GameSession session, SkillPlanChangeNameReq req)
     {
         using var held = await CharacterService.Lock(session);
-        int result = req.Plan is < 0 or >= PlanCount || !session.SkillPlans!.SkillAssignPlans[req.Plan].IsUnlock
+        int result = req.Plan is < 0 or >= PlanCount || !session.Combat.SkillPlans!.SkillAssignPlans[req.Plan].IsUnlock
             || string.IsNullOrWhiteSpace(req.Name) || req.Name.Any(char.IsControl)
             || req.Name.EnumerateRunes().Count() > (int)(Data.Config.PublicParams.Of(_data).SchemeNameNumMax ?? 8) ? ErrorCodes.Parameter : 0;
         if (result == 0)
         {
-            var next = session.SkillPlans!.Clone();
+            var next = session.Combat.SkillPlans!.Clone();
             next.SkillAssignPlans[req.Plan].Name = req.Name;
             await CommitAsync(session, next, kind: "cd13c/skill-rename");
         }
@@ -768,7 +768,7 @@ public sealed partial class SkillService
 
     /// <summary>Shared gate for direct skill switches and Build-window child switches.</summary>
     internal int PlanSwitchCooldownError(GameSession session) => InCombat(session) ? ErrorCodes.Parameter
-        : _clock.GetUtcNow().UtcDateTime - session.SkillPlanSwitchUtc < TimeSpan.FromSeconds((int)(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3))
+        : _clock.GetUtcNow().UtcDateTime - session.Combat.SkillPlanSwitchUtc < TimeSpan.FromSeconds((int)(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3))
             ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>
@@ -818,7 +818,7 @@ public sealed partial class SkillService
                 }
                 if (code == 0)
                     foreach (var (group, target) in req.LevelUpList)
-                        if (target.SkillLevel > (session.SkillPlans!.SkillAssignPlans[req.Plan].SkillAssigns
+                        if (target.SkillLevel > (session.Combat.SkillPlans!.SkillAssignPlans[req.Plan].SkillAssigns
                                 .GetValueOrDefault(group)?.SkillLevel ?? 0)
                             && UpgradeGroups().TryGetValue(group, out int upgraded)
                             && selected.SkillAssigns.GetValueOrDefault(upgraded)?.SkillLevel > 0)
@@ -1033,7 +1033,7 @@ public sealed partial class SkillService
                 }
             }
             else await CommitAsync(session, plans, kind: "cd13c/skill-load");
-            if (code == 0) { session.SkillPlans = plans; await SyncAsync(session); }
+            if (code == 0) { session.Combat.SkillPlans = plans; await SyncAsync(session); }
         }
         await session.SendGameAsync(SkillLoad, new SkillLoadResp { Result = code, IsManual = req.IsManual });
     }
@@ -1065,7 +1065,7 @@ public sealed partial class SkillService
                         changed = true;
                     }
                     else await CommitAsync(session, plans, kind: "cd13c/skill-reset");
-                    session.SkillPlans = plans;
+                    session.Combat.SkillPlans = plans;
                     await SyncAsync(session);
                 }
             }

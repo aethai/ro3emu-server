@@ -146,7 +146,7 @@ public sealed class CoreMessages(
         routes.Map(TowerService.End, "handler", RouteAdmission.Role, _ => { });
         routes.Map<WildAfkSaveChargeReq>(WildAfkService.SaveCharge, "handler", RouteAdmission.Default, (session, req) =>
         {
-            if (session.WildAfk is { } state) state.PowerSaving = req.IsSaveCharge;
+            if (session.Activities.WildAfk is { } state) state.PowerSaving = req.IsSaveCharge;
         });
         routes.Map(WildAfkService.OfflineReward, "handler", RouteAdmission.Default,
             session => session.SendGameAsync(WildAfkService.OfflineReward, new ReceiveOfflineRewardRsp { Result = ErrorCodes.AfkNoSummary }));

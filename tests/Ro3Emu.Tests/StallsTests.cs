@@ -317,7 +317,7 @@ public sealed partial class StallsTests : IAsyncLifetime
         // An outfit slot beside the creation hair: the puppet must not fall back to the hair-only look.
         var worn = await Service<GameLoop>().InvokeAsync(() =>
         {
-            var wardrobe = Session(seller).Wardrobe!; wardrobe.CurUseAppearances[2] = 4242;
+            var wardrobe = Session(seller).Profile.Wardrobe!; wardrobe.CurUseAppearances[2] = 4242;
             return Task.FromResult(wardrobe.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value));
         });
         Assert.Equal(0, (await Open(seller, Offer(guid))).Result);

@@ -19,7 +19,7 @@ public sealed partial class ScriptedDungeonService
     internal JourneyVictory? CaptureJourneyVictory(GameSession s, long sceneEntry, string source)
     {
         if (CanStageJourneyVictory?.Invoke(s) != true
-            || s.NewActivities?.ActivityInfo.TryGetValue(112, out var activity) != true
+            || s.Activities.NewActivities?.ActivityInfo.TryGetValue(112, out var activity) != true
             || activity.ActivityParam?.Journey is not { } journey) return null;
         foreach (long id in journey.CurActIds.Keys)
             if (_data.Row("JourneyActConfig", id) is { } row
@@ -36,18 +36,18 @@ public sealed partial class ScriptedDungeonService
     /// the original source; the Journey award and acknowledgement must use the same transaction.</summary>
     public async Task DeliverJourneyPendingAsync(GameSession s)
     {
-        if (s.Role == null || s.Dungeons == null || !s.ActivitiesReady || JourneyWon == null) return;
+        if (s.Role == null || s.Instances.Dungeons == null || !s.Activities.ActivitiesReady || JourneyWon == null) return;
         using var scope = await _owners.EnterAsync("dungeon/journey-followup", Ownership.ReservationKey.Role(s.Role.Id));
         if (s.Owner is { } owner) scope.Context.Pin(owner);
-        foreach (var victory in s.Dungeons.PendingJourney.Values.ToArray())
+        foreach (var victory in s.Instances.Dungeons.PendingJourney.Values.ToArray())
         {
-            var next = Copy(s.Dungeons);
+            var next = Copy(s.Instances.Dungeons);
             if (!next.PendingJourney.Remove(victory.Source)) continue;
             try
             {
                 bool delivered = await JourneyWon(s, victory,
                     tx => tx.RoleBlob(s.Role.Id, "dungeons", JsonSerializer.SerializeToUtf8Bytes(next)),
-                    () => s.Dungeons = next);
+                    () => s.Instances.Dungeons = next);
                 if (!delivered) _log.LogWarning("Journey continuation {Source} requires recovery for role {Role}; its captured activity or act no longer matches",
                     victory.Source, s.Role.Id);
             }
@@ -61,7 +61,7 @@ public sealed partial class ScriptedDungeonService
 
     internal bool JourneyCanEnter(GameSession session, long sceneEntry)
     {
-        if (session.NewActivities == null || !session.NewActivities.ActivityInfo.TryGetValue(112, out var activity)
+        if (session.Activities.NewActivities == null || !session.Activities.NewActivities.ActivityInfo.TryGetValue(112, out var activity)
             || activity.ActivityParam?.Journey is not { } journey || session.SceneLoading || session.Role == null)
             return false;
         long now = _clock.GetUtcNow().ToUnixTimeSeconds();

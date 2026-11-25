@@ -53,7 +53,7 @@ public sealed partial class PetService
     private bool RoundOpen(GameSession s, JsonElement round)
     {
         long now = Now;
-        return s.NewActivities?.ActivityInfo.TryGetValue(GameData.Int(round, "_iActivity"), out var activity) == true
+        return s.Activities.NewActivities?.ActivityInfo.TryGetValue(GameData.Int(round, "_iActivity"), out var activity) == true
             && !activity.IsShielded && activity.State != "_close" && now >= activity.CurStartTime && now < activity.CurEndTime;
     }
 
@@ -117,7 +117,7 @@ public sealed partial class PetService
         if (code == 0)
         {
             var config = _data.Row("PetIncubationSlotConfig", req.RoundId)!.Value;
-            var lottery = s.Lottery?.Clone();
+            var lottery = s.Activities.Lottery?.Clone();
             var result = Draw(s.Pets!, config, lottery);
             var cost = Cost(config, "_kMaterial");
             if (result == null || cost.Count == 0) code = ErrorCodes.FeatureUnavailable;
@@ -298,7 +298,7 @@ public sealed partial class PetService
             code = ErrorCodes.PetOperation;
         var config = code == 0 ? _data.Row("PetIncubationSlotConfig", req.RoundId) : null;
         var next = s.Pets?.Clone();
-        var lottery = s.Lottery?.Clone();
+        var lottery = s.Activities.Lottery?.Clone();
         var costs = new Dictionary<int, long>();
         var goods = new List<(int, int)>();
         var reply = new FastIncubateRes();

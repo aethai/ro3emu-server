@@ -12,7 +12,7 @@ public sealed partial class EmblemService
     private const int PlanCount = 5, PlanNameMax = 8;
 
     internal int PlanSwitchCooldownError(GameSession session) =>
-        session.UtcNow - session.EmblemPlanSwitchUtc < TimeSpan.FromSeconds(3) ? ErrorCodes.Cooldown : 0;
+        session.UtcNow - session.Profile.EmblemPlanSwitchUtc < TimeSpan.FromSeconds(3) ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Project the selected 5005 plan onto detached 5009 item instances before committing either owner.</summary>
     internal void ApplyGenreMarkers(IEnumerable<InvItem> inventory, EmblemState state)
@@ -40,7 +40,7 @@ public sealed partial class EmblemService
         }
         using var gate = await CharacterService.Lock(session);
         int code = Gate(session);
-        var state = session.Emblems;
+        var state = session.Profile.Emblems;
         if (code == 0 && (req.TargetIndex is < 0 or >= PlanCount || !state.Plans.ContainsKey(req.TargetIndex)))
             code = ErrorCodes.Parameter;
         if (code == 0 && req.TargetIndex != state.CurrentPlan)
@@ -63,12 +63,12 @@ public sealed partial class EmblemService
                 var beforeItems = session.Items.Select(i => i.Clone()).ToArray();
                 var afterItems = beforeItems.Select(i => i.Clone()).ToList();
                 ApplyGenreMarkers(afterItems, next);
-                long previous = session.EmblemPower;
+                long previous = session.Profile.EmblemPower;
                 try
                 {
                     await CommitEmblemsAsync(session, "emblem-plan-switch", next, beforeItems, afterItems, [],
                         new { From = state.CurrentPlan, To = req.TargetIndex },
-                        () => session.EmblemPlanSwitchUtc = session.UtcNow);
+                        () => session.Profile.EmblemPlanSwitchUtc = session.UtcNow);
                 }
                 catch (SqliteException e)
                 {
@@ -81,7 +81,7 @@ public sealed partial class EmblemService
                 }
             }
         }
-        await session.SendGameAsync(SwitchPlan, new EmbleSwitchPlanResp { Result = code, CurrentPlan = session.Emblems.CurrentPlan });
+        await session.SendGameAsync(SwitchPlan, new EmbleSwitchPlanResp { Result = code, CurrentPlan = session.Profile.Emblems.CurrentPlan });
     }
 
     /// <summary>82426 uses 5005 planName (LC_SchemeServerHelper:260-310); validation follows shared scheme limits.</summary>
@@ -95,11 +95,11 @@ public sealed partial class EmblemService
         using var gate = await CharacterService.Lock(session);
         int code = Gate(session);
         string name = req.Name.Trim();
-        if (code == 0 && (req.TargetIndex is < 0 or >= PlanCount || !session.Emblems.Plans.ContainsKey(req.TargetIndex)
+        if (code == 0 && (req.TargetIndex is < 0 or >= PlanCount || !session.Profile.Emblems.Plans.ContainsKey(req.TargetIndex)
             || name.Length == 0 || name.EnumerateRunes().Count() > PlanNameMax || name.Any(char.IsControl))) code = ErrorCodes.Parameter;
         if (code == 0)
         {
-            var next = CopyState(session.Emblems);
+            var next = CopyState(session.Profile.Emblems);
             next.Plans[req.TargetIndex].Name = name;
             var beforeItems = session.Items.Select(i => i.Clone()).ToArray();
             var afterItems = beforeItems.Select(i => i.Clone()).ToArray();

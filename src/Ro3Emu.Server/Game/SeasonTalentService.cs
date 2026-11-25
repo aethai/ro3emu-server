@@ -43,32 +43,32 @@ public sealed partial class SeasonTalentService
     /// <summary>Called before the first login stat snapshot; (inferred) saved plans carry across seasons without reset.</summary>
     public void Load(GameSession session)
     {
-        session.SeasonTalent = _roles.LoadSeasonTalent(session.Role!.Id) is { } bytes
+        session.Season.SeasonTalent = _roles.LoadSeasonTalent(session.Role!.Id) is { } bytes
             ? DBSeasonTalent.Parser.ParseFrom(bytes) : new DBSeasonTalent();
-        session.TalentEffectsEnabled = false; // TaskService has not loaded this role's quest state yet.
-        session.TalentPlanSwitchUtc = default;
+        session.Season.TalentEffectsEnabled = false; // TaskService has not loaded this role's quest state yet.
+        session.Season.TalentPlanSwitchUtc = default;
         session.TalentSkillModifiers = [];
         session.TalentProcBuffs = [];
         session.TalentBuffAttributes = [];
-        Seed(session.SeasonTalent);
+        Seed(session.Season.SeasonTalent);
     }
 
     /// <summary>Called after 5027 and before 5056, also when quests or progress change.</summary>
     public async Task SyncAsync(GameSession session)
     {
-        if (session.SeasonTalent == null) return;
+        if (session.Season.SeasonTalent == null) return;
         // The DAL expects configured tree and node keys in 5050. An empty map can crash its overlay.
         if (!HasTalentGraph()) return;
-        bool before = session.TalentEffectsEnabled;
-        var oldTrees = session.SeasonTalent.UnlockedTrees.ToDictionary(kv => kv.Key, kv => kv.Value);
-        var oldNodes = session.SeasonTalent.UnlockedNode.ToDictionary(kv => kv.Key, kv => kv.Value);
-        session.TalentEffectsEnabled = Available(session);
+        bool before = session.Season.TalentEffectsEnabled;
+        var oldTrees = session.Season.SeasonTalent.UnlockedTrees.ToDictionary(kv => kv.Key, kv => kv.Value);
+        var oldNodes = session.Season.SeasonTalent.UnlockedNode.ToDictionary(kv => kv.Key, kv => kv.Value);
+        session.Season.TalentEffectsEnabled = Available(session);
         BuildUnlocks(session);
-        await CharacterService.SyncAsync(session, TalentSync, session.SeasonTalent, session.SeasonTalent.Clone);
+        await CharacterService.SyncAsync(session, TalentSync, session.Season.SeasonTalent, session.Season.SeasonTalent.Clone);
         // Seeding false map keys at login cannot alter stats; avoid an extra pre-world 31008.
-        if (before != session.TalentEffectsEnabled || (session.TalentEffectsEnabled
-            && (!Same(oldTrees, session.SeasonTalent.UnlockedTrees)
-                || !Same(oldNodes, session.SeasonTalent.UnlockedNode)))) await _character.RefreshStatsAsync(session);
+        if (before != session.Season.TalentEffectsEnabled || (session.Season.TalentEffectsEnabled
+            && (!Same(oldTrees, session.Season.SeasonTalent.UnlockedTrees)
+                || !Same(oldNodes, session.Season.SeasonTalent.UnlockedNode)))) await _character.RefreshStatsAsync(session);
         await RefreshEffectsAsync(session);
     }
 
@@ -87,7 +87,7 @@ public sealed partial class SeasonTalentService
         if (index == state.CurPlanId && !replaceCurrent) return 0;
         if (!Available(session)) return ErrorCodes.FeatureUnavailable;
         if (index is < 0 or >= PlanCount || !state.Plan.ContainsKey(index)) return ErrorCodes.Parameter;
-        if (index != state.CurPlanId && session.UtcNow - session.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds)) return ErrorCodes.Cooldown;
+        if (index != state.CurPlanId && session.UtcNow - session.Season.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds)) return ErrorCodes.Cooldown;
         state.CurPlanId = index;
         BuildUnlocks(session, state);
         return 0;
@@ -95,7 +95,7 @@ public sealed partial class SeasonTalentService
 
     internal async Task SyncGenrePlanAsync(GameSession session)
     {
-        await CharacterService.SyncAsync(session, TalentSync, session.SeasonTalent!, session.SeasonTalent!.Clone);
+        await CharacterService.SyncAsync(session, TalentSync, session.Season.SeasonTalent!, session.Season.SeasonTalent!.Clone);
         await RefreshEffectsAsync(session);
     }
 
@@ -120,8 +120,8 @@ public sealed partial class SeasonTalentService
 
     private void BuildUnlocks(GameSession s, DBSeasonTalent? candidate = null)
     {
-        var state = candidate ?? s.SeasonTalent!;
-        s.TalentEffectsEnabled = Available(s);
+        var state = candidate ?? s.Season.SeasonTalent!;
+        s.Season.TalentEffectsEnabled = Available(s);
         Seed(state);
         var active = state.Plan[state.CurPlanId];
         long total = TalentLevel(state, active);
@@ -130,7 +130,7 @@ public sealed partial class SeasonTalentService
         foreach (var tree in Trees())
         {
             if (tree.Id <= 0) continue;
-            bool unlocked = s.TalentEffectsEnabled && Applies(tree)
+            bool unlocked = s.Season.TalentEffectsEnabled && Applies(tree)
                 && _functions.ConditionMet(s, tree.Condition) && total >= tree.NeedLevel;
             state.UnlockedTrees[tree.Id] = unlocked;
             // (inferred) the oath cap is the largest cap marker on an eligible, unlocked tree.
@@ -284,7 +284,7 @@ public sealed partial class SeasonTalentService
             result = UpgradeLocked(s, req.TalentId, out var cost, out var node, out var isOath);
             if (result == 0)
             {
-                var next = s.SeasonTalent!.Clone();
+                var next = s.Season.SeasonTalent!.Clone();
                 if (isOath) next.BattleOathLevel++;
                 else next.Plan[next.CurPlanId].TalentNodes[node].CurrentLevel++; // (inferred) ordinary purchases belong to one plan
                 BuildUnlocks(s, next);
@@ -303,7 +303,7 @@ public sealed partial class SeasonTalentService
                         Popup = false,
                         Sync = false,
                         Persist = tx => { tx.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray()); tx.WithEconomy(economy); },
-                        Committed = () => s.SeasonTalent = next,
+                        Committed = () => s.Season.SeasonTalent = next,
                         AsyncCommit = true,
                     });
                 }
@@ -330,10 +330,10 @@ public sealed partial class SeasonTalentService
     private int UpgradeLocked(GameSession s, long id, out List<(int Entry, long Count)>? cost, out long node, out bool oath)
     {
         cost = null; node = id; oath = false;
-        if (s.SeasonTalent == null || s.Progress == null || !Available(s)) return ErrorCodes.FeatureUnavailable;
+        if (s.Season.SeasonTalent == null || s.Progress == null || !Available(s)) return ErrorCodes.FeatureUnavailable;
         if (_data.Row("SeasonTalentConfig", id) is not { } row) return ErrorCodes.TalentInvalid;
         BuildUnlocks(s);
-        var state = s.SeasonTalent;
+        var state = s.Season.SeasonTalent;
         if (!state.UnlockedNode.GetValueOrDefault(id)) return ErrorCodes.TalentLocked;
         oath = GameData.Int(row, "_iType") == PvpNodeType;
         long current = oath ? state.BattleOathLevel : state.Plan[state.CurPlanId].TalentNodes[id].CurrentLevel;
@@ -354,12 +354,12 @@ public sealed partial class SeasonTalentService
         int result;
         using (await CharacterService.Lock(s))
         {
-            result = !Available(s) || s.SeasonTalent == null ? ErrorCodes.FeatureUnavailable
+            result = !Available(s) || s.Season.SeasonTalent == null ? ErrorCodes.FeatureUnavailable
                 : req.PlanId is < 0 or >= PlanCount ? ErrorCodes.Parameter
-                : s.UtcNow - s.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds) ? ErrorCodes.Cooldown : 0;
+                : s.UtcNow - s.Season.TalentPlanSwitchUtc < TimeSpan.FromSeconds(SwitchCooldownSeconds) ? ErrorCodes.Cooldown : 0;
             if (result == 0)
             {
-                var next = s.SeasonTalent!.Clone();
+                var next = s.Season.SeasonTalent!.Clone();
                 next.CurPlanId = req.PlanId;
                 BuildUnlocks(s, next);
                 try
@@ -368,8 +368,8 @@ public sealed partial class SeasonTalentService
                     transaction.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray());
                     await _roles.CommitAsync(transaction, "season-talent/set-plan", _ =>
                     {
-                        s.SeasonTalent = next;
-                        s.TalentPlanSwitchUtc = s.UtcNow;
+                        s.Season.SeasonTalent = next;
+                        s.Season.TalentPlanSwitchUtc = s.UtcNow;
                     });
                     await CharacterService.SyncAsync(s, TalentSync, next.Clone());
                     await _character.RefreshStatsAsync(s);
@@ -393,18 +393,18 @@ public sealed partial class SeasonTalentService
         using (await CharacterService.Lock(s))
         {
             string name = req.PlanName.Trim();
-            result = !Available(s) || s.SeasonTalent == null ? ErrorCodes.FeatureUnavailable
+            result = !Available(s) || s.Season.SeasonTalent == null ? ErrorCodes.FeatureUnavailable
                 : req.PlanId is < 0 or >= PlanCount || name.Length == 0 || name.EnumerateRunes().Count() > NameMaxRunes
                     || name.Any(char.IsControl) ? ErrorCodes.Parameter : 0;
             if (result == 0)
             {
-                var next = s.SeasonTalent!.Clone();
+                var next = s.Season.SeasonTalent!.Clone();
                 next.Plan[req.PlanId].PlanName = name;
                 try
                 {
                     var transaction = _roles.NewTransaction();
                     transaction.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray());
-                    await _roles.CommitAsync(transaction, "season-talent/rename", _ => s.SeasonTalent = next);
+                    await _roles.CommitAsync(transaction, "season-talent/rename", _ => s.Season.SeasonTalent = next);
                     await CharacterService.SyncAsync(s, TalentSync, next.Clone());
                 }
                 catch (Exception e) when (e is SqliteException or Accounts.Persistence.PersistenceException
@@ -432,7 +432,7 @@ public sealed partial class SeasonTalentService
     /// <summary>The active plan's SeasonTalentEffectConfig rows at their bought levels, and the oath's at its level.</summary>
     private IEnumerable<JsonElement> ActiveEffects(GameSession s)
     {
-        if (!Available(s) || s.SeasonTalent is not { } state || s.Progress == null
+        if (!Available(s) || s.Season.SeasonTalent is not { } state || s.Progress == null
             || !state.Plan.TryGetValue(state.CurPlanId, out var plan)) yield break;
         long total = TalentLevel(state, plan);
         foreach (var (id, saved) in plan.TalentNodes)

@@ -162,7 +162,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
     private IReadOnlyDictionary<(int Type, int Son), bool> OpenTaskGroups(GameSession session)
     {
         var groups = new Dictionary<(int Type, int Son), bool>();
-        if (!session.ActivitiesReady) return groups;
+        if (!session.Activities.ActivitiesReady) return groups;
         foreach (var row in Definitions)
         {
             if (!row.TryGetProperty("_kTaskRenew", out var renew) || renew.ValueKind != JsonValueKind.Array || renew.GetArrayLength() == 0
@@ -238,16 +238,16 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         try
         {
             if (!_deadlines.IsCurrent(session, lease)) return;
-            session.NewActivities = loaded;
+            session.Activities.NewActivities = loaded;
             var runtime = _roles.LoadActivityRuntime(session.Role.Id);
-            session.ActivityRuntime = runtime == null ? new() : JsonSerializer.Deserialize<ActivityRuntimeState>(runtime) ?? new();
+            session.Activities.ActivityRuntime = runtime == null ? new() : JsonSerializer.Deserialize<ActivityRuntimeState>(runtime) ?? new();
             await SyncServerDayAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
             await SettleEveExpiredAsync(session, lease);
             if (!_deadlines.IsCurrent(session, lease)) return;
-            var nextCalendar = session.NewActivities.Clone();
+            var nextCalendar = session.Activities.NewActivities.Clone();
             RefreshCalendar(session, nextCalendar);
-            await SaveCalendarAsync(session, nextCalendar, saved == null ? null : session.NewActivities.ToByteArray(),
+            await SaveCalendarAsync(session, nextCalendar, saved == null ? null : session.Activities.NewActivities.ToByteArray(),
                 initializeRuntime: runtime == null);
             await ReconcilePassAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
@@ -255,7 +255,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
             if (!_deadlines.IsCurrent(session, lease)) return;
             await SyncAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
-            session.ActivitiesReady = true;
+            session.Activities.ActivitiesReady = true;
             await SyncConchesAsync(session);
             await _life.SyncRestrictionsAsync(session);
             _tasks.OnStateChanged(session); // the open activities' quests (TaskService.ActivityTasks.cs)
@@ -319,24 +319,24 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
 
     internal int ActivityError(GameSession session, long activityId, int expectedType = 0, bool allowInitializing = false)
     {
-        if (!allowInitializing && !session.ActivitiesReady || session.Role == null || session.Progress == null || session.NewActivities == null)
+        if (!allowInitializing && !session.Activities.ActivitiesReady || session.Role == null || session.Progress == null || session.Activities.NewActivities == null)
             return ErrorCodes.FeatureUnavailable;
         if (_data.Row("NewActivityConfig", activityId) is not { } row || expectedType != 0 && GameData.Int(row, "_iActivityType") != expectedType) return ErrorCodes.Parameter;
         if (!Applies(session, row)) return ErrorCodes.ActivityClosed;
         if (!Gate(session, row)) return ErrorCodes.FunctionLocked;
         if (!_activityClock.ResolveActivity(row, Now, session.Role.CreateTime, Playbook(session)).Contains(Now)) return ErrorCodes.ActivityPeriod;
-        return session.NewActivities.ActivityInfo.ContainsKey(activityId) ? 0 : ErrorCodes.ActivityClosed;
+        return session.Activities.NewActivities.ActivityInfo.ContainsKey(activityId) ? 0 : ErrorCodes.ActivityClosed;
     }
 
     public async Task ListAsync(GameSession session)
     {
         await ReconcileAsync(session);
         var response = new GetActivityListResp();
-        if (!session.ActivitiesReady || session.NewActivities == null) response.Result = ErrorCodes.FeatureUnavailable;
+        if (!session.Activities.ActivitiesReady || session.Activities.NewActivities == null) response.Result = ErrorCodes.FeatureUnavailable;
         else foreach (var row in Definitions.Where(r => Applies(session, r)))
         {
             long id = GameData.Int(row, "_iID");
-            if (session.NewActivities.ActivityInfo.TryGetValue(id, out var info))
+            if (session.Activities.NewActivities.ActivityInfo.TryGetValue(id, out var info))
                 response.ActivityList.Add(new NewActivityBaseInfo { Id = id, BeginTime = info.CycleStartTime, EndTime = info.CycleEndTime });
         }
         await session.SendGameAsync(GetList, response);
@@ -351,7 +351,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
             return;
         }
         var lease = _deadlines.Capture(session);
-        bool social = session.ActivitiesReady && session.Owner != null && session.Attachment != null
+        bool social = session.Activities.ActivitiesReady && session.Owner != null && session.Attachment != null
             && (req.FragmentGatherSend != null || req.FragmentGatherAskFinished != null
                 || req.BattlePassGift != null);
         LegacyOwnerScope? socialScope = social
@@ -369,7 +369,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         try
         {
             if (!_deadlines.IsCurrent(session, lease)) return;
-            if (session.ActivitiesReady && session.NewActivities != null)
+            if (session.Activities.ActivitiesReady && session.Activities.NewActivities != null)
             {
                 await SettleEveExpiredAsync(session, lease);
                 if (!_deadlines.IsCurrent(session, lease)) return;
@@ -399,7 +399,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
                     && !await HandleAdventureCommonAsync(session, req, response)) response.Result = ErrorCodes.Parameter;
             }
             if (!_deadlines.IsCurrent(session, lease)) return;
-            if (session.ActivitiesReady) await SyncAsync(session);
+            if (session.Activities.ActivitiesReady) await SyncAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
             await session.SendGameAsync(Common, response);
         }
@@ -429,7 +429,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         try
         {
             if (!_deadlines.IsCurrent(session, lease)) return;
-            if (session.ActivitiesReady && session.NewActivities != null)
+            if (session.Activities.ActivitiesReady && session.Activities.NewActivities != null)
             {
                 await SettleEveExpiredAsync(session, lease);
                 if (!_deadlines.IsCurrent(session, lease)) return;
@@ -438,7 +438,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
             int result = ActivityError(session, req.ActivityID);
             if (result == 0) result = await ClaimCoreAsync(session, req);
             if (!_deadlines.IsCurrent(session, lease)) return;
-            if (session.ActivitiesReady) await SyncAsync(session);
+            if (session.Activities.ActivitiesReady) await SyncAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
             await session.SendGameAsync(GetReward, new NewActivityGetRewardCommonResp { Result = result });
         }
@@ -447,12 +447,12 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
 
     private async Task<int> ClaimCoreAsync(GameSession session, NewActivityGetRewardCommonReq req)
     {
-        if (session.NewActivities!.ActivityInfo[req.ActivityID].ActivityParam.SevenDay is not { } seven)
+        if (session.Activities.NewActivities!.ActivityInfo[req.ActivityID].ActivityParam.SevenDay is not { } seven)
             return await ClaimAdventureAsync(session, req);
         if (_data.Row("SevenDaySignUpConfig", req.Index) is not { } row) return ErrorCodes.ActivityReward;
         if (seven.RewardStatus.GetValueOrDefault(req.Index)) return ErrorCodes.RewardClaimed;
         if (seven.LoginDays < GameData.Int(row, "_iRewardDate")) return ErrorCodes.TaskRequirements;
-        var next = session.NewActivities.Clone();
+        var next = session.Activities.NewActivities.Clone();
         next.ActivityInfo[req.ActivityID].ActivityParam.SevenDay.RewardStatus[req.Index] = true;
         next.ActivityTypeState[8].ActivityState[req.ActivityID].SelfData.SevenDay = next.ActivityInfo[req.ActivityID].ActivityParam.SevenDay.Clone();
         return await CommitAsync(session, next, [GameData.Int(row, "_iRewardID")],
@@ -464,21 +464,22 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         int error = ActivityError(session, activityId, preview ? 4 : 3);
         if (error != 0) return error;
         if (_data.Row(preview ? "FunctionPreviewConfig" : "LevelAwardConfig", rewardId) is not { } row) return ErrorCodes.ActivityReward;
-        var param = session.NewActivities!.ActivityInfo[activityId].ActivityParam;
+        var param = session.Activities.NewActivities!.ActivityInfo[activityId].ActivityParam;
         var claims = preview ? param.FunctionPreview : param.LevelAward;
         if (claims.AwardData.ContainsKey(rewardId)) return ErrorCodes.RewardClaimed;
         bool eligible = preview ? GameData.Int(row, "_iFunction") is var f and > 0
             ? _functions.IsOpen(session, f) : session.Progress!.Level >= GameData.Int(row, "_iLv")
             : session.Progress!.Level >= GameData.Int(row, "_iLevel");
         if (!eligible) return ErrorCodes.TaskRequirements;
-        var next = session.NewActivities.Clone();
+        var next = session.Activities.NewActivities.Clone();
         var awardData = preview ? next.ActivityInfo[activityId].ActivityParam.FunctionPreview : next.ActivityInfo[activityId].ActivityParam.LevelAward;
         awardData.AwardData[rewardId] = Now; // existence is the client claim test; timestamp value is inferred
         return await CommitAsync(session, next, [GameData.Int(row, "_iAwardID")],
             source: $"simple/{activityId}/{next.ActivityInfo[activityId].CycleStartTime}/{rewardId}");
     }
 
-    internal static ActivityRuntimeState CloneRuntime(GameSession session) => JsonSerializer.Deserialize<ActivityRuntimeState>(JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime))!;
+    internal static ActivityRuntimeState CloneRuntime(GameSession session) =>
+        JsonSerializer.Deserialize<ActivityRuntimeState>(JsonSerializer.SerializeToUtf8Bytes(session.Activities.ActivityRuntime))!;
 
     /// <summary>One source settlement, with source markers committed before any observable success or reward packet.</summary>
     internal async Task<int> CommitAsync(GameSession session, DBNewActivityInfo next, IEnumerable<long>? awardIds = null,
@@ -512,7 +513,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
                     Exp = grants.Where(g => g.Entry is 100 or 101).Select(g => new { g.Entry, g.Count }).ToArray()
                 });
             }
-            byte[] infoBytes = next.ToByteArray(), runtimeBytes = JsonSerializer.SerializeToUtf8Bytes(runtime ?? session.ActivityRuntime);
+            byte[] infoBytes = next.ToByteArray(), runtimeBytes = JsonSerializer.SerializeToUtf8Bytes(runtime ?? session.Activities.ActivityRuntime);
             var journeyEconomy = journeySource == null ? null : new CharacterService.OwnedAwardSource(
                 "cd13e/journey-victory", journeySource,
                 new { Source = journeySource, State = Convert.ToBase64String(infoBytes), Grants = grants });
@@ -532,8 +533,8 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
                         new { Source = source, Activity = Convert.ToBase64String(infoBytes), Runtime = Convert.ToBase64String(runtimeBytes) }));
             }, stateLockHeld: stateLockHeld, committed: () =>
             {
-                session.NewActivities = next;
-                if (runtime != null) session.ActivityRuntime = runtime;
+                session.Activities.NewActivities = next;
+                if (runtime != null) session.Activities.ActivityRuntime = runtime;
                 committed?.Invoke();
             }, ownedAward: journeyEconomy);
             if (!_deadlines.IsCurrent(session, lease) || session.Role?.Id != roleId)
@@ -567,25 +568,25 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         var tx = _roles.NewTransaction();
         if (changed) tx.RoleBlob(session.Role!.Id, "new_activities", info);
         if (initializeRuntime) tx.RoleBlob(session.Role!.Id, "activity_runtime",
-            JsonSerializer.SerializeToUtf8Bytes(session.ActivityRuntime));
-        await _roles.CommitAsync(tx, "activity/calendar", _ => session.NewActivities = next);
-        if (chapterChanged && session.ActivitiesReady) _tasks.OnStateChanged(session);
+            JsonSerializer.SerializeToUtf8Bytes(session.Activities.ActivityRuntime));
+        await _roles.CommitAsync(tx, "activity/calendar", _ => session.Activities.NewActivities = next);
+        if (chapterChanged && session.Activities.ActivitiesReady) _tasks.OnStateChanged(session);
     }
 
     private async Task RefreshCalendarAndSaveAsync(GameSession session)
     {
-        byte[] before = session.NewActivities!.ToByteArray();
-        var next = session.NewActivities!.Clone();
+        byte[] before = session.Activities.NewActivities!.ToByteArray();
+        var next = session.Activities.NewActivities!.Clone();
         RefreshCalendar(session, next);
         await SaveCalendarAsync(session, next, before);
     }
 
     internal async Task SyncAsync(GameSession session)
     {
-        if (session.NewActivities == null) return;
+        if (session.Activities.NewActivities == null) return;
         var lease = _deadlines.Capture(session);
         if (!_deadlines.IsCurrent(session, lease)) return;
-        var state = session.NewActivities.Clone();
+        var state = session.Activities.NewActivities.Clone();
         if (state.ActivityInfo.TryGetValue(118, out var info)) info.ActivityParam.PronteraDefense = _defense.BuildPlayerState(session);
         foreach (var id in state.ActivityInfo.Keys.ToArray())
             if (_data.Row("NewActivityConfig", id) is not { } row || !Applies(session, row)) state.ActivityInfo.Remove(id);
@@ -607,7 +608,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         if (!_deadlines.IsCurrent(session, lease)) return;
         await SyncTreasureAsync(session, lease);
         if (!_deadlines.IsCurrent(session, lease)) return;
-        if (session.ActivitiesReady)
+        if (session.Activities.ActivitiesReady)
         {
             await SyncConchesAsync(session);
             if (exploration != null) await _life.SyncRestrictionsAsync(session);
@@ -621,14 +622,14 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
     private async Task ReconcileAsync(GameSession session, DeadlineLease? scheduled)
     {
         if (!_loop.IsOnLoop) { await _loop.InvokeAsync(() => ReconcileAsync(session, scheduled)); return; }
-        if (!session.ActivitiesReady || session.Role == null || session.NewActivities == null) return;
+        if (!session.Activities.ActivitiesReady || session.Role == null || session.Activities.NewActivities == null) return;
         var lease = scheduled ?? _deadlines.Capture(session);
         var ownerScope = _loop.Owners != null
             ? await EnterLocalWithGateAsync(session, "activity reconciliation") : null;
         if (ownerScope == null) await session.ActivityGate.WaitAsync();
         try
         {
-            if (!session.ActivitiesReady || session.Role == null || session.NewActivities == null
+            if (!session.Activities.ActivitiesReady || session.Role == null || session.Activities.NewActivities == null
                 || !_deadlines.IsCurrent(session, lease)) return;
             await SyncServerDayAsync(session);
             if (!_deadlines.IsCurrent(session, lease)) return;
@@ -654,8 +655,8 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
     {
         // LC_DAL_ServerInfo.PackServerBasicInfo uses floor((logic-open)/86400)+1.
         long day = (long)Math.Floor((Now - _activityClock.ServerOpen) / 86400d) + 1;
-        if (session.ActivityServerDay == day) return;
-        session.ActivityServerDay = day;
+        if (session.Activities.ActivityServerDay == day) return;
+        session.Activities.ActivityServerDay = day;
         await session.SendGameAsync(30130, new ServerBasicInfo
         { ServerOpenTime = (ulong)_activityClock.ServerOpen, ServerLogicTime = (ulong)Now });
         await _functions.SyncAsync(session);
@@ -663,7 +664,7 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
 
     internal void QueueRefresh(GameSession session)
     {
-        if (!session.ActivitiesReady) return;
+        if (!session.Activities.ActivitiesReady) return;
         if (!_loop.IsOnLoop)
         {
             var role = session.Role;

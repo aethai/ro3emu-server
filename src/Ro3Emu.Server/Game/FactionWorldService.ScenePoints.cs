@@ -57,7 +57,7 @@ public sealed partial class FactionWorldService
     }
 
     internal static IEnumerable<GameSession> LoadedMembers(Battle b) => b.Room.ActiveMembers.Select(m => m.Session)
-        .Where(s => ReferenceEquals(s.TerritoryBattle, b) && s.InstanceId == b.Room.Id && !s.SceneLoading);
+        .Where(s => ReferenceEquals(s.Instances.TerritoryBattle, b) && s.InstanceId == b.Room.Id && !s.SceneLoading);
 
     /// <summary>
     /// The full point set on every load of the battle scene: the client deletes TerritoryWarsScenePointInfo on each
@@ -159,7 +159,7 @@ public sealed partial class FactionWorldService
         using var stagedTerritoryState = StageState();
         try
         {
-            if (s.TerritoryBattle is not { } b || s.InstanceId != b.Room.Id) return "Not in a territory battle.";
+            if (s.Instances.TerritoryBattle is not { } b || s.InstanceId != b.Room.Id) return "Not in a territory battle.";
             if (!ScenePointsOf(b.State).TryGetValue(pointId, out var current))
                 return $"No gameplay point {pointId} here: {string.Join(" ", ScenePointsOf(b.State).Keys.Order())}";
             long owner = args.Length < 4 ? current.Owner : args[3].Equals("self", StringComparison.OrdinalIgnoreCase)

@@ -56,7 +56,7 @@ public sealed partial class ActivityPassService
     /// <summary>Today's three and the week's seven, as 5027 task rows: running with progress, or delivered when done.</summary>
     private IEnumerable<Romsg.TaskInfo> PassTasks(GameSession session)
     {
-        if (!session.PassChallengeRows || session.ActivityRuntime?.PassPlay is not { } play || session.Role == null
+        if (!session.Activities.PassChallengeRows || session.Activities.ActivityRuntime?.PassPlay is not { } play || session.Role == null
             || OpenPass(session) == null) return [];
         var (day, week) = PassPeriod(_clock.GetLocalNow());
         if (play.Day != day || play.Week != week)
@@ -85,9 +85,9 @@ public sealed partial class ActivityPassService
     public Task PassPanelAsync(GameSession session)
     {
         if (!_passPlay || session.Role == null || session.Tasks == null) return Task.CompletedTask;
-        if (!session.PassChallengeRows) _log.LogInformation("Pass challenge rows on for role {Role}", session.Role.Id);
-        session.PassChallengeRows = true;
-        return session.DeferTaskSync ? Task.CompletedTask : _tasks.SyncTasksAsync(session);
+        if (!session.Activities.PassChallengeRows) _log.LogInformation("Pass challenge rows on for role {Role}", session.Role.Id);
+        session.Activities.PassChallengeRows = true;
+        return session.Profile.DeferTaskSync ? Task.CompletedTask : _tasks.SyncTasksAsync(session);
     }
 
     private long[]? _chapterEnds;
@@ -111,7 +111,7 @@ public sealed partial class ActivityPassService
         _character.StateChanged.Subscribe(s =>
         {
             // Daily activity points are a currency: watch the balance after every award instead of the grants.
-            if (s.Progress is { } progress && s.ActivityRuntime?.PassPlay is { } play
+            if (s.Progress is { } progress && s.Activities.ActivityRuntime?.PassPlay is { } play
                 && progress.Currency.GetValueOrDefault(Liveness) != play.LivenessSeen)
                 PassEvent(s, []);
         });
@@ -169,7 +169,7 @@ public sealed partial class ActivityPassService
     internal void PassEvent(GameSession session, (PassGoal Goal, long Count)[] progress, long kills = 0, long dungeons = 0,
         long mvps = 0, long quest = 0)
     {
-        if (!_passPlay || session.Role == null || !session.ActivitiesReady) return;
+        if (!_passPlay || session.Role == null || !session.Activities.ActivitiesReady) return;
         // Detached: the event often fires inside another owned operation; the activity gate then admits the role and its
         // lifecycle itself once that operation is done.
         var role = session.Role;
@@ -184,15 +184,15 @@ public sealed partial class ActivityPassService
     private async Task PassEventAsync(GameSession session, (PassGoal Goal, long Count)[] progress, long kills, long dungeons,
         long mvps, long quest)
     {
-        if (!session.ActivitiesReady || session.Role == null || session.NewActivities == null || session.ActivityRuntime == null) return;
+        if (!session.Activities.ActivitiesReady || session.Role == null || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null) return;
         // Like ReconcileAsync: the owner scope takes the activity gate with it, and the caller releases the gate.
         var scope = _loop.Owners != null ? await EnterLocalWithGateAsync(session, "activity/pass-progress") : null;
         if (scope == null) await session.ActivityGate.WaitAsync();
         try
         {
-            if (!session.ActivitiesReady || session.Role == null || session.NewActivities == null || session.ActivityRuntime == null) return;
+            if (!session.Activities.ActivitiesReady || session.Role == null || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null) return;
             await PassProgressCoreAsync(session, progress, kills, dungeons, mvps, quest);
-            if (!session.DeferTaskSync) await _tasks.SyncTasksAsync(session); // the challenges in the season task panel
+            if (!session.Profile.DeferTaskSync) await _tasks.SyncTasksAsync(session); // the challenges in the season task panel
         }
         finally { session.ActivityGate.Release(); scope?.Dispose(); }
     }
@@ -268,7 +268,7 @@ public sealed partial class ActivityPassService
         {
             double multiplier = 1;
             if (_teams.MembersOf(role).Count > 1) multiplier += 0.2;
-            var info = session.NewActivities!.ActivityInfo[passId];
+            var info = session.Activities.NewActivities!.ActivityInfo[passId];
             double days = Math.Max(1, (Now - info.CycleStartTime) / 86400.0);
             if (play.Instance != info.ActivityInstance) { play.Instance = info.ActivityInstance; play.Earned = 0; play.Overflow = 0; }
             if (play.Earned < days * PacePerDay * 0.75) multiplier *= 2; // catching up
@@ -296,18 +296,18 @@ public sealed partial class ActivityPassService
             // Progress alone is kept on the session and saved with the next commit; every tenth change is saved now,
             // as a plain role blob like the activity calendar: it moves no asset, so it has no economy receipt.
             if (!dirty) return;
-            if (++play.Unsaved < 10) { session.ActivityRuntime = runtime; return; }
+            if (++play.Unsaved < 10) { session.Activities.ActivityRuntime = runtime; return; }
             play.Unsaved = 0;
             play.Sequence++;
             var save = _roles.NewTransaction();
             save.RoleBlob(role, "activity_runtime", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(runtime));
-            await _roles.CommitAsync(save, "activity/pass-progress", _ => session.ActivityRuntime = runtime);
+            await _roles.CommitAsync(save, "activity/pass-progress", _ => session.Activities.ActivityRuntime = runtime);
             foreach (var notice in notices) await GmCommands.ReplyAsync(session, notice);
             return;
         }
         play.Unsaved = 0;
         play.Sequence++;
-        int result = await _activities.CommitAsync(session, session.NewActivities!.Clone(), extra: grants, runtime: runtime,
+        int result = await _activities.CommitAsync(session, session.Activities.NewActivities!.Clone(), extra: grants, runtime: runtime,
             source: string.Create(CultureInfo.InvariantCulture, $"pass/play/{role}/{play.Day}/{play.Sequence}"));
         if (result != 0) { _log.LogWarning("Pass progress for role {Role} not saved: {Result}", role, result); return; }
         if (grants.Count > 0) await ReconcilePassAsync(session);
@@ -327,12 +327,12 @@ public sealed partial class ActivityPassService
     /// <summary>"/pass" lists today's challenges, "/pass week" the weekly ones, on the marquee.</summary>
     private async Task PassCommandAsync(GameSession session, string args)
     {
-        if (session.ActivityRuntime == null || session.NewActivities == null || session.Role == null)
+        if (session.Activities.ActivityRuntime == null || session.Activities.NewActivities == null || session.Role == null)
         {
             await GmCommands.ReplyAsync(session, "The pass is not ready yet.");
             return;
         }
-        var play = session.ActivityRuntime.PassPlay ?? new PassPlayState();
+        var play = session.Activities.ActivityRuntime.PassPlay ?? new PassPlayState();
         var (day, week) = PassPeriod(_clock.GetLocalNow());
         if (play.Day != day || play.Week != week)
         {
@@ -340,7 +340,7 @@ public sealed partial class ActivityPassService
             Roll(play, session.Role.Id, day, week);
         }
         string head = OpenPass(session) is long passId
-            && session.NewActivities.ActivityInfo[passId].ActivityParam.BattlePass is { } pass
+            && session.Activities.NewActivities.ActivityInfo[passId].ActivityParam.BattlePass is { } pass
             ? $"Pass Lv {pass.Level}, {pass.Exp}/2000 EXP"
             : "No pass is open right now";
         string Line(PassChallenge c, Dictionary<string, long> done, List<string> finished) =>

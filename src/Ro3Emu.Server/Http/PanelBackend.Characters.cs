@@ -69,7 +69,7 @@ public sealed partial class PanelBackend
         progress.Stats.CopyTo(copy.Stats, 0);
         foreach (var (key, value) in progress.Currency) copy.Currency[key] = value;
         foreach (var (key, value) in progress.Skills) copy.Skills[key] = value;
-        var levels = new EquipLevels { Strength = new(session.EquipLevels.Strength), Refine = new(session.EquipLevels.Refine), Luck = new(session.EquipLevels.Luck) };
+        var levels = new EquipLevels { Strength = new(session.Profile.EquipLevels.Strength), Refine = new(session.Profile.EquipLevels.Refine), Luck = new(session.Profile.EquipLevels.Luck) };
         var at = session.Position;
         return new CharacterState(role, copy, [.. session.Items.Select(i => i.Clone())], levels, session.SceneEntry, at.X, at.Y, at.Z, Live: true);
     }

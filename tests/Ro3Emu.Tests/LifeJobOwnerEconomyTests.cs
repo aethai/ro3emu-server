@@ -122,7 +122,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
             await alice.SendGameAsync(LifeJobService.SwitchLife,
                 new SwitchLifeJobReq { NewLifejobId = (LifeJobType)1, OpJobType = 1 });
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Empty(session.LifeJob!.ActiveLifejob);
+            Assert.Empty(session.Season.LifeJob!.ActiveLifejob);
             Assert.Equal(1, session.Items.Where(i => i.Entry == 1291000).Sum(i => i.Stack));
             Assert.Equal(0, ReceiptCount("cd13c/life-switch"));
             sameRole = Gm("alice", "!item 1291000 1");
@@ -131,7 +131,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
             await bob.SendGameAsync(LifeJobService.SwitchLife,
                 new SwitchLifeJobReq { NewLifejobId = (LifeJobType)1, OpJobType = 1 });
             Assert.Equal(0, (await Next(bob, LifeJobService.SwitchLife, SwitchLifeJobResp.Parser)).Result);
-            Assert.Equal(1, Session("bob").LifeJob!.ActiveLifejob[1]);
+            Assert.Equal(1, Session("bob").Season.LifeJob!.ActiveLifejob[1]);
         }
         finally
         {
@@ -145,7 +145,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
         }
         Assert.Equal(0, (await Next(alice, LifeJobService.SwitchLife, SwitchLifeJobResp.Parser)).Result);
         await sameRole!.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Equal(1, session.LifeJob!.ActiveLifejob[1]);
+        Assert.Equal(1, session.Season.LifeJob!.ActiveLifejob[1]);
         Assert.Equal(1, session.Items.Where(i => i.Entry == 1291000).Sum(i => i.Stack));
         var receipt = Receipt("cd13c/life-switch");
         Assert.StartsWith($"cd13c/life-switch/{role}/", receipt.Source);
@@ -174,7 +174,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
                     () => Service<LifeJobService>().SwitchAsync(session,
                         new SwitchLifeJobReq { NewLifejobId = (LifeJobType)1, OpJobType = 1 }))));
             Assert.Contains("life economy rollback", failure.Message);
-            Assert.Empty(session.LifeJob!.ActiveLifejob);
+            Assert.Empty(session.Season.LifeJob!.ActiveLifejob);
             Assert.Equal(1, session.Items.Where(i => i.Entry == 1291000).Sum(i => i.Stack));
             Assert.Empty(DBLifeJobInfo.Parser.ParseFrom(Service<RoleStore>().LoadLifeJob(role)!).ActiveLifejob);
             Assert.Equal(0, ReceiptCount("cd13c/life-switch"));
@@ -197,14 +197,14 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
         long guid = session.Items.Single(i => i.Entry == 1291002).Guid;
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
-        Assert.Equal(1500, session.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
-        Assert.Equal(5, session.Restrictions.RestrictCount[LifeJobService.VigorUsesId].Count);
+        Assert.Equal(1500, session.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
+        Assert.Equal(5, session.Season.Restrictions.RestrictCount[LifeJobService.VigorUsesId].Count);
         Assert.DoesNotContain(session.Items, i => i.Guid == guid);
         var receipt = Receipt("cd13c/life-vigor-item");
         Assert.StartsWith($"cd13c/life-vigor-item/{role}/", receipt.Source);
         Assert.Contains(Legs(receipt.Operation), leg => leg.Asset == 1291002 && leg.Delta == -1);
         var saved = DBRestrictInfo.Parser.ParseFrom(Service<RoleStore>().LoadLifeRestrict(role)!);
-        Assert.Equal(session.Restrictions.ToByteArray(), saved.ToByteArray());
+        Assert.Equal(session.Season.Restrictions.ToByteArray(), saved.ToByteArray());
         Assert.Equal(1, ReceiptCount("cd13c/life-vigor-item"));
     }
 
@@ -221,7 +221,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, LifeJobService.StudyRecipe, StudyRecipeResp.Parser)).Result);
         foreach (int ingredient in new[] { 1293022, 1293050, 1294010 }) await Gm("alice", $"!item {ingredient} 8");
         var session = Session("alice");
-        long beforeVigor = session.Restrictions!.RestrictCount[LifeJobService.VigorId].Count;
+        long beforeVigor = session.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count;
         await alice.SendGameAsync(LifeJobService.ForgeTime, new GetForgeCostTimeReq { ForgeID = 20001 });
         var quote = await Next(alice, LifeJobService.ForgeTime, GetForgeCostTimeResp.Parser);
         Assert.Equal(0, quote.Result);
@@ -229,7 +229,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
         await alice.SendGameAsync(LifeJobService.StartForge, new StartForgeReq { ItemUniqueId = 20001, ItemNum = 1 });
         var forged = await Next(alice, LifeJobService.StartForge, StartForgeResp.Parser);
         Assert.Equal(0, forged.Result);
-        Assert.Equal(beforeVigor - 20, session.Restrictions.RestrictCount[LifeJobService.VigorId].Count);
+        Assert.Equal(beforeVigor - 20, session.Season.Restrictions.RestrictCount[LifeJobService.VigorId].Count);
         var receipt = Receipt("cd13c/life-forge");
         Assert.Equal(receipt.Legs, Legs(receipt.Operation).Length);
         Assert.Contains(Legs(receipt.Operation), leg => leg.Asset == 1293022 && leg.Delta < 0);
@@ -252,7 +252,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
             new SwitchLifeJobReq { NewLifejobId = (LifeJobType)1, OpJobType = 1 });
         Assert.Equal(0, (await Next(alice, LifeJobService.SwitchLife, SwitchLifeJobResp.Parser)).Result);
         var session = Session("alice");
-        Assert.Equal(1, session.LifeJob!.ActiveLifejob[1]);
+        Assert.Equal(1, session.Season.LifeJob!.ActiveLifejob[1]);
         Assert.Equal(0, session.Items.Where(i => i.Entry == 1291000).Sum(i => i.Stack));
         Assert.Equal(1, ReceiptCount("cd13c/life-switch"));
         await alice.SendGameAsync(LifeJobService.SwitchLife,
@@ -304,7 +304,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
             await alice.SendGameAsync(LifeJobService.StartForge,
                 new StartForgeReq { ItemUniqueId = 20001, ItemNum = 1 });
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(500, session.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
+            Assert.Equal(500, session.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
             Assert.Equal(8, session.Items.Where(i => i.Entry == 1293022).Sum(i => i.Stack));
             Assert.Equal(0, ReceiptCount("cd13c/life-forge"));
             _clock.Set(beforeCutoff.AddMinutes(2));
@@ -313,7 +313,7 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
             potionReply = Next(alice, CharacterService.ItemUse, ItemUseResp.Parser);
             await deferred.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.False(potionReply.IsCompleted);
-            Assert.Equal(500, session.Restrictions.RestrictCount[LifeJobService.VigorId].Count);
+            Assert.Equal(500, session.Season.Restrictions.RestrictCount[LifeJobService.VigorId].Count);
             Assert.Equal(0, ReceiptCount("cd13c/life-vigor-item"));
         }
         finally
@@ -329,14 +329,14 @@ public sealed class LifeJobOwnerEconomyTests : IAsyncLifetime
         var forged = await Next(alice, LifeJobService.StartForge, StartForgeResp.Parser);
         Assert.Equal(0, forged.Result);
         Assert.Equal(0, (await potionReply!.WaitAsync(TimeSpan.FromSeconds(10))).Result);
-        Assert.Equal(1480, session.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
-        Assert.Equal(5, session.Restrictions.RestrictCount[LifeJobService.VigorUsesId].Count);
-        Assert.Equal(0, session.LifeRuntime.EnergySpent);
+        Assert.Equal(1480, session.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count);
+        Assert.Equal(5, session.Season.Restrictions.RestrictCount[LifeJobService.VigorUsesId].Count);
+        Assert.Equal(0, session.Season.LifeRuntime.EnergySpent);
         Assert.Equal(DateOnly.FromDateTime(beforeCutoff.AddMinutes(2).LocalDateTime.AddHours(-5)).DayNumber,
-            session.LifeRuntime.EnergyDay);
+            session.Season.LifeRuntime.EnergyDay);
         Assert.Contains(forged.OutputItemMap.Values.SelectMany(row => row.Items), item =>
             session.Items.Any(owned => owned.Entry == item.ItemEntry && owned.Guid == item.ItemGuid));
-        Assert.Equal(session.Restrictions.ToByteArray(), Service<RoleStore>().LoadLifeRestrict(role));
+        Assert.Equal(session.Season.Restrictions.ToByteArray(), Service<RoleStore>().LoadLifeRestrict(role));
         Assert.Equal(1, ReceiptCount("cd13c/life-forge"));
         Assert.Equal(1, ReceiptCount("cd13c/life-vigor-item"));
         Assert.NotEqual(Receipt("cd13c/life-forge").Source, Receipt("cd13c/life-vigor-item").Source);

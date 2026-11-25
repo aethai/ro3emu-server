@@ -165,12 +165,12 @@ public sealed partial class TerritoryEscortService
 
     /// <summary>The escort actors' keys, for a scene load that refreshes them (C/D 15).</summary>
     private Ownership.ReservationKey[] SceneKeys(GameSession session) =>
-        session.Role != null && session.TerritoryEscort != null && EscortLine(session) ? MutationKeys(null, false) : [];
+        session.Role != null && session.Instances.TerritoryEscort != null && EscortLine(session) ? MutationKeys(null, false) : [];
 
     private async Task SceneLoadedAsync(GameSession session)
     {
         _leavingEscort.TryRemove(session, out _);
-        if (session.Role == null || session.TerritoryEscort == null || !EscortLine(session)) return;
+        if (session.Role == null || session.Instances.TerritoryEscort == null || !EscortLine(session)) return;
         await RefreshCartActorsAsync();
         await RefreshCargoActorsAsync();
         await SendCartsAsync(session);
@@ -295,7 +295,7 @@ public sealed partial class TerritoryEscortService
         foreach (var (cart, scene) in finalized)
         {
             await BroadcastCartDestroyedAsync(cart, scene);
-            await RoleFanout.EachAsync(_sessions.All().Where(s => s.SceneEntry == scene && EscortLine(s) && s.TerritoryEscort != null), SendScoreAsync);
+            await RoleFanout.EachAsync(_sessions.All().Where(s => s.SceneEntry == scene && EscortLine(s) && s.Instances.TerritoryEscort != null), SendScoreAsync);
         }
         if (finalized.Count > 0) await RefreshCargoActorsAsync();
     }
@@ -442,9 +442,9 @@ public sealed partial class TerritoryEscortService
                 if (score > 0)
                 {
                     AddGuildScore(guild.Id, score);
-                    if (attacker.TerritoryEscort != null)
+                    if (attacker.Instances.TerritoryEscort != null)
                     {
-                        scoredRole = CopyRole(attacker.TerritoryEscort);
+                        scoredRole = CopyRole(attacker.Instances.TerritoryEscort);
                         scoredRole.ScoreByRound[Round] = checked(scoredRole.ScoreByRound.GetValueOrDefault(Round) + score);
                         SaveRole(attackerRole, scoredRole, transaction);
                     }
@@ -454,7 +454,7 @@ public sealed partial class TerritoryEscortService
                 durable = true;
                 if (scoredRole != null && attacker.Role?.Id == attackerRole
                     && ReferenceEquals(attacker.Attachment, attackerAttachment))
-                    attacker.TerritoryEscort = scoredRole;
+                    attacker.Instances.TerritoryEscort = scoredRole;
                 if (hp == 0) _pendingDestroyed[monster.Uid] = cart;
             }
             catch
@@ -470,7 +470,7 @@ public sealed partial class TerritoryEscortService
                             && savedHit.CurrentHp == hitHp && hitHp < priorHp;
                     if (persistedHit && attacker.Role?.Id == attackerRole
                         && ReferenceEquals(attacker.Attachment, attackerAttachment))
-                        attacker.TerritoryEscort = _roles.LoadTerritoryEscort(attacker.Role.Id) is { } prior
+                        attacker.Instances.TerritoryEscort = _roles.LoadTerritoryEscort(attacker.Role.Id) is { } prior
                             ? System.Text.Json.JsonSerializer.Deserialize<RoleState>(prior) : new RoleState();
                     if (persistedHit && hitHp == 0) _pendingDestroyed[monster.Uid] = cart;
                     // A nonlethal failed hit must not leave actor HP below the durable reservation.
@@ -523,9 +523,9 @@ public sealed partial class TerritoryEscortService
             {
                 if (!ReferenceEquals(scorer.Role, selected[scorer].Role)
                     || !ReferenceEquals(scorer.Attachment, selected[scorer].Attachment)) continue;
-                if (scorer.TerritoryEscort == null || Own(scorer) is not { } guild || Own(victim)?.Id == guild.Id) continue;
+                if (scorer.Instances.TerritoryEscort == null || Own(scorer) is not { } guild || Own(victim)?.Id == guild.Id) continue;
                 long score = scorer == killer ? 1000 : 500; // EscortScoreParamKill / EscortScoreParamAssist.
-                var stagedRole = CopyRole(scorer.TerritoryEscort);
+                var stagedRole = CopyRole(scorer.Instances.TerritoryEscort);
                 stagedRole.ScoreByRound[Round] = checked(stagedRole.ScoreByRound.GetValueOrDefault(Round) + score);
                 AddGuildScore(guild.Id, score);
                 SaveRole(scorer.Role!.Id, stagedRole, transaction);
@@ -535,9 +535,9 @@ public sealed partial class TerritoryEscortService
             foreach (var staged in stagedScores)
                 if (staged.Session.Role?.Id == staged.RoleId
                     && ReferenceEquals(staged.Session.Attachment, staged.Attachment))
-                    staged.Session.TerritoryEscort = staged.State;
+                    staged.Session.Instances.TerritoryEscort = staged.State;
         }
         finally { stagedEscortLedger.Dispose(); _gate.Release(); reservation?.Dispose(); }
-        await RoleFanout.EachAsync(scorers.Where(s => s.TerritoryEscort != null), SendScoreAsync);
+        await RoleFanout.EachAsync(scorers.Where(s => s.Instances.TerritoryEscort != null), SendScoreAsync);
     }
 }

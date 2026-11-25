@@ -334,7 +334,7 @@ public sealed class AntiCheatTests
         update.Records[88_888_888] = 1;
         await bot.SendGameAsync(GuideService.UpdateGuide, update);
         await bot.HeartbeatAsync();
-        var guides = await OnLoop(host, () => Session(host, bot).Guides!.Clone());
+        var guides = await OnLoop(host, () => Session(host, bot).Activities.Guides!.Clone());
         Assert.Equal([7001L], guides.FinishedGuideIds);
         Assert.Equal([7001L], guides.GuideFinishRecord.Keys);
     }

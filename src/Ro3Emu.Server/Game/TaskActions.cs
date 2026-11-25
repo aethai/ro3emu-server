@@ -67,7 +67,7 @@ public sealed partial class TaskService
                     && _data.Row("TaskConfig", originTask) != null
                     && int.TryParse(action[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int recycle)
                     && _mounts.IsConfigured(recycle):
-                    if ((questMount ?? session.MountState.QuestMount) == recycle) questMount = 0;
+                    if ((questMount ?? session.Profile.MountState.QuestMount) == recycle) questMount = 0;
                     break;
                 case 621 when action.Length == 1: cutScene = true; break;
                 case MarkGuildActivityJoin when action.Length == 2
@@ -139,7 +139,7 @@ public sealed partial class TaskService
     {
         using var gate = await LockTasksAsync(session);
         if (BeforeProgress is { } before) await before(session);
-        session.InCutScene = false;
+        session.Activities.InCutScene = false;
         Save(session);
     }
 
@@ -150,7 +150,7 @@ public sealed partial class TaskService
         if (BeforeProgress is { } before) await before(session);
         if (session.Tasks == null || !Active(session, req.TaskId) || !Defs().TryGetValue(req.TaskId, out var def)) return;
         foreach (var action in def.Track)
-            if (ServerOpcode(action) == 621 && action.Length == 1) session.InCutScene = true;
+            if (ServerOpcode(action) == 621 && action.Length == 1) session.Activities.InCutScene = true;
         Save(session);
     }
 

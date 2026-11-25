@@ -79,7 +79,7 @@ public sealed partial class InstanceService
         && ReferenceEquals(session.Attachment, state.Lease) && state.Lease?.Cancelled != true
         && session.SceneGeneration == state.Generation && session.Handoff?.Generation == state.Generation
         && session.InstanceId == 0 && session.SceneEntry == state.OutsideScene && !session.SceneLoading
-        && session.TowerAttempt == null && session.DungeonAttempt == null;
+        && session.Instances.TowerAttempt == null && session.DungeonAttempt == null;
 
     /// <summary>(inferred) Only an opted-in private-room return restores a dead member before ENTITYSELF.
     /// Wait for death publication and competing item revival; a living member retains current HP/SP.</summary>

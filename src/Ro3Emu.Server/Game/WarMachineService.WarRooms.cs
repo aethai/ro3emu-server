@@ -38,12 +38,12 @@ public sealed partial class WarMachineService
     {
         try
         {
-            if (s.SiegeBattle is { } siege && !siege.Room.Closed && SiegeActive(siege) && SiegeMember(s, siege))
+            if (s.Instances.SiegeBattle is { } siege && !siege.Room.Closed && SiegeActive(siege) && SiegeMember(s, siege))
             {
                 long guild = siege.State.Players[s.Role!.Id].Guild;
                 return new WarRoom(siege.Room, WarKind.Siege, guild == siege.State.Attack ? 1 : 2, guild);
             }
-            if (s.TerritoryBattle is { } battle && !battle.Room.Closed && Active(battle) && Member(s, battle) && MachineBattle(battle))
+            if (s.Instances.TerritoryBattle is { } battle && !battle.Room.Closed && Active(battle) && Member(s, battle) && MachineBattle(battle))
                 return new WarRoom(battle.Room, WarKind.Territory, 3, battle.State.Players[s.Role!.Id].Guild);
         }
         catch (InvalidOperationException) { }

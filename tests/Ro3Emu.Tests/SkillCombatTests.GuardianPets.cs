@@ -92,7 +92,7 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2353301, IsAutoCast = true });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         Assert.Equal(s.Role!.Id, (await Next(alice, CombatService.ExtraUseInSkill, UseInSkillInfo.Parser, p => p.PetConfigId == 10001)).SrcID);
-        Assert.Null(s.PetActor);
+        Assert.Null(s.Profile.PetActor);
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(31037)
             && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Any(b => b.EntityType == 7));
     }

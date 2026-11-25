@@ -344,24 +344,24 @@ public sealed partial class AchievementService : IGameTicker
         switch (t[0])
         {
             case CEquipQuality: // [n, quality, grids...]: listed grids holding an item, or wearing a look, of quality >= p2
-                if (s.Wardrobe == null && t[3..].Any(AppearanceGrids.ContainsKey)) return null;
+                if (s.Profile.Wardrobe == null && t[3..].Any(AppearanceGrids.ContainsKey)) return null;
                 return t[3..].Count(grid => AppearanceGrids.TryGetValue(grid, out int slot)
                     ? WornQuality(s, slot) >= t[2]
                     : s.Items.Any(i => i.Grid == grid && Quality(i.Entry) >= t[2]));
             case CRefineLevel: // highest refine level on any grid
-                return s.EquipLevels.Refine.Values.DefaultIfEmpty(0).Max();
+                return s.Profile.EquipLevels.Refine.Values.DefaultIfEmpty(0).Max();
             case CCardQuality: // [1, type, subtype, quality]: a card of quality >= p4 seen (collection or bag)
-                return (s.Library?.Cards.Keys.ToList() ?? []).Concat(s.Items.Select(i => i.Entry))
+                return (s.Profile.Library?.Cards.Keys.ToList() ?? []).Concat(s.Items.Select(i => i.Entry))
                     .Any(entry => CardOf(entry, t[2], t[3]) && Quality(entry) >= t[4]) ? r : 0;
             case CCardInserted: // [quality, n]: socketed cards of quality >= p1
                 return s.Items.Count(i => i.Grid < 0 && IsCard(i.Entry) && Quality(i.Entry) >= t[1]);
             case CCardStars: // [1, stars]: one card raised to >= p2 stars
                 return s.Items.Any(i => IsCard(i.Entry) && (i.Attrs?.GetValueOrDefault((int)StarAttr) ?? 0) >= t[2]) ? r : 0;
             case CTalentLevel: // total level of the active talent plan, battle oath excluded
-                if (s.SeasonTalent is not { } talent || !talent.Plan.TryGetValue(talent.CurPlanId, out var plan)) return null;
+                if (s.Season.SeasonTalent is not { } talent || !talent.Plan.TryGetValue(talent.CurPlanId, out var plan)) return null;
                 return plan.TalentNodes.Where(kv => kv.Key != TalentOathNode).Sum(kv => Math.Max(0, kv.Value.CurrentLevel));
             case CEmblemQuality: // [quality, n]: Soul Echoes of quality >= p1 in the active plan
-                if (!s.Emblems.Plans.TryGetValue(s.Emblems.CurrentPlan, out var emblems)) return 0;
+                if (!s.Profile.Emblems.Plans.TryGetValue(s.Profile.Emblems.CurrentPlan, out var emblems)) return 0;
                 return emblems.Slots.Values.Count(guid => s.Items.FirstOrDefault(i => i.Guid == guid) is { } item && Quality(item.Entry) >= t[1]);
             case CResonance: // [stage, n]: Echo Resonances at stage >= p1 (EmblemService.Resonances)
                 return EmblemService.Resonances(s, _data).Values.Count(stage => stage >= t[1]);
@@ -372,28 +372,28 @@ public sealed partial class AchievementService : IGameTicker
             case CHatch: // eggs hatched in total (inferred: hatch count, not lottery draws)
                 return s.Pets?.IncubationCount;
             case CTowerFloor:
-                return s.Tower == null ? null : _tower.HighestClearedFloor(s);
+                return s.Instances.Tower == null ? null : _tower.HighestClearedFloor(s);
             case CTeamBoss: // [1, multi, npc]: that boss's record passed
-                return s.Dungeons == null ? null
-                    : row.RecordKeys[index] is { } key && s.Dungeons.Records.TryGetValue(key, out var record) && record.Passed ? r : 0;
+                return s.Instances.Dungeons == null ? null
+                    : row.RecordKeys[index] is { } key && s.Instances.Dungeons.Records.TryGetValue(key, out var record) && record.Passed ? r : 0;
             case CGodBoss: // [npc, 1]: the boss passed in the normal or hard Realm of the Gods
-                return s.Dungeons == null ? null
-                    : row.GodKeys[index].Any(k => s.Dungeons.Records.TryGetValue(k, out var god) && god.Passed) ? r : 0;
+                return s.Instances.Dungeons == null ? null
+                    : row.GodKeys[index].Any(k => s.Instances.Dungeons.Records.TryGetValue(k, out var god) && god.Passed) ? r : 0;
             case CGuild:
                 return s.Guild == null ? null : s.Guild.GuildId != 0 ? r : 0;
             case CGuildPosition: // [op, value]: LC_InteractCondition.CheckGuildPosition, ePosition op p2 (5 = "<")
                 return s.Guild == null ? null : s.Guild.GuildId != 0 && Compare(t[1], s.Guild.Official, t[2]) ? r : 0;
             case CAppearance: // [appearanceId]: costume or mount unlocked; R is the id itself
-                return s.Wardrobe == null && s.Mounts == null ? null : OwnedAppearances(s).Contains(t[1]) ? r : 0;
+                return s.Profile.Wardrobe == null && s.Mounts == null ? null : OwnedAppearances(s).Contains(t[1]) ? r : 0;
             case CAppearanceCount: // [n, k, types...]: owned appearances of the listed WardRobeConfig._iType
-                if (s.Wardrobe == null && s.Mounts == null) return null;
+                if (s.Profile.Wardrobe == null && s.Mounts == null) return null;
                 var types = t.Skip(3).Take((int)Math.Max(0, t[2])).ToHashSet();
                 return OwnedAppearances(s).Count(id => types.Contains(_wardrobeType.GetOrAdd(id,
                     key => _data.Row("WardRobeConfig", key) is { } w ? GameData.Int(w, "_iType") : -1)));
             case CTavernStar: // [n]: Star Power received from Tavern gifts (TavernService, 5043 popularity)
-                return s.Tavern?.Popularity;
+                return s.Social.Tavern?.Popularity;
             case CFashionLevel: // [level]: the Wardrobe's Fashion Rating level
-                return s.Wardrobe == null ? null : FashionLevel(WardrobeService.FashionScore(_data, s.Wardrobe));
+                return s.Profile.Wardrobe == null ? null : FashionLevel(WardrobeService.FashionScore(_data, s.Profile.Wardrobe));
             case CJobRank: // [rank]: JobConfig._iJobRank >= p1
                 return s.Progress == null ? null
                     : _data.Row("JobConfig", s.Progress.Career) is { } job && GameData.Int(job, "_iJobRank") >= t[1] ? r : 0;
@@ -427,7 +427,7 @@ public sealed partial class AchievementService : IGameTicker
     /// <summary>WardRobeConfig._iQuality of the look worn in a wardrobe slot, -1 for none or an expired one. That the
     /// quality of 303004 reads this column for an appearance grid is (inferred): it is the item quality's counterpart.</summary>
     private long WornQuality(GameSession s, int slot) =>
-        s.Wardrobe!.CurUseAppearances.TryGetValue(slot, out int id) && OwnedAppearances(s).Contains(id)
+        s.Profile.Wardrobe!.CurUseAppearances.TryGetValue(slot, out int id) && OwnedAppearances(s).Contains(id)
             ? WardRobeConfig.Get(_data, id)?.Quality ?? -1 : -1;
 
     /// <summary>Lit-up costumes and owned mounts that have not expired (mount ids are WardRobeConfig ids).</summary>
@@ -435,8 +435,8 @@ public sealed partial class AchievementService : IGameTicker
     {
         long now = NowMs;
         var owned = new HashSet<long>();
-        if (s.Wardrobe != null)
-            foreach (var (id, info) in s.Wardrobe.AllLightUpAppearances)
+        if (s.Profile.Wardrobe != null)
+            foreach (var (id, info) in s.Profile.Wardrobe.AllLightUpAppearances)
                 if (info.OverdueTimeMs == 0 || info.OverdueTimeMs > now) owned.Add(id);
         if (s.Mounts != null)
             foreach (var (id, mount) in s.Mounts.Mounts)
@@ -469,7 +469,7 @@ public sealed partial class AchievementService : IGameTicker
     /// <summary>Whether a snapshot re-read would change anything (the tick's cheap read-only probe).</summary>
     private bool SnapshotImproves(GameSession s)
     {
-        var state = s.Achievements!;
+        var state = s.Activities.Achievements!;
         foreach (var row in Rows().Rows.Values)
         {
             if (row.Blocked || Reached(state.Infos.GetValueOrDefault(row.Id))) continue;
@@ -554,7 +554,7 @@ public sealed partial class AchievementService : IGameTicker
 
     /// <summary>101011 cumulative login days as counted here: every login-day row counts in parallel (up to 365), so the
     /// highest slot is the role's count.</summary>
-    internal long LoginDays(GameSession s) => s.Achievements is { } state
+    internal long LoginDays(GameSession s) => s.Activities.Achievements is { } state
         ? Rows().Rows.Values.SelectMany(row => row.Targets.Select((t, i) => t[0] == CLoginDays
             ? Slot(state.Infos.GetValueOrDefault(row.Id), i) : 0)).DefaultIfEmpty(0).Max()
         : 0;
@@ -606,16 +606,16 @@ public sealed partial class AchievementService : IGameTicker
     private async Task CommitProgressAsync(GameSession s, DBRoleAchievementInfo next)
     {
         RefreshLevels(next);
-        if (next.Equals(s.Achievements)) return;
+        if (next.Equals(s.Activities.Achievements)) return;
         _roles.SaveAchievements(s.Role!.Id, next.ToByteArray());
-        s.Achievements = next;
+        s.Activities.Achievements = next;
         await CharacterService.SyncAsync(s, Sync, next.Clone());
     }
 
     private void SaveRuntime(GameSession s) =>
-        _roles.SaveAchievementRuntime(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.AchievementRuntime));
+        _roles.SaveAchievementRuntime(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Activities.AchievementRuntime));
 
-    private bool Ready(GameSession s) => s.Role != null && s.Achievements != null && s.AchievementRuntime != null;
+    private bool Ready(GameSession s) => s.Role != null && s.Activities.Achievements != null && s.Activities.AchievementRuntime != null;
 
     // ---------------------------------------------------------------- login
 
@@ -639,8 +639,8 @@ public sealed partial class AchievementService : IGameTicker
         await EvaluateFriendsAsync(s, state, now);
         RefreshLevels(state);
         if (saved == null || !state.Equals(original)) _roles.SaveAchievements(role, state.ToByteArray());
-        s.Achievements = state;
-        s.AchievementRuntime = runtime;
+        s.Activities.Achievements = state;
+        s.Activities.AchievementRuntime = runtime;
         if (runtimeChanged) SaveRuntime(s);
         await CharacterService.SyncAsync(s, Sync, state.Clone());
     }
@@ -663,7 +663,7 @@ public sealed partial class AchievementService : IGameTicker
             if (!Ready(s)) return;
             using var gate = await LockAsync(s);
             if (!Ready(s)) return;
-            var next = s.Achievements!.Clone();
+            var next = s.Activities.Achievements!.Clone();
             if (EvaluateSnapshots(s, next, NowMs)) await CommitProgressAsync(s, next);
         }, "achievement recheck", discarded: () => _recheckQueued.Remove(s));
     }
@@ -678,7 +678,7 @@ public sealed partial class AchievementService : IGameTicker
             if (!Ready(s)) return;
             using var gate = await LockAsync(s);
             if (!Ready(s)) return;
-            var next = s.Achievements!.Clone();
+            var next = s.Activities.Achievements!.Clone();
             if (await EvaluateFriendsAsync(s, next, NowMs)) await CommitProgressAsync(s, next);
         }, "achievement friends", discarded: () => _friendQueued.Remove(s));
     }
@@ -705,7 +705,7 @@ public sealed partial class AchievementService : IGameTicker
             if (!Ready(s)) return;
             using var gate = await LockAsync(s);
             if (!Ready(s)) return;
-            var next = s.Achievements!.Clone();
+            var next = s.Activities.Achievements!.Clone();
             if (AddCounts(next, amount, NowMs)) await CommitProgressAsync(s, next);
         }, "achievement event");
     }
@@ -719,9 +719,9 @@ public sealed partial class AchievementService : IGameTicker
             if (!Ready(s)) return;
             using var gate = await LockAsync(s);
             if (!Ready(s)) return;
-            var next = s.Achievements!.Clone();
+            var next = s.Activities.Achievements!.Clone();
             long now = NowMs;
-            if (RollLoginDay(next, s.AchievementRuntime!, now)) SaveRuntime(s);
+            if (RollLoginDay(next, s.Activities.AchievementRuntime!, now)) SaveRuntime(s);
             EvaluateSnapshots(s, next, now);
             await CommitProgressAsync(s, next);
         }, "achievement day", discarded: () => _recheckQueued.Remove(s));
@@ -752,7 +752,7 @@ public sealed partial class AchievementService : IGameTicker
         {
             if (!Ready(s) || _recheckQueued.Contains(s)) continue;
             if (s.Handoff != null) { _dirty.Add(s); continue; }
-            if (s.AchievementRuntime!.LastLoginDay < day) QueueLoginDay(s);
+            if (s.Activities.AchievementRuntime!.LastLoginDay < day) QueueLoginDay(s);
             else if (SnapshotImproves(s)) PostRecheck(s);
         }
     }
@@ -814,7 +814,7 @@ public sealed partial class AchievementService : IGameTicker
         if (grants.Length == 0)
         {
             _roles.SaveAchievements(role, bytes);
-            s.Achievements = next;
+            s.Activities.Achievements = next;
             return 0;
         }
         string source = $"achievement/{role}/{kind}/{description}";
@@ -824,7 +824,7 @@ public sealed partial class AchievementService : IGameTicker
         {
             bool ok = await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, grants),
                 persist: tx => _roles.SaveAchievements(role, bytes, tx),
-                committed: () => s.Achievements = next,
+                committed: () => s.Activities.Achievements = next,
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/achievement-award", source,
                     new { Version = 1, Kind = kind, Claim = description, Awards = plans.Select(p => p.AwardId).ToArray(), Outcome = outcome }));
             return ok ? 0 : ErrorCodes.Unknown;
@@ -843,7 +843,7 @@ public sealed partial class AchievementService : IGameTicker
         var resp = new GetAchievementRewardResp();
         if (!Ready(s)) { resp.Result = ErrorCodes.Unknown; await s.SendGameAsync(GetReward, resp); return; }
         var ids = req.ID.Distinct().ToList();
-        var state = s.Achievements!;
+        var state = s.Activities.Achievements!;
         int code = ids.Count == 0 ? NotExist : 0;
         foreach (long id in ids)
         {
@@ -862,7 +862,7 @@ public sealed partial class AchievementService : IGameTicker
         if (code == 0) resp.ID.AddRange(ids);
         _log.LogInformation("{Name} claims achievements {Ids}: {Result}", s.Role!.Name, string.Join(",", req.ID), code);
         await s.SendGameAsync(GetReward, resp);
-        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Achievements!.Clone());
+        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Activities.Achievements!.Clone());
     }
 
     /// <summary>76003: claim a global (type 0) or category level reward, settling every unclaimed tier up to it.</summary>
@@ -871,10 +871,10 @@ public sealed partial class AchievementService : IGameTicker
         using var gate = await LockAsync(s);
         var resp = new GetAchievementPointRewardResp { Type = req.Type };
         long[] tierAwards = [];
-        int code = !Ready(s) ? ErrorCodes.Unknown : ValidateTier(s.Achievements!, req.Type, req.Level, out tierAwards);
+        int code = !Ready(s) ? ErrorCodes.Unknown : ValidateTier(s.Activities.Achievements!, req.Type, req.Level, out tierAwards);
         if (code == 0)
         {
-            var next = s.Achievements!.Clone();
+            var next = s.Activities.Achievements!.Clone();
             int from = next.AchievementLevelInfo[req.Type].CurLevelRewardLevel;
             next.AchievementLevelInfo[req.Type].CurLevelRewardLevel = req.Level;
             code = await CommitClaimAsync(s, next, tierAwards, "tier", $"{req.Type}:{from}-{req.Level}",
@@ -884,7 +884,7 @@ public sealed partial class AchievementService : IGameTicker
         if (code == 0) resp.CurLevelRewardLevel = req.Level;
         _log.LogInformation("{Name} claims achievement level {Type}:{Level}: {Result}", s.Role!.Name, req.Type, req.Level, code);
         await s.SendGameAsync(GetPointReward, resp);
-        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Achievements!.Clone());
+        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Activities.Achievements!.Clone());
     }
 
     /// <summary>
@@ -897,7 +897,7 @@ public sealed partial class AchievementService : IGameTicker
         using var gate = await LockAsync(s);
         var resp = new GetAchievementAllRewardResp();
         if (!Ready(s)) { resp.Result = ErrorCodes.Unknown; await s.SendGameAsync(GetAllReward, resp); return; }
-        var state = s.Achievements!;
+        var state = s.Activities.Achievements!;
         int firstError = 0;
         var ids = new List<long>();
         foreach (long id in req.TaskIds.Distinct())
@@ -938,7 +938,7 @@ public sealed partial class AchievementService : IGameTicker
             foreach (var level in levels)
                 await s.SendGameAsync(GetPointReward, new GetAchievementPointRewardResp
                 { Type = level.Type, Result = 0, CurLevelRewardLevel = level.To });
-        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Achievements!.Clone());
+        if (code == 0) await CharacterService.SyncAsync(s, Sync, s.Activities.Achievements!.Clone());
     }
 
     /// <summary>
@@ -949,7 +949,7 @@ public sealed partial class AchievementService : IGameTicker
     {
         using var gate = await LockAsync(s);
         if (!Ready(s)) return;
-        var next = s.Achievements!.Clone();
+        var next = s.Activities.Achievements!.Clone();
         RefreshLevels(next);
         foreach (var (type, info) in next.AchievementLevelInfo) info.CurHintLevel = info.Level;
         await CommitProgressAsync(s, next);
@@ -966,7 +966,7 @@ public sealed partial class AchievementService : IGameTicker
             else if (args is ["fill", var typeText, var countText])
             {
                 int type = int.Parse(typeText), count = int.Parse(countText);
-                var next = s.Achievements!.Clone();
+                var next = s.Activities.Achievements!.Clone();
                 var picked = Rows().Rows.Values.Where(r => r.Type == type && !Reached(next.Infos.GetValueOrDefault(r.Id)))
                     .OrderBy(r => r.Id).Take(count).ToList();
                 foreach (var row in picked) Force(next, row);
@@ -975,7 +975,7 @@ public sealed partial class AchievementService : IGameTicker
             }
             else if (args.Length >= 1 && long.TryParse(args[0], out long id) && Rows().Rows.TryGetValue(id, out var row))
             {
-                var next = s.Achievements!.Clone();
+                var next = s.Activities.Achievements!.Clone();
                 if (args.Length > 1 && args[1] == "reset") next.Infos.Remove(id);
                 else Force(next, row);
                 await CommitProgressAsync(s, next);

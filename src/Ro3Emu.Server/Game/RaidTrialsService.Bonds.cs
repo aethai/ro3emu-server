@@ -16,7 +16,7 @@ public sealed partial class RaidTrialsService
     public static long PositionFor(GameData data, GameSession s)
     {
         var choices = PositionsFor(data, s.Progress?.Career ?? s.Role?.Career ?? 0);
-        return choices.Contains(s.Dungeons?.JobPosition ?? 0) ? s.Dungeons!.JobPosition : choices.FirstOrDefault();
+        return choices.Contains(s.Instances.Dungeons?.JobPosition ?? 0) ? s.Instances.Dungeons!.JobPosition : choices.FirstOrDefault();
     }
 
     internal static long[] PositionsFor(GameData data, long job) => data.Row("JobConfig", job) is { } row

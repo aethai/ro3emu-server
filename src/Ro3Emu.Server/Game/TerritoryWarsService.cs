@@ -236,10 +236,10 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         if (actor?.Role is { } role) keys.Add(Ownership.ReservationKey.Role(role.Id));
         if (includeParticipants)
         {
-            foreach (var session in _sessions.All().Where(s => s.Role != null && !RoleRequiresRecovery(s.Role.Id) && s.TerritoryWars != null &&
-                (state.Epoch != Epoch || s.TerritoryBattle == null && s.TerritoryWars.Fatigue > 0
-                 || _seasonCleanupState != null && (s.TerritoryBattle?.Epoch == _seasonCleanupState.Epoch
-                     || s.SiegeBattle?.Epoch == _seasonCleanupState.Epoch))))
+            foreach (var session in _sessions.All().Where(s => s.Role != null && !RoleRequiresRecovery(s.Role.Id) && s.Instances.TerritoryWars != null &&
+                (state.Epoch != Epoch || s.Instances.TerritoryBattle == null && s.Instances.TerritoryWars.Fatigue > 0
+                 || _seasonCleanupState != null && (s.Instances.TerritoryBattle?.Epoch == _seasonCleanupState.Epoch
+                     || s.Instances.SiegeBattle?.Epoch == _seasonCleanupState.Epoch))))
                 keys.Add(Ownership.ReservationKey.Role(session.Role!.Id));
             foreach (var player in state.Battles.Values.SelectMany(b => b.Players.Keys)
                 .Concat(state.SiegeRuns.Values.SelectMany(b => b.Players.Keys))
@@ -315,7 +315,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         combat.Killed.Subscribe(KilledAsync);
         combat.PlayerDied.Subscribe(DiedAsync);
         // DiedAsync publishes the battle's own countdown for a recorded participant.
-        combat.ReviveInfoOwners.Subscribe(s => s.TerritoryBattle is { } battle && s.Role is { } role && battle.State.Players.ContainsKey(role.Id));
+        combat.ReviveInfoOwners.Subscribe(s => s.Instances.TerritoryBattle is { } battle && s.Role is { } role && battle.State.Players.ContainsKey(role.Id));
         combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
         combat.PvpDealtAsync.Subscribe(PvpRecordedAsync);
         combat.HealedAsync.Subscribe(BattleHealRecordedAsync);
@@ -498,7 +498,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
                 || state.SiegeRuns.Values.Any(b => b.StatisticsId == stat));
         }
         return (id is 30106 or 30110 or 30116 or 30117) &&
-            (session.TerritoryBattle != null || session.SiegeBattle != null);
+            (session.Instances.TerritoryBattle != null || session.Instances.SiegeBattle != null);
     }
 
     /// <summary>Only declared requests mutate state; inbound notification IDs cannot author results or ownership.</summary>
@@ -526,7 +526,10 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
                 case AutoCancel: await AutoCancelAsync(s, TerritoryAutoBidCancelReq.Parser.ParseFrom(body.Span)); break;
                 case AutoQuery: await SendAutoAsync(s); break;
                 case History: await HistoryAsync(s, GetTerritoryWarsHistoryStatisticsReq.Parser.ParseFrom(body.Span)); break;
-                case Minimap: s.TerritoryMinimapOpen = TerritoryWarsMapOpenMinimapStatus.Parser.ParseFrom(body.Span).IsOpen; if (s.TerritoryMinimapOpen) await SendMarkersAsync(s); break;
+                case Minimap:
+                    s.Instances.TerritoryMinimapOpen = TerritoryWarsMapOpenMinimapStatus.Parser.ParseFrom(body.Span).IsOpen;
+                    if (s.Instances.TerritoryMinimapOpen) await SendMarkersAsync(s);
+                    break;
                 case QueueCancel: await CancelQueueAsync(s, TerritoryWarQueueExitReason.Cancel); await Send(s, id, new TerritoryWarQueueCancelRes()); break;
                 case SubmitDrop: await SubmitDropAsync(s); break;
                 case WarHall: await WarHallAsync(s); break;
@@ -552,9 +555,9 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
 
     public async Task LoginAsync(GameSession s)
     {
-        s.TerritoryBattle = null;
-        s.SiegeBattle = null;
-        s.TerritoryMinimapOpen = false;
+        s.Instances.TerritoryBattle = null;
+        s.Instances.SiegeBattle = null;
+        s.Instances.TerritoryMinimapOpen = false;
         // C/D 15: no realm reconciliation inside the login (it reserved Realm-wide territory state and every
         // participant). The one-second Tick runs it from startup; a stage change it publishes reaches this session
         // once its TerritoryWars projection is set below.
@@ -572,19 +575,19 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
             var savedEpoch = saved is { Length: > 0 } ? JsonSerializer.Deserialize<RoleState>(saved)?.Epoch : null;
             if (savedEpoch != aligned.Epoch) await SaveRoleAsync(roleId, aligned);
             if (s.Role?.Id != roleId || !ReferenceEquals(s.Attachment, attachment)) return;
-            s.TerritoryWars = aligned;
+            s.Instances.TerritoryWars = aligned;
             _seasonRoleProjectionPending.Remove(roleId);
         }
         foreach (var handler in CampChanged.Handlers) handler(s); // the quests settled at login before this state was loaded
         // Epoch alignment just committed this role projection. An empty outbox needs no reload
         // after that write invalidates the login snapshot; nonempty delivery still checks its source.
-        if (s.TerritoryWars!.Pending.Count != 0) await DeliverAsync(s);
+        if (s.Instances.TerritoryWars!.Pending.Count != 0) await DeliverAsync(s);
         await Send(s, StageNotify, StageData());
         await SyncGloryAsync(s);
         await Send(s, MapNotify, new TerritoryWarsMapDataNotify { Data = MapData() });
         await Send(s, GuildNotify, new TerritoryWarsNotifySiegeCampChange { GuildData = GuildData(Own(s)?.Id ?? 0) });
         await SyncActivityAsync(s);
-        await SyncSiegeAsync(s, committedRole: s.TerritoryWars);
+        await SyncSiegeAsync(s, committedRole: s.Instances.TerritoryWars);
         await Send(s, SiegeBaseQuery, new GetSiegeBaseInfoRsp { SiegeBaseInfo = SiegeBase(s) });
     }
 
@@ -667,7 +670,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         {
             var recipient = batch.Peers[peer];
             return peer.Role?.Id == recipient.RoleId && ReferenceEquals(peer.Attachment, recipient.Attachment)
-                && peer.TerritoryWars != null && !RoleRequiresRecovery(recipient.RoleId);
+                && peer.Instances.TerritoryWars != null && !RoleRequiresRecovery(recipient.RoleId);
         }
         await RoleFanout.EachAsync(batch.Peers.Keys.Where(Current), async peer =>
         {
@@ -718,7 +721,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     internal async Task PublishAsync()
     {
         var map = new TerritoryWarsMapDataNotify { Data = MapData() };
-        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.TerritoryWars != null), async s =>
+        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Instances.TerritoryWars != null), async s =>
         {
             try
             {
@@ -734,12 +737,12 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private async Task SetCampAsync(GameSession s, PvpSetRoleCampReq req)
     {
         var role = LoadRole(s.Role!.Id);
-        long remain = Math.Max(0, (Data.Config.PublicParams.Of(_data).TerritoryAttackClearCD ?? 120) - (_clock.Now - s.LastCombatMs / 1000));
-        int error = (int)req.Type is < 1 or > 3 ? ErrorCodes.Parameter : s.TerritoryBattle != null ? ErrorCodes.TerritoryCampFixed
+        long remain = Math.Max(0, (Data.Config.PublicParams.Of(_data).TerritoryAttackClearCD ?? 120) - (_clock.Now - s.Combat.LastCombatMs / 1000));
+        int error = (int)req.Type is < 1 or > 3 ? ErrorCodes.Parameter : s.Instances.TerritoryBattle != null ? ErrorCodes.TerritoryCampFixed
             : req.Type == EPvpRoleCampNum.Guild && Own(s) == null ? ErrorCodes.TerritoryCampGuild
             : _clock.Now < role.LastCampChange + (Data.Config.PublicParams.Of(_data).TerritoryChangeCampCD ?? 10) ? ErrorCodes.TerritoryCampCooldown
             : remain > 0 ? ErrorCodes.TerritoryCampCombat : 0;
-        if (error == 0) { role.Camp = (int)req.Type; role.LastCampChange = _clock.Now; await SaveRoleAsync(s.Role!.Id, role); s.TerritoryWars = role; }
+        if (error == 0) { role.Camp = (int)req.Type; role.LastCampChange = _clock.Now; await SaveRoleAsync(s.Role!.Id, role); s.Instances.TerritoryWars = role; }
         await Send(s, Camp, new PvpSetRoleCampResp { Result = error, Type = (EPvpRoleCampNum)role.Camp, PeaceTimeInterval = remain });
         if (error == 0) foreach (var handler in CampChanged.Handlers) handler(s);
     }
@@ -788,7 +791,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
             }) == null) continue;
             current = next;
         }
-        s.TerritoryWars = LoadRole(s.Role.Id);
+        s.Instances.TerritoryWars = LoadRole(s.Role.Id);
     }
 
     public async Task ReconcileAsync()
@@ -821,7 +824,7 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         {
             state.LastStage = _clock.Current.Id;
             await SaveAsync(state);
-            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.TerritoryWars != null), async s =>
+            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Instances.TerritoryWars != null), async s =>
             { await Send(s, StageNotify, StageData()); QueueActivity(s); });
         }
     }

@@ -171,7 +171,7 @@ public sealed class FreshRealmTests : IAsyncLifetime
         var sync = await Next(alice, NewActivityService.ActivitySync, DBNewActivityInfoIncrement.Parser, m => m.SyncAllMark);
         long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), open = new DateTimeOffset(DateTime.Today).ToUnixTimeSeconds();
         var infos = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
-            Session("alice").NewActivities!.ActivityInfo.ToDictionary(k => k.Key, k => k.Value.Clone())));
+            Session("alice").Activities.NewActivities!.ActivityInfo.ToDictionary(k => k.Key, k => k.Value.Clone())));
         // LC_DAL_NewActivity keeps an activity for the page only while its state is a TimeLimitConfig state ("Start"),
         // and the chapter card is Ongoing when the server's window holds now (Ode to Echoes 110, Divine Realm
         // Speedrun 115, Genesis Movement 111 on chapter one).

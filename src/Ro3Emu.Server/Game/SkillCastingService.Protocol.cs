@@ -117,9 +117,9 @@ public sealed partial class SkillCastingService
         // LC_DynamicParamMgr.ProcessDynamicSkillParam ignores its absent affectParam.
         if (update.AffectParamDict.Count == 0) update.AffectParamDict[0] = new BeAffectedParamInfoEx();
         string signature = Convert.ToHexString(update.ToByteArray());
-        if (session.SkillProtocol.ParameterSignature != signature)
+        if (session.Combat.SkillProtocol.ParameterSignature != signature)
         {
-            session.SkillProtocol.ParameterSignature = signature;
+            session.Combat.SkillProtocol.ParameterSignature = signature;
             await SendParametersWithModeCooldownsAsync(session, update, modes);
         }
         await RefreshTemporarySlotsAsync(session);
@@ -134,7 +134,7 @@ public sealed partial class SkillCastingService
     /// </summary>
     private static async Task SendParametersWithModeCooldownsAsync(GameSession session, SkillBeAffectedParamExNotify update, Dictionary<int, int> modes)
     {
-        var told = session.SkillProtocol.GroupModes;
+        var told = session.Combat.SkillProtocol.GroupModes;
         var started = new SkillCdNotify { Uuid = update.Uuid };
         var ended = new SkillCdNotify { Uuid = update.Uuid };
         long now = session.NowMs;
@@ -166,12 +166,12 @@ public sealed partial class SkillCastingService
 
     /// <summary>When a cast of this group under this mode is ready again: the group's shared cooldown or the mode's own.</summary>
     internal static long CooldownEnd(GameSession session, int group, int mode) =>
-        Math.Max(session.SkillCds.GetValueOrDefault(group), session.SkillModeCds.GetValueOrDefault((group, mode)));
+        Math.Max(session.Combat.SkillCds.GetValueOrDefault(group), session.Combat.SkillModeCds.GetValueOrDefault((group, mode)));
 
     private async Task RefreshTemporarySlotsAsync(GameSession session)
     {
-        var old = session.SkillProtocol.TemporarySlotRows;
-        var plan = session.SkillPlans is { } state && state.CurrentPlanIndex >= 0 && state.CurrentPlanIndex < state.SkillAssignPlans.Count
+        var old = session.Combat.SkillProtocol.TemporarySlotRows;
+        var plan = session.Combat.SkillPlans is { } state && state.CurrentPlanIndex >= 0 && state.CurrentPlanIndex < state.SkillAssignPlans.Count
             ? state.SkillAssignPlans[state.CurrentPlanIndex] : null;
         foreach (int slot in session.Progress!.SkillBar.Keys.Concat(old.Keys).Distinct().Order())
         {
@@ -199,7 +199,7 @@ public sealed partial class SkillCastingService
 
     /// <summary>One authoritative cast timeline. High-level routes share the same Lua handler, not another cast.</summary>
     private static bool OwnsActiveSkillSource(GameSession owner, long uid) => owner.Role != null
-        && owner.SkillObjects.Any(o => o.Uid == uid && o.OwnerSession == owner && o.OwnerId == owner.Role.Id
+        && owner.Combat.SkillObjects.Any(o => o.Uid == uid && o.OwnerSession == owner && o.OwnerId == owner.Role.Id
             && o.WorldScene == owner.WorldScene && o.ExpiresMs > owner.NowMs && !o.Removing);
 
     public Task SendCastTimelineAsync(GameSession caster, UseInSkillInfo info, bool highLevel = false, bool extra = false)
@@ -461,10 +461,10 @@ public sealed partial class SkillCastingService
     {
         if (viewer.Role == null || skillTag <= 0 || !target.Viewers.Contains(viewer) || target.WorldScene != viewer.WorldScene) return;
         var key = (target.Uid, white, skillTag);
-        bool previous = viewer.SkillProtocol.SkillSelection.GetValueOrDefault(key);
+        bool previous = viewer.Combat.SkillProtocol.SkillSelection.GetValueOrDefault(key);
         if (previous == enabled) return;
-        if (enabled) viewer.SkillProtocol.SkillSelection[key] = true;
-        else viewer.SkillProtocol.SkillSelection.Remove(key);
+        if (enabled) viewer.Combat.SkillProtocol.SkillSelection[key] = true;
+        else viewer.Combat.SkillProtocol.SkillSelection.Remove(key);
         var info = new SkillBlackWhiteOpInfo
         {
             ObjectId = target.Uid,
@@ -511,8 +511,8 @@ public sealed partial class SkillCastingService
     /// UI_Sys_GVE_ExitMenu_PauseWidgetBaseCtrl.OnOpen shows Resume again (inferred: the pause is per scene).</summary>
     public async Task ClearSceneSkillProtocolAsync(GameSession viewer)
     {
-        viewer.SkillProtocol.SkillSelection.Clear();
-        viewer.SkillProtocol.TrainingPaused = false;
+        viewer.Combat.SkillProtocol.SkillSelection.Clear();
+        viewer.Combat.SkillProtocol.TrainingPaused = false;
         if (viewer.Role != null) await viewer.SendGameAsync(BossClearSkillCds, new BossClearAllSkillShowCdNotify());
     }
 
@@ -523,7 +523,7 @@ public sealed partial class SkillCastingService
             && !OwnsActiveSkillSource(source, entry.DamageSourceId)) || entry.SkillId == 0 && entry.BuffId == 0) return;
         var notification = new DamageStatisticsNotify { Damages = { entry } };
         foreach (var viewer in _world.Viewers(source).Prepend(source).Distinct())
-            if (viewer.Role != null && !viewer.SkillProtocol.TrainingPaused)
+            if (viewer.Role != null && !viewer.Combat.SkillProtocol.TrainingPaused)
                 await viewer.SendGameAsync(DamageStatistics, notification);
     }
 
@@ -532,7 +532,7 @@ public sealed partial class SkillCastingService
     {
         int op = (int)request.OpType;
         int error = session.Role == null || session.SceneLoading || op is not (1 or 2) ? ErrorCodes.Parameter : 0;
-        if (error == 0) session.SkillProtocol.TrainingPaused = op == 1;
+        if (error == 0) session.Combat.SkillProtocol.TrainingPaused = op == 1;
         await session.SendGameAsync(TrainingOperation, new BattleTrainingGroundOpResp { Result = error, OpType = request.OpType });
     }
 }

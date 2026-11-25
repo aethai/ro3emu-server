@@ -37,7 +37,7 @@ public sealed partial class SurvivorBattleTests
         Assert.Equal(ErrorCodes.Parameter, (await Next(alice, EmojiService.DungeonEmojiInstall, DungeonEmojiInstallResp.Parser)).Result);
         await OnLoop(() =>
         {
-            Assert.Equal([1002, 1001, 0, 0, 0, 0], Session(alice).EmojiInfo!.DungeonEmojiInstalls[0].EmojiIds);
+            Assert.Equal([1002, 1001, 0, 0, 0, 0], Session(alice).Social.EmojiInfo!.DungeonEmojiInstalls[0].EmojiIds);
             return Task.CompletedTask;
         });
         await alice.SendGameAsync(TimedBattleService.EmojiPlay, new DungeonModuleEmojiPlayReq { EmojiId = 1003 });

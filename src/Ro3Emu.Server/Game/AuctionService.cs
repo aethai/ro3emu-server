@@ -99,8 +99,8 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
                 .Evidence(new { Orders = pending.Select(p => new { p.Id, p.UnitPrice, p.Currency }).ToArray() }));
             roles.Commit(builder, "auction/login-prebuy");
         }
-        s.Auction = roles.LoadAuction(s.Role!.Id) is { } saved ? DBAuction.Parser.ParseFrom(saved) : new DBAuction();
-        await CharacterService.SyncAsync(s, Sync, s.Auction.Clone());
+        s.Social.Auction = roles.LoadAuction(s.Role!.Id) is { } saved ? DBAuction.Parser.ParseFrom(saved) : new DBAuction();
+        await CharacterService.SyncAsync(s, Sync, s.Social.Auction.Clone());
         var auto = store.OpenItems().Where(r => r.Owner == s.Role.Id && r.Auto && r.State == AuctionState.Bidding)
             .Select(r => r.Id).Concat(store.Prebuys().Where(p => p.Role == s.Role.Id).Select(p => p.RequestedId))
             .Distinct().ToArray();
@@ -117,7 +117,7 @@ public sealed partial class AuctionService(AuctionStore store, RoleStore roles, 
     {
         if (Online(role) is not { } s) return;
         var next = Personal(roles, role);
-        s.Auction = next;
+        s.Social.Auction = next;
         await CharacterService.SyncAsync(s, Sync, next.Clone());
     }
 

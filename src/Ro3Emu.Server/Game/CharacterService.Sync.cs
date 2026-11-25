@@ -77,7 +77,7 @@ public sealed partial class CharacterService
         if (stillOwner?.Invoke() == false) return;
         if (PruneEquipmentPlans(session))
         {
-            roles.SaveEquipPlans(session.Role!.Id, session.EquipmentPlans.ToByteArray());
+            roles.SaveEquipPlans(session.Role!.Id, session.Profile.EquipmentPlans.ToByteArray());
             await SyncEquipmentAsync(session);
         }
     }
@@ -116,7 +116,7 @@ public sealed partial class CharacterService
     private BaseAttrInfo BuildAttr(GameSession session)
     {
         var p = session.Progress!;
-        var info = session.StatPlans.Info.Clone();
+        var info = session.Profile.StatPlans.Info.Clone();
         info.AllAttrPoints = TotalPoints(p);
         RefreshPlanBudgets(info, p);
         info.AllPlanBaseProperty.TryGetValue(info.CurPlanIndex, out var saved);
@@ -132,8 +132,8 @@ public sealed partial class CharacterService
     internal DBItemsInfo BuildItems(GameSession session)
     {
         var p = session.Progress!;
-        var info = new DBItemsInfo { AutoDecomposeSetting = session.AutoDecompose.Clone() };
-        var preferences = session.BagState.Info;
+        var info = new DBItemsInfo { AutoDecomposeSetting = session.Profile.AutoDecompose.Clone() };
+        var preferences = session.Profile.BagState.Info;
         info.QuickUseInfos.Add(preferences.QuickUseInfos);
         info.ShortcutBarInfos.Add(FullShortcutBar(preferences.ShortcutBarInfos));
         info.MedicinesAutoUse = WithMedicineDefaults(preferences.MedicinesAutoUse);
@@ -166,16 +166,16 @@ public sealed partial class CharacterService
                 slots.CardSlotInfo[socket] = ItemInfo(card);
             }
         }
-        session.NewItems.IntersectWith(bag.Select(i => i.Guid));
-        foreach (var guid in session.NewItems) info.GuidToNew[guid] = true;
+        session.Profile.NewItems.IntersectWith(bag.Select(i => i.Guid));
+        foreach (var guid in session.Profile.NewItems) info.GuidToNew[guid] = true;
         return info;
     }
 
     /// <summary>5007: equipped instances, the plan grid, refine levels of grids 1..7.</summary>
     internal DBEquipInfo BuildEquip(GameSession session)
     {
-        var info = session.EquipmentPlans.Clone();
-        var levels = session.EquipLevels;
+        var info = session.Profile.EquipmentPlans.Clone();
+        var levels = session.Profile.EquipLevels;
         for (int grid = 1; grid <= EquipInfoSlots; grid++)
         {
             info.ItemsRefine[grid] = levels.Refine.GetValueOrDefault(grid);
@@ -189,10 +189,10 @@ public sealed partial class CharacterService
 
     internal static long NextVersion(GameSession session, uint msgId)
     {
-        lock (session.SyncVersions)
+        lock (session.Profile.SyncVersions)
         {
-            long v = session.SyncVersions.GetValueOrDefault(msgId) + 1;
-            session.SyncVersions[msgId] = v;
+            long v = session.Profile.SyncVersions.GetValueOrDefault(msgId) + 1;
+            session.Profile.SyncVersions[msgId] = v;
             return v;
         }
     }

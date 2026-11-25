@@ -71,7 +71,7 @@ public sealed partial class PetCombatService
     }
 
     private GameSession[] GuardianReactionAllies(GameSession source, float radius, int maximum) => [.. _world.PlayersIn(source.WorldScene)
-        .Where(p => p.Role != null && !p.Dead && !p.SceneLoading && !p.SceneRecoveryRequired
+        .Where(p => p.Role != null && !p.Dead && !p.SceneLoading && !p.WorldState.SceneRecoveryRequired
             && !IsPlayerHostile(source, p) && !IsPlayerHostile(p, source)
             && !CanPlayerHit(source, p) && !CanPlayerHit(p, source) && Distance(source.Position, p.Position) <= radius)
         .OrderBy(p => p == source ? 0 : 1).ThenBy(p => Distance(source.Position, p.Position)).ThenBy(p => p.Role!.Id)

@@ -104,7 +104,7 @@ public sealed partial class GenesisNoteDropTests
         clock.Set(clock.GetUtcNow().AddSeconds(3).ToUnixTimeSeconds());
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains((ulong)uid));
         Assert.Equal(before + 3, Notes());
-        var collected = session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
+        var collected = session.Activities.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
         Assert.Equal(1, collected.CollectCount[point.Id]);
         Assert.Equal(ErrorCodes.NpcMissing, await Interact(finish));
     }
@@ -162,7 +162,7 @@ public sealed partial class GenesisNoteDropTests
         // Award 100118002 pays 1,000 Zeny plus one pick from group 1230, which can itself pay Zeny.
         long paid = session.Progress.Currency.GetValueOrDefault(CharacterService.ZenyId) - before;
         Assert.True(paid is 1000 or (>= 2000 and <= 4000) or 6000, $"Unexpected special conch Zeny reward: {paid}");
-        var collected = session.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
+        var collected = session.Activities.NewActivities!.ActivityInfo[111].ActivityParam.WorldExploration.MapCollect[map];
         Assert.Equal(1, collected.CollectCount[point]);
         Assert.Equal(ErrorCodes.NpcMissing, await Pick(7000008));
     }
@@ -202,7 +202,7 @@ public sealed partial class GenesisNoteDropTests
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && !n.Interrupt);
         Assert.Equal(before + 1, Count(session));
-        Assert.Equal(4, session.Restrictions!.RestrictCount[1007].Count);
+        Assert.Equal(4, session.Season.Restrictions!.RestrictCount[1007].Count);
 
         await Gm(host, alice, "!warp 10112");
         var loop = host.Service<GameLoop>();
@@ -211,14 +211,14 @@ public sealed partial class GenesisNoteDropTests
         var afk = host.Service<WildAfkService>();
         await loop.InvokeAsync(() => owners.RunSessionAsync("exploration field rewards", [ReservationKey.Realm], session, async () =>
         {
-            session.AutoBattle = true;
+            session.Combat.AutoBattle = true;
             var monsters = host.Service<World>().UnitsIn(session.WorldScene).OfType<MonsterUnit>()
                 .Where(m => afk.IsFieldAutoBattle(session, m)).Take(7).ToArray();
             Assert.Equal(7, monsters.Length);
-            session.AutoBattle = false;
+            session.Combat.AutoBattle = false;
             await rewards.PrepareKilledAsync(session, monsters[0]);
             Assert.Equal(before + 1, Count(session));
-            session.AutoBattle = true;
+            session.Combat.AutoBattle = true;
             notes.Draw = n => n - 1;
             await rewards.PrepareKilledAsync(session, monsters[1]);
             Assert.Equal(before + 1, Count(session));

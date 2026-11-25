@@ -95,12 +95,12 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Warp(bot, 10100); // MapConfig._iSceneType=0, Prontera
         await OnOwnedLoop(bot, "AFK toggle cooldown fixture", s =>
         {
-            s.WildAfk!.LastToggleMs = 0;
+            s.Activities.WildAfk!.LastToggleMs = 0;
             return Task.CompletedTask;
         });
         await bot.SendGameAsync(WildAfkService.Start, new StartHighMultiplierTimeReq());
         Assert.Equal(0, (await Next(bot, WildAfkService.Start, StartHighMultiplierTimeRsp.Parser)).Result);
-        Assert.True(await State(bot, s => s.WildAfk!.Info.IsHighMagnification && s.WildAfk.Info.IsSuspended));
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.Info.IsHighMagnification && s.Activities.WildAfk.Info.IsSuspended));
     }
 
     private async Task Warp(BotClient bot, int scene)
@@ -130,7 +130,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         await using var bot = await InWorld();
         var oldSession = Session(bot);
         long alice = oldSession.Role!.Id;
-        var oldState = oldSession.WildAfk!;
+        var oldState = oldSession.Activities.WildAfk!;
         var bob = (await bot.CreateRoleAsync("Bob")).RoleBaseInfo.Id;
 
         await OnOwnedLoop(bot, "AFK role-switch fixture", _ =>
@@ -148,11 +148,11 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.Equal(1234, saved.Info.HighMultiplierTimeSeconds);
         Assert.Equal(427, saved.RemainderMs);
         Assert.Equal(17, saved.ConsumedTodaySeconds);
-        Assert.NotSame(oldState, oldSession.WildAfk);
+        Assert.NotSame(oldState, oldSession.Activities.WildAfk);
         Assert.Equal(bob, oldSession.Role!.Id);
-        Assert.Equal(3600, oldSession.WildAfk!.Info.HighMultiplierTimeSeconds);
-        Assert.Equal(0, oldSession.WildAfk.RemainderMs);
-        Assert.False(oldSession.AutoBattle);
+        Assert.Equal(3600, oldSession.Activities.WildAfk!.Info.HighMultiplierTimeSeconds);
+        Assert.Equal(0, oldSession.Activities.WildAfk.RemainderMs);
+        Assert.False(oldSession.Combat.AutoBattle);
     }
 
     private async Task<int> Kill(BotClient bot)
@@ -245,15 +245,15 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Eligible(bot);
         await Warp(bot, 10111);
         await Auto(bot, true);
-        Assert.True(await State(bot, s => s.WildAfk!.Info.IsSuspended));
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.Info.IsSuspended));
         int npc = await Kill(bot);
-        Assert.False(await State(bot, s => s.WildAfk!.Info.IsSuspended));
+        Assert.False(await State(bot, s => s.Activities.WildAfk!.Info.IsSuspended));
         await Task.Delay(1200);
         Assert.InRange(await Query(bot), 3597, 3599);
 
         await OnOwnedLoop(bot, "AFK snapshot fixture", _ =>
         {
-            Session(bot).WildAfk!.Info.CurrentSnapshot.Timestamp -= 6;
+            Session(bot).Activities.WildAfk!.Info.CurrentSnapshot.Timestamp -= 6;
             return Task.CompletedTask;
         });
         await bot.SendGameAsync(WildAfkService.Snapshot, new GenerateAFKDropSnapshotReq());
@@ -313,7 +313,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.Equal(37, await State(bot, s => s.Progress!.Level));
         await OnLoop(() =>
         {
-            Session(bot).OdinStatue!.CurLv = statueLevel;
+            Session(bot).Instances.OdinStatue!.CurLv = statueLevel;
             return Task.CompletedTask;
         });
         int reduced = await KillYoyoAndReadExp(1);
@@ -330,7 +330,7 @@ public sealed class WildAfkTests : IAsyncLifetime
     private Task RunningClock(BotClient bot) => OnOwnedLoop(bot, "AFK running fixture", _ =>
     {
         long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var s = Session(bot).WildAfk!;
+        var s = Session(bot).Activities.WildAfk!;
         s.Info.HighMultiplierTimeSeconds = 3600; s.Info.IsHighMagnification = true; s.Info.IsSuspended = false;
         s.AccountedAtMs = now; s.LastKillAtMs = now; s.RemainderMs = 0;
         return Task.CompletedTask;
@@ -362,7 +362,7 @@ public sealed class WildAfkTests : IAsyncLifetime
                 if (DateTime.UtcNow > until) throw new TimeoutException("the running clock never reached the database");
                 await Task.Delay(50);
             }
-            Assert.False(await State(bot, s => s.WildAfk!.Info.IsSuspended));
+            Assert.False(await State(bot, s => s.Activities.WildAfk!.Info.IsSuspended));
             Assert.Equal(0, loopWrites);
         }
         finally { accounts.WriteSyncPlanObserved = null; }
@@ -384,7 +384,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         {
             await RunningClock(bot);
             var until = DateTime.UtcNow + Wait;
-            while (!await State(bot, s => lazy.IsDirty(s) && s.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
+            while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
             {
                 if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
                 await Task.Delay(50);
@@ -430,13 +430,13 @@ public sealed class WildAfkTests : IAsyncLifetime
         await OnOwnedLoop(bot, "AFK idle fixture", _ =>
         {
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var s = Session(bot).WildAfk!;
+            var s = Session(bot).Activities.WildAfk!;
             s.Info.HighMultiplierTimeSeconds = 3600; s.Info.IsSuspended = false;
             s.AccountedAtMs = now - 60_000; s.LastKillAtMs = now - 60_000; s.RemainderMs = 0;
             return Task.CompletedTask;
         });
         Assert.Equal(3590, await Query(bot)); // exactly the ten-second grace, never a full idle minute
-        Assert.True(await State(bot, s => s.WildAfk!.Info.IsSuspended));
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.Info.IsSuspended));
         Assert.Equal("NoKillTimeout", (await Next(bot, WildAfkService.SuspendReason, SuspendReasonRes.Parser)).Reason);
         Assert.Equal(3590, await Query(bot));
         await Auto(bot, false);
@@ -459,7 +459,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Kill(bot);
         await OnOwnedLoop(bot, "AFK final-second fixture", _ =>
         {
-            var s = Session(bot).WildAfk!;
+            var s = Session(bot).Activities.WildAfk!;
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             s.ConsumedTodaySeconds = 3599;
             s.Info.HighMultiplierTimeSeconds = 1; s.Info.IsSuspended = false;
@@ -471,7 +471,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             x => x.ActivityData.TryGetValue(106, out var row) && row.Inc?.TaskCompleteTimes == 1);
         Assert.Equal(40, await State(bot, s => s.Progress!.Currency.GetValueOrDefault(5)));
         Assert.Equal(1, await State(bot, s => s.Tasks!.CompleteTaskNum[500130]));
-        Assert.False(await State(bot, s => s.WildAfk!.Info.IsHighMagnification));
+        Assert.False(await State(bot, s => s.Activities.WildAfk!.Info.IsHighMagnification));
         await bot.SendGameAsync(WildAfkService.Start, new StartHighMultiplierTimeReq());
         Assert.Equal(ErrorCodes.AfkTimeEmpty, (await Next(bot, WildAfkService.Start, StartHighMultiplierTimeRsp.Parser)).Result);
         await Query(bot);
@@ -491,7 +491,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         long Stored() => DBTaskInfo.Parser.ParseFrom(Service<RoleStore>().LoadTasks(role)!).Infos[500130].CompleteNum[0];
         void Running(long consumedToday, long elapsedMs)
         {
-            var s = Session(bot).WildAfk!;
+            var s = Session(bot).Activities.WildAfk!;
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             s.ConsumedTodaySeconds = consumedToday;
             s.Info.HighMultiplierTimeSeconds = 3000; s.Info.IsSuspended = false;
@@ -507,7 +507,7 @@ public sealed class WildAfkTests : IAsyncLifetime
 
         await OnOwnedLoop(bot, "AFK seconds fixture", _ => { Running(written, 5000); return Task.CompletedTask; });
         await Query(bot);
-        Assert.True(await State(bot, s => s.WildAfk!.ConsumedTodaySeconds) >= written + 5);
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds) >= written + 5);
         Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
         Assert.Equal(written, Stored());
 
@@ -527,7 +527,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             await Eligible(bot);
             await OnOwnedLoop(bot, "AFK daily restore fixture", _ =>
             {
-                var state = Session(bot).WildAfk!;
+                var state = Session(bot).Activities.WildAfk!;
                 state.Info.HighMultiplierTimeSeconds = 1200;
                 state.Info.IsHighMagnification = false;
                 state.Info.TodayKillCount = 7;
@@ -536,12 +536,12 @@ public sealed class WildAfkTests : IAsyncLifetime
                 return Task.CompletedTask;
             });
             Assert.Equal(4800, await Query(bot));
-            Assert.Equal(0, await State(bot, s => s.WildAfk!.Info.TodayKillCount));
-            Assert.Equal(0, await State(bot, s => s.WildAfk!.ConsumedTodaySeconds));
-            Assert.True(await State(bot, s => s.WildAfk!.Info.IsHighMagnification));
+            Assert.Equal(0, await State(bot, s => s.Activities.WildAfk!.Info.TodayKillCount));
+            Assert.Equal(0, await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds));
+            Assert.True(await State(bot, s => s.Activities.WildAfk!.Info.IsHighMagnification));
             await OnOwnedLoop(bot, "AFK bank cap fixture", _ =>
             {
-                var state = Session(bot).WildAfk!;
+                var state = Session(bot).Activities.WildAfk!;
                 state.DailyEpoch = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(state.DailyEpoch).LocalDateTime.AddDays(-7)).ToUnixTimeSeconds();
                 return Task.CompletedTask;
             });
@@ -552,7 +552,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         var info = await Next(again, WildAfkService.Sync, DBWildAFKInfoIncrement.Parser);
         Assert.Equal(remaining, info.HighMultiplierTimeSeconds);
         Assert.True(info.IsSuspended);
-        Assert.False(await State(again, s => s.AutoBattle));
+        Assert.False(await State(again, s => s.Combat.AutoBattle));
         Assert.Equal(remaining, await Query(again));
     }
 
@@ -567,11 +567,11 @@ public sealed class WildAfkTests : IAsyncLifetime
         await OnLoop(() => Service<Ro3Emu.Server.Game.Ownership.OwnerRegistry>().RunSessionAsync("AFK boundary test",
             [Ro3Emu.Server.Game.Ownership.ReservationKey.Role(s.Role!.Id)], s, async () =>
         {
-            long boundary = s.Daily!.DailyEpoch;
+            long boundary = s.Activities.Daily!.DailyEpoch;
             long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(boundary).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
-            s.Daily.DailyEpoch = old;
-            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Daily));
-            var afk = s.WildAfk!;
+            s.Activities.Daily.DailyEpoch = old;
+            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Activities.Daily));
+            var afk = s.Activities.WildAfk!;
             afk.DailyEpoch = old;
             afk.ConsumedTodaySeconds = 3599;
             afk.Info.HighMultiplierTimeSeconds = 1;
@@ -591,14 +591,14 @@ public sealed class WildAfkTests : IAsyncLifetime
             Assert.Equal(boundary, stored.DailyEpoch);
             Assert.Equal(3600, stored.Info.HighMultiplierTimeSeconds);
             Assert.Equal(0, afk.RemainderMs); // the 300ms beyond the exhausted old bank cannot debit tomorrow
-            Assert.Equal(0, s.DailyRows!.ActivityData[106].TaskCompleteTimes);
+            Assert.Equal(0, s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes);
         }));
         var paid = await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser,
             x => x.Rewards.Any(i => i.ItemEntry == 5 && i.Stack == 40));
         Assert.Single(paid.Rewards, i => i.ItemEntry == 5);
         await Query(bot);
-        Assert.InRange(await State(bot, s => s.WildAfk!.ConsumedTodaySeconds), 0, 10);
-        Assert.Equal(0, await State(bot, s => s.DailyRows!.ActivityData[106].TaskCompleteTimes));
+        Assert.InRange(await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds), 0, 10);
+        Assert.Equal(0, await State(bot, s => s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes));
     }
 
     /// <summary>Puts the role's daily and AFK periods one day back (session and stored rows), AFK paused with a
@@ -615,16 +615,16 @@ public sealed class WildAfkTests : IAsyncLifetime
 
     private (long Old, long Boundary) SetYesterdayPeriod(GameSession s, long liveness)
     {
-        long boundary = s.Daily!.DailyEpoch;
+        long boundary = s.Activities.Daily!.DailyEpoch;
         long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(boundary).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
-        s.Daily.DailyEpoch = old;
-        var afk = s.WildAfk!;
+        s.Activities.Daily.DailyEpoch = old;
+        var afk = s.Activities.WildAfk!;
         afk.DailyEpoch = old;
         afk.Info.HighMultiplierTimeSeconds = 1200;
         afk.Info.IsHighMagnification = false;
         afk.ConsumedTodaySeconds = 2400;
         s.Progress!.Currency[5] = liveness;
-        Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Daily));
+        Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Activities.Daily));
         Service<RoleStore>().SaveWildAfk(s.Role.Id, JsonSerializer.SerializeToUtf8Bytes(afk));
         Service<RoleStore>().SaveProgress(s.Role.Id, s.Progress);
         return (old, boundary);
@@ -651,19 +651,19 @@ public sealed class WildAfkTests : IAsyncLifetime
                 "CREATE TRIGGER fail_daily_reset BEFORE UPDATE OF daily ON role BEGIN SELECT RAISE(ABORT, 'daily reset fixture'); END");
             await Assert.ThrowsAnyAsync<Exception>(() => Service<DailyActivityService>().ReconcileAsync(s));
             // Nothing of the new period is visible: not the daily epoch, not the AFK allowance, not the currency.
-            Assert.Equal(old, s.Daily!.DailyEpoch);
-            Assert.Equal(old, s.WildAfk!.DailyEpoch);
-            Assert.Equal(1200, s.WildAfk.Info.HighMultiplierTimeSeconds);
-            Assert.Equal(2400, s.WildAfk.ConsumedTodaySeconds);
+            Assert.Equal(old, s.Activities.Daily!.DailyEpoch);
+            Assert.Equal(old, s.Activities.WildAfk!.DailyEpoch);
+            Assert.Equal(1200, s.Activities.WildAfk.Info.HighMultiplierTimeSeconds);
+            Assert.Equal(2400, s.Activities.WildAfk.ConsumedTodaySeconds);
             Assert.Equal(25, s.Progress!.Currency.GetValueOrDefault(5));
             Assert.Equal(old, JsonSerializer.Deserialize<WildAfkService.State>(Service<RoleStore>().LoadWildAfk(s.Role!.Id)!)!.DailyEpoch);
             Assert.Equal(old, JsonSerializer.Deserialize<DailyActivityService.DailyState>(Service<RoleStore>().LoadDaily(s.Role.Id)!)!.DailyEpoch);
             FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_daily_reset");
             await Service<DailyActivityService>().ReconcileAsync(s);
         }));
-        Assert.Equal(boundary, await State(bot, x => x.Daily!.DailyEpoch));
-        Assert.Equal(boundary, await State(bot, x => x.WildAfk!.DailyEpoch));
-        Assert.Equal(4800, await State(bot, x => x.WildAfk!.Info.HighMultiplierTimeSeconds));
+        Assert.Equal(boundary, await State(bot, x => x.Activities.Daily!.DailyEpoch));
+        Assert.Equal(boundary, await State(bot, x => x.Activities.WildAfk!.DailyEpoch));
+        Assert.Equal(4800, await State(bot, x => x.Activities.WildAfk!.Info.HighMultiplierTimeSeconds));
         Assert.Equal(0, await State(bot, x => x.Progress!.Currency.GetValueOrDefault(5)));
         var afkRow = await Stored(bot, (id, r) => JsonSerializer.Deserialize<WildAfkService.State>(r.LoadWildAfk(id)!)!);
         Assert.Equal(boundary, afkRow.DailyEpoch);
@@ -707,7 +707,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             var claim = await Next(bot, DailyActivityService.StageGain, StageRewardGainResp.Parser);
             Assert.NotEqual(0, claim.Result); // yesterday's 1000 liveness was reset before the claim was decided
             Assert.Equal(1, Volatile.Read(ref resets));
-            Assert.Equal(boundary, await State(bot, x => x.Daily!.DailyEpoch));
+            Assert.Equal(boundary, await State(bot, x => x.Activities.Daily!.DailyEpoch));
             Assert.Equal(0, await State(bot, x => x.Progress!.Currency.GetValueOrDefault(5)));
             Assert.Equal(4800, await Query(bot));
         }
@@ -721,21 +721,21 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Eligible(bot);
         await OnOwnedLoop(bot, "AFK daily quest reset fixture", async s =>
         {
-            long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
-            s.Daily.DailyEpoch = old;
-            s.WildAfk!.DailyEpoch = old;
-            s.WildAfk.ConsumedTodaySeconds = 3600;
+            long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Activities.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
+            s.Activities.Daily.DailyEpoch = old;
+            s.Activities.WildAfk!.DailyEpoch = old;
+            s.Activities.WildAfk.ConsumedTodaySeconds = 3600;
             s.Progress!.Currency[5] = 40;
-            s.DailyRows!.ActivityData[106].TaskCompleteTimes = 1;
-            s.Daily.Rows = s.DailyRows.ToByteArray();
+            s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes = 1;
+            s.Activities.Daily.Rows = s.Activities.DailyRows.ToByteArray();
             s.Tasks!.CompleteTaskNum[500130] = 1;
-            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Daily));
+            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Activities.Daily));
             Service<RoleStore>().SaveTasks(s.Role.Id, s.Tasks.ToByteArray());
             Service<RoleStore>().SaveProgress(s.Role.Id, s.Progress);
             // Daily's ticker is registered first; exercise that exact ordering before the AFK owner's tick.
             await Service<DailyActivityService>().ReconcileAsync(s);
             await Service<TaskService>().RefreshAsync(s);
-            Assert.Equal(0, s.DailyRows!.ActivityData[106].TaskCompleteTimes);
+            Assert.Equal(0, s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes);
             Assert.Equal(0, s.Progress.Currency.GetValueOrDefault(5));
             Assert.Equal(0, s.Tasks!.Infos[500130].CompleteNum[0]);
         });
@@ -753,15 +753,15 @@ public sealed class WildAfkTests : IAsyncLifetime
             role = (long)bot.Self!.Uuid;
             await OnOwnedLoop(bot, "AFK pending old-day fixture", s =>
             {
-                long epoch = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
+                long epoch = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Activities.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
                 old = epoch;
-                s.Daily.DailyEpoch = epoch;
-                s.WildAfk!.DailyEpoch = epoch;
-                s.WildAfk.ConsumedTodaySeconds = 3600;
-                s.WildAfk.Info.HighMultiplierTimeSeconds = 0;
-                s.WildAfk.Info.IsHighMagnification = false;
-                Service<RoleStore>().SaveDaily(role, JsonSerializer.SerializeToUtf8Bytes(s.Daily));
-                Service<RoleStore>().SaveWildAfk(role, JsonSerializer.SerializeToUtf8Bytes(s.WildAfk));
+                s.Activities.Daily.DailyEpoch = epoch;
+                s.Activities.WildAfk!.DailyEpoch = epoch;
+                s.Activities.WildAfk.ConsumedTodaySeconds = 3600;
+                s.Activities.WildAfk.Info.HighMultiplierTimeSeconds = 0;
+                s.Activities.WildAfk.Info.IsHighMagnification = false;
+                Service<RoleStore>().SaveDaily(role, JsonSerializer.SerializeToUtf8Bytes(s.Activities.Daily));
+                Service<RoleStore>().SaveWildAfk(role, JsonSerializer.SerializeToUtf8Bytes(s.Activities.WildAfk));
                 FixtureSql.Execute(Service<AccountStore>(),
                     "CREATE TRIGGER fail_afk_award BEFORE UPDATE OF currency ON role BEGIN SELECT RAISE(ABORT, 'afk award fixture'); END");
                 return Task.CompletedTask;
@@ -780,8 +780,8 @@ public sealed class WildAfkTests : IAsyncLifetime
             await Next(again, CharacterService.GetRewardNotify, GetRewardNotify.Parser,
                 x => x.Rewards.Any(i => i.ItemEntry == 5 && i.Stack == 40));
             Assert.Equal(3600, await Query(again));
-            Assert.Equal(0, await State(again, s => s.WildAfk!.ConsumedTodaySeconds));
-            Assert.Equal(0, await State(again, s => s.DailyRows!.ActivityData[106].TaskCompleteTimes));
+            Assert.Equal(0, await State(again, s => s.Activities.WildAfk!.ConsumedTodaySeconds));
+            Assert.Equal(0, await State(again, s => s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes));
             Assert.Equal(0, await State(again, s => s.Progress!.Currency.GetValueOrDefault(5)));
             await again.SendGameAsync(MsgId.Logout, new LogoutReq());
             await Next(again, MsgId.Logout, LogoutResp.Parser);
@@ -799,9 +799,9 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Eligible(bot);
         await OnOwnedLoop(bot, "AFK failed award fixture", s =>
         {
-            s.WildAfk!.ConsumedTodaySeconds = 3600;
-            s.WildAfk.Info.HighMultiplierTimeSeconds = 0;
-            s.WildAfk.Info.IsHighMagnification = false;
+            s.Activities.WildAfk!.ConsumedTodaySeconds = 3600;
+            s.Activities.WildAfk.Info.HighMultiplierTimeSeconds = 0;
+            s.Activities.WildAfk.Info.IsHighMagnification = false;
             FixtureSql.Execute(Service<AccountStore>(),
                 "CREATE TRIGGER fail_afk_award BEFORE UPDATE OF currency ON role BEGIN SELECT RAISE(ABORT, 'afk award fixture'); END");
             return Task.CompletedTask;
@@ -810,18 +810,18 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.Equal(0, await State(bot, s => s.Tasks!.CompleteTaskNum.GetValueOrDefault(500130)));
         await OnOwnedLoop(bot, "AFK failed award reset fixture", async s =>
         {
-            long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
-            s.Daily.DailyEpoch = old;
-            s.WildAfk!.DailyEpoch = old;
-            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Daily));
+            long old = new DateTimeOffset(DateTimeOffset.FromUnixTimeSeconds(s.Activities.Daily!.DailyEpoch).LocalDateTime.AddDays(-1)).ToUnixTimeSeconds();
+            s.Activities.Daily.DailyEpoch = old;
+            s.Activities.WildAfk!.DailyEpoch = old;
+            Service<RoleStore>().SaveDaily(s.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(s.Activities.Daily));
             await Assert.ThrowsAsync<InvalidOperationException>(() => Service<DailyActivityService>().ReconcileAsync(s));
-            Assert.Equal(old, s.Daily.DailyEpoch); // reset is held, so the earned old-day award remains retryable
+            Assert.Equal(old, s.Activities.Daily.DailyEpoch); // reset is held, so the earned old-day award remains retryable
             FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_afk_award");
         });
         Assert.Equal(3600, await Query(bot)); // recovery settles once, then restores the new day
         await Next(bot, CharacterService.GetRewardNotify, GetRewardNotify.Parser, x => x.Rewards.Any(i => i.ItemEntry == 5 && i.Stack == 40));
-        Assert.Equal(0, await State(bot, s => s.DailyRows!.ActivityData[106].TaskCompleteTimes));
-        Assert.Equal(0, await State(bot, s => s.WildAfk!.ConsumedTodaySeconds));
+        Assert.Equal(0, await State(bot, s => s.Activities.DailyRows!.ActivityData[106].TaskCompleteTimes));
+        Assert.Equal(0, await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds));
     }
 
     [ClientDataFact]
@@ -851,8 +851,8 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, WildAfkService.Start, StartHighMultiplierTimeRsp.Parser)).Result);
         await bot.SendGameAsync(WildAfkService.SaveCharge, new WildAfkSaveChargeReq { IsSaveCharge = true });
         await Query(bot);
-        Assert.True(await State(bot, s => s.WildAfk!.PowerSaving));
-        Assert.True(await State(bot, s => s.WildAfk!.Info.IsHighMagnification));
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.PowerSaving));
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.Info.IsHighMagnification));
     }
 
     [ClientDataFact]
@@ -860,7 +860,7 @@ public sealed class WildAfkTests : IAsyncLifetime
     {
         await using var bot = await InWorld();
         var session = Session(bot);
-        var state = session.WildAfk!;
+        var state = session.Activities.WildAfk!;
         var afk = Service<WildAfkService>();
         await state.Gate.WaitAsync();
         Task leaving, queued;
@@ -872,8 +872,8 @@ public sealed class WildAfkTests : IAsyncLifetime
         }
         finally { state.Gate.Release(); }
         await Task.WhenAll(leaving, queued);
-        Assert.Null(session.WildAfk);
-        Assert.False(session.AutoBattle);
+        Assert.Null(session.Activities.WildAfk);
+        Assert.False(session.Combat.AutoBattle);
         Assert.NotNull(Service<RoleStore>().LoadWildAfk(session.Role!.Id));
     }
 
@@ -885,7 +885,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         var session = Session(bot);
         var oldRole = session.Role!;
         var oldProgress = session.Progress!;
-        var oldAfk = session.WildAfk!;
+        var oldAfk = session.Activities.WildAfk!;
         var afk = Service<WildAfkService>();
         var rewards = Service<RewardService>();
         var combat = Service<CombatService>();
@@ -951,7 +951,7 @@ public sealed class WildAfkTests : IAsyncLifetime
 
             oldAfk.Gate.Release(); initialGateHeld = false;
             await leaving.WaitAsync(Wait);
-            Assert.Null(session.WildAfk);
+            Assert.Null(session.Activities.WildAfk);
             // Scope admission may release/retry a semaphore on an owner conflict. Explicit phases
             // avoid relying on FIFO across that release while retaining the real stale-gate wait.
             await oldAfk.Gate.WaitAsync(); blockerAcquired = true;
@@ -963,7 +963,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             await bot.EnterWorldAsync(bob);
             Assert.NotEqual(oldRole.Id, session.Role!.Id);
             Assert.NotSame(oldProgress, session.Progress);
-            Assert.NotSame(oldAfk, session.WildAfk);
+            Assert.NotSame(oldAfk, session.Activities.WildAfk);
             long baseExp = session.Progress!.Exp, jobExp = session.Progress.JobExp;
             var currency = session.Progress.Currency.OrderBy(kv => kv.Key).Select(kv => (kv.Key, kv.Value)).ToArray();
             var items = session.Items.Select(i => (i.Entry, i.Stack)).Order().ToArray();
@@ -1006,12 +1006,12 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Query(bot);
         var session = Session(bot);
         var oldRole = session.Role!;
-        var oldAfk = session.WildAfk!;
+        var oldAfk = session.Activities.WildAfk!;
         var oldProgress = session.Progress!;
         var oldExp = oldProgress.Exp;
         var oldJobExp = oldProgress.JobExp;
         var oldCurrency = oldProgress.Currency.GetValueOrDefault(5);
-        bool SameRole() => ReferenceEquals(session.Role, oldRole) && ReferenceEquals(session.WildAfk, oldAfk)
+        bool SameRole() => ReferenceEquals(session.Role, oldRole) && ReferenceEquals(session.Activities.WildAfk, oldAfk)
             && session.Progress != null;
 
         await session.StateLock.WaitAsync();
@@ -1027,7 +1027,7 @@ public sealed class WildAfkTests : IAsyncLifetime
             Assert.False(grant.IsCompleted);
             Assert.False(exp.IsCompleted);
             await bot.SwitchRoleAsync();
-            Assert.Null(session.WildAfk);
+            Assert.Null(session.Activities.WildAfk);
 
             session.StateLock.Release(); lockHeld = false;
             await Task.WhenAll(grant, exp).WaitAsync(Wait);

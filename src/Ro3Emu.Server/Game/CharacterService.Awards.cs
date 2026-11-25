@@ -61,7 +61,7 @@ public sealed partial class CharacterService
         byte[] previousDaily, byte[] nextDaily, DBTaskInfo? nextTasks = null, byte[]? expectedTasks = null, long questExp = 0)
     {
         using var held = await LockAsync(session);
-        if (session.Daily == null || !JsonSerializer.SerializeToUtf8Bytes(session.Daily).AsSpan().SequenceEqual(previousDaily)
+        if (session.Activities.Daily == null || !JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily).AsSpan().SequenceEqual(previousDaily)
             || expectedTasks != null && (session.Tasks == null || !session.Tasks.ToByteArray().AsSpan().SequenceEqual(expectedTasks)))
             return false;
         var before = JsonSerializer.Deserialize<DailyActivityService.DailyState>(previousDaily);
@@ -125,8 +125,8 @@ public sealed partial class CharacterService
             throw new ArgumentOutOfRangeException(nameof(manifestType));
         if ((expectedDaily == null) != (nextDaily == null)) throw new ArgumentException("Daily award requires before and after state");
         if (expectedTasks != null && deliveredTaskState == null) throw new ArgumentException("Task comparison requires next task state");
-        if (expectedDaily != null && (session.Daily == null
-                || !JsonSerializer.SerializeToUtf8Bytes(session.Daily).AsSpan().SequenceEqual(expectedDaily))) return false;
+        if (expectedDaily != null && (session.Activities.Daily == null
+                || !JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily).AsSpan().SequenceEqual(expectedDaily))) return false;
         if (expectedTasks != null && (session.Tasks == null || !session.Tasks.ToByteArray().AsSpan().SequenceEqual(expectedTasks))) return false;
         var nextTasks = deliveredTaskState == null ? null : DBTaskInfo.Parser.ParseFrom(deliveredTaskState);
         var nextRuntime = taskRuntimeState == null ? null : JsonSerializer.Deserialize<TaskRuntimeState>(taskRuntimeState)
@@ -256,11 +256,11 @@ public sealed partial class CharacterService
             session.Progress = staged;
             session.Items = items;
             if (nextTasks != null) session.Tasks = nextTasks;
-            if (nextRuntime != null) session.TaskRuntime = nextRuntime;
+            if (nextRuntime != null) session.Activities.TaskRuntime = nextRuntime;
             if (nextDailyState != null)
             {
-                session.Daily = nextDailyState;
-                session.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(nextDailyState.Rows);
+                session.Activities.Daily = nextDailyState;
+                session.Activities.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(nextDailyState.Rows);
             }
             cardSight?.Apply();
             committed?.Invoke();
@@ -341,9 +341,9 @@ public sealed partial class CharacterService
         }
         if (attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)) return true;
         if (ownedAward?.CommandKind is "cd13e/grant" or "cd13e/gm-grant")
-            foreach (var item in received.Where(i => i.Guid > 0 && items.Contains(i))) session.NewItems.Add(item.Guid);
+            foreach (var item in received.Where(i => i.Guid > 0 && items.Contains(i))) session.Profile.NewItems.Add(item.Guid);
         else
-            foreach (var item in items.Where(i => i.Guid > 0 && !oldItemGuids.Contains(i.Guid))) session.NewItems.Add(item.Guid);
+            foreach (var item in items.Where(i => i.Guid > 0 && !oldItemGuids.Contains(i.Guid))) session.Profile.NewItems.Add(item.Guid);
         if (expense.Count > 0 || plan.Grants.Any(g => g.Entry is not (BaseExpItem or JobExpItem))) await SyncItemsAsync(session);
         if (baseExp > 0 || jobExp > 0)
         {

@@ -65,16 +65,16 @@ public sealed partial class SeasonTalentService
         int result = 0;
         using (await CharacterService.Lock(s))
         {
-            if (s.SeasonTalent == null || s.Progress == null || !Available(s)) result = ErrorCodes.FeatureUnavailable;
+            if (s.Season.SeasonTalent == null || s.Progress == null || !Available(s)) result = ErrorCodes.FeatureUnavailable;
             else
             {
                 BuildUnlocks(s);
                 var path = ChoicePath(req.TalentId, s.Progress.Career);
                 if (path == null) result = ErrorCodes.TalentInvalid;
-                else if (!s.SeasonTalent.UnlockedNode.GetValueOrDefault(path.Value.Gate)) result = ErrorCodes.TalentLocked;
+                else if (!s.Season.SeasonTalent.UnlockedNode.GetValueOrDefault(path.Value.Gate)) result = ErrorCodes.TalentLocked;
                 else
                 {
-                    var next = s.SeasonTalent.Clone();
+                    var next = s.Season.SeasonTalent.Clone();
                     var plan = next.Plan[next.CurPlanId];
                     // (inferred) choosing again replaces this one choice, within this plan only.
                     foreach (long member in ChoiceMembers(path.Value.Gate)) plan.TalentNodes[member].CurrentLevel = 0;
@@ -86,7 +86,7 @@ public sealed partial class SeasonTalentService
                     {
                         var transaction = _roles.NewTransaction();
                         transaction.RoleBlob(s.Role!.Id, "season_talent", next.ToByteArray());
-                        await _roles.CommitAsync(transaction, "season-talent/profession", _ => s.SeasonTalent = next);
+                        await _roles.CommitAsync(transaction, "season-talent/profession", _ => s.Season.SeasonTalent = next);
                     }
                     catch (Exception error) when (error is SqliteException
                         or Accounts.Persistence.PersistenceException or InvalidOperationException)

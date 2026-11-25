@@ -54,16 +54,16 @@ public sealed partial class RaidTrialsService
                 foreach (var (multi, mark) in targets)
                     await PayFirstPassAsync(s, multi, mark);
         }
-        if (s.Dungeons != null) await SyncAsync(s);
+        if (s.Instances.Dungeons != null) await SyncAsync(s);
         await s.SendGameAsync(ClaimFirstPass, new ClaimFirstPassAwardResp
         { Result = error, MultiDungeonId = req.MultiDungeonId, MarkId = req.MarkId });
     }
 
     private int FirstPassRefusal(GameSession s, int multiId, int mark)
     {
-        if (s.Role == null || s.Dungeons == null || MultiRow(multiId) is not { } multi || !Meets(s, multi)
+        if (s.Role == null || s.Instances.Dungeons == null || MultiRow(multiId) is not { } multi || !Meets(s, multi)
             || _catalog.Boss(multi, mark) is not { } boss) return ErrorCodes.Parameter;
-        var state = CurrentState(s.Dungeons);
+        var state = CurrentState(s.Instances.Dungeons);
         int award = FirstPassAwardState(state, $"{multiId}:{mark}", boss, state.Records.GetValueOrDefault($"{multiId}:{mark}"));
         return award == FirstAwardComplete ? 0 : award == FirstAwardFinish ? ErrorCodes.RewardClaimed : ErrorCodes.Parameter;
     }
@@ -74,7 +74,7 @@ public sealed partial class RaidTrialsService
         var targets = new List<(int, int)>();
         var multi = MultiRow(multiId)!.Value;
         if (new TenGameplayConfig(multi).Difficulty != 2 || BossSlot(multi, mark) is not { } slot) return targets;
-        var state = CurrentState(s.Dungeons!);
+        var state = CurrentState(s.Instances.Dungeons!);
         foreach (var normal in _catalog.MultiRows.Where(r => new TenGameplayConfig(r).Type == new TenGameplayConfig(multi).Type
             && new TenGameplayConfig(r).Difficulty == 1 && Meets(s, r)))
             for (int m = 1; m <= DungeonCatalog.Marks(normal); m++)
@@ -103,7 +103,7 @@ public sealed partial class RaidTrialsService
         try { if (awardId > 0) plan = _awards.ResolveDirect(s, awardId); }
         catch (AwardResolutionException e) { LogFirstPassAwardRejected(_log, e, awardId); }
         if (plan == null || plan.Grants.Count == 0) return ErrorCodes.RewardMissing;
-        var next = CurrentState(s.Dungeons!);
+        var next = CurrentState(s.Instances.Dungeons!);
         next.FirstPassPaid.Add(key);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(next);
         bool paid = await _character.ApplyAwardAsync(s, plan, persist: tx =>
@@ -113,7 +113,7 @@ public sealed partial class RaidTrialsService
                 tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "dungeon/first-pass-award",
                     $"dungeon/first-pass-award/{s.Role.Id}/{key}/{next.SeasonStart}", [], plan.Grants,
                     new { Multi = multiId, Mark = mark, Award = awardId }));
-        }, committed: () => s.Dungeons = next);
+        }, committed: () => s.Instances.Dungeons = next);
         return paid ? 0 : ErrorCodes.Unknown;
     }
 

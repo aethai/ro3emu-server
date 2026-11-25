@@ -131,7 +131,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
                 Attrs = new Dictionary<int, long> { [3] = 1, [240] = 10051001, [241] = 10053005 },
             };
             Session.Items.Add(totem);
-            Session.Totems!.TotemPlans[0].SetUpTotem[1] = totem.Guid;
+            Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1] = totem.Guid;
             await Service<TotemEffects>().RefreshAsync(Session);
             Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == totem.Guid && b.ConfigId == 2500201);
             // A recovery tick before the first hit (+1002 per 5 s) outlasts this floor's monsters (180 per second): no death.
@@ -201,7 +201,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             Assert.Equal(Service<CharacterService>().Stats(Session)[103], self.Base.Property.Single(p => p.Idx == 103).Data);
             Assert.False(Session.Dead);
             Assert.Equal(0, Session.InstanceId);
-            Assert.Null(Session.TowerAttempt);
+            Assert.Null(Session.Instances.TowerAttempt);
             return Task.CompletedTask;
         });
         await Next(bot, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => !info.BDead);
@@ -225,8 +225,8 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long spentSp = Service<CharacterService>().Stats(Session)[102] / 2;
         await OnLoop(async () =>
         {
-            foreach (var monster in Session.TowerAttempt!.Monsters) monster.Dead = true;
-            Session.LastCombatMs = Service<GameLoop>().NowMs;
+            foreach (var monster in Session.Instances.TowerAttempt!.Monsters) monster.Dead = true;
+            Session.Combat.LastCombatMs = Service<GameLoop>().NowMs;
             Session.StatusBits |= 1L << 15; // suppress out-of-combat regen during the return assertion
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(Session, wounded, spentSp);
@@ -236,7 +236,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(wounded, self.Base.Property.Single(p => p.Idx == 2000).Data);
         Assert.Equal(spentSp, self.Base.Property.Single(p => p.Idx == 2001).Data);
         Assert.Equal(wounded, Service<CharacterService>().Stats(Session)[2000]);
-        Assert.Null(Session.TowerAttempt);
+        Assert.Null(Session.Instances.TowerAttempt);
     }
 
     [ClientDataFact]
@@ -364,7 +364,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long wounded = Service<CharacterService>().Stats(Session)[101] / 2;
         await OnLoop(() =>
         {
-            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Service<CharacterService>().SetHpSpAsync(Session, wounded, null);
@@ -374,12 +374,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(wounded, successSelf.Base.Property.Single(p => p.Idx == 2000).Data);
 
         var second = await EnterFloor(bot, 2);
-        await OnLoop(() => { Session.TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
+        await OnLoop(() => { Session.Instances.TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
         await Kill(bot, second.Monsters[0].Uuid);
         Assert.False((await Next(bot, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
         await OnLoop(() =>
         {
-            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Task.CompletedTask;

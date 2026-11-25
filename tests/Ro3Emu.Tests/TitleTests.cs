@@ -103,7 +103,7 @@ public sealed class TitleTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.ItemsShort, await Claim(alice));
         await Gm(alice, $"!item {CrestOfJourney} 2");
         Assert.Equal(0, await Claim(alice));
-        Assert.Equal(4, Session(alice).TitleInfo!.TitleId);
+        Assert.Equal(4, Session(alice).Profile.TitleInfo!.TitleId);
         Assert.DoesNotContain(Session(alice).Items, i => i.Entry == CrestOfJourney);
         // The rank is the role's public title and adds its _iPowerAdd to titleScore.
         Assert.Equal(4, Service<CharacterService>().TitleOf!(Session(alice)));

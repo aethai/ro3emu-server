@@ -60,8 +60,8 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var a = Session("alice");
-        a.InCutScene = true;
-        Assert.True(a.CutSceneSinceMs > 0);
+        a.Activities.InCutScene = true;
+        Assert.True(a.Activities.CutSceneSinceMs > 0);
         long hp = Character.Stats(a)[AttributeId.Hp];
         var combat = _app.Services.GetRequiredService<CombatService>();
         await Loop.InvokeAsync(() => combat.EnvironmentDamageAsync(a, 10));

@@ -22,7 +22,7 @@ public sealed partial class PetCombatService
             MoveTimeMs = Math.Max(1, move.Ms),
         });
         if (!CurrentCastMap(source, action)) return;
-        source.PreviousPosition = start; source.Position = end;
+        source.WorldState.PreviousPosition = start; source.Position = end;
         await _world.MoveAsync(source, new WalkReq { Pos = end, Dir = source.Face, Face = source.Face, BStop = true }, forceTeleport: true);
     }
 }

@@ -27,7 +27,7 @@ public sealed partial class SkillCombatTests
             using (await CharacterService.Lock(s)) s.Progress!.Skills[13102] = 5;
             if (falcon) await _app.Services.GetRequiredService<CareerSpecialService>().GmLeaseAsync(s, FalconLease, mount: false, ride: false);
         });
-        if (falcon) Assert.Equal(FalconLease, Session(name).CareerSpecial!.PendantSlot.CartRemouldCfg);
+        if (falcon) Assert.Equal(FalconLease, Session(name).Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
         var monster = await Target(name, stationary: true);
         await Loop.InvokeAsync(() => { monster.Hp = 1_000_000; return Task.CompletedTask; });
         await HoldInMainHand(name, Bow);

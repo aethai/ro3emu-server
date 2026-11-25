@@ -191,12 +191,12 @@ public sealed class PersonalTests : IAsyncLifetime
         // Fashion: permanently lit appearances' _iFashionScore (WardRobeConfig 10030417 scores 10).
         var data = _app.Services.GetRequiredService<GameData>();
         int Fashion(Dictionary<object, object?> seen) => RoleAdditionBaseInfo.Parser.ParseFrom((byte[])seen["Base"]!).FashionScore;
-        long before = WardrobeService.FashionScore(data, Session("bob").Wardrobe);
+        long before = WardrobeService.FashionScore(data, Session("bob").Profile.Wardrobe);
         Assert.Equal(before, Fashion(await Card(alice, b, "Base")));
         await WaitUntil(() =>
         {
-            Session("bob").Wardrobe!.AllLightUpAppearances[10030417] = new DBAppearanceInfo { AppearanceId = 10030417 };
-            Session("bob").Wardrobe!.AllLightUpAppearances[10030419] = new DBAppearanceInfo { AppearanceId = 10030419, OverdueTimeMs = 1 };
+            Session("bob").Profile.Wardrobe!.AllLightUpAppearances[10030417] = new DBAppearanceInfo { AppearanceId = 10030417 };
+            Session("bob").Profile.Wardrobe!.AllLightUpAppearances[10030419] = new DBAppearanceInfo { AppearanceId = 10030419, OverdueTimeMs = 1 };
             return true;
         }, "wardrobe not changed");
         Assert.Equal(before + 10, Fashion(await Card(alice, b, "Base"))); // the leased one does not count
@@ -229,7 +229,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(0, full.UpvoteTimes[0].All);
         var seed = await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => !i.SyncAllMark);
         Assert.True(seed.UpvoteTimes[0].Del);
-        Assert.Empty(Session("alice").Personal!.UpvoteTimes);
+        Assert.Empty(Session("alice").Social.Personal!.UpvoteTimes);
 
         // 5044: the own card reads the worn title and honor; the defaults are worn and owned.
         var outfit = await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, i => i.SyncAllMark);
@@ -299,7 +299,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(PersonalService.ErrStickers, (await Save(alice, 1, twice)).Result); // one owned, two placed
 
         // The pose is a PerformanceConfig emote the role has unlocked; the editor preselects one (50001) even for a sign edit.
-        var unlockedPoses = Session("alice").EmojiPlay!.EmojiUnlocks.ToHashSet();
+        var unlockedPoses = Session("alice").Social.EmojiPlay!.EmojiUnlocks.ToHashSet();
         int lockedPose = _app.Services.GetRequiredService<GameData>().Table("PerformanceConfig").Values
             .Select(r => (int)GameData.Int(r, "_iID")).First(id => id > 0 && !unlockedPoses.Contains(id));
         var posed = stuck.Clone(); posed.RoleInfos.Add(new PersonalRoleInfo { ActionId = lockedPose });
@@ -312,8 +312,8 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(0, (await Save(alice, 1, stuck)).Result);
         var changed = await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.PlanInfos.ContainsKey(1));
         Assert.Equal("Hello there", changed.PlanInfos[1].Inc.Sign);
-        Assert.Equal("", Session("alice").Personal!.PlanInfos[1].PlanName);
-        Assert.Equal(Sticker, Session("alice").Personal!.PlanInfos[1].DecalInfos.Single().DecalId);
+        Assert.Equal("", Session("alice").Social.Personal!.PlanInfos[1].PlanName);
+        Assert.Equal(Sticker, Session("alice").Social.Personal!.PlanInfos[1].DecalInfos.Single().DecalId);
         Assert.Equal(1, Session("alice").Progress!.Currency[Sticker]); // placed, not spent
 
         // 82560 rename: PersonalTemplateLimit 7, not empty.

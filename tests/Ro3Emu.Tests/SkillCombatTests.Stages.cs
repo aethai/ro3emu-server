@@ -48,7 +48,7 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var away = await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)a.Role!.Id);
         await Task.Delay(500);
-        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1532901, TargetPos = away.EndPos, Face = a.Face });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var back = await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)a.Role!.Id);
@@ -63,9 +63,9 @@ public sealed partial class SkillCombatTests
         var a = Session("alice");
         await Loop.InvokeAsync(async () =>
         {
-            a.Energy[141002].Value = 19;
+            a.Combat.Energy[141002].Value = 19;
             await _app.Services.GetRequiredService<BuffService>().AddShieldStanceAsync(a);
-            Assert.Equal(0, a.Energy[141002].Value);
+            Assert.Equal(0, a.Combat.Energy[141002].Value);
             Assert.Equal(3, a.Buffs.Single(b => b.ConfigId == 1163101).PileCount);
         });
     }

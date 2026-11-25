@@ -100,7 +100,7 @@ public sealed partial class TalentProcs
     }
 
     private bool FalconFollows(GameSession s) => MountService.Rider(s) != WolfMount
-        && s.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == FalconPendantType);
+        && s.Profile.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == FalconPendantType);
 
     private async Task KatarMasteryAsync(GameSession s)
     {

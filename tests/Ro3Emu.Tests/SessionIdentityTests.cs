@@ -105,6 +105,24 @@ public sealed class SessionIdentityTests
     }
 
     [Fact]
+    public void SessionSlotStoresAndClearsRoleScopedState()
+    {
+        var roleSlot = new SessionSlot<List<int>>(clearOnRoleReset: true);
+        var connSlot = new SessionSlot<List<string>>(clearOnRoleReset: false);
+        var session = Game();
+
+        Assert.Null(session.GetSlot(roleSlot));
+        session.GetOrCreateSlot(roleSlot).Add(42);
+        session.GetOrCreateSlot(connSlot).Add("keep");
+        Assert.Equal([42], session.GetSlot(roleSlot));
+        Assert.Equal(["keep"], session.GetSlot(connSlot));
+
+        session.ClearRoleLoadState();
+        Assert.Null(session.GetSlot(roleSlot));
+        Assert.Equal(["keep"], session.GetSlot(connSlot));
+    }
+
+    [Fact]
     public void AMicroConnectionThatChangesAccountStopsReceivingTheFirstOnesPushes()
     {
         var micro = new MicroSessions(NullLogger<MicroSessions>.Instance);

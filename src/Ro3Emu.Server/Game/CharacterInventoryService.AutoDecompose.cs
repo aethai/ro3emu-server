@@ -44,7 +44,7 @@ public sealed partial class CharacterInventoryService
         var plan = PlanAutoDecompose(session, received, before);
         foreach (var (item, count) in plan.Sources) TakeFromStack(session, item, count, [], []);
         foreach (var (entry, count) in plan.Gains)
-            foreach (var item in AddItemCore(session, entry, count, out _)) session.NewItems.Add(item.Guid);
+            foreach (var item in AddItemCore(session, entry, count, out _)) session.Profile.NewItems.Add(item.Guid);
         return plan.Notice;
     }
 

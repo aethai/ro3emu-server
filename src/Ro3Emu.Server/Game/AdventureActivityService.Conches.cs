@@ -109,7 +109,7 @@ public sealed partial class AdventureActivityService
             && WorldPhaseOpen(session, trigger.Phase.Row) && _functions.IsOpen(session, trigger.Function));
 
     private bool ConchMapOpen(GameSession session) =>
-        !session.SceneLoading && session.InstanceId == 0 && session.ActivitiesReady &&
+        !session.SceneLoading && session.InstanceId == 0 && session.Activities.ActivitiesReady &&
         ExplorePhaseConfig.All(_data).Any(p => p.Activityid == ExplorationActivity && p.Map.Contains(session.SceneEntry)
             && WorldPhaseOpen(session, p.Row))
             && _functions.IsOpen(session, (int)(Data.Config.ActivityConstants.Of(_data).ExploreFunction ?? 0))
@@ -137,7 +137,7 @@ public sealed partial class AdventureActivityService
         var visible = new HashSet<long>();
         if (open)
         {
-            var state = session.NewActivities!.ActivityInfo[ExplorationActivity].ActivityParam.WorldExploration;
+            var state = session.Activities.NewActivities!.ActivityInfo[ExplorationActivity].ActivityParam.WorldExploration;
             var collected = state.MapCollect.GetValueOrDefault(session.SceneEntry);
             var map = Conches(session.SceneEntry);
             foreach (var (uid, point) in map.Points)
@@ -197,7 +197,7 @@ public sealed partial class AdventureActivityService
             return true;
         }
         var end = _clock.GetUtcNow().AddMilliseconds(play![1]);
-        long cycle = session.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime;
+        long cycle = session.Activities.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime;
         if (startSong)
         {
             // The successful 32700 reply runs EnterMusicGame on the client. Closing the HUD sends no cancellation.
@@ -257,7 +257,7 @@ public sealed partial class AdventureActivityService
     // when we do have a start, also enforce its target, cycle and time limit.
     private bool CanFinishPillar(GameSession session, long uid) =>
         session.PlayingPillar is not { } song || (song.Uid == uid && song.End > _clock.GetUtcNow()
-        && song.Cycle == session.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime);
+        && song.Cycle == session.Activities.NewActivities!.ActivityInfo[ExplorationActivity].CycleStartTime);
 
     internal async Task ConchMovedAsync(GameSession session)
     {
@@ -270,7 +270,7 @@ public sealed partial class AdventureActivityService
         if (session.InstanceId != 0 || !_conchMaps.TryGetValue(session.SceneEntry, out var map)) return;
         foreach (var trigger in map.Triggers.Values)
         {
-            var previous = session.PreviousPosition;
+            var previous = session.WorldState.PreviousPosition;
             if (trigger.Area is not { } area || area.Contains(previous.X, previous.Z) == area.Contains(session.Position.X, session.Position.Z)) continue;
             await SyncConchesAsync(session);
             break;
@@ -311,7 +311,7 @@ public sealed partial class AdventureActivityService
         try
         {
             if (!_deadlines.IsCurrent(session, lease) || CheckConch(session, session.PendingConch, out var point) != 0) return;
-            var next = session.NewActivities!.Clone();
+            var next = session.Activities.NewActivities!.Clone();
             var activity = next.ActivityInfo[ExplorationActivity];
             if (activity.CycleStartTime != session.ConchCycle || !RecordConch(activity.ActivityParam.WorldExploration, session.SceneEntry, point!.Id)) return;
             long award = NPCConfig.Get(_data, point.ConfigId)!.Value.CAward;

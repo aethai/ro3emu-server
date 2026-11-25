@@ -23,9 +23,9 @@ public sealed partial class BuffService
     public async Task InitializeEnergyAsync(GameSession p)
     {
         if (p.Role == null || p.Progress == null) return;
-        p.Energy.Clear();
-        p.EnergyCareer = 0;
-        p.EnergyMounts = 0;
+        p.Combat.Energy.Clear();
+        p.Combat.EnergyCareer = 0;
+        p.Combat.EnergyMounts = 0;
         await ReconcileEnergyAsync(p);
     }
 
@@ -37,22 +37,22 @@ public sealed partial class BuffService
     {
         if (p.Role == null || p.Progress == null) return;
         int mounts = OwnedEnergyMounts(p);
-        if (p.EnergyCareer == p.Progress.Career && p.EnergyMounts == mounts) return;
+        if (p.Combat.EnergyCareer == p.Progress.Career && p.Combat.EnergyMounts == mounts) return;
         int career = p.Progress.Career;
         var applicable = _data.Table("EnergyConfig").Values
             .Where(row => BelongsToJob(row, career) || BelongsToOwnedMount(row, p))
             .Select(row => (Id: (int)GameData.Int(row, "_iID"), Row: row))
             .Where(x => x.Id > 0).ToList();
         var ids = applicable.Select(x => x.Id).ToHashSet();
-        foreach (int id in p.Energy.Keys.Where(id => !ids.Contains(id)).ToList()) p.Energy.Remove(id);
-        p.EnergyCareer = career;
-        p.EnergyMounts = mounts;
+        foreach (int id in p.Combat.Energy.Keys.Where(id => !ids.Contains(id)).ToList()) p.Combat.Energy.Remove(id);
+        p.Combat.EnergyCareer = career;
+        p.Combat.EnergyMounts = mounts;
         long now = _loop.NowMs;
         foreach (var (id, row) in applicable)
         {
-            if (p.Energy.ContainsKey(id)) continue;
+            if (p.Combat.Energy.ContainsKey(id)) continue;
             long interval = GameData.Int(row, "_iAutoRecoverInterval");
-            p.Energy[id] = new PlayerEnergyState
+            p.Combat.Energy[id] = new PlayerEnergyState
             {
                 Value = Math.Clamp(GameData.Int(row, "_iInitializeValue"), 0, GameData.Int(row, "_iLimitValue")),
                 LastRecoverMs = now, NextRecoverMs = interval > 0 ? now + interval : 0,
@@ -62,7 +62,7 @@ public sealed partial class BuffService
     }
 
     /// <summary>MountService.Changed: a role whose meters are not initialized yet waits for InitializeEnergyAsync.</summary>
-    public Task MountsChangedAsync(GameSession p) => p.EnergyCareer == 0 ? Task.CompletedTask : ReconcileEnergyAsync(p);
+    public Task MountsChangedAsync(GameSession p) => p.Combat.EnergyCareer == 0 ? Task.CompletedTask : ReconcileEnergyAsync(p);
 
     private static bool BelongsToJob(JsonElement row, int career) =>
         row.TryGetProperty("_iBelongJob", out var jobs) && jobs.ValueKind == JsonValueKind.Array
@@ -117,27 +117,27 @@ public sealed partial class BuffService
 
     public bool CanSpendEnergy(GameSession p, JsonElement skill) =>
         TryEnergyCosts(skill, out var costs)
-        && costs.All(c => p.Energy.TryGetValue(c.EnergyId, out var meter) && meter.Value >= c.Amount);
+        && costs.All(c => p.Combat.Energy.TryGetValue(c.EnergyId, out var meter) && meter.Value >= c.Amount);
 
     /// <summary>Call only after cast validation succeeds; changes each charged meter once and sends 31334.</summary>
     public async Task SpendEnergyAsync(GameSession p, JsonElement skill)
     {
         if (!TryEnergyCosts(skill, out var costs)
-            || costs.Any(c => !p.Energy.TryGetValue(c.EnergyId, out var meter) || meter.Value < c.Amount)) return;
+            || costs.Any(c => !p.Combat.Energy.TryGetValue(c.EnergyId, out var meter) || meter.Value < c.Amount)) return;
         foreach (var (id, amount) in costs)
         {
-            var meter = p.Energy[id];
+            var meter = p.Combat.Energy[id];
             meter.Value -= amount;
             await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)5);
         }
-        if (costs.Any(c => c.EnergyId == EnhanceSpearCharges) && p.Energy[EnhanceSpearCharges].Value == 0)
+        if (costs.Any(c => c.EnergyId == EnhanceSpearCharges) && p.Combat.Energy[EnhanceSpearCharges].Value == 0)
             foreach (var storm in p.Buffs.Where(b => b.ConfigId == FuriousStorm).ToArray()) await RemoveAsync(p, storm);
     }
 
     /// <summary>Adds to a meter up to its limit: blades, charges and other fills no row's _kHitRecoverEnergy holds.</summary>
     internal async Task AddEnergyAsync(GameSession p, int energy, long amount)
     {
-        if (amount <= 0 || !p.Energy.TryGetValue(energy, out var meter) || Data.Config.EnergyConfig.Get(_data, energy) is not { } config) return;
+        if (amount <= 0 || !p.Combat.Energy.TryGetValue(energy, out var meter) || Data.Config.EnergyConfig.Get(_data, energy) is not { } config) return;
         meter.Value = Math.Clamp(meter.Value + amount, 0, config.LimitValue);
         await SendEnergyAsync(p, energy, (EPlayerEnergyChangeReason)2);
     }
@@ -153,7 +153,7 @@ public sealed partial class BuffService
     /// <summary>Reflect Damage: "there is a ... 50% Chance, respectively, to grant you 1 stack of [Shield Stance]".</summary>
     internal async Task AddShieldStanceAsync(GameSession p)
     {
-        if (!p.Energy.TryGetValue(ShieldStance, out var meter) || Data.Config.EnergyConfig.Get(_data, ShieldStance) is not { } config) return;
+        if (!p.Combat.Energy.TryGetValue(ShieldStance, out var meter) || Data.Config.EnergyConfig.Get(_data, ShieldStance) is not { } config) return;
         meter.Value = Math.Clamp(meter.Value + 1, 0, config.LimitValue);
         await UltraBashAtFullAsync(p, ShieldStance, meter, config.LimitValue);
         await SendEnergyAsync(p, ShieldStance, (EPlayerEnergyChangeReason)2);
@@ -162,7 +162,7 @@ public sealed partial class BuffService
     /// <summary>Takes this much from a meter, if it holds that much: a cost no row's _kCost names (Reading Spellbook's Book Pages).</summary>
     internal async Task<bool> TrySpendEnergyAsync(GameSession p, int energy, long amount)
     {
-        if (!p.Energy.TryGetValue(energy, out var meter) || meter.Value < amount) return false;
+        if (!p.Combat.Energy.TryGetValue(energy, out var meter) || meter.Value < amount) return false;
         meter.Value -= amount;
         await SendEnergyAsync(p, energy, (EPlayerEnergyChangeReason)5);
         return true;
@@ -179,7 +179,7 @@ public sealed partial class BuffService
     /// and the row's 5 is the meter's limit (both inferred).</summary>
     internal async Task StartFuriousStormAsync(GameSession p)
     {
-        if (!p.Energy.TryGetValue(RainSpearCharges, out var rain) || !p.Energy.TryGetValue(EnhanceSpearCharges, out var enhance)
+        if (!p.Combat.Energy.TryGetValue(RainSpearCharges, out var rain) || !p.Combat.Energy.TryGetValue(EnhanceSpearCharges, out var enhance)
             || Data.Config.EnergyConfig.Get(_data, EnhanceSpearCharges) is not { } config) return;
         rain.Value = 0;
         enhance.Value = config.LimitValue;
@@ -194,7 +194,7 @@ public sealed partial class BuffService
             || hit.GetArrayLength() < 2) return;
         int id = (int)(GameData.Number(hit[0]) ?? 0);
         long amount = (long)(GameData.Number(hit[1]) ?? 0);
-        if (amount <= 0 || !p.Energy.TryGetValue(id, out var meter) || _data.Row("EnergyConfig", id) is not { } config) return;
+        if (amount <= 0 || !p.Combat.Energy.TryGetValue(id, out var meter) || _data.Row("EnergyConfig", id) is not { } config) return;
         long limit = GameData.Int(config, "_iLimitValue");
         meter.Value = Math.Clamp(meter.Value + amount, 0, limit);
         // Precision Thrust: "Gain @{2} stack(s) of [Hundred Spear Pierce] charge for every @{1} HIT(s)": a full 140001 turns into one 140002.
@@ -214,7 +214,7 @@ public sealed partial class BuffService
     {
         if (p.Role == null) return;
         List<int>? recovered = null;
-        foreach (var (id, meter) in p.Energy)
+        foreach (var (id, meter) in p.Combat.Energy)
         {
             if (meter.NextRecoverMs == 0 || meter.NextRecoverMs > now || _data.Row("EnergyConfig", id) is not { } row) continue;
             long interval = GameData.Int(row, "_iAutoRecoverInterval");
@@ -232,13 +232,13 @@ public sealed partial class BuffService
     private async Task SendRecoveredAsync(GameSession p, List<int> ids)
     {
         foreach (int id in ids)
-            if (p.Energy.ContainsKey(id)) await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)1, notifyChanged: false);
+            if (p.Combat.Energy.ContainsKey(id)) await SendEnergyAsync(p, id, (EPlayerEnergyChangeReason)1, notifyChanged: false);
         foreach (var handler in Changed.Handlers) await handler(p);
     }
 
     private async Task SendEnergyAsync(GameSession p, int id, EPlayerEnergyChangeReason reason, bool notifyChanged = true)
     {
-        var meter = p.Energy[id];
+        var meter = p.Combat.Energy[id];
         await p.SendGameAsync(EnergyNotify, new PlayerEnergyNotify
         {
             EnergyConfigId = id, EnergyValue = meter.Value, ChangeReason = reason,

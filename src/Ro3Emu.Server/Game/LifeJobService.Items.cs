@@ -20,11 +20,11 @@ public sealed partial class LifeJobService
         long Arg(int n) => effect.GetArrayLength() > n ? (long)(GameData.Number(effect[n]) ?? 0) : 0;
         bool food = Arg(0) == 607, vigor = Arg(0) == 315 && Arg(1) == VigorId;
         if (!food && !vigor) return null;
-        if (s.Role == null || s.Progress == null || s.LifeJob == null || s.Restrictions == null)
+        if (s.Role == null || s.Progress == null || s.Season.LifeJob == null || s.Season.Restrictions == null)
             return ErrorCodes.FeatureUnavailable;
         if (!Current(itemRow) || s.Progress!.Level < GameData.Int(itemRow, "_iLevelNeed")) return ErrorCodes.LifeRequirements;
         if (!_functions.ConditionMet(s, GameData.Int(itemRow, "_iUseLimit"))) return ErrorCodes.LifeRequirements;
-        var next = s.LifeJob.Clone(); var restrict = s.Restrictions.Clone(); var runtime = Copy(s.LifeRuntime);
+        var next = s.Season.LifeJob.Clone(); var restrict = s.Season.Restrictions.Clone(); var runtime = Copy(s.Season.LifeRuntime);
         Reconcile(next, restrict, runtime);
         if (food)
         {
@@ -55,8 +55,8 @@ public sealed partial class LifeJobService
     /// <summary>Magic food adds _kAttrs once per accepted use (inferred aggregation into the ordinary stat pipeline).</summary>
     private IEnumerable<(long Id, double Value)> FoodAttributes(GameSession s)
     {
-        if (s.LifeJob == null || s.LifeRuntime.FoodBook != _seasons.PlayBook) yield break;
-        foreach (var (entry, count) in s.LifeJob.MagicFoodTimes)
+        if (s.Season.LifeJob == null || s.Season.LifeRuntime.FoodBook != _seasons.PlayBook) yield break;
+        foreach (var (entry, count) in s.Season.LifeJob.MagicFoodTimes)
             if (_data.Row("LifeMagicFoodAttrConfig", entry) is { } row && Current(row))
                 foreach (var (id, value) in GameData.Pairs(row, "_kAttrs"))
                     yield return (id, value * Math.Clamp(count, 0, GameData.Int(row, "_kLimit")));

@@ -69,13 +69,13 @@ public sealed partial class SkillCombatTests
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1201001, TargetPos = at, Face = a.Face });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var deadline = DateTime.UtcNow + Wait;
-        while (a.SkillObjects.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
-        Assert.NotEmpty(a.SkillObjects);
+        while (a.Combat.SkillObjects.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.NotEmpty(a.Combat.SkillObjects);
         await Task.Delay(1200); // the wall's own cast has played out
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1221301, TargetPos = at, Face = a.Face });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, r => r.Result == 0)).Result);
         deadline = DateTime.UtcNow + Wait;
-        while (a.SkillObjects.Count > 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
-        Assert.Empty(a.SkillObjects);
+        while (a.Combat.SkillObjects.Count > 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.Empty(a.Combat.SkillObjects);
     }
 }

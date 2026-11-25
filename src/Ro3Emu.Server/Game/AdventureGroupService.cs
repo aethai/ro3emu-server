@@ -267,10 +267,10 @@ public sealed partial class AdventureGroupService : IGameTicker
     /// <summary>The role's own values (role blob "adventure_group"); group fields are filled in by <see cref="Relation"/>.</summary>
     private DBAdventureGroupRelationData Personal(GameSession s)
     {
-        if (s.AdventureGroupRole is { } loaded) return loaded;
+        if (s.Activities.AdventureGroupRole is { } loaded) return loaded;
         var bytes = _roles.LoadAdventureGroup(s.Role!.Id);
-        s.AdventureGroupRole = bytes is { Length: > 0 } ? DBAdventureGroupRelationData.Parser.ParseFrom(bytes) : new DBAdventureGroupRelationData();
-        return s.AdventureGroupRole;
+        s.Activities.AdventureGroupRole = bytes is { Length: > 0 } ? DBAdventureGroupRelationData.Parser.ParseFrom(bytes) : new DBAdventureGroupRelationData();
+        return s.Activities.AdventureGroupRole;
     }
 
     private DBAdventureGroupRelationData Relation(GameSession s, AdventureGroupStore.State? g)
@@ -296,7 +296,7 @@ public sealed partial class AdventureGroupService : IGameTicker
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "adventure_group", next.ToByteArray());
-        await _roles.CommitAsync(transaction, "advguild/personal", _ => s.AdventureGroupRole = next);
+        await _roles.CommitAsync(transaction, "advguild/personal", _ => s.Activities.AdventureGroupRole = next);
     }
 
     // ---------------------------------------------------------------- pushes
@@ -364,7 +364,7 @@ public sealed partial class AdventureGroupService : IGameTicker
     /// <summary>5068 always (the client's DAL needs the dataset), 34011 for members, before 5056 opens the function.</summary>
     public async Task LoginAsync(GameSession s)
     {
-        s.AdventureGroupRole = null;
+        s.Activities.AdventureGroupRole = null;
         var g = Own(s);
         await SyncRelationAsync(s, g);
         if (g != null) await SendFullAsync(s, g);

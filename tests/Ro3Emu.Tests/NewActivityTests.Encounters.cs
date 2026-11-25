@@ -80,7 +80,7 @@ public sealed partial class NewActivityTests
         {
             var dummy = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits()
                 .OfType<MonsterUnit>().Single(m => m.InstanceId == instance)));
-            await OnLoop(() => { Session(bot).SkillCds.Clear(); _clock.AdvanceSeconds(2); return Task.CompletedTask; });
+            await OnLoop(() => { Session(bot).Combat.SkillCds.Clear(); _clock.AdvanceSeconds(2); return Task.CompletedTask; });
             await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = dummy.Pos, BStop = true, SpeedRate = 1 });
             await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = dummy.Uid });
             Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -160,7 +160,7 @@ public sealed partial class NewActivityTests
         Assert.False(actor.Dead);
         Assert.Equal(1, (await QuestProbe.DoneAsync(_app, "training", DummyChallengeQuest)).CompleteNum[0]);
         // Seed the qualification threshold independently of hit strength; the RPC still validates and settles the claim.
-        await OnLoop(() => { Session(bot).Training!.MaxDps = Math.Max(100, Session(bot).Training!.MaxDps); return Task.CompletedTask; });
+        await OnLoop(() => { Session(bot).Activities.Training!.MaxDps = Math.Max(100, Session(bot).Activities.Training!.MaxDps); return Task.CompletedTask; });
         long moneyBefore = Session(bot).Progress!.Currency.GetValueOrDefault(1);
         long Receipts()
         {
@@ -183,7 +183,7 @@ public sealed partial class NewActivityTests
         {
             await bot.SendGameAsync(84062, claim);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.DoesNotContain(1L, Session(bot).Training!.ClaimedAwardIds);
+            Assert.DoesNotContain(1L, Session(bot).Activities.Training!.ClaimedAwardIds);
             Assert.Equal(moneyBefore, Session(bot).Progress!.Currency.GetValueOrDefault(1));
             Assert.Equal(receiptsBefore, Receipts());
         }
@@ -207,8 +207,8 @@ public sealed partial class NewActivityTests
         await bot.DisposeAsync();
         await WaitOffline("training");
         await using var again = await InWorld("Training", false);
-        Assert.Contains(1L, Session(again).Training!.ClaimedAwardIds);
-        Assert.True(Session(again).Training!.MaxDps >= 100);
+        Assert.Contains(1L, Session(again).Activities.Training!.ClaimedAwardIds);
+        Assert.True(Session(again).Activities.Training!.MaxDps >= 100);
         Assert.Equal(0, Session(again).InstanceId);
     }
 

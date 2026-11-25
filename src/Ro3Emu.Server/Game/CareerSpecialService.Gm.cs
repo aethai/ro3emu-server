@@ -15,7 +15,7 @@ public sealed partial class CareerSpecialService
     {
         using var gate = await CharacterService.Lock(s);
         int type = mount ? MountType : PendantType;
-        if (s.CareerSpecial == null) return "Special Class Items are not loaded for this role.";
+        if (s.Profile.CareerSpecial == null) return "Special Class Items are not loaded for this role.";
         if (CartRemouldTable.Get(_data, id) is not { } row || row.Type != type)
             return $"{id} is not a Special Class Item {(mount ? "mount" : "pendant")} (CartRemouldTable _iType {type}).";
         int error = Entitlement(s, Row(id));
@@ -28,16 +28,16 @@ public sealed partial class CareerSpecialService
                 ErrSkill => $"needs skill {row.UnlockSkillId}",
                 _ => $"error {error}",
             } + ".";
-        long previous = mount ? s.CareerSpecial.MountsSlot.CartRemouldCfg : s.CareerSpecial.PendantSlot.CartRemouldCfg;
+        long previous = mount ? s.Profile.CareerSpecial.MountsSlot.CartRemouldCfg : s.Profile.CareerSpecial.PendantSlot.CartRemouldCfg;
         if (previous == id && !(mount && ride)) return $"{id} is already leased.";
         if (previous != id && IsCart(previous) && !IsCart(id) && CartHasItems(s)) return $"{id} cannot replace the cart: the cart is not empty.";
-        var next = s.CareerSpecial.Clone();
+        var next = s.Profile.CareerSpecial.Clone();
         if (mount) next.MountsSlot.CartRemouldCfg = id;
         else next.PendantSlot.CartRemouldCfg = id;
         var mounts = mount ? BattleSlot(s, id, previous) : null;
         if (ride && mounts != null)
             foreach (var (key, selected) in mounts.MountIds) selected.IsRiding = key == BattleSlotKey && selected.MountId == id;
-        var shown = s.CareerPendants;
+        var shown = s.Profile.CareerPendants;
         await CommitAsync(s, next, "gm-lease", mounts);
         await PublishAsync(s, mount, shown);
         return $"Leased {(mount ? "mount" : "pendant")} {id}" + (ride && mounts != null ? ", riding." : ".");

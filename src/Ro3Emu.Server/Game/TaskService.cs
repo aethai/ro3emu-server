@@ -173,7 +173,7 @@ public sealed partial class TaskService
         }
         var saved = _roles.LoadTasks(role.Id);
         session.Tasks = saved != null ? DBTaskInfo.Parser.ParseFrom(saved) : new DBTaskInfo();
-        session.TaskRuntime = _roles.LoadTaskRuntime(role.Id) is { } runtime ? JsonSerializer.Deserialize<TaskRuntimeState>(runtime) ?? new() : new();
+        session.Activities.TaskRuntime = _roles.LoadTaskRuntime(role.Id) is { } runtime ? JsonSerializer.Deserialize<TaskRuntimeState>(runtime) ?? new() : new();
         if (saved == null) Start(session);
         // Drop ids the client cannot decode (an unknown id breaks the update it is in).
         foreach (var id in session.Tasks.Infos.Keys.Where(id => !_defs!.ContainsKey(id)).ToList()) session.Tasks.Infos.Remove(id);
@@ -190,7 +190,7 @@ public sealed partial class TaskService
         // The full sync needs non-empty maps (they decode as nil otherwise and AllTaskInfo stays unset).
         if (session.Tasks.CompleteTaskNum.Count == 0) session.Tasks.CompleteTaskNum[FirstTask] = 0;
         Save(session);
-        if (!session.DeferTaskSync) await SyncTasksAsync(session);
+        if (!session.Profile.DeferTaskSync) await SyncTasksAsync(session);
         // Deliveries found at login (e.g. a level target already met) are handled like any other change.
         await SettleAsync(session);
         QueueFriendCount(session); // 103019 reads the friend list, which is not loaded here
@@ -615,14 +615,14 @@ public sealed partial class TaskService
     internal async Task FlushAsync(GameSession session, bool settled = false)
     {
         if (settled && _roles.HasTaskFollowup(session.Role!.Id))
-            await _roles.SaveSettledTasksAsync(session.Role.Id, session.Tasks!.ToByteArray(), JsonSerializer.SerializeToUtf8Bytes(session.TaskRuntime));
+            await _roles.SaveSettledTasksAsync(session.Role.Id, session.Tasks!.ToByteArray(), JsonSerializer.SerializeToUtf8Bytes(session.Activities.TaskRuntime));
         else Save(session);
-        if (!session.DeferTaskSync)
+        if (!session.Profile.DeferTaskSync)
         {
             await SyncTasksAsync(session);
             if (SyncGrowthClass is { } growth) await growth(session); // 5045 reads the delivered growth quests
         }
-        if (session.DailyReady && RefreshDailyTracking is { } refresh) await refresh(session);
+        if (session.Activities.DailyReady && RefreshDailyTracking is { } refresh) await refresh(session);
         await _talents.SyncAsync(session); // 5050 before 5056 when quest 10103160 opens function 1003
         await _functions.SyncAsync(session);
     }
@@ -659,11 +659,11 @@ public sealed partial class TaskService
             var plan = _awards.ResolveTask(session, def.Award, playBook);
             var runtime = new TaskRuntimeState
             {
-                CompletedGuides = [.. session.TaskRuntime.CompletedGuides], InCutScene = session.InCutScene || cutScene,
-                FactionDay = session.TaskRuntime.FactionDay, FactionPoints = session.TaskRuntime.FactionPoints,
+                CompletedGuides = [.. session.Activities.TaskRuntime.CompletedGuides], InCutScene = session.Activities.InCutScene || cutScene,
+                FactionDay = session.Activities.TaskRuntime.FactionDay, FactionPoints = session.Activities.TaskRuntime.FactionPoints,
             };
             string awardSource = $"task/{session.Role!.Id}/{id}/{next.CompleteTaskNum[id]}/" +
-                $"{session.Daily?.DailyEpoch ?? 0}/{session.Daily?.WeeklyEpoch ?? 0}";
+                $"{session.Activities.Daily?.DailyEpoch ?? 0}/{session.Activities.Daily?.WeeklyEpoch ?? 0}";
             if (!await _character.ApplyAwardAsync(session, plan, def.Exp, costs, next.ToByteArray(),
                 JsonSerializer.SerializeToUtf8Bytes(runtime), expectedDaily: daily?.Before, nextDaily: daily?.After,
                 expectedTasks: expectedTasks, persist: questMount is { } ride ? tx => _mounts.PersistQuestRide(session, ride, tx) : null,
@@ -671,7 +671,7 @@ public sealed partial class TaskService
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/quest-award", awardSource,
                     new { Version = 1, Task = id, Count = next.CompleteTaskNum[id], plan.AwardId })))
                 return daily == null ? ErrorCodes.ItemsShort : ErrorCodes.Unknown;
-            session.TaskRuntime = runtime;
+            session.Activities.TaskRuntime = runtime;
             deliveredPlan = plan;
             if (questMount is { } selectedRide && attachment?.Cancelled != true && ReferenceEquals(session.Attachment, attachment))
                 await _mounts.PublishQuestRideAsync(session, selectedRide);
@@ -688,7 +688,7 @@ public sealed partial class TaskService
         }
         session.Tasks = next;
         if (daily?.MirrorChanged == true && SyncDailyDelivery is { } sync) await sync(session);
-        if (cutScene) session.InCutScene = true;
+        if (cutScene) session.Activities.InCutScene = true;
         if (deliveredPlan != null) foreach (var handler in QuestDelivered.Handlers) handler(session, id, deliveredPlan);
         foreach (long activity in guildActivities)
             foreach (var handler in GuildActivityJoined.Handlers) handler(session, activity);
@@ -738,7 +738,7 @@ public sealed partial class TaskService
         var def = Defs()[id];
         var info = session.Tasks.Infos[id];
         int step = Enumerable.Range(0, def.Targets.Length).FirstOrDefault(i => info.CompleteNum[i] != Required(session, def.Targets[i]), -1);
-        if (step >= 0 && step < def.AcceptActions.Length && ServerOpcode(def.AcceptActions[step]) == 621) session.InCutScene = true;
+        if (step >= 0 && step < def.AcceptActions.Length && ServerOpcode(def.AcceptActions[step]) == 621) session.Activities.InCutScene = true;
         // The 53 hidden Connect quests start together at login; at Information they would fill a /bug report's context.
         _log.Log(def.Type == ConnectTaskType ? LogLevel.Debug : LogLevel.Information, "{Name} accepts task {Task} {TaskName}",
             session.Role?.Name, id, _data.TextOf(_data.Row("TaskConfig", id)!.Value, "_iName"));
@@ -790,7 +790,7 @@ public sealed partial class TaskService
         if (session.Role is { } role && session.Tasks != null)
         {
             _roles.SaveTasks(role.Id, session.Tasks.ToByteArray());
-            _roles.SaveTaskRuntime(role.Id, JsonSerializer.SerializeToUtf8Bytes(session.TaskRuntime));
+            _roles.SaveTaskRuntime(role.Id, JsonSerializer.SerializeToUtf8Bytes(session.Activities.TaskRuntime));
         }
     }
 

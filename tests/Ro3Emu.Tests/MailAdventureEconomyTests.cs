@@ -165,9 +165,9 @@ public sealed class MailAdventureEconomyTests : IAsyncLifetime
         {
             var session = Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)bot.Self!.Uuid);
             await Service<NewActivityService>().ReconcileAsync(session);
-            var eve = session.NewActivities!.ActivityInfo[117];
+            var eve = session.Activities.NewActivities!.ActivityInfo[117];
             Assert.True(eve.CycleStartTime > 0 && eve.CycleEndTime <= _clock.GetUtcNow().ToUnixTimeSeconds());
-            Assert.Equal(eve.CycleStartTime, session.ActivityRuntime.EveSettledCycleStart);
+            Assert.Equal(eve.CycleStartTime, session.Activities.ActivityRuntime.EveSettledCycleStart);
             var saved = System.Text.Json.JsonSerializer.Deserialize<ActivityRuntimeState>(
                 Service<RoleStore>().LoadActivityRuntime(session.Role!.Id)!);
             Assert.Equal(eve.CycleStartTime, saved!.EveSettledCycleStart);

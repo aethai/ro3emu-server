@@ -78,7 +78,7 @@ public sealed partial class CharacterInventoryService
             : item.BindExpire > 0 && item.BindExpire <= UseClock.GetUtcNow().ToUnixTimeSeconds() ? ErrorCodes.ItemMissing
             : session.Dead ? ErrorCodes.UseWhileDead
             : IsItemUseForbidden?.Invoke(session) == true ? ErrorCodes.ItemUseForbidden
-            : session.ItemCds.GetValueOrDefault(item.Entry) > now || group > 0 && session.ItemGroupCds.GetValueOrDefault(group) > now ? ErrItemInCd
+            : session.Combat.ItemCds.GetValueOrDefault(item.Entry) > now || group > 0 && session.Combat.ItemGroupCds.GetValueOrDefault(group) > now ? ErrItemInCd
             : 0;
         if (result == 0) result = ItemRuleError(session, row!.Value, item!.Entry, count);
         if (result != 0)
@@ -91,7 +91,7 @@ public sealed partial class CharacterInventoryService
         long itemCd = GameData.Int(row!.Value, "_iCD") is var cd and > 0 ? now + cd : 0;
         long shareCd = group > 0 && row.Value.TryGetProperty("_kCDGroup", out var g2) && g2.GetArrayLength() > 1 && GameData.Number(g2[1]) is { } share and > 0
             ? now + (long)share : 0;
-        var stored = session.BagState.Info.Clone();
+        var stored = session.Profile.BagState.Info.Clone();
         int useTimes = StageUseTimes(stored, row.Value, entry, count);
         if (itemCd > 0 || shareCd > 0)
         {
@@ -105,9 +105,9 @@ public sealed partial class CharacterInventoryService
         void PersistCooldown(RoleItemPlanBuilder builder) => builder.RoleBlob(session.Role!.Id, "bag_state", cooldownBytes);
         void PublishCooldown()
         {
-            session.BagState.Info = stored;
-            if (itemCd > 0) session.ItemCds[entry] = itemCd;
-            if (shareCd > 0) session.ItemGroupCds[group] = shareCd;
+            session.Profile.BagState.Info = stored;
+            if (itemCd > 0) session.Combat.ItemCds[entry] = itemCd;
+            if (shareCd > 0) session.Combat.ItemGroupCds[group] = shareCd;
         }
         int? specialized = null;
         if (SpecialItemUse.Count > 0 || LifeItemUse != null)

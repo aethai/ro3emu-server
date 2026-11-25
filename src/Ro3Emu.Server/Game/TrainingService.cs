@@ -84,8 +84,8 @@ public sealed partial class TrainingService : IGameTicker
 
     public async Task LoginAsync(GameSession s)
     {
-        s.Training = _roles.LoadTraining(s.Role!.Id) is { } saved ? DBTrainingGroundInfo.Parser.ParseFrom(saved) : new();
-        await CharacterService.SyncAsync(s, Sync, s.Training.Clone());
+        s.Activities.Training = _roles.LoadTraining(s.Role!.Id) is { } saved ? DBTrainingGroundInfo.Parser.ParseFrom(saved) : new();
+        await CharacterService.SyncAsync(s, Sync, s.Activities.Training.Clone());
     }
 
     public Task LeaveRoleAsync(GameSession s)
@@ -96,7 +96,7 @@ public sealed partial class TrainingService : IGameTicker
 
     private int Gate(GameSession s)
     {
-        if (!s.ActivitiesReady || s.Role == null || s.Training == null || _data.Row("NewActivityConfig", 119) is not { } row) return ErrorCodes.ActivityClosed;
+        if (!s.Activities.ActivitiesReady || s.Role == null || s.Activities.Training == null || _data.Row("NewActivityConfig", 119) is not { } row) return ErrorCodes.ActivityClosed;
         if (!_functions.ConditionMet(s, GameData.Int(row, "_kOpenCondition"))) return ErrorCodes.FunctionLocked;
         return _clock.ResolveActivity(row, Now / 1000, s.Role.CreateTime, 101).Contains(Now / 1000) ? 0 : ErrorCodes.ActivityPeriod;
     }
@@ -246,7 +246,7 @@ public sealed partial class TrainingService : IGameTicker
         int result = Gate(s);
         if (result == 0 && (req.AimAwardIds.Count == 0 || req.AimAwardIds.Distinct().Count() != req.AimAwardIds.Count)) result = ErrorCodes.Parameter;
         long rootJob = RootJob(_data, s.Progress?.Career ?? 0);
-        var grants = new List<AwardGrant>(); var next = s.Training?.Clone() ?? new DBTrainingGroundInfo();
+        var grants = new List<AwardGrant>(); var next = s.Activities.Training?.Clone() ?? new DBTrainingGroundInfo();
         if (result == 0)
             foreach (long id in req.AimAwardIds)
             {
@@ -273,7 +273,7 @@ public sealed partial class TrainingService : IGameTicker
                 {
                     tx.RoleBlob(s.Role.Id, "training", claimed);
                     tx.WithEventEconomy(economy);
-                }, stateLockHeld: true, committed: () => s.Training = next))
+                }, stateLockHeld: true, committed: () => s.Activities.Training = next))
                 result = ErrorCodes.BagFull;
             else await CharacterService.SyncAsync(s, Sync, next.Clone());
         }
@@ -303,11 +303,11 @@ public sealed partial class TrainingService : IGameTicker
             using var held = await CharacterService.Lock(s);
             if (!a.Running || Now < a.End || !_attempts.TryGetValue(s, out var current)
                 || current != a || s.InstanceId != a.Room.Id) return;
-            var next = s.Training!.Clone(); next.MaxDps = Math.Max(next.MaxDps, dps);
+            var next = s.Activities.Training!.Clone(); next.MaxDps = Math.Max(next.MaxDps, dps);
             var builder = _roles.NewTransaction();
             builder.RoleBlob(s.Role!.Id, "training", next.ToByteArray());
             await _roles.CommitAsync(builder, "training/result", _ =>
-            { s.Training = next; a.Running = false; });
+            { s.Activities.Training = next; a.Running = false; });
             await s.SendGameAsync(DungeonService.Result, new DungeonResNotify
             {
                 DungeonEntry = a.Room.SceneEntry,

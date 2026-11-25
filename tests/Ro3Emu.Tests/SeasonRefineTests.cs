@@ -224,7 +224,7 @@ public sealed class SeasonRefineTests : IAsyncLifetime
         var initialEntity = relog.Self!.Property.ToDictionary(p => p.Idx, p => p.Data);
         await Service<GameLoop>().InvokeAsync(() =>
         {
-            var slot = relogSession.SeasonRefine!.EquipParts[1].RefineSlots[1];
+            var slot = relogSession.Season.SeasonRefine!.EquipParts[1].RefineSlots[1];
             try
             {
                 slot.ActiveAttr = 0;
@@ -309,22 +309,22 @@ public sealed class SeasonRefineTests : IAsyncLifetime
         var season = await Next(bob, SeasonService.SeasonSync, DBSeasonInfoIncrement.Parser);
         Assert.Equal(102, season.Current.All.PlayBookId);
         Assert.Equal(102, Session(bob).SeasonState!.PlayBookId);
-        Assert.False(Session(bob).SyncVersions.ContainsKey(SeasonRefineService.SeasonRefineSync));
+        Assert.False(Session(bob).Profile.SyncVersions.ContainsKey(SeasonRefineService.SeasonRefineSync));
         Service<SeasonService>().SetPlayBook(101);
         await Service<GameLoop>().InvokeAsync(() =>
         {
             var session = Session(bob);
-            var slot = session.SeasonRefine!.EquipParts[1].RefineSlots[1];
-            int oldLevel = session.EquipLevels.Refine.GetValueOrDefault(1), oldActive = slot.ActiveAttr;
+            var slot = session.Season.SeasonRefine!.EquipParts[1].RefineSlots[1];
+            int oldLevel = session.Profile.EquipLevels.Refine.GetValueOrDefault(1), oldActive = slot.ActiveAttr;
             try
             {
-                session.EquipLevels.Refine[1] = 1;
+                session.Profile.EquipLevels.Refine[1] = 1;
                 slot.ActiveAttr = 1;
                 Assert.Empty(Service<SeasonRefineService>().ActiveAttributes(session));
             }
             finally
             {
-                session.EquipLevels.Refine[1] = oldLevel;
+                session.Profile.EquipLevels.Refine[1] = oldLevel;
                 slot.ActiveAttr = oldActive;
             }
             return Task.CompletedTask;

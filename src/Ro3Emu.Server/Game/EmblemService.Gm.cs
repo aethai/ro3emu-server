@@ -35,7 +35,7 @@ public sealed partial class EmblemService
         attrs[TotalExp] = totalExp;
         AddMarks(attrs, entry, target);
         AddSubattrs(attrs, entry, target);
-        var state = CopyState(session.Emblems);
+        var state = CopyState(session.Profile.Emblems);
         var plan = state.Plans[state.CurrentPlan];
         int slot = SeasonValid(entry) ? Enumerable.Range(FirstSlot, LastSlot - FirstSlot + 1).FirstOrDefault(s => !plan.Slots.ContainsKey(s)) : 0;
         if (slot != 0)
@@ -45,7 +45,7 @@ public sealed partial class EmblemService
             attrs[Position] = slot;
         }
         echo.Attrs = attrs;
-        long previous = session.EmblemPower;
+        long previous = session.Profile.EmblemPower;
         await CommitEmblemsAsync(session, "emblem-gm-create", state, beforeItems, afterItems, [],
             new { Entry = entry, echo.Guid, Level = target, Slot = slot, Attributes = attrs });
         await ChangedAsync(session, previous, inventory: true);

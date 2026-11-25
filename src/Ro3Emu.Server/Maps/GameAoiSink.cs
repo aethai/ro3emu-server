@@ -138,7 +138,7 @@ public sealed class GameAoiSink : IAoiSink
         };
         var transition = MovementTransitionType.MoveTransNormal;
         float speed = subject.Speed / 100f * Math.Clamp(walk.SpeedRate, 0f, 1f);
-        if (Distance(subject.PreviousPosition, walk.Pos) > TeleportDistance)
+        if (Distance(subject.WorldState.PreviousPosition, walk.Pos) > TeleportDistance)
         {
             transition = MovementTransitionType.MoveTransForceTeleport;
             info.MoveType = MovementType.MoveTypeNone;

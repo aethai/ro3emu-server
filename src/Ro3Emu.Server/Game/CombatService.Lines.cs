@@ -23,7 +23,7 @@ public sealed partial class CombatService
     }
 
     internal static bool CurrentCastMap(GameSession session, ActiveSkillCast cast) => !cast.Cancelled
-        && !session.SceneLoading && !session.SceneRecoveryRequired && !session.Dead
+        && !session.SceneLoading && !session.WorldState.SceneRecoveryRequired && !session.Dead
         && session.Role?.Id == cast.OwnerId && session.WorldScene == cast.WorldScene
         && ReferenceEquals(session.Attachment, cast.Attachment) && cast.Attachment?.Cancelled != true
         && session.SceneGeneration == cast.SceneGeneration && (cast.SourceEligible?.Invoke() ?? true);

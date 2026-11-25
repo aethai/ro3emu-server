@@ -96,18 +96,18 @@ public sealed partial class NewActivityTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.FunctionLocked, (await Next(bot, NewActivityService.GetReward, NewActivityGetRewardCommonResp.Parser)).Result);
         await Gm(bot, "!lvl 30");
         await Reconcile(bot);
-        Assert.Equal(1, Session(bot).NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
+        Assert.Equal(1, Session(bot).Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
         await bot.SendGameAsync(NewActivityService.GetReward, new NewActivityGetRewardCommonReq { ActivityID = 113, Index = 1 });
         Assert.Equal(0, (await Next(bot, NewActivityService.GetReward, NewActivityGetRewardCommonResp.Parser)).Result);
         await bot.SendGameAsync(NewActivityService.GetReward, new NewActivityGetRewardCommonReq { ActivityID = 113, Index = 1 });
         Assert.Equal(ErrorCodes.RewardClaimed, (await Next(bot, NewActivityService.GetReward, NewActivityGetRewardCommonResp.Parser)).Result);
         await bot.DisposeAsync();
         await using var again = await InWorld("LoginDays", false);
-        Assert.True(Session(again).NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.RewardStatus[1]);
-        Assert.Equal(1, Session(again).NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
+        Assert.True(Session(again).Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.RewardStatus[1]);
+        Assert.Equal(1, Session(again).Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
         _clock.AdvanceDays(3);
         await Reconcile(again);
-        Assert.Equal(2, Session(again).NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
+        Assert.Equal(2, Session(again).Activities.NewActivities!.ActivityInfo[113].ActivityParam.SevenDay.LoginDays);
         await again.SendGameAsync(NewActivityService.GetReward, new NewActivityGetRewardCommonReq { ActivityID = 113, Index = 3 });
         Assert.Equal(ErrorCodes.TaskRequirements, (await Next(again, NewActivityService.GetReward, NewActivityGetRewardCommonResp.Parser)).Result);
     }
@@ -126,7 +126,7 @@ public sealed partial class NewActivityTests : IAsyncLifetime
         Assert.Equal(0, (await Common(bot, req)).Result);
         Assert.Equal(ErrorCodes.RewardClaimed, (await Common(bot, req)).Result);
         await Gm(bot, "!lvl 40"); await Reconcile(bot);
-        var before = Session(bot).NewActivities!.ToByteArray();
+        var before = Session(bot).Activities.NewActivities!.ToByteArray();
         FixtureSql.Execute(Service<AccountStore>(),
             "CREATE TRIGGER activity_test_rollback BEFORE UPDATE OF new_activities ON role BEGIN SELECT RAISE(ABORT,'activity-source-test'); END");
         // Model the dispatcher's admission even though this call observes the SQL exception directly.
@@ -163,8 +163,8 @@ public sealed partial class NewActivityTests : IAsyncLifetime
         }
         await blocker.WaitAsync(Wait);
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => claim.WaitAsync(Wait));
-        Assert.Equal(before, Session(bot).NewActivities!.ToByteArray());
-        Assert.False(Session(bot).NewActivities!.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(2));
+        Assert.Equal(before, Session(bot).Activities.NewActivities!.ToByteArray());
+        Assert.False(Session(bot).Activities.NewActivities!.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(2));
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER activity_test_rollback");
         Assert.Equal(0, (await Common(bot, premature)).Result);
     }
@@ -200,16 +200,16 @@ public sealed partial class NewActivityTests : IAsyncLifetime
             ActivityId = 103,
             LevelAwardGetReward = new GetThreeDayLevelAwardReq { LevelAwardCfgId = 1 }
         };
-        Assert.False(session.NewActivities!.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(1));
+        Assert.False(session.Activities.NewActivities!.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(1));
         await bot.SendGameAsync(MsgId.Logout, new LogoutReq());
         await Next(bot, MsgId.Logout, LogoutResp.Parser);
-        Assert.False(session.ActivitiesReady);
+        Assert.False(session.Activities.ActivitiesReady);
         await StageGate.AssertUnansweredAsync(bot, NewActivityService.Common, request);
         await StageGate.AssertUnansweredAsync(bot, NewActivityService.GetReward, new NewActivityGetRewardCommonReq { ActivityID = 113, Index = 1 });
-        Assert.False(session.NewActivities.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(1));
-        Assert.Empty(session.NewActivities.ActivityInfo[113].ActivityParam.SevenDay.RewardStatus);
+        Assert.False(session.Activities.NewActivities.ActivityInfo[103].ActivityParam.LevelAward.AwardData.ContainsKey(1));
+        Assert.Empty(session.Activities.NewActivities.ActivityInfo[113].ActivityParam.SevenDay.RewardStatus);
         await bot.EnterWorldAsync(roleId);
-        Assert.True(Session(bot).ActivitiesReady);
+        Assert.True(Session(bot).Activities.ActivitiesReady);
         Assert.Equal(0, (await Common(bot, request)).Result);
     }
 
