@@ -18,7 +18,7 @@ public sealed class CodeShapeTests
 
     private const int MethodsOver80Lines = 94;
     private const int MethodsOver10ParamsInGame = 7;
-    private const int ClassesWith15OrMoreDependencies = 28;
+    private const int ClassesWith15OrMoreDependencies = 27;
     private const int RoleNullForgiving = 961;
     private const int LinesOver200Chars = 92;
     private const int ExposedHookLists = 0;

@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// Editing needs GuildPermissionConfig 20 EliteSetting (UI_Sys_Guild_Manage_EliteWidgetCtrl.lua); 32313 forms a 40-person team
 /// of the elites with a guild chat card (template 102 GuildTeam).
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint EliteSave = 32302, EliteQuery = 32303, EliteTeam = 32313, EliteChange = 32321;
     private const int EliteRight = 20;
@@ -92,7 +92,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>32321 to the online members, then 32231 Change_LeagueElite to each member whose own standing changed.</summary>
-    private async Task PushElitesAsync(GuildStore.State g, IReadOnlySet<long> before)
+    internal async Task PushElitesAsync(GuildStore.State g, IReadOnlySet<long> before)
     {
         var notice = new EliteGroupChangeNotify();
         notice.CurrentEliteData.Add(EliteGroupOf(g));
@@ -108,7 +108,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>A member left: the slot is freed and the version moves on, so an editor holding the old roster refetches.</summary>
-    private static bool DropElite(GuildStore.State g, long role)
+    internal static bool DropElite(GuildStore.State g, long role)
     {
         var slots = g.LeagueElites.Where(p => p.Value == role).Select(p => p.Key).ToArray();
         foreach (int slot in slots) g.LeagueElites.Remove(slot);

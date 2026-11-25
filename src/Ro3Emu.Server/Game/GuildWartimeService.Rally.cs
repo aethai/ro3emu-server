@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// the funds go through the ledger as a guild treasury sink.</item>
 /// </list>
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint Convene = 32297, ConveneNotify = 32298, ConfirmConvene = 32299;
     // ErrorCodeConfig (English): 10030 The invitation to Join a guild has expired, 10031 Guild summons cannot be used in
@@ -66,7 +66,7 @@ public sealed partial class GuildService
         if (code != 0) return;
         _lastRallyMs[g!.Id] = now;
         foreach (var stale in _rallies.Where(r => r.Value.ExpiresMs <= now).Select(r => r.Key).ToArray()) _rallies.Remove(stale);
-        long token = ++_nextToken;
+        long token = NextToken();
         _rallies[token] = new Rally(g.Id, s.Role!.Id, s.SceneEntry,
             new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, s.Face), now + (Data.Config.GuildSettings.Of(data).GuildGatherInviteTime ?? 60) * 1000);
         await PushBase(g, new GuildBaseInfoChangeNtf { Tp = GuildBaseInfoChangeNtf.Types.ChangeType.ChangeResource, Resource = Resource(g) });

@@ -25,7 +25,7 @@ namespace Ro3Emu.Server.Game;
 /// <item>32291: every member with the Guild Funds they brought in (Royal Caravan, UITips 17023; deposited 104).</item>
 /// </list>
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint TakeActivityBonus = 32300, ReceiveWeekActiveReward = 32311, MoneyRank = 32291;
     private const int FundsItem = 104, PrestigeItem = 105, ActivityItem = 106, ContributionItem = 107, Zeny = 1;
@@ -40,7 +40,7 @@ public sealed partial class GuildService
     private bool _depositHooked;
 
     /// <summary>Monday 05:00 local of this week, unix seconds (the guild activity reset, UITips 17019).</summary>
-    private long WeekStart => GameCalendar.WeekStart(clock).ToUnixTimeSeconds();
+    internal long WeekStart => GameCalendar.WeekStart(clock).ToUnixTimeSeconds();
     private long PreviousWeekStart => GameCalendar.PreviousWeekStart(clock).ToUnixTimeSeconds();
 
     // ------------------------------------------------------------------ weekly views and roll
@@ -52,7 +52,7 @@ public sealed partial class GuildService
         : g.ActivityWeek == PreviousWeekStart ? g.CurActivity : 0;
     /// <summary>The guild's Guild Activity of the last finished week (Guild League registration, GuildLeagueActive).</summary>
     internal long LastWeekActivityOf(GuildStore.State g) => LastWeekActivity(g);
-    private long LastWeekActivity(GuildStore.State g, GuildStore.Member m) => g.ActivityWeek == WeekStart ? m.LastWeekActivity
+    internal long LastWeekActivity(GuildStore.State g, GuildStore.Member m) => g.ActivityWeek == WeekStart ? m.LastWeekActivity
         : g.ActivityWeek == PreviousWeekStart ? m.WeekActivity : 0;
 
     /// <summary>Moves this week to last week once the week has turned. True when it changed the guild.</summary>
@@ -72,12 +72,12 @@ public sealed partial class GuildService
         return true;
     }
 
-    private GuildActivityInfo ActivityInfo(GuildStore.State g) => new() { CurActivity = CurActivity(g), LastWeekActivity = LastWeekActivity(g) };
+    internal GuildActivityInfo ActivityInfo(GuildStore.State g) => new() { CurActivity = CurActivity(g), LastWeekActivity = LastWeekActivity(g) };
 
     // ------------------------------------------------------------------ deposit of guild currencies
 
     /// <summary>After any committed award: a member holding guild currencies hands them to the guild.</summary>
-    private void HookDeposits()
+    internal void HookDeposits()
     {
         if (_depositHooked) return;
         _depositHooked = true;
@@ -238,7 +238,7 @@ public sealed partial class GuildService
     });
 
     /// <summary>32231 tp=14: the dividend line of the panel (one Zeny item, LC_DAL_Guild.lua:3278-3340); the full info has none.</summary>
-    private Task PushDividendAsync(GameSession s, GuildStore.State g)
+    internal Task PushDividendAsync(GameSession s, GuildStore.State g)
     {
         var info = new GuildBonusInfo();
         if (g.Members.TryGetValue(s.Role!.Id, out var m) && DividendAwards(g, m) is { Length: > 0 } groups && Amount(s, groups) is var zeny and > 0)

@@ -5,6 +5,8 @@ using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 
+using IWarMachineSite = Ro3Emu.Server.Game.GuildService.IWarMachineSite;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -18,7 +20,7 @@ namespace Ro3Emu.Server.Game;
 /// (SiegePermissionSelfData, which filters the battle bag to that type). Editing needs GuildPermissionConfig 13
 /// War Machine Management, as the panel's Management button.
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint WartimeStore = 32273, ToolAssign = 32282, ToolExchange = 32283, ToolList = 32284,
         ToolPermission = 32285, ToolChange = 32286;
@@ -34,26 +36,6 @@ public sealed partial class GuildService
 
     /// <summary>Set by TerritoryWarsService: places and raises the cannons of the siege a member fights in.</summary>
     public IWarMachineSite? WarMachines { get; set; }
-
-    /// <summary>The siege side of building a cannon (TerritoryWarsService.WarMachines).</summary>
-    public interface IWarMachineSite
-    {
-        /// <summary>0, or 530 (<see cref="ErrorCodes.GuildCannonPlace"/>) when the blueprint stands where the client
-        /// would refuse it.</summary>
-        int CheckPlace(GameSession builder, JsonElement cannon, Vec3 pos);
-        /// <summary>The builder's 32702: BuildingCannon with <paramref name="state"/>, Idle when null.</summary>
-        Task BuildStateAsync(GameSession builder, BuildCannonState? state);
-        /// <summary>The cannon raised for a builder still fighting there; its unit id, or 0.</summary>
-        Task<long> RaiseAsync(GameSession builder, JsonElement cannon, Vec3 pos, float face);
-        /// <summary>The vehicle NPC <paramref name="npcId"/> raised beside its owner still fighting there; its unit id, or 0.</summary>
-        Task<long> RaiseVehicleAsync(GameSession owner, int npcId);
-        /// <summary>A cannon or vehicle of a running siege still stands.</summary>
-        bool Standing(long machine);
-        /// <summary>Destroys a standing cannon or vehicle; whoever is on it gets off first.</summary>
-        Task RemoveAsync(long machine);
-        /// <summary>The repair zone of a repair item's GVG_S0_RepairArea skill at the member's feet; false if it could not stand.</summary>
-        Task<bool> RaiseRepairZoneAsync(GameSession user, int item, long skill);
-    }
 
     /// <summary>
     /// A member's cannon or vehicle was destroyed in the siege: the slot shows nothing in use any more (32285 to the member,
@@ -98,7 +80,7 @@ public sealed partial class GuildService
     /// and the client has no state for a machine without a slot. A reserved machine and a cannon still being built go
     /// back to the warehouse, as when the builder dies. Returns whether the warehouse changed (the caller saves it).
     /// </summary>
-    private async Task<bool> TakeMachinesAsync(GuildStore.State g, long role)
+    internal async Task<bool> TakeMachinesAsync(GuildStore.State g, long role)
     {
         bool stock = ReturnPrepay(g, role);
         var site = WarMachines;
@@ -174,7 +156,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>A member's reserved machine back into the warehouse; false when there was none.</summary>
-    private static bool ReturnPrepay(GuildStore.State g, long role)
+    internal static bool ReturnPrepay(GuildStore.State g, long role)
     {
         if (!g.WartimePrepay.Remove(role, out int item)) return false;
         g.WartimeItems[item] = g.WartimeItems.GetValueOrDefault(item) + 1;
@@ -182,7 +164,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>32273 with the current warehouse to every online member.</summary>
-    private async Task PushStoreAsync(GuildStore.State g)
+    internal async Task PushStoreAsync(GuildStore.State g)
     {
         var ntf = StoreOf(g);
         foreach (var m in g.Members.Values)
@@ -376,7 +358,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>A member's warehouse view and own permission, with the full guild info (login, join, refresh).</summary>
-    private async Task SendWartimeAsync(GameSession s, GuildStore.State g)
+    internal async Task SendWartimeAsync(GameSession s, GuildStore.State g)
     {
         await s.SendGameAsync(WartimeStore, StoreOf(g));
         if (s.Role != null && ToolOf(g, s.Role.Id) is var type && type != WartimeToolType.None)
@@ -385,7 +367,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>A former member: an empty warehouse and no permission (the battle bag empties).</summary>
-    private static async Task ClearWartimeAsync(GameSession s)
+    internal static async Task ClearWartimeAsync(GameSession s)
     {
         await s.SendGameAsync(WartimeStore, new GuildWartimeStoreItemNtf());
         await s.SendGameAsync(ToolPermission, new GuildWartimeToolRolePermissionNtf());
@@ -465,7 +447,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>A member left: every slot they held is freed. Returns the freed slots for <see cref="PushToolChangesAsync"/>.</summary>
-    private static List<(WartimeToolType Type, int Index)> DropWartime(GuildStore.State g, long role)
+    internal static List<(WartimeToolType Type, int Index)> DropWartime(GuildStore.State g, long role)
     {
         var freed = new List<(WartimeToolType, int)>();
         foreach (var (type, slots) in g.WartimeSlots)
@@ -481,7 +463,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>32286 with the slots' current holders to every online member.</summary>
-    private async Task PushToolChangesAsync(GuildStore.State g, List<(WartimeToolType Type, int Index)> changed)
+    internal async Task PushToolChangesAsync(GuildStore.State g, List<(WartimeToolType Type, int Index)> changed)
     {
         if (changed.Count == 0) return;
         var ntf = new GuildWartimeToolBelongInfoChangeNtf();
