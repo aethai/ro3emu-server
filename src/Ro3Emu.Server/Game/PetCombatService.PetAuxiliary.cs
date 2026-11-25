@@ -5,7 +5,7 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     /// <summary>Named auxiliary script and matching star level. Some passive rows omit their auto-learn link;
     /// that family-specific join is inferred and validated against the advertised coefficient by its caller.</summary>

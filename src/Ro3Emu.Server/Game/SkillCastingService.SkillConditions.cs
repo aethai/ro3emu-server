@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Game;
 /// SkillConfig._iSkillCondition, which LC_Skill_ActionPreCheck asks through LC_Skill_Function.CheckSkillPreCondition before
 /// the client casts: a weapon type, a battle mount, a pendant, a buff. Only a modified client reaches the server without it.
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     private const long CondBuffLayer = 2000, CondEquip = 2001, CondMountIs = 2003, CondMountIsNot = 2004, CondPendant = 2006,
         CondSceneFlyable = 2009;

@@ -5,9 +5,9 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
-    private static bool IsGuardianEffect(JsonElement row) => GameData.Int(row, "_iSystemType") == GuardianPetRules.EffectType
+    internal static bool IsGuardianEffect(JsonElement row) => GameData.Int(row, "_iSystemType") == GuardianPetRules.EffectType
         || row.TryGetProperty("_ro3GuardianProc", out _);
 
     /// <summary>Whether a point is inside a skill row's area: monster selection for every skill, and a guardian's player
@@ -46,7 +46,7 @@ public sealed partial class CombatService
             || Math.Atan2(Math.Abs(side), forward) <= (range.Length > 1 ? range[1] : 90) * Math.PI / 360);
     }
 
-    private GameSession[] GuardianPlayerTargets(GameSession source, ActiveSkillCast cast, Vec3 center) => [.. _sessions.All()
+    internal GameSession[] GuardianPlayerTargets(GameSession source, ActiveSkillCast cast, Vec3 center) => [.. _sessions.All()
         .Where(p => CanPlayerHit(source, p) && SkillAreaContains(cast.Row, cast.Origin, center, cast.Request.Face, p.Position))];
 
     private long GuardianOwlTarget(GameSession source, GuardianPetRules.Skill pet, ActiveSkillCast cast)

@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// Counters and meters a class skill's text names and no row's cost does: Warg Strike's swings, the Guillotine's blades, the Mechanic's Firepower, Joint Beat's
 /// shattered parts, Energy Release's countdown. Buffs that switch a skill's mode (SkillAttributeList type 15) reach the client by themselves.
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     private const int EmpoweredWargStrikeBuff = 1333101, BladeMeter = 540002, DarkIllusionMarkGroup = 15301, CrossRipperGroup = 15302;
     private const int FirepowerPilesGroup = 16313, FirepowerGroup = 16317, FirepowerBuff = 1631701, CannonEnhanceBuff = 1632001;
@@ -24,7 +24,7 @@ public sealed partial class CombatService
     private static bool IsArmCannon(string script) => script.StartsWith("ArmCannon", StringComparison.Ordinal);
 
     /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.</summary>
-    private static bool ComesFromALoop(string script, int buff) => buff / 100 == FirepowerGroup && script is "VulcanArm" or "FlameLauncher"
+    internal static bool ComesFromALoop(string script, int buff) => buff / 100 == FirepowerGroup && script is "VulcanArm" or "FlameLauncher"
         || script == "AxeLeapAttack2" && buff == 1634601; // the shield came with the flight
 
     private async Task ClassLoopsOnCastAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
@@ -87,7 +87,7 @@ public sealed partial class CombatService
 
     /// <summary>Cross Ripper Slasher: "blade count (minimum @{1}) * PATK * ${2}%", "At ${5} blades, resets this skill's cooldown"; after Dark Illusion "multiplies the blade count of the
     /// next Cross Ripper Slasher by ${10}, and increases each hit's damage by ${11}%", its second ratio. Spending every blade is (inferred): no row says how many a throw takes.</summary>
-    private async Task<JsonElement> CrossRipperRowAsync(GameSession s, JsonElement row)
+    internal async Task<JsonElement> CrossRipperRowAsync(GameSession s, JsonElement row)
     {
         var skill = new SkillConfig(row);
         long blades = s.Energy.TryGetValue(BladeMeter, out var meter) ? meter.Value : 0;
@@ -99,7 +99,7 @@ public sealed partial class CombatService
         return skill.WithDamage([ratio * count], skill.DamageParam2);
     }
 
-    private static ActiveSkillCast WithRow(ActiveSkillCast action, JsonElement row) => new()
+    internal static ActiveSkillCast WithRow(ActiveSkillCast action, JsonElement row) => new()
     {
         Id = action.Id, OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = action.SceneGeneration, Attachment = action.Attachment,
         Request = action.Request, Row = row, Origin = action.Origin, StartMs = action.StartMs, ChantMs = action.ChantMs, ActionMs = action.ActionMs, Operator = action.Operator,
@@ -107,7 +107,7 @@ public sealed partial class CombatService
 
     /// <summary>Energy Release: "converts it into a [Shield] for ... then begins a ${1}-second countdown ... You have [Immunity] during the countdown. When the countdown ends, deal ...
     /// You then lose ${5}% of your current Max HP. This HP loss can" not kill. The row's buff is the countdown, its _kLogicData names the row that goes off.</summary>
-    private async Task EnergyReleaseAsync(GameSession s, ActiveSkillCast action)
+    internal async Task EnergyReleaseAsync(GameSession s, ActiveSkillCast action)
     {
         var skill = new SkillConfig(action.Row);
         var plain = WithRow(action, skill.WithDamage([], []));

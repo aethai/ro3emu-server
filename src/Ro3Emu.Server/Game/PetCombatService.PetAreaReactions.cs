@@ -4,7 +4,7 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     private async Task GuardianAreaReactionAsync(GameSession source, GuardianPetRules.Skill pet, ActiveSkillCast action, int buff)
     {
@@ -95,7 +95,7 @@ public sealed partial class CombatService
             GuardianPetRules.Description(pet, 2), GuardianPetRules.Description(pet, 0));
     }
 
-    private long GuardianNormalAttackResistance(GameSession target, JsonElement skill, long damage)
+    internal long GuardianNormalAttackResistance(GameSession target, JsonElement skill, long damage)
     {
         if (GameData.Int(skill, "_iIsNormalAtk") != 1 || damage <= 0) return damage;
         double reduction = target.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > Now)

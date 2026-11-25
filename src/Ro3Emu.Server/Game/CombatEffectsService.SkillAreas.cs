@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// What a skill reaches when its row's _kRange does not say it and its text does. A number the row holds stays the row's: Arm Cannon's
 /// _iTargetMax 5 stands against its "1 selected ... and up to 5 Other", and Pile Bunker's [100,1,0,0] against its "within 4 meters".
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     private enum TextShape { AroundTarget, LineToTarget, FrontRectangle }
 

@@ -5,7 +5,7 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     private enum GuardianWindowKind { ExtraHit, HealOnHit, HealLowHp, BuffEnemy, BuffSelf, ControlledBonus, DefenceOnHit, CurseOnKill, Stealth }
     private sealed class GuardianWindow
@@ -127,7 +127,7 @@ public sealed partial class CombatService
     private Task GuardianWindowMonsterHitAsync(GameSession source, MonsterUnit target, JsonElement row, long damage) =>
         GuardianWindowHitAsync(source, target.Uid, target.Pos, row, damage, target.Dead || target.Hp <= 0);
 
-    private async Task GuardianWindowHitAsync(GameSession source, long targetId, Romsg.Vec3 position, JsonElement row, long damage, bool dead)
+    internal async Task GuardianWindowHitAsync(GameSession source, long targetId, Romsg.Vec3 position, JsonElement row, long damage, bool dead)
     {
         if (damage <= 0 || row.TryGetProperty("_ro3GuardianProc", out _) || row.TryGetProperty("_ro3GuardianFixedHit", out _)
             || GameData.Int(row, "_iSystemType") == GuardianPetRules.EffectType) return;
@@ -181,7 +181,7 @@ public sealed partial class CombatService
         }
     }
 
-    private async Task GuardianTakenAsync(GameSession target, long damage)
+    internal async Task GuardianTakenAsync(GameSession target, long damage)
     {
         if (damage <= 0 || target.Dead || target.SceneLoading) return;
         await _buffs.BreakHitControlsAsync(target);
@@ -202,7 +202,7 @@ public sealed partial class CombatService
         }
     }
 
-    private long GuardianControlledDamage(GameSession source, bool affected, long damage)
+    internal long GuardianControlledDamage(GameSession source, bool affected, long damage)
     {
         if (!affected || damage <= 0) return damage;
         double percent = LiveGuardianWindows(source).Where(w => w.Kind == GuardianWindowKind.ControlledBonus).Sum(w => w.Coefficient);
@@ -211,10 +211,10 @@ public sealed partial class CombatService
 
     // (inferred) Medusa's "controlled" enemy: petrified, or slowed below its own speed (a player: under a negative
     // movement-speed change). The description does not list the states it counts.
-    private bool GuardianControlTarget(MonsterUnit target) => _buffs.UnitHasGroup(target, BuffService.PetrifyGroup)
+    internal bool GuardianControlTarget(MonsterUnit target) => _buffs.UnitHasGroup(target, BuffService.PetrifyGroup)
         || target.SpeedCm(Now) < target.Template.SpeedCm;
 
-    private bool GuardianControlTarget(GameSession target) => target.Buffs.Any(b => b.ExpireMs > Now
+    internal bool GuardianControlTarget(GameSession target) => target.Buffs.Any(b => b.ExpireMs > Now
         && (_data.Row("BuffConfig", b.ConfigId) is { } row && GameData.Int(row, "_iBuffID") == BuffService.PetrifyGroup
             || b.Changes.Any(c => c.Attr is AttributeId.PerSpeed or AttributeId.BuffPerSpeed && c.Value < 0)));
 }

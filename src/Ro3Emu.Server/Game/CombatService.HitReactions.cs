@@ -105,7 +105,7 @@ public sealed partial class CombatService
         await CardHitReactions.InvokeAsync(p, enemy, row, damage);
     }
 
-    private static double ParseDesc(string text) =>
+    internal static double ParseDesc(string text) =>
         double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v) ? v : 0;
 
     private async Task StrikeBackAsync(GameSession p, SkillConfig row, List<MonsterUnit> monsters, GameSession? enemy)

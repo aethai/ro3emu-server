@@ -3,7 +3,7 @@ using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     /// <summary>
     /// Skills that keep dealing damage while their caster walks: the description's total is the row's ratio times the show's
@@ -118,7 +118,7 @@ public sealed partial class CombatService
     /// the cast's aim (inferred: the stretched main effect 1332003 is bound to the moving DRoot). Procs of "after using" a
     /// skill see the first hit only, so they fire once per cast.
     /// </summary>
-    private async Task<bool> StartChannelAsync(GameSession s, ActiveSkillCast action)
+    internal async Task<bool> StartChannelAsync(GameSession s, ActiveSkillCast action)
     {
         var show = _data.SkillTemplate(new SkillConfig(action.Row).ScriptShow);
         var hits = ChannelHits(action.Row, show);

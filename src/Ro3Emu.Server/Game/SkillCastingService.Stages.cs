@@ -8,7 +8,7 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Skills with a first press and a second: High-Energy Impact's flight and landing, Move back Shadow Echo's shadow and return.</summary>
-public sealed partial class CombatService
+public sealed partial class SkillCastingService
 {
     private const int FlyingBuff = 1632901, ImpactShieldBuff = 1633301, PulseBuff = 1633501, PulseGroup = 16335, TornadoEnhanceBuff = 1633601, TornadoEnhanceGroup = 16336;
     private const int ShadowEchoGroup = 15329, ShadowReturnBuffGroup = 115334;
@@ -25,7 +25,7 @@ public sealed partial class CombatService
     /// Left alone, the take-off's own show lands: show 16307 plays the landing animation Skill16_3 at 2.983 s and its impact effects at 3.367 s, and its
     /// m_kAtkPoints [0, 3.2, 3.367] hit at 3.2 s of its 5.017 s. The landing hits at that second attack point (<see cref="LandingOffset"/>); at the
     /// action's end it came about 1.7 s after the client had shown the impact.</summary>
-    private async Task HighEnergyTakeOffAsync(GameSession s, ActiveSkillCast action)
+    internal async Task HighEnergyTakeOffAsync(GameSession s, ActiveSkillCast action)
     {
         var skill = new SkillConfig(action.Row);
         await ApplyEffectsAsync(s, WithRow(action, skill.WithDamage([], [])), action.Origin);
@@ -42,7 +42,7 @@ public sealed partial class CombatService
             request.TargetPos = s.Position.Clone();
             var fall = new ActiveSkillCast
             {
-                Id = ++_sessionIds, OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration, Attachment = s.Attachment,
+                Id = NextSessionId(), OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration, Attachment = s.Attachment,
                 Request = request, Row = new SkillConfig(landing.WithoutBuff1()).Row, Origin = s.Position.Clone(), StartMs = Now, ChantMs = 0, ActionMs = 1,
             };
             await ApplyEffectsAsync(s, fall, s.Position.Clone());
@@ -88,10 +88,10 @@ public sealed partial class CombatService
     /// <summary>Move back Shadow Echo: "Leaves a shadow in place. Cast in a selected direction to move ... Cast again within ${2} seconds to return to the shadow." Its cooldown waits for the
     /// return or the end of that time, or the second press would meet it.
     /// The status the first press gives names the return row (RetreatingShadows2), which the wheel then shows in the slot (SkillService.FollowUps).</summary>
-    private bool ReturnsToShadow(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1" or ShadowReturnScript or ShadowReturnSeasonScript
+    internal bool ReturnsToShadow(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1" or ShadowReturnScript or ShadowReturnSeasonScript
         && _shadowSpots.TryGetValue(s, out var spot) && spot.At != null && spot.Until > Now;
 
-    private void LeaveShadow(GameSession s, ActiveSkillCast action)
+    internal void LeaveShadow(GameSession s, ActiveSkillCast action)
     {
         var skill = new SkillConfig(action.Row);
         double seconds = skill.DescData.Length > 1 && double.TryParse(skill.DescData[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double read) ? read : 6;
@@ -113,7 +113,7 @@ public sealed partial class CombatService
     private bool ShadowEchoWaits(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1"
         && !(_shadowSpots.TryGetValue(s, out var spot) && (spot.Ending || spot.At != null && spot.Until > Now));
 
-    private async Task ReturnToShadowAsync(GameSession s, ActiveSkillCast action)
+    internal async Task ReturnToShadowAsync(GameSession s, ActiveSkillCast action)
     {
         if (!_shadowSpots.TryGetValue(s, out var spot) || spot.At is not { } at) return;
         // The return row has a cooldown of its own: Move back Shadow Echo's starts at the return, as on a second press of its own row.

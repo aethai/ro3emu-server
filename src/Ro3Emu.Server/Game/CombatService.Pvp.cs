@@ -122,7 +122,7 @@ public sealed partial class CombatService
         && _world.PlayersIn(source.WorldScene).Contains(source) && _world.PlayersIn(source.WorldScene).Contains(target)
         && IsPlayerHostile(source, target);
 
-    private bool CanHitMonster(GameSession source, MonsterUnit target) =>
+    internal bool CanHitMonster(GameSession source, MonsterUnit target) =>
         !target.Dead && target.WorldScene == source.WorldScene
         && IsMonsterTargetAllowed(source, target);
 

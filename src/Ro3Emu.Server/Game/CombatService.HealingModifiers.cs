@@ -9,7 +9,7 @@ public sealed partial class CombatService
             * Math.Max(0, 1 + (target[AttributeId.PerCure] + target[AttributeId.PerCure1]) / 10000.0)), 0, long.MaxValue);
 
     /// <summary>What a healer's heal reads: the sheet, without a totem's 207, which TotemEffects.HealingMultiplier already applied.</summary>
-    private StatSheet HealerAttributes(GameSession healer)
+    internal StatSheet HealerAttributes(GameSession healer)
     {
         var stats = _character.Stats(healer);
         if (!healer.Buffs.Any(b => b.IsTotemOwned)) return stats;

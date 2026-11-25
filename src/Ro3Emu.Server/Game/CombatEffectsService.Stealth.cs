@@ -21,7 +21,7 @@ namespace Ro3Emu.Server.Game;
 /// (StealthEffects).</item>
 /// </list>
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     internal const int StealthCategory = 31, DetectionCategory = 109;
     private const int SightGroup = 12012, SightSkill = 1200201, SightSprout = 12110;
@@ -84,5 +84,5 @@ public sealed partial class CombatService
     /// <summary>An extra hit of a SkillConfig row on one hostile player, through the ordinary player hit path.</summary>
     internal Task CastExtraOnPlayerAsync(GameSession source, SkillConfig row, GameSession target) =>
         HitEventPlayersAsync(source, [target], row.Row, (int)row.Id, HitEffect(row.ScriptShow),
-            ++_sessionIds, () => source.Role != null && !source.Dead);
+            NextSessionId(), () => source.Role != null && !source.Dead);
 }

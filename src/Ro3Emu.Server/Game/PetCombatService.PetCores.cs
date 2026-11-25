@@ -5,9 +5,9 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
-    private static void RecordGuardianDamage(ActiveSkillCast action, long targetId, long damage)
+    internal static void RecordGuardianDamage(ActiveSkillCast action, long targetId, long damage)
     {
         if (action.GuardianDamage is not { } totals || damage <= 0) return;
         long prior = totals.GetValueOrDefault(targetId);
@@ -80,7 +80,7 @@ public sealed partial class CombatService
 
     /// <summary>Hope's core says HP cannot fall below the configured share while Divine Hope is active.
     /// (inferred) Absorb shields first; HP lock cannot heal someone who was already below the threshold.</summary>
-    private long GuardianHpFloor(GameSession target, long currentHp)
+    internal long GuardianHpFloor(GameSession target, long currentHp)
     {
         int percent = target.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > Now)
             .Select(b => b.HpFloorBasisPoints).DefaultIfEmpty(0).Max();

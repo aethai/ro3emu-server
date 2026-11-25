@@ -3,34 +3,28 @@ using Ro3Emu.Server.Data;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
-    private readonly PetService _pets;
-
-    /// <summary>Hooks the guardian rules into the shared services: the pet wheel, hit and damage callbacks, unit
-    /// attributes and controls, and the hidden-target check of monster aggro.</summary>
+    /// <summary>Hooks the guardian rules into the shared services: the pet wheel, hit and damage callbacks, and reactions.</summary>
     private void WireGuardians()
     {
         _skills.PetWheel = _pets.GuardianWheel;
         _pets.Changed.Subscribe(SyncGuardianWheelAsync);
         _scene.Loaded.Subscribe(SyncGuardianWheelAsync);
-        DealtAsync.Subscribe(GuardianDamageReactionAsync);
-        DealtAsync.Subscribe(GuardianWindowMonsterHitAsync);
-        DealtAsync.Subscribe((_, target, _, damage) => damage > 0 ? _buffs.ConsumeGuardianGroupAsync(target, GuardianGroup.CatVulnerability) : Task.CompletedTask);
-        TakenAsync.Subscribe((_, target, amount) => GuardianTakenAsync(target, amount));
-        DamageAdjusters.Subscribe((s, _, row, _, damage) => GuardianOutgoingDamage(s, row, damage));
-        CastResolved.Subscribe(AutoCounterOnCastAsync);
-        CastResolved.Subscribe(SupportSkillOnCastAsync);
-        DamageAdjusters.Subscribe((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage));
-        _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
-        _monsters.Forbidden = _buffs.UnitForbidden;
-        _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
+        DealtAsync.Subscribe(GuardianDamageReactionAsync, order: CombatService.GuardianHookOrder);
+        DealtAsync.Subscribe(GuardianWindowMonsterHitAsync, order: CombatService.GuardianHookOrder);
+        DealtAsync.Subscribe(
+            (_, target, _, damage) => damage > 0 ? _buffs.ConsumeGuardianGroupAsync(target, GuardianGroup.CatVulnerability) : Task.CompletedTask,
+            order: CombatService.GuardianHookOrder);
+        TakenAsync.Subscribe((_, target, amount) => GuardianTakenAsync(target, amount), order: CombatService.GuardianHookOrder);
+        DamageAdjusters.Subscribe((s, _, row, _, damage) => GuardianOutgoingDamage(s, row, damage), order: CombatService.GuardianHookOrder);
+        DamageAdjusters.Subscribe((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage), order: CombatService.GuardianHookOrder);
     }
 
     private Task SyncGuardianWheelAsync(GameSession session) => session.SkillPlans == null
         ? Task.CompletedTask : _skills.SyncAsync(session);
 
-    private async Task CastGuardianAsync(GameSession s, CastSkillReq req)
+    internal async Task CastGuardianAsync(GameSession s, CastSkillReq req)
     {
         var skill = _pets.Guardians(s).FirstOrDefault(g => g.IsPrimary && g.Id == req.SkillId && g.Kind != GuardianPetRules.Kind.Unsupported);
         int error = skill == null ? ErrorCodes.SkillNotLearned : GuardianError(s, skill, req);
@@ -88,7 +82,7 @@ public sealed partial class CombatService
         var (targetId, targetPos) = GuardianRequestTarget(s, skill, req);
         return new ActiveSkillCast
         {
-            Id = ++_sessionIds, OwnerId = s.Role!.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
+            Id = NextSessionId(), OwnerId = s.Role!.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
             Attachment = s.Attachment, Row = GuardianPetRules.DamageRow(skill, _character.Stats(s)),
             Request = new CastSkillReq
             {

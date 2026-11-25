@@ -4,13 +4,13 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CombatService
+public sealed partial class PetCombatService
 {
     /// <summary>AttributeConfig per_dmg1 and the bonus of the hit's element (none_ele..undead_ele).</summary>
-    private static bool RaisesDamage(long attribute, int element) => attribute == AttributeId.PerDmg1
+    internal static bool RaisesDamage(long attribute, int element) => attribute == AttributeId.PerDmg1
         || element is >= 1 and <= AttributeId.ElementCount && attribute == AttributeId.NoneEle + element - 1;
 
-    private static long GuardianOutgoingDamage(GameSession source, JsonElement row, long damage)
+    internal static long GuardianOutgoingDamage(GameSession source, JsonElement row, long damage)
     {
         int element = (int)Math.Clamp(GameData.Int(row, "_iEleType"), 1, AttributeId.ElementCount);
         double bonus = source.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > source.NowMs
@@ -99,13 +99,13 @@ public sealed partial class CombatService
             var stats = _character.Stats(s);
             long amount = (long)Math.Floor(Math.Max(stats[AttributeId.Atk], stats[AttributeId.Matk])
                 * GuardianPetRules.Description(passive, 0) / 100);
-            await GuardianHealAsync(s, s, (int)GameData.Int(effect, "_iID"), ++_sessionIds, amount, Current);
+            await GuardianHealAsync(s, s, (int)GameData.Int(effect, "_iID"), NextSessionId(), amount, Current);
         }
     }
 
     /// <summary>Same named Wild Rose reaction for a committed hostile-player hit. Hostility, source generation and
     /// damage settlement are checked by HitEventPlayersAsync; player movement comes from the real 1131 buff.</summary>
-    private async Task GuardianPlayerDamageReactionAsync(GameSession source, GameSession target, JsonElement row, long damage, Func<bool> current)
+    internal async Task GuardianPlayerDamageReactionAsync(GameSession source, GameSession target, JsonElement row, long damage, Func<bool> current)
     {
         if (damage <= 0 || GameData.Int(row, "_iSystemType") != GuardianPetRules.EffectType) return;
         if (_character.Stats(target)[AttributeId.Hp] <= 0)

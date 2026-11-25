@@ -6,7 +6,7 @@ using Ro3Emu.Server.Maps;
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Skills whose text does more than their row's damage and buffs: Hymn of Devotion, Ganbantein, who a heal reaches.</summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     /// <summary>Rows whose text names the caster as well as the ally they lock: Heal "for you and the designated ST ally", Highness Heal
     /// "to You and one designated ally", Kyrie Eleison "yourself and a designated ST ally". The data has no flag.</summary>
@@ -112,7 +112,7 @@ public sealed partial class CombatService
     /// <summary>Elements a live buff gives: Magnum Break 1100201 [11000,4,11400] "Basic Attack becomes Fire", Aspersio "becomes Holy",
     /// Enchant Poison "becomes Poison-property". Keyed by group, as only Magnum Break's row holds a number that matches its text. Card:
     /// Marine Sphere's Magnum Break puts on its own 2092101, with the same text and no number.</summary>
-    private static int ElementFromBuff(GameSession s)
+    internal static int ElementFromBuff(GameSession s)
     {
         foreach (var buff in s.Buffs)
         {
@@ -152,7 +152,7 @@ public sealed partial class CombatService
         return element;
     }
 
-    private static DamageAttributes.Kind KindOf(MonsterTemplate t) => t.IsBoss ? DamageAttributes.Kind.Boss : DamageAttributes.Kind.Normal;
+    internal static DamageAttributes.Kind KindOf(MonsterTemplate t) => t.IsBoss ? DamageAttributes.Kind.Boss : DamageAttributes.Kind.Normal;
 
     /// <summary>Removals only a skill's text names: Dragon Howling "all status ailments"; King's Grace and Energy Release "all Control effects" (tag 37);
     /// Cart Boost "Removes Slow" (33); Hymn of the Lamb's _kLogicData [37,33]. A row _iDisperse 0 stays, as for a dispel.</summary>
@@ -173,7 +173,7 @@ public sealed partial class CombatService
     }
 
     /// <summary>Holy Light 1401101, _kLogicData [14117]: it "removes the target's Kyrie Eleison effect".</summary>
-    private async Task HolyLightBreaksKyrieAsync(GameSession target, JsonElement row)
+    internal async Task HolyLightBreaksKyrieAsync(GameSession target, JsonElement row)
     {
         if (Script(row) != "HolyLight" || new SkillConfig(row).LogicData is not [var group, ..]) return;
         foreach (var buff in target.Buffs.Where(b => b.ConfigId / 100 == group).ToArray()) await _buffs.RemoveAsync(target, buff);

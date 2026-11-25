@@ -10,7 +10,7 @@ namespace Ro3Emu.Server.Game;
 /// procs, the periodic damage and heal ticks, and the relations auras use. The decay and the aura registry live in
 /// BuffService (BuffService.Decay/.Halo/.Periodic).
 /// </summary>
-public sealed partial class CombatService
+public sealed partial class CombatEffectsService
 {
     private void WireBuffRules()
     {
@@ -28,7 +28,7 @@ public sealed partial class CombatService
     /// Silence, Fear, Immobilize, Freeze, Petrify), formula 2 the duration (Poisoned, Bleeding, Burn, Paralyze, Sleep,
     /// Stun, Slow), the split the attributes' own tips state. A duration scaled to nothing does not land.
     /// </summary>
-    private bool RollHostileBuff(JsonElement tuple, GameSession? sourcePlayer, WorldUnit? sourceUnit,
+    internal bool RollHostileBuff(JsonElement tuple, GameSession? sourcePlayer, WorldUnit? sourceUnit,
         GameSession? targetPlayer, WorldUnit? targetUnit, out int id, out int duration)
     {
         id = duration = 0;
@@ -58,7 +58,7 @@ public sealed partial class CombatService
         return Rolls.Proc(10000) < chance;
     }
 
-    /// <summary>A tag attribute of a fighter: a player's stat sheet, or what a unit's live buffs add (monster
+    /// <summary>A tag attribute of a CombatService.Fighter: a player's stat sheet, or what a unit's live buffs add (monster
     /// templates carry none of 701-728).</summary>
     private long TagAttribute(GameSession? player, WorldUnit? unit, int attr)
     {
@@ -92,7 +92,7 @@ public sealed partial class CombatService
         if (effect.Rule.Kind == BuffRuleTables.PeriodicKind.Heal)
             return effect.Player is { } healed ? PeriodicHealAsync(healed, effect, buff) : Task.CompletedTask;
         if (effect.Source is not { } source) return Task.CompletedTask;
-        var attacker = new Fighter(source.Atk, source.Matk, 0, 0, source.Level, source.Element);
+        var attacker = new CombatService.Fighter(source.Atk, source.Matk, 0, 0, source.Level, source.Element);
         if (effect.Player is { } player) return PeriodicPlayerDamageAsync(player, effect, buff, attacker);
         if (effect.Unit is MonsterUnit monster) return PeriodicMonsterDamageAsync(monster, effect, buff, attacker);
         return Task.CompletedTask;
@@ -101,18 +101,18 @@ public sealed partial class CombatService
     /// <summary>One tick: the applier's ATK or MATK x _kData1 through the defender's DEF/MDEF and the buff's element
     /// (the same BaseDamage a skill hit uses), times the buff's piles (Poisoned stacks to 6). (inferred) No hit, float
     /// or critical roll: the descriptions give a fixed share of the applier's damage. A tick is no attack, so Bonus ATK and DEF stay out.</summary>
-    private long PeriodicAmount(Fighter attacker, Fighter defender, BuffRuleTables.PeriodicRule rule, int piles) =>
+    private long PeriodicAmount(CombatService.Fighter attacker, CombatService.Fighter defender, BuffRuleTables.PeriodicRule rule, int piles) =>
         Math.Max(1, (long)Math.Round(Math.Max(0, BaseDamage(attacker, defender, rule.Row, 0, out _, attack: false)) * Math.Max(1, piles)));
 
     /// <summary>A tick on a player: the protected HP transition (shields, lethal prevention) every hit takes, one
     /// 31101 from the applier without a skill (skillId 0, showPoint 0: the number shows, no hit effect) and the HP.</summary>
-    private async Task PeriodicPlayerDamageAsync(GameSession p, BuffService.PeriodicEffect effect, ActiveBuff buff, Fighter attacker)
+    private async Task PeriodicPlayerDamageAsync(GameSession p, BuffService.PeriodicEffect effect, ActiveBuff buff, CombatService.Fighter attacker)
     {
         var role = p.Role;
         if (role == null || role.Id != effect.TargetId || p.Dead || p.SceneLoading || p.Progress == null) return;
         long scene = p.WorldScene, generation = p.SceneGeneration;
         var stats = _character.Stats(p);
-        var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
+        var defender = new CombatService.Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
         {
             Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef],
             Attributes = PlayerAttributes(p, stats), Race = PlayerRace, Size = PlayerSize
@@ -127,7 +127,7 @@ public sealed partial class CombatService
         {
             await ToPlayerAndViewersAsync(p, SkillHit, new SkillHitInfo
             {
-                SrcID = effect.Source!.Uid, SessionId = ++_sessionIds, SrcElement = rule.Element,
+                SrcID = effect.Source!.Uid, SessionId = NextSessionId(), SrcElement = rule.Element,
                 Dsts = { new DamageInfo { DstID = role.Id, Damage = damage, SheildDamage = shieldDamage, DstElement = ArmorElement(p), IsDead = hp == 0 } },
             });
             await _character.SetHpSpAsync(p, null, null);
@@ -146,7 +146,7 @@ public sealed partial class CombatService
     /// <summary>A tick on a monster from a player's buff: the ordinary hit settlement (MVP/event damage, kill
     /// rewards to the applier). (inferred) The applier must still be in that scene: a tick with no one to credit is
     /// skipped, as nothing can be rewarded for it.</summary>
-    private async Task PeriodicMonsterDamageAsync(MonsterUnit m, BuffService.PeriodicEffect effect, ActiveBuff buff, Fighter attacker)
+    private async Task PeriodicMonsterDamageAsync(MonsterUnit m, BuffService.PeriodicEffect effect, ActiveBuff buff, CombatService.Fighter attacker)
     {
         var s = effect.Source!.Player;
         var role = s?.Role;
@@ -172,7 +172,7 @@ public sealed partial class CombatService
             }
             var hit = new SkillHitInfo
             {
-                SrcID = role.Id, SessionId = ++_sessionIds, SrcElement = rule.Element,
+                SrcID = role.Id, SessionId = NextSessionId(), SrcElement = rule.Element,
                 Dsts = { new DamageInfo { DstID = m.Uid, Damage = amount, DstElement = m.Template.Element, IsDead = m.Hp == 0 } },
             };
             foreach (var viewer in m.Viewers.Append(s).Distinct().ToArray()) await viewer.SendGameAsync(SkillHit, hit);
@@ -232,7 +232,7 @@ public sealed partial class CombatService
         await _character.SetHpSpAsync(p, stats[AttributeId.Hp] + actual, null);
         await ToPlayerAndViewersAsync(p, SkillHit, new SkillHitInfo
         {
-            SrcID = p.Role.Id, SessionId = ++_sessionIds,
+            SrcID = p.Role.Id, SessionId = NextSessionId(),
             Dsts = { new DamageInfo { DstID = p.Role.Id, Damage = actual, DamageType = DamageType.Heal, DstElement = 1 } },
         });
     }
