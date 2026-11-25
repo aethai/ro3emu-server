@@ -10,14 +10,21 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class TaskDomainService(
     TaskService tasks,
-    GameData _data,
-    FunctionService _functions,
-    GameLoop _loop,
-    SessionRegistry _sessions,
-    SceneService _scene,
-    TimeProvider _clock,
-    ILogger<TaskDomainService> _log)
+    GameData data,
+    FunctionService functions,
+    GameLoop loop,
+    SessionRegistry sessions,
+    SceneService scene,
+    TimeProvider clock,
+    ILogger<TaskDomainService> log)
 {
+    private readonly GameData _data = data;
+    private readonly FunctionService _functions = functions;
+    private readonly GameLoop _loop = loop;
+    private readonly SessionRegistry _sessions = sessions;
+    private readonly SceneService _scene = scene;
+    private readonly TimeProvider _clock = clock;
+    private readonly ILogger<TaskDomainService> _log = log;
     private const uint TaskRewardNotice = TaskService.TaskRewardNotice;
     private const TaskState Running = TaskState.Running;
     private const int TPlot = TaskService.TPlot;
@@ -59,7 +66,7 @@ public sealed partial class TaskDomainService(
     private void QueueRefresh(GameSession s) => tasks.QueueRefresh(s);
     private long Required(GameSession? s, long[] t) => tasks.Required(s, t);
     private static long[] Longs(JsonElement row, string field) => TaskService.Longs(row, field);
-    private Task<IDisposable> LockTasksAsync(GameSession s) => TaskService.LockTasksAsync(s);
+    private static Task<IDisposable> LockTasksAsync(GameSession s) => TaskService.LockTasksAsync(s);
     private Task SyncTasksAsync(GameSession s) => tasks.SyncTasksAsync(s);
     private Task FlushAsync(GameSession s, bool settled = false) => tasks.FlushAsync(s, settled);
     private Task SettleAsync(GameSession s) => tasks.SettleAsync(s);
