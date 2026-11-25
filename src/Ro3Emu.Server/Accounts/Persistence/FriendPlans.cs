@@ -22,7 +22,7 @@ internal sealed class FriendReadPlan(FriendReadKind kind, long a, long b = 0, in
         FriendReadKind.GroupsFor => GroupsFor(db, tx, a),
         FriendReadKind.Intimacy => Intimacy(db, tx, a, b),
         FriendReadKind.RecentTeammates => Recent(db, tx, a, max, cutoff),
-        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        _ => throw new InvalidOperationException("Unsupported friend read kind."),
     };
 
     private static List<long> Ids(SqliteConnection db, SqliteTransaction tx, string sql, long a, long b)
@@ -190,7 +190,7 @@ internal sealed class FriendWritePlan : DbPlan
                     Exec(db, tx, "INSERT INTO recent_team_peer(owner,other,last_seen) VALUES($a,$b,$time) ON CONFLICT(owner,other) DO UPDATE SET last_seen=excluded.last_seen", peer, _a, _time);
                 }
                 break;
-            default: throw new ArgumentOutOfRangeException();
+            default: throw new InvalidOperationException("Unsupported friend write kind.");
         }
         return true;
     }

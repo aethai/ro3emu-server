@@ -23,7 +23,7 @@ sealed class FileRepoHandler(string repo) : HttpMessageHandler
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
         byte[] data = File.ReadAllBytes(path);
-        if (relative.StartsWith("chunks/"))
+        if (relative.StartsWith("chunks/", StringComparison.Ordinal))
         {
             Interlocked.Add(ref ChunkBytesServed, data.Length);
             Interlocked.Increment(ref ChunkRequests);
@@ -265,7 +265,7 @@ public sealed class PatcherTests : IDisposable
 
         // The server dies after a few chunks: the update fails, the installed 1.0.0 stays intact.
         int served = 0;
-        handler.FailWhen = relative => relative.StartsWith("chunks/") && Interlocked.Increment(ref served) > 10;
+        handler.FailWhen = relative => relative.StartsWith("chunks/", StringComparison.Ordinal) && Interlocked.Increment(ref served) > 10;
         await Assert.ThrowsAsync<PatcherException>(() => Update(handler));
         Assert.Equal(File.ReadAllBytes(Path.Combine(Repo, "..", "build", "Game.exe")), File.ReadAllBytes(Path.Combine(Game, "Game.exe")));
         using (var client = new RepositoryClient(new Uri("https://repo.test/"), handler))

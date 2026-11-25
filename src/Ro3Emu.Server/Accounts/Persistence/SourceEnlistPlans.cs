@@ -139,7 +139,7 @@ internal sealed class RealmStatePlan : DbPlan
             RealmStateKind.TerritoryWars => "territory_wars",
             RealmStateKind.TerritoryEscort => "territory_escort",
             RealmStateKind.GuildLeague => "guild_league",
-            _ => throw new ArgumentOutOfRangeException()
+            _ => throw new InvalidOperationException("Unsupported realm state kind.")
         };
         using var cmd = DbSql.Command(db, tx,
             $"INSERT INTO {table}(id,state) VALUES(1,$state) ON CONFLICT(id) DO UPDATE SET state=excluded.state");

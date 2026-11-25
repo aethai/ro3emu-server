@@ -1000,7 +1000,7 @@ internal sealed class RoleIdentityWritePlan : DbPlan
                     cmd.Parameters.AddWithValue("$face", _face); cmd.Parameters.AddWithValue("$id", _id);
                     return cmd.ExecuteNonQuery();
                 }
-            default: throw new ArgumentOutOfRangeException();
+            default: throw new InvalidOperationException("Unsupported role identity write kind.");
         }
     }
 }

@@ -66,7 +66,7 @@ public class VoiceStubPatchTests
             // Init's native context login shows the walk sees GME before the patch. (Join and the auth buffer P/Invoke
             // were asserted here too, but only ever against an already patched DLL; in the original the static walk
             // does not follow their path.)
-            Assert.Contains(before, c => c.StartsWith("Obf_yyC ->"));
+            Assert.Contains(before, c => c.StartsWith("Obf_yyC ->", StringComparison.Ordinal));
         }
 
         var report = VoiceStubPatch.Patch(original.MainModule);

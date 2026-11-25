@@ -400,7 +400,7 @@ public sealed partial class DungeonMatchService : IGameTicker
         if (_preparing.TryGetValue(s, out var match)) await CancelReadyAsync(match, false, notifySelf ? null : s);
     }
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = _time.GetUtcNow().ToUnixTimeSeconds();
         if (now == _lastSecond) return;

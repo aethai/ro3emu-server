@@ -289,7 +289,7 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
 
     // ------------------------------------------------------------------ tick
 
-    public void Tick(GameTime gameTime)
+    public void Tick(GameTime time)
     {
         long now = Now;
         if (now == _lastSecond) return;

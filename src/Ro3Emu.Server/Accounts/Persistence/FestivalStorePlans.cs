@@ -58,7 +58,7 @@ internal sealed class FestivalReadPlan(FestivalReadKind kind, long id = 0) : DbR
                         reader.GetInt64(2), (byte[])reader.GetValue(3)));
                     return rows;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported festival read kind.");
         }
     }
 }

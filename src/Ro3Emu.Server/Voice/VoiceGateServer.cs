@@ -59,20 +59,20 @@ public sealed class VoiceGateServer(IOptions<ServerOptions> options, VoiceTicket
         return base.StartAsync(cancellationToken);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_listener == null) return; // relay off
         using var listener = _listener;
-        while (!ct.IsCancellationRequested)
+        while (!stoppingToken.IsCancellationRequested)
         {
             Socket socket;
-            try { socket = await listener.AcceptAsync(ct); }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            try { socket = await listener.AcceptAsync(stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (SocketException e)
             {
                 // A transient accept failure (handle exhaustion, reset) must not stop the host.
                 log.LogWarning("VoiceGate accept failed: {Error}", e.SocketErrorCode);
-                try { await Task.Delay(100, ct); }
+                try { await Task.Delay(100, stoppingToken); }
                 catch (OperationCanceledException) { break; }
                 continue;
             }

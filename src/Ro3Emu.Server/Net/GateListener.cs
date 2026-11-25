@@ -65,14 +65,14 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
         return base.StartAsync(cancellationToken);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var listener = _listener!;
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var socket = await listener.AcceptAsync(ct);
+                var socket = await listener.AcceptAsync(stoppingToken);
                 socket.NoDelay = true;
                 var remote = (socket.RemoteEndPoint as IPEndPoint)?.Address is { } ip && !(ExemptLoopback && IPAddress.IsLoopback(ip))
                     ? (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip) : null;
@@ -98,7 +98,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                         continue;
                     }
                     // No cancellation token on Task.Run: a canceled dispatch must still dispose its socket.
-                    var task = Task.Run(() => ServeAsync(socket, completion, ct), CancellationToken.None);
+                    var task = Task.Run(() => ServeAsync(socket, completion, stoppingToken), CancellationToken.None);
                     _serves.Add(id, (socket, task));
                     if (remote != null) _perAddress[remote] = _perAddress.GetValueOrDefault(remote) + 1;
                     var removed = task.ContinueWith(_ =>
@@ -115,7 +115,7 @@ public abstract partial class GateListener(IPAddress address, int port, ILogger 
                 }
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

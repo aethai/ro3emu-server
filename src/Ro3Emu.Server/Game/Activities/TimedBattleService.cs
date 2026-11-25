@@ -1058,7 +1058,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         await work();
     }
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = _time.GetUtcNow().ToUnixTimeSeconds();
         if (now == _lastSecond) return;

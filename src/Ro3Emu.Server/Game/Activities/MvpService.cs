@@ -42,7 +42,7 @@ public sealed partial class MvpService : IGameTicker
     private sealed class Stat
     {
         public long Attack, BeAttack, Dead;
-        public long Cure = 0; // No healing event source yet; retained in the existing score formula.
+        public long Cure { get; set; } // No healing event source yet; retained in the existing score formula.
         public long TeamId, Leader;
     }
 

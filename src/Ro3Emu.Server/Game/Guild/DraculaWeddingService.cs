@@ -175,7 +175,7 @@ public sealed class DraculaWeddingService : IGameTicker
 
     // ---- stage 1: the guild home ----
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = Now;
         if (_sweeping || now == _lastSecond) return;

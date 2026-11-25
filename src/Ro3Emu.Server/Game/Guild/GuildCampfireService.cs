@@ -460,7 +460,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         return 0;
     }
 
-    public void Tick(GameTime gameTime)
+    public void Tick(GameTime time)
     {
         long second = _time.GetUtcNow().ToUnixTimeSeconds();
         if (_lastSecond == second) return;

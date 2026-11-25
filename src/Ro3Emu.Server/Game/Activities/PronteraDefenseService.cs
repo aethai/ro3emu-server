@@ -197,7 +197,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
     private bool resultMap(int round, long map) => round > 0 && _data.Table("PronteraDefenseRoundConfig").Values.Any(r =>
         GameData.Int(r, "_iRoundId") == round && GameData.Int(r, "_iMapId") == map);
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = _clock.UtcNow.ToUnixTimeSeconds();
         if (now == _lastSecond || _advancing) return;

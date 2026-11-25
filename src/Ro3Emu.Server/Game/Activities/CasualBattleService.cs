@@ -216,7 +216,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         { Result = error, ActivityId = req.ActivityId, RequestId = req.RequestId, CasualBattleSignUp = new CasualBattleRes() });
     }
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = Now;
         if (now == _lastSecond) return;
