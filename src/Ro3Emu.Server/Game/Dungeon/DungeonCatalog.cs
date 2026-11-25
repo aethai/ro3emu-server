@@ -34,10 +34,10 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     public sealed record Plan(JsonElement Config, JsonElement? Multi, JsonElement? Boss, int Mark,
         int MinPlayers, int MaxPlayers, IReadOnlyList<Wave> Waves, JsonElement? Layer = null)
     {
-        public long LayerId => Layer is { } row ? GameData.Int(row, "_iID") : 0;
-        public long SceneEntry => GameData.Int(Config, "_iID");
-        public int MultiId => Multi is { } row ? (int)GameData.Int(row, "_iID") : 0;
-        public int DurationMs => (int)Math.Clamp(GameData.Int(Config, "_iLimitTime"), 1000, int.MaxValue);
+        public long LayerId => Layer is { } row ? new HeroicSpiritLayerConfig(row).Id : 0;
+        public long SceneEntry => new DungeonConfig(Config).Id;
+        public int MultiId => Multi is { } row ? (int)new TenGameplayConfig(row).Id : 0;
+        public int DurationMs => (int)Math.Clamp(new DungeonConfig(Config).LimitTime, 1000, int.MaxValue);
         /// <summary>A Hidden Realm run: the random entry (TenGameplayConfig _iIsRandomDungeon) this boss was drawn for.</summary>
         public RandomOrigin? Origin { get; init; }
         /// <summary>The entry whose rewards, allowance and record the run counts against: the Hidden Realm's own row when
@@ -45,7 +45,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         public JsonElement? RewardMulti => Origin?.Multi ?? Multi;
         public JsonElement? RewardBoss => Origin?.Boss ?? Boss;
         public int RewardMark => Origin?.Mark ?? Mark;
-        public int RewardMultiId => RewardMulti is { } row ? (int)GameData.Int(row, "_iID") : 0;
+        public int RewardMultiId => RewardMulti is { } row ? (int)new TenGameplayConfig(row).Id : 0;
         public DungeonInitData Init(long teamId = 0, long instanceId = 0)
         {
             var init = LayerId != 0
@@ -58,7 +58,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
                     { MultiDungeonId = MultiId, MarkId = Mark, TeamID = teamId, DungeonId = instanceId }
                 };
             if (Origin is { } origin && init.MultiDungeonInitData != null)
-                init.MultiDungeonInitData.Origin = new MultiDungeonInfo { MultiDungeonId = GameData.Int(origin.Multi, "_iID"), MarkId = origin.Mark };
+                init.MultiDungeonInitData.Origin = new MultiDungeonInfo { MultiDungeonId = new TenGameplayConfig(origin.Multi).Id, MarkId = origin.Mark };
             return init;
         }
     }
@@ -70,32 +70,39 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
 
     public JsonElement? Boss(JsonElement multi, int mark)
     {
-        if (!multi.TryGetProperty("_kBoss", out var list) || list.ValueKind != JsonValueKind.Array
-            || mark < 1 || mark > list.GetArrayLength()) return null;
-        var tuple = list[mark - 1];
-        return tuple.ValueKind == JsonValueKind.Array && tuple.GetArrayLength() >= 2
-            ? data.Row("TenGameplayBossConfig", (long)(GameData.Number(tuple[1]) ?? 0)) : null;
+        var bosses = new TenGameplayConfig(multi).Boss;
+        if (mark < 1 || mark > bosses.Length) return null;
+        var tuple = bosses[mark - 1];
+        return tuple.Length >= 2 ? data.Row("TenGameplayBossConfig", tuple[1]) : null;
     }
 
-    public static int Marks(JsonElement multi) => multi.TryGetProperty("_kBoss", out var list)
-        && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
+    public static int Marks(JsonElement multi) => new TenGameplayConfig(multi).Boss.Length;
 
-    public JsonElement? Refresh(JsonElement multi) => data.Table("TenGameplayRefreshTimeConfig").Values
-        .Where(r => GameData.Int(r, "_iGroupID") == GameData.Int(multi, "_iGroup"))
-        .Select(r => (JsonElement?)r).FirstOrDefault();
+    public JsonElement? Refresh(JsonElement multi)
+    {
+        long group = new TenGameplayConfig(multi).Group;
+        return TenGameplayRefreshTimeConfig.All(data).Where(r => r.GroupId == group).Select(r => (JsonElement?)r.Row).FirstOrDefault();
+    }
 
     /// <summary>Group/family accounting is (inferred); Normal and Hard raw counters are distinct in the Lua DAL.</summary>
-    public static string AllowanceKey(JsonElement multi, int mark) =>
-        $"{GameData.Int(multi, "_iGroup")}:{GameData.Number(multi.GetProperty("_kBoss")[mark - 1][2])}:{GameData.Int(multi, "_iDifficulty")}";
+    public static string AllowanceKey(JsonElement multi, int mark)
+    {
+        var cfg = new TenGameplayConfig(multi);
+        return $"{cfg.Group}:{cfg.Boss[mark - 1][2]}:{cfg.Difficulty}";
+    }
 
     /// <summary>Lua_CFG_TenGameplayConfig:169-204 matches _iType, not _iRelation. Lowest-id tie order is (inferred).</summary>
-    public JsonElement? HardCounterpart(JsonElement multi) => MultiRows
-        .Where(r => GameData.Int(r, "_iType") == GameData.Int(multi, "_iType") && GameData.Int(r, "_iDifficulty") == 2)
-        .OrderBy(r => GameData.Int(r, "_iID")).Select(r => (JsonElement?)r).FirstOrDefault();
+    public JsonElement? HardCounterpart(JsonElement multi)
+    {
+        long type = new TenGameplayConfig(multi).Type;
+        return MultiRows.Select(r => new TenGameplayConfig(r))
+            .Where(r => r.Type == type && r.Difficulty == 2)
+            .OrderBy(r => r.Id).Select(r => (JsonElement?)r.Row).FirstOrDefault();
+    }
 
     public Plan? Resolve(EnterDungeonReq req)
     {
-        if (data.Row("DungeonConfig", req.SceneEntry) is not { } config
+        if (DungeonConfig.Get(data, req.SceneEntry) is not { } config
             || worldData.Map(req.SceneEntry) is not { Born: not null }) return null;
         // Separate owners handle tower, PvP, AFK and activity init branches; never accept forged init data.
         var init = req.InitData?.Clone() ?? new DungeonInitData();
@@ -103,27 +110,27 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         init.MultiDungeonInitData = null;
         if (init.CalculateSize() != 0 || req.Param != null && req.Param.CalculateSize() != 0) return null;
         JsonElement? multi = null, boss = null;
-        int mark = 0, min = 1, max = (int)GameData.Int(config, "_iRoleCntLimit");
-        long mode = GameData.Int(config, "_iGamePlayType"), kind = GameData.Int(config, "_iDungeonType");
+        int mark = 0, min = 1, max = (int)config.RoleCntLimit;
+        long mode = config.GamePlayType, kind = config.DungeonType;
         if (selected != null)
         {
-            multi = MultiRows.Where(r => GameData.Int(r, "_iID") == selected.MultiDungeonId).Select(r => (JsonElement?)r).FirstOrDefault();
+            multi = MultiRows.Where(r => new TenGameplayConfig(r).Id == selected.MultiDungeonId).Select(r => (JsonElement?)r).FirstOrDefault();
             if (multi == null || selected.IsMatch || selected.NeedCreateTeam || selected.Origin != null) return null;
             mark = selected.MarkId;
             boss = Boss(multi.Value, mark);
-            if (boss == null || GameData.Int(boss.Value, "_iDungeon") != req.SceneEntry) return null;
-            var limits = multi.Value.GetProperty("_kLimit");
-            min = (int)(GameData.Number(limits[0]) ?? 1);
-            max = Math.Min(max, (int)(GameData.Number(limits[1]) ?? max));
+            if (boss == null || new TenGameplayBossConfig(boss.Value).Dungeon != req.SceneEntry) return null;
+            var limits = new TenGameplayConfig(multi.Value).Limit;
+            min = limits.Length > 0 ? (int)limits[0] : 1;
+            max = Math.Min(max, limits.Length > 1 ? (int)limits[1] : max);
         }
         // A scripted scene may also be a DanceParty (26: the opening dance, 1010601), which the client runs with the
         // plain lc_dungeon_base like an ordinary dungeon (GamePlayConfig.lua:136-140).
         else if (kind is not (1 or 2) || mode is not (6 or 24) && !(mode == 26 && reconstructed?.Scripted(req.SceneEntry) != null)
-            || data.Table("TenGameplayBossConfig").Values.Any(r => GameData.Int(r, "_iDungeon") == req.SceneEntry)) return null;
+            || TenGameplayBossConfig.All(data).Any(r => r.Dungeon == req.SceneEntry)) return null;
         // A Journey scene (24) rebuilt as a scripted scene plays its steps instead of the bare point respawns.
         var waves = mode == 24 && selected == null && reconstructed?.Scripted(req.SceneEntry) == null
             ? JourneySpawns(config) : Spawns(config, boss, worldData.Map(req.SceneEntry)!);
-        return max >= min && waves.Count > 0 ? new Plan(config, multi, boss, mark, min, max, waves) : null;
+        return max >= min && waves.Count > 0 ? new Plan(config.Row, multi, boss, mark, min, max, waves) : null;
     }
 
     /// <summary>
@@ -134,32 +141,31 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// </summary>
     internal Plan? GuildChallenge(long scene, int limit)
     {
-        if (data.Row("DungeonConfig", scene) is not { } config || GameData.Int(config, "_iGamePlayType") != 19
+        if (DungeonConfig.Get(data, scene) is not { GamePlayType: 19 } config
             || worldData.Map(scene) is not { Born: not null }) return null;
-        string editor = config.GetProperty("_kResSceneEditorName").GetString() ?? "";
+        string editor = config.ResSceneEditorName;
         if (SceneEditorFile(editor) is not { } path) return null;
         using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
         if (!doc.RootElement.TryGetProperty("m_kMonsterSpawnPoints", out var points)) return null;
-        int difficulty = data.Table("GuildChallengeConfig").Values.Where(r => r.GetProperty("_kDungeonId").EnumerateArray()
-            .Any(v => GameData.Number(v) == scene)).Select(r => (int)GameData.Int(r, "_iLevel")).Single();
+        int difficulty = GuildChallengeConfig.All(data).Where(r => r.DungeonId.Contains(scene)).Select(r => (int)r.Level).Single();
         var spawns = new List<Spawn>();
-        foreach (var binding in data.Table("NpcLevelPointRespawnConfig").Values
+        foreach (var binding in NpcLevelPointRespawnConfig.All(data)
             // (inferred) The matching level selects the difficulty's boss. Level 0 is an alternate legacy
             // easy template; level -1 contains script-controlled mechanisms/post-boss NPCs, not an initial wave.
-            .Where(r => GameData.Int(r, "_iMapid") == scene && GameData.Int(r, "_iLevel") == difficulty)
-            .OrderBy(r => GameData.Int(r, "_iRespawnpointid")))
+            .Where(r => r.Mapid == scene && r.Level == difficulty)
+            .OrderBy(r => r.Respawnpointid))
         {
-            int id = (int)GameData.Int(binding, "_iNpcid");
-            string pointId = GameData.Int(binding, "_iRespawnpointid").ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (!points.TryGetProperty(pointId, out var point) || GameData.Int(point, "monsterType") != 0 || data.Row("NPCConfig", id) is not { } npc
-                || GameData.Int(npc, "_iNPCType") != 1 || GameData.Int(npc, "_iCamp") != 3
-                || GameData.Int(npc, "_iNoSelected") != 0 || monsters.Template(id) == null) continue;
+            int id = (int)binding.Npcid;
+            string pointId = binding.Respawnpointid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!points.TryGetProperty(pointId, out var point) || GameData.Int(point, "monsterType") != 0
+                || NPCConfig.Get(data, id) is not { NPCType: 1, Camp: 3, NoSelected: 0 }
+                || monsters.Template(id) == null) continue;
             var p = point.GetProperty("position");
             spawns.Add(new(id, new MapPoint(WorldNpc.Float(p, "x"), WorldNpc.Float(p, "y"), WorldNpc.Float(p, "z"), WorldNpc.Float(point, "direction"))));
         }
         // (inferred) Recommended Players is advisory; no configured minimum was recovered. Solo entry is allowed.
-        return spawns.Count == 0 ? null : new Plan(config, null, null, 0, 1,
-            Math.Min(limit, (int)GameData.Int(config, "_iRoleCntLimit")), [new Wave(1, spawns)]);
+        return spawns.Count == 0 ? null : new Plan(config.Row, null, null, 0, 1,
+            Math.Min(limit, (int)config.RoleCntLimit), [new Wave(1, spawns)]);
     }
 
     /// <summary>
@@ -182,45 +188,43 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// boss but not its spawn point; every spawn point of these scenes has npcId 0). Solo: the panel challenges alone,
     /// although DungeonConfig allows 10 (inferred).
     /// </summary>
-    internal Plan? Valhalla(JsonElement layer)
+    internal Plan? Valhalla(JsonElement layerRow)
     {
-        long scene = GameData.Int(layer, "_iDungeonId");
-        if (data.Row("DungeonConfig", scene) is not { } config || GameData.Int(config, "_iGamePlayType") != 23
-            || worldData.Map(scene) is not { Born: not null }
-            || !layer.TryGetProperty("_kMonsterPreview", out var bosses) || bosses.ValueKind != JsonValueKind.Array
-            || bosses.GetArrayLength() == 0) return null;
-        string editor = config.GetProperty("_kResSceneEditorName").GetString() ?? "";
+        var layer = new HeroicSpiritLayerConfig(layerRow);
+        long scene = layer.DungeonId;
+        if (DungeonConfig.Get(data, scene) is not { GamePlayType: 23 } config
+            || worldData.Map(scene) is not { Born: not null } || layer.MonsterPreview.Length == 0) return null;
+        string editor = config.ResSceneEditorName;
         if (SceneEditorFile(editor) is not { } path) return null;
         using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
         if (!doc.RootElement.TryGetProperty("m_kMonsterSpawnPoints", out var points) || points.ValueKind != JsonValueKind.Object) return null;
         var serverPoints = points.EnumerateObject().Select(p => p.Value.Clone())
             .Where(p => GameData.Int(p, "monsterType") == 0 && p.TryGetProperty("position", out _))
             .OrderBy(p => GameData.Int(p, "Id")).ToArray();
-        var waves = BossWave((int)(GameData.Number(bosses[0]) ?? 0), serverPoints, p =>
+        var waves = BossWave((int)layer.MonsterPreview[0], serverPoints, p =>
         {
             var v = p.GetProperty("position");
             return new MapPoint(WorldNpc.Float(v, "x"), WorldNpc.Float(v, "y"), WorldNpc.Float(v, "z"), WorldNpc.Float(p, "direction"));
         });
-        return waves.Count == 0 ? null : new Plan(config, null, null, 0, 1, 1, waves, layer);
+        return waves.Count == 0 ? null : new Plan(config.Row, null, null, 0, 1, 1, waves, layerRow);
     }
 
     /// <summary>Journey action 407 maps to the authored NPC/map/point relation, not a guessed scene actor.</summary>
-    private IReadOnlyList<Wave> JourneySpawns(JsonElement config)
+    private IReadOnlyList<Wave> JourneySpawns(DungeonConfig config)
     {
-        long scene = GameData.Int(config, "_iID");
-        if (!data.Table("JourneyActConfig").Values.Any(r => r.TryGetProperty("_iAction", out var actions)
-            && actions.ValueKind == JsonValueKind.Array && actions.GetArrayLength() > 0
-            && actions[0].ValueKind == JsonValueKind.Array && actions[0].GetArrayLength() >= 3
-            && GameData.Number(actions[0][0]) == 407 && GameData.Number(actions[0][1]) == scene)) return [];
+        long scene = config.Id;
+        if (!JourneyActConfig.All(data).Any(r => r.Action is { ValueKind: JsonValueKind.Array } actions
+            && actions.GetArrayLength() > 0 && actions[0].ValueKind == JsonValueKind.Array
+            && actions[0].GetArrayLength() >= 3 && GameData.Number(actions[0][0]) == 407
+            && GameData.Number(actions[0][1]) == scene)) return [];
         if (worldData.Map(scene) is not { } map) return [];
-        var rows = data.Table("NpcLevelPointRespawnConfig").Values
-            .Where(r => GameData.Int(r, "_iMapid") == scene && GameData.Int(r, "_iNpcid") > 0)
-            .OrderBy(r => GameData.Int(r, "_iId")).ToArray();
+        var rows = NpcLevelPointRespawnConfig.All(data)
+            .Where(r => r.Mapid == scene && r.Npcid > 0).OrderBy(r => r.Id).ToArray();
         var spawns = new List<Spawn>();
         foreach (var row in rows)
         {
-            long pointId = GameData.Int(row, "_iRespawnpointid");
-            int npcId = (int)GameData.Int(row, "_iNpcid");
+            long pointId = row.Respawnpointid;
+            int npcId = (int)row.Npcid;
             if (!map.Points.TryGetValue(pointId, out var point) || monsters.Template(npcId) == null) return [];
             spawns.Add(new Spawn(npcId, point));
         }
@@ -240,9 +244,9 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// its configured count along authored inner points is (inferred) until the server placement algorithm is known.
     /// No phase, wave delay, hidden reward or boss mechanic is fabricated from DungeonPhaseConfig's UI descriptions.
     /// </summary>
-    private IReadOnlyList<Wave> Spawns(JsonElement config, JsonElement? boss, MapWorld map)
+    private IReadOnlyList<Wave> Spawns(DungeonConfig config, JsonElement? boss, MapWorld map)
     {
-        string? editor = config.TryGetProperty("_kResSceneEditorName", out var name) ? name.GetString() : null;
+        string editor = config.ResSceneEditorName;
         if (string.IsNullOrEmpty(editor) || SceneEditorFile(editor) is not { } path) return [];
         using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
         if (!doc.RootElement.TryGetProperty("m_kMonsterSpawnPoints", out var points) || points.ValueKind != JsonValueKind.Object) return [];
@@ -255,11 +259,11 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             return new MapPoint(WorldNpc.Float(v, "x"), WorldNpc.Float(v, "y"), WorldNpc.Float(v, "z"), WorldNpc.Float(p, "direction"));
         }
         // A scripted story scene without a fight (inferred, see ReconstructedDungeons.Scripted): steps, not monsters.
-        if (boss == null && reconstructed?.Scripted(GameData.Int(config, "_iID")) is { } scripted)
+        if (boss == null && reconstructed?.Scripted(config.Id) is { } scripted)
             return ScriptedWaves(scripted, map);
         // A reconstructed story encounter (inferred, see ReconstructedDungeons) replaces the unresolvable
         // server-only templates: client-known monsters at authored points, one wave per quest stage.
-        if (boss == null && reconstructed?.For(GameData.Int(config, "_iID")) is { } rebuilt)
+        if (boss == null && reconstructed?.For(config.Id) is { } rebuilt)
         {
             var waves = new List<Wave>();
             foreach (var wave in rebuilt.Waves)
@@ -275,7 +279,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             }
             return waves;
         }
-        if (boss is { } b) return BossWave((int)GameData.Int(b, "_iBoss"), serverPoints, Point);
+        if (boss is { } b) return BossWave((int)new TenGameplayBossConfig(b).Boss, serverPoints, Point);
         var explicitPoints = serverPoints.Where(p => GameData.Int(p, "npcId") > 0).ToArray();
         if (explicitPoints.Any(p => monsters.Template((int)GameData.Int(p, "npcId")) == null)) return [];
         if (explicitPoints.Length > 0)
@@ -283,35 +287,31 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
                 .Select((g, i) => new Wave(i + 1, [.. g.Select(p => new Spawn((int)GameData.Int(p, "npcId"), Point(p)))]))];
 
         var mapped = new List<Spawn>();
-        foreach (var row in data.Table("NpcLevelPointRespawnConfig").Values
-            .Where(r => GameData.Int(r, "_iMapid") == GameData.Int(config, "_iID")))
+        foreach (var row in NpcLevelPointRespawnConfig.All(data).Where(r => r.Mapid == config.Id))
         {
-            int npc = (int)GameData.Int(row, "_iNpcid");
+            int npc = (int)row.Npcid;
             if (monsters.Template(npc) == null) continue; // exported rows also name noncombat scene actors
-            string id = GameData.Int(row, "_iRespawnpointid").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string id = row.Respawnpointid.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (!points.TryGetProperty(id, out var point) || GameData.Int(point, "monsterType") != 0) return [];
             mapped.Add(new Spawn(npc, Point(point)));
         }
 
-        foreach (var row in data.Table("NpcLevelRegionRespawnConfig").Values
-            .Where(r => GameData.Int(r, "_iMapid") == GameData.Int(config, "_iID")))
+        foreach (var row in NpcLevelRegionRespawnConfig.All(data).Where(r => r.Mapid == config.Id))
         {
-            int regionId = (int)GameData.Int(row, "_iRespawnregionid");
+            int regionId = (int)row.Respawnregionid;
             if (!doc.RootElement.TryGetProperty("m_kRegins", out var regions)
                 || !regions.TryGetProperty(regionId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var region)
                 || !region.TryGetProperty("innerPoints", out var inner) || inner.ValueKind != JsonValueKind.Object)
                 return [];
             var inside = inner.EnumerateObject().OrderBy(p => int.TryParse(p.Name, out int n) ? n : int.MaxValue)
                 .Select(p => p.Value).ToArray();
-            if (inside.Length == 0 || !row.TryGetProperty("_iNpcrespawngroup", out var groups)
-                || groups.ValueKind != JsonValueKind.Array) return [];
-            foreach (var groupId in groups.EnumerateArray())
+            if (inside.Length == 0 || row.Npcrespawngroup.Length == 0) return [];
+            foreach (long groupId in row.Npcrespawngroup)
             {
-                if (data.Row("NpcRespawnGroupConfig", (long)(GameData.Number(groupId) ?? 0)) is not { } group
-                    || !group.TryGetProperty("_kNpcgroup", out var npcIds) || npcIds.ValueKind != JsonValueKind.Array
-                    || npcIds.GetArrayLength() != 1) return []; // multi-NPC weight selection is unproven
-                int npc = (int)(GameData.Number(npcIds[0]) ?? 0);
-                int count = (int)GameData.Int(group, "_iByweightnum");
+                if (NpcRespawnGroupConfig.Get(data, groupId) is not { } group || group.Npcgroup.Length != 1)
+                    return []; // multi-NPC weight selection is unproven
+                int npc = (int)group.Npcgroup[0];
+                int count = (int)group.Byweightnum;
                 if (monsters.Template(npc) == null || count is < 1 or > 100) return [];
                 // Region inner points are authored positions. Interpolation is (inferred); all samples remain
                 // on an authored segment, and the map grounds them against its navigation layer at spawn.
@@ -341,16 +341,15 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         var waves = new List<Wave>();
         foreach (var step in scene.Steps)
         {
-            if (!data.Table("DungeonQuestConfig").Values.Any(q => GameData.Int(q, "_iDungeonID") == scene.Scene
-                && GameData.Int(q, "_iQuestID") == step.Quest)) return [];
+            if (!DungeonQuestConfig.All(data).Any(q => q.DungeonId == scene.Scene && q.QuestId == step.Quest)) return [];
             foreach (var actor in step.Actors)
-                if (data.Row("NPCConfig", actor.NpcId) is not { } npc || GameData.Int(npc, "_iNPCType") is not (1 or 2)
+                if (NPCConfig.Get(data, actor.NpcId) is not { NPCType: 1 or 2 }
                     || !map.Points.ContainsKey(actor.Point)
-                    || actor.Buffs.Any(b => data.Row("BuffConfig", b) is not { } buff || GameData.Int(buff, "_iBuffID") <= 0)) return [];
+                    || actor.Buffs.Any(b => BuffConfig.Get(data, b) is not { BuffId: > 0 })) return [];
             // A companion is a client NPC that can fight beside the player (CompanionUnit.Build); it carries no buffs.
             if (step.Companions.Any(c => !map.Points.ContainsKey(c.Point) || c.Buffs.Count > 0
                     || CompanionUnit.Build(data, monsters, c.NpcId) == null)) return [];
-            if (step.Story != 0 && data.Row("PlotInterpretation", step.Story) == null) return [];
+            if (step.Story != 0 && PlotInterpretation.Get(data, step.Story) == null) return [];
             if (step.TeleportAfter != 0 && !map.Points.ContainsKey(step.TeleportAfter)) return [];
             if (step.HoldAfterMs is < 0 or > 60000) return [];
             // A ride needs its route, an actor that walks (a UnitConfig speed) and an actor interaction that completes the step.
@@ -365,7 +364,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
                     ReconstructedDungeons.TriggerKind.Message => step.Actors.Any(a => Interactions(a.NpcId).Any(i => DungeonMessage(i) == t.Id)),
                     ReconstructedDungeons.TriggerKind.Region => map.Regions.ContainsKey(t.Id),
                     ReconstructedDungeons.TriggerKind.Point => map.Points.ContainsKey(t.Id) && t.Radius > 0,
-                    ReconstructedDungeons.TriggerKind.Plot => data.Row("PlotInterpretation", t.Id) != null,
+                    ReconstructedDungeons.TriggerKind.Plot => PlotInterpretation.Get(data, t.Id) != null,
                     _ => false,
                 };
                 if (!known) return [];
@@ -373,12 +372,12 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             if (step.Seek is { } seek && (step.Actors.Count == 0 || seek.Rounds <= 0 || seek.SearchedRadius < 0
                     || step.Complete.Count == 0 || step.Complete.Any(t => t.Kind != ReconstructedDungeons.TriggerKind.Point)
                     || seek.Opening.Append(seek.Round).Append(seek.Countdown).Append(seek.Longer).Append(seek.Won).Append(seek.Found)
-                        .Any(chat => data.Row("ChatConfig", chat) == null))) return [];
+                        .Any(chat => ChatConfig.Get(data, chat) == null))) return [];
             if (step.Shelter is { } shelter && (!step.Fight.Any(f => f.NpcId == shelter.Boss) || !step.Actors.Any(a => a.NpcId == shelter.Cover)
-                    || data.Row("ChatConfig", shelter.Tip) == null || data.Row("SkillConfig", shelter.Skill) == null
+                    || ChatConfig.Get(data, shelter.Tip) == null || SkillConfig.Get(data, shelter.Skill) == null
                     || shelter.EveryMs <= shelter.WarnMs || shelter.WarnMs < 0 || shelter.Width <= 0 || shelter.Depth <= 0)) return [];
             if (step.React is { } react && !ReactionResolves(step, react)) return [];
-            if (step.Cannon is { } cannon && (step.Fight.Count == 0 || data.Row("SkillConfig", cannon.Fire) == null
+            if (step.Cannon is { } cannon && (step.Fight.Count == 0 || SkillConfig.Get(data, cannon.Fire) == null
                     || !step.Actors.Any(a => Interactions(a.NpcId).Contains(cannon.Interaction)))) return [];
             var fight = new List<Spawn>();
             foreach (var spawn in step.Fight)
@@ -397,8 +396,8 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             waves.Add(new Wave(waves.Count + 1, fight, step.Quest, step));
         }
         // An unplayed quest is one of the scene's own quests that no step shows.
-        if (scene.Unplayed.Any(q => scene.Steps.Any(s => s.Quest == q) || !data.Table("DungeonQuestConfig").Values.Any(r =>
-                GameData.Int(r, "_iDungeonID") == scene.Scene && GameData.Int(r, "_iQuestID") == q))) return [];
+        if (scene.Unplayed.Any(q => scene.Steps.Any(s => s.Quest == q)
+            || !DungeonQuestConfig.All(data).Any(r => r.DungeonId == scene.Scene && r.QuestId == q))) return [];
         return waves;
     }
 
@@ -443,10 +442,10 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// </summary>
     internal Plan? Dracula(long scene)
     {
-        if (data.Row("DungeonConfig", scene) is not { } config || GameData.Int(config, "_iGamePlayType") != 31
+        if (DungeonConfig.Get(data, scene) is not { GamePlayType: 31 } config
             || worldData.Map(scene) is not { Born: not null } map) return null;
-        var bound = data.Table("NpcLevelPointRespawnConfig").Values.Where(r => GameData.Int(r, "_iMapid") == scene)
-            .GroupBy(r => GameData.Int(r, "_iRespawnpointid")).ToDictionary(g => g.Key, g => (int)GameData.Int(g.First(), "_iNpcid"));
+        var bound = NpcLevelPointRespawnConfig.All(data).Where(r => r.Mapid == scene)
+            .GroupBy(r => r.Respawnpointid).ToDictionary(g => g.Key, g => (int)g.First().Npcid);
         Spawn? At(long point) => bound.TryGetValue(point, out int npc) && map.Points.TryGetValue(point, out var p)
             && monsters.Template(npc) != null ? new Spawn(npc, p) : null;
         ReconstructedDungeons.ScriptedStep Chase(long region) => new($"chase to region {region}", 0, (0, 1), [], 0,
@@ -477,7 +476,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         foreach (int npc in DraculaBushes.Append(DraculaCage))
         {
             long point = bound.Where(p => p.Value == npc).Select(p => p.Key).SingleOrDefault();
-            if (!map.Points.ContainsKey(point) || data.Row("NPCConfig", npc) is not { } row || GameData.Int(row, "_iNPCType") != 2
+            if (!map.Points.ContainsKey(point) || NPCConfig.Get(data, npc) is not { NPCType: 2 }
                 || Interactions(npc).Count == 0) return null;
             actors.Add(new(npc, point, []));
         }
@@ -486,7 +485,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             [new(ReconstructedDungeons.TriggerKind.Interaction, DraculaUnlock)],
             [.. DraculaBushes.SelectMany(Interactions).Select(i => new ReconstructedDungeons.StepTrigger(
                 ReconstructedDungeons.TriggerKind.Interaction, i))], 0, [], false)));
-        return new Plan(config, null, null, 0, 1, (int)GameData.Int(config, "_iRoleCntLimit"), waves);
+        return new Plan(config.Row, null, null, 0, 1, (int)config.RoleCntLimit, waves);
     }
 
     /// <summary>A scene-editor point (m_kAllPoints) of the scene's map.</summary>
@@ -511,9 +510,8 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
         worldData.Map(scene)?.Regions.TryGetValue(region, out var r) == true ? r : null;
 
     /// <summary>An NPCConfig row's _iInteractID list (the interactions the client offers on that unit).</summary>
-    public IReadOnlyList<long> Interactions(int npcId) => data.Row("NPCConfig", npcId) is { } npc
-        && npc.TryGetProperty("_iInteractID", out var ids) && ids.ValueKind == JsonValueKind.Array
-        ? ids.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).Where(v => v > 0).ToArray() : [];
+    public IReadOnlyList<long> Interactions(int npcId) =>
+        NPCConfig.Get(data, npcId) is { } npc ? npc.InteractId.Where(v => v > 0).ToArray() : [];
 
     /// <summary>
     /// The dungeon message an interaction sends: its NPCInteractConfig _iEXECAction ["210", id, ...]. ActionConfig 210
@@ -521,8 +519,8 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
     /// </summary>
     public long? DungeonMessage(long interactionId)
     {
-        if (data.Row("NPCInteractConfig", interactionId) is not { } row || !row.TryGetProperty("_iEXECAction", out var actions)
-            || actions.ValueKind != JsonValueKind.Array) return null;
+        if (NPCInteractConfig.Get(data, interactionId)?.EXECAction is not { ValueKind: JsonValueKind.Array } actions)
+            return null;
         foreach (var action in actions.EnumerateArray())
             if (action.ValueKind == JsonValueKind.Array && action.GetArrayLength() >= 2
                 && GameData.Number(action[0]) == 210 && GameData.Number(action[1]) is { } id) return (long)id;

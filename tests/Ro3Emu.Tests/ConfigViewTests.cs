@@ -174,7 +174,7 @@ public sealed class ConfigViewTests
 
     // Each client field name written as a string outside Data/Config is a read the startup check cannot see. The
     // count only goes down: lower it when a change removes such reads, never raise it.
-    private const int FieldNamesOutsideViews = 2638;
+    private const int FieldNamesOutsideViews = 2227;
     private const int KeyValueTableReadsOutsideViews = 0;
     private static readonly string Obj = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
 

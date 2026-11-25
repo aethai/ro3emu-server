@@ -1,8 +1,8 @@
-using System.Text.Json;
 using Google.Protobuf;
 using Microsoft.Data.Sqlite;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -17,46 +17,37 @@ public sealed partial class SeasonTalentService
     private (long Gate, long Branch)? ChoicePath(long id, int career)
     {
         Nodes();
-        if (_data.Row("SeasonTalentConfig", id) is not { } node) return null;
-        long tree = GameData.Int(node, "_iTalentTreeID"), branch = id;
-        long type = GameData.Int(node, "_iType");
+        if (SeasonTalentConfig.Get(_data, id) is not { } node) return null;
+        long tree = node.TalentTreeId, branch = id, type = node.Type;
         if (type is not (ProfessionBranchType or ProfessionOptionType)
-            || Effect(GameData.Int(node, "_iLevelGroupId"), 1, career) == null) return null;
+            || Effect(node.LevelGroupId, 1, career) == null) return null;
         if (type == ProfessionOptionType)
         {
             var parents = _parents!.GetValueOrDefault((id, tree), [])
-                .Where(p => _data.Row("SeasonTalentConfig", p.Parent) is { } r
-                    && GameData.Int(r, "_iType") == ProfessionBranchType).ToArray();
+                .Where(p => SeasonTalentConfig.Get(_data, p.Parent) is { Type: ProfessionBranchType }).ToArray();
             if (parents.Length != 1) return null;
             branch = parents[0].Parent;
         }
-        var branchRow = _data.Row("SeasonTalentConfig", branch)!.Value;
-        if (Effect(GameData.Int(branchRow, "_iLevelGroupId"), 1, career) == null) return null;
+        var branchRow = SeasonTalentConfig.Get(_data, branch)!.Value;
+        if (Effect(branchRow.LevelGroupId, 1, career) == null) return null;
         // A branch with selectable children must name one; otherwise the choice is incomplete.
-        if (type == ProfessionBranchType && Children(branchRow).Any(child =>
-            _data.Row("SeasonTalentConfig", child) is { } r && GameData.Int(r, "_iType") == ProfessionOptionType
-            && Effect(GameData.Int(r, "_iLevelGroupId"), 1, career) != null)) return null;
+        if (type == ProfessionBranchType && branchRow.Afterids.Any(child =>
+            SeasonTalentConfig.Get(_data, child) is { Type: ProfessionOptionType } r
+            && Effect(r.LevelGroupId, 1, career) != null)) return null;
         var gates = _parents!.GetValueOrDefault((branch, tree), [])
-            .Where(p => _data.Row("SeasonTalentConfig", p.Parent) is { } r
-                && GameData.Int(r, "_iType") == ChoiceNodeType).ToArray();
+            .Where(p => SeasonTalentConfig.Get(_data, p.Parent) is { Type: ChoiceNodeType }).ToArray();
         return gates.Length == 1 ? (gates[0].Parent, branch) : null;
     }
 
-    private static IEnumerable<long> Children(JsonElement row) =>
-        row.TryGetProperty("_kAfterids", out var children) && children.ValueKind == JsonValueKind.Array
-            ? children.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)) : [];
-
     private IEnumerable<long> ChoiceMembers(long gate)
     {
-        if (_data.Row("SeasonTalentConfig", gate) is not { } row) yield break;
-        foreach (long branch in Children(row))
+        if (SeasonTalentConfig.Get(_data, gate) is not { } row) yield break;
+        foreach (long branch in row.Afterids)
         {
-            if (_data.Row("SeasonTalentConfig", branch) is not { } b
-                || GameData.Int(b, "_iType") != ProfessionBranchType) continue;
+            if (SeasonTalentConfig.Get(_data, branch) is not { Type: ProfessionBranchType } b) continue;
             yield return branch;
-            foreach (long option in Children(b))
-                if (_data.Row("SeasonTalentConfig", option) is { } o
-                    && GameData.Int(o, "_iType") == ProfessionOptionType) yield return option;
+            foreach (long option in b.Afterids)
+                if (SeasonTalentConfig.Get(_data, option) is { Type: ProfessionOptionType }) yield return option;
         }
     }
 

@@ -7,5 +7,6 @@ namespace Ro3Emu.Server.Data.Config;
 public readonly partial record struct RefiningTable(JsonElement Row)
 {
     [ConfigField("_iEquipType")] public partial long EquipType { get; }
+    [ConfigField("_iPower", Optional = true)] public partial long Power { get; }
     [ConfigField("_iRefiningInterval")] public partial long RefiningInterval { get; }
 }

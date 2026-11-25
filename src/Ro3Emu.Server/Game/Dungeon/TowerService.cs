@@ -6,6 +6,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -110,21 +111,24 @@ public sealed partial class TowerService
     /// <summary>PetFloorConfig is an array. Lookup and sorting use its explicit _iID / _iFloor domains. Built once per
     /// playbook (and per loaded table): achievements read a role's cleared floor on every probe, and filtering and sorting
     /// the table there each time took most of their tick at 500 players (LoadTest S3).</summary>
-    private (int PlayBook, object Table, IReadOnlyList<JsonElement> Rows, Dictionary<long, JsonElement> ById)? _floors;
+    private (int PlayBook, object Table, IReadOnlyList<PetFloorConfig> Rows, Dictionary<long, PetFloorConfig> ById)? _floors;
 
-    private IReadOnlyList<JsonElement> Floors() => FloorTable().Rows;
+    private IReadOnlyList<PetFloorConfig> Floors() => FloorTable().Rows;
 
-    private (int PlayBook, object Table, IReadOnlyList<JsonElement> Rows, Dictionary<long, JsonElement> ById) FloorTable()
+    private (int PlayBook, object Table, IReadOnlyList<PetFloorConfig> Rows, Dictionary<long, PetFloorConfig> ById) FloorTable()
     {
         int playBook = _seasons.PlayBook;
         var table = _data.Table("PetFloorConfig");
         if (_floors is { } cached && cached.PlayBook == playBook && ReferenceEquals(cached.Table, table)) return cached;
-        List<JsonElement> rows = [.. table.Values.Where(r => FitsPlayBook(r, playBook)).OrderBy(r => GameData.Int(r, "_iFloor"))];
-        var byId = new Dictionary<long, JsonElement>();
-        foreach (var row in rows) byId.TryAdd(GameData.Int(row, "_iID"), row);
+        List<PetFloorConfig> rows = [.. PetFloorConfig.All(_data).Where(r => FitsPlayBook(r.MultiverseArray, playBook)).OrderBy(r => r.Floor)];
+        var byId = new Dictionary<long, PetFloorConfig>();
+        foreach (var row in rows) byId.TryAdd(row.Id, row);
         _floors = (playBook, table, rows, byId);
         return _floors.Value;
     }
+
+    internal static bool FitsPlayBook(long[] books, int playBook) =>
+        books.Length == 0 || books is [0] || (books.Length > 1 && books[1] == -1 ? playBook >= books[0] : books.Contains(playBook));
 
     /// <summary>LC_SeasonHelper.GetMultiverseFitSeason: empty/[0], explicit membership, or [minimum,-1].</summary>
     internal static bool FitsPlayBook(JsonElement row, int playBook)
@@ -135,8 +139,8 @@ public sealed partial class TowerService
         return books.EnumerateArray().Any(b => GameData.Number(b) == playBook);
     }
 
-    private JsonElement? Floor(long id) => FloorTable().ById.TryGetValue(id, out var row) ? row : null;
-    private int Cleared(GameSession s) => Floor(s.Instances.Tower!.LayerConfID) is { } f ? (int)GameData.Int(f, "_iFloor") : 0;
+    private PetFloorConfig? Floor(long id) => FloorTable().ById.TryGetValue(id, out var row) ? row : null;
+    private int Cleared(GameSession s) => Floor(s.Instances.Tower!.LayerConfID) is { } f ? (int)f.Floor : 0;
 
     /// <summary>The highest Spirit Tower floor this role has cleared (PetFloorConfig._iFloor of its record), 0 without one.</summary>
     public int HighestClearedFloor(GameSession s) => s.Instances.Tower == null ? 0 : Cleared(s);
@@ -163,14 +167,11 @@ public sealed partial class TowerService
     internal static int DifficultyRatio(JsonElement floor, int attribute, long challengeMs, DateTimeOffset now)
     {
         if (challengeMs <= 0) return 10000;
-        if (!floor.TryGetProperty("_kDynamicDifficulty", out var modifiers) || modifiers.ValueKind != JsonValueKind.Array)
-            return 10000;
-        foreach (var tuple in modifiers.EnumerateArray())
+        foreach (var tuple in new PetFloorConfig(floor).DynamicDifficulty)
         {
-            if (tuple.ValueKind != JsonValueKind.Array || tuple.GetArrayLength() < 3
-                || GameData.Number(tuple[0]) != attribute) continue;
-            long step = Math.Max(0, (long)(GameData.Number(tuple[1]) ?? 0));
-            long cap = Math.Clamp((long)(GameData.Number(tuple[2]) ?? 0), 0, 9999);
+            if (tuple.Length < 3 || tuple[0] != attribute) continue;
+            long step = Math.Max(0, tuple[1]);
+            long cap = Math.Clamp(tuple[2], 0, 9999);
             // Lua_TimeHelper.GetPassDay floors (seconds + 28800)/86400; caller first subtracts 5 hours.
             long dayNow = (long)Math.Floor((now.ToUnixTimeSeconds() + 3 * 3600) / 86400d);
             long dayThen = (long)Math.Floor((challengeMs / 1000 + 3 * 3600) / 86400d);
@@ -205,7 +206,7 @@ public sealed partial class TowerService
             info.CurDay = t.CurDay;
             info.PassedMaxLayerConfID = t.LayerConfID;
             info.LastLayerConfID = t.LastLayerConfID;
-            info.DurationTime = Floor(t.LayerConfID) is { } f ? Math.Max(0, (int)GameData.Int(f, "_iTimeLimit") - t.RemainDuration) : 0;
+            info.DurationTime = Floor(t.LayerConfID) is { } f ? Math.Max(0, (int)f.TimeLimit - t.RemainDuration) : 0;
         }
         return s.SendGameAsync(Info, info);
     }
@@ -246,8 +247,7 @@ public sealed partial class TowerService
         {
             int id = ids[slot];
             if (id == 0) continue;
-            if (_data.Row("PetBaseConfig", id) is not { } pet || _data.Row("NPCConfig", GameData.Int(pet, "_iMonster")) is not { } npc
-                || GameData.Int(npc, "_iNPCType") != 7) return ErrorCodes.PetNoConfig;
+            if (PetBaseConfig.Get(_data, id) is not { } pet || NPCConfig.Get(_data, pet.Monster) is not { NPCType: 7 }) return ErrorCodes.PetNoConfig;
             if (!s.Pets.ListPet.ContainsKey(id)) return ErrorCodes.PetNotOwned;
             if (!TowerPetUnit.CanSpawn(_data, s.Pets, id)) return ErrorCodes.PetNoConfig;
             if (!TowerSlotOpen(s, slot + 1)) return ErrorCodes.PetSetupSlot;
@@ -259,8 +259,8 @@ public sealed partial class TowerService
     {
         int[] levels = [33, 33, 45, 50]; // PublicParamConfig.PetFightFieldUnlockLv.
         return slot >= 1 && slot <= levels.Length && s.Progress!.Level >= levels[slot - 1]
-            && _data.Row("PetSetLimitConfig", slot) is { } row
-            && _functions.ConditionMet(s, GameData.Int(row, "_iCondition"));
+            && PetSetLimitConfig.Get(_data, slot) is { } row
+            && _functions.ConditionMet(s, row.Condition);
     }
 
     /// <summary>First two living chosen IDs fight; later positions replace a dead combatant in order (inferred).
@@ -268,7 +268,7 @@ public sealed partial class TowerService
     private async Task ReconcilePetsAsync(GameSession s, Attempt a)
     {
         if (!Active(s, a) || s.Pets == null || s.Instances.Tower == null) return;
-        int capacity = Math.Clamp((int)GameData.Int(a.Floor, "_iPetOnBattle"), 0, 4);
+        int capacity = Math.Clamp((int)new PetFloorConfig(a.Floor).PetOnBattle, 0, 4);
         var desired = s.Instances.Tower.PetIds.Where(id => id != 0 && !a.DeadPetIds.Contains(id)
             && s.Pets.ListPet.ContainsKey(id)).Take(capacity).ToArray();
         foreach (var pet in a.Pets.Where(p => !desired.Contains(p.PetId)).ToArray())
@@ -317,17 +317,17 @@ public sealed partial class TowerService
             : s.SceneLoading ? ErrorCodes.SwitchingScenes
             : s.Dead && !deadRetry || s.InstanceId != 0 && s.Instances.TowerAttempt == null ? ErrorCodes.FeatureUnavailable
             : floor == null ? ErrorCodes.Parameter
-            : s.Progress!.Level < GameData.Int(floor.Value, "_iLevelLimit") ? ErrorCodes.FeatureUnavailable
-            : GameData.Int(floor.Value, "_iFloor") > Cleared(s) + 1 ? ErrorCodes.Parameter
+            : s.Progress!.Level < floor.Value.LevelLimit ? ErrorCodes.FeatureUnavailable
+            : floor.Value.Floor > Cleared(s) + 1 ? ErrorCodes.Parameter
             : req.IsInClimTower != (s.Instances.TowerAttempt != null) || s.Instances.TowerAttempt is { Settled: false } ? ErrorCodes.Parameter : 0;
         // A saved formation can outlive ownership/level changes; entry must apply the same slot rules as 32803.
         if (error == 0) error = FormationCode(s, [.. s.Instances.Tower!.PetIds]);
-        long mapId = floor is { } f ? GameData.Int(f, "_iMapID") : 0;
+        long mapId = floor is { } f ? f.MapId : 0;
         var map = error == 0 ? _worldData.Map(mapId) : null;
-        var spawns = error == 0 && map != null ? Expand(floor!.Value, map) : null;
+        var spawns = error == 0 && map != null ? Expand(floor!.Value.Row, map) : null;
         if (error == 0 && (map?.Born == null || spawns == null || spawns.Count == 0)) error = ErrorCodes.SceneMissing;
         // Validate the real payout before permitting a clear; previews are never a fallback grant.
-        if (error == 0 && Award(GameData.Int(floor!.Value, "_iFirstReward")) == null) error = ErrorCodes.FeatureUnavailable;
+        if (error == 0 && Award(floor!.Value.FirstReward) == null) error = ErrorCodes.FeatureUnavailable;
         // Revive at full HP/SP in place, as the 30402 exit's return recovery would, before the next floor (inferred).
         if (error == 0 && deadRetry)
         {
@@ -340,16 +340,16 @@ public sealed partial class TowerService
         if (error != 0) return;
 
         var room = InPlace(s, mapId) is { } kept ? kept : _instances.Create(mapId, [s]);
-        bool nextFloor = GameData.Int(floor!.Value, "_iFloor") == Cleared(s) + 1;
+        bool nextFloor = floor!.Value.Floor == Cleared(s) + 1;
         long challengeMs = nextFloor ? s.Instances.Tower!.ChallengeTime : 0;
         var now = _clock.GetUtcNow();
-        int hpRatio = DifficultyRatio(floor.Value, 1011, challengeMs, now);
+        int hpRatio = DifficultyRatio(floor.Value.Row, 1011, challengeMs, now);
         var attempt = new Attempt
         {
-            Room = room, Floor = floor.Value, Spawns = spawns!, PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId,
+            Room = room, Floor = floor.Value.Row, Spawns = spawns!, PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId,
             HpRatio = hpRatio,
-            DamageRatio = DifficultyRatio(floor.Value, 215, challengeMs, now),
-            Suppressed = Suppress(s, floor.Value, hpRatio),
+            DamageRatio = DifficultyRatio(floor.Value.Row, 215, challengeMs, now),
+            Suppressed = Suppress(s, floor.Value.Row, hpRatio),
         };
         if (ReferenceEquals(room, s.Instances.TowerAttempt?.Room)) await ResetFloorAsync(s, attempt, map!.Born!.Value);
         else
@@ -393,12 +393,12 @@ public sealed partial class TowerService
     internal IReadOnlyList<Spawn>? Expand(JsonElement floor, MapWorld map)
     {
         var result = new List<Spawn>();
-        if (!floor.TryGetProperty("_kMonsterGroup", out var groups) || groups.ValueKind != JsonValueKind.Array) return null;
-        foreach (var tuple in groups.EnumerateArray())
+        var groups = new PetFloorConfig(floor).MonsterGroup;
+        if (groups.Length == 0) return null;
+        foreach (var tuple in groups)
         {
-            if (tuple.ValueKind != JsonValueKind.Array || tuple.GetArrayLength() < 3) return null;
-            int group = (int)(GameData.Number(tuple[0]) ?? 0), npc = (int)(GameData.Number(tuple[1]) ?? 0);
-            int delay = (int)(GameData.Number(tuple[2]) ?? -1);
+            if (tuple.Length < 3) return null;
+            int group = (int)tuple[0], npc = (int)tuple[1], delay = (int)tuple[2];
             if (delay < 0 || _monsters.Template(npc) == null || !map.DungeonGroups.TryGetValue(group, out var points) || points.Count == 0) return null;
             result.AddRange(points.Select(p => new Spawn(npc, new MapPoint(p.X, p.Y, p.Z, p.Face), delay)));
         }
@@ -414,12 +414,13 @@ public sealed partial class TowerService
         a.Loaded = true;
         a.StartedAt = _loop.Now;
         a.StartTimeMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
-        int seconds = (int)GameData.Int(a.Floor, "_iTimeLimit");
+        var floorCfg = new PetFloorConfig(a.Floor);
+        int seconds = (int)floorCfg.TimeLimit;
         // Start stage 1 / Running at the accepted 30005 (inferred: region22 has no recovered server start action).
         await s.SendGameAsync(DungeonInfo, new DungeonBaseInfoNotify
         {
             DungeonEntry = s.SceneEntry, DungeonId = a.InstanceId, Stage = 1, Level = 1,
-            InitData = new DungeonInitData { ClimbTowerInit = new ClimbTowerInit { LayerConfID = GameData.Int(a.Floor, "_iID") } },
+            InitData = new DungeonInitData { ClimbTowerInit = new ClimbTowerInit { LayerConfID = floorCfg.Id } },
             ChangeType = (DungeonBaseInfoNotify.Types.eChangeType)2,
             // Actual participant snapshot, not a dummy: LC_DunGeon_VarDefine.lua:236-240 defines 145 as
             // CDungeonPlayerUidList, consumed by LC_DunGeon_Base. Including it at tower startup is (inferred).
@@ -462,7 +463,7 @@ public sealed partial class TowerService
     {
         if (s.Instances.TowerAttempt is not { } a || !Active(s, a) || monster.InstanceId != a.InstanceId
             || !a.Monsters.Contains(monster) || !a.Killed.Add(monster.Uid)) return Task.CompletedTask;
-        if (_loop.Now - a.StartedAt >= TimeSpan.FromSeconds(GameData.Int(a.Floor, "_iTimeLimit"))) return SettleAsync(s, a, false);
+        if (_loop.Now - a.StartedAt >= TimeSpan.FromSeconds(new PetFloorConfig(a.Floor).TimeLimit)) return SettleAsync(s, a, false);
         return a.Killed.Count == a.Spawns.Count ? SettleAsync(s, a, true) : Task.CompletedTask;
     }
 
@@ -476,17 +477,18 @@ public sealed partial class TowerService
             || monster.InstanceId != a.InstanceId || !a.Monsters.Contains(monster)
             || a.Killed.Contains(monster.Uid)
             || a.Killed.Count + a.Monsters.Count(m => !a.Killed.Contains(m.Uid)
-                && (ReferenceEquals(m, monster) || m.DeathDurable)) != a.Spawns.Count
-            || _loop.Now - a.StartedAt >= TimeSpan.FromSeconds(GameData.Int(a.Floor, "_iTimeLimit"))) return Task.CompletedTask;
+                && (ReferenceEquals(m, monster) || m.DeathDurable)) != a.Spawns.Count) return Task.CompletedTask;
+        var floorCfg = new PetFloorConfig(a.Floor);
+        if (_loop.Now - a.StartedAt >= TimeSpan.FromSeconds(floorCfg.TimeLimit)) return Task.CompletedTask;
         if (a.PlayBook != _seasons.PlayBook || a.SeasonId != _seasons.SeasonId) return Task.CompletedTask;
         if (monster.RewardCommit != null) return Task.CompletedTask;
-        int floor = (int)GameData.Int(a.Floor, "_iFloor"), limit = (int)GameData.Int(a.Floor, "_iTimeLimit");
-        long config = GameData.Int(a.Floor, "_iID"), now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
+        int floor = (int)floorCfg.Floor, limit = (int)floorCfg.TimeLimit;
+        long config = floorCfg.Id, now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         int duration = Math.Clamp((int)(_loop.Now - a.StartedAt).TotalSeconds, 0, limit);
         var previous = s.Instances.Tower!;
         bool record = floor > Cleared(s);
         var goods = !previous.RewardRecord.TryGetValue(config, out bool paid) || !paid
-            ? Award(GameData.Int(a.Floor, "_iFirstReward"))! : [];
+            ? Award(floorCfg.FirstReward)! : [];
         var next = previous.Clone();
         next.RewardRecord[config] = true;
         if (record)
@@ -547,8 +549,7 @@ public sealed partial class TowerService
                     reward.Rewards.Add(shown);
                     remaining -= count;
                 }
-                if (remaining > 0 && _data.Row("ItemConfig", group.Key) is { } row
-                    && GameData.Int(row, "_iType") == 1)
+                if (remaining > 0 && ItemConfig.Get(_data, group.Key) is { Type: 1 })
                     reward.Rewards.Add(_character.ItemInfoOf(new InvItem { Entry = group.Key, Stack = remaining }));
             }
             a.ClearCommitted = true;
@@ -587,7 +588,8 @@ public sealed partial class TowerService
         won &= a.PlayBook == _seasons.PlayBook && a.SeasonId == _seasons.SeasonId;
         a.Settled = true; // Reserve settlement before any await: duplicate kills/timeouts cannot grant twice.
         s.Attack = null;
-        int floor = (int)GameData.Int(a.Floor, "_iFloor"), limit = (int)GameData.Int(a.Floor, "_iTimeLimit");
+        var floorCfg = new PetFloorConfig(a.Floor);
+        int floor = (int)floorCfg.Floor, limit = (int)floorCfg.TimeLimit;
         // curTime/completeTime use Unix milliseconds (inferred); challengeTime's millisecond units are client-proven.
         long now = a.ClearCommitted ? a.ClearNow : _clock.GetUtcNow().ToUnixTimeMilliseconds();
         int duration = a.ClearCommitted ? a.ClearDuration : Math.Clamp((int)(_loop.Now - a.StartedAt).TotalSeconds, 0, limit);
@@ -636,14 +638,14 @@ public sealed partial class TowerService
     {
         var floors = Floors();
         int error = !Open(s) ? ErrorCodes.FeatureUnavailable : floors.Count == 0 || req.MinLayer < 1
-            || req.MaxLayer < req.MinLayer || req.MaxLayer > GameData.Int(floors[^1], "_iFloor") ? ErrorCodes.Parameter : 0;
+            || req.MaxLayer < req.MinLayer || req.MaxLayer > floors[^1].Floor ? ErrorCodes.Parameter : 0;
         var response = new QueryClimbTowerFirstPassRangeResp { Result = error };
         if (error == 0)
         {
             var records = _roles.LoadTowerFirstPasses(req.MinLayer, req.MaxLayer);
             foreach (var f in floors)
             {
-                long n = GameData.Int(f, "_iFloor");
+                long n = f.Floor;
                 if (n < req.MinLayer || n > req.MaxLayer) continue;
                 response.Results.Add(records.TryGetValue(n, out var bytes) ? ClimbTowerFirstPassData.Parser.ParseFrom(bytes)
                     : new ClimbTowerFirstPassData { Layer = n, HasFirstPass = false });
@@ -667,11 +669,11 @@ public sealed partial class TowerService
         if (error == 0)
         {
             var records = _roles.LoadTowerFirstPasses(watermark + 1, long.MaxValue);
-            foreach (var f in Floors().Where(f => GameData.Int(f, "_iFloor") > watermark && GameData.Int(f, "_iServerFirstReward") > 0))
+            foreach (var f in Floors().Where(f => f.Floor > watermark && f.ServerFirstReward > 0))
             {
-                long floor = GameData.Int(f, "_iFloor");
+                long floor = f.Floor;
                 if (!records.ContainsKey(floor)) break;
-                if (Award(GameData.Int(f, "_iServerFirstReward")) is not { } award) { error = ErrorCodes.FeatureUnavailable; break; }
+                if (Award(f.ServerFirstReward) is not { } award) { error = ErrorCodes.FeatureUnavailable; break; }
                 goods.AddRange(award);
                 watermark = floor;
             }
@@ -718,20 +720,21 @@ public sealed partial class TowerService
     private List<(int Entry, int Count)>? Award(long group)
     {
         if (group == 0) return [];
-        if (_data.Row("MultiverseGroupConfig", group) is not { } mg) return null;
-        long id = GameData.Int(mg, $"_iValue_{_seasons.PlayBook}");
-        if (id == 0) id = GameData.Int(mg, "_iValue_default");
-        if (_data.Row("AwardConfig", id) is not { } award) return null;
-        var rows = award.ValueKind == JsonValueKind.Array ? award.EnumerateArray().ToArray() : [award];
+        if (MultiverseGroupConfig.Get(_data, group) is not { } mg) return null;
+        long id = GameData.Int(mg.Row, $"_iValue_{_seasons.PlayBook}");
+        if (id == 0) id = mg.ValueDefault;
+        var rows = AwardConfig.Get(_data, id);
+        if (rows.Count == 0) return null;
         var result = new List<(int, int)>();
         foreach (var row in rows)
         {
-            if (!row.TryGetProperty("_kAward", out var entries) || entries.ValueKind != JsonValueKind.Array) return null;
-            foreach (var tuple in entries.EnumerateArray())
+            var entries = row.Award;
+            if (entries.Length == 0 && !row.Row.TryGetProperty("_kAward", out _)) return null;
+            foreach (var tuple in entries)
             {
-                if (tuple.ValueKind != JsonValueKind.Array || tuple.GetArrayLength() < 2) return null;
-                int entry = (int)(GameData.Number(tuple[0]) ?? 0), count = (int)(GameData.Number(tuple[1]) ?? 0);
-                if (count <= 0 || _data.Row("ItemConfig", entry) == null) return null;
+                if (tuple.Length < 2) return null;
+                int entry = (int)tuple[0], count = (int)tuple[1];
+                if (count <= 0 || ItemConfig.Get(_data, entry) == null) return null;
                 result.Add((entry, count));
             }
         }

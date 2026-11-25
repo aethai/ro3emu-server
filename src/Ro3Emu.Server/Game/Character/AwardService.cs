@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text.Json;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -43,14 +44,14 @@ public sealed class AwardService(GameData data)
     private AwardPlan ResolveGroup(RoleProgress? progress, long multiverseGroupId, int? playBookId, int? serverOpenDay = null)
     {
         if (multiverseGroupId == 0) return new AwardPlan(0, 0, []);
-        var group = data.Row("MultiverseGroupConfig", multiverseGroupId)
+        var group = MultiverseGroupConfig.Get(data, multiverseGroupId)
             ?? throw Fail($"missing MultiverseGroupConfig {multiverseGroupId}");
-        if (GameData.Int(group, "_itype") != 0) throw Fail($"group {multiverseGroupId} is not an AwardConfig route");
+        if (group.Type != 0) throw Fail($"group {multiverseGroupId} is not an AwardConfig route");
 
         // Lua_CFG_MultiverseGroupConfig.GetSeasonValueID: nonzero book value wins, zero falls back to default.
         long awardId = playBookId is > 0
-            ? GameData.Int(group, $"_iValue_{playBookId}") is var selected and > 0 ? selected : GameData.Int(group, "_iValue_default")
-            : GameData.Int(group, "_iValue_default");
+            ? GameData.Int(group.Row, $"_iValue_{playBookId}") is var selected and > 0 ? selected : group.ValueDefault
+            : group.ValueDefault;
         if (awardId <= 0) throw Fail($"group {multiverseGroupId} has no configured award value");
         return ResolveAward(progress, multiverseGroupId, awardId, serverOpenDay);
     }
@@ -79,7 +80,7 @@ public sealed class AwardService(GameData data)
         var row = rows.GetArrayLength() == 1 ? rows[0] : OpenDayRow(rows, serverOpenDay!.Value, awardId);
         long baseExp = BaseExp(row, awardId);
         if (HasValues(row, "_kCondition")) CheckLevelCondition(row, progress, awardId);
-        if (data.Table("AwardRestricConfig").Values.Any(r => GameData.Int(r, "_iRewardID") == awardId))
+        if (AwardRestricConfig.All(data).Any(r => r.RewardId == awardId))
             throw Fail($"AwardConfig {awardId} has unresolved restriction/replacement policy");
 
         var grants = new List<AwardGrant>();
@@ -98,7 +99,7 @@ public sealed class AwardService(GameData data)
                 grants.Add(new AwardGrant(entry, count, bind, expiry));
             }
         }
-        long poolId = GameData.Int(row, "_iDropPool");
+        long poolId = new AwardConfig(row).DropPool;
         if (poolId < 0) throw Fail($"AwardConfig {awardId} has invalid pool id");
         if (poolId > 0) RollPool(poolId, progress, grants);
         return new AwardPlan(multiverseGroupId, awardId, grants);
@@ -117,7 +118,7 @@ public sealed class AwardService(GameData data)
             if (groupId <= 0 || chance is < 0 or > 1_000_000 || rolls is < 1 or > 1000 || picks is < 1 or > 1000)
                 throw Fail($"DropPoolConfig {poolId} slot {slot} has unsupported range");
             var candidates = EligibleRows(groupId, progress);
-            long weight = candidates.Sum(r => GameData.Int(r, "_iWeights"));
+            long weight = candidates.Sum(r => new DropGroupConfig(r).Weights);
             if (weight <= 0) continue;
             // (inferred) RewardService's current [group,chance-per-million,rolls,picks] interpretation.
             for (int r = 0; r < rolls; r++)
@@ -125,11 +126,12 @@ public sealed class AwardService(GameData data)
                 if (Random.Shared.NextInt64(1_000_000) >= chance) continue;
                 foreach (var candidate in DropPicks.Distinct(candidates, picks, Random.Shared.NextInt64))
                 {
-                    int min = checked((int)GameData.Int(candidate, "_iMinNumber"));
-                    int max = checked((int)GameData.Int(candidate, "_iMaxNumber"));
+                    var drop = new DropGroupConfig(candidate);
+                    int min = checked((int)drop.MinNumber);
+                    int max = checked((int)drop.MaxNumber);
                     if (min < 1 || max < min) throw Fail($"DropGroupConfig {groupId} has invalid quantity range");
                     int count = checked((int)Random.Shared.NextInt64(min, (long)max + 1));
-                    int entry = checked((int)GameData.Int(candidate, "_kDropItem"));
+                    int entry = checked((int)drop.DropItem);
                     int bind = PoolBindType(candidate, groupId);
                     ValidateGrant(entry, count, bind, 0);
                     grants.Add(new AwardGrant(entry, count, bind));
@@ -140,35 +142,35 @@ public sealed class AwardService(GameData data)
 
     private List<JsonElement> EligibleRows(long groupId, RoleProgress? progress)
     {
-        if (data.Row("DropGroupConfig", groupId) is not { ValueKind: JsonValueKind.Array } rows)
+        var rows = DropGroupConfig.Get(data, groupId);
+        if (rows.Count == 0 && data.Row("DropGroupConfig", groupId) is not { ValueKind: JsonValueKind.Array })
             throw Fail($"missing DropGroupConfig {groupId}");
         var eligible = new List<JsonElement>();
-        foreach (var row in rows.EnumerateArray())
+        foreach (var drop in rows)
         {
-            long weight = GameData.Int(row, "_iWeights");
+            long weight = drop.Weights;
             if (weight <= 0) continue;
             // A declared but empty/zero-weight pool still resolves fixed grants without a recipient.
             // Only an eligible weighted candidate needs role level and career.
             if (progress == null) throw Fail($"DropGroupConfig {groupId} requires a recipient");
-            long min = GameData.Int(row, "_iMinLevelLimit"), max = GameData.Int(row, "_iMaxLevelLimit");
+            long min = drop.MinLevelLimit, max = drop.MaxLevelLimit;
             if (progress.Level < min || max > 0 && progress.Level > max) continue;
-            if (row.TryGetProperty("_iJobLimit", out var jobs) && jobs.ValueKind == JsonValueKind.Array && jobs.GetArrayLength() > 0
-                && !jobs.EnumerateArray().Any(j => GameData.Number(j) == progress.Career)) continue;
-            if (row.TryGetProperty("_iJobLimit", out jobs) && jobs.ValueKind == JsonValueKind.Object && jobs.EnumerateObject().Any())
+            if (drop.JobLimit.Length > 0 && !drop.JobLimit.Contains(progress.Career)) continue;
+            if (drop.Row.TryGetProperty("_iJobLimit", out var jobs) && jobs.ValueKind == JsonValueKind.Object && jobs.EnumerateObject().Any())
                 throw Fail($"DropGroupConfig {groupId} has unresolved job filter");
             // DropAttenuationConfig scales by the player/monster level gap; an award has no slain monster, so a row
             // with _iAttenuationPlanID drops in full (DropAttenuation, inferred).
-            if (GameData.Int(row, "_iQuestLimit") != 0 || GameData.Int(row, "_iActivityid") != 0
-                || GameData.Int(row, "_kCoefficient") != 0
-                || GameData.Int(row, "_iBind") != 0 || HasValues(row, "_kServerLevel"))
+            if (drop.QuestLimit != 0 || drop.Activityid != 0
+                || drop.Coefficient != 0
+                || drop.Bind != 0 || HasValues(drop.ServerLevel))
                 throw Fail($"DropGroupConfig {groupId} has unresolved eligibility or bind policy");
-            int bind = PoolBindType(row, groupId);
-            int entry = checked((int)GameData.Int(row, "_kDropItem"));
-            int low = checked((int)GameData.Int(row, "_iMinNumber"));
-            int high = checked((int)GameData.Int(row, "_iMaxNumber"));
+            int bind = PoolBindType(drop.Row, groupId);
+            int entry = checked((int)drop.DropItem);
+            int low = checked((int)drop.MinNumber);
+            int high = checked((int)drop.MaxNumber);
             if (low <= 0 || high < low) throw Fail($"DropGroupConfig {groupId} has invalid quantity range");
             ValidateGrant(entry, low, bind, 0);
-            eligible.Add(row);
+            eligible.Add(drop.Row);
         }
         return eligible;
     }
@@ -186,13 +188,12 @@ public sealed class AwardService(GameData data)
 
     private void ValidateGrant(int entry, int count, int bind, long expiry)
     {
-        if (entry <= 0 || count <= 0 || data.Row("ItemConfig", entry) == null) throw Fail($"unknown or invalid award item {entry} x{count}");
+        if (entry <= 0 || count <= 0 || ItemConfig.Get(data, entry) is not { } item) throw Fail($"unknown or invalid award item {entry} x{count}");
         if (bind is < 0 or > 2 || expiry < 0 || bind == 2 && expiry <= 0)
             throw Fail($"unsupported binding/expiry for item {entry}");
         if (entry is 100 or 101 && (bind != 0 || expiry != 0)) throw Fail("virtual EXP cannot be bound or expire");
-        var item = data.Row("ItemConfig", entry)!.Value;
-        if (GameData.Int(item, "_iType") == 1 && (expiry != 0 || bind == 2
-            || bind == 1 && (!item.TryGetProperty("_iTrade", out var trade) || GameData.Number(trade) != 0)))
+        if (item.Type == 1 && (expiry != 0 || bind == 2
+            || bind == 1 && (!item.Row.TryGetProperty("_iTrade", out var trade) || GameData.Number(trade) != 0)))
             throw Fail($"currency {entry} has unsupported binding, expiry, or trade policy");
     }
 
@@ -211,11 +212,14 @@ public sealed class AwardService(GameData data)
         throw Fail($"AwardConfig {awardId} has unresolved EXP policy");
     }
 
-    private static bool HasValues(JsonElement row, string key) => row.TryGetProperty(key, out var value) && (value.ValueKind switch
+    private static bool HasValues(JsonElement row, string key) =>
+        row.TryGetProperty(key, out var value) && HasValues(value);
+
+    private static bool HasValues(JsonElement? value) => value is { } v && (v.ValueKind switch
     {
-        JsonValueKind.Array => value.GetArrayLength() > 0,
-        JsonValueKind.Object => value.EnumerateObject().Any(),
-        JsonValueKind.Number => GameData.Number(value) != 0,
+        JsonValueKind.Array => v.GetArrayLength() > 0,
+        JsonValueKind.Object => v.EnumerateObject().Any(),
+        JsonValueKind.Number => GameData.Number(v) != 0,
         JsonValueKind.Null or JsonValueKind.Undefined => false,
         _ => true,
     });

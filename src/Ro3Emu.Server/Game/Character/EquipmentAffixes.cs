@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -11,29 +12,26 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 internal static class EquipmentAffixes
 {
-    // Stage G: a roll's pools are fixed per (table, quality or group). Scanning the whole table with by-name JSON
-    // lookups for every rolled item was a third of a new role's first login (the starter kit). Tables load once.
-    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameData, Dictionary<(string Table, long Key), JsonElement[]>> Pools = [];
-    private static readonly Dictionary<string, (string Field, Func<JsonElement, bool> Fixed)> PoolRules = new()
-    {
-        ["EquipAttriRandom"] = ("_iQuality", r => GameData.Int(r, "_iWeight") > 0),
-        ["EquipEntryRandom"] = ("_iQuality", r => GameData.Int(r, "_iWeight") > 0),
-        ["EquipAttriGroupConfig"] = ("_iGroup", r => GameData.Int(r, "_iWeight") > 0 && GameData.Int(r, "_iAttriID") > 0
-            && GameData.Int(r, "_iMax") >= GameData.Int(r, "_iMin")),
-        ["EquipSpecialGroupConfig"] = ("_iGroup", r => GameData.Int(r, "_iWeight") > 0),
-    };
+    // A roll's pools are fixed per (table, quality or group). Caching per GameData avoids scanning the whole table
+    // with by-name JSON lookups for every rolled item during a new role's starter-kit login.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameData, Dictionary<(string Table, long Key), (long Weight, JsonElement Row)[]>> Pools = [];
 
     /// <summary>The table's rows for the key passing the table's fixed rule, in table order; a fresh list per call.</summary>
-    private static List<JsonElement> Pool(GameData data, string table, long key)
+    private static List<(long Weight, JsonElement Row)> Pool(GameData data, string table, long key)
     {
         var cache = Pools.GetValue(data, _ => []);
-        JsonElement[]? rows;
+        (long Weight, JsonElement Row)[]? rows;
         lock (cache)
             if (!cache.TryGetValue((table, key), out rows))
-            {
-                var (field, rule) = PoolRules[table];
-                cache[(table, key)] = rows = [.. data.Table(table).Values.Where(r => GameData.Int(r, field) == key && rule(r))];
-            }
+                cache[(table, key)] = rows = table switch
+                {
+                    "EquipAttriRandom" => [.. EquipAttriRandom.All(data).Where(r => r.Quality == key && r.Weight > 0).Select(r => (r.Weight, r.Row))],
+                    "EquipEntryRandom" => [.. EquipEntryRandom.All(data).Where(r => r.Quality == key && r.Weight > 0).Select(r => (r.Weight, r.Row))],
+                    "EquipAttriGroupConfig" => [.. EquipAttriGroupConfig.All(data)
+                        .Where(r => r.Group == key && r.Weight > 0 && r.AttriId > 0 && r.Max >= r.Min).Select(r => (r.Weight, r.Row))],
+                    "EquipSpecialGroupConfig" => [.. EquipSpecialGroupConfig.All(data).Where(r => r.Group == key && r.Weight > 0).Select(r => (r.Weight, r.Row))],
+                    _ => [],
+                };
         return [.. rows];
     }
 
@@ -45,8 +43,9 @@ internal static class EquipmentAffixes
     /// </summary>
     internal static Dictionary<int, long>? Create(int entry, GameData data)
     {
-        if (Config(entry, data) is not { } equip || data.Row("ItemConfig", entry) is not { } item) return null;
-        var attrs = new Dictionary<int, long> { [3] = GameData.Int(equip, "_iIfAppraise") == 1 ? 0 : 1 };
+        if (Config(entry, data) is not { } equipRow || ItemConfig.Get(data, entry) is not { } item) return null;
+        var equip = new EquipConfig(equipRow);
+        var attrs = new Dictionary<int, long> { [3] = equip.IfAppraise == 1 ? 0 : 1 };
         RollBase(attrs, item, equip, data);
         if (attrs[3] == 1) RollAffixes(attrs, item, equip, data);
         return attrs;
@@ -55,8 +54,9 @@ internal static class EquipmentAffixes
     /// <summary>Called only for a validated detached appraisal candidate; preserve base rolls and unrelated state.</summary>
     internal static void Appraise(InvItem item, GameData data)
     {
-        if (Config(item.Entry, data) is not { } equip || data.Row("ItemConfig", item.Entry) is not { } config)
+        if (Config(item.Entry, data) is not { } equipRow || ItemConfig.Get(data, item.Entry) is not { } config)
             throw new InvalidDataException($"Equipment {item.Entry} has no config");
+        var equip = new EquipConfig(equipRow);
         item.Attrs ??= [];
         if (!item.Attrs.ContainsKey(30)) RollBase(item.Attrs, config, equip, data);
         RollAffixes(item.Attrs, config, equip, data);
@@ -69,27 +69,27 @@ internal static class EquipmentAffixes
     /// </summary>
     internal static bool NeedsLegacyEntries(InvItem item, GameData data)
     {
-        if (item.Attrs?.GetValueOrDefault(3) != 1 || Entries(item).Any() || Config(item.Entry, data) is not { } equip)
+        if (item.Attrs?.GetValueOrDefault(3) != 1 || Entries(item).Any() || Config(item.Entry, data) is not { } equipRow)
             return false;
-        if (Rows(equip, "_kFixedEntries").Any()) return true;
-        if (GameData.Int(equip, "_iEntries") == 0 || data.Row("ItemConfig", item.Entry) is not { } config) return false;
-        var counts = Pool(data, "EquipEntryRandom", GameData.Int(config, "_iQuality"));
-        return counts.Count > 0 && counts.All(r => GameData.Int(r, "_iNum") > 0);
+        var equip = new EquipConfig(equipRow);
+        if (equip.FixedEntries.Length > 0) return true;
+        if (equip.Entries == 0 || ItemConfig.Get(data, item.Entry) is not { } config) return false;
+        var counts = Pool(data, "EquipEntryRandom", config.Quality);
+        return counts.Count > 0 && counts.All(r => new EquipEntryRandom(r.Row).Num > 0);
     }
 
     internal static JsonElement? Config(int entry, GameData data) =>
-        data.Row("ItemConfig", entry) is { } item && GameData.Int(item, "_iType") == 5
-            ? data.Row("EquipConfig", GameData.Int(item, "_iEquipId")) : null;
+        ItemConfig.Get(data, entry) is { Type: 5 } item ? data.Row("EquipConfig", item.EquipId) : null;
 
-    private static void RollBase(Dictionary<int, long> attrs, JsonElement item, JsonElement equip, GameData data)
+    private static void RollBase(Dictionary<int, long> attrs, ItemConfig item, EquipConfig equip, GameData data)
     {
-        var ratios = Pool(data, "EquipAttriRandom", GameData.Int(item, "_iQuality"));
+        var ratios = Pool(data, "EquipAttriRandom", item.Quality);
         int slot = 0;
-        foreach (var row in Rows(equip, "_kBasicAttribute"))
+        foreach (var row in equip.BasicAttribute)
         {
             if (row.Length < 2 || slot >= 20) continue;
             long min = row[1], max = row.Length > 2 ? row[2] : min;
-            long ratio = ratios.Count == 0 ? 5000 : GameData.Int(Draw(ratios), "_iRatio");
+            long ratio = ratios.Count == 0 ? 5000 : new EquipAttriRandom(Draw(ratios)).Ratio;
             attrs[30 + slot] = row[0];
             attrs[60 + slot++] = min + (max - min) * ratio / 10000;
         }
@@ -101,7 +101,7 @@ internal static class EquipmentAffixes
     /// EquipEntryExclusion / EquipSpecialExclusion have only empty rows in both client exports: no hidden cross-ID
     /// rule is invented. Exclude duplicate attributes/effects and nonzero SpecialEffectConfig families.
     /// </summary>
-    private static void RollAffixes(Dictionary<int, long> attrs, JsonElement item, JsonElement equip, GameData data)
+    private static void RollAffixes(Dictionary<int, long> attrs, ItemConfig item, EquipConfig equip, GameData data)
     {
         var entryIds = new HashSet<long>();
         int entrySlot = 0;
@@ -110,27 +110,27 @@ internal static class EquipmentAffixes
             attrs.Remove(EntryKey + i);
             attrs.Remove(EntryValue + i);
         }
-        foreach (var fixedEntry in Rows(equip, "_kFixedEntries"))
+        foreach (var fixedEntry in equip.FixedEntries)
             if (fixedEntry.Length >= 2 && fixedEntry[0] > 0 && entryIds.Add(fixedEntry[0]) && entrySlot < EntrySlots)
             {
                 attrs[EntryKey + entrySlot] = fixedEntry[0];
                 attrs[EntryValue + entrySlot++] = fixedEntry[1];
             }
-        long group = GameData.Int(equip, "_iEntries");
+        long group = equip.Entries;
         if (group > 0)
         {
-            var counts = Pool(data, "EquipEntryRandom", GameData.Int(item, "_iQuality"));
-            int count = counts.Count == 0 ? 0 : (int)GameData.Int(Draw(counts), "_iNum");
+            var counts = Pool(data, "EquipEntryRandom", item.Quality);
+            int count = counts.Count == 0 ? 0 : (int)new EquipEntryRandom(Draw(counts)).Num;
             var pool = Pool(data, "EquipAttriGroupConfig", group);
-            pool.RemoveAll(r => entryIds.Contains(GameData.Int(r, "_iAttriID")));
+            pool.RemoveAll(r => entryIds.Contains(new EquipAttriGroupConfig(r.Row).AttriId));
             for (int n = 0; n < count && entrySlot < EntrySlots && pool.Count > 0; n++)
             {
-                var picked = Draw(pool);
-                long id = GameData.Int(picked, "_iAttriID"), min = GameData.Int(picked, "_iMin"), max = GameData.Int(picked, "_iMax");
+                var picked = new EquipAttriGroupConfig(Draw(pool));
+                long id = picked.AttriId, min = picked.Min, max = picked.Max;
                 attrs[EntryKey + entrySlot] = id;
                 attrs[EntryValue + entrySlot++] = min == max ? min : Random.Shared.NextInt64(min, max + 1);
                 entryIds.Add(id);
-                pool.RemoveAll(r => entryIds.Contains(GameData.Int(r, "_iAttriID")));
+                pool.RemoveAll(r => entryIds.Contains(new EquipAttriGroupConfig(r.Row).AttriId));
             }
         }
 
@@ -141,36 +141,35 @@ internal static class EquipmentAffixes
         var specials = new HashSet<long>();
         var families = new HashSet<long>();
         int specialSlot = 0;
-        bool Allowed(long id) => id > 0 && !specials.Contains(id) && data.Row("SpecialEffectConfig", id) is { } effect
-            && (GameData.Int(effect, "_iGroupID") == 0 || !families.Contains(GameData.Int(effect, "_iGroupID")));
+        bool Allowed(long id) => id > 0 && !specials.Contains(id) && SpecialEffectConfig.Get(data, id) is { } effect
+            && (effect.GroupId == 0 || !families.Contains(effect.GroupId));
         void AddSpecial(long id)
         {
             if (specialSlot >= SpecialSlots || !Allowed(id)) return;
             attrs[SpecialKey + specialSlot++] = id;
             specials.Add(id);
-            long family = GameData.Int(data.Row("SpecialEffectConfig", id)!.Value, "_iGroupID");
+            long family = SpecialEffectConfig.Get(data, id)!.Value.GroupId;
             if (family != 0) families.Add(family);
         }
-        if (equip.TryGetProperty("_kFixedSpecialAttribute", out var fixedSpecials) && fixedSpecials.ValueKind == JsonValueKind.Array)
-            foreach (var id in fixedSpecials.EnumerateArray()) AddSpecial((long)(GameData.Number(id) ?? 0));
-        foreach (var directive in Rows(equip, "_kSpecial"))
+        foreach (long id in equip.FixedSpecialAttribute) AddSpecial(id);
+        foreach (var directive in equip.Special)
         {
             if (directive.Length < 2 || specialSlot >= SpecialSlots || Random.Shared.Next(10000) >= directive[1]) continue;
             var pool = Pool(data, "EquipSpecialGroupConfig", directive[0]);
-            pool.RemoveAll(r => GameData.Int(r, "_iSpecialID") != 0 && !Allowed(GameData.Int(r, "_iSpecialID")));
-            if (pool.Count > 0) AddSpecial(GameData.Int(Draw(pool), "_iSpecialID"));
+            pool.RemoveAll(r => new EquipSpecialGroupConfig(r.Row).SpecialId is var sid and not 0 && !Allowed(sid));
+            if (pool.Count > 0) AddSpecial(new EquipSpecialGroupConfig(Draw(pool)).SpecialId);
         }
     }
 
-    private static JsonElement Draw(List<JsonElement> rows)
+    private static JsonElement Draw(List<(long Weight, JsonElement Row)> rows)
     {
-        long roll = Random.Shared.NextInt64(rows.Sum(r => GameData.Int(r, "_iWeight")));
-        foreach (var row in rows)
+        long roll = Random.Shared.NextInt64(rows.Sum(r => r.Weight));
+        foreach (var (weight, row) in rows)
         {
-            roll -= GameData.Int(row, "_iWeight");
+            roll -= weight;
             if (roll < 0) return row;
         }
-        return rows[^1];
+        return rows[^1].Row;
     }
 
     internal static IEnumerable<long[]> Rows(JsonElement row, string field)
