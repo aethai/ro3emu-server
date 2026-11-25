@@ -218,7 +218,7 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
             if (changed != null) await changed;
         }
     }
-    private long Day => DateOnly.FromDateTime(_clock.GetLocalNow().DateTime.AddHours(-5)).DayNumber;
+    private long Day => GameCalendar.CurrentDayNumber(_clock);
     private long NowMs => _clock.GetUtcNow().ToUnixTimeMilliseconds();
     private GuildStore.State? Guild(GameSession s) => s.Role is { } role && s.Guild?.GuildId is > 0
         && _guilds.ForRole(role.Id) is { } guild && guild.Id == s.Guild.GuildId

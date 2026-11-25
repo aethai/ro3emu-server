@@ -34,7 +34,6 @@ public sealed partial class MvpService : IGameTicker
     public List<Action<GameSession>> ParticipantSettled { get; } = [];
     private const int RefreshMessage = 603, DieMessage = 604; // PublicParamConfig.MVPRefreshMessage / MVPDieMessage
     private const int TeamCap = 3, JoinCap = 5, FirstCap = 3, EndCap = 3; // TeamAwardNum / PartAwardNum / FirstDamageAward / LastDamage
-    private const int ResetHour = 5;                                        // AwardNumRefreshTime
     private const int RankedTeams = 10;                                     // TeamAwardLeaderboardLimit
     private const long NoticeBeforeMs = 120_000;                            // RefreshUIShowTime
 
@@ -946,9 +945,8 @@ public sealed partial class MvpService : IGameTicker
             info.TeamNum = row.Team;
             info.LastTime = row.Last;
         }
-        var now = _loop.Time.GetLocalNow().DateTime;
-        var lastReset = now.Date.AddHours(ResetHour) is var today && now >= today ? today : today.AddDays(-1);
-        if (DateTimeOffset.FromUnixTimeMilliseconds(info.LastTime).LocalDateTime < lastReset)
+        long lastResetMs = GameCalendar.DayStart(_loop.Time).ToUnixTimeMilliseconds();
+        if (info.LastTime < lastResetMs)
         {
             info.FirstNum = info.EndNum = info.JoinNum = info.TeamNum = 0;
             info.LastTime = _loop.NowMs;

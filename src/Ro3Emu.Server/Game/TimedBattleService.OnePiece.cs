@@ -151,17 +151,13 @@ public sealed partial class TimedBattleService
     private long RiftRestrictMax(long id) => _data.Row("RestrictConfig", id) is { } row ? GameData.Int(row, "_iMaxRestrictNum") : 0;
 
     /// <summary>The restriction day turns at 05:00 like the To-Do and life restrictions (inferred), as a DateOnly day number.</summary>
-    private long RiftDay() =>
-        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_time.GetUtcNow(), _time.LocalTimeZone).DateTime.AddHours(-5)).DayNumber;
+    private long RiftDay() => GameCalendar.CurrentDayNumber(_time);
 
     /// <summary>The day number of the week's Monday (inferred week start).</summary>
-    private static long RiftWeek(long day) => day - ((int)DateOnly.FromDayNumber((int)day).DayOfWeek + 6) % 7;
+    private static long RiftWeek(long day) => GameCalendar.MondayDayNumber(day);
 
-    private long RiftDayStart(long day)
-    {
-        var local = DateOnly.FromDayNumber((int)day).ToDateTime(new TimeOnly(5, 0));
-        return new DateTimeOffset(local, _time.LocalTimeZone.GetUtcOffset(local)).ToUnixTimeSeconds();
-    }
+    private long RiftDayStart(long day) =>
+        GameCalendar.DayStartOf(DateOnly.FromDayNumber((int)day), _time.LocalTimeZone).ToUnixTimeSeconds();
 
     /// <summary>
     /// RestrictInfo1020 in the 5018 map (LC_DAL_Restrict, LC_RestrictHelper.GetRestrictCount): the extra awards left

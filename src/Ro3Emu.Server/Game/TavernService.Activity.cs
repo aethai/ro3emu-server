@@ -183,12 +183,7 @@ public sealed partial class TavernService
     }
 
     /// <summary>(inferred) The Tavern day starts at 05:00 realm time, as every daily reset.</summary>
-    private long DayStartMs()
-    {
-        var local = _clock.GetLocalNow();
-        var day = local.AddHours(-5).Date.AddHours(5);
-        return new DateTimeOffset(day, local.Offset).ToUnixTimeMilliseconds();
-    }
+    private long DayStartMs() => GameCalendar.DayStart(_clock).ToUnixTimeMilliseconds();
 
     /// <summary>Today's seconds in a Tavern room, written ones and pending ones (the quest's 106010 reads it).</summary>
     public long TodaySeconds(GameSession s)

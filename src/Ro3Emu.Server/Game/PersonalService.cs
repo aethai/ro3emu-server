@@ -397,13 +397,7 @@ public sealed class PersonalService
     }
 
     /// <summary>(inferred) The popularity week starts on Monday 05:00 realm time, as the guild activity week.</summary>
-    public static long WeekStartMs(TimeProvider clock)
-    {
-        var local = clock.GetLocalNow();
-        var day = local.AddHours(-5).Date;
-        int sinceMonday = ((int)day.DayOfWeek + 6) % 7;
-        return new DateTimeOffset(day.AddDays(-sinceMonday).AddHours(5), local.Offset).ToUnixTimeMilliseconds();
-    }
+    public static long WeekStartMs(TimeProvider clock) => GameCalendar.WeekStart(clock).ToUnixTimeMilliseconds();
 
     private int Gate(GameSession s) => s.Personal == null || s.Progress == null ? ErrorCodes.FeatureUnavailable
         : !_functions.IsOpen(s, Function) ? ErrFunction : 0;

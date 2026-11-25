@@ -99,9 +99,9 @@ public sealed class FirstHeartService : IGameTicker
     /// <summary>Day number since the start: local days that begin at 05:00, the realm's daily reset (inferred).</summary>
     private int DayNumber(long start)
     {
-        DateTime LocalDay(long seconds) =>
-            TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(seconds), _clock.LocalTimeZone).DateTime.AddHours(-5).Date;
-        return (LocalDay(Now) - LocalDay(start)).Days + 1;
+        DateOnly LocalDay(long seconds) =>
+            GameCalendar.GameDayOf(DateTimeOffset.FromUnixTimeSeconds(seconds), _clock.LocalTimeZone);
+        return LocalDay(Now).DayNumber - LocalDay(start).DayNumber + 1;
     }
 
     /// <summary>A target's (current, required): login days from the achievement count, the rest from task snapshots.</summary>

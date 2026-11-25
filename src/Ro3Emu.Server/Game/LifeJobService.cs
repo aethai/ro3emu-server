@@ -114,7 +114,7 @@ public sealed partial class LifeJobService
 
     private long NowSeconds => _clock.GetUtcNow().ToUnixTimeSeconds();
     private long Today => Day(_clock.GetLocalNow().DateTime);
-    private static long Day(DateTime now) => DateOnly.FromDateTime(now.AddHours(-5)).DayNumber;
+    private static long Day(DateTime now) => GameCalendar.GameDayOf(now).DayNumber;
     public static long DailyEnergyUsed(GameSession s, long restriction) => restriction == VigorId
         && s.LifeRuntime.EnergyDay == Day(s.Clock.GetLocalNow().DateTime) ? s.LifeRuntime.EnergySpent : 0;
     private long RestrictMax(int id) => _data.Row("RestrictConfig", id) is { } r ? GameData.Int(r, "_iMaxRestrictNum") : 0;

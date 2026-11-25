@@ -40,16 +40,8 @@ public sealed partial class GuildService
     private bool _depositHooked;
 
     /// <summary>Monday 05:00 local of this week, unix seconds (the guild activity reset, UITips 17019).</summary>
-    private long WeekStart
-    {
-        get
-        {
-            var local = clock.GetLocalNow();
-            var day = local.AddHours(-5).Date;
-            int sinceMonday = ((int)day.DayOfWeek + 6) % 7;
-            return new DateTimeOffset(day.AddDays(-sinceMonday).AddHours(5), local.Offset).ToUnixTimeSeconds();
-        }
-    }
+    private long WeekStart => GameCalendar.WeekStart(clock).ToUnixTimeSeconds();
+    private long PreviousWeekStart => GameCalendar.PreviousWeekStart(clock).ToUnixTimeSeconds();
 
     // ------------------------------------------------------------------ weekly views and roll
 
@@ -57,18 +49,18 @@ public sealed partial class GuildService
     /// <summary>This week's Guild Activity of a committed guild (the 1031 leaderboard).</summary>
     internal long WeekActivityOf(GuildStore.State g) => CurActivity(g);
     private long LastWeekActivity(GuildStore.State g) => g.ActivityWeek == WeekStart ? g.LastWeekActivity
-        : g.ActivityWeek == WeekStart - Week ? g.CurActivity : 0;
+        : g.ActivityWeek == PreviousWeekStart ? g.CurActivity : 0;
     /// <summary>The guild's Guild Activity of the last finished week (Guild League registration, GuildLeagueActive).</summary>
     internal long LastWeekActivityOf(GuildStore.State g) => LastWeekActivity(g);
     private long LastWeekActivity(GuildStore.State g, GuildStore.Member m) => g.ActivityWeek == WeekStart ? m.LastWeekActivity
-        : g.ActivityWeek == WeekStart - Week ? m.WeekActivity : 0;
+        : g.ActivityWeek == PreviousWeekStart ? m.WeekActivity : 0;
 
     /// <summary>Moves this week to last week once the week has turned. True when it changed the guild.</summary>
     private bool RollActivity(GuildStore.State g)
     {
         long week = WeekStart;
         if (g.ActivityWeek == week) return false;
-        bool previous = g.ActivityWeek == week - Week;
+        bool previous = g.ActivityWeek == PreviousWeekStart;
         g.LastWeekActivity = previous ? g.CurActivity : 0;
         g.CurActivity = 0;
         foreach (var m in g.Members.Values)
