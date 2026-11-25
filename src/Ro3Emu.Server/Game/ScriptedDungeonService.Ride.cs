@@ -4,6 +4,11 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -17,7 +22,7 @@ namespace Ro3Emu.Server.Game;
 /// carrier stays where the route ends (a later step that shows it at the same point finds it there). A ride that is
 /// alone moves only the carrier.
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     private const int RideTickMs = 100;
 
@@ -73,12 +78,6 @@ public sealed partial class DungeonService
         /// <summary>The carrier walks alone: nobody is moved with it (ScriptedStep.RideAlone).</summary>
         public bool Alone { get; init; }
     }
-
-    /// <summary>
-    /// A ride after its route: the seated driver steers the carrier (its client controls the vehicle, LC_PassengerComponent
-    /// ChangeControlUnit) until someone reaches Region; then Arrived runs.
-    /// </summary>
-    internal sealed record Drive(SceneActorUnit Carrier, long Region, Func<Task> Arrived, int Generation);
 
     /// <summary>
     /// Whether a rider stays seated: the step's ride is driven on to a region (DriveAfter) not reached yet. (inferred) The

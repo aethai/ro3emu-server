@@ -3,20 +3,20 @@ using Romsg;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>Dungeon victory is the authority for a Journey boss act, independent of a client completion request.</summary>
     internal Func<GameSession, JourneyVictory, Action<RoleItemPlanBuilder>, Action, Task<bool>>? JourneyWon { get; set; }
     internal Func<GameSession, bool>? CanStageJourneyVictory { get; set; }
 
-    /// <summary>The exact act and activity generation earned by the frozen dungeon source. A later
-    /// activity cycle must never consume this older victory or draw its result again.</summary>
-    public sealed record JourneyVictory(string Source, long SceneEntry, long ActId, long NodeId,
-        long ActivityStart, long ActivityEnd, long PlayBook);
-
-    private JourneyVictory? CaptureJourneyVictory(GameSession s, long sceneEntry, string source)
+    internal JourneyVictory? CaptureJourneyVictory(GameSession s, long sceneEntry, string source)
     {
         if (CanStageJourneyVictory?.Invoke(s) != true
             || s.NewActivities?.ActivityInfo.TryGetValue(112, out var activity) != true
@@ -59,7 +59,7 @@ public sealed partial class DungeonService
         }
     }
 
-    private bool JourneyCanEnter(GameSession session, long sceneEntry)
+    internal bool JourneyCanEnter(GameSession session, long sceneEntry)
     {
         if (session.NewActivities == null || !session.NewActivities.ActivityInfo.TryGetValue(112, out var activity)
             || activity.ActivityParam?.Journey is not { } journey || session.SceneLoading || session.Role == null)

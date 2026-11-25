@@ -1,9 +1,14 @@
 using Google.Protobuf;
 using Romsg;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>
     /// Dracula's Lair (DraculaWeddingService owns its admission): one room per guild and occurrence on the ordinary

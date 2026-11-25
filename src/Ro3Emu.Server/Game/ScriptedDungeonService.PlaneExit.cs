@@ -1,8 +1,13 @@
 using Ro3Emu.Server.Data.Config;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>(inferred) Seconds between a plane scene's 30403 success and the return to the field.</summary>
     internal const int PlaneExitSeconds = 5;
@@ -16,10 +21,10 @@ public sealed partial class DungeonService
     /// clear is (inferred), as is the delay; the return is the exit button's own path, a 30402 that
     /// LC_DunGeon_Base.CELL_LEAVE_DUNGEON also accepts unasked.
     /// </summary>
-    private static bool LeavesAfterClear(Attempt a) =>
+    internal static bool LeavesAfterClear(Attempt a) =>
         a.Plan.Multi == null && new DungeonConfig(a.Plan.Config) is { PlaneMapId: not 0, RoleCntLimit: 1 };
 
-    private void ScheduleLeaveAfterClear(GameSession s, Attempt a)
+    internal void ScheduleLeaveAfterClear(GameSession s, Attempt a)
     {
         long roleId = s.Role?.Id ?? 0;
         _loop.ScheduleLegacy(TimeSpan.FromSeconds(PlaneExitSeconds), async () =>

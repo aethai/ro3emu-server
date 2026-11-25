@@ -4,6 +4,11 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Maps;
 using Kind = Ro3Emu.Server.Game.ReconstructedDungeons.TriggerKind;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -14,7 +19,7 @@ namespace Ro3Emu.Server.Game;
 /// step, and the last one settles the room as a clear (so DungeonService.Completed counts quest target 101018).
 /// Generic: nothing here knows a scene, task or NPC id.
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>DungeonVariableFunctionConfig 100020016: start function PlayCutSceneStory, array; [plot] plays it.</summary>
     public const int StoryVar = 100020016;
@@ -26,60 +31,16 @@ public sealed partial class DungeonService
     /// </summary>
     internal const long SceneActorUidBase = 1L << 47;
     /// <summary>The interaction reach (inferred): SceneService's 4 m plus its walk-report slack of 8 m.</summary>
-    private const float SceneActorReach = 12f;
+    internal const float SceneActorReach = 12f;
     private long _sceneActorSerial;
+    internal long NextSceneActorUid() => SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial);
     private long _sceneActorBuffGuid = 1L << 56;
 
-    /// <summary>
-    /// A scene actor: NPCConfig _iNPCType 1 is created by the client as a monster unit (entity type 1, with its HP
-    /// and level so the head bar renders), 2 as an NPC (entity type 2, which TriggerNpcInteract looks up by config id).
-    /// Its buffs travel in the entity (AoIBuffInfo) and in 31104/31105 when a later step changes them.
-    /// </summary>
-    internal sealed class SceneActorUnit : WorldUnit
-    {
-        public required int NpcId { get; init; }
-        public required long Point { get; init; }
-        public required int EntityType { get; init; }
-        public required long Camp { get; init; }
-        public required string Name { get; init; }
-        public MonsterTemplate? Template { get; init; }
-        public long BornMs { get; init; }
-        public List<BuffInfo> Buffs { get; } = [];
-
-        /// <summary>Attribute 113 of an actor that can carry a rider: its own walking speed in cm/s, which the client moves it at.</summary>
-        public long CarrySpeed { get; set; }
-
-        public override EntityBase Entity()
-        {
-            var entity = new EntityBase
-            {
-                Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Name = Name, EntityCamp = Camp,
-                // An NPC (type 2) is shaped exactly like the server's world NPCs (SceneService.NpcEntity: portals, Kafras,
-                // whose 32700 the live client sends): no born time, so it never enters a born state. A monster-type actor
-                // keeps it, as MonsterUnit does.
-                Face = Face, State = EntityState.Alive, BornTimeMs = EntityType == 2 ? 0 : BornMs,
-                NotifyType = EntityBase.Types.NotifyType.All,
-                MovementInfo = new MovementInfo
-                {
-                    Pos = Pos, Face = Face, ServerTime = NowMs,
-                    MoveType = MovementType.MoveTypeNone
-                },
-            };
-            if (Template is { } t)
-                foreach (var (idx, value) in new (long, long)[] { (AttributeId.MaxHp, t.MaxHp), (AttributeId.Hp, t.MaxHp), (2002, t.Level), (AttributeId.Speed, t.SpeedCm),
-                             (102, t.MaxSp), (AttributeId.Sp, t.MaxSp) })
-                    entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            if (CarrySpeed > 0) entity.Property.Add(new AoIProperty { Idx = AttributeId.Speed, Data = CarrySpeed, BaseData = CarrySpeed });
-            if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
-            return entity;
-        }
-    }
-
-    private static ReconstructedDungeons.ScriptedStep? Step(Attempt a) =>
+    internal static ReconstructedDungeons.ScriptedStep? Step(Attempt a) =>
         a.Wave < a.Plan.Waves.Count ? a.Plan.Waves[a.Wave].Step : null;
 
     /// <summary>Called by SpawnWaveAsync for a scripted step instead of spawning monsters.</summary>
-    private async Task BeginStepAsync(Attempt a, ReconstructedDungeons.ScriptedStep step)
+    internal async Task BeginStepAsync(Attempt a, ReconstructedDungeons.ScriptedStep step)
     {
         a.StepSeen.Clear();
         a.StepHeld = a.StepHoldOver = false;
@@ -154,14 +115,14 @@ public sealed partial class DungeonService
         }
     }
 
-    private BuffInfo ActorBuff(SceneActorUnit unit, int configId) => new()
+    internal BuffInfo ActorBuff(SceneActorUnit unit, int configId) => new()
     {
         BuffGuid = Interlocked.Increment(ref _sceneActorBuffGuid), ConfigId = configId, ExpireTime = 0, Duration = 0,
         PileCount = 1, SourceId = unit.Uid,
     };
 
     /// <summary>A kept actor's buffs for the new step (31105/31104 and the AOI attribute change, as BuffService does).</summary>
-    private async Task SetActorBuffsAsync(SceneActorUnit unit, IReadOnlyList<int> wanted)
+    internal async Task SetActorBuffsAsync(SceneActorUnit unit, IReadOnlyList<int> wanted)
     {
         var removed = unit.Buffs.Where(b => !wanted.Contains(b.ConfigId)).ToArray();
         var added = wanted.Where(id => unit.Buffs.All(b => b.ConfigId != id)).Select(id => ActorBuff(unit, id)).ToArray();
@@ -234,7 +195,7 @@ public sealed partial class DungeonService
     /// within the reach, measured from the player's own position every 0.2 s (LC_InteractManager.Update), so a
     /// teleport is enough.
     /// </summary>
-    private async Task ActorsGmAsync(GameSession s, string[] args)
+    internal async Task ActorsGmAsync(GameSession s, string[] args)
     {
         if (args.Length == 1 && args[0].Equals("use", StringComparison.OrdinalIgnoreCase))
         {

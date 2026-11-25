@@ -1,6 +1,11 @@
 using Romsg;
 using Ro3Emu.Server.Data.Config;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -10,10 +15,10 @@ namespace Ro3Emu.Server.Game;
 /// and the right/wrong Bell effects (5402101 SXGD_RIGHT, 5402201 SXGD_WRONG, whose sound and effects play when the buff
 /// starts) are in the client, but nothing in the client sends them.
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     /// <summary>The step's opening lines, each once the previous one's display time has run out.</summary>
-    private void StartReaction(Attempt a, ReconstructedDungeons.Reaction react)
+    internal void StartReaction(Attempt a, ReconstructedDungeons.Reaction react)
     {
         int generation = a.StepGeneration, at = 0;
         foreach (int chat in react.Start)
@@ -27,7 +32,7 @@ public sealed partial class DungeonService
     /// Answers an event with the response's line and effect. Returns how long the line stays on screen, which a completing
     /// reaction waits out before the next step.
     /// </summary>
-    private async Task<int> RespondAsync(Attempt a, ReconstructedDungeons.Reaction? react,
+    internal async Task<int> RespondAsync(Attempt a, ReconstructedDungeons.Reaction? react,
         ReconstructedDungeons.Response? response, SceneActorUnit? used)
     {
         if (react == null || response == null || a.Settled || a.Room.Closed) return 0;
@@ -53,5 +58,5 @@ public sealed partial class DungeonService
     private int LineMs(int chat) => _data.Row("ChatConfig", chat) is { } row ? (int)new ChatConfig(row).Time : 0;
 
     /// <summary>A scripted scene's delay, shortened by ScriptedScenePacePercent (tests).</summary>
-    private TimeSpan Paced(int ms) => TimeSpan.FromMilliseconds((long)ms * Math.Max(1, _options.ScriptedScenePacePercent) / 100);
+    internal TimeSpan Paced(int ms) => TimeSpan.FromMilliseconds((long)ms * Math.Max(1, _options.ScriptedScenePacePercent) / 100);
 }

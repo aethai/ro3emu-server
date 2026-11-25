@@ -2,6 +2,11 @@ using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -16,12 +21,12 @@ namespace Ro3Emu.Server.Game;
 /// reward (boss row 4300099 _iPersonAward/_iGuildAward), its allowance (TenGameplayRefreshTimeConfig
 /// _iAddRandomRewardNum) and its record.</para>
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     public const uint RandomDungeon = 82591;
-    private readonly HashSet<GameSession> _rolling = [];
+    internal readonly HashSet<GameSession> _rolling = [];
 
-    private static bool IsRandom(DungeonCatalog.Plan plan) => plan.Origin == null && plan.Multi is { } multi
+    internal static bool IsRandom(DungeonCatalog.Plan plan) => plan.Origin == null && plan.Multi is { } multi
         && GameData.Int(multi, "_iIsRandomDungeon") == 1;
 
     private int RandomSeconds() =>
@@ -50,7 +55,7 @@ public sealed partial class DungeonService
     }
 
     /// <summary>The draw, its 82591 and, after the countdown, the ordinary run of the drawn boss.</summary>
-    private async Task RollAsync(DungeonCatalog.Plan origin, GameSession[] members, long leader, long team, bool matched)
+    internal async Task RollAsync(DungeonCatalog.Plan origin, GameSession[] members, long leader, long team, bool matched)
     {
         var pool = RandomPool(origin, members);
         var drawn = pool.Count > 0 ? pool[Random.Shared.Next(pool.Count)]

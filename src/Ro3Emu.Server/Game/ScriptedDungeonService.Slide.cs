@@ -1,5 +1,10 @@
 using Romsg;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -10,7 +15,7 @@ namespace Ro3Emu.Server.Game;
 /// _applySlideData). The ids are the client's enum_CustomData (Lua_CustomDataDefine). The speeds come from the scene's json
 /// (inferred: the original's are not in the client).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>enum_CustomData.Player_SlideState: 1 enters the slide (once the speed is known), 0 leaves it.</summary>
     internal const long SlideStateData = 5400001;

@@ -1,6 +1,11 @@
 using Romsg;
 using Ro3Emu.Server.Maps;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -12,10 +17,10 @@ namespace Ro3Emu.Server.Game;
 /// skill's 31101 (LC_Actor_TPSInput._onSkillRelease). Damage and defeat are the ordinary combat's. What flies past is
 /// a step's fight with a route (<see cref="FlyAsync"/>).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     /// <summary>The step's cannon interaction seats its user. Only the step that shows the cannons counts.</summary>
-    private async Task BoardCannonAsync(Attempt a, GameSession s, SceneActorUnit actor, long interaction)
+    internal async Task BoardCannonAsync(Attempt a, GameSession s, SceneActorUnit actor, long interaction)
     {
         if (Step(a) is not { Cannon: { } cannon } || cannon.Interaction != interaction || a.Settled) return;
         long token = await _vehicles.SeatOnCannonAsync(s, actor.Uid, actor.NpcId, (int)interaction);
@@ -31,7 +36,7 @@ public sealed partial class DungeonService
     /// room shows it however far, and it flies the patrol once at its own speed and stays where the patrol ends (inferred:
     /// the client ships the patrols' points and no rule for them, and the original's server script is absent).
     /// </summary>
-    private async Task FlyAsync(Attempt a, MonsterUnit unit, IReadOnlyList<(float X, float Y, float Z)> route)
+    internal async Task FlyAsync(Attempt a, MonsterUnit unit, IReadOnlyList<(float X, float Y, float Z)> route)
     {
         unit.StaysOutOfBattle = true;
         unit.KeepsDamage = true;

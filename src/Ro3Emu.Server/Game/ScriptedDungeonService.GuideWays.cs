@@ -1,9 +1,14 @@
 using Romsg;
 using Ro3Emu.Server.Data.Config;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>
     /// LC_DunGeon_VarDefine 10021 PGuideWayList (a table of numbers, kProcessComp GuideGfx): the scene editor guide
@@ -19,7 +24,7 @@ public sealed partial class DungeonService
     /// routes chain into one path (the Culvert plane's route 19 ends where 21 starts). Null for scenes without routes
     /// and for group content.
     /// </summary>
-    private DungeonVar? GuideWays(Attempt a)
+    internal DungeonVar? GuideWays(Attempt a)
     {
         if (a.Plan.Multi != null || a.GuildChallenge != null || a.Dracula != null
             || new DungeonConfig(a.Plan.Config).RoleCntLimit != 1) return null;
@@ -45,7 +50,7 @@ public sealed partial class DungeonService
         : Task.CompletedTask;
 
     /// <summary>After the clear: 10021 with no routes, so the arrows go away (DungeonEventDungeonVarChange).</summary>
-    private Task HideGuideWaysAsync(GameSession s, Attempt a) => GuideWays(a) is { } ways
+    internal Task HideGuideWaysAsync(GameSession s, Attempt a) => GuideWays(a) is { } ways
         ? s.SendGameAsync(Event, new DungeonEventNotify
         {
             DungeonEntry = a.Plan.SceneEntry, EventType = (DungeonEventType)4, StageNum = a.Wave + 1, LevelNum = 1, Vars = { ways },

@@ -2,6 +2,11 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Kind = Ro3Emu.Server.Game.ReconstructedDungeons.TriggerKind;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,9 +18,9 @@ namespace Ro3Emu.Server.Game;
 /// hide-and-seek! Hahaha! Play with me again~". The lines go out as 1022 with the seeker's uid, which a Bubbling row
 /// (type 2) needs for its head bubble (LC_SystemMessageDecodeFunc.PushBubbling uses playerId as the unit).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
-    private const uint SystemBroadcast = 1022;
+    internal const uint SystemBroadcast = 1022;
     // (inferred) the gaps between the opening bubbles, from a round's warning to its countdown and after a look.
     private const int SeekOpeningGapMs = 1500, SeekWarnMs = 3000, SeekPauseMs = 3000;
 
@@ -34,7 +39,7 @@ public sealed partial class DungeonService
 
     /// <summary>A timer of the step: it does nothing once a newer game or step started, or (unless
     /// <paramref name="whileFighting"/>: a fight-only step is done from its start) once the step is done.</summary>
-    private void StepLater(Attempt a, int generation, int ms, Func<Task> work, bool whileFighting = false) =>
+    internal void StepLater(Attempt a, int generation, int ms, Func<Task> work, bool whileFighting = false) =>
         _loop.ScheduleLegacy(Paced(ms),
             () => !a.Settled && !a.Room.Closed && (whileFighting || !a.StepDone) && a.StepGeneration == generation
                 ? work() : Task.CompletedTask);

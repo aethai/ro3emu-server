@@ -165,7 +165,7 @@ public sealed class DraculaWeddingTests : IAsyncLifetime
         await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, hit => hit.Dsts.Any(d => d.DstID == actor.Uid && d.IsDead));
     }
 
-    private static async Task<int> Interact(BotClient bot, DungeonService.SceneActorUnit actor, int interaction)
+    private static async Task<int> Interact(BotClient bot, SceneActorUnit actor, int interaction)
     {
         await bot.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
         {
@@ -175,7 +175,7 @@ public sealed class DraculaWeddingTests : IAsyncLifetime
             r => r.Req.NpcUid == actor.Uid && r.Req.InteractionId == interaction)).Result;
     }
 
-    private Task Beside(BotClient bot, DungeonService.SceneActorUnit actor) =>
+    private Task Beside(BotClient bot, SceneActorUnit actor) =>
         OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(bot), new MapPoint(actor.X + 1, actor.Y, actor.Z, 0)));
 
     private MailService.Mailbox Mailbox(long role) => Service<RoleStore>().LoadMailbox(role) is { Length: > 0 } blob

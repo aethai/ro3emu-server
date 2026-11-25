@@ -99,7 +99,7 @@ CombatService.BeforeKilled (3)
 CombatService.BeforeLethalPublication (1)
   MvpService.PrepareKilledAsync
 CombatService.BossAreaLanded (1)
-  DungeonService.TrialBreakersAsync
+  RaidTrialsService.TrialBreakersAsync
 CombatService.CardHitReactions (1)
   CardEffects.ReflectAsync
 CombatService.CastLanded (4)
@@ -118,8 +118,8 @@ CombatService.CastResolved (7)
 CombatService.DamageAdjusters (10)
   PetCombatService.<WireGuardians> lambda
   PetCombatService.<WireGuardians> lambda
-  DungeonService.TrialDamage
-  DungeonService.<.ctor> lambda
+  RaidTrialsService.TrialDamage
+  RaidTrialsService.<WireCombat> lambda
   MvpService.<.ctor> lambda
   SiegeService.<.ctor> lambda
   TowerService.<RegisterSuppression> lambda
@@ -128,7 +128,7 @@ CombatService.DamageAdjusters (10)
   PassiveSkills.PreyOnTheWeakDamage
 CombatService.Dealt (5)
   TaskService.<.ctor> lambda
-  DungeonService.<.ctor> lambda
+  DungeonService.<BindSubsystems> lambda
   TimedBattleService.DragonDealt
   CasualBattleService.BossDealt
   GuildHuntingService.Dealt
@@ -136,7 +136,7 @@ CombatService.DealtAsync (8)
   PetCombatService.GuardianDamageReactionAsync
   PetCombatService.GuardianWindowMonsterHitAsync
   PetCombatService.<WireGuardians> lambda
-  DungeonService.TrialBossHitAsync
+  RaidTrialsService.TrialBossHitAsync
   TotemEffects.OnDealtAsync
   CardEffects.OnDealtAsync
   TalentProcs.RowProcsOnDealtAsync
@@ -156,12 +156,12 @@ CombatService.ExtraHitDamage (1)
 CombatService.GrantedSkill (6)
   CombatService.<.ctor> lambda
   MountService.<.ctor> lambda
-  DungeonService.FiresCannon
+  RaidTrialsService.FiresCannon
   CasualBattleService.<HookArena> lambda
   CasualBattleService.<HookArena> lambda
   WarMachineService.SeatSkill
 CombatService.Healed (3)
-  DungeonService.<.ctor> lambda
+  DungeonService.<BindSubsystems> lambda
   ChickenBattleService.ChickenHealed
   CasualBattleService.<.ctor> lambda
 CombatService.HealedAsync (3)
@@ -169,13 +169,13 @@ CombatService.HealedAsync (3)
   SiegeService.SiegeHealRecordedAsync
   GuildLeagueService.HealedAsync
 CombatService.IncomingDamageAdjusters (3)
-  DungeonService.<.ctor> lambda
+  RaidTrialsService.<WireCombat> lambda
   MvpService.<.ctor> lambda
   TotemEffects.AdjustIncomingDamageAsync
 CombatService.Killed (21)
   TaskService.OnKillAsync
   RewardService.KilledAsync
-  DungeonService.TrialObjectKilledAsync
+  RaidTrialsService.TrialObjectKilledAsync
   DungeonService.KilledAsync
   PronteraDefenseService.OnKilledAsync
   MvpService.OnKilledAsync
@@ -242,13 +242,13 @@ CombatService.PvpDealtAsync (6)
 CombatService.PvpHitLanded (1)
   CardEffects.OnPvpHitAsync
 CombatService.ReviveInfoOwners (5)
-  DungeonService.<.ctor> lambda
+  DungeonService.<BindSubsystems> lambda
   ChickenBattleService.OwnsRevive
   CasualBattleService.<HookArena> lambda
   TerritoryWarsService.<.ctor> lambda
   GuildLeagueService.<HookBattle> lambda
 CombatService.Taken (2)
-  DungeonService.<.ctor> lambda
+  DungeonService.<BindSubsystems> lambda
   MvpService.OnTaken
 CombatService.TakenAsync (6)
   PetCombatService.<WireGuardians> lambda
@@ -358,7 +358,7 @@ SceneService.Leaving (28)
   InstanceService.AbandonAsync
   WorldInteractionService.LeaveAsync
   DungeonService.AbandonAsync
-  DungeonService.StopSlideAsync
+  ScriptedDungeonService.StopSlideAsync
   LifeJobService.CancelAsync
   AdventureActivityService.LeaveConchesAsync
   TimedBattleService.LeavingAsync

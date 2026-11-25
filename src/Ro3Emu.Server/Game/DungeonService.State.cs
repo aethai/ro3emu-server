@@ -39,16 +39,16 @@ public sealed partial class DungeonService
         public int Remaining { get; set; }
     }
 
-    private static State Copy(State state) => JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
-    private static string RecordKey(DungeonCatalog.Plan plan) => $"{plan.RewardMultiId}:{plan.RewardMark}";
-    private async Task SaveAsync(GameSession s, State state)
+    internal static State Copy(State state) => JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
+    internal static string RecordKey(DungeonCatalog.Plan plan) => $"{plan.RewardMultiId}:{plan.RewardMark}";
+    internal async Task SaveAsync(GameSession s, State state)
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "dungeons", JsonSerializer.SerializeToUtf8Bytes(state));
         await _roles.CommitAsync(transaction, "dungeon/state", _ => s.Dungeons = state);
     }
 
-    private State CurrentState(State previous)
+    internal State CurrentState(State previous)
     {
         long start = _seasons.StartTime;
         // Key progress by configured season identity; preserve role-level job preference (inferred season policy).
@@ -110,7 +110,7 @@ public sealed partial class DungeonService
         return allowance;
     }
 
-    private bool Meets(GameSession s, JsonElement row) => _functions.ConditionMet(s, GameData.Int(row, "_kUnlock"))
+    internal bool Meets(GameSession s, JsonElement row) => _functions.ConditionMet(s, GameData.Int(row, "_kUnlock"))
         && _functions.ConditionMet(s, GameData.Int(row, "_kPersonalUnlock"));
 
     /// <summary>
@@ -228,7 +228,7 @@ public sealed partial class DungeonService
         { Result = s.Dungeons == null ? ErrorCodes.Parameter : 0, GuideFlag = s.Dungeons?.FirstSetted ?? false });
     }
 
-    private List<(int Entry, int Count, int Bind)>? Award(long group, GameSession s)
+    internal List<(int Entry, int Count, int Bind)>? Award(long group, GameSession s)
     {
         if (group == 0) return [];
         if (_data.Row("MultiverseGroupConfig", group) is not { } mg) return null;
