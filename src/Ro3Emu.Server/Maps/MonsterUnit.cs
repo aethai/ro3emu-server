@@ -31,12 +31,31 @@ public sealed record MonsterTemplate(
     /// <summary>Its HP is restored when it is back from a lost fight: AIConfig _iUnFightBUFF holds the full-heal buff
     /// (MonsterService.ResetHealBuff), or the NPC has no AI row (inferred).</summary>
     public bool HealsOnReturn { get; init; } = true;
+    /// <summary>AIConfig _iHatredType: 1 enables official aggro / threat tracking.</summary>
+    public int HatredType { get; init; }
+    /// <summary>AIConfig _iHatredDeclineSpeed: points of threat decayed per second after the delay.</summary>
+    public int HatredDeclineSpeed { get; init; }
+    /// <summary>AIConfig _iHatredDeclineTime: milliseconds after taking damage before threat begins decaying.</summary>
+    public int HatredDeclineTimeMs { get; init; }
+    /// <summary>AIConfig _iMinHatredDecline: floor below which threat does not decay.</summary>
+    public int MinHatredDecline { get; init; }
+    /// <summary>NPCConfig _kTopHatredBuff: buff (e.g. 14723001) applied to the player holding highest aggro.</summary>
+    public int TopHatredBuffId { get; init; }
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war
 /// machines derive from it (TerritoryWarsService.CannonUnit, VehicleUnit): they take damage and die as monsters do.</summary>
 public class MonsterUnit : WorldUnit
 {
+    /// <summary>Per-player threat/hatred tracking for MMORPG aggro management (Issue #537).</summary>
+    public sealed class ThreatRecord
+    {
+        public long Value { get; set; }
+        public long LastHitMs { get; set; }
+    }
+    public Dictionary<Game.GameSession, ThreatRecord> ThreatTable { get; } = [];
+    public Game.GameSession? TopThreatSession { get; set; }
+    public long TopThreatValue => TopThreatSession != null && ThreatTable.TryGetValue(TopThreatSession, out var r) ? r.Value : 0;
     /// <summary>Its kind's stats; GmSetEntityAttr swaps in a changed copy for this one unit.</summary>
     public required MonsterTemplate Template { get; set; }
     /// <summary>Instance-specific final outgoing damage rate; 10000 leaves field and dungeon monsters unchanged.</summary>

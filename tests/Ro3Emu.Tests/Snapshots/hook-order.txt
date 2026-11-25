@@ -303,6 +303,8 @@ MonsterService.Born (1)
 MonsterService.TargetChanged (2)
   WorldEffectsService.TargetChangedAsync
   WorldCoreService.TargetChangedAsync
+MonsterService.TopThreatChanged (1)
+  CombatEffectsService.TopThreatChangedAsync
 MountService.Changed (1)
   BuffService.MountsChangedAsync
 MountService.RideChanged (5)

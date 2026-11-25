@@ -62,8 +62,25 @@ public sealed partial class CombatEffectsService
         _loop = loop;
         _log = log;
         CastResolved.Subscribe(SupportSkillOnCastAsync, order: CombatService.GuardianHookOrder);
+        monsters.TopThreatChanged.Subscribe(TopThreatChangedAsync);
         WireBuffRules();
         WireBossSkills();
+    }
+
+    private async Task TopThreatChangedAsync(MonsterUnit monster, GameSession? previous, GameSession? newTop)
+    {
+        int buffId = monster.Template.TopHatredBuffId;
+        if (buffId <= 0) return;
+        if (previous?.Role != null)
+        {
+            if (previous.Buffs.FirstOrDefault(b => b.ConfigId == buffId) is { } oldBuff)
+                await _buffs.RemoveAsync(previous, oldBuff);
+        }
+        if (newTop?.Role != null && newTop.WorldScene == monster.WorldScene)
+        {
+            if (!newTop.Buffs.Any(b => b.ConfigId == buffId))
+                await _buffs.AddUntilSpentAsync(newTop, buffId, monster.Uid);
+        }
     }
 
     private long Now => _loop.NowMs;
