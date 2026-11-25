@@ -62,6 +62,9 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     /// <summary>Never closes and is never counted as outstanding work.</summary>
     private WorkPermit _orphan = null!;
     private long _startedAt;
+    private readonly object _clockSync = new();
+    private long _wallAnchorMs;
+    private long _wallAnchorElapsedMs;
     private volatile bool _started;
     private bool _disposeRequested;
     private bool _queueDisposed;
@@ -85,8 +88,30 @@ public sealed partial class GameLoop : IHostedService, IDisposable
     /// <summary>Monotonic game time.</summary>
     public TimeSpan Now => _started ? _time.GetElapsedTime(_startedAt) : TimeSpan.Zero;
 
-    /// <summary>Current realm UTC wall clock in Unix milliseconds.</summary>
-    public long NowMs => _time.GetUtcNow().ToUnixTimeMilliseconds();
+    /// <summary>
+    /// Current realm UTC wall clock in Unix milliseconds. Tracks <see cref="TimeProvider.GetUtcNow"/> under real and
+    /// controllable fake clocks without double-counting, and advances with monotonic loop time when a test clock pins
+    /// its calendar date without overriding <see cref="TimeProvider.GetTimestamp"/>.
+    /// </summary>
+    public long NowMs
+    {
+        get
+        {
+            long wallMs = _time.GetUtcNow().ToUnixTimeMilliseconds();
+            if (!_started) return wallMs;
+            long elapsedMs = (long)Now.TotalMilliseconds;
+            lock (_clockSync)
+            {
+                if (wallMs != _wallAnchorMs)
+                {
+                    _wallAnchorMs = wallMs;
+                    _wallAnchorElapsedMs = elapsedMs;
+                    return wallMs;
+                }
+                return wallMs + Math.Max(0, elapsedMs - _wallAnchorElapsedMs);
+            }
+        }
+    }
 
     /// <summary>Current realm UTC wall clock in Unix seconds.</summary>
     public long NowSec => _time.GetUtcNow().ToUnixTimeSeconds();
@@ -439,6 +464,11 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             if (_phase != GameLoopPhase.Accepting) throw new InvalidOperationException("The game loop has stopped.");
             if (_started) throw new InvalidOperationException("The game loop has already started.");
             _startedAt = _time.GetTimestamp();
+            lock (_clockSync)
+            {
+                _wallAnchorMs = _time.GetUtcNow().ToUnixTimeMilliseconds();
+                _wallAnchorElapsedMs = 0;
+            }
             _started = true;
             _thread.Start();
         }

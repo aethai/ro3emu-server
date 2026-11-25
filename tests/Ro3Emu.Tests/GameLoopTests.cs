@@ -35,6 +35,42 @@ public sealed class GameLoopTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task NowMsAdvancesWithLoopTimeUnderPinnedWallClockAndDoesNotDoubleCountFakeClock()
+    {
+        var pinned = new PinnedWallClock(new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+        using var pinnedLoop = new GameLoop(NullLogger<GameLoop>.Instance, time: pinned);
+        await pinnedLoop.StartAsync(default);
+        try
+        {
+            long start = pinnedLoop.NowMs;
+            Assert.True(SpinWait.SpinUntil(() => pinnedLoop.NowMs - start >= 40, TimeSpan.FromSeconds(2)),
+                $"Expected pinned-wall-clock NowMs to advance, delta was {pinnedLoop.NowMs - start} ms");
+            pinned.Advance(TimeSpan.FromMinutes(10));
+            Assert.Equal(pinned.GetUtcNow().ToUnixTimeMilliseconds(), pinnedLoop.NowMs);
+        }
+        finally { await pinnedLoop.StopAsync(default); }
+
+        var fake = new FakeTimeProvider(new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+        using var fakeLoop = new GameLoop(NullLogger<GameLoop>.Instance, time: fake);
+        await fakeLoop.StartAsync(default);
+        try
+        {
+            long t0 = fakeLoop.NowMs;
+            fake.Advance(TimeSpan.FromMilliseconds(350));
+            Assert.Equal(t0 + 350, fakeLoop.NowMs);
+            Assert.Equal(t0 + 350, fakeLoop.NowMs);
+        }
+        finally { await fakeLoop.StopAsync(default); }
+    }
+
+    private sealed class PinnedWallClock(DateTimeOffset now) : TimeProvider
+    {
+        private long _ticks = now.UtcTicks;
+        public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
+        public void Advance(TimeSpan by) => Interlocked.Add(ref _ticks, by.Ticks);
+    }
+
+    [Fact]
     public async Task LateUntrackedContinuationRunsOnTheLoopInsteadOfThrowing()
     {
         var resumed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
