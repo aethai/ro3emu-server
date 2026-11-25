@@ -453,7 +453,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         }
         await Loop.InvokeAsync(() =>
         {
-            combat.SetEventPvPHandlers((source, target) => source == a && target == b, (_, _) => Task.CompletedTask);
+            combat.AddRuleForTest(new DelegateCombatRule { EventCanFight = (source, target) => source == a && target == b });
             return Task.CompletedTask;
         });
         long hp = Character.Stats(b)[2000];

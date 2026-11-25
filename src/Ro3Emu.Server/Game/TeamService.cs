@@ -15,8 +15,10 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class TeamService(SessionRegistry sessions, CharacterService character, ChatService chat, RoleStore roles, FriendStore friends,
     GameData data, SeasonService seasons, IOptions<ServerOptions> options, GameLoop loop, Maps.World world, ILogger<TeamService> log)
-    : IGameTicker
+    : IGameTicker, ICombatRule
 {
+    bool ICombatRule.IsSameParty(GameSession a, GameSession b) => a.Role is { } ar && b.Role is { } br
+        && TeamOf(ar.Id).TeamId is var team and not 0 && TeamOf(br.Id).TeamId == team;
     /// <summary>DungeonService supplies the authoritative role preference, allowances and Light of Bonds projection.</summary>
     public Func<GameSession, IReadOnlyList<long>, TeamMultiDungeonInfo>? MultiDungeonInfo { get; set; }
     public const uint TeamCreate = 42000, TeamLeave = 42001, TeamInvite = 42004, TeamNotifyInvitee = 42005, TeamInviteeResp = 42006,

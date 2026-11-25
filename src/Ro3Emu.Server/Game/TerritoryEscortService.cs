@@ -14,8 +14,10 @@ namespace Ro3Emu.Server.Game;
 /// clientB LC_TerritoryWarsTradeServer and LC_TerritoryWarsServer senders and the msgtable. Server policy
 /// that cannot be recovered from those senders is identified as inferred beside the transition.
 /// </summary>
-public sealed partial class TerritoryEscortService : IGameTicker
+public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
 {
+    bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) => Hostile(attacker, defender);
+    bool ICombatRule.CanHitMonster(GameSession attacker, MonsterUnit target) => CanHitCart(attacker, target);
     public const uint UseNpcSkill = 83050, QueryOwner = 83055, Selling = 83070, History = 83071,
         Buy = 83072, BuyOrders = 83073, Sell = 83074, TakeDown = 83075, SellOrders = 83076,
         Operate = 83077, PlayTime = 83079, GuildPlay = 83080, PlayersPlay = 83081,

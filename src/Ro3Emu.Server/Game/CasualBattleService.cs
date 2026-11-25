@@ -45,8 +45,10 @@ namespace Ro3Emu.Server.Game;
 /// login (TryPayAsync's own retry) but gets no history entry, since nothing here revisits a login after the fact to
 /// write one.
 /// </summary>
-public sealed partial class CasualBattleService : IGameTicker
+public sealed partial class CasualBattleService : IGameTicker, ICombatRule
 {
+    bool ICombatRule.CanEventFight(GameSession attacker, GameSession defender) => CanFight(attacker, defender);
+    Task ICombatRule.OnEventPlayerKilledAsync(GameSession killer, GameSession victim) => PlayerKilledAsync(killer, victim);
     public const uint Sync = 5070, ResultNotify = 30132, SetFlag = 30442, FlagNotify = 30443, Rally = 30444,
         RallyNotify = 30445, RallyReply = 30446, RallyReplyNotify = 30447, Follow = 30448, FollowNotify = 30449,
         SwapPosition = 30450, Transfer = 30451;

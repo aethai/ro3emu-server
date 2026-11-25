@@ -154,7 +154,7 @@ public sealed class MapLineTests : IAsyncLifetime
         await Move(alice, a, 10100); await Move(bob, b, 10100, newLine: true);
         await OnLoop(() =>
         {
-            Service<CombatService>().PlayerHostile = (_, _) => true; // force hostility so locality is the deciding gate
+            Service<CombatService>().AddRuleForTest(new DelegateCombatRule { PlayerHostile = (_, _) => true }); // force hostility so locality is the deciding gate
             return Task.CompletedTask;
         });
         long hp = Service<CharacterService>().Stats(b)[2000];

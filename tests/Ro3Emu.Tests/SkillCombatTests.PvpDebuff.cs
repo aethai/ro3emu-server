@@ -20,7 +20,7 @@ public sealed partial class SkillCombatTests
         await Loop.InvokeAsync(() =>
         {
             victim.Position = new Vec3 { X = start.X + 2, Y = start.Y, Z = start.Z };
-            Combat.PlayerHostile = (a, b) => a == source && b == victim;
+            Combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == victim });
             return Task.CompletedTask;
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1111201, TargetId = victim.Role!.Id, TargetPos = victim.Position });

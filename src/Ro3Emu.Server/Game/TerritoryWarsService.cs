@@ -14,8 +14,16 @@ namespace Ro3Emu.Server.Game;
 /// client Logic/TerritoryWars, LC_ActivityParser_TerritoryWar and the auction DAL.
 /// Reconstructed server choices are marked (inferred) and collected in docs/systems/territory-wars.md.
 /// </summary>
-public sealed partial class TerritoryWarsService : IGameTicker
+public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
 {
+    bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) =>
+        Hostile(attacker, defender) || WorldHostile(attacker, defender);
+    bool ICombatRule.CanHitMonster(GameSession attacker, MonsterUnit target) => CanHitObjective(attacker, target);
+    bool ICombatRule.IsSkillLineBlocked(GameSession caster, MonsterUnit? target, Vec3 origin, Vec3 destination) =>
+        SiegeSkillLineBlocked(caster, target, origin, destination);
+    int? ICombatRule.AdmitOwnSkill(GameSession session, int skillId) => CommandSkillAdmit(session, skillId);
+    Task ICombatRule.CastOwnSkillAsync(GameSession session, int skillId) => CommandSkillCastAsync(session, skillId);
+    Task ICombatRule.LandOwnSkillAsync(GameSession session, JsonElement row) => CommandSkillLandedAsync(session, row);
     public const int Function = 72, SiegeFunction = 67;
     public const uint MapQuery = 83001, MapNotify = 83002, GuildNotify = 83003, Camp = 83007, GuildQuery = 83008,
         LegacyBid = 83010, LegacyQuery = 83011, StageQuery = 83012, StageNotify = 83013, History = 83014,
@@ -217,17 +225,11 @@ public sealed partial class TerritoryWarsService : IGameTicker
         combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
         combat.EventDamageRecorded.Subscribe(SiegeDamageRecordedAsync);
         combat.EventDamageRecorded.Subscribe(MachineDamageRecordedAsync);
-        combat.PlayerHostile = Hostile;
-        combat.MonsterTargetAllowed = CanHitObjective;
-        combat.SkillLineBlocked = SiegeSkillLineBlocked;
         combat.DamageAdjusters.Subscribe((_, target, row, _, damage) => SiegeTagDamage(target, row, damage));
         combat.PvpDealtAsync.Subscribe(PvpRecordedAsync);
         combat.PvpDealtAsync.Subscribe(SiegePvpRecordedAsync);
         combat.HealedAsync.Subscribe(BattleHealRecordedAsync);
         combat.HealedAsync.Subscribe(SiegeHealRecordedAsync);
-        combat.OwnSkillAdmit = CommandSkillAdmit;
-        combat.OwnSkillCast = CommandSkillCastAsync;
-        combat.OwnSkillLanded = CommandSkillLandedAsync;
         combat.PlayerKilled.Subscribe(GloryKilledAsync);
         combat.PvpDealtAsync.Subscribe(GloryHitAsync);
         character.StateChanged.Subscribe(s => _ = SyncGloryAsync(s));

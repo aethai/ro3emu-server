@@ -15,8 +15,11 @@ namespace Ro3Emu.Server.Game;
 /// exported EatChickenMatchConfig/DragonIslandMatchConfig scenes and specialized population/team sizes.
 /// CombatService calls CanFight/PlayerKilledAsync for actual opposing-player combat.
 /// </summary>
-public sealed partial class TimedBattleService : IGameTicker
+public sealed partial class TimedBattleService : IGameTicker, ICombatRule
 {
+    bool ICombatRule.CanEventFight(GameSession attacker, GameSession defender) => CanFight(attacker, defender);
+    Task ICombatRule.OnEventPlayerKilledAsync(GameSession killer, GameSession victim) => PlayerKilledAsync(killer, victim);
+    bool? ICombatRule.AllowMatchSkill(GameSession session, int skillId) => MatchSkillRule(session, skillId);
     public const uint StartMatch = 82681, CancelMatch = 82682, Ready = 82637, ReadyNotify = 82636,
         MatchStartNotify = 82638, ChickenResult = 82633, DragonClaim = 84071, DragonSettle = 84074,
         OnePieceInfo = 83351, OnePieceMap = 83350;
@@ -228,7 +231,6 @@ public sealed partial class TimedBattleService : IGameTicker
         world.CanObserve = CanBeSeen; // Survivor Battle watchers (TimedBattleService.ChickenWatch)
         combat.Dealt.Subscribe(DragonDealt);
         combat.Killed.Subscribe(DragonBossKilledAsync);
-        combat.MatchSkillRule = MatchSkillRule;
         character.MatchAttributes = MatchAttributes;
     }
 

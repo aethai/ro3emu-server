@@ -8,9 +8,6 @@ namespace Ro3Emu.Server.Game;
 /// <summary>Skills whose text does more than their row's damage and buffs: Hymn of Devotion, Ganbantein, who a heal reaches.</summary>
 public sealed partial class CombatService
 {
-    /// <summary>Same party, for "Party Members" and Harmony Heal's party value (set by the host: TeamService.TeamOf, inferred for its 5-slot groups).</summary>
-    public Func<GameSession, GameSession, bool>? SameParty { get; set; }
-
     /// <summary>Rows whose text names the caster as well as the ally they lock: Heal "for you and the designated ST ally", Highness Heal
     /// "to You and one designated ally", Kyrie Eleison "yourself and a designated ST ally". The data has no flag.</summary>
     private static bool ReachesCasterToo(string script) => script is "Heal" or "HighHeal" or "S1_Poem" or "Kyrie_Eleison" or "Aspersio";
@@ -24,13 +21,13 @@ public sealed partial class CombatService
 
     /// <summary>Radiant Holy Light: "up to ${2} allies ... prioritizing Party Members".</summary>
     private bool OutsideThePartyAsLast(GameSession s, GameSession p, string script) =>
-        script == "ColuseoHeal" && p != s && SameParty?.Invoke(s, p) != true;
+        script == "ColuseoHeal" && p != s && !IsSameParty(s, p);
 
     /// <summary>Harmony Heal [3000,6000]: "restores Life equal to Magic ATK*30%. If the unit is a party Member, ... 60%".</summary>
     private double HealRatio(GameSession healer, GameSession recipient, JsonElement row, string script)
     {
         var ratios = Numbers(row, "_kDamageParam1");
-        return script == "Harmony_Heal" && ratios.Length > 1 && SameParty?.Invoke(healer, recipient) == true ? ratios[1] : ratios.FirstOrDefault();
+        return script == "Harmony_Heal" && ratios.Length > 1 && IsSameParty(healer, recipient) ? ratios[1] : ratios.FirstOrDefault();
     }
 
     /// <summary>Blessing, Increase AGI, Angelus, Magnificat, Impositio Manus, Suffragium, Assumptio: a friendly row with a Buff1 and no damage;
@@ -94,7 +91,7 @@ public sealed partial class CombatService
         async Task TickAsync()
         {
             if (!ReferenceEquals(s.Role, role) || s.Dead || s.SceneLoading || s.SceneGeneration != generation || Now > ends + 100) return;
-            var party = AlliesNear(s, s.Position, metres).Where(p => p == s || SameParty?.Invoke(s, p) == true).ToList();
+            var party = AlliesNear(s, s.Position, metres).Where(p => p == s || IsSameParty(s, p)).ToList();
             if (party.Count > 0) await CastExtraOnAlliesAsync(s, heal.Row, party);
             if (Now + 1000 <= ends) _loop.ScheduleLegacy(TimeSpan.FromSeconds(1), TickAsync, "hymn of devotion");
         }
