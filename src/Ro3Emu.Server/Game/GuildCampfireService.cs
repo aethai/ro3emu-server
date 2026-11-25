@@ -184,7 +184,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
     private bool Open(GameSession session) => Eligible(session) && _schedule.IsOpen(116);
 
     /// <summary>A guild member who may take part in DailyActivity 116 (Lv, function 1321), at any hour.</summary>
-    private bool Eligible(GameSession session) => session.ActivitiesReady && GuildId(session) != null && session.Progress != null
+    private bool Eligible(GameSession session) => session.Activities.ActivitiesReady && GuildId(session) != null && session.Progress != null
         && _data.Row("DailyActivityConfig", 116) is { } daily
         && session.Progress.Level >= GameData.Int(daily, "_iiLv")
         && _functions.IsOpen(session, Function);

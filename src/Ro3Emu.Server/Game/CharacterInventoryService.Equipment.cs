@@ -56,7 +56,7 @@ public sealed partial class CharacterInventoryService
 
     internal JsonElement? ResonanceRow(GameSession session, string table)
     {
-        var levels = table.StartsWith("Strengthen") ? session.EquipLevels.Strength : session.EquipLevels.Refine;
+        var levels = table.StartsWith("Strengthen") ? session.Profile.EquipLevels.Strength : session.Profile.EquipLevels.Refine;
         JsonElement? best = null;
         foreach (var (row, grids, level) in ResonanceRows(table))
         {
@@ -67,7 +67,7 @@ public sealed partial class CharacterInventoryService
 
     internal int Resonance(GameSession session, string table) => ResonanceRow(session, table) is { } row ? (int)GameData.Int(row, "_iEffectLev") : 0;
 
-    internal void SaveEquipLevels(GameSession session) => roles.SaveEquipLevels(session.Role!.Id, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.EquipLevels));
+    internal void SaveEquipLevels(GameSession session) => roles.SaveEquipLevels(session.Role!.Id, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.Profile.EquipLevels));
 
     /// <summary>After a grid level change: 5007 and the changed properties.</summary>
     internal async Task EquipLevelsChangedAsync(GameSession session, bool persist = true)
@@ -223,13 +223,13 @@ public sealed partial class CharacterInventoryService
             return;
         }
 
-        var plans = session.EquipmentPlans.Clone();
+        var plans = session.Profile.EquipmentPlans.Clone();
         var active = plans.EquipPlans[plans.CurrentEquipPlan];
         active.ItemsEquipGrid.Clear();
         foreach (var worn in staged.Where(i => i.Grid > 0 && i.Pack == 2 && i.Grid <= 8)) active.ItemsEquipGrid[worn.Grid] = worn.Guid;
         await CommitCharacterAsync(session, "equip", nextItems: staged,
             blobs: new Dictionary<string, byte[]> { ["equip_plans"] = plans.ToByteArray() },
-            apply: () => session.EquipmentPlans = plans);
+            apply: () => session.Profile.EquipmentPlans = plans);
         // Bag first, then equipment (its increment must reach the client before the reply).
         await SyncItemsAsync(session);
         await SyncAsync(session, EquipSync, BuildEquip(session));

@@ -21,7 +21,7 @@ public sealed partial class PetCombatService
         DamageAdjusters.Subscribe((s, target, _, _, damage) => GuardianControlledDamage(s, GuardianControlTarget(target), damage), order: CombatService.GuardianHookOrder);
     }
 
-    private Task SyncGuardianWheelAsync(GameSession session) => session.SkillPlans == null
+    private Task SyncGuardianWheelAsync(GameSession session) => session.Combat.SkillPlans == null
         ? Task.CompletedTask : _skills.SyncAsync(session);
 
     internal async Task CastGuardianAsync(GameSession s, CastSkillReq req)
@@ -38,7 +38,7 @@ public sealed partial class PetCombatService
 
     private int GuardianError(GameSession s, GuardianPetRules.Skill skill, CastSkillReq req)
     {
-        if (s.Role == null || s.Progress == null || s.Dead || s.SceneLoading || s.SceneRecoveryRequired
+        if (s.Role == null || s.Progress == null || s.Dead || s.SceneLoading || s.WorldState.SceneRecoveryRequired
             || !_sessions.Contains(s) || s.Attachment?.Cancelled == true) return ErrorCodes.SkillBadState;
         if (!_pets.GuardianEquipped(s, skill)) return ErrorCodes.SkillNotLearned;
         if (req.OpUnitId != 0 && req.OpUnitId != s.Role.Id) return ErrorCodes.SkillRequirements;
@@ -53,7 +53,7 @@ public sealed partial class PetCombatService
         // These families have no configured cost. Never let an extra cast bypass an unfamiliar cost shape.
         if (GuardianPetRules.HasCost(skill.Active) || GuardianPetRules.HasCost(skill.Effect)) return ErrorCodes.SkillRequirements;
         int group = (int)GameData.Int(skill.Active, "_iSkillID"), mode = (int)GameData.Int(skill.Active, "_iMode");
-        if (Math.Max(s.SkillCds.GetValueOrDefault(group), s.SkillModeCds.GetValueOrDefault((group, mode))) > Now)
+        if (Math.Max(s.Combat.SkillCds.GetValueOrDefault(group), s.Combat.SkillModeCds.GetValueOrDefault((group, mode))) > Now)
             return ErrorCodes.SkillCooldown;
         return skill.Kind is GuardianPetRules.Kind.Damage or GuardianPetRules.Kind.Debuff
             ? ValidateTarget(s, GuardianPetRules.TargetRow(skill), req, s.Position, 0) : 0;
@@ -223,7 +223,7 @@ public sealed partial class PetCombatService
             maximum = (int)Numbers(skill.Active, "_kDescData").ElementAtOrDefault(4);
         }
         // (inferred) Ally means non-hostile player; owner first, then distance/ID. Original team scope is unverified.
-        return [.. _world.PlayersIn(s.WorldScene).Where(p => p.Role != null && !p.Dead && !p.SceneLoading && !p.SceneRecoveryRequired
+        return [.. _world.PlayersIn(s.WorldScene).Where(p => p.Role != null && !p.Dead && !p.SceneLoading && !p.WorldState.SceneRecoveryRequired
                 && !IsPlayerHostile(s, p) && !IsPlayerHostile(p, s) && !CanPlayerHit(s, p) && !CanPlayerHit(p, s)
                 && Distance(s.Position, p.Position) <= radius)
             .OrderBy(p => p == s ? 0 : 1).ThenBy(p => Distance(s.Position, p.Position))

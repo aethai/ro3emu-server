@@ -41,7 +41,7 @@ public sealed partial class TaskDomainService
         int accepted = 0;
         // The current game day began at the daily epoch (05:00, DailyActivityService); 0 before the first reconcile.
         // TaskInfo.startTime is the server clock's acceptance time.
-        long today = (session.Daily?.DailyEpoch ?? 0) * 1000;
+        long today = (session.Activities.Daily?.DailyEpoch ?? 0) * 1000;
         foreach (var (id, son) in ActivityTasks())
         {
             if (!groups.TryGetValue((SeasonTreasureType, son), out bool daily)) continue;

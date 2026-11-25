@@ -11,13 +11,42 @@ namespace Ro3Emu.Server.Game;
 /// One client on the game gate. Server -> client traffic is Phonest EntityMessage on gate index 2:
 /// named RPCs (methodName + msgpack values concatenated without an array header) or raw game messages
 /// (no methodName, parameters = uint32 LE msgId ‖ romsg protobuf).
+/// Feature-specific state lives in the domain state containers (<see cref="Combat"/>, <see cref="Profile"/>,
+/// <see cref="Season"/>, <see cref="Activities"/>, <see cref="Instances"/>, <see cref="Social"/>,
+/// <see cref="WorldState"/>) or in service-owned <see cref="SessionSlot{T}"/> slots.
 /// </summary>
 public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, TimeProvider? clock = null)
 {
+    private object?[] _slots = [];
+
     internal TimeProvider Clock { get; } = clock ?? TimeProvider.System;
     internal long NowMs => Clock.GetUtcNow().ToUnixTimeMilliseconds();
     internal long NowSec => Clock.GetUtcNow().ToUnixTimeSeconds();
     internal DateTime UtcNow => Clock.GetUtcNow().UtcDateTime;
+
+    /// <summary>Gets the service-owned state attached to this session for <paramref name="slot"/>, or null.</summary>
+    public T? GetSlot<T>(SessionSlot<T> slot) where T : class =>
+        (uint)slot.Index < (uint)_slots.Length ? (T?)_slots[slot.Index] : null;
+
+    /// <summary>Gets or creates the service-owned state attached to this session for <paramref name="slot"/>.</summary>
+    public T GetOrCreateSlot<T>(SessionSlot<T> slot) where T : class, new()
+    {
+        if ((uint)slot.Index < (uint)_slots.Length && _slots[slot.Index] is T existing) return existing;
+        var created = new T();
+        SetSlot(slot, created);
+        return created;
+    }
+
+    /// <summary>Attaches or clears service-owned state on this session for <paramref name="slot"/>.</summary>
+    public void SetSlot<T>(SessionSlot<T> slot, T? value) where T : class
+    {
+        if (slot.Index >= _slots.Length)
+        {
+            if (value == null) return;
+            Array.Resize(ref _slots, Math.Max(slot.Index + 1, _slots.Length == 0 ? 8 : _slots.Length * 2));
+        }
+        _slots[slot.Index] = value;
+    }
 
     /// <summary>The current game transport. A silent reconnect (ReconnectService) swaps it on the loop; frames and
     /// closes of a swapped-out channel are ignored by the gate.</summary>
@@ -82,22 +111,20 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
         RolePositionReady = false;
         GuildOnlinePublished = false;
         Progress = null;
-        Daily = null; DailyRows = null; DailyReady = false;
-        WildAfk = null; Guild = null; Tasks = null;
-        Achievements = null; AchievementRuntime = null; AdventureGroupRole = null;
-        Library = null; CardLibraryReadyAttachment = null; GrowthClass = null;
-        NewActivities = null; ActivitiesReady = false;
+        Guild = null; Tasks = null;
+        CardLibraryReadyAttachment = null;
         VisibleConches.Clear(); PlayingPillar = null; PendingConch = 0; ConchStartPosition = null;
-        Dungeons = null; DungeonAttempt = null;
-        Tower = null; TowerAttempt = null;
-        Training = null; EventFaction = 0;
-        TerritoryWars = null; TerritoryBattle = null; SiegeBattle = null; TerritoryEscort = null;
-        Defense = null; TimedBattle = null;
-        LifeJob = null; Restrictions = null;
+        DungeonAttempt = null;
         Items = []; Pets = null;
         WorldState = new();
+        Profile.ClearRoleLoadState();
+        Season.ClearRoleLoadState();
+        Activities.ClearRoleLoadState();
+        Instances.ClearRoleLoadState();
+        SessionSlotRegistry.ClearRoleSlots(_slots);
         Power = null; PowerPublishedMs = 0;
     }
+
     private CancellationTokenSource _pendingCharacterIntents = new();
     internal CancellationToken PendingCharacterIntent => _pendingCharacterIntents.Token;
     // Only speculative, not-yet-locked grants use this pulse. Admitted mutations keep their durability.
@@ -109,6 +136,12 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     }
 
     public WorldSessionState WorldState { get; set; } = new();
+    public SessionCombatState Combat { get; } = new();
+    public SessionProfileState Profile { get; } = new();
+    public SessionSeasonState Season { get; } = new();
+    public SessionActivityState Activities { get; } = new(clock ?? TimeProvider.System);
+    public SessionInstanceState Instances { get; } = new();
+    public SessionSocialState Social { get; } = new();
 
     /// <summary>One map transition per selected session, including asynchronous leave hooks.</summary>
     public SemaphoreSlim SceneTransitionGate { get; } = new(1, 1);
@@ -132,20 +165,15 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>One outstanding 70010/30005 handoff. Generation fences continuations; the wire has no nonce.</summary>
     public long SceneGeneration { get; set; }
     public SceneHandoff? Handoff { get; set; }
-    public bool SceneRecoveryRequired { get; set; }
 
     /// <summary>Last position the client reported (WALK is client-authoritative), and the facing in degrees.</summary>
     public Romsg.Vec3 Position { get; set; } = new();
-
-    /// <summary>Position before the latest WALK, to tell walks from jumps.</summary>
-    public Romsg.Vec3 PreviousPosition { get; set; } = new();
 
     public float Face { get; set; }
 
     /// <summary>Speed attribute (idx 113) of the role; the client moves at Speed/100 units per second.</summary>
     public long Speed { get; set; } = RoleSessionService.DefaultSpeed;
 
-    public DateTime PositionSavedUtc { get; set; }
     /// <summary>C/D 18 lazy public-position state (PositionPersistence).</summary>
     internal Persistence.LazyRolePart.State? PositionPart { get; set; }
     /// <summary>C/D 17: the role's client settings, merged in memory and written lazily (SettingsPersistence).</summary>
@@ -159,8 +187,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>One process run and dead-to-alive cycle identify retries of the same paid revival.</summary>
     internal string? ReviveDeathSource { get; set; }
 
-    /// <summary>The 31029 lock target and the running auto-attack (CombatService).</summary>
-    public long LockTarget { get; set; }
+    /// <summary>The running auto-attack (CombatService).</summary>
     public AttackLoop? Attack { get; set; }
 
     /// <summary>Authoritative cast generation; delayed effects cannot outlive an interrupted/replaced cast.</summary>
@@ -168,48 +195,22 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>The running Skill Bar Lineup (CombatService.StartLineup); pressing the Skill Bar again replaces it.</summary>
     internal object? LineupRun { get; set; }
     public SemaphoreSlim SkillCastGate { get; } = new(1, 1);
-    public List<SkillObject> SkillObjects { get; } = [];
-    public Dictionary<(int Group, int Mode), long> SkillModeCds { get; } = [];
-    public CombatService.ProtocolState SkillProtocol { get; set; } = new();
 
-    /// <summary>Status bits (property 2701, bit 15 = fighting) and when the player last dealt or took a hit.</summary>
+    /// <summary>Status bits (property 2701, bit 15 = fighting).</summary>
     public long StatusBits { get; set; }
-    public long LastCombatMs { get; set; }
-    /// <summary>No natural HP/SP regeneration before this server ms (CombatService.RegenAsync). Only tests set it, to keep
-    /// the five-second regeneration out of exact HP checks; fighting does not pause it.</summary>
+    /// <summary>No natural HP/SP regeneration before this server ms (CombatService.RegenAsync). Only tests set it.</summary>
     internal long NoRegenUntilMs { get; set; }
 
-    /// <summary>Active buffs (BuffService) and cooldown ends in server ms: skills by group id, items by id, item share groups.</summary>
+    /// <summary>Active buffs (BuffService).</summary>
     public List<ActiveBuff> Buffs { get; } = [];
     /// <summary>The role's kept buffs are on it, so a logout may save over them (BuffService.Offline).</summary>
     internal bool OfflineBuffsLoaded { get; set; }
-    /// <summary>Buff-owned portions of 2701/2702/2711; 2701 also contains CombatService's fighting bit.</summary>
-    public ulong BuffStatusBits { get; set; }
-    public ulong ForbiddenBits { get; set; }
-    public ulong StaggerBits { get; set; }
-    public HashSet<int> ForbiddenOrdinals { get; } = [];
-    /// <summary>Transient configured energy meters; BuffService sends each change as 31334.</summary>
-    public Dictionary<int, PlayerEnergyState> Energy { get; } = [];
-    public int EnergyCareer { get; set; }
-    /// <summary>EnergyConfig._iBelongMount mounts owned when the meters were last reconciled (BuffService.Energy).</summary>
-    public int EnergyMounts { get; set; }
-    /// <summary>31134/31135 lethal-hit choice; only an eligible active Osiris buff may create it.</summary>
-    public ImmuneDeathOffer? ImmuneDeathOffer { get; set; }
-    public Dictionary<long, long> BuffEffectCds { get; } = [];
-    public long ImmuneRecoveryUntilMs { get; set; }
-    public int ImmuneRecoveryPercent { get; set; }
-    public Dictionary<int, long> SkillCds { get; } = [];
-    public Dictionary<int, long> ItemCds { get; } = [];
-    public Dictionary<int, long> ItemGroupCds { get; } = [];
 
     /// <summary>Current HP / SP (null = full); maxima come from the stat sheet.</summary>
     public long? CurrentHp { get; set; }
     public long? CurrentSp { get; set; }
 
-    /// <summary>GM override added to the speed attribute (113), not saved (!speed).</summary>
-    public long SpeedBonus { get; set; }
-
-    /// <summary>CharacterService.Stats' memo and the loop work item a combat path allowed it in (see there).</summary>
+    /// <summary>CharacterService.Stats' memo and the loop work item a combat path allowed it in.</summary>
     internal object? StatsMemo { get; set; }
     internal long StatsReuseSerial { get; set; } = -1;
 
@@ -223,9 +224,6 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>Between sending 70010 and the client's 30005: walks still refer to the old map and are dropped.</summary>
     public bool SceneLoading { get; set; }
 
-    /// <summary>Time of the last accepted walk (speed check).</summary>
-    public DateTime LastWalkUtc { get; set; }
-
     /// <summary>The distance the walk check still lets this client report (SceneService.AcceptWalkAsync).</summary>
     internal WalkAllowance WalkAllowance { get; } = new();
     /// <summary>A swing a move cancelled holds the next normal attack until this time (CombatService.CancelCastAsync).</summary>
@@ -236,7 +234,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>A 31112 carries this player from <paramref name="start"/> to <paramref name="end"/> in <paramref name="moveMs"/>: the server is at the end at once.</summary>
     internal void CarryBySkill(Romsg.Vec3 start, Romsg.Vec3 end, long nowMs, int moveMs)
     {
-        PreviousPosition = start.Clone();
+        WorldState.PreviousPosition = start.Clone();
         Position = end.Clone();
         Carry = new SkillCarry(start.Clone(), end.Clone(), nowMs, nowMs + Math.Max(1, moveMs));
     }
@@ -250,217 +248,47 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>The same for flight moves (WorldCoreService.FlyMoveAsync), at the flight speed.</summary>
     internal WalkAllowance FlightAllowance { get; } = new();
 
-    /// <summary>WalkReq.dir of the last accepted walk: degrees, 0 = +z, clockwise toward +x.</summary>
-    public float WalkDir { get; set; }
-
-    /// <summary>The last accepted walk was a move, not a stop: the client is somewhere along it now.</summary>
-    public bool Walking { get; set; }
-
     /// <summary>Level, exp, stats, currencies of the role in play (CharacterService).</summary>
     public RoleProgress? Progress { get; set; }
 
-    /// <summary>Last successful skill-plan switch; the plans themselves use the shared DBSkillData below.</summary>
-    public DateTime SkillPlanSwitchUtc { get; set; }
-
     /// <summary>Quest state (AUTO_SYNC 5027), loaded at login by TaskService.</summary>
     public Romsg.DBTaskInfo? Tasks { get; set; }
-    public TaskRuntimeState TaskRuntime { get; set; } = new();
-    public bool InCutScene
-    {
-        get => TaskRuntime.InCutScene;
-        set
-        {
-            if (value && !TaskRuntime.InCutScene) CutSceneSinceMs = NowMs;
-            TaskRuntime.InCutScene = value;
-        }
-    }
-    /// <summary>When this login's cutscene began; 0 when one was only restored from the saved state.</summary>
-    public long CutSceneSinceMs { get; private set; }
 
     /// <summary>Serializes quest transitions and source replay independently of the inventory transaction lock.</summary>
     public SemaphoreSlim TaskLock { get; } = new(1, 1);
 
-    /// <summary>Achievements / Trophy (AUTO_SYNC 5019, role blobs "achievements" and "achievement_runtime"); AchievementService.</summary>
-    public Romsg.DBRoleAchievementInfo? Achievements { get; set; }
-
-    /// <summary>The role's own Adventure Group values (role blob "adventure_group", AUTO_SYNC 5068); AdventureGroupService.</summary>
-    public Romsg.DBAdventureGroupRelationData? AdventureGroupRole { get; set; }
-    public AchievementService.RuntimeState? AchievementRuntime { get; set; }
-
     /// <summary>Serializes achievement progress and claims (taken before, never inside, the character lock).</summary>
     public SemaphoreSlim AchievementLock { get; } = new(1, 1);
 
-    /// <summary>To-Do rows and shared stage claims (5004/5059), loaded before quest login.</summary>
-    public DailyActivityService.DailyState? Daily { get; set; }
-    public Romsg.DBDailyActivityInfo? DailyRows { get; set; }
-    public bool DailyReady { get; set; }
-    /// <summary>Derived 5004 schedule refresh, independent of persisted progress/reset epochs.</summary>
-    public long DailyWindowRefreshAt { get; set; }
-    public long DailyWindowSampledAt { get; set; }
     /// <summary>A reconciliation from the paced tick is queued (DailyActivityService.Tick).</summary>
     internal bool DailyReconcileQueued { get; set; }
 
-    /// <summary>Per-role seasonal activities (5013); the source lock serializes claims independently of inventory.</summary>
-    public Romsg.DBNewActivityInfo? NewActivities { get; set; }
-    public ActivityRuntimeState ActivityRuntime { get; set; } = new();
     public SemaphoreSlim ActivityGate { get; } = new(1, 1);
     internal HashSet<long> VisibleConches { get; } = [];
     internal AdventureActivityService.PillarAttempt? PlayingPillar { get; set; }
     internal long ConchCycle { get; set; }
     internal long PendingConch { get; set; }
     internal Romsg.Vec3? ConchStartPosition { get; set; }
-    public bool ActivitiesReady { get; set; }
-    /// <summary>The client has the pass challenge rows (Ro3Emu.ClientHooks.PassChallenges sent 77014): 5027 may carry them.</summary>
-    public bool PassChallengeRows { get; set; }
-    public PronteraDefenseService.State? Defense { get; set; }
-    public TimedBattleService.State? TimedBattle { get; set; }
-    public int EventFaction { get; set; }
-    /// <summary>EntityBase.teamId on this player's unit: its party (TeamService.SyncUnitTeamAsync), 0 when solo.</summary>
-    public long UnitTeamId { get; set; }
-    public Romsg.DBTrainingGroundInfo? Training { get; set; }
-    public long? ActivityServerDay { get; set; }
-    public Romsg.DBLotteryData? Lottery { get; set; }
-    public long LotteryDay { get; set; }
-
-    /// <summary>Finished tutorial guides (AUTO_SYNC 5055), loaded at login by GuideService.</summary>
-    public Romsg.DBGuideInfo? Guides { get; set; }
-
-    /// <summary>Emote favourites, unlocks and idle emote (5006, role blob "emoji_play"); EmojiService.</summary>
-    public Romsg.DBEmojiPlayInfo? EmojiPlay { get; set; }
-
-    /// <summary>Chat emoticons unlocked by items (5041, role blob "emoji_info"); EmojiService.</summary>
-    public Romsg.DBEmojiInfo? EmojiInfo { get; set; }
-
-    /// <summary>Tavern Star Power, active days and today's time in a room (5043, role blob "barroom"); TavernService.</summary>
-    public TavernService.RoleState? Tavern { get; set; }
-
-    /// <summary>Profile card presets and 620 item unlocks (5016, role blob "personal"; other unlockInfos are derived); PersonalService.</summary>
-    public Romsg.DBPersonalInfo? Personal { get; set; }
-
-    /// <summary>Chat cosmetics unlocked by items and the worn choices (role blob "social_outfit"; 5044 lays them over the
-    /// configuration's defaults); SocialOutfitService.</summary>
-    public Romsg.DBSocialOutfit? SocialOutfit { get; set; }
-
-    /// <summary>The emote or sitting in progress (state 17 Prepare or 14 Play); runtime only, gone at logout.</summary>
-    public EmojiService.Emote? Emote { get; set; }
-
-    /// <summary>Last accepted emote request (PerformanceConfig._iPerformanceCD).</summary>
-    public long LastEmoteRequestMs { get; set; }
 
     /// <summary>Owned pet roster and plans (AUTO_SYNC 5017).</summary>
     public Romsg.DBPetInfo? Pets { get; set; }
 
-    /// <summary>Login prerequisites (5027/5017) must arrive before quest-gated 5056, including automatic quest rewards.</summary>
-    public bool DeferFunctionSync { get; set; }
-    /// <summary>
-    /// Role selection holds 5027 until every owner has run its login changes (the day reset accepts the day's
-    /// tracking quests). A 5027 increment before the first scene made the client's task handler refresh NPC
-    /// sprites with no current map (LC_MapDataHelper.GetAllNPCData nil index on the first login after 05:00);
-    /// one full 5027 at the end of the data phase carries those quests like any other login.
-    /// </summary>
-    public bool DeferTaskSync { get; set; }
     /// <summary>The card source has been loaded for this exact attachment, not a previous role/select.</summary>
     internal Ownership.AttachmentLease? CardLibraryReadyAttachment { get; set; }
 
-    /// <summary>Transient deployed actor; visibility is owned by World, never persisted with the roster.</summary>
-    public PetFollowerActor? PetActor { get; set; }
-
-    /// <summary>Card collection (AUTO_SYNC 5057), loaded at login by CardService.</summary>
-    public Romsg.DBLibraryInfo? Library { get; set; }
-    /// <summary>Persisted card socket selections (AUTO_SYNC 5026).</summary>
-    public Romsg.DBStorageHoleInfo? CardPlans { get; set; }
-
-    public ShopService.ShopState? Shop { get; set; }
-
-    /// <summary>Mount ownership/selection, wardrobe, Divine Totem and Build presets (5012/5034/5032/5008).</summary>
+    /// <summary>Mount ownership/selection (5012).</summary>
     public Romsg.DBMountsInfo? Mounts { get; set; }
-    public MountService.SavedState MountState { get; set; } = new();
 
-    /// <summary>Leased Special Class Items (5002, role blob "career_special"); CareerSpecialService.</summary>
-    public Romsg.DBCareerSpecial? CareerSpecial { get; set; }
-
-    /// <summary>The title rank (role blob "title", 5031); TitleService.</summary>
-    public Romsg.DBTitleInfo? TitleInfo { get; set; }
-
-    /// <summary>Astral Level stars and Star Cores (role blob "paragon", runegroup only; level and EXP are progress
-    /// columns); ParagonService.</summary>
-    public Romsg.DBParagonLevel? Paragon { get; set; }
-
-    /// <summary>Valhalla Trials Blessing statue (role blob "heroic_spirit"); ValhallaService. Cleared layers live in <see cref="Dungeons"/>.</summary>
-    public Romsg.DBOdinStatue? OdinStatue { get; set; }
-
-    /// <summary>The layer of the last admitted Valhalla challenge (5046 latestChallengeId; the client never reads it).</summary>
-    public long ValhallaLatest { get; set; }
-
-    /// <summary>Monster Hunt counters and claims (5053, role blob "area_concur"); MonsterHuntService.</summary>
-    public Romsg.DBAreaConcurInfo? AreaConcur { get; set; }
-    /// <summary>The bytes of <see cref="AreaConcur"/> as stored: a kill's staged write checks them in its transaction.</summary>
-    public byte[] AreaConcurPersisted { get; set; } = [];
-    /// <summary>A committed kill changed the counters; the 5053 sync follows the kill.</summary>
-    public bool AreaConcurChanged { get; set; }
-
-    /// <summary>Growth Classroom claimed rank rewards (role blob "growth_class", only rankReward); GrowthClassService.</summary>
-    public Romsg.DBGrowthClassInfo? GrowthClass { get; set; }
-
-    /// <summary>Seven-Day Goal tasks, score and claims (5049, role blob "first_heart"); FirstHeartService.</summary>
-    public Romsg.DBFirstHeartTaskActivityData? FirstHeart { get; set; }
-
-    /// <summary>The leased items' PendantConfig ids (EntityBase.pendantInfo), derived from <see cref="CareerSpecial"/>.</summary>
-    public int[] CareerPendants { get; set; } = [];
-    public int CareerMountPendant { get; set; }
-    public Romsg.DBWardRobeInfo? Wardrobe { get; set; }
-    public Romsg.DBTotemInfo? Totems { get; set; }
-    public string TotemRefineEpoch { get; set; } = "";
-    public Romsg.DBGenre? Genre { get; set; }
-    public Romsg.DBSkillData? SkillPlans { get; set; }
     /// <summary>The normal attack the last skill sync put on the wheel for the ridden battle mount (0 for the career's own).</summary>
     internal int WheelAttack { get; set; }
     /// <summary>The follow-up statuses (SkillService.FollowUps) the last skill sync showed on the wheel.</summary>
     internal string FollowUpsShown { get; set; } = "";
-    public DateTime TotemSwitchUtc { get; set; }
-    /// <summary>5063 personal pre-buy counters and joined auction history.</summary>
-    public Romsg.DBAuction? Auction { get; set; }
-
-    /// <summary>5033 preferences and market counters; offers live in durable escrow, not this dataset.</summary>
-    public Romsg.DBUserTradeInfo? Trade { get; set; }
-    /// <summary>5058 world-stall metadata. The actual stock travels in 33408/33411.</summary>
-    public Romsg.DBStallsInfo? Stalls { get; set; }
-    public long ViewedStall { get; set; }
-    public long ViewedSystemStall { get; set; }
 
     /// <summary>5047 role view, rebuilt from the exclusive guild membership index at login.</summary>
     public Romsg.DBRoleGuildInfo? Guild { get; set; }
 
-    /// <summary>Spirit Tower progress (5065), including four party slots</summary>
-    public Romsg.DBClimTower? Tower { get; set; }
-
-    public TowerService.Attempt? TowerAttempt { get; set; }
-
-    /// <summary>Ordinary dungeon progress/allowances (5062) and the current shared attempt.</summary>
-    public DungeonService.State? Dungeons { get; set; }
-    public long DungeonSyncMinute { get; set; }
+    /// <summary>Current shared dungeon attempt.</summary>
     public DungeonService.Attempt? DungeonAttempt { get; set; }
-    public GuildChallengeService.PersonalState? GuildChallenge { get; set; }
-
-    /// <summary>GM test aid only: this role session may start a multi-dungeon match alone. Never persisted.</summary>
-    public bool DungeonSoloMatch { get; set; }
-
-    /// <summary>GM panel GmPlayerAsset openallfunc: every FunctionConfig function counts as open. This role session only (inferred).</summary>
-    public bool GmAllFunctionsOpen { get; set; }
-
-    /// <summary>Territory war role counters and the shared, guild-qualified battle instance.</summary>
-    public TerritoryWarsService.RoleState? TerritoryWars { get; set; }
-    public TerritoryWarsService.Battle? TerritoryBattle { get; set; }
-    public TerritoryWarsService.SiegeRun? SiegeBattle { get; set; }
-    public TerritoryEscortService.RoleState? TerritoryEscort { get; set; }
-    public bool TerritoryMinimapOpen { get; set; }
-
-    /// <summary>Durable Soul Echo plans (AUTO_SYNC 5005) and attained power.</summary>
-    public EmblemService.EmblemState Emblems { get; set; } = new();
-
-    /// <summary>Current active Soul Echo plan's season score (power protocol).</summary>
-    public long EmblemPower { get; set; }
-    public DateTime EmblemPlanSwitchUtc { get; set; }
 
     /// <summary>Last published role power (PowerService, 31502/31503/5066); null until this role's login publish.</summary>
     public PowerService.Snapshot? Power { get; set; }
@@ -469,89 +297,30 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>Fills the stored plan power of 5007/5025/5026/5067 before the dataset is diffed (PowerService).</summary>
     internal Action<uint, IMessage>? PlanPowers { get; set; }
 
-    /// <summary>Durable talent plans and oath (AUTO_SYNC 5050), loaded for the selected role.</summary>
-    public Romsg.DBSeasonTalent? SeasonTalent { get; set; }
-
-    /// <summary>Season page claims/honor (5022) and grid refinement (5023), selected-role state.</summary>
-    public Romsg.DBSeasonPage? SeasonPage { get; set; }
-    public Romsg.DBSeasonRefine? SeasonRefine { get; set; }
-
     /// <summary>Season/playbook captured at role load, then advanced with its 5021/82708 clock notifications.</summary>
     public Romsg.SeasonState? SeasonState { get; set; }
 
-    /// <summary>MG_Lifejob: persisted profession state and the restriction-backed vigor balance.</summary>
-    public Romsg.DBLifeJobInfo? LifeJob { get; set; }
-    public Romsg.DBRestrictInfo? Restrictions { get; set; }
-    public LifeJobService.RuntimeState LifeRuntime { get; set; } = new();
-
-    /// <summary>Current playbook and delivered tasks permit this role's purchased talent attributes.</summary>
-    public bool TalentEffectsEnabled { get; set; }
-
-    /// <summary>The active talent plan's skill parameter modifiers, with the weapon and the buff group each needs
-    /// (SeasonTalentService).</summary>
+    /// <summary>The active talent plan's skill parameter modifiers (SeasonTalentService).</summary>
     internal IReadOnlyList<(long Weapon, long Buff, SkillParameterRules.Modifier Modifier)> TalentSkillModifiers { get; set; } = [];
-
     /// <summary>The skill tuples of the talents' armed next-cast charges (TalentProcs.Charges).</summary>
     internal IReadOnlyList<SkillParameterRules.Modifier> TalentChargeModifiers { get; set; } = [];
-
-    /// <summary>The learned passives' skill tuples with the weapons each needs (CombatService.PassiveModifiers),
-    /// refreshed with 31132.</summary>
+    /// <summary>The learned passives' skill tuples with the weapons each needs (CombatService.PassiveModifiers).</summary>
     internal IReadOnlyList<(long[] Weapons, SkillParameterRules.Modifier Modifier)> PassiveSkillModifiers { get; set; } = [];
-
     /// <summary>The active talent plan's Buff(2) rows with their effect's _kDescData (TalentProcs).</summary>
     internal IReadOnlyList<(long Buff, string[] Description)> TalentProcBuffs { get; set; } = [];
-
     /// <summary>The active talent plan's changes to other buffs' values (BuffConfig._kBuffAttributeList, op 12).</summary>
     internal IReadOnlyList<SeasonTalentService.BuffAttribute> TalentBuffAttributes { get; set; } = [];
 
-    /// <summary>Last accepted 83552 switch in this session (PublicParamConfig.SchemeCD).</summary>
-    public DateTime TalentPlanSwitchUtc { get; set; }
-
-    public EquipLevels EquipLevels { get; set; } = new();
-
-    /// <summary>5007 plan references/names/current index; instances remain exclusively in Items.</summary>
-    public Romsg.DBEquipInfo EquipmentPlans { get; set; } = new();
-
-    /// <summary>5009 autoDecomposeSetting, loaded before the first item sync.</summary>
-    public Romsg.AutoDecomposeSetting AutoDecompose { get; set; } = new();
-
-    /// <summary>Durable quick-use, medicine, ammunition and shortcut selections (5009).</summary>
-    public RoleBagState BagState { get; set; } = new(null);
-
-    /// <summary>Durable attribute allocations and names for every 5067 stat plan.</summary>
-    public StatPlanState StatPlans { get; set; } = new(null);
-
-    /// <summary>31054 SKILL_SET_AUTO_BATTLE: the client's auto-battle switch.</summary>
-    public bool AutoBattle { get; set; }
-
-    /// <summary>5035 field Bonus Time, daily consumption and drop history; transient activity never survives logout.</summary>
-    public WildAfkService.State? WildAfk { get; set; }
-
-    /// <summary>
-    /// Property list (AoIProperty idx, data, baseData) for ENTITYSELF / AOI bases, kept current by CharacterService.Refresh.
-    /// Base is the stat sheet's pre-percentage part (StatSheet.Base), the value 31008 sends as baseData.
-    /// </summary>
+    /// <summary>Property list (AoIProperty idx, data, baseData) for ENTITYSELF / AOI bases, kept current by CharacterService.Refresh.</summary>
     public (long Id, long Value, long Base)[] EntityProperties { get; set; } = [];
-
-    /// <summary>Property ids already sent in 31008; retained across local Refresh until a zero is sent.</summary>
-    public HashSet<int> SentPropertyIds { get; } = [];
-
-    /// <summary>EntityBase.equipInfo: item ids of equipment grids 1..7.</summary>
-    public long[] EquipLook { get; set; } = [];
 
     /// <summary>Items of the role in play, bag and equipped (CharacterService).</summary>
     public List<InvItem> Items { get; set; } = [];
 
     /// <summary>The last version of each AUTO_SYNC dataset the client got (msg id -> DB object), for AutoSync increments.</summary>
     public Dictionary<uint, Google.Protobuf.IMessage> Synced { get; } = [];
-    /// <summary>The serialized last-sent copy of the large datasets CharacterService keeps packed (see there).</summary>
+    /// <summary>The serialized last-sent copy of the large datasets CharacterService keeps packed.</summary>
     internal Dictionary<uint, byte[]> SyncedPacked { get; } = [];
-
-    /// <summary>Items still marked new in the bag (guidToNew, the red dot).</summary>
-    public HashSet<long> NewItems { get; } = [];
-
-    /// <summary>Last AUTO_SYNC version sent per message id.</summary>
-    public Dictionary<uint, long> SyncVersions { get; } = [];
 
     /// <summary>Serializes changes to the role state (game messages vs. GM commands from the HTTP endpoint).</summary>
     public SemaphoreSlim StateLock { get; } = new(1, 1);
@@ -559,16 +328,13 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     /// <summary>Distinguishes successive ClientAccount entities of one connection (role switching).</summary>
     public int AccountEntitySerial { get; set; }
 
-    /// <summary>Other players this client currently shows (guarded by World's lock). Visibility is directed: a
-    /// client with a lower view cap can show fewer players than see it (<see cref="Observers"/>).</summary>
+    /// <summary>Other players this client currently shows (guarded by World's lock).</summary>
     public HashSet<GameSession> Visible { get; } = [];
 
-    /// <summary>Players whose clients show this one: the reverse of their <see cref="Visible"/> sets. Broadcasts
-    /// about this player (movement, attributes, effects) go to these.</summary>
+    /// <summary>Players whose clients show this one: the reverse of their <see cref="Visible"/> sets.</summary>
     public HashSet<GameSession> Observers { get; } = [];
 
-    /// <summary>Most other players this client shows: its 30005 / 30007 viewMaxCount (min of the quality tier cap
-    /// 39/49/79/99/149 and MaxOnScreenPlayers, LC_TransitionBase), clamped to 1..149.</summary>
+    /// <summary>Most other players this client shows: its 30005 / 30007 viewMaxCount, clamped to 1..149.</summary>
     public int ViewLimit { get; set; } = Maps.World.MaxViewLimit;
 
     /// <summary>Server units (monsters...) this client currently shows.</summary>
@@ -588,9 +354,6 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
             Parameters = ByteString.CopyFrom(buffer.WrittenSpan),
         });
     }
-
-    /// <summary>Chat groups this player joined (guarded by ChatService's lock).</summary>
-    public HashSet<string> ChatGroups { get; } = [];
 
     private bool CanPresent() => Owners?.AllowsPresentation(this) != false
         && (Owners?.Current?.CanPresent(this) ?? true);
@@ -646,8 +409,7 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
         return Channel.SendAsync(GameGateServer.EntityMessageOut, new EntityMessage { Parameters = ByteString.CopyFrom(parameters) });
     }
 
-    /// <summary>Creates the client-side entity ("ClientAccount" before role select, "ClientAvatar" after).
-    /// <paramref name="reconnectInfo"/> (field 8) becomes the client's GameClient.ReconnectInfo.</summary>
+    /// <summary>Creates the client-side entity ("ClientAccount" before role select, "ClientAvatar" after).</summary>
     public Task CreateChannelEntityAsync(string type, string entityId, long channelId, byte[]? reconnectInfo = null)
     {
         var info = new ChannelEntityInfo

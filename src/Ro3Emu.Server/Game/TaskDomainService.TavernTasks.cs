@@ -29,7 +29,7 @@ public sealed partial class TaskDomainService
     internal int AcceptTavernTasks(GameSession session)
     {
         if (TavernTasks().Length == 0 || !_functions.IsOpen(session, TavernFunction)) return 0;
-        long day = (session.Daily?.DailyEpoch ?? 0) * 1000;
+        long day = (session.Activities.Daily?.DailyEpoch ?? 0) * 1000;
         int accepted = 0;
         foreach (long id in TavernTasks())
         {

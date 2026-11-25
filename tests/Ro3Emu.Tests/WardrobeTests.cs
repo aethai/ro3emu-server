@@ -226,7 +226,7 @@ public sealed class WardrobeTests : IAsyncLifetime
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq
         { ItemGuid = session.Items.Single(i => i.Entry == Banquet).Guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
-        Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(Look));
+        Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(Look));
         var same = session.Items.Single(i => i.Entry == SameLook);
         await alice.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = same.Guid, ItemCount = 1 });
         Assert.Equal(ErrorCodes.ShopAppearanceOwned, (await Next(alice, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
@@ -246,7 +246,7 @@ public sealed class WardrobeTests : IAsyncLifetime
         var due = DateTimeOffset.FromUnixTimeMilliseconds(_clock.GetUtcNow().ToUnixTimeMilliseconds() + 1250);
         await loop.InvokeAsync(async () =>
         {
-            var info = session.Wardrobe!.Clone();
+            var info = session.Profile.Wardrobe!.Clone();
             info.AllLightUpAppearances[Head] = new DBAppearanceInfo
             {
                 AppearanceId = Head, OverdueTimeMs = due.ToUnixTimeMilliseconds()
@@ -266,8 +266,8 @@ public sealed class WardrobeTests : IAsyncLifetime
 
         await loop.InvokeAsync(() => { _clock.Set(due.AddTicks(-1)); deadlines.Tick(default); return Task.CompletedTask; });
         await loop.InvokeAsync(() => wardrobe.ReconcileAsync(session)); // former polling oracle, before due
-        Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(Head));
-        Assert.Equal(Head, session.Wardrobe.CurUseAppearances[1]);
+        Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(Head));
+        Assert.Equal(Head, session.Profile.Wardrobe.CurUseAppearances[1]);
 
         await loop.InvokeAsync(() => { _clock.Set(due.AddSeconds(7)); deadlines.Tick(default); return Task.CompletedTask; });
         await Next(alice, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
@@ -275,12 +275,12 @@ public sealed class WardrobeTests : IAsyncLifetime
         await Next(bob, CharacterService.EntityBaseChange, EntityBase.Parser,
             p => p.Uuid == alice.Self!.Uuid && p.NotifyType == EntityBase.Types.NotifyType.WardRobe &&
                  !p.CurUseAppearances.ContainsKey(1));
-        Assert.False(session.Wardrobe!.AllLightUpAppearances.ContainsKey(Head));
-        Assert.False(session.Wardrobe.CurUseAppearances.ContainsKey(1));
-        Assert.False(session.Wardrobe.CurUseAppearanceAttrs.ContainsKey(1));
-        Assert.False(session.Wardrobe.AppearancePlans[1].Appearances.ContainsKey(1));
+        Assert.False(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(Head));
+        Assert.False(session.Profile.Wardrobe.CurUseAppearances.ContainsKey(1));
+        Assert.False(session.Profile.Wardrobe.CurUseAppearanceAttrs.ContainsKey(1));
+        Assert.False(session.Profile.Wardrobe.AppearancePlans[1].Appearances.ContainsKey(1));
         var saved = roles.LoadWardrobe(session.Role!.Id)!;
-        Assert.Equal(session.Wardrobe.ToByteArray(), saved);
+        Assert.Equal(session.Profile.Wardrobe.ToByteArray(), saved);
         await loop.InvokeAsync(() => wardrobe.ReconcileAsync(session));
         Assert.Equal(saved, roles.LoadWardrobe(session.Role.Id));
     }

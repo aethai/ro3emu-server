@@ -58,12 +58,12 @@ public sealed partial class FactionWorldService
             || modes.ValueKind != JsonValueKind.Array || modes.GetArrayLength() == 0) return false;
         long ag = Own(a)?.Id ?? 0, bg = Own(b)?.Id ?? 0;
         if (ag != 0 && ag == bg) return false;
-        int camp = a.TerritoryWars?.Camp ?? LoadRole(a.Role.Id).Camp;
+        int camp = a.Instances.TerritoryWars?.Camp ?? LoadRole(a.Role.Id).Camp;
         return camp == (int)EPvpRoleCampNum.Free || camp == (int)EPvpRoleCampNum.Guild && ag != 0;
     }
 
     /// <summary>The role's territory camp (EPvpRoleCampNum), Peace before its territory state is loaded.</summary>
-    public int WorldCampOf(GameSession s) => s.TerritoryWars?.Camp ?? (int)EPvpRoleCampNum.Peace;
+    public int WorldCampOf(GameSession s) => s.Instances.TerritoryWars?.Camp ?? (int)EPvpRoleCampNum.Peace;
 
     /// <summary>The killer defeated a player of another guild in the territory world (the Faction Quest's 101023
     /// "Defeat players from other guilds"): a WorldHostile pair, both in a guild (inferred).</summary>
@@ -78,8 +78,8 @@ public sealed partial class FactionWorldService
     /// <summary>The territory gate's keys, for a scene load whose hooks write territory state (C/D 15): a world
     /// territory scene, or the loaded instance of the role's territory or siege battle (participant loaded flag).</summary>
     internal Ownership.ReservationKey[] SceneKeys(GameSession s) =>
-        WorldScene(s) || s.TerritoryBattle is { } battle && s.InstanceId == battle.Room.Id
-            || s.SiegeBattle is { } siege && s.InstanceId == siege.Room.Id ? MutationKeys(s) : [];
+        WorldScene(s) || s.Instances.TerritoryBattle is { } battle && s.InstanceId == battle.Room.Id
+            || s.Instances.SiegeBattle is { } siege && s.InstanceId == siege.Room.Id ? MutationKeys(s) : [];
 
     public async Task WorldLoadedAsync(GameSession s)
     {
@@ -462,7 +462,7 @@ public sealed partial class FactionWorldService
                 {
                     if (!victim.Dead || victim.SceneLoading || victim.InstanceId != 0 || victim.LineNumber != 1
                         || !IsWorldTerritory(victim.SceneEntry)) return;
-                    int camp = victim.TerritoryWars?.Camp ?? LoadRole(victim.Role.Id).Camp;
+                    int camp = victim.Instances.TerritoryWars?.Camp ?? LoadRole(victim.Role.Id).Camp;
                     if (Data.Config.PublicParams.Of(_data).TerritoryWorldDeathDropRate is not { } rates
                         || camp < 1 || camp > rates.Length) return;
                     double rate = rates[camp - 1];
@@ -582,7 +582,7 @@ public sealed partial class FactionWorldService
                         await RecoverWorldActivityAfterFaultAsync(pair.Key, occurrence);
                         throw;
                     }
-                    killer.TerritoryWars = role;
+                    killer.Instances.TerritoryWars = role;
                     deliverRole = killer.Role.Id;
                 }
                 else await SaveAsync(next);
@@ -647,7 +647,7 @@ public sealed partial class FactionWorldService
             },
             AsyncCommit = true,
         }) == null) { await Error(s, SubmitDrop, ErrorCodes.Parameter); return; }
-        PublishCommitted(next); s.TerritoryWars = role;
+        PublishCommitted(next); s.Instances.TerritoryWars = role;
         await _character.ItemsChangedAsync(s, false);
         await _guilds.RefreshResourceAsync(guild.Id);
         await Send(s, SubmitDrop, new NullArg());

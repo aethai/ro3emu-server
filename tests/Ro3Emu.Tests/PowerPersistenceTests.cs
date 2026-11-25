@@ -18,7 +18,7 @@ public sealed class PowerPersistenceTests
             using var gate = await CharacterService.Lock(session);
             var before = session.Power;
             var saved = host.Service<RoleStore>().LoadEmblems(session.Role!.Id);
-            session.Emblems.Power = null; // force a record write without changing the computed gameplay score
+            session.Profile.Emblems.Power = null; // force a record write without changing the computed gameplay score
             accounts.BeforeCommitForTest = label =>
             {
                 if (label == "power/record") throw new IOException("Power save failure probe");

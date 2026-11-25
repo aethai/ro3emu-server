@@ -77,7 +77,7 @@ public sealed class TotemEffects : IGameTicker
         && list.ValueKind == JsonValueKind.Array && list.EnumerateArray().Any(x => GameData.Number(x) == category);
     private IEnumerable<(InvItem Item, int Skill, JsonElement Row)> Effective(GameSession s)
     {
-        if (s.Totems?.TotemPlans.TryGetValue(s.Totems.CurrentPlan, out var plan) != true) yield break;
+        if (s.Profile.Totems?.TotemPlans.TryGetValue(s.Profile.Totems.CurrentPlan, out var plan) != true) yield break;
         var equipped = plan.SetUpTotem.Values.Where(g => g != 0)
             .Select(g => s.Items.FirstOrDefault(i => i.Guid == g && TotemService.IsTotem(_data, i.Entry)))
             .OfType<InvItem>().ToArray();

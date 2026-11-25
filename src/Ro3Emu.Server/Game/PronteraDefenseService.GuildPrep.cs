@@ -72,7 +72,7 @@ public sealed partial class PronteraDefenseService
         if (count <= 0 || count > int.MaxValue) { response.Result = ErrorCodes.Parameter; return; }
         if (guild == null) { response.Result = ErrorCodes.NotInGuild; return; }
         if (_character.CountOf(session, SupplyItem) < count) { response.Result = ErrorCodes.ItemsShort; return; }
-        var next = CopyState(session.Defense!);
+        var next = CopyState(session.Instances.Defense!);
         next.ContributionPoint = checked(next.ContributionPoint + count); // one point per supply: inferred.
         int round = RoundAt(now);
         if (round > 0) next.RoundContribution[round] = next.RoundContribution.GetValueOrDefault(round) + count;
@@ -90,7 +90,7 @@ public sealed partial class PronteraDefenseService
                     $"prontera/donate/{open}/{session.Role.Id}/{Guid.NewGuid():N}",
                     [(SupplyItem, count)], [], new { Count = count, next.ContributionPoint, Guild = guild.Id }));
             },
-            Committed = () => session.Defense = next,
+            Committed = () => session.Instances.Defense = next,
         });
         response.Result = committed == null ? ErrorCodes.Unknown : 0;
         if (committed == null) return;
@@ -111,7 +111,7 @@ public sealed partial class PronteraDefenseService
         _prepExp[guild] = checked(_prepExp.GetValueOrDefault(guild) + count);
         if (PrepLevel(_data, _prepExp[guild]).Level != before)
             await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && GuildOf(s) == guild), ApplyPrepBuffAsync);
-        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.ActivitiesReady && GuildOf(s) == guild), NotifyAsync);
+        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady && GuildOf(s) == guild), NotifyAsync);
     }
 
     private long GuildOf(GameSession s) => s.Role is { } role && _guilds.ForRole(role.Id) is { } guild ? guild.Id : 0;

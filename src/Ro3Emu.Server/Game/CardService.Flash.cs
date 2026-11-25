@@ -128,7 +128,7 @@ public sealed partial class CardService
         }
         if (granted != null)
         {
-            await CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone());
+            await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library!.Clone());
             await _character.ItemsChangedAsync(session, stats: false); // 5009 must precede 31469 presentation.
         }
         await session.SendGameAsync(Treasured, new CardTreasuredResp

@@ -346,7 +346,7 @@ internal sealed class VehicleSeats(GameData data, World world, Func<GameSession,
         await world.MoveUnitAsync(unit, movement, except: s);
         foreach (var other in unit.Seats.OfType<GameSession>().Where(p => p != s).ToList())
         {
-            other.PreviousPosition = other.Position;
+            other.WorldState.PreviousPosition = other.Position;
             other.Position = walk.Pos.Clone();
             await world.MoveAsync(other, new WalkReq { Pos = walk.Pos.Clone(), Face = walk.Face, BStop = true, SpeedRate = 1 });
         }

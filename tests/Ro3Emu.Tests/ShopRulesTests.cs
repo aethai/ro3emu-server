@@ -131,6 +131,6 @@ public sealed class ShopRulesTests : IAsyncLifetime
         var bought = await Buy(bot, Daily, 10);
         Assert.Equal(0, bought.Result);
         Assert.Equal(10, bought.BuyTimes);
-        Assert.Equal("20261014", Session(bot).Shop!.Bought[Daily].Period);
+        Assert.Equal("20261014", Session(bot).Social.Shop!.Bought[Daily].Period);
     }
 }

@@ -86,12 +86,12 @@ public sealed partial class TaskService
 
     private long MiscPassive(GameSession s, long[] t) => t[0] switch
     {
-        TTitle => s.TitleInfo == null ? -1 : TitleReached(s.TitleInfo.TitleId, t[1]) ? t[1] : 0,
-        TOnHookTime => s.WildAfk is { } afk ? afk.Info.SumHighMultiplierTime / 60 : -1,
+        TTitle => s.Profile.TitleInfo == null ? -1 : TitleReached(s.Profile.TitleInfo.TitleId, t[1]) ? t[1] : 0,
+        TOnHookTime => s.Activities.WildAfk is { } afk ? afk.Info.SumHighMultiplierTime / 60 : -1,
         TNowMount => s.Mounts == null ? -1 : MountService.Rider(s) == t[2] ? t[1] : 0,
-        TMapAwards => s.AreaConcur?.MapInfo.Values.LongCount(m => m.IsClaimedAward) ?? -1,
-        TAreaAwards => s.AreaConcur?.AreaInfo.Values.Sum(a => a.ClaimedAward.Values.LongCount(c => c)) ?? -1,
-        TMapAward => s.AreaConcur == null ? -1 : s.AreaConcur.MapInfo.GetValueOrDefault(t[1])?.IsClaimedAward == true ? 1 : 0,
+        TMapAwards => s.Activities.AreaConcur?.MapInfo.Values.LongCount(m => m.IsClaimedAward) ?? -1,
+        TAreaAwards => s.Activities.AreaConcur?.AreaInfo.Values.Sum(a => a.ClaimedAward.Values.LongCount(c => c)) ?? -1,
+        TMapAward => s.Activities.AreaConcur == null ? -1 : s.Activities.AreaConcur.MapInfo.GetValueOrDefault(t[1])?.IsClaimedAward == true ? 1 : 0,
         TBranchChosen => s.Tasks == null ? -1 : s.Tasks.SelectBranch.Values.Any(chosen => chosen) ? 1 : 0,
         TWaitSeconds => WaitedSeconds(s, t),
         _ => -1,
@@ -210,7 +210,7 @@ public sealed partial class TaskService
     /// </summary>
     private int AcceptExploreTasks(GameSession session)
     {
-        if (session.NewActivities?.ActivityInfo.Values.Select(a => a.ActivityParam?.WorldExploration)
+        if (session.Activities.NewActivities?.ActivityInfo.Values.Select(a => a.ActivityParam?.WorldExploration)
             .FirstOrDefault(w => w != null) is not { } exploration) return 0;
         _exploreNodes ??= [.. ExploreNodeConfig.All(_data).Where(n => Defs().ContainsKey(n.QuestId))];
         int accepted = 0;

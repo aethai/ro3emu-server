@@ -50,7 +50,7 @@ public sealed partial class CharacterInventoryService
         if (GameData.Int(row, "_iSexNeed") is var sex and not 0 && sex != session.Role!.Sex) return ErrSexNeed;
         if (!ItemMapLimit.Allows(data, session.SceneEntry, row)) return ErrorCodes.ItemUseAreaForbidden;
         var (period, limit) = UseTimesRule(row);
-        if (period != 0 && CurrentUseTimes(session.BagState.Info).GetValueOrDefault(entry) + (long)count > limit)
+        if (period != 0 && CurrentUseTimes(session.Profile.BagState.Info).GetValueOrDefault(entry) + (long)count > limit)
             return ErrUseTimes;
         return 0;
     }
@@ -113,7 +113,7 @@ public sealed partial class CharacterInventoryService
         if (session.Role != null && session.Progress != null) await SyncItemsAsync(session);
     }
 
-    internal bool HasUseTimes(GameSession session) => session.BagState.Info.UseTimes.Count > 1;
+    internal bool HasUseTimes(GameSession session) => session.Profile.BagState.Info.UseTimes.Count > 1;
 
     /// <summary>
     /// A usable ItemConfig row whose server content is its _iAward (MultiverseGroupConfig): no use effect, or only

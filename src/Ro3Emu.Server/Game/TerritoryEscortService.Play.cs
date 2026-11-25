@@ -82,9 +82,9 @@ public sealed partial class TerritoryEscortService
                 ledger.Carts = []; ledger.Cargo = [];
                 ledger.SeasonStart = _clock.SeasonStart; ledger.PlayBook = _clock.PlayBook; ledger.Cycle = _clock.Cycle;
                 resetTransient = true;
-                foreach (var peer in _sessions.All().Where(s => s.Role != null && s.TerritoryEscort != null))
+                foreach (var peer in _sessions.All().Where(s => s.Role != null && s.Instances.TerritoryEscort != null))
                 {
-                    var aligned = JsonSerializer.Deserialize<RoleState>(JsonSerializer.SerializeToUtf8Bytes(peer.TerritoryEscort))!;
+                    var aligned = JsonSerializer.Deserialize<RoleState>(JsonSerializer.SerializeToUtf8Bytes(peer.Instances.TerritoryEscort))!;
                     if (AlignRole(aligned)) alignedRoles.Add((peer, peer.Role!.Id, peer.Attachment, aligned));
                 }
                 changed = true;
@@ -134,7 +134,7 @@ public sealed partial class TerritoryEscortService
                 await CommitAsync(transaction, "reconcile", EscortReconcileSource(_committedLedger, ledger));
                 foreach (var peer in alignedRoles)
                     if (peer.Peer.Role?.Id == peer.RoleId && ReferenceEquals(peer.Peer.Attachment, peer.Attachment))
-                        peer.Peer.TerritoryEscort = peer.State;
+                        peer.Peer.Instances.TerritoryEscort = peer.State;
                 if (resetTransient) { _marks.Clear(); _transferInvites.Clear(); _lastSceneCounts.Clear(); }
             }
         }
@@ -238,7 +238,7 @@ public sealed partial class TerritoryEscortService
         if (g != null)
             foreach (var m in g.Members.Values)
             {
-                var rs = m.RoleId == s.Role!.Id ? s.TerritoryEscort : LoadRole(m.RoleId);
+                var rs = m.RoleId == s.Role!.Id ? s.Instances.TerritoryEscort : LoadRole(m.RoleId);
                 resp.PlayerInfos.Add(new TerritoryWarsEscortPlayerPlayInfo
                 {
                     RoleId = m.RoleId,
@@ -323,9 +323,9 @@ public sealed partial class TerritoryEscortService
 
     private async Task SendScoreAsync(GameSession s)
     {
-        var resp = new TerritoryWarsEscortGuildPlayerScoreRes { Score = s.TerritoryEscort?.ScoreByRound.GetValueOrDefault(Round) ?? 0 };
+        var resp = new TerritoryWarsEscortGuildPlayerScoreRes { Score = s.Instances.TerritoryEscort?.ScoreByRound.GetValueOrDefault(Round) ?? 0 };
         for (int i = 0; i < 5; i++)
-            resp.AwardStates.Add(s.TerritoryEscort?.ClaimedByRound.GetValueOrDefault(Round)?.Contains(i) == true ? 2
+            resp.AwardStates.Add(s.Instances.TerritoryEscort?.ClaimedByRound.GetValueOrDefault(Round)?.Contains(i) == true ? 2
                 : resp.Score >= ScoreThresholds[i] ? 1 : 0);
         await s.SendGameAsync(Score, resp);
     }
@@ -423,12 +423,12 @@ public sealed partial class TerritoryEscortService
                 var p = GetPlay(c.Guild); p.Transported += c.Count; p.FinishedCarts++; AddGuildScore(c.Guild, c.Count);
                 long roleId = s.Role!.Id;
                 var attachment = s.Attachment;
-                var stagedRole = CopyRole(s.TerritoryEscort!);
+                var stagedRole = CopyRole(s.Instances.TerritoryEscort!);
                 stagedRole.ScoreByRound[Round] = checked(stagedRole.ScoreByRound.GetValueOrDefault(Round) + (long)(c.Count * 0.3));
                 SaveRole(roleId, stagedRole, transaction);
                 await CommitAsync(transaction, "cart-submit", $"escort-cart:{Epoch}:{c.Id}:submit", s);
                 if (s.Role?.Id == roleId && ReferenceEquals(s.Attachment, attachment))
-                    s.TerritoryEscort = stagedRole;
+                    s.Instances.TerritoryEscort = stagedRole;
                 accepted = true;
             }
         }
@@ -495,7 +495,7 @@ public sealed partial class TerritoryEscortService
     private async Task ClaimAsync(GameSession s, TerritoryWarsEscortGuildPlayerGetScoreAwardReq req)
     {
         int index = req.AwardIndex;
-        var roleState = s.TerritoryEscort;
+        var roleState = s.Instances.TerritoryEscort;
         if (roleState == null || index is < 0 or > 4 || roleState.ScoreByRound.GetValueOrDefault(Round) < ScoreThresholds[index]
             || roleState.ClaimedByRound.GetValueOrDefault(Round)?.Contains(index) == true) return;
         using var reservation = await EnterGateAsync("escort/claim", s);
@@ -503,7 +503,7 @@ public sealed partial class TerritoryEscortService
         try
         {
             using var held = await CharacterService.Lock(s);
-            roleState = s.TerritoryEscort;
+            roleState = s.Instances.TerritoryEscort;
             if (roleState == null || roleState.ScoreByRound.GetValueOrDefault(Round) < ScoreThresholds[index]
                 || roleState.ClaimedByRound.GetValueOrDefault(Round)?.Contains(index) == true) return;
             var plan = _awards.Resolve(s, 1001);
@@ -530,7 +530,7 @@ public sealed partial class TerritoryEscortService
                 AppliedBeforeNotify = () =>
             {
                 if (s.Role?.Id == roleId && ReferenceEquals(s.Attachment, attachment))
-                    s.TerritoryEscort = stagedRoleState;
+                    s.Instances.TerritoryEscort = stagedRoleState;
             },
             });
             accepted = granted != null && s.Role?.Id == roleId && ReferenceEquals(s.Attachment, attachment);

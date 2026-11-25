@@ -12,19 +12,19 @@ public sealed partial class LifeJobService
         int error = ActiveLevel(s, req.JobId) < 0 ? ErrorCodes.LifeInactive : 0;
         if (error == 0)
         {
-            var job = s.LifeJob!.LifeJobInfoMap[req.JobId];
+            var job = s.Season.LifeJob!.LifeJobInfoMap[req.JobId];
             var row = _data.Table("LifeJobTitleConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iJobId") == req.JobId
                 && GameData.Int(r, "_iLevel") == job.TitleInfo.JobLevel + 1);
             error = row.ValueKind != System.Text.Json.JsonValueKind.Object ? ErrorCodes.LifeTitleMissing
                 : !_functions.ConditionMet(s, GameData.Int(row, "_iCondition")) ? ErrorCodes.LifeTitleRequirements : 0;
             if (error == 0)
             {
-                var next = s.LifeJob.Clone(); var title = next.LifeJobInfoMap[req.JobId].TitleInfo;
+                var next = s.Season.LifeJob.Clone(); var title = next.LifeJobInfoMap[req.JobId].TitleInfo;
                 title.JobLevel++;
                 if (_data.Row("LifeSkillSlots", GameData.Int(row, "_iSlotId")) is { } slot)
                     title.JobTitleDetail[(int)GameData.Int(slot, "_iSort")] = Offer(slot);
                 var cost = Costs(row, "_kUnlockcost");
-                if (await CommitAsync(s, "cd13c/life-title-upgrade", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
+                if (await CommitAsync(s, "cd13c/life-title-upgrade", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), cost, [],
                     result: new { Job = req.JobId, Level = title.JobLevel }) == null) error = _character.ShortageOf(s, cost);
             }
         }
@@ -55,7 +55,7 @@ public sealed partial class LifeJobService
             || req.TitlePoint is < 1 or > int.MaxValue ? ErrorCodes.Parameter : 0;
         if (error == 0)
         {
-            var next = s.LifeJob!.Clone(); var title = next.LifeJobInfoMap[(long)req.LifejobId].TitleInfo;
+            var next = s.Season.LifeJob!.Clone(); var title = next.LifeJobInfoMap[(long)req.LifejobId].TitleInfo;
             var slots = extra ? title.SkillExtraSkill : title.JobTitleDetail;
             if (!slots.TryGetValue((int)req.Level, out var skill) || !CanActivateLifeSkill((int)req.TitlePoint)
                 || (!skill.OptionalSkills.Values.Contains((int)req.TitlePoint) && skill.OriginalSkill != req.TitlePoint)) error = ErrorCodes.LifeSkillMissing;
@@ -63,7 +63,7 @@ public sealed partial class LifeJobService
             {
                 if (skill.OriginalSkill != req.TitlePoint) skill.ExtraInfo = null;
                 skill.SelectedSkill = (int)req.TitlePoint; skill.OriginalSkill = skill.SelectedSkill;
-                await CommitAsync(s, "cd13c/life-title-choose", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), [], [],
+                await CommitAsync(s, "cd13c/life-title-choose", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), [], [],
                     result: new { Job = req.LifejobId, Slot = req.Level, Skill = req.TitlePoint, Extra = extra });
             }
         }
@@ -77,7 +77,7 @@ public sealed partial class LifeJobService
         int error = ActiveLevel(s, job) < 0 ? ErrorCodes.LifeInactive : level is < 1 or > int.MaxValue ? ErrorCodes.Parameter : 0;
         if (error == 0)
         {
-            var next = s.LifeJob!.Clone(); var title = next.LifeJobInfoMap[job].TitleInfo;
+            var next = s.Season.LifeJob!.Clone(); var title = next.LifeJobInfoMap[job].TitleInfo;
             var slots = extra ? title.SkillExtraSkill : title.JobTitleDetail;
             var row = _data.Table("LifeSkillSlots").Values.FirstOrDefault(r => GameData.Int(r, "_iJobId") == job && GameData.Int(r, "_iSort") == level);
             if (!slots.TryGetValue((int)level, out var old) || row.ValueKind != System.Text.Json.JsonValueKind.Object) error = ErrorCodes.LifeSkillMissing;
@@ -86,7 +86,7 @@ public sealed partial class LifeJobService
                 slots[(int)level] = Offer(row, old.OriginalSkill > 0 ? old.OriginalSkill : old.SelectedSkill);
                 slots[(int)level].ExtraInfo = old.ExtraInfo?.Clone();
                 var cost = Costs(row, "_kRefreshcost");
-                if (await CommitAsync(s, "cd13c/life-title-refresh", next, s.Restrictions!.Clone(), Copy(s.LifeRuntime), cost, [],
+                if (await CommitAsync(s, "cd13c/life-title-refresh", next, s.Season.Restrictions!.Clone(), Copy(s.Season.LifeRuntime), cost, [],
                     result: new
                     {
                         Job = job, Slot = level, Extra = extra,

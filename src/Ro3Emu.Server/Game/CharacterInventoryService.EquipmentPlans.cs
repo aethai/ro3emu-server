@@ -50,8 +50,8 @@ public sealed partial class CharacterInventoryService
     internal void LoadEquipmentPlans(GameSession session)
     {
         var saved = roles.LoadEquipPlans(session.Role!.Id);
-        session.EquipmentPlans = saved != null ? DBEquipInfo.Parser.ParseFrom(saved) : new DBEquipInfo();
-        var state = session.EquipmentPlans;
+        session.Profile.EquipmentPlans = saved != null ? DBEquipInfo.Parser.ParseFrom(saved) : new DBEquipInfo();
+        var state = session.Profile.EquipmentPlans;
         for (int index = 0; index < EquipmentPlanCount; index++)
             if (!state.EquipPlans.ContainsKey(index)) state.EquipPlans[index] = new DBEquipPlan();
         if (!state.EquipPlans.ContainsKey(state.CurrentEquipPlan)) state.CurrentEquipPlan = 0;
@@ -64,7 +64,7 @@ public sealed partial class CharacterInventoryService
     /// <summary>31400 edits the selected plan; other plans retain references to the same instances (inferred).</summary>
     private static void RememberEquipment(GameSession session)
     {
-        var plan = session.EquipmentPlans.EquipPlans[session.EquipmentPlans.CurrentEquipPlan];
+        var plan = session.Profile.EquipmentPlans.EquipPlans[session.Profile.EquipmentPlans.CurrentEquipPlan];
         plan.ItemsEquipGrid.Clear();
         foreach (var item in Equipped(session)) plan.ItemsEquipGrid[item.Grid] = item.Guid;
     }
@@ -74,7 +74,7 @@ public sealed partial class CharacterInventoryService
     {
         var owned = session.Items.Select(i => i.Guid).ToHashSet();
         bool changed = false;
-        foreach (var plan in session.EquipmentPlans.EquipPlans.Values)
+        foreach (var plan in session.Profile.EquipmentPlans.EquipPlans.Values)
             foreach (var grid in plan.ItemsEquipGrid.Where(p => !owned.Contains(p.Value)).Select(p => p.Key).ToArray())
                 changed |= plan.ItemsEquipGrid.Remove(grid);
         return changed;
@@ -100,7 +100,7 @@ public sealed partial class CharacterInventoryService
     public async Task SwitchEquipmentPlanAsync(GameSession session, EquipSwitchPlanReq req)
     {
         using var _ = await LockAsync(session);
-        var state = session.EquipmentPlans;
+        var state = session.Profile.EquipmentPlans;
         int result = state.EquipPlans.TryGetValue(req.TargetIndex, out var target) ? 0 : ErrorCodes.Parameter;
         var incoming = new Dictionary<long, (InvItem Item, int Grid)>();
         if (result == 0)
@@ -142,7 +142,7 @@ public sealed partial class CharacterInventoryService
                 next.CurrentEquipPlan = req.TargetIndex;
                 await CommitCharacterAsync(session, "equip-plan-switch", nextItems: staged,
                     blobs: new Dictionary<string, byte[]> { ["equip_plans"] = next.ToByteArray() },
-                    apply: () => session.EquipmentPlans = next);
+                    apply: () => session.Profile.EquipmentPlans = next);
                 state = next;
                 await SyncItemsAsync(session);
                 await SyncEquipmentAsync(session);
@@ -161,16 +161,16 @@ public sealed partial class CharacterInventoryService
     {
         using var _ = await LockAsync(session);
         // (inferred) Reject blank/control text; count Unicode scalars, preserving the supplied name exactly.
-        int result = !session.EquipmentPlans.EquipPlans.ContainsKey(req.TargetIndex)
+        int result = !session.Profile.EquipmentPlans.EquipPlans.ContainsKey(req.TargetIndex)
             || string.IsNullOrWhiteSpace(req.Name) || req.Name.Any(char.IsControl)
             || req.Name.EnumerateRunes().Count() > EquipmentPlanNameLimit ? ErrorCodes.Parameter : 0;
         if (result == 0)
         {
-            var next = session.EquipmentPlans.Clone();
+            var next = session.Profile.EquipmentPlans.Clone();
             next.EquipPlans[req.TargetIndex].PlanName = req.Name;
             await CommitCharacterAsync(session, "equip-plan-rename",
                 blobs: new Dictionary<string, byte[]> { ["equip_plans"] = next.ToByteArray() },
-                apply: () => session.EquipmentPlans = next);
+                apply: () => session.Profile.EquipmentPlans = next);
             await SyncEquipmentAsync(session);
         }
         await session.SendGameAsync(EquipChangePlanName, new EquipChangePlanNameResp { Result = result });

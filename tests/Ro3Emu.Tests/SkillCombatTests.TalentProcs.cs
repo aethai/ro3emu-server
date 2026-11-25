@@ -22,7 +22,7 @@ public sealed partial class SkillCombatTests
         await Loop.InvokeAsync(async () =>
         {
             var s = Session(name);
-            var plan = s.SeasonTalent!.Plan[s.SeasonTalent.CurPlanId];
+            var plan = s.Season.SeasonTalent!.Plan[s.Season.SeasonTalent.CurPlanId];
             foreach (var row in data.Table("SeasonTalentConfig").Values)
             {
                 long tree = GameData.Int(row, "_iTalentTreeID");

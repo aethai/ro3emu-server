@@ -53,9 +53,9 @@ public sealed partial class TaskService
     {
         using var gate = await LockTasksAsync(s);
         if (BeforeProgress is { } before) await before(s);
-        long guild = s.Guild?.GuildId ?? 0, group = s.AdventureGroupRole?.AdventureGroupId ?? 0;
+        long guild = s.Guild?.GuildId ?? 0, group = s.Activities.AdventureGroupRole?.AdventureGroupId ?? 0;
         bool guildMate = guild > 0 && party.Any(o => !ReferenceEquals(o, s) && o.Guild?.GuildId == guild);
-        bool groupMate = group > 0 && party.Any(o => !ReferenceEquals(o, s) && o.AdventureGroupRole?.AdventureGroupId == group);
+        bool groupMate = group > 0 && party.Any(o => !ReferenceEquals(o, s) && o.Activities.AdventureGroupRole?.AdventureGroupId == group);
         await ProgressCoreAsync(s, TTenBossWin, t => t is [TTenBossWin, _, _, ..] && t.AsSpan(2).Contains(boss) ? 1 : 0,
             def => def.Type switch { GuildQuestType => guildMate, AdventureGroupQuestType => groupMate, _ => true });
     }

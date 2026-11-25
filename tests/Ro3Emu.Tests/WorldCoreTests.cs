@@ -116,7 +116,7 @@ public sealed class WorldCoreTests : IAsyncLifetime
                 && SyncRoleVisitMapInfoNtf.Parser.ParseFrom(e.Body).Mapid.Contains(10100));
             await loop.InvokeAsync(() => Service<DungeonService>().SetGuideAsync(Player("bob"),
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = true })).WaitAsync(Wait);
-            Assert.True(Player("bob").Dungeons!.FirstSetted);
+            Assert.True(Player("bob").Instances.Dungeons!.FirstSetted);
         }
         finally
         {
@@ -200,10 +200,10 @@ public sealed class WorldCoreTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, WorldCoreService.MonitorCustom, MonitorCustomDataResp.Parser)).Result);
         await alice.SendGameAsync(31043, new MiniMapStatus { IsOpen = true });
         await Next(alice, WorldCoreService.MiniMap, MiniMapMsg.Parser, p => p.MiniInfo.All(i => i.Uid != (ulong)b.Role.Id));
-        var before = a.SyncVersions[CharacterService.ItemsSync];
+        var before = a.Profile.SyncVersions[CharacterService.ItemsSync];
         await alice.SendGameAsync(MsgId.PlayerAsset, new PlayerAssetReq { AssetType = { 6 } });
         Assert.Contains(6L, (await Next(alice, MsgId.PlayerAsset, PlayerAssetResp.Parser)).AssetType);
-        Assert.True(a.SyncVersions[CharacterService.ItemsSync] > before);
+        Assert.True(a.Profile.SyncVersions[CharacterService.ItemsSync] > before);
         long scene = a.SceneEntry;
         await alice.SendGameAsync(WorldCoreService.SceneQueue, new SceneQueuingReq { SceneId = 10100 });
         Assert.NotEqual(0, (await Next(alice, 99999, APIErrorMsg.Parser, p => p.OriginMsgId == WorldCoreService.SceneQueue)).ErrorCode);

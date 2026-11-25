@@ -49,7 +49,7 @@ public sealed partial class TotemService
     /// <summary>The active plan's deployed totem instances.</summary>
     internal static IEnumerable<InvItem> Deployed(GameSession s, GameData data)
     {
-        if (s.Totems?.TotemPlans.TryGetValue(s.Totems.CurrentPlan, out var plan) != true) yield break;
+        if (s.Profile.Totems?.TotemPlans.TryGetValue(s.Profile.Totems.CurrentPlan, out var plan) != true) yield break;
         foreach (long guid in plan.SetUpTotem.Values.Where(g => g != 0).Distinct())
             if (s.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0 && i.Pack == 4 && IsTotem(data, i.Entry)) is { } item)
                 yield return item;
@@ -73,24 +73,24 @@ public sealed partial class TotemService
     }
 
     /// <summary>Every saved plan reserves its GUIDs against unrelated consumption (LC_SchemeHelper.IsInSchemeByItemInfo).</summary>
-    public static bool IsReserved(GameSession s, InvItem item) => s.Totems?.TotemPlans.Values.Any(p => p.SetUpTotem.Values.Contains(item.Guid)) == true;
+    public static bool IsReserved(GameSession s, InvItem item) => s.Profile.Totems?.TotemPlans.Values.Any(p => p.SetUpTotem.Values.Contains(item.Guid)) == true;
 
     public void Load(GameSession s)
     {
         string priorEpoch = System.Text.Encoding.UTF8.GetString(_roles.LoadTotemRefineEpoch(s.Role!.Id) ?? []);
         bool resetRefinements = priorEpoch.Length > 0 && priorEpoch != RefineEpoch;
         var saved = _roles.LoadTotems(s.Role!.Id);
-        s.Totems = saved is { } bytes ? DBTotemInfo.Parser.ParseFrom(bytes) : new DBTotemInfo { Inited = true };
+        s.Profile.Totems = saved is { } bytes ? DBTotemInfo.Parser.ParseFrom(bytes) : new DBTotemInfo { Inited = true };
         // (inferred) Five ready, zero-based slots match the shared scheme UI, with explicit empty deployment slots.
         for (int n = 0; n < (Data.Config.PublicParams.Of(_data).SchemeNum ?? 5); n++)
         {
-            if (!s.Totems.TotemPlans.ContainsKey(n)) s.Totems.TotemPlans[n] = new TotemPlan { PlanName = $"Plan {n + 1}" };
-            var plan = s.Totems.TotemPlans[n];
+            if (!s.Profile.Totems.TotemPlans.ContainsKey(n)) s.Profile.Totems.TotemPlans[n] = new TotemPlan { PlanName = $"Plan {n + 1}" };
+            var plan = s.Profile.Totems.TotemPlans[n];
             for (int slot = 1; slot <= 3; slot++) if (!plan.SetUpTotem.ContainsKey(slot)) plan.SetUpTotem[slot] = 0;
             foreach (var (slot, guid) in plan.SetUpTotem.ToArray()) if (guid != 0 && !s.Items.Any(i => i.Guid == guid && i.Pack != 100 && IsTotem(_data, i.Entry))) plan.SetUpTotem[slot] = 0;
         }
-        if (!s.Totems.TotemPlans.ContainsKey(s.Totems.CurrentPlan)) s.Totems.CurrentPlan = 0;
-        s.TotemSwitchUtc = default;
+        if (!s.Profile.Totems.TotemPlans.ContainsKey(s.Profile.Totems.CurrentPlan)) s.Profile.Totems.CurrentPlan = 0;
+        s.Profile.TotemSwitchUtc = default;
         var copies = s.Items.Select(i => i.Clone()).ToList();
         foreach (var item in copies.Where(i => IsTotem(_data, i.Entry)))
         {
@@ -98,11 +98,11 @@ public sealed partial class TotemService
             if (item.Attrs == null || !item.Attrs.ContainsKey(220)) item.Attrs = CreateAttributes(item.Entry);
             if (resetRefinements && item.Attrs != null) item.Attrs[270] = 0;
         }
-        ApplyMarkers(copies, s.Totems, Now);
+        ApplyMarkers(copies, s.Profile.Totems, Now);
         // Stage G: only what this normalization changed is written. A transaction at every login (even with nothing
         // to change) was a third of a role's initialization in a login storm.
         var changed = copies.Where((item, i) => IsTotem(_data, item.Entry) && !SameTotemState(s.Items[i], item)).ToList();
-        var totems = s.Totems.ToByteArray();
+        var totems = s.Profile.Totems.ToByteArray();
         bool totemsChanged = saved == null || !saved.AsSpan().SequenceEqual(totems), epochChanged = priorEpoch != RefineEpoch;
         if (changed.Count == 0 && _roles.IsLoginStaging(s.Role.Id))
         {
@@ -117,17 +117,17 @@ public sealed partial class TotemService
                 if (totemsChanged) _roles.SaveTotems(s.Role.Id, totems, tx);
                 if (epochChanged) _roles.SaveTotemRefineEpoch(s.Role.Id, System.Text.Encoding.UTF8.GetBytes(RefineEpoch), tx);
             });
-        s.Items = copies; s.TotemRefineEpoch = RefineEpoch;
+        s.Items = copies; s.Profile.TotemRefineEpoch = RefineEpoch;
     }
 
     public Task RefreshEffectsAsync(GameSession s) => _effects.RefreshAsync(s);
 
     public async Task SyncAsync(GameSession s)
     {
-        if (s.Totems == null) return;
+        if (s.Profile.Totems == null) return;
         await RefreshEffectsAsync(s);
         // Power is a view of current item attributes. Keep the committed 5032 state immutable after Apply.
-        var wire = s.Totems.Clone();
+        var wire = s.Profile.Totems.Clone();
         foreach (var p in wire.TotemPlans.Values) p.Power = new PowerUnit { NormalPower = Power(s, p) };
         await CharacterService.SyncAsync(s, Sync, wire);
     }
@@ -171,7 +171,7 @@ public sealed partial class TotemService
         return 0;
     }
 
-    public int ValidatePlan(GameSession s, int index) => s.Totems?.TotemPlans.TryGetValue(index, out var p) == true ? ValidateSelection(s, p) : ErrorCodes.TotemPlan;
+    public int ValidatePlan(GameSession s, int index) => s.Profile.Totems?.TotemPlans.TryGetValue(index, out var p) == true ? ValidateSelection(s, p) : ErrorCodes.TotemPlan;
 
     private int SlotError(GameSession s, int slot)
     {
@@ -211,7 +211,7 @@ public sealed partial class TotemService
         await _roles.CommitAsync(tx, "totem/state", receipts =>
         {
             ItemSnapshotWritePlan.ApplyGuids(copies, (long[])receipts[itemReceipt]!);
-            s.Items = copies; s.Totems = next;
+            s.Items = copies; s.Profile.Totems = next;
         });
         await _character.ItemsChangedAsync(s, stats: true);
         await SyncAsync(s);
@@ -220,7 +220,7 @@ public sealed partial class TotemService
     internal async Task RunOwnedAsync(GameSession s, Func<Task> command)
     {
         using var gate = await CharacterService.Lock(s);
-        if (s.TotemRefineEpoch != RefineEpoch) await ReconcileEpochAsync(s);
+        if (s.Profile.TotemRefineEpoch != RefineEpoch) await ReconcileEpochAsync(s);
         await command();
     }
 
@@ -230,7 +230,7 @@ public sealed partial class TotemService
         var copies = s.Items.Select(i => i.Clone()).ToList();
         foreach (var item in copies.Where(i => IsTotem(_data, i.Entry)))
             if (item.Attrs != null) item.Attrs[270] = 0;
-        ApplyMarkers(copies, s.Totems!, Now);
+        ApplyMarkers(copies, s.Profile.Totems!, Now);
         var tx = _roles.NewTransaction();
         int itemReceipt = tx.ItemDelta(s.Role!.Id, s.Items, copies);
         tx.RoleBlob(s.Role.Id, "totem_refine_epoch", System.Text.Encoding.UTF8.GetBytes(epoch));
@@ -243,7 +243,7 @@ public sealed partial class TotemService
         {
             ItemSnapshotWritePlan.ApplyGuids(copies, (long[])receipts[itemReceipt]!);
             s.Items = copies;
-            s.TotemRefineEpoch = epoch;
+            s.Profile.TotemRefineEpoch = epoch;
         });
         await _character.ItemsChangedAsync(s, stats: false);
         await SyncAsync(s);
@@ -259,7 +259,7 @@ public sealed partial class TotemService
         long old = 0;
         if (error == 0)
         {
-            var next = s.Totems!.Clone();
+            var next = s.Profile.Totems!.Clone();
             var plan = next.TotemPlans[next.CurrentPlan];
             old = plan.SetUpTotem.GetValueOrDefault(req.TotemPos);
             foreach (var (slot, guid) in plan.SetUpTotem.ToArray()) if (guid == req.TotemGuid && guid != 0) plan.SetUpTotem[slot] = 0;
@@ -274,7 +274,7 @@ public sealed partial class TotemService
         int error = Gate(s);
         if (error != 0) return error;
         if ((error = ItemError(s, guid)) != 0) return error;
-        int actual = s.Totems!.TotemPlans[s.Totems.CurrentPlan].SetUpTotem.FirstOrDefault(p => p.Value == guid).Key;
+        int actual = s.Profile.Totems!.TotemPlans[s.Profile.Totems.CurrentPlan].SetUpTotem.FirstOrDefault(p => p.Value == guid).Key;
         return pos != actual ? ErrorCodes.TotemMismatch : 0;
     }
 
@@ -399,7 +399,7 @@ public sealed partial class TotemService
         }
         long cap = _data.Table("TotemLvConfig").Values.Sum(r => GameData.Int(r, "_iExp"));
         var refund = new List<(int Entry, int Count)>();
-        long overflow = Math.Max(0, exp - (cap - s.Totems!.TotemTotalExp));
+        long overflow = Math.Max(0, exp - (cap - s.Profile.Totems!.TotemTotalExp));
         // The upgrade panel consumes gainItems; preserve excess EXP in configured denominations (inferred).
         foreach (var denomination in (Data.Config.PublicParams.Of(_data).TotemCurrencyExp ?? []).OrderByDescending(r => r[1]))
         {
@@ -408,10 +408,10 @@ public sealed partial class TotemService
             if (count > 0) refund.Add(((int)denomination[0], (int)count));
             overflow %= denomination[1];
         }
-        if (error == 0 && s.Totems.TotemTotalExp >= cap) error = 1401; // ErrorCodeConfig: already at maximum level.
+        if (error == 0 && s.Profile.Totems.TotemTotalExp >= cap) error = 1401; // ErrorCodeConfig: already at maximum level.
         if (error == 0)
         {
-            var next = s.Totems!.Clone(); next.TotemTotalExp = Math.Min(cap, next.TotemTotalExp + exp);
+            var next = s.Profile.Totems!.Clone(); next.TotemTotalExp = Math.Min(cap, next.TotemTotalExp + exp);
             var cost = req.ConsumeItems.Select(p => (p.Key, (long)p.Value)).ToList();
             var semanticCost = cost.Concat(req.TotemGuids.Select(g => (Find(s, g)!.Entry, 1L))).ToList();
             if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
@@ -430,7 +430,7 @@ public sealed partial class TotemService
                             StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray()))
                         }));
                 },
-                Committed = () => s.Totems = next,
+                Committed = () => s.Profile.Totems = next,
                 AsyncCommit = true,
             }) == null) error = _character.ShortageOf(s, cost);
             else { await SyncAsync(s); await _character.RefreshStatsAsync(s); }
@@ -440,8 +440,8 @@ public sealed partial class TotemService
         await s.SendGameAsync(82365, response);
     }
 
-    internal int PlanSwitchCooldownError(GameSession s) => s.TotemSwitchUtc != default
-        && _clock.GetUtcNow().UtcDateTime - s.TotemSwitchUtc < TimeSpan.FromSeconds(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3) ? ErrorCodes.GenreCooldown : 0;
+    internal int PlanSwitchCooldownError(GameSession s) => s.Profile.TotemSwitchUtc != default
+        && _clock.GetUtcNow().UtcDateTime - s.Profile.TotemSwitchUtc < TimeSpan.FromSeconds(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3) ? ErrorCodes.GenreCooldown : 0;
 
     internal async Task SwitchAsync(GameSession s, TotemSwitchPlanReq req)
     {
@@ -450,27 +450,27 @@ public sealed partial class TotemService
         if (error == 0) error = PlanSwitchCooldownError(s);
         if (error == 0)
         {
-            var next = s.Totems!.Clone(); next.CurrentPlan = req.TargetIndex;
-            await CommitAsync(s, next); s.TotemSwitchUtc = _clock.GetUtcNow().UtcDateTime;
+            var next = s.Profile.Totems!.Clone(); next.CurrentPlan = req.TargetIndex;
+            await CommitAsync(s, next); s.Profile.TotemSwitchUtc = _clock.GetUtcNow().UtcDateTime;
         }
-        await s.SendGameAsync(82367, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Totems!.CurrentPlan });
+        await s.SendGameAsync(82367, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Profile.Totems!.CurrentPlan });
     }
 
     internal async Task RenameAsync(GameSession s, TotemChangeTotemNameReq req)
     {
         int error = Gate(s);
-        if (error == 0 && !s.Totems!.TotemPlans.ContainsKey(req.TargetIndex)) error = ErrorCodes.TotemPlan;
+        if (error == 0 && !s.Profile.Totems!.TotemPlans.ContainsKey(req.TargetIndex)) error = ErrorCodes.TotemPlan;
         if (error == 0 && (string.IsNullOrWhiteSpace(req.Name)
             || req.Name.EnumerateRunes().Count() > (Data.Config.PublicParams.Of(_data).SchemeNameNumMax ?? 8)
             || req.Name.Any(char.IsControl))) error = ErrorCodes.NameLengthInvalid;
-        if (error == 0) { var next = s.Totems!.Clone(); next.TotemPlans[req.TargetIndex].PlanName = req.Name; await CommitAsync(s, next); }
+        if (error == 0) { var next = s.Profile.Totems!.Clone(); next.TotemPlans[req.TargetIndex].PlanName = req.Name; await CommitAsync(s, next); }
         await s.SendGameAsync(82368, new TotemChangeTotemNameResp { Result = error });
     }
 
     internal async Task SwapAsync(GameSession s, TotemSwapReq req)
     {
         int error = Gate(s);
-        var next = s.Totems!.Clone(); var p = next.TotemPlans[next.CurrentPlan];
+        var next = s.Profile.Totems!.Clone(); var p = next.TotemPlans[next.CurrentPlan];
         int from = p.SetUpTotem.FirstOrDefault(x => x.Value == req.SwapFromGuid && x.Value != 0).Key;
         int to = p.SetUpTotem.FirstOrDefault(x => x.Value == req.SwapToGuid && x.Value != 0).Key;
         if (error == 0 && (from == 0 || req.SwapFromGuid == req.SwapToGuid)) error = ErrorCodes.TotemSlotEmpty;
@@ -500,7 +500,7 @@ public sealed partial class TotemService
         var resp = new TotemAppraiseResp { Result = error };
         if (error == 0)
         {
-            await CommitAsync(s, s.Totems!.Clone(), updates);
+            await CommitAsync(s, s.Profile.Totems!.Clone(), updates);
             foreach (var item in updates) resp.AppraiseResult.Add(_character.ItemInfoOf(item));
         }
         await s.SendGameAsync(82370, resp);
@@ -632,8 +632,8 @@ public sealed partial class TotemService
     }
     public IEnumerable<(long Id, double Value)> Attributes(GameSession s)
     {
-        if (s.Totems?.TotemPlans.TryGetValue(s.Totems.CurrentPlan, out var plan) != true) yield break;
-        int level = Level(s.Totems.TotemTotalExp);
+        if (s.Profile.Totems?.TotemPlans.TryGetValue(s.Profile.Totems.CurrentPlan, out var plan) != true) yield break;
+        int level = Level(s.Profile.Totems.TotemTotalExp);
         var lv = _data.Table("TotemLvConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iLv") == level);
         double multiplier = 1 + (lv.ValueKind == JsonValueKind.Object ? GameData.Int(lv, "_iAttributeEnhance") / 10000d : 0);
         var equipped = plan.SetUpTotem.Values.Where(x => x != 0).Select(id => Find(s, id)).OfType<InvItem>().ToArray();

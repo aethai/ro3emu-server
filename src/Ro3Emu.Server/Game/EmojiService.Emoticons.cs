@@ -25,7 +25,7 @@ public sealed partial class EmojiService
     private async Task<int> UseEmoticonItemAsync(ItemActionUse use)
     {
         var s = use.Session;
-        if (s.EmojiInfo == null) return ErrorCodes.FeatureUnavailable;
+        if (s.Social.EmojiInfo == null) return ErrorCodes.FeatureUnavailable;
         if (use.Count != 1) return ErrorCodes.Parameter;
         var ids = new List<long>();
         foreach (var effect in use.Effects)
@@ -38,12 +38,12 @@ public sealed partial class EmojiService
                     && new EmoticonsConfig(emoticon).Type == type) ids.Add((long)id);
         }
         if (ids.Count == 0) return ErrorCodes.ItemNoConfig;
-        var fresh = ids.Distinct().Where(id => !s.EmojiInfo.EmojiInfo.Contains(id)).ToList();
+        var fresh = ids.Distinct().Where(id => !s.Social.EmojiInfo.EmojiInfo.Contains(id)).ToList();
         if (fresh.Count == 0) return ErrEmotesUnlocked;
-        var next = s.EmojiInfo.Clone();
+        var next = s.Social.EmojiInfo.Clone();
         next.EmojiInfo.AddRange(fresh);
         byte[] saved = next.ToByteArray();
-        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "emoji_info", saved), () => s.EmojiInfo = next,
+        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "emoji_info", saved), () => s.Social.EmojiInfo = next,
             new { Emoticons = fresh })) return ErrorCodes.ItemsShort;
         await SyncEmoticonsAsync(s);
         return 0;
@@ -52,7 +52,7 @@ public sealed partial class EmojiService
     private async Task LoginEmoticonsAsync(GameSession session)
     {
         var saved = _roles.LoadEmojiInfo(session.Role!.Id);
-        session.EmojiInfo = saved is { Length: > 0 } ? DBEmojiInfo.Parser.ParseFrom(saved) : new DBEmojiInfo();
+        session.Social.EmojiInfo = saved is { Length: > 0 } ? DBEmojiInfo.Parser.ParseFrom(saved) : new DBEmojiInfo();
         await SyncEmoticonsAsync(session);
     }
 
@@ -65,7 +65,7 @@ public sealed partial class EmojiService
     /// </summary>
     private Task SyncEmoticonsAsync(GameSession session)
     {
-        var wire = session.EmojiInfo!.Clone();
+        var wire = session.Social.EmojiInfo!.Clone();
         if (wire.EmojiInfo.Count == 0) wire.EmojiInfo.Add(0);
         if (!wire.DungeonEmojiInstalls.ContainsKey(WheelChicken))
             wire.DungeonEmojiInstalls[WheelChicken] = new DBDungeonEmojiInstall { DungeonId = WheelChicken, EmojiIds = { DefaultWheel() } };
@@ -93,17 +93,17 @@ public sealed partial class EmojiService
     public async Task InstallDungeonEmojiAsync(GameSession session, DungeonEmojiInstallReq req)
     {
         int result = ErrorCodes.Parameter;
-        if (session.Role != null && session.EmojiInfo != null && req.DungeonId is WheelChicken or WheelOther
+        if (session.Role != null && session.Social.EmojiInfo != null && req.DungeonId is WheelChicken or WheelOther
             && req.EmojiIds.Count <= WheelSlots && req.EmojiIds.All(id => id == 0 || WheelEmoji(session, id))
             && req.EmojiIds.Where(id => id != 0).Distinct().Count() == req.EmojiIds.Count(id => id != 0))
         {
-            var next = session.EmojiInfo.Clone();
+            var next = session.Social.EmojiInfo.Clone();
             var wheel = new DBDungeonEmojiInstall { DungeonId = req.DungeonId, EmojiIds = { req.EmojiIds } };
             while (wheel.EmojiIds.Count < WheelSlots) wheel.EmojiIds.Add(0);
             next.DungeonEmojiInstalls[req.DungeonId] = wheel;
             var transaction = _roles.NewTransaction();
             transaction.RoleBlob(session.Role.Id, "emoji_info", next.ToByteArray());
-            await _roles.CommitAsync(transaction, "emoji/wheel", _ => session.EmojiInfo = next);
+            await _roles.CommitAsync(transaction, "emoji/wheel", _ => session.Social.EmojiInfo = next);
             await SyncEmoticonsAsync(session);
             result = 0;
         }
@@ -115,12 +115,12 @@ public sealed partial class EmojiService
     {
         if (_data.Row("EmoticonsConfig", id) is not { } row || new EmoticonsConfig(row).Type != SurvivorEmoticonType) return false;
         if (new EmoticonsConfig(row).UnlockType == 0) return true;
-        var info = session.EmojiInfo;
+        var info = session.Social.EmojiInfo;
         return info != null && info.EmojiInfo.Contains(id)
             && (!info.EmojiExpireTime.TryGetValue(id, out long expire) || expire == 0 || expire > _clock.GetUtcNow().ToUnixTimeSeconds());
     }
 
     /// <summary>The Survivor wheel as the client sees it: the saved one, else the default.</summary>
     internal IReadOnlyList<int> Wheel(GameSession session) =>
-        session.EmojiInfo?.DungeonEmojiInstalls.TryGetValue(WheelChicken, out var saved) == true ? saved.EmojiIds : DefaultWheel();
+        session.Social.EmojiInfo?.DungeonEmojiInstalls.TryGetValue(WheelChicken, out var saved) == true ? saved.EmojiIds : DefaultWheel();
 }

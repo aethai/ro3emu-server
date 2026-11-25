@@ -18,7 +18,7 @@ public sealed partial class NewActivityTests
         _clock.AdvanceSeconds(checked((int)(first - 1 - _clock.GetUtcNow().ToUnixTimeSeconds())));
         await Reconcile(bot);
         var session = Session(bot);
-        Assert.Equal(0, session.NewActivities!.ActivityInfo[118].ActivityParam.PronteraDefense.GlobalInfo.CurRound);
+        Assert.Equal(0, session.Activities.NewActivities!.ActivityInfo[118].ActivityParam.PronteraDefense.GlobalInfo.CurRound);
 
         foreach (var (offset, round, intensity) in new[]
             { (0, 1, 80000L), (600, 1, 100000L), (1200, 1, 120000L), (1560, 1, 140000L), (1800, 0, 0L) })
@@ -33,7 +33,7 @@ public sealed partial class NewActivityTests
             await OnLoop(() =>
             {
                 var expected = defense.BuildPlayerState(session).GlobalInfo;
-                var current = session.NewActivities!.ActivityInfo[118].ActivityParam.PronteraDefense.GlobalInfo;
+                var current = session.Activities.NewActivities!.ActivityInfo[118].ActivityParam.PronteraDefense.GlobalInfo;
                 Assert.Equal(expected, current);
                 Assert.Equal(round, current.CurRound);
                 Assert.Equal(intensity, current.CurIntensity);

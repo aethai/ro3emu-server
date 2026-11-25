@@ -54,7 +54,7 @@ public sealed partial class EquipmentService
     {
         using var gate = await CharacterService.Lock(session);
         int grid = (int)req.EquipPos, steps = Math.Clamp(req.StrengthenNum, 1, MaxStrengthenBatch);
-        var levels = session.EquipLevels;
+        var levels = session.Profile.EquipLevels;
         int level = levels.Strength.GetValueOrDefault(grid);
         var cost = new List<(int, long)>();
         Fail? error = null;
@@ -79,7 +79,7 @@ public sealed partial class EquipmentService
                     tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/equipment-strengthen", cost, [],
                         new { Grid = grid, Before = level, After = level + steps, Steps = steps }));
                 },
-                Committed = () => session.EquipLevels = next,
+                Committed = () => session.Profile.EquipLevels = next,
             }) == null)
                 error = new(ErrorCodes.StrengthenMaterials, "payment short");
         }
@@ -109,7 +109,7 @@ public sealed partial class EquipmentService
         using (await CharacterService.Lock(session))
         {
             int grid = (int)req.EquipPos;
-            var levels = session.EquipLevels;
+            var levels = session.Profile.EquipLevels;
             int level = levels.Refine.GetValueOrDefault(grid), luck = levels.Luck.GetValueOrDefault(grid);
             var row = _character.RefineRow(grid, level + 1);
             Fail? error = row == null ? new(ErrorCodes.RefineParameter, "max level") : GameData.Int(row.Value, "_iLev") > session.Progress!.Level ? new(ErrorCodes.RefineParameter, "base level") : null;
@@ -170,11 +170,11 @@ public sealed partial class EquipmentService
                                 DemoteRoll = demoteRoll, Protect = protect, Bonus = bonus
                             }));
                     },
-                    Committed = () => session.EquipLevels = nextLevels,
+                    Committed = () => session.Profile.EquipLevels = nextLevels,
                 }) == null)
                     error = new(ErrorCodes.RefineMaterials, "payment short");
             }
-            levels = session.EquipLevels;
+            levels = session.Profile.EquipLevels;
             _log.LogInformation("{Name} refines grid {Grid} +{Level}: {Result}", session.Role!.Name, grid, level, error?.Why ?? (success ? "success" : $"failed, now +{levels.Refine.GetValueOrDefault(grid)}"));
             // LC_DAL_Equipment._processRefineEquipments plays the success settlement (its animation and sound) for a
             // refineLv above the stored level and the failure one only when refineLv is absent; a failed roll therefore
@@ -229,13 +229,13 @@ public sealed partial class EquipmentService
         foreach (int grid in grids)
             if (level < 0 || level > 0 && (refine ? _character.RefineRow(grid, level) : _character.StrengthenRow(grid, level)) == null)
                 return null;
-        var next = CopyLevels(session.EquipLevels);
+        var next = CopyLevels(session.Profile.EquipLevels);
         foreach (int grid in grids)
         {
             (refine ? next.Refine : next.Strength)[grid] = level;
             if (refine) next.Luck.Remove(grid);
         }
-        session.EquipLevels = next;
+        session.Profile.EquipLevels = next;
         await SendFullLevelsAsync(session);
         return $"{(refine ? "Refine" : "Strengthen")} +{level} on grids {string.Join(',', grids)}.";
     }
@@ -277,7 +277,7 @@ public sealed partial class EquipmentService
                 var outputs = Pairs(recipe, "_kQualityEquipID") // [quality, item]
                     .Select(o => (Quality: o.Entry, Entry: (int)o.Count, Weight: WeightOf(req.Rank, o.Entry))).ToList();
                 int recipeId = (int)GameData.Int(recipe, "_iID");
-                var counter = session.EquipmentPlans.CraftInfo.TryGetValue(recipeId, out var held) ? held.Clone()
+                var counter = session.Profile.EquipmentPlans.CraftInfo.TryGetValue(recipeId, out var held) ? held.Clone()
                     : new DBEquipCraftInfo { Rank = req.Rank, EquipType = req.Subtype };
                 long orangeAt = GameData.Int(recipe, "_iOrangeGuarantee"), redAt = GameData.Int(recipe, "_iRedGuarantee");
                 bool canOrange = orangeAt > 0 && outputs.Any(o => o.Quality >= QualityOrange);
@@ -293,7 +293,7 @@ public sealed partial class EquipmentService
                 counter.CraftCount++;
                 if (canRed) counter.RedGuarantee = quality >= QualityRed ? 0 : counter.RedGuarantee + 1;
                 if (canOrange) counter.OrangeGuarantee = quality >= QualityOrange ? 0 : counter.OrangeGuarantee + 1;
-                var next = session.EquipmentPlans.Clone();
+                var next = session.Profile.EquipmentPlans.Clone();
                 ApplyCraftCounter(next, recipeId, counter);
                 if (entry == 0) error = new(ErrorCodes.CraftParameter, "no output");
                 else if (await _character.ExchangeLockedAsync(session, new ExchangeRequest
@@ -309,9 +309,9 @@ public sealed partial class EquipmentService
                     },
                     Committed = () =>
                     {
-                        var current = session.EquipmentPlans.Clone();
+                        var current = session.Profile.EquipmentPlans.Clone();
                         ApplyCraftCounter(current, recipeId, counter);
-                        session.EquipmentPlans = current;
+                        session.Profile.EquipmentPlans = current;
                     },
                 })
                     is not { Count: > 0 } items) error = new(ErrorCodes.CraftMaterialsShort, "payment short");

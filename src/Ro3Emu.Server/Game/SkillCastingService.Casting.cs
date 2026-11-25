@@ -90,7 +90,7 @@ public sealed partial class SkillCastingService
         var req = request.Clone();
         var row = EffectiveSkillRow(s, req.SkillId);
         var owned = req.OpUnitId == 0 || req.OpUnitId == s.Role?.Id ? null
-            : s.SkillObjects.FirstOrDefault(u => u.Uid == req.OpUnitId && u.WorldScene == s.WorldScene && u.ExpiresMs > Now);
+            : s.Combat.SkillObjects.FirstOrDefault(u => u.Uid == req.OpUnitId && u.WorldScene == s.WorldScene && u.ExpiresMs > Now);
         int error = s.Role == null || s.Progress == null || s.Dead || s.SceneLoading ? ErrorCodes.SkillBadState
             : row == null ? ErrorCodes.SkillUnknown
             : req.OpUnitId != 0 && req.OpUnitId != s.Role.Id && owned == null ? ErrorCodes.SkillRequirements
@@ -172,8 +172,8 @@ public sealed partial class SkillCastingService
             {
                 Target = target, SkillId = loopSkill,
                 NextSwingMs = Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value),
-                StartX = s.Position.X, StartZ = s.Position.Z, StartedWalking = s.Walking, StartMs = Now,
-                ArrivalSpeed = s.Speed / 100f, WalkFromUtc = s.LastWalkUtc
+                StartX = s.Position.X, StartZ = s.Position.Z, StartedWalking = s.WorldState.Walking, StartMs = Now,
+                ArrivalSpeed = s.Speed / 100f, WalkFromUtc = s.WorldState.LastWalkUtc
             };
         }
         // _iIfAutoAtk 1 (NotInterrupt, LC_Skill_RunTimeContext): the running attack goes on after this cast.
@@ -227,7 +227,7 @@ public sealed partial class SkillCastingService
     /// </summary>
     private void StartLineup(GameSession s, ActiveSkillCast? bar)
     {
-        if (bar == null || s.SkillPlans is not { } plans || s.Progress == null) return;
+        if (bar == null || s.Combat.SkillPlans is not { } plans || s.Progress == null) return;
         var members = plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillQueue.OrderBy(kv => kv.Key)
             .Select(kv => kv.Value).Where(m => m.SkillId > 0).Select(m => (m.SkillId, m.SkillLevel)).ToList();
         if (members.Count == 0) return;
@@ -282,7 +282,7 @@ public sealed partial class SkillCastingService
             new
             {
                 SessionId = id, Skill = row.GetRawText(), Request = Convert.ToBase64String(Google.Protobuf.MessageExtensions.ToByteArray(request)),
-                Plan = s.SkillPlans?.CurrentPlanIndex, Attachment = s.Attachment?.Generation,
+                Plan = s.Combat.SkillPlans?.CurrentPlanIndex, Attachment = s.Attachment?.Generation,
                 s.WorldScene, s.SceneGeneration, AttributeCosts = costs.Attrs, BuffCosts = costs.Buffs,
                 EnergyCosts = costs.Energy, Outcome = "admitted"
             });
@@ -445,7 +445,7 @@ public sealed partial class SkillCastingService
     // below the 5 s SceneService.AcceptWalkAsync allows.
     internal const double MaxWalkSlackSeconds = 5;
     private static double WalkedSeconds(DateTime since, DateTime now) => Math.Clamp((now - since).TotalSeconds, 0, MaxWalkSlackSeconds);
-    private static float WalkSlack(GameSession s) => !s.Walking ? 0 : (float)(s.Speed / 100.0 * WalkedSeconds(s.LastWalkUtc, s.UtcNow));
+    private static float WalkSlack(GameSession s) => !s.WorldState.Walking ? 0 : (float)(s.Speed / 100.0 * WalkedSeconds(s.WorldState.LastWalkUtc, s.UtcNow));
 
     /// <summary>
     /// Where along the walk in progress the caster can be nearest to the target: the walk goes straight from the last walk's
@@ -457,7 +457,7 @@ public sealed partial class SkillCastingService
     {
         var best = origin;
         float bestDistance = Distance(origin, target);
-        foreach (float degrees in new[] { s.WalkDir, s.Face })
+        foreach (float degrees in new[] { s.WorldState.WalkDir, s.Face })
         {
             double angle = degrees * Math.PI / 180;
             float ux = (float)Math.Sin(angle), uz = (float)Math.Cos(angle);
@@ -622,12 +622,12 @@ public sealed partial class SkillCastingService
     {
         long now = s.NowMs;
         var notice = new SkillCdNotify { Uuid = s.Role!.Id };
-        foreach (var (key, end) in s.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
+        foreach (var (key, end) in s.Combat.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
         {
-            s.SkillModeCds.Remove(key);
+            s.Combat.SkillModeCds.Remove(key);
             notice.Infos.Add(new SkillCdInfo { SkillId = group, SkillMode = key.Mode, CdStartTimestampMs = now, CdEndTimestampMs = now });
         }
-        if (s.SkillCds.Remove(group) && notice.Infos.Count == 0)
+        if (s.Combat.SkillCds.Remove(group) && notice.Infos.Count == 0)
             notice.Infos.Add(new SkillCdInfo { SkillId = group, CdStartTimestampMs = now, CdEndTimestampMs = now });
         if (notice.Infos.Count > 0) await s.SendGameAsync(SkillCdUpdate, notice);
     }
@@ -637,16 +637,16 @@ public sealed partial class SkillCastingService
     {
         long now = s.NowMs;
         var notice = new SkillCdNotify { Uuid = s.Role!.Id };
-        foreach (var (key, end) in s.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
+        foreach (var (key, end) in s.Combat.SkillModeCds.Where(c => c.Key.Group == group && c.Value > now).ToArray())
         {
             long left = Math.Max(now, end - ms);
-            if (left > now) s.SkillModeCds[key] = left; else s.SkillModeCds.Remove(key);
+            if (left > now) s.Combat.SkillModeCds[key] = left; else s.Combat.SkillModeCds.Remove(key);
             notice.Infos.Add(new SkillCdInfo { SkillId = group, SkillMode = key.Mode, CdStartTimestampMs = now, CdEndTimestampMs = left });
         }
-        if (s.SkillCds.TryGetValue(group, out long plain) && plain > now)
+        if (s.Combat.SkillCds.TryGetValue(group, out long plain) && plain > now)
         {
             long left = Math.Max(now, plain - ms);
-            if (left > now) s.SkillCds[group] = left; else s.SkillCds.Remove(group);
+            if (left > now) s.Combat.SkillCds[group] = left; else s.Combat.SkillCds.Remove(group);
             if (notice.Infos.Count == 0) notice.Infos.Add(new SkillCdInfo { SkillId = group, CdStartTimestampMs = now, CdEndTimestampMs = left });
         }
         if (notice.Infos.Count > 0) await s.SendGameAsync(SkillCdUpdate, notice);
@@ -664,9 +664,9 @@ public sealed partial class SkillCastingService
         {
             if (duration <= 0) return;
             // The client overwrites by key (LC_Scene_Sync): a shorter public cooldown must not replace the skill's own, so the longest is told.
-            long end = Math.Max(now + duration, s.SkillModeCds.GetValueOrDefault((g, m)));
-            s.SkillModeCds[(g, m)] = end;
-            if (shared) s.SkillCds[g] = Math.Max(end, s.SkillCds.GetValueOrDefault(g));
+            long end = Math.Max(now + duration, s.Combat.SkillModeCds.GetValueOrDefault((g, m)));
+            s.Combat.SkillModeCds[(g, m)] = end;
+            if (shared) s.Combat.SkillCds[g] = Math.Max(end, s.Combat.SkillCds.GetValueOrDefault(g));
             if (notice.Infos.FirstOrDefault(i => i.SkillId == g && i.SkillMode == shownMode) is { } told) told.CdEndTimestampMs = Math.Max(told.CdEndTimestampMs, end);
             else notice.Infos.Add(new SkillCdInfo { SkillId = g, SkillMode = shownMode, CdStartTimestampMs = now, CdEndTimestampMs = end });
         }
@@ -749,15 +749,15 @@ public sealed partial class SkillCastingService
         var action = new ActiveSkillCast
         {
             Id = id, OwnerId = s.Role!.Id, WorldScene = s.WorldScene, SceneGeneration = s.SceneGeneration,
-            Attachment = s.Attachment, Request = req, Row = row, Origin = origin, StartedWalking = actor == null && s.Walking, WalkFromUtc = s.LastWalkUtc,
+            Attachment = s.Attachment, Request = req, Row = row, Origin = origin, StartedWalking = actor == null && s.WorldState.Walking, WalkFromUtc = s.WorldState.LastWalkUtc,
             StartMs = Now + leadMs, ChantMs = ChantMs(s, row), ActionMs = SkillMs(s, row), Operator = actor,
         };
         s.SkillCast = action;
         // A caster that may not walk while casting (_bMovement 0) saves up no walking distance until the cast ends: a client
         // that walks on without reporting it cannot claim the distance afterwards (SceneService.AcceptWalkAsync).
         // One pressed in mid-walk is the exception: the client walks on (PlayerMoved).
-        if (actor == null && !s.Walking && new SkillConfig(row).Movement == 0)
-            SceneService.HoldWalk(s, s.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.Walking);
+        if (actor == null && !s.WorldState.Walking && new SkillConfig(row).Movement == 0)
+            SceneService.HoldWalk(s, s.UtcNow.AddMilliseconds(leadMs + action.ChantMs + action.ActionMs), s.WorldState.Walking);
         s.WorldState.ResurrectionCastId = IsResurrection(row) ? id : 0;
         s.Face = face;
         req.Face = face;
@@ -933,7 +933,7 @@ public sealed partial class SkillCastingService
         if (walk.BStop || walk.SpeedRate <= 0 || s.Role == null || !_castOnNextWalk.TryGetValue(s, out var row)) return;
         _castOnNextWalk.Remove(s);
         long wait = s.SkillCast is { Cancelled: false } running ? Math.Max(0, running.StartMs + running.ChantMs + running.ActionMs + 1 - Now) : 0;
-        float face = s.WalkDir;
+        float face = s.WorldState.WalkDir;
         ScheduleRuntime(s.WorldScene, TimeSpan.FromMilliseconds(wait), () => s.Role == null ? Task.CompletedTask : CastAsync(s,
             new CastSkillReq { SkillId = row.Value, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = face }, lineup: true));
     }
@@ -944,11 +944,11 @@ public sealed partial class SkillCastingService
             && MonsterService.Distance(eventAttack.StartX, eventAttack.StartZ, s.Position.X, s.Position.Z) > 1.5f) EventAttacks.Remove(s);
         // A position correction of a few cm is no step away (inferred): a real walk, or past 1.5 m as event attacks use, ends the loop.
         if (s.Attack is { } a && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 0.1f
-            && (s.Walking || a.StartedWalking || MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 1.5f))
+            && (s.WorldState.Walking || a.StartedWalking || MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) > 1.5f))
         {
             // Clicking an enemy from afar: the client attacks on reaching range and stops a few ms later (in-game
             // 11.10), so that first stop is where the auto-attack starts, not a step away that ends it. The 300 ms grace is inferred.
-            if (a.StartedWalking && !s.Walking && Now - a.StartMs <= 300
+            if (a.StartedWalking && !s.WorldState.Walking && Now - a.StartMs <= 300
                 && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) <= a.ArrivalSpeed * WalkedSeconds(a.WalkFromUtc, s.UtcNow) + 0.5)
             {
                 a.StartX = s.Position.X; a.StartZ = s.Position.Z;
@@ -959,14 +959,14 @@ public sealed partial class SkillCastingService
         if (s.SkillCast is not { } cast || new SkillConfig(cast.Row).Movement != 0) return;
         // A walk that sets off (not a stop) after the arrival grace ends a cast that holds the caster in place, even before it
         // has moved: the client interrupts such a cast to walk, and the walk budget is held until the cast ends.
-        if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.Walking && Now - cast.StartMs > 300)) return;
+        if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.WorldState.Walking && Now - cast.StartMs > 300)) return;
         // A cast that began in mid-walk: the client plays it and walks on with the key held, reporting steps and sending no
         // 31124 (in-game 3.11), and it casts on reaching range and stops 1 ms later (in-game 11.10). Neither ends the cast;
         // the walk budget stays open for it, so the steps are still paced (inferred). A walk begun after a stop does end it.
         if (cast.StartedWalking)
         {
             cast.Origin = s.Position.Clone();
-            if (!s.Walking) cast.StartedWalking = false;
+            if (!s.WorldState.Walking) cast.StartedWalking = false;
             return;
         }
         _loop.TrackRuntimeDetached("cast movement cancellation", () => CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Move));

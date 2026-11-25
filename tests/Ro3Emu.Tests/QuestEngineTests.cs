@@ -364,11 +364,11 @@ public sealed class QuestEngineTests : IAsyncLifetime
         long cutsceneTask = GameData.Int(row, "_iTaskID");
         await Accept(cutsceneTask);
         await Gm($"!quest done {cutsceneTask}");
-        Assert.True(await Read(s => s.InCutScene));
+        Assert.True(await Read(s => s.Activities.InCutScene));
         await Accept(10101020);
         await bot.SendGameAsync(TaskService.ExitCutSceneState, new ExitCutSceneStateReq());
         await Barrier(bot);
-        Assert.False(await Read(s => s.InCutScene));
+        Assert.False(await Read(s => s.Activities.InCutScene));
         Assert.Equal(0, (await State(10101020)).CompleteNum[0]);
     }
 

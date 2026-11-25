@@ -329,7 +329,7 @@ public sealed class TimedEventTests : IAsyncLifetime
             await bot.SendGameAsync(NewActivityService.Common, request);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(2, Service<CharacterService>().CountOf(Session(bot), 600));
-            Assert.Equal(0, Session(bot).Defense!.ContributionPoint);
+            Assert.Equal(0, Session(bot).Instances.Defense!.ContributionPoint);
             Assert.Equal(receiptsBefore, DonationReceipts());
             // The second same-role donation must wait behind the held debit and then refuse insufficient items.
             await bot.SendGameAsync(NewActivityService.Common, request);
@@ -338,7 +338,7 @@ public sealed class TimedEventTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, NewActivityService.Common, CommonActivityRes.Parser)).Result);
         await OnLoop(() =>
         {
-            Assert.Equal(2, Session(bot).Defense!.ContributionPoint);
+            Assert.Equal(2, Session(bot).Instances.Defense!.ContributionPoint);
             Assert.Equal(0, Service<CharacterService>().CountOf(Session(bot), 600));
             return Task.CompletedTask;
         });
@@ -433,8 +433,8 @@ public sealed class TimedEventTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, TimedBattleService.StartMatch, StartMatchResp.Parser)).Result);
         await bob.SendGameAsync(TimedBattleService.StartMatch, req);
         Assert.Equal(0, (await Next(bob, TimedBattleService.StartMatch, StartMatchResp.Parser)).Result);
-        Assert.Equal(0, Session(alice).EventFaction);
-        Assert.Equal(0, Session(bob).EventFaction);
+        Assert.Equal(0, Session(alice).Instances.EventFaction);
+        Assert.Equal(0, Session(bob).Instances.EventFaction);
         Assert.Equal(0, Session(alice).InstanceId); // Two entrants cannot trigger the exported 100/30-player queue.
         foreach (var player in new[] { alice, bob })
         {
@@ -448,10 +448,10 @@ public sealed class TimedEventTests : IAsyncLifetime
             var today = window.LocalStart;
             await OnLoop(() =>
             {
-                Session(alice).TimedBattle!.DragonCurrencyDay = today.Year * 10000L + today.Month * 100 + today.Day;
-                Session(alice).TimedBattle!.DragonCurrencyEarned = 950;
-                Session(bob).TimedBattle!.DragonScore = 80;
-                Session(bob).TimedBattle!.DragonRankScore = 80;
+                Session(alice).Instances.TimedBattle!.DragonCurrencyDay = today.Year * 10000L + today.Month * 100 + today.Day;
+                Session(alice).Instances.TimedBattle!.DragonCurrencyEarned = 950;
+                Session(bob).Instances.TimedBattle!.DragonScore = 80;
+                Session(bob).Instances.TimedBattle!.DragonRankScore = 80;
                 return Task.CompletedTask;
             });
         }
@@ -528,8 +528,8 @@ public sealed class TimedEventTests : IAsyncLifetime
             Assert.False(result.HasAborted);
             Assert.Equal(2, result.RoleStatistics.Count);
             Assert.Equal(1, result.RoleStatistics[(long)alice.Self.Uuid].Totalscore);
-            Assert.Equal(2, Session(alice).TimedBattle!.ChickenRank);
-            Assert.Equal(100, Session(alice).TimedBattle!.ChickenScore);
+            Assert.Equal(2, Session(alice).Instances.TimedBattle!.ChickenRank);
+            Assert.Equal(100, Session(alice).Instances.TimedBattle!.ChickenScore);
             Assert.Equal(100, Service<CharacterService>().CountOf(Session(alice), 7));
             Assert.Equal(100, JsonSerializer.Deserialize<TimedBattleService.State>(
                 Service<RoleStore>().LoadTimedBattle((long)alice.Self!.Uuid)!)!.ChickenScore);
@@ -641,7 +641,7 @@ public sealed class TimedEventTests : IAsyncLifetime
         await NextLethalPlayerHit(alice, cara);
         await OnLoop(() =>
         {
-            Assert.Equal(0, Session(alice).TimedBattle!.ChickenMatches);
+            Assert.Equal(0, Session(alice).Instances.TimedBattle!.ChickenMatches);
             Assert.True(Service<TimedBattleService>().CanFight(Session(bob), Session(dan)));
             return Task.CompletedTask;
         });
@@ -656,10 +656,10 @@ public sealed class TimedEventTests : IAsyncLifetime
             Assert.Equal(4, result.RoleStatistics.Count);
             Assert.Equal(2, result.TeamStatistics.MemberIds.Count);
         }
-        Assert.Equal(2, Session(alice).TimedBattle!.ChickenRank);
-        Assert.Equal(2, Session(bob).TimedBattle!.ChickenRank);
-        Assert.Equal(1, Session(cara).TimedBattle!.ChickenRank);
-        Assert.Equal(1, Session(dan).TimedBattle!.ChickenRank);
+        Assert.Equal(2, Session(alice).Instances.TimedBattle!.ChickenRank);
+        Assert.Equal(2, Session(bob).Instances.TimedBattle!.ChickenRank);
+        Assert.Equal(1, Session(cara).Instances.TimedBattle!.ChickenRank);
+        Assert.Equal(1, Session(dan).Instances.TimedBattle!.ChickenRank);
         Assert.Equal(100, Service<CharacterService>().CountOf(Session(alice), 7));
         Assert.Equal(100, Service<CharacterService>().CountOf(Session(bob), 7));
         Assert.Equal(0, Service<CharacterService>().CountOf(Session(cara), 7));
@@ -709,9 +709,9 @@ public sealed class TimedEventTests : IAsyncLifetime
             await OnLoop(() =>
             {
                 Assert.Equal(0, Service<TimedBattleService>().ActiveMatchCountForTest);
-                Assert.Equal(0, a.EventFaction);
-                Assert.Equal(0, b.EventFaction);
-                Assert.Equal(0, b.TimedBattle!.ChickenMatches);
+                Assert.Equal(0, a.Instances.EventFaction);
+                Assert.Equal(0, b.Instances.EventFaction);
+                Assert.Equal(0, b.Instances.TimedBattle!.ChickenMatches);
                 return Task.CompletedTask;
             });
             releaseB.TrySetResult();
@@ -768,13 +768,13 @@ public sealed class TimedEventTests : IAsyncLifetime
             Assert.Equal("Bob", result.RoleStatistics[bobId].BaseInfo.Name);
             Assert.Equal("Cara", result.RoleStatistics[caraId].BaseInfo.Name);
             Assert.Equal(currentCareer, result.RoleStatistics[caraId].BaseInfo.Job);
-            Assert.Equal(1, c.TimedBattle!.ChickenMatches);
+            Assert.Equal(1, c.Instances.TimedBattle!.ChickenMatches);
             Assert.Equal(100, Service<CharacterService>().CountOf(c, 7));
             Assert.NotEqual(room, c.InstanceId);
             await OnLoop(() =>
             {
                 Assert.Equal(0, Service<TimedBattleService>().ActiveMatchCountForTest);
-                Assert.Equal(0, b.EventFaction);
+                Assert.Equal(0, b.Instances.EventFaction);
                 return Task.CompletedTask;
             });
             releaseB.TrySetResult();
@@ -838,8 +838,8 @@ public sealed class TimedEventTests : IAsyncLifetime
             Assert.True(b.Attachment!.Cancelled);
             release.TrySetResult();
             await commitEntered.Task.WaitAsync(TimeSpan.FromSeconds(8));
-            Assert.Equal(0, a.TimedBattle!.ChickenMatches);
-            Assert.Equal(0, b.TimedBattle!.ChickenMatches);
+            Assert.Equal(0, a.Instances.TimedBattle!.ChickenMatches);
+            Assert.Equal(0, b.Instances.TimedBattle!.ChickenMatches);
             Assert.Equal(0, Service<CharacterService>().CountOf(a, 7));
             Assert.Equal(0, CountRows(receiptCount));
             Assert.Equal(0, CountRows(obligationCount));
@@ -1026,10 +1026,10 @@ public sealed class TimedEventTests : IAsyncLifetime
         long week = day - ((int)DateOnly.FromDayNumber((int)day).DayOfWeek + 6) % 7;
         await OnLoop(() =>
         {
-            var exhausted = Session(cid).TimedBattle!;
+            var exhausted = Session(cid).Instances.TimedBattle!;
             exhausted.OnePieceExtraDay = day;
             exhausted.OnePieceExtraUsed = 10;
-            var capped = Session(ben).TimedBattle!;
+            var capped = Session(ben).Instances.TimedBattle!;
             capped.OnePieceWeek = week;
             capped.OnePieceWeekItems[1302002] = 5;
             return Task.CompletedTask;
@@ -1138,7 +1138,7 @@ public sealed class TimedEventTests : IAsyncLifetime
                 if (dead) await Task.Delay(20);
             }
             Assert.False(dead);
-            Assert.Equal(0, Session(bot).TimedBattle!.OnePieceExtraUsed); // a loss pays nothing
+            Assert.Equal(0, Session(bot).Instances.TimedBattle!.OnePieceExtraUsed); // a loss pays nothing
         }
         Assert.Null((await RiftStonesAsync()).Single(s => s.Uid == stone.Uid).Challenger);
         await gus.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq { NpcUid = stone.Uid, InteractionId = 161000011 });

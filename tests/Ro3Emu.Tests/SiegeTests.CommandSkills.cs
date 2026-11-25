@@ -93,7 +93,7 @@ public sealed partial class SiegeTests
     private Task ClearCommonCd(BotClient commander, long guild) => OnLoop(() =>
     {
         _clock.AdvanceMs(5500);
-        Session(commander).SiegeBattle!.Command.Skills[guild].CommonCdEnd = 0;
+        Session(commander).Instances.SiegeBattle!.Command.Skills[guild].CommonCdEnd = 0;
         return Task.CompletedTask;
     });
 }

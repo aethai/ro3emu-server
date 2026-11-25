@@ -109,7 +109,7 @@ public sealed partial class SkillCombatTests
         await Cast();
         Assert.False(buffs.UnitHasGroup(target, 9024));
         Assert.True(target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < target.Template.SpeedCm);
-        await Loop.InvokeAsync(() => { s.SkillCds.Clear(); s.SkillModeCds.Clear(); return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { s.Combat.SkillCds.Clear(); s.Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         await Cast();
         Assert.True(buffs.UnitHasGroup(target, 9024));
     }

@@ -519,8 +519,8 @@ public sealed partial class GuildTests : IAsyncLifetime
             Assert.Equal(carolBefore, roles.LoadGuildInfo(carolId));
             Assert.Equal(guildId, bobSession.Guild!.GuildId);
             Assert.Equal(guildId, carolSession.Guild!.GuildId);
-            Assert.Contains($"2_{guildId}", bobSession.ChatGroups);
-            Assert.Contains($"2_{guildId}", carolSession.ChatGroups);
+            Assert.Contains($"2_{guildId}", bobSession.Social.ChatGroups);
+            Assert.Contains($"2_{guildId}", carolSession.Social.ChatGroups);
         }
         finally
         {
@@ -536,7 +536,7 @@ public sealed partial class GuildTests : IAsyncLifetime
             Assert.Equal(0, personal.GuildId);
             Assert.Equal(guildId, personal.LastGuildId);
             Assert.Equal(0, session.Guild!.GuildId);
-            Assert.DoesNotContain($"2_{guildId}", session.ChatGroups);
+            Assert.DoesNotContain($"2_{guildId}", session.Social.ChatGroups);
         }
     }
 

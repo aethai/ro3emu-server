@@ -246,7 +246,7 @@ public sealed class GuildHuntingService : IGameTicker
     private bool Busy(long guild) => Unsettled(out var week) && NowMs < week.Data.StartPhaseEndMs && GroupOf(week, guild) != null;
 
     /// <summary>A guild member who may take part in DailyActivity 3303 (_iiLv 30, function 1329 = condition 2000116).</summary>
-    private bool Eligible(GameSession s) => s.ActivitiesReady && s.Progress != null && _home.GuildId(s) != null
+    private bool Eligible(GameSession s) => s.Activities.ActivitiesReady && s.Progress != null && _home.GuildId(s) != null
         && _data.Row("DailyActivityConfig", Activity) is { } daily && s.Progress.Level >= GameData.Int(daily, "_iiLv")
         && _functions.IsOpen(s, Function);
 

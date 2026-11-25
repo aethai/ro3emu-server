@@ -132,7 +132,7 @@ public sealed partial class FlyingDragonService : IGameTicker
     }
 
     private static bool OwnsDragon(GameSession s) =>
-        s.Mounts?.MountIds.ContainsKey(MountId) == true || s.Wardrobe?.AllLightUpAppearances.ContainsKey(MountId) == true;
+        s.Mounts?.MountIds.ContainsKey(MountId) == true || s.Profile.Wardrobe?.AllLightUpAppearances.ContainsKey(MountId) == true;
 
     /// <summary>The dragon's unseal material (WardRobeConfig 60060010 _kMaterial: Lord's Mane x1).</summary>
     private List<(int Entry, long Count)> Material() =>

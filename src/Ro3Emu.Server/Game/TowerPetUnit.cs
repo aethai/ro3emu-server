@@ -133,7 +133,7 @@ public sealed class TowerPetUnit : WorldUnit
 
     public override void Tick(MapInstance map, GameTime time)
     {
-        if (Dead || Hp <= 0 || _owner.Dead || _owner.SceneLoading || _owner.TowerAttempt is not { Loaded: true, Settled: false } a
+        if (Dead || Hp <= 0 || _owner.Dead || _owner.SceneLoading || _owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } a
             || a.InstanceId != InstanceId || _owner.WorldScene != WorldScene) return;
         long now = _world.NowMs;
         if (now < _nextAttackMs) return;

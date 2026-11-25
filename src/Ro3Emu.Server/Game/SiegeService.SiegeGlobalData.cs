@@ -28,7 +28,7 @@ public sealed partial class SiegeService
     private bool SiegeGlobal(MonsterUnit unit) => NPCConfig.Get(_data, unit.Template.NpcId) is { NeedNotifyGlobalData: 1 };
 
     private static IEnumerable<GameSession> SiegeLoadedMembers(SiegeRun battle) => battle.Room.ActiveMembers
-        .Select(m => m.Session).Where(s => ReferenceEquals(s.SiegeBattle, battle) && s.InstanceId == battle.Room.Id && !s.SceneLoading);
+        .Select(m => m.Session).Where(s => ReferenceEquals(s.Instances.SiegeBattle, battle) && s.InstanceId == battle.Room.Id && !s.SceneLoading);
 
     /// <summary>The full set of standing objects on every load of the siege scene: the client clears its global objects
     /// with the scene.</summary>

@@ -24,7 +24,7 @@ public sealed partial class TerritoryWarsService
 
     internal enum WarKind { Siege, Territory }
 
-    internal static long CampOf(GameSession s) => s.EventFaction > 0 ? s.EventFaction : 1;
+    internal static long CampOf(GameSession s) => s.Instances.EventFaction > 0 ? s.Instances.EventFaction : 1;
 
     internal static CustomData CannonLong(long id, long value) =>
         new() { Id = id, CustomParam = new CustomParam { Tp = CustomParam.Types.ParamType.Long, LongParam = value } };

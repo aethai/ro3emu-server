@@ -359,7 +359,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
     public async Task LoginAsync(GameSession session)
     {
         if (session.Role == null) return;
-        session.TimedBattle = _roles.LoadTimedBattle(session.Role.Id) is { } bytes
+        session.Instances.TimedBattle = _roles.LoadTimedBattle(session.Role.Id) is { } bytes
             ? JsonSerializer.Deserialize<State>(bytes) ?? new State() : new State();
         await DeliverPendingAsync(session);
         await SyncBattleStateAsync(session, login: true);
@@ -371,12 +371,12 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         if (session.Role == null) return;
         var tx = _roles.NewTransaction();
         tx.RoleBlob(session.Role.Id, "timed_battle", JsonSerializer.SerializeToUtf8Bytes(next));
-        await _roles.CommitAsync(tx, "timed-battle/state", _ => session.TimedBattle = next);
+        await _roles.CommitAsync(tx, "timed-battle/state", _ => session.Instances.TimedBattle = next);
     }
 
     internal async Task SyncBattleStateAsync(GameSession session, bool login = false)
     {
-        if (session.TimedBattle is not { } state) return;
+        if (session.Instances.TimedBattle is not { } state) return;
         var chicken = new DBChickenInfo { RankId = state.ChickenRank, ChickenTimes = state.ChickenMatches };
         var dragon = new DBDragonIslandInfo { RankId = state.DragonRank };
         foreach (int id in state.DragonRankClaimed) dragon.RankAwardClaimed[id] = true;
@@ -482,8 +482,8 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
 
     private int Admission(GameSession session, int entry, bool alreadyQueued = false)
     {
-        if (session.Role == null || session.Progress == null || session.TimedBattle == null) return ErrorCodes.Parameter;
-        if (!session.ActivitiesReady) return ErrorCodes.FeatureUnavailable;
+        if (session.Role == null || session.Progress == null || session.Instances.TimedBattle == null) return ErrorCodes.Parameter;
+        if (!session.Activities.ActivitiesReady) return ErrorCodes.FeatureUnavailable;
         if (entry is not (ChickenEntry or DragonEntry) || _data.Row("MatchConfig", entry) == null
             || MatchShape(entry).Players == 0) return ErrorCodes.Parameter;
         int todo = entry == ChickenEntry ? 114 : 126;
@@ -600,7 +600,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
     public async Task<bool> CancelMatchAsync(GameSession session, CancelMatchReq req)
     {
         using var scope = await EnterCommandAsync(session, req.MatchEntryId, "timed battle cancel matchmaking");
-        int result = !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+        int result = !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
             : _queue.GetValueOrDefault(req.MatchEntryId)?.Contains(session) == true
             || _preparing.TryGetValue(session, out var awaiting) && awaiting.Entry == req.MatchEntryId
             ? 0 : ErrorCodes.Parameter;
@@ -664,7 +664,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         using (var scope = await EnterCommandAsync(session, req.MatchEntryId, "timed battle ready"))
         {
             var match = _preparing.GetValueOrDefault(session);
-            int result = !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+            int result = !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
                 : match == null || match.Entry != req.MatchEntryId || session.Role?.Id != req.PlayerId
                 ? ErrorCodes.Parameter : !req.IsReady ? ErrorCodes.DungeonDeclined : 0;
             await session.SendGameAsync(Ready, new MatchReadyResp
@@ -689,12 +689,12 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
             await RoleFanout.EachAsync(match.Players, async player =>
             {
                 _active[player] = match;
-                player.EventFaction = match.Faction[player];
+                player.Instances.EventFaction = match.Faction[player];
                 bool entered = false;
                 try { entered = await _instances.EnterAsync(match.Room, player, 5); }
                 finally
                 {
-                    if (!entered) { _active.Remove(player); player.EventFaction = 0; }
+                    if (!entered) { _active.Remove(player); player.Instances.EventFaction = 0; }
                 }
             });
             await RoleFanout.EachAsync(match.Players.Where(_active.ContainsKey), player =>
@@ -713,7 +713,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         && a.Loaded.Contains(attacker) && a.Loaded.Contains(target)
         && a.Faction[attacker] != a.Faction[target] && !a.Fallen.Contains(attacker) && !a.Fallen.Contains(target)
         && !a.Absent.Contains(attacker) && !a.Absent.Contains(target)
-        && attacker.ActivitiesReady && target.ActivitiesReady
+        && attacker.Activities.ActivitiesReady && target.Activities.ActivitiesReady
         && !attacker.Dead && (!requireAlive || !target.Dead)
         && (a.Chicken is not { } run || run.Stage == ChickenRules.StageStartGame)
         && (a.Dragon is not { } dragon || dragon.Stage == 1)
@@ -869,18 +869,18 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
     public async Task ClaimDragonAsync(GameSession session, DragonIslandClaimRankRewardReq _)
     {
         long roleId = session.Role?.Id ?? 0;
-        int selectedRank = session.TimedBattle?.DragonRank ?? 0;
+        int selectedRank = session.Instances.TimedBattle?.DragonRank ?? 0;
         using var scope = roleId > 0 && _loop.Owners is { } owners
             ? await owners.EnterAsync("timed battle dragon rank claim", [ReservationKey.Role(roleId),
                 ReservationKey.Lifecycle(roleId),
                 ReservationKey.Entity("timed_battle_rank_claim", $"{roleId}/{selectedRank}")]) : null;
-        if (session.Role?.Id != roleId || session.TimedBattle?.DragonRank != selectedRank)
+        if (session.Role?.Id != roleId || session.Instances.TimedBattle?.DragonRank != selectedRank)
             throw new OperationCanceledException("Dragon rank changed before claim admission.");
         if (session.Owner != null) scope?.Context.Pin(session.Owner);
-        int result = !session.ActivitiesReady || session.Role == null || session.TimedBattle == null || session.TimedBattle.DragonSettled.Count == 0
+        int result = !session.Activities.ActivitiesReady || session.Role == null || session.Instances.TimedBattle == null || session.Instances.TimedBattle.DragonSettled.Count == 0
             ? ErrorCodes.FeatureUnavailable : 0;
-        int rank = session.TimedBattle?.DragonRank ?? 0;
-        if (result == 0 && session.TimedBattle!.DragonRankClaimed.Contains(rank)) result = ErrorCodes.TaskRequirements;
+        int rank = session.Instances.TimedBattle?.DragonRank ?? 0;
+        if (result == 0 && session.Instances.TimedBattle!.DragonRankClaimed.Contains(rank)) result = ErrorCodes.TaskRequirements;
         var row = _data.Row("DragonIslandLevelConfig", rank);
         long award = row is { } r ? GameData.Int(r, "_iAward") : 0;
         if (result == 0 && award <= 0) result = ErrorCodes.ActivityReward;
@@ -890,7 +890,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         if (result == 0 && plan?.Grants.Count == 0) result = ErrorCodes.ActivityReward;
         if (result == 0)
         {
-            var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(session.TimedBattle))!;
+            var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(session.Instances.TimedBattle))!;
             next.DragonRankClaimed.Add(rank);
             if (!await _character.ApplyAwardAsync(session, plan!, persist: tx =>
                 {
@@ -899,7 +899,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
                         tx.WithEventEconomy(EventEconomy.ForRole(_data, session, "timed-battle/dragon-rank",
                             $"timed-battle/dragon-rank/{session.Role.Id}/{rank}", [], plan.Grants,
                             new { Rank = rank, Award = award }));
-                }, committed: () => session.TimedBattle = next))
+                }, committed: () => session.Instances.TimedBattle = next))
                 result = ErrorCodes.Unknown;
         }
         if (result == 0) await SyncBattleStateAsync(session);
@@ -991,7 +991,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
                     { Name = session.Role!.Name, Career = session.Progress?.Career ?? original.Career };
                 match.Absent.Add(session);
                 match.Fallen.Add(session);
-                session.EventFaction = 0;
+                session.Instances.EventFaction = 0;
                 if (match.Chicken is { } chicken)
                 {
                     // Survivor Battle: a departure is that player's forfeit; the others play on (inferred). Before the
@@ -1033,7 +1033,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
     {
         if (match.Settled) return;
         match.Settled = true;
-        foreach (var player in match.Players) { _active.Remove(player); player.EventFaction = 0; }
+        foreach (var player in match.Players) { _active.Remove(player); player.Instances.EventFaction = 0; }
         await RoleFanout.EachAsync(match.Players.Where(player => player != departed), async player =>
         {
             if (match.Entry == ChickenEntry)

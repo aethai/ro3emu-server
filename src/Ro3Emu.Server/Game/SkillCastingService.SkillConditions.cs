@@ -34,7 +34,7 @@ public sealed partial class SkillCastingService
         [CondEquip, var type, ..] => s.Items.Any(i => i.Grid != 0 && ItemConfig.Get(_data, i.Entry)?.SubType == type), // all gear, not only the hands: subtype 50 is worn in part 3
         [CondMountIs, var mount, ..] => MountService.Rider(s) == mount,
         [CondMountIsNot, var mount, ..] => MountService.Rider(s) != mount,
-        [CondPendant, var type, ..] => s.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == type),
+        [CondPendant, var type, ..] => s.Profile.CareerPendants.Any(pendant => PendantConfig.Get(_data, pendant)?.Type == type),
         [CondBuffLayer, var buff, var most, var least, ..] => s.Buffs.Any(b => b.ConfigId == buff && b.ExpireMs > Now && b.PileCount >= least && b.PileCount <= most),
         [CondSceneFlyable, ..] => MapConfig.Get(_data, s.SceneEntry)?.RiderForbidden is [_, _, 0, ..],
         _ => true,

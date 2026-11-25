@@ -35,7 +35,7 @@ public sealed partial class AdventureActivityService
     }
 
     private (long Cycle, int Area, long Day) PreKey(GameSession session, long id) =>
-        (session.NewActivities!.ActivityInfo[id].CycleStartTime, session.Role!.Area,
+        (session.Activities.NewActivities!.ActivityInfo[id].CycleStartTime, session.Role!.Area,
             DateOnly.FromDateTime(_clock.GetLocalNow().Date).DayNumber);
 
     private (long Score, long Today, long Submitters) PreTotals(GameSession session, long id)
@@ -59,7 +59,7 @@ public sealed partial class AdventureActivityService
                 if (req.Num is < 1 or > 1000000) res.Result = ErrorCodes.Parameter;
                 else
                 {
-                    var next = session.NewActivities!.Clone();
+                    var next = session.Activities.NewActivities!.Clone();
                     var state = next.ActivityTypeState[2].ActivityState[req.ActivityID].SelfData.SeasonPre;
                     state.Score = checked(state.Score + req.Num * PreCrystalScore);
                     var (cycle, area, day) = PreKey(session, req.ActivityID);
@@ -110,14 +110,14 @@ public sealed partial class AdventureActivityService
                 var score = PreTotals(session, req.ActivityID).Score;
                 var requested = req.RewardIDs.Distinct().ToArray();
                 var rows = requested.Select(id => _data.Row("SeasonPreProgressRewardConfig", id)).ToArray();
-                var current = session.NewActivities!.ActivityTypeState[2].ActivityState[req.ActivityID].SelfData.SeasonPre;
+                var current = session.Activities.NewActivities!.ActivityTypeState[2].ActivityState[req.ActivityID].SelfData.SeasonPre;
                 if (requested.Length == 0 || requested.Length != req.RewardIDs.Count
                     || rows.Any(r => r == null || GameData.Int(r.Value, "_iActivityid") != req.ActivityID
                         || score < GameData.Int(r.Value, "_iEndType"))
                     || requested.Any(id => current.ReceivedRewardIDs.ContainsKey(id))) res.Result = ErrorCodes.TaskRequirements;
                 else
                 {
-                    var next = session.NewActivities.Clone();
+                    var next = session.Activities.NewActivities.Clone();
                     var state = next.ActivityTypeState[2].ActivityState[req.ActivityID].SelfData.SeasonPre;
                     foreach (var id in requested) state.ReceivedRewardIDs[id] = Now;
                     res.Result = await CommitAdventureAsync(session, next, rows.Select(r => GameData.Int(r!.Value, "_iReward")));
@@ -138,7 +138,7 @@ public sealed partial class AdventureActivityService
     {
         if (ActivityError(session, activityId, 5) is var error and not 0) return error;
         if (!FragmentItems.Any(i => i == req.ItemConfigID)) return ErrorCodes.Parameter;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var gather = next.ActivityInfo[activityId].ActivityParam.FragmentGather;
         long dayEnd = new DateTimeOffset(_clock.GetLocalNow().Date.AddDays(1), _clock.LocalTimeZone.GetUtcOffset(_clock.GetLocalNow().Date.AddDays(1))).ToUnixTimeSeconds();
         if (gather.DailyData.ExpireTs <= Now) gather.DailyData = new FragmentGatherDaily { ExpireTs = dayEnd };
@@ -156,7 +156,7 @@ public sealed partial class AdventureActivityService
 
     public async Task FragmentAskFinishedAsync(GameSession session, NewActivityFragmentGatherAskFinishedReq req)
     {
-        if (!session.ActivitiesReady || session.Owner == null || session.Attachment == null)
+        if (!session.Activities.ActivitiesReady || session.Owner == null || session.Attachment == null)
         {
             await FragmentDirectAsync(session, 82967, req, new NewActivityFragmentGatherAskFinishedResp(),
                 r => FragmentAskFinishedCoreAsync(session, 105, req, r));
@@ -183,7 +183,7 @@ public sealed partial class AdventureActivityService
         var blob = online == null
             ? (await _accounts.ReadAsync<RoleBlobSnapshot>(new RoleBlobSnapshotRead(req.UserID, "activity_runtime"))).Value
             : null;
-        var state = online?.ActivityRuntime ?? (blob == null ? new ActivityRuntimeState()
+        var state = online?.Activities.ActivityRuntime ?? (blob == null ? new ActivityRuntimeState()
             : JsonSerializer.Deserialize<ActivityRuntimeState>(blob) ?? new());
         if (!state.AdventureFragmentAsks.TryGetValue(req.AskID, out var ask) || ask.Owner != req.UserID) return ErrorCodes.Parameter;
         res.IsFinished = ask.Finished;
@@ -197,7 +197,7 @@ public sealed partial class AdventureActivityService
     private async Task<int> FragmentCraftCoreAsync(GameSession session, long activityId, NewActivityFragmentGatherCraftResp res)
     {
         if (ActivityError(session, activityId, 5) is var error and not 0) return error;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var gather = next.ActivityInfo[activityId].ActivityParam.FragmentGather;
         gather.ProgressFinish++;
         gather.Seed = Random.Shared.Next();
@@ -215,7 +215,7 @@ public sealed partial class AdventureActivityService
         if (ActivityError(session, activityId, 5) is var error and not 0) return error;
         var row = _data.Row("SeasonPrepProgressReward", req.GatherTimes);
         if (row == null || GameData.Int(row.Value, "_iActivityid") != activityId) return ErrorCodes.Parameter;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var gather = next.ActivityInfo[activityId].ActivityParam.FragmentGather;
         long threshold = GameData.Int(row.Value, "_iEndType");
         if (gather.ProgressFinish < threshold || gather.ProgressAward >= threshold) return ErrorCodes.TaskRequirements;
@@ -225,7 +225,7 @@ public sealed partial class AdventureActivityService
 
     public async Task FragmentSendAsync(GameSession session, NewActivityFragmentGatherSendReq req)
     {
-        if (!session.ActivitiesReady || session.Owner == null || session.Attachment == null)
+        if (!session.Activities.ActivitiesReady || session.Owner == null || session.Attachment == null)
         {
             await FragmentDirectAsync(session, 82964, req, new NewActivityFragmentGatherSendResp(),
                 _ => FragmentSendCoreAsync(session, 105, req));
@@ -283,7 +283,7 @@ public sealed partial class AdventureActivityService
             transaction.Guard(new RoleBlobGuardPlan(req.ToUserID, "activity_runtime", targetRuntimeSnapshot));
             byte[]? targetNewBytes = targetNewSnapshot.Value;
             byte[]? targetRuntimeBytes = targetRuntimeSnapshot.Value;
-            var targetNew = receiver?.NewActivities?.Clone()
+            var targetNew = receiver?.Activities.NewActivities?.Clone()
                 ?? (targetNewBytes is { } blob ? DBNewActivityInfo.Parser.ParseFrom(blob) : null);
             var targetRuntime = receiver != null ? CloneRuntime(receiver)
                 : targetRuntimeBytes == null ? new ActivityRuntimeState()
@@ -292,7 +292,7 @@ public sealed partial class AdventureActivityService
                 || targetInfo.ActivityParam?.FragmentGather == null
                 || !targetRuntime.AdventureFragmentAsks.TryGetValue(req.AskID, out var ask)
                 || ask.Owner != req.ToUserID || ask.Item != req.ItemID || ask.Finished
-                || ask.Created < sender.NewActivities!.ActivityInfo[activityId].CycleStartTime)
+                || ask.Created < sender.Activities.NewActivities!.ActivityInfo[activityId].CycleStartTime)
                 return ErrorCodes.TaskRequirements;
 
             var senderOriginal = sender.Items.Select(i => i.Clone()).ToList();
@@ -343,8 +343,8 @@ public sealed partial class AdventureActivityService
                 if (receiver != null)
                 {
                     receiver.Items = targetItems;
-                    receiver.NewActivities = targetNew;
-                    receiver.ActivityRuntime = targetRuntime;
+                    receiver.Activities.NewActivities = targetNew;
+                    receiver.Activities.ActivityRuntime = targetRuntime;
                 }
             });
             // Run authoritative observers while both owners are still pinned. OwnerNotices freezes

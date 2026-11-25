@@ -90,7 +90,7 @@ public sealed partial class SkillCastingService
     internal async Task<JsonElement> CrossRipperRowAsync(GameSession s, JsonElement row)
     {
         var skill = new SkillConfig(row);
-        long blades = s.Energy.TryGetValue(BladeMeter, out var meter) ? meter.Value : 0;
+        long blades = s.Combat.Energy.TryGetValue(BladeMeter, out var meter) ? meter.Value : 0;
         if (blades > 0) await _buffs.TrySpendEnergyAsync(s, BladeMeter, blades);
         bool marked = await _buffs.ConsumeBuffPilesAsync(s, DarkIllusionMarkGroup, 1);
         long count = Math.Max(1, blades) * (marked ? 3 : 1);

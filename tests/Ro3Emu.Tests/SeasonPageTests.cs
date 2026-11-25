@@ -121,12 +121,12 @@ public sealed class SeasonPageTests : IAsyncLifetime
         await Gm(bot, "!lvl 50");
         await Gm(bot, "!item 1300046 1");
         await Page(bot);
-        Assert.True(Session(bot).SeasonPage!.HonorBadgeData.ContainsKey(1300046));
+        Assert.True(Session(bot).Season.SeasonPage!.HonorBadgeData.ContainsKey(1300046));
         await bot.SendGameAsync(SeasonPageService.PutOnHonorBadge,
             new SeasonPagePutOnHonorBadgeReq { Id = 1300046, IsPutOn = true });
         Assert.Equal(0, (await Next(bot, SeasonPageService.PutOnHonorBadge, SeasonPagePutOnHonorBadgeResp.Parser)).Result);
-        Assert.True(Session(bot).SeasonPage!.HonorBadgeData[1300046].IsPutOn);
-        Assert.Equal(Service<SeasonService>().SeasonId, Session(bot).SeasonPage!.HonorBadgeData[1300046].GetSeasonId);
+        Assert.True(Session(bot).Season.SeasonPage!.HonorBadgeData[1300046].IsPutOn);
+        Assert.Equal(Service<SeasonService>().SeasonId, Session(bot).Season.SeasonPage!.HonorBadgeData[1300046].GetSeasonId);
     }
 
     [ClientDataFact]
@@ -140,10 +140,10 @@ public sealed class SeasonPageTests : IAsyncLifetime
             "CREATE TRIGGER season_badge_abort BEFORE UPDATE OF season_page ON role BEGIN SELECT RAISE(ABORT, 'badge test'); END");
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => Service<GameLoop>().InvokeAsync(
             () => Service<SeasonPageService>().GetDataAsync(session)));
-        Assert.Empty(session.SeasonPage!.HonorBadgeData);
+        Assert.Empty(session.Season.SeasonPage!.HonorBadgeData);
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER season_badge_abort");
         await Page(bot);
-        Assert.True(session.SeasonPage!.HonorBadgeData.ContainsKey(1300046));
+        Assert.True(session.Season.SeasonPage!.HonorBadgeData.ContainsKey(1300046));
 
         await Gm(bot, "!item 11 200");
         _clock.Set(Service<SeasonService>().Times().SeasonBreakStartTime);
@@ -151,10 +151,10 @@ public sealed class SeasonPageTests : IAsyncLifetime
             "CREATE TRIGGER season_snapshot_abort BEFORE UPDATE OF season_page_meta ON role BEGIN SELECT RAISE(ABORT, 'snapshot test'); END");
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => Service<GameLoop>().InvokeAsync(
             () => Service<SeasonPageService>().GetDataAsync(session)));
-        Assert.True(session.SeasonPage!.HistorySnapshot == null || session.SeasonPage.HistorySnapshot.FunctionScore.Count == 0);
+        Assert.True(session.Season.SeasonPage!.HistorySnapshot == null || session.Season.SeasonPage.HistorySnapshot.FunctionScore.Count == 0);
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER season_snapshot_abort");
         await Page(bot);
-        Assert.Equal(200, session.SeasonPage!.HistorySnapshot!.FunctionScore[17]);
+        Assert.Equal(200, session.Season.SeasonPage!.HistorySnapshot!.FunctionScore[17]);
     }
 
     [ClientDataFact]
@@ -168,7 +168,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         long breakTime = Service<SeasonService>().Times().SeasonBreakStartTime;
         _clock.Set(breakTime);
         Assert.Equal(101005, (await Page(bot)).StageID);
-        Assert.Equal(200, Session(bot).SeasonPage!.HistorySnapshot.FunctionScore[17]);
+        Assert.Equal(200, Session(bot).Season.SeasonPage!.HistorySnapshot.FunctionScore[17]);
         Assert.Contains("cannot precede", Service<SeasonService>().AdvanceCycle(101, Service<SeasonService>().Start.AddDays(1)));
         Assert.Equal(1, Service<SeasonService>().SeasonId);
         var nextStart = FirstLocalMidnightAtOrAfter(breakTime);
@@ -184,7 +184,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         var season = await Next(again, SeasonService.SeasonSync, DBSeasonInfoIncrement.Parser);
         Assert.Equal(2, season.Current.All.SeasonId);
         Assert.True(season.History.ContainsKey(1));
-        var page = Session(again).SeasonPage!;
+        var page = Session(again).Season.SeasonPage!;
         Assert.Equal(200, page.HistoryFunctionScoreData[1].FunctionScore[17]);
         Assert.Empty(page.RankRewardReceiveInfo);
         Assert.Equal(0, (await Page(again)).RankScore[17]);
@@ -238,7 +238,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
             ? DBSeasonPage.Parser.ParseFrom(page).HistoryFunctionScoreData : new DBSeasonPage().HistoryFunctionScoreData);
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER season_page_abort");
         await Service<GameLoop>().InvokeAsync(() => Service<SeasonPageService>().LoginAsync(session));
-        Assert.Equal(200, session.SeasonPage!.HistoryFunctionScoreData[1].FunctionScore[17]);
+        Assert.Equal(200, session.Season.SeasonPage!.HistoryFunctionScoreData[1].FunctionScore[17]);
         var list = await bot.MicroAsync("MailService", "getUserMailList", new Dictionary<string, object?>
         { ["Uid"] = role.ToString(), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
         Assert.Single((object?[])list["MailList"]!);
@@ -279,7 +279,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         Assert.True(Assert.Single(page.MailRewardReceiveInfo).Value.Del);
         await OnLoop(() =>
         {
-            var real = Session(bot).SeasonPage!;
+            var real = Session(bot).Season.SeasonPage!;
             Assert.Empty(real.RankRewardReceiveInfo); Assert.Empty(real.HonorBadgeData);
             Assert.Empty(real.HistoryFunctionScoreData); Assert.Empty(real.MailRewardReceiveInfo);
             return Task.CompletedTask;
@@ -303,9 +303,9 @@ public sealed class SeasonPageTests : IAsyncLifetime
         Assert.Equal(101002, updated.Current.Inc.StageId);
         await OnLoop(async () =>
         {
-            long version = Session(bot).SyncVersions[SeasonService.SeasonSync];
+            long version = Session(bot).Profile.SyncVersions[SeasonService.SeasonSync];
             await Service<SeasonService>().ReconcileAsync(Session(bot));
-            Assert.Equal(version, Session(bot).SyncVersions[SeasonService.SeasonSync]);
+            Assert.Equal(version, Session(bot).Profile.SyncVersions[SeasonService.SeasonSync]);
         });
         await Gm(bot, "!lvl 50");
         Assert.Equal(101002, (await Page(bot)).StageID);
@@ -450,7 +450,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         try
         {
             await staged.Task.WaitAsync(Wait);
-            Assert.Empty(session.SeasonPage!.RankRewardReceiveInfo);
+            Assert.Empty(session.Season.SeasonPage!.RankRewardReceiveInfo);
             Assert.DoesNotContain(session.Items, item => item.Entry is 1200000 or 1200001);
             gm = Gm(bot, "!item 2 1");
             await deferred.Task.WaitAsync(Wait);
@@ -470,7 +470,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
         Assert.Equal(0, (await claim.WaitAsync(Wait)).Result);
         await gm!.WaitAsync(Wait);
         Assert.Equal(2, session.Items.Where(item => item.Entry == 1200000).Sum(item => item.Stack));
-        Assert.Contains(17, session.SeasonPage!.RankRewardReceiveInfo[2].Functions);
+        Assert.Contains(17, session.Season.SeasonPage!.RankRewardReceiveInfo[2].Functions);
         var window = S3EconomyReader.ReadLedger(_dataDir, catalog, before, S3EconomyReader.Read(_dataDir, catalog))!;
         // The deferred GM grant commits its own 13a receipt in the same window; the claim has exactly one.
         var receipt = Assert.Single(window.Receipts, r => r.CommandKind == "cd13c/season-page-claim");
@@ -505,13 +505,13 @@ public sealed class SeasonPageTests : IAsyncLifetime
         await Gm(bot, "!lvl 50");
         foreach (int currency in new[] { 11, 12, 13, 14 }) await Gm(bot, $"!item {currency} 200");
         Assert.Equal(ErrorCodes.SeasonRankReward, (await Claim(bot, (2, 17), (3, 23))).Result);
-        Assert.Empty(Session(bot).SeasonPage!.RankRewardReceiveInfo);
+        Assert.Empty(Session(bot).Season.SeasonPage!.RankRewardReceiveInfo);
         foreach (int function in new[] { 17, 67, 60 }) Assert.Equal(0, (await Claim(bot, (2, function))).Result);
         var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var beforeCapRefusal = S3EconomyReader.Read(_dataDir, catalog);
         Assert.Equal(ErrorCodes.SeasonRankReward, (await Claim(bot, (2, 36))).Result);
         Assert.Equal(beforeCapRefusal.Cut.CommitSequence, S3EconomyReader.Read(_dataDir, catalog).Cut.CommitSequence);
-        Assert.Equal(3, Session(bot).SeasonPage!.RankRewardReceiveInfo[2].Functions.Count);
+        Assert.Equal(3, Session(bot).Season.SeasonPage!.RankRewardReceiveInfo[2].Functions.Count);
         Assert.Equal(0, (await Claim(bot, (3, 36))).Result); // another dan has its own pool
     }
 
@@ -559,7 +559,7 @@ public sealed class SeasonPageTests : IAsyncLifetime
             "CREATE TRIGGER fail_season_page BEFORE UPDATE OF season_page ON role BEGIN SELECT RAISE(ABORT, 'season page fault injection'); END");
         var request = new SeasonPageReceiveRankRewardReq { RankReward = { [2] = 17 } };
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => OnLoop(() => Service<SeasonPageService>().ClaimAsync(Session(bot), request)));
-        Assert.Empty(Session(bot).SeasonPage!.RankRewardReceiveInfo);
+        Assert.Empty(Session(bot).Season.SeasonPage!.RankRewardReceiveInfo);
         Assert.Equal(before, Service<ItemStore>().Load(role).Select(i => (i.Guid, i.Entry, i.Stack)).OrderBy(x => x.Guid).ToArray());
         Assert.Equal(before, Session(bot).Items.Select(i => (i.Guid, i.Entry, i.Stack)).OrderBy(x => x.Guid).ToArray());
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_season_page");

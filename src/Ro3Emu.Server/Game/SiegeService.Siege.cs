@@ -158,7 +158,7 @@ public sealed partial class SiegeService
         // online role: O(N^2) during a login storm.
         bool realm = token != _siegePublishedState;
         _siegePublishedState = token;
-        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.TerritoryWars != null), async s =>
+        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Instances.TerritoryWars != null), async s =>
         {
             long guild = s.Guild?.GuildId ?? 0;
             var last = _siegePublishedGuild.GetValue(s, static _ => new(long.MinValue));
@@ -167,7 +167,7 @@ public sealed partial class SiegeService
             {
                 // Guild qualification is recomputed by SyncSiegeAsync; the published role projection
                 // already has the committed honor/fatigue values and needs no loop-side blob reload.
-                await SyncSiegeAsync(s, committedRole: s.TerritoryWars);
+                await SyncSiegeAsync(s, committedRole: s.Instances.TerritoryWars);
                 await Send(s, SiegeBaseQuery, new GetSiegeBaseInfoRsp { SiegeBaseInfo = SiegeBase(s) });
                 last.Value = guild;
             }

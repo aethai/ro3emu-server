@@ -57,7 +57,7 @@ public sealed partial class TimedBattleService
             {
                 var player = target.Player;
                 var owner = target.Original.Owner;
-                bool current = !match.Absent.Contains(player) && player.ActivitiesReady && player.TimedBattle != null
+                bool current = !match.Absent.Contains(player) && player.Activities.ActivitiesReady && player.Instances.TimedBattle != null
                     && ReferenceEquals(player.Role, target.Original.Role)
                     && ReferenceEquals(player.Owner, owner) && ReferenceEquals(player.Attachment, target.Original.Lease);
                 if (current && player.Owners != null)
@@ -69,7 +69,7 @@ public sealed partial class TimedBattleService
                 {
                     match.Absent.Add(player);
                     match.Fallen.Add(player);
-                    player.EventFaction = 0;
+                    player.Instances.EventFaction = 0;
                     _active.Remove(player);
                     continue;
                 }
@@ -112,7 +112,7 @@ public sealed partial class TimedBattleService
             {
                 var original = match.Participants[player];
                 bool won = actualVictory && match.Faction[player] == winnerFaction;
-                var state = player.TimedBattle!;
+                var state = player.Instances.TimedBattle!;
                 if (match.Entry == ChickenEntry && state.ChickenSettled.Contains(match.Open)
                     || match.Entry == DragonEntry && state.DragonSettled.Contains(match.Open)) continue;
                 var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
@@ -236,7 +236,7 @@ public sealed partial class TimedBattleService
             {
                 foreach (var item in frozen)
                 {
-                    item.Player.TimedBattle = item.Next;
+                    item.Player.Instances.TimedBattle = item.Next;
                     if (item.PaidProgress != null) item.Player.Progress = item.PaidProgress;
                     item.TaskPlan?.Apply();
                     _pendingDeliveryRoles.Add(item.Obligation.RoleId);
@@ -284,7 +284,7 @@ public sealed partial class TimedBattleService
             { _log.LogWarning(error, "Timed battle room leave failed for role {Role}", match.Participants[player].Id); }
             finally
             {
-                player.EventFaction = 0;
+                player.Instances.EventFaction = 0;
                 _active.Remove(player);
                 // A player in a handover may refuse the stat refresh; that must not keep the match open.
                 if (match.Chicken != null)

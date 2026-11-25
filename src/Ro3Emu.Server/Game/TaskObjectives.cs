@@ -291,14 +291,14 @@ public sealed partial class TaskService
             TBaseLevel => p.Level,
             // 500130 [106901,3600] displays whole consumed minutes. Reading the committed
             // daily counter also repairs a disconnect between 5035 persistence and the quest sync (inferred).
-            TAfkSeconds => s.WildAfk is { } afk && s.Daily?.DailyEpoch == afk.DailyEpoch ? afk.ConsumedTodaySeconds : 0,
+            TAfkSeconds => s.Activities.WildAfk is { } afk && s.Activities.Daily?.DailyEpoch == afk.DailyEpoch ? afk.ConsumedTodaySeconds : 0,
             TJobRank => _data.Row("JobConfig", p.Career) is { } job && GameData.Int(job, "_iJobRank") >= t[1] ? 1 : 0,
             TSkillPoints => _skills.SpentPoints(p),
             TSkillRank => _skills.SpentPoints(p, (int)t[1]),
             TStatPoints => _character.SpentStatPoints(p),
             TTaskDone => IsDelivered(s, t[1]) ? 1 : 0,
             TJobChange => IsDescendant(p.Career, t[1]) ? 1 : 0,
-            TGuide => s.TaskRuntime.CompletedGuides.Contains(t[1]) ? 1 : 0,
+            TGuide => s.Activities.TaskRuntime.CompletedGuides.Contains(t[1]) ? 1 : 0,
             TCollect or TSubmit => _character.CountOf(s, (int)t[1]),
             // TaskConfig[500070] [106906,1004,100]: committed consumption, not current balance or item 5.
             TRestrictUse => LifeJobService.DailyEnergyUsed(s, t[1]),
@@ -309,23 +309,23 @@ public sealed partial class TaskService
             TCardQuality => s.Items.LongCount(i => i.Grid < 0 && _character.IsCard(i.Entry) && ItemQuality(i.Entry) >= t[1]),
             TCardStars => s.Items.LongCount(i => i.Grid < 0 && _character.IsCard(i.Entry) && (i.Attrs?.GetValueOrDefault(502) ?? 0) >= t[1]),
             TTreasure => ReferenceEquals(s.CardLibraryReadyAttachment, s.Attachment)
-                ? s.Library?.Cards.Values.LongCount(c => c.TreasureUnlock && ItemQuality((int)c.CardId) >= t[1]) ?? 0 : 0,
+                ? s.Profile.Library?.Cards.Values.LongCount(c => c.TreasureUnlock && ItemQuality((int)c.CardId) >= t[1]) ?? 0 : 0,
             TResonance => _character.Resonance(s, "RefiningEffectTable"),
-            TTotalRefine => Enumerable.Range(1, 7).Sum(g => (long)s.EquipLevels.Refine.GetValueOrDefault(g)),
-            TRefineSlots => Enumerable.Range(1, 7).LongCount(g => s.EquipLevels.Refine.GetValueOrDefault(g) > 0),
+            TTotalRefine => Enumerable.Range(1, 7).Sum(g => (long)s.Profile.EquipLevels.Refine.GetValueOrDefault(g)),
+            TRefineSlots => Enumerable.Range(1, 7).LongCount(g => s.Profile.EquipLevels.Refine.GetValueOrDefault(g) > 0),
             // Slot 0 is "all equipment slots" (growth titles 4/5, 704060 [103021,0,2]): the lowest of grids 1..7 (inferred).
-            TSlotRefine => t[1] == 0 ? Enumerable.Range(1, 7).Min(g => (long)s.EquipLevels.Refine.GetValueOrDefault(g))
-                : s.EquipLevels.Refine.GetValueOrDefault((int)t[1]),
+            TSlotRefine => t[1] == 0 ? Enumerable.Range(1, 7).Min(g => (long)s.Profile.EquipLevels.Refine.GetValueOrDefault(g))
+                : s.Profile.EquipLevels.Refine.GetValueOrDefault((int)t[1]),
             // The active plan's purchased talent levels (the Battle Oath is its own track).
-            TTalentLevels => s.SeasonTalent is { } talent && talent.Plan.TryGetValue(talent.CurPlanId, out var plan)
+            TTalentLevels => s.Season.SeasonTalent is { } talent && talent.Plan.TryGetValue(talent.CurPlanId, out var plan)
                 ? plan.TalentNodes.Values.Sum(n => n.CurrentLevel) : 0,
             TPetsDeployed => s.Pets?.SetupPlans.GetValueOrDefault(s.Pets.CurrentPlan)?.SetUpPets.Values.LongCount(id => id != 0) ?? 0,
-            TTowerFloor or TTowerFloorReached => s.Tower is { LayerConfID: > 0 } tower && _data.Table("PetFloorConfig").Values
+            TTowerFloor or TTowerFloorReached => s.Instances.Tower is { LayerConfID: > 0 } tower && _data.Table("PetFloorConfig").Values
                 .FirstOrDefault(r => GameData.Int(r, "_iID") == tower.LayerConfID) is { ValueKind: JsonValueKind.Object } floor
                 ? GameData.Int(floor, "_iFloor") : 0,
-            TStrength => s.EquipLevels.Strength.GetValueOrDefault((int)t[1]),
+            TStrength => s.Profile.EquipLevels.Strength.GetValueOrDefault((int)t[1]),
             TRentCareerSpecial => CareerSpecialService.HoldsSubType(s, _data, t[1]) ? 1 : 0,
-            TValhallaLayer => DungeonService.ValhallaCleared(s.Dungeons).Contains(t[1]) ? 1 : 0,
+            TValhallaLayer => DungeonService.ValhallaCleared(s.Instances.Dungeons).Contains(t[1]) ? 1 : 0,
             TMonsterHunt => MonsterHuntService.AreaProgress(s, t[1]),
             // Pets load after the quests at login (RoleSystems): keep the stored value until the post-login refresh.
             TPetQuality => s.Pets?.ListPet.Values.LongCount(pet => PetQuality(pet.PetId) >= t[1]) ?? -1,
@@ -545,7 +545,7 @@ public sealed partial class TaskService
         using var gate = await LockTasksAsync(session);
         if (BeforeProgress is { } before) await before(session);
         if (session.Tasks == null || !GuideExists(guide)) return;
-        session.TaskRuntime.CompletedGuides.Add(guide);
+        session.Activities.TaskRuntime.CompletedGuides.Add(guide);
         await SettleAsync(session);
     }
 

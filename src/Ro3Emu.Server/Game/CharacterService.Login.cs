@@ -17,41 +17,41 @@ public sealed partial class CharacterService
     public void Load(GameSession session)
     {
         var role = session.Role!;
-        session.SeasonTalent = null; // role switching must not leak the previous role's attribute source
-        session.SeasonRefine = null;
-        session.SeasonPage = null;
+        session.Season.SeasonTalent = null; // role switching must not leak the previous role's attribute source
+        session.Season.SeasonRefine = null;
+        session.Season.SeasonPage = null;
         session.SeasonState = null;
         session.Tasks = null; // task gates must likewise wait for the selected role's task load
-        session.Dungeons = null; // progression hooks must wait for this role's 5062 state
-        session.GuildChallenge = null; // a pending clear must never see the previous role's entitlement cache
-        session.DungeonSyncMinute = 0;
+        session.Instances.Dungeons = null; // progression hooks must wait for this role's 5062 state
+        session.Instances.GuildChallenge = null; // a pending clear must never see the previous role's entitlement cache
+        session.Instances.DungeonSyncMinute = 0;
         var progress = roles.LoadProgress(role.Id);
         session.Progress = progress;
-        session.GmAllFunctionsOpen = roles.LoadGmState(role.Id) is { Length: > 0 } gm
+        session.Profile.GmAllFunctionsOpen = roles.LoadGmState(role.Id) is { Length: > 0 } gm
             && JsonSerializer.Deserialize<GmCommands.RoleGmState>(gm)?.AllFunctionsOpen == true; // GM panel openallfunc
         session.Pets = null; // The next role's pets load before 5056; never reuse a previous role's stat contributions.
         session.Items = itemStore.Load(role.Id);
-        session.BagState = new RoleBagState(roles.LoadBagState(role.Id));
-        session.ItemCds.Clear();
-        session.ItemGroupCds.Clear();
+        session.Profile.BagState = new RoleBagState(roles.LoadBagState(role.Id));
+        session.Combat.ItemCds.Clear();
+        session.Combat.ItemGroupCds.Clear();
         long nowMs = session.NowMs;
-        foreach (var (id, end) in session.BagState.Info.ItemCds?.Data ?? new CdData().Data)
-            if (id is > 0 and <= int.MaxValue && end > nowMs) session.ItemCds[(int)id] = end;
-        foreach (var (id, end) in session.BagState.Info.ShareCds?.Data ?? new CdData().Data)
-            if (id is > 0 and <= int.MaxValue && end > nowMs) session.ItemGroupCds[(int)id] = end;
-        session.StatPlans = new StatPlanState(roles.LoadStatPlans(role.Id));
+        foreach (var (id, end) in session.Profile.BagState.Info.ItemCds?.Data ?? new CdData().Data)
+            if (id is > 0 and <= int.MaxValue && end > nowMs) session.Combat.ItemCds[(int)id] = end;
+        foreach (var (id, end) in session.Profile.BagState.Info.ShareCds?.Data ?? new CdData().Data)
+            if (id is > 0 and <= int.MaxValue && end > nowMs) session.Combat.ItemGroupCds[(int)id] = end;
+        session.Profile.StatPlans = new StatPlanState(roles.LoadStatPlans(role.Id));
         LoadStatPlans(session);
         MigrateEquipmentInstances(session);
         MigrateCardPackItems(session);
         MigrateAcquireTimeBoundItems(session);
-        session.EquipLevels = roles.LoadEquipLevels(role.Id) is { } levels ? System.Text.Json.JsonSerializer.Deserialize<EquipLevels>(levels) ?? new() : new();
+        session.Profile.EquipLevels = roles.LoadEquipLevels(role.Id) is { } levels ? System.Text.Json.JsonSerializer.Deserialize<EquipLevels>(levels) ?? new() : new();
         LoadEquipmentPlans(session);
-        session.AutoDecompose = roles.LoadAutoDecompose(role.Id) is { } setting ? AutoDecomposeSetting.Parser.ParseFrom(setting) : new();
+        session.Profile.AutoDecompose = roles.LoadAutoDecompose(role.Id) is { } setting ? AutoDecomposeSetting.Parser.ParseFrom(setting) : new();
         session.Synced.Clear();
         session.SyncedPacked.Clear();
-        session.SentPropertyIds.Clear();
-        session.NewItems.Clear();
-        session.SyncVersions.Clear();
+        session.Profile.SentPropertyIds.Clear();
+        session.Profile.NewItems.Clear();
+        session.Profile.SyncVersions.Clear();
         // Stats are current before the selection awaits anything: the loop may tick this session meanwhile.
         Refresh(session);
     }
@@ -60,7 +60,7 @@ public sealed partial class CharacterService
     internal void OpenAllFunctions(GameSession session)
     {
         roles.SaveGmState(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(new GmCommands.RoleGmState { AllFunctionsOpen = true }));
-        session.GmAllFunctionsOpen = true;
+        session.Profile.GmAllFunctionsOpen = true;
     }
 
     /// <summary>The rest of <see cref="Load"/>: a new role's starter kit.</summary>
@@ -175,7 +175,7 @@ public sealed partial class CharacterService
         if (CareerPackCapacity(session) is var cartSize and > 0)
         {
             await session.SendGameAsync(CareerSpecialSizeChange, new NotifyCareerSpecialPackSizeChange { Size = cartSize });
-            session.BagState.LastNotifiedCartSize = cartSize;
+            session.Profile.BagState.LastNotifiedCartSize = cartSize;
         }
         await SyncAsync(session, EquipSync, BuildEquip(session));
     }

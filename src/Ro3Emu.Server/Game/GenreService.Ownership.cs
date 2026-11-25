@@ -50,14 +50,14 @@ public sealed partial class GenreService
     private async Task SaveGenreAsync(GameSession session, DBGenre next)
     {
         var bytes = next.ToByteArray();
-        if (roles.BlobUnchanged(session.Role!.Id, "genre", bytes)) { session.Genre = next; return; } // a login's normalization
+        if (roles.BlobUnchanged(session.Role!.Id, "genre", bytes)) { session.Profile.Genre = next; return; } // a login's normalization
         var tx = roles.NewTransaction();
         tx.RoleBlob(session.Role.Id, "genre", bytes);
-        await roles.CommitAsync(tx, "cd13b/genre-state", _ => session.Genre = next);
+        await roles.CommitAsync(tx, "cd13b/genre-state", _ => session.Profile.Genre = next);
     }
 
     internal Task MyRecommendationsAsync(GameSession session) => session.SendGameAsync(82808,
-        new GenreGetAllMyRecommendResp { MyRecommend = session.Genre!.MyRecommend?.Clone() ?? new() });
+        new GenreGetAllMyRecommendResp { MyRecommend = session.Profile.Genre!.MyRecommend?.Clone() ?? new() });
 
     internal async Task QueryRecommendationsAsync(GameSession session)
     {

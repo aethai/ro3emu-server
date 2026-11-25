@@ -123,8 +123,8 @@ public sealed partial class DungeonService
             foreach (var s in participants)
             {
                 long roleId = s.Role!.Id;
-                var original = JsonSerializer.SerializeToUtf8Bytes(s.Dungeons!);
-                var next = CurrentState(s.Dungeons!);
+                var original = JsonSerializer.SerializeToUtf8Bytes(s.Instances.Dungeons!);
+                var next = CurrentState(s.Instances.Dungeons!);
                 var goods = new List<DungeonRewardGood>();
                 bool newRecord = false;
                 bool auctionEligible = false;
@@ -327,13 +327,13 @@ public sealed partial class DungeonService
 
     private async Task<(bool Committed, List<ItemBaseInfo> Awarded)> DeliverAsync(GameSession s, DungeonRewardObligation row)
     {
-        if (s.Role?.Id != row.RoleId || s.Dungeons == null) return (false, []);
+        if (s.Role?.Id != row.RoleId || s.Instances.Dungeons == null) return (false, []);
         var settlement = new RewardSettlement(row.Key, "dungeon-reward") { DeferPresentation = true };
         var shown = new List<ItemBaseInfo>();
         using (await CharacterService.Lock(s, [RunKey(row.RoomId)]))
         {
-            if (s.Role?.Id != row.RoleId || s.Dungeons == null) return (false, []);
-            var next = ApplyFrozenState(s.Dungeons, row);
+            if (s.Role?.Id != row.RoleId || s.Instances.Dungeons == null) return (false, []);
+            var next = ApplyFrozenState(s.Instances.Dungeons, row);
             var oldStacks = s.Items.ToDictionary(item => item.Guid, item => item.Stack);
             var granted = await _character.ExchangeLockedAsync(s, new ExchangeRequest
             {
@@ -352,7 +352,7 @@ public sealed partial class DungeonService
                 },
                 RewardSettlement = settlement,
                 AsyncCommit = true,
-                Committed = () => s.Dungeons = next,
+                Committed = () => s.Instances.Dungeons = next,
             });
             if (granted == null || !settlement.Committed)
                 throw new InvalidOperationException("Validated dungeon obligation was refused.");
@@ -402,7 +402,7 @@ public sealed partial class DungeonService
     /// <summary>Login and new entry both drain already earned grants before a later dungeon can spend allowances.</summary>
     public async Task DeliverPendingAsync(GameSession s)
     {
-        if (s.Role == null || s.Dungeons == null) return;
+        if (s.Role == null || s.Instances.Dungeons == null) return;
         foreach (var row in _obligations.Pending(s.Role.Id))
         {
             // Inside the role select only the obligations it reserved are delivered; one frozen after its admission

@@ -14,7 +14,7 @@ public sealed partial class CharacterInventoryService
         var notices = new List<Func<Task>> { CaptureEconomicSync(session, ItemsSync, items) };
         if (PruneEquipmentPlans(session))
         {
-            roles.SaveEquipPlans(session.Role!.Id, session.EquipmentPlans.ToByteArray());
+            roles.SaveEquipPlans(session.Role!.Id, session.Profile.EquipmentPlans.ToByteArray());
             notices.Add(CaptureEconomicSync(session, EquipSync, BuildEquip(session)));
         }
         if (publishStateChanged) foreach (var handler in StateChanged.Handlers) handler(session);

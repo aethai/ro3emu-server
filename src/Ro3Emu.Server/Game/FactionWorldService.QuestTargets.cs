@@ -27,7 +27,7 @@ public sealed partial class FactionWorldService
 
     /// <summary>200001 / 210003 of a loaded siege participant, -1 outside a siege.</summary>
     public long SiegeTrackerValue(GameSession s, int target) =>
-        s.SiegeBattle is { } battle && s.Role != null && s.InstanceId == battle.Room.Id
+        s.Instances.SiegeBattle is { } battle && s.Role != null && s.InstanceId == battle.Room.Id
         && battle.State.Players.TryGetValue(s.Role.Id, out var p)
             ? target switch { RatingTarget => p.Score, AssistsTarget => p.Assists, _ => -1 } : -1;
 

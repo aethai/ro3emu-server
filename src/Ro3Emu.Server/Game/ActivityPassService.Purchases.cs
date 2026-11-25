@@ -71,7 +71,7 @@ public sealed partial class ActivityPassService
     public Task FirstRechargeAwardsAsync(GameSession session)
     {
         var response = new GetRechargeFirstAwardResp();
-        if (!_freeProducts || session.ActivityRuntime is not { } runtime) response.Result = ErrorCodes.FeatureUnavailable;
+        if (!_freeProducts || session.Activities.ActivityRuntime is not { } runtime) response.Result = ErrorCodes.FeatureUnavailable;
         else response.IdList.Add(RechargeConfig.All(_data)
             .Where(r => r.Platform == PcPlatform && r.FirstChargeAward.Length >= 2
                 && runtime.Purchases.GetValueOrDefault(PurchaseKey(ChargeRecharge, r.Id)) is not { Total: > 0 })
@@ -88,10 +88,10 @@ public sealed partial class ActivityPassService
 
     private async Task<(int Result, long FirstCharge)> PurchaseAsync(GameSession session, CreateOrderReq req, string order)
     {
-        if (!session.ActivitiesReady || session.NewActivities == null || session.ActivityRuntime == null || session.Progress == null)
+        if (!session.Activities.ActivitiesReady || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null || session.Progress == null)
             return (ErrorCodes.FeatureUnavailable, 0);
         string key = PurchaseKey(req.ChargeType, req.ChargeId);
-        var bought = session.ActivityRuntime.Purchases.GetValueOrDefault(key) ?? new PurchaseRecord();
+        var bought = session.Activities.ActivityRuntime.Purchases.GetValueOrDefault(key) ?? new PurchaseRecord();
         long day = GameDayNumber;
         int today = bought.Day == day ? bought.DayCount : 0;
         (int Result, List<AwardGrant> Grants, long FirstCharge) priced = req.ChargeType switch
@@ -103,7 +103,7 @@ public sealed partial class ActivityPassService
         if (priced.Result != 0) return (priced.Result, 0);
         var runtime = CloneRuntime(session);
         runtime.Purchases[key] = new PurchaseRecord { Total = bought.Total + 1, Day = day, DayCount = today + 1 };
-        int result = await _activities.CommitAsync(session, session.NewActivities.Clone(), extra: priced.Grants, runtime: runtime,
+        int result = await _activities.CommitAsync(session, session.Activities.NewActivities.Clone(), extra: priced.Grants, runtime: runtime,
             source: "purchase/" + order);
         if (result != 0) return (result, 0);
         await ReconcilePassAsync(session);
@@ -150,7 +150,7 @@ public sealed partial class ActivityPassService
         if (ActivityError(session, MonthCardActivity, MonthCardType) is var error and not 0) return error;
         var cards = MonthCardConfig.All(_data).Where(c => grants.Any(g => g.Entry == c.Item)).ToList();
         if (cards.Count == 0) return ErrorCodes.TopUpOption;
-        var owned = session.NewActivities!.ActivityInfo[MonthCardActivity].ActivityParam.MonthCard.Infos;
+        var owned = session.Activities.NewActivities!.ActivityInfo[MonthCardActivity].ActivityParam.MonthCard.Infos;
         foreach (var card in cards)
         {
             long lastDays = owned.GetValueOrDefault(card.Id) is { } info && info.ExpireTs > Now ? info.LastDays : 0;
@@ -175,7 +175,7 @@ public sealed partial class ActivityPassService
         var gift = passes.Where(p => grants.Any(g => g.Entry == p.GiftItemId)).ToList();
         if (premium.Count == 0 && gift.Count == 0) return ErrorCodes.BattlePassClosed;
         if (premium.Count > 0 && premium.All(p => Owned(session, (int)p.PremiumItemId) > 0
-            || session.NewActivities!.ActivityInfo[p.Id].ActivityParam.BattlePass.Premium)) return ErrorCodes.AlreadyPurchased;
+            || session.Activities.NewActivities!.ActivityInfo[p.Id].ActivityParam.BattlePass.Premium)) return ErrorCodes.AlreadyPurchased;
         if (gift.Count > 0 && (today > 0 || gift.Any(p => Owned(session, (int)p.GiftItemId) > 0))) return ErrorCodes.TopUpLimit;
         return 0;
     }

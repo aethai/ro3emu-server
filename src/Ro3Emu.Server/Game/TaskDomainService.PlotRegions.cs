@@ -43,7 +43,7 @@ public sealed partial class TaskDomainService
         var now = _clock.GetUtcNow();
         foreach (var session in _sessions.All())
         {
-            if (session.Role == null || session.Tasks == null || session.SceneLoading || session.InCutScene)
+            if (session.Role == null || session.Tasks == null || session.SceneLoading || session.Activities.InCutScene)
             {
                 if (_plotRegionEntered.TryGetValue(session, out var idle)) idle.Clear();
                 continue;

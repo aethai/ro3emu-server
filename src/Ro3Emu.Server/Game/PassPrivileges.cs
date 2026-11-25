@@ -27,7 +27,7 @@ internal static class PassPrivileges
     /// <summary>The parameters of each active privilege of <paramref name="type"/>.</summary>
     internal static IEnumerable<long[]> Of(GameData data, GameSession session, long type)
     {
-        if (session.NewActivities is not { } state) return [];
+        if (session.Activities.NewActivities is not { } state) return [];
         var ids = new HashSet<long>();
         foreach (var pass in BattlePassConfig.All(data))
             if (state.ActivityInfo.TryGetValue(pass.Id, out var info) && info.IsEnterComplete && !info.IsExitComplete

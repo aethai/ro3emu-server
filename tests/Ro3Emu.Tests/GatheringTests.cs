@@ -113,7 +113,7 @@ public sealed class GatheringTests : IAsyncLifetime
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gmDeferred = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var owners = _server.Service<Ro3Emu.Server.Game.Ownership.OwnerRegistry>();
-        byte[] before = Google.Protobuf.MessageExtensions.ToByteArray(owner.LifeJob!);
+        byte[] before = Google.Protobuf.MessageExtensions.ToByteArray(owner.Season.LifeJob!);
         accounts.BeforeOwnedCommitForTest = label =>
         {
             if (label != "economy/gather-yield") return Task.CompletedTask;
@@ -130,14 +130,14 @@ public sealed class GatheringTests : IAsyncLifetime
             await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
             await staged.Task.WaitAsync(Wait);
             Assert.Empty(GatherSources());
-            Assert.Equal(before, Google.Protobuf.MessageExtensions.ToByteArray(owner.LifeJob!));
+            Assert.Equal(before, Google.Protobuf.MessageExtensions.ToByteArray(owner.Season.LifeJob!));
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(GatheringService.StateChange)
                 && InteractChangeNtf.Parser.ParseFrom(e.Body) is { Interrupt: false, DataInfo.EType: InteractInfo.Types.EState.Idle });
             gm = Gm("alice", "!speed 701");
             await gmDeferred.Task.WaitAsync(Wait);
             await loop.InvokeAsync(() => _server.Service<DungeonService>().SetGuideAsync(other,
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = true })).WaitAsync(Wait);
-            Assert.True(other.Dungeons!.FirstSetted);
+            Assert.True(other.Instances.Dungeons!.FirstSetted);
             Assert.False(gm.IsCompleted);
         }
         finally
@@ -148,7 +148,7 @@ public sealed class GatheringTests : IAsyncLifetime
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && !n.Interrupt);
         await gm!.WaitAsync(Wait);
         Assert.Single(GatherSources());
-        Assert.Equal(1, owner.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]);
+        Assert.Equal(1, owner.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]);
         var items = _server.Service<ItemStore>().Load(owner.Role!.Id);
         Assert.True(items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack) > 0);
     }
@@ -166,7 +166,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.StartsWith("gather/", first[0]);
         var initial = await OnLoop("alice", s =>
             (Materials: s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             Count: s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             Count: s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.Equal(1, initial.Count);
         await alice.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
@@ -183,7 +183,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.NotEqual(sources[0], sources[1]);
         var after = await OnLoop("alice", s =>
             (Materials: s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             Count: s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             Count: s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.True(after.Materials > initial.Materials);
         Assert.Equal(2, after.Count);
     }
@@ -207,7 +207,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.Equal(2, attempts);
         Assert.Single(GatherSources());
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
     }
 
     [ClientDataFact]
@@ -224,7 +224,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.Equal(1, faults);
         Assert.Single(GatherSources());
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         await alice.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
         Assert.Single(GatherSources());
@@ -275,7 +275,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await _server.RestartAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.Single(GatherSources());
         await using var nextBob = await InWorld("Bob", create: false);
         var next = await EnterMinerField(nextBob, "bob");
@@ -363,7 +363,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.True(Count(alice, LifeJobService.RestrictSync) > vigorBefore);
         var (material, pointCount) = await OnLoop("alice", s =>
             (s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.True(material >= 4);
         Assert.Equal(1, pointCount);
         var removed = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(node.Uuid));
@@ -501,7 +501,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var again = await InWorld("Alice", create: false);
         var (material, counted) = await OnLoop("alice", s =>
             (s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             s.LifeJob!.GeneralCollectionTimesByMap.TryGetValue(Scene, out var map)
+             s.Season.LifeJob!.GeneralCollectionTimesByMap.TryGetValue(Scene, out var map)
                  && map.Times.ContainsKey(node.CollectionInfo.PointConfigId)));
         Assert.Equal(0, material);
         Assert.False(counted);

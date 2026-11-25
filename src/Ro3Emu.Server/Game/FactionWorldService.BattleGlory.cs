@@ -59,7 +59,7 @@ public sealed partial class FactionWorldService
     /// <summary>5001 for a loaded role: read without copying (StateChanged calls it on every bag or EXP change).</summary>
     internal async Task SyncGloryAsync(GameSession s)
     {
-        if (s.Role is not { } owner || s.Progress == null || s.TerritoryWars is not { } role || !_functions.IsOpen(s, GloryFunction))
+        if (s.Role is not { } owner || s.Progress == null || s.Instances.TerritoryWars is not { } role || !_functions.IsOpen(s, GloryFunction))
             return;
         var glory = SeasonGlory(role, Epoch);
         var info = new DBBattleGloryInfo
@@ -82,7 +82,7 @@ public sealed partial class FactionWorldService
             ? SeasonGlory(role, epoch)?.Points ?? 0 : 0;
 
     /// <summary>Task target 106610 (TaskObjectives): this season's points of a loaded role, -1 before it loads.</summary>
-    public long GloryPoints(GameSession s) => s.TerritoryWars is { } role ? SeasonGlory(role, Epoch)?.Points ?? 0 : -1;
+    public long GloryPoints(GameSession s) => s.Instances.TerritoryWars is { } role ? SeasonGlory(role, Epoch)?.Points ?? 0 : -1;
 
     private BattleGloryBase? GloryMap(GameSession s) => s.InstanceId == 0 && s.LineNumber == 1
         ? BattleGloryBase.Get(_data, s.SceneEntry) : null;
@@ -145,7 +145,7 @@ public sealed partial class FactionWorldService
             using var held = await CharacterService.Lock(s);
             if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment) || s.Progress == null
                 || !_functions.IsOpen(s, GloryFunction)) return;
-            var next = Copy(s.TerritoryWars ?? LoadRole(role.Id));
+            var next = Copy(s.Instances.TerritoryWars ?? LoadRole(role.Id));
             var glory = Glory(next);
             string key = $"{(int)kind}:{other}";
             int count = glory.Counts[key] = glory.Counts.GetValueOrDefault(key) + 1;
@@ -153,7 +153,7 @@ public sealed partial class FactionWorldService
                 (Data.Config.PublicParams.Of(_data).BattleGloryDailyLimit ?? 0));
             if (points == 0)
             {
-                s.TerritoryWars = next;
+                s.Instances.TerritoryWars = next;
                 return;
             }
             glory.Points += points; glory.DayGain += points;
@@ -165,7 +165,7 @@ public sealed partial class FactionWorldService
                     SaveRole(role.Id, next, tx);
                     tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "battle-glory", source, [], grants,
                         new { Kind = kind.ToString(), Other = other, Points = points, glory.Rank }));
-                }, stateLockHeld: true, committed: () => s.TerritoryWars = next))
+                }, stateLockHeld: true, committed: () => s.Instances.TerritoryWars = next))
                 return;
             paid = true;
             LogGloryEarned(_log, role.Id, points, (int)kind, other, glory.Rank);
@@ -200,7 +200,7 @@ public sealed partial class FactionWorldService
     private async Task<int> ClaimGloryRankAsync(GameSession s, int level)
     {
         if (s.Role is not { } role || s.Progress == null) return ErrorCodes.Unknown;
-        var next = Copy(s.TerritoryWars ?? LoadRole(role.Id));
+        var next = Copy(s.Instances.TerritoryWars ?? LoadRole(role.Id));
         var glory = Glory(next);
         int refusal = GloryRules.ClaimError(level, glory, _functions.IsOpen(s, GloryFunction));
         if (refusal != 0) return refusal;
@@ -220,7 +220,7 @@ public sealed partial class FactionWorldService
                 if (plan.Grants.Any(g => g.Entry is not (100 or 101)))
                     tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "battle-glory-rank", source, [], plan.Grants,
                         new { Rank = level, Award = group, plan.AwardId }));
-            }, stateLockHeld: true, committed: () => s.TerritoryWars = next) ? 0 : ErrorCodes.Unknown;
+            }, stateLockHeld: true, committed: () => s.Instances.TerritoryWars = next) ? 0 : ErrorCodes.Unknown;
     }
 }
 

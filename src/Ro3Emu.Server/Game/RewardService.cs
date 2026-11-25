@@ -101,8 +101,8 @@ public sealed class RewardService
     private async Task CommitKillAsync(GameSession player, MonsterUnit monster)
     {
         var role = player.Role!;
-        var afk = player.WildAfk;
-        bool SameRole() => ReferenceEquals(player.Role, role) && ReferenceEquals(player.WildAfk, afk)
+        var afk = player.Activities.WildAfk;
+        bool SameRole() => ReferenceEquals(player.Role, role) && ReferenceEquals(player.Activities.WildAfk, afk)
             && player.Progress != null && player.Attachment?.Cancelled != true;
         var settlement = monster.RewardSettlement!;
         try
@@ -134,7 +134,7 @@ public sealed class RewardService
             if (outcome.Note is { } note && ExplorationNotes?.Spend(player, note) is { } remaining)
             {
                 items = [.. items, (note.Item, 1)];
-                restrict = player.Restrictions!.Clone();
+                restrict = player.Season.Restrictions!.Clone();
                 restrict.RestrictCount[remaining.Id] = remaining;
             }
             StageAfkKill?.Invoke(player, monster, settlement, items, outcome.BaseExp, outcome.JobExp);
@@ -157,7 +157,7 @@ public sealed class RewardService
                 {
                     settlement.Applied?.Invoke();
                     if (restrict == null) return;
-                    player.Restrictions = restrict;
+                    player.Season.Restrictions = restrict;
                     outcome.NoteGranted = true;
                     outcome.Items = items;
                 },
@@ -211,7 +211,7 @@ public sealed class RewardService
             baseExp = baseExp * Correction((int)Math.Clamp(gap, -200, 200)) / 10000;
             baseExp = Math.Max(1, baseExp * _teams.ExpBonus(player) / 10000);
             baseExp = ScaleFieldExp(monster.Template.NpcId, player.Progress!.Level, baseExp);
-            if (fieldAutoBattle && player.OdinStatue is { CurLv: > 0 } statue)
+            if (fieldAutoBattle && player.Instances.OdinStatue is { CurLv: > 0 } statue)
                 baseExp += baseExp * _statueFieldExp.GetValueOrDefault(statue.CurLv) / 10000;
         }
         // BaseExpAddConfig catch-up below the server level (CharacterService.LevelRules).

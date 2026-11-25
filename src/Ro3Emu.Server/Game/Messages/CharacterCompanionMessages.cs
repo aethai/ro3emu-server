@@ -17,7 +17,7 @@ public sealed class CharacterCompanionMessages(
         routes.Intercept("life", id => id is >= LifeJobService.SwitchLife and <= GatheringService.MiniGame, async (session, msgId, _) =>
         {
             // Life job requests before the role's life state is loaded are refused, not routed.
-            if (session.Role != null && session.Progress != null && session.LifeJob != null && session.Restrictions != null) return false;
+            if (session.Role != null && session.Progress != null && session.Season.LifeJob != null && session.Season.Restrictions != null) return false;
             await life.RejectUnloadedAsync(session, msgId);
             return true;
         });

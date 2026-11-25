@@ -471,7 +471,7 @@ public sealed class CharacterTests : IAsyncLifetime
             await buying.WaitAsync(Wait);
             Assert.Equal(currency - 2000, roles.LoadProgress(role).Currency[1]);
             Assert.Equal(stack + 2, items.Load(role).Where(i => i.Entry == potion).Sum(i => i.Stack));
-            Assert.Equal(2, source.Shop!.Bought[commodity].Count);
+            Assert.Equal(2, source.Social.Shop!.Bought[commodity].Count);
             Assert.Equal(987654, (await Next(bob, ShopService.BuyCommodity, BuyCommodityResp.Parser,
                 r => r.CommodityId == 987654)).CommodityId);
             // A fresh, unbound permit can still address this socket. Receiving its sentinel
@@ -582,7 +582,7 @@ public sealed class CharacterTests : IAsyncLifetime
             var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
             s.Progress!.SkillBar[1] = 10000;
             // ... and a plan's manual bar (SkillAssignPlan.ManualLoadSkill), which the wheel prefers.
-            var plan = s.SkillPlans!.SkillAssignPlans[s.SkillPlans.CurrentPlanIndex];
+            var plan = s.Combat.SkillPlans!.SkillAssignPlans[s.Combat.SkillPlans.CurrentPlanIndex];
             plan.ManualLoadSkill.Clear();
             plan.ManualLoadSkill.Add(new SkillData { SkillId = 10000, SkillLevel = 1 });
             return Task.CompletedTask;

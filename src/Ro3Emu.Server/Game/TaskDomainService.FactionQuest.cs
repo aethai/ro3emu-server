@@ -85,10 +85,10 @@ public sealed partial class TaskDomainService
     /// </summary>
     internal void AddFactionPoints(GameSession s, long taskId, AwardPlan _)
     {
-        if (taskId == FactionQuest) FactionGuildAward?.Invoke(s, s.Daily?.DailyEpoch ?? 0);
+        if (taskId == FactionQuest) FactionGuildAward?.Invoke(s, s.Activities.Daily?.DailyEpoch ?? 0);
         if (s.Tasks == null || !FactionPoints().TryGetValue(taskId, out long points)) return;
         TakeFactionDay(s);
-        var runtime = s.TaskRuntime;
+        var runtime = s.Activities.TaskRuntime;
         points = Math.Min(points, Math.Max(0, (Data.Config.PublicParams.Of(_data).TerritoryWarzoneTaskPointsLimit ?? 3000) - runtime.FactionPoints));
         if (points <= 0) return;
         runtime.FactionPoints += points;
@@ -141,7 +141,7 @@ public sealed partial class TaskDomainService
             Accept(session, FactionQuest);
             moved++;
         }
-        bool open = session.TaskRuntime.FactionPoints < (Data.Config.PublicParams.Of(_data).TerritoryWarzoneTaskPointsLimit ?? 3000);
+        bool open = session.Activities.TaskRuntime.FactionPoints < (Data.Config.PublicParams.Of(_data).TerritoryWarzoneTaskPointsLimit ?? 3000);
         int tier = FactionTier(session);
         foreach (var (id, subTier) in FactionTiers())
         {
@@ -163,8 +163,8 @@ public sealed partial class TaskDomainService
     /// </summary>
     private int StartFactionDay(GameSession session)
     {
-        long today = session.Daily?.DailyEpoch ?? 0;
-        var runtime = session.TaskRuntime;
+        long today = session.Activities.Daily?.DailyEpoch ?? 0;
+        var runtime = session.Activities.TaskRuntime;
         if (today <= 0 || runtime.FactionDay == 0 || runtime.FactionDay == today) return 0;
         int dropped = 1;
         foreach (long id in FactionPoints().Keys.Append(FactionQuest).Append(FactionClaim))
@@ -180,6 +180,6 @@ public sealed partial class TaskDomainService
     /// <summary>The faction tasks and points from now on belong to the current game day.</summary>
     private static void TakeFactionDay(GameSession session)
     {
-        if (session.TaskRuntime.FactionDay == 0) session.TaskRuntime.FactionDay = session.Daily?.DailyEpoch ?? 0;
+        if (session.Activities.TaskRuntime.FactionDay == 0) session.Activities.TaskRuntime.FactionDay = session.Activities.Daily?.DailyEpoch ?? 0;
     }
 }

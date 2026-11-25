@@ -83,7 +83,7 @@ public sealed partial class RiftBattleService
         int result = session.Role == null || stone == null || session.SceneEntry != stone.Map
                 || !StoneInteractions(stone).Contains(req.InteractionId)
             ? ErrorCodes.NpcMissing : session.SceneLoading ? ErrorCodes.SwitchingScenes
-            : !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+            : !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
             : MonsterService.Distance(session.Position.X, session.Position.Z, stone.Point.X, stone.Point.Z) > 10f
                 ? ErrorCodes.NpcTooFar
             : session.Progress?.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, RiftFunction)
@@ -115,7 +115,7 @@ public sealed partial class RiftBattleService
         for (long round = start, index = 1; round < end; round += RiftRoundSeconds, index++)
             response.TimeMap[(int)index] = new HiddenTreasureRoundInfo
             { Index = (int)index, StartTime = round * 1000, EndTime = Math.Min(end, round + RiftRoundSeconds) * 1000 };
-        if (session.Role != null && session.TimedBattle is { } state)
+        if (session.Role != null && session.Instances.TimedBattle is { } state)
         {
             long week = RiftWeek(RiftDay());
             foreach (var (item, restrict) in RiftVaultItems())
@@ -166,7 +166,7 @@ public sealed partial class RiftBattleService
     private RestrictInfo? RiftRestriction(GameSession session)
     {
         long max = RiftRestrictMax(RiftExtraRestrict);
-        if (session.TimedBattle is not { } state || max <= 0) return null;
+        if (session.Instances.TimedBattle is not { } state || max <= 0) return null;
         long day = RiftDay();
         // Testing UnlimitedRewards (TEST AID, not original): the count is never spent, so it shows full.
         long used = state.OnePieceExtraDay == day && !_testing.UnlimitedRewards ? state.OnePieceExtraUsed : 0;
@@ -236,8 +236,8 @@ public sealed partial class RiftBattleService
         // stone NPC / interaction id) the nearest stone of that scene on the player's map is meant.
         var named = req.InitData?.HiddenTreasureInitData?.NpcId ?? 0;
         var stone = _riftStones.GetValueOrDefault(named) ?? NearestRiftStone(session, req.SceneEntry);
-        int error = session.Role == null || session.Progress == null || session.TimedBattle == null ? ErrorCodes.Parameter
-            : !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+        int error = session.Role == null || session.Progress == null || session.Instances.TimedBattle == null ? ErrorCodes.Parameter
+            : !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
             : session.Progress.Level < 44 || !_schedule.IsOpen(200) || !_functions.IsOpen(session, RiftFunction)
                 ? ErrorCodes.FeatureUnavailable
             : stone == null || session.SceneEntry != stone.Map ? ErrorCodes.NpcMissing
@@ -299,7 +299,7 @@ public sealed partial class RiftBattleService
         _treasure.ContainsKey(member) || _riftVotes.GetValueOrDefault(member) is { } vote && vote != own
             ? ErrorCodes.RiftMemberInVault
         : member.SceneLoading || member.InstanceId != 0 ? ErrorCodes.DungeonBusy
-        : !member.ActivitiesReady || member.Progress == null || member.TimedBattle == null || member.Progress.Level < 44
+        : !member.Activities.ActivitiesReady || member.Progress == null || member.Instances.TimedBattle == null || member.Progress.Level < 44
             || !_functions.IsOpen(member, RiftFunction) ? ErrorCodes.RiftMemberLocked
         : member.Dead || member.SceneEntry != stone.Map ? ErrorCodes.RiftMemberIneligible : 0;
 
@@ -538,7 +538,7 @@ public sealed partial class RiftBattleService
             {
                 try
                 {
-                    paid = [.. present.Where(m => m.ActivitiesReady && m.TimedBattle != null && m.Progress != null).Select(m => StageTreasureReward(a, m))];
+                    paid = [.. present.Where(m => m.Activities.ActivitiesReady && m.Instances.TimedBattle != null && m.Progress != null).Select(m => StageTreasureReward(a, m))];
                     if (paid.Length == 0) win = false;
                     else await CommitTreasureAsync(a, paid);
                 }
@@ -582,7 +582,7 @@ public sealed partial class RiftBattleService
     private TreasurePay StageTreasureReward(Treasure a, GameSession member)
     {
         long roleId = member.Role!.Id;
-        var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(member.TimedBattle!))!;
+        var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(member.Instances.TimedBattle!))!;
         long day = RiftDay(), week = RiftWeek(day);
         next.OnePieceGains = null; next.OnePieceItemGains = null;
         if (next.OnePieceExtraDay != day) { next.OnePieceExtraDay = day; next.OnePieceExtraUsed = 0; }
@@ -648,7 +648,7 @@ public sealed partial class RiftBattleService
         {
             foreach (var pay in paid)
             {
-                pay.Player.TimedBattle = pay.Next;
+                pay.Player.Instances.TimedBattle = pay.Next;
                 pay.TaskPlan?.Apply();
                 _pendingDeliveryRoles.Add(pay.Obligation.RoleId);
             }

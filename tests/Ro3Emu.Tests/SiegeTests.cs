@@ -300,7 +300,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
                     }
                 });
             Assert.Equal(gd, Service<TerritoryWarsService>().OwnerOf(1));
-            var run = Session(attack).SiegeBattle!;
+            var run = Session(attack).Instances.SiegeBattle!;
             await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(defense),
                 Service<Ro3Emu.Server.Maps.WorldData>().Map(2230101)!.Points[44]));
             await defense.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = run.Crystal!.Uid });
@@ -309,8 +309,8 @@ public sealed partial class SiegeTests : IAsyncLifetime
             await defense.SendGameAsync(GuildService.Leave, new GuildMemberLeaveReq());
             Assert.Equal(0, (await Next(defense, GuildService.Leave, GuildMemberLeaveResp.Parser)).Result);
             await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
-            Assert.Null(Session(defense).SiegeBattle);
-            Assert.Equal(0, Session(defense).EventFaction);
+            Assert.Null(Session(defense).Instances.SiegeBattle);
+            Assert.Equal(0, Session(defense).Instances.EventFaction);
             Assert.False(Service<TerritoryWarsService>().Hostile(Session(attack), Session(defense)));
             // Guild departure sends a real return handoff; finish it before advancing the load deadline clock.
             var returned = await Next(defense, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);

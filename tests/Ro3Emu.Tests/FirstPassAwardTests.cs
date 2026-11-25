@@ -44,7 +44,7 @@ public sealed class FirstPassAwardTests
     private static Task Cleared(SyntheticHost host, BotClient bot, int multi, int mark) => OnLoop(host, async () =>
     {
         var session = Session(host, bot);
-        session.Dungeons!.Records[$"{multi}:{mark}"] = new DungeonService.Record { Passed = true, FastestMs = 60_000 };
+        session.Instances.Dungeons!.Records[$"{multi}:{mark}"] = new DungeonService.Record { Passed = true, FastestMs = 60_000 };
         await host.Service<DungeonService>().SyncAsync(session);
     });
 
@@ -140,7 +140,7 @@ public sealed class FirstPassAwardTests
         Assert.Equal(0, await Claim(bot, OpenHard, 1));
         Assert.Equal(before + 40, await Count(host, bot));
         bool paid = true;
-        await OnLoop(host, () => { paid = Session(host, bot).Dungeons!.FirstPassPaid.Contains($"{LockedNormal}:1"); return Task.CompletedTask; });
+        await OnLoop(host, () => { paid = Session(host, bot).Instances.Dungeons!.FirstPassPaid.Contains($"{LockedNormal}:1"); return Task.CompletedTask; });
         Assert.False(paid); // a locked dungeon is not in 5062, so its paid flag is checked on the state
     }
 }

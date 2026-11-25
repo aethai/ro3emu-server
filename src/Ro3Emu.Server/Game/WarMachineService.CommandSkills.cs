@@ -53,7 +53,7 @@ public sealed partial class WarMachineService
 
     private long CommandNow => _loop.NowMs;
 
-    private static Dictionary<int, CommandSkillRule> CommandRules(GameSession s) => s.SiegeBattle != null ? SiegeCommandSkills : TerritoryCommandSkills;
+    private static Dictionary<int, CommandSkillRule> CommandRules(GameSession s) => s.Instances.SiegeBattle != null ? SiegeCommandSkills : TerritoryCommandSkills;
 
     private static CommandSkillState CommandSkillsOf(CommandSide side) =>
         side.Board.Skills.TryGetValue(side.Guild, out var state) ? state : side.Board.Skills[side.Guild] = new();

@@ -42,7 +42,7 @@ public sealed partial class StallsService
     /// The look is captured when the stall opens; later wardrobe changes are not pushed to it (inferred).
     /// </summary>
     private static Dictionary<int, int> WornAppearances(GameSession s) =>
-        s.Wardrobe?.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value) ?? RoleProto.Appearances(s.Role!);
+        s.Profile.Wardrobe?.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value) ?? RoleProto.Appearances(s.Role!);
 
     private async Task StartAsync(GameSession s, PlayerStartStallsReq req)
     {
@@ -73,7 +73,7 @@ public sealed partial class StallsService
                 if (req.Itembase.Count == 0) return ErrorCodes.StallItemMissing;
                 if (req.Itembase.Count > slots) return ErrorCodes.StallFull;
                 if (req.Itembase.Select(i => i.Itemid).Distinct().Count() != req.Itembase.Count) return ErrorCodes.Parameter;
-                int credit = s.Trade?.CreditPoint ?? (int)(Data.Config.PublicParams.Of(_data).TradeCreditDefault ?? 1000);
+                int credit = s.Social.Trade?.CreditPoint ?? (int)(Data.Config.PublicParams.Of(_data).TradeCreditDefault ?? 1000);
                 if (credit < (Data.Config.PublicParams.Of(_data).CreditBooth ?? 20)) return ErrorCodes.TradeLowCredit;
                 var meta = Metadata(tx, s.Role!.Id);
                 row = new StallRow
@@ -313,7 +313,7 @@ public sealed partial class StallsService
                 : req.SceneEntryID != row!.Scene || (row.SystemId == 0 && req.SceneLineNum != row.LineNumber)
                   || (row.SystemId > 0 && req.SceneLineNum != s.LineNumber) ? ErrorCodes.StallMissing : 0;
         });
-        if (code == 0) { s.ViewedStall = row!.Owner; s.ViewedSystemStall = row.SystemId; }
+        if (code == 0) { s.Social.ViewedStall = row!.Owner; s.Social.ViewedSystemStall = row.SystemId; }
         await s.SendGameAsync(View, new PlayerStallsSyncBuyerStallsInfoResp
         { Result = code, Info = code == 0 ? BuyerView(row!, row!.SystemId > 0 ? s.LineNumber : 0) : null });
     }

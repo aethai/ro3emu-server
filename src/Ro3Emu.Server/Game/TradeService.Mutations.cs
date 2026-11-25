@@ -31,7 +31,7 @@ public sealed partial class TradeService
             if (req.Quantity < 1 || req.Quantity > item.Stack || req.Quantity > GameData.Int(row, "_iShelveLimit")
                 || req.Quantity > GameData.Int(row, "_iTradeStackMaxNum")) return ErrorCodes.TradeSaleQuantity;
             if (!ValidPrice(row, req.ItemPrice)) return ErrorCodes.TradePrice;
-            if (Active(tx).Count(l => l.SellerId == owner.RoleId) >= s.Trade!.StallsNum) return ErrorCodes.TradeSpace;
+            if (Active(tx).Count(l => l.SellerId == owner.RoleId) >= s.Social.Trade!.StallsNum) return ErrorCodes.TradeSpace;
             listingFee = ListingFee(req.ItemPrice, req.Quantity, req.CurrencyType);
             if (listingFee < 0) return ErrorCodes.TradeRequest;
             // UI_Sys_TradeSalePanelCtrl:476-491 checks the fee against item 2, regardless of sale currency.
@@ -63,7 +63,7 @@ public sealed partial class TradeService
             tx.Put(Listings, sku, created);
             // (inferred) tradeTimes counts successful listed units by entry. No reset period is
             // established, so it is informational and does not enforce a lifetime quota.
-            next = s.Trade!.Clone();
+            next = s.Social.Trade!.Clone();
             next.TradeTimes.TryGetValue(item.Entry, out int previous);
             next.TradeTimes[item.Entry] = (int)Math.Min(int.MaxValue, (long)previous + req.Quantity);
             tx.SaveBlob(owner.RoleId, "trade_info", next.ToByteArray());
@@ -278,7 +278,7 @@ public sealed partial class TradeService
         DBUserTradeInfo? next = null;
         int code = await market.RunAsync(s, tx =>
         {
-            int place = s.Trade!.StallsNum + 1;
+            int place = s.Social.Trade!.StallsNum + 1;
             var row = data.Row("TradeConfigUnlockPlace", place);
             if (row == null) return ErrorCodes.TradeStallFull;
             var spend = row.Value.GetProperty("_kSpend");
@@ -292,7 +292,7 @@ public sealed partial class TradeService
                 tx.Economy.Sink(new(EconomyAssetKind.Currency, currency), amount, EconomyReason.MarketSlotUnlock,
                     EconomyCompartment.Currency, new(EconomyOwnerKind.Role, owner.RoleId.ToString(CultureInfo.InvariantCulture)));
             }
-            next = s.Trade.Clone(); next.StallsNum = place;
+            next = s.Social.Trade.Clone(); next.StallsNum = place;
             tx.SaveBlob(s.Role!.Id, "trade_info", next.ToByteArray());
             return 0;
         });
@@ -305,7 +305,7 @@ public sealed partial class TradeService
         int code = await market.RunAsync(s, tx =>
         {
             if (req.OpType is not (1 or 2) || req.Id.Length == 0) return ErrorCodes.TradeRequest;
-            next = s.Trade!.Clone();
+            next = s.Social.Trade!.Clone();
             bool add = req.OpType == 1;
             long now = NowMs;
             if (req.AttionType == 1)
@@ -339,9 +339,9 @@ public sealed partial class TradeService
         int code = await market.RunAsync(s, tx =>
         {
             long now = NowMs;
-            if (now - s.Trade!.LastClientRefreshTime < (Data.Config.PublicParams.Of(data).TradeRefreshCd ?? 300) * 1000)
+            if (now - s.Social.Trade!.LastClientRefreshTime < (Data.Config.PublicParams.Of(data).TradeRefreshCd ?? 300) * 1000)
                 return ErrorCodes.TradeRefreshCooldown;
-            next = s.Trade.Clone(); next.LastRefreshTime = now; next.LastClientRefreshTime = now;
+            next = s.Social.Trade.Clone(); next.LastRefreshTime = now; next.LastClientRefreshTime = now;
             tx.SaveBlob(s.Role!.Id, "trade_info", next.ToByteArray());
             return 0;
         });

@@ -19,14 +19,14 @@ public sealed partial class TavernService
     {
         var saved = _roles.LoadBarRoom(s.Role!.Id);
         var state = saved is { Length: > 0 } ? JsonSerializer.Deserialize<RoleState>(saved) ?? new() : new();
-        s.Tavern = Rolled(state);
+        s.Social.Tavern = Rolled(state);
     }
 
     /// <summary>Login: 5043 with the room the role is still in (a relog within <see cref="OfflineGraceMs"/>), so the
     /// client rejoins its chat and voice.</summary>
     public async Task LoginAsync(GameSession s)
     {
-        if (s.Tavern == null) Load(s);
+        if (s.Social.Tavern == null) Load(s);
         lock (_sync)
             if (_roomOf.TryGetValue(s.Role!.Id, out long guid) && _rooms[guid].Members.TryGetValue(s.Role.Id, out var member))
                 member.OfflineSinceMs = 0;
@@ -38,7 +38,7 @@ public sealed partial class TavernService
     /// <see cref="OfflineGraceMs"/> (the sweep then removes it).</summary>
     public async Task LeaveRoleAsync(GameSession s)
     {
-        if (s.Role == null || s.Tavern == null) return;
+        if (s.Role == null || s.Social.Tavern == null) return;
         await FlushNowAsync(s);
     }
 
@@ -46,8 +46,8 @@ public sealed partial class TavernService
     /// room, unix seconds; inBarRoomTime includes the seconds not yet written.</summary>
     private async Task SyncAsync(GameSession s)
     {
-        if (s.Role == null || s.Tavern == null) return;
-        var state = Rolled(s.Tavern);
+        if (s.Role == null || s.Social.Tavern == null) return;
+        var state = Rolled(s.Social.Tavern);
         var info = new DBBarRoomInfo
         {
             Popularity = state.Popularity, ActDays = state.ActDays, IsToDayActComplete = state.TodayComplete,
@@ -88,7 +88,7 @@ public sealed partial class TavernService
     /// </summary>
     private async Task<bool> FlushNowAsync(GameSession s)
     {
-        if (s.Role == null || s.Tavern == null) return false;
+        if (s.Role == null || s.Social.Tavern == null) return false;
         int seconds;
         lock (_sync)
         {
@@ -97,7 +97,7 @@ public sealed partial class TavernService
             _pendingSeconds[s.Role.Id] -= seconds;
             if (!_roomOf.ContainsKey(s.Role.Id) && _pendingSeconds[s.Role.Id] < 1) _pendingSeconds.Remove(s.Role.Id);
         }
-        var next = Rolled(s.Tavern).Clone();
+        var next = Rolled(s.Social.Tavern).Clone();
         next.TodaySeconds = AddClamped(next.TodaySeconds, seconds);
         CompleteDay(next);
         try { await CommitAsync(s, next, "tavern/stay"); }
@@ -132,7 +132,7 @@ public sealed partial class TavernService
     /// </summary>
     private async Task PayOwedDrinkAsync(GameSession s)
     {
-        if (s.Role == null || s.Tavern is not { DrinkOwed: > 0 } state) return;
+        if (s.Role == null || s.Social.Tavern is not { DrinkOwed: > 0 } state) return;
         int drink = state.DrinkOwed;
         var next = state.Clone();
         next.DrinkOwed = 0;
@@ -147,7 +147,7 @@ public sealed partial class TavernService
             tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "tavern-day", source, [], [new AwardGrant(drink, 1)],
                 new { Drink = drink, state.ActDays }));
         },
-            Committed = () => s.Tavern = next,
+            Committed = () => s.Social.Tavern = next,
         });
     }
 
@@ -155,8 +155,8 @@ public sealed partial class TavernService
     /// popularity's, PersonalService.WeekStartMs).</summary>
     private async Task CreditStarAsync(GameSession s, int star)
     {
-        if (s.Role == null || s.Tavern == null) return;
-        var next = Rolled(s.Tavern).Clone();
+        if (s.Role == null || s.Social.Tavern == null) return;
+        var next = Rolled(s.Social.Tavern).Clone();
         next.Popularity = AddClamped(next.Popularity, star);
         next.WeekPopularity = AddClamped(next.WeekPopularity, star);
         await CommitAsync(s, next, "tavern/star");
@@ -167,7 +167,7 @@ public sealed partial class TavernService
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "barroom", JsonSerializer.SerializeToUtf8Bytes(next));
-        await _roles.CommitAsync(transaction, label, _ => s.Tavern = next);
+        await _roles.CommitAsync(transaction, label, _ => s.Social.Tavern = next);
         await SyncAsync(s);
     }
 
@@ -188,12 +188,12 @@ public sealed partial class TavernService
     /// <summary>Today's seconds in a Tavern room, written ones and pending ones (the quest's 106010 reads it).</summary>
     public long TodaySeconds(GameSession s)
     {
-        if (s.Role == null || s.Tavern == null) return 0;
-        lock (_sync) return Rolled(s.Tavern).TodaySeconds + (long)_pendingSeconds.GetValueOrDefault(s.Role.Id);
+        if (s.Role == null || s.Social.Tavern == null) return 0;
+        lock (_sync) return Rolled(s.Social.Tavern).TodaySeconds + (long)_pendingSeconds.GetValueOrDefault(s.Role.Id);
     }
 
     /// <summary>Star Power received in total (achievement condition 106008 BarroomPopularity); null before login.</summary>
-    public long? Popularity(GameSession s) => s.Tavern?.Popularity;
+    public long? Popularity(GameSession s) => s.Social.Tavern?.Popularity;
 
     // ---- GM ----
 
@@ -226,8 +226,8 @@ public sealed partial class TavernService
 
     private async Task<string> GmAddAsync(GameSession s, Action<RoleState> change, int star = 0)
     {
-        if (s.Tavern == null) return "No Tavern state loaded.";
-        var next = Rolled(s.Tavern).Clone();
+        if (s.Social.Tavern == null) return "No Tavern state loaded.";
+        var next = Rolled(s.Social.Tavern).Clone();
         change(next);
         CompleteDay(next);
         if (star > 0) next.WeekPopularity = AddClamped(next.WeekPopularity, star);

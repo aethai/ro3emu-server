@@ -147,7 +147,7 @@ public sealed partial class WarMachineService
     }
 
     private bool StillActivating(GameSession s, Battle b, PlatformRing ring) =>
-        !s.Dead && ReferenceEquals(s.TerritoryBattle, b) && Active(b) && Member(s, b) && OwnId(s) == ring.Guild
+        !s.Dead && ReferenceEquals(s.Instances.TerritoryBattle, b) && Active(b) && Member(s, b) && OwnId(s) == ring.Guild
         && MonsterService.Distance(ring, s) <= RingReach(ring);
 
     private float RingReach(PlatformRing ring) => (float)Math.Max(NPCConfig.Get(_data, ring.NpcId)?.InteractDistance ?? 3, 3) + 1;
@@ -191,7 +191,7 @@ public sealed partial class WarMachineService
     /// <summary>32700 on a platform's ring; false for any other NPC.</summary>
     private async Task<bool> RingInteractAsync(GameSession s, NpcInteractionReq req)
     {
-        if (s.TerritoryBattle is not { } b || b.PlatformRings.Values.FirstOrDefault(r => r.Uid == req.NpcUid) is not { } ring) return false;
+        if (s.Instances.TerritoryBattle is not { } b || b.PlatformRings.Values.FirstOrDefault(r => r.Uid == req.NpcUid) is not { } ring) return false;
         int code = CanActivate(s, b, ring, req);
         await Send(s, SceneService.NpcInteraction, new NpcInteractionRsp { Result = code, Req = req });
         if (code != 0) return true;

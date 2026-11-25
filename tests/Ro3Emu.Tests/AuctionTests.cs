@@ -519,11 +519,11 @@ public sealed partial class AuctionTests : AuctionTestsHost
         Assert.Equal(0, (await Batch(0, 2, 2)).Result);
         Assert.Equal(0, (await Batch(2, 1, 3)).Result); // client sends only the new slot, total remains 3
         Assert.Equal(3, Service<AuctionStore>().Prebuys().Count);
-        Assert.Equal(3, Session(alice).Auction!.PreBuyNum["4:5001:1200000"]);
+        Assert.Equal(3, Session(alice).Social.Auction!.PreBuyNum["4:5001:1200000"]);
         await Gm(alice, $"!zeny -{Currency(alice) - 100}");
         Assert.Equal(ErrorCodes.AuctionCurrencyShort, (await Batch(3, 1, 4)).Result);
         Assert.Equal(3, Service<AuctionStore>().Prebuys().Count);
-        Assert.Equal(3, Session(alice).Auction!.PreBuyNum["4:5001:1200000"]);
+        Assert.Equal(3, Session(alice).Social.Auction!.PreBuyNum["4:5001:1200000"]);
     }
 
     [Fact]
@@ -550,7 +550,7 @@ public sealed partial class AuctionTests : AuctionTestsHost
         Assert.Equal(0, res.Results[rows[0].Id].Result);
         Assert.Equal(ErrorCodes.AuctionCurrencyShort, res.Results[rows[1].Id].Result);
         Assert.Single(Service<AuctionStore>().Prebuys());
-        Assert.Equal(1, Session(alice).Auction!.PreBuyNum["4:5001:1200000"]);
+        Assert.Equal(1, Session(alice).Social.Auction!.PreBuyNum["4:5001:1200000"]);
         Assert.Equal(starting - 800, Currency(alice));
     }
 

@@ -101,7 +101,7 @@ public sealed partial class SkillCombatTests
         });
         for (int hit = 1; hit <= 5; hit++)
         {
-            await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Character.SetHpSpAsync(a, null, long.MaxValue); });
+            await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); return Character.SetHpSpAsync(a, null, long.MaxValue); });
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1200401, TargetId = b.Role!.Id });
             var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
             Assert.Equal(0, accepted.Result);
@@ -145,7 +145,7 @@ public sealed partial class SkillCombatTests
 
         await Teach("alice", 15112);
         await Task.Delay(1000); // the slide still moves her
-        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1510401, Face = 0 });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var camouflage = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == 1500602));

@@ -404,16 +404,16 @@ public sealed class CardProgressTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, CardService.SlotInsert, EquipmentCardInsertResp.Parser)).Result);
         await alice.SendGameAsync(CardService.SwitchPlan, new CardSwitchPlanReq { TargetIndex = 2 });
         Assert.Equal(0, (await Next(alice, CardService.SwitchPlan, CardSwitchPlanResp.Parser)).Result);
-        Assert.Equal(Lunatic, session.CardPlans!.StoragePlans[1].CardInfo[1].CardSlotInfo[1].ItemId);
+        Assert.Equal(Lunatic, session.Profile.CardPlans!.StoragePlans[1].CardInfo[1].CardSlotInfo[1].ItemId);
         await Gm("alice", $"!delitem {Lunatic} 1");
         Assert.DoesNotContain(session.Items, i => i.Entry == Lunatic);
 
         await alice.SendGameAsync(82806, new SwitchGenrePlanReq
         { TargetPlan = 1, IsApply = true, ChildSystem = { [4] = 1 } });
         Assert.Equal(0, (await Next(alice, 82806, SwitchGenrePlanResp.Parser)).Result);
-        Assert.Equal(1, session.CardPlans.CurrentPlan);
+        Assert.Equal(1, session.Profile.CardPlans.CurrentPlan);
         Assert.DoesNotContain(session.Items, i => i.Grid < 0);
-        Assert.All(session.CardPlans.StoragePlans[1].CardInfo.Values.SelectMany(g => g.CardSlotInfo.Values),
+        Assert.All(session.Profile.CardPlans.StoragePlans[1].CardInfo.Values.SelectMany(g => g.CardSlotInfo.Values),
             slot => Assert.Equal(0, slot.ItemId));
         var saved = _app.Services.GetRequiredService<RoleStore>().LoadCardPlans(session.Role!.Id);
         Assert.NotNull(saved);

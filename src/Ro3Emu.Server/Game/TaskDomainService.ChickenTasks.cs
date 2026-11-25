@@ -28,7 +28,7 @@ public sealed partial class TaskDomainService
     internal int AcceptChickenTasks(GameSession session)
     {
         if (ChickenTasks().Length == 0 || !_functions.IsOpen(session, ChickenFunction)) return 0;
-        long week = (session.Daily?.WeeklyEpoch ?? 0) * 1000;
+        long week = (session.Activities.Daily?.WeeklyEpoch ?? 0) * 1000;
         int accepted = 0;
         foreach (long id in ChickenTasks())
         {

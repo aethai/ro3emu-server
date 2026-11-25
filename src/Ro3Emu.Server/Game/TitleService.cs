@@ -43,8 +43,8 @@ public sealed partial class TitleService
     {
         this._data = data; this._character = character; this._functions = functions; this._roles = roles;
         this._options = options.Value;
-        power.TitleId = s => s.TitleInfo?.TitleId ?? 0;
-        character.TitleOf = s => s.TitleInfo?.TitleId ?? 0;
+        power.TitleId = s => s.Profile.TitleInfo?.TitleId ?? 0;
+        character.TitleOf = s => s.Profile.TitleInfo?.TitleId ?? 0;
         rewards.ExtraKillDrops.Subscribe(CrestDrops);
         gm.Register("title", "set <rank> | info (title rank test aid)", GmAsync);
     }
@@ -65,11 +65,11 @@ public sealed partial class TitleService
     public void Load(GameSession s)
     {
         var bytes = _roles.LoadTitle(s.Role!.Id);
-        s.TitleInfo = bytes is { Length: > 0 } ? DBTitleInfo.Parser.ParseFrom(bytes) : new DBTitleInfo();
+        s.Profile.TitleInfo = bytes is { Length: > 0 } ? DBTitleInfo.Parser.ParseFrom(bytes) : new DBTitleInfo();
     }
 
-    public Task LoginAsync(GameSession s) => s.TitleInfo == null ? Task.CompletedTask
-        : CharacterService.SyncAsync(s, Sync, s.TitleInfo.Clone());
+    public Task LoginAsync(GameSession s) => s.Profile.TitleInfo == null ? Task.CompletedTask
+        : CharacterService.SyncAsync(s, Sync, s.Profile.TitleInfo.Clone());
 
     public async Task LevelAsync(GameSession s)
     {
@@ -78,16 +78,16 @@ public sealed partial class TitleService
         using (await CharacterService.Lock(s))
         {
             result = await LevelLockedAsync(s);
-            title = s.TitleInfo?.TitleId ?? 0;
+            title = s.Profile.TitleInfo?.TitleId ?? 0;
         }
         await s.SendGameAsync(Level, new TitleLevelRsp { Result = result, TitleId = title });
     }
 
     private async Task<int> LevelLockedAsync(GameSession s)
     {
-        if (s.TitleInfo == null || s.Progress == null) return ErrorCodes.Unknown;
+        if (s.Profile.TitleInfo == null || s.Progress == null) return ErrorCodes.Unknown;
         if (!_functions.IsOpen(s, Function)) return ErrorCodes.FunctionLocked;
-        if (Next(s.TitleInfo.TitleId) is not { } next) return ErrorCodes.Parameter;
+        if (Next(s.Profile.TitleInfo.TitleId) is not { } next) return ErrorCodes.Parameter;
         if (s.Progress.Level < next.Lev) return ErrorCodes.LevelTooLow;
         if (PowerService.Total(PowerService.History(s)) < next.Power) return ErrorCodes.Parameter;
         var cost = (next.Spend ?? []).Where(p => p.Length >= 2 && p[1] > 0).Select(p => ((int)p[0], p[1])).ToList();
@@ -103,10 +103,10 @@ public sealed partial class TitleService
                 tx.RoleBlob(role, "title", bytes);
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13a/character-title", cost, [], new { Title = next.Id }));
             },
-            Committed = () => s.TitleInfo = saved,
+            Committed = () => s.Profile.TitleInfo = saved,
         });
         if (paid == null) return ErrorCodes.ItemsShort;
-        await CharacterService.SyncAsync(s, Sync, s.TitleInfo.Clone()); // an increment after the login's full sync
+        await CharacterService.SyncAsync(s, Sync, s.Profile.TitleInfo.Clone()); // an increment after the login's full sync
         await _character.RefreshStatsAsync(s);
         return 0;
     }
@@ -138,15 +138,15 @@ public sealed partial class TitleService
 
     private async Task GmAsync(GameSession s, string[] a)
     {
-        if (a.Length >= 2 && a[0] == "set" && long.TryParse(a[1], out long rank) && s.TitleInfo != null)
+        if (a.Length >= 2 && a[0] == "set" && long.TryParse(a[1], out long rank) && s.Profile.TitleInfo != null)
         {
             var saved = new DBTitleInfo { TitleId = rank };
             _roles.SaveTitle(s.Role!.Id, saved.ToByteArray());
-            s.TitleInfo = saved;
+            s.Profile.TitleInfo = saved;
             await CharacterService.SyncAsync(s, Sync, saved.Clone());
         }
-        var next = Next(s.TitleInfo?.TitleId ?? 0);
-        await GmCommands.ReplyAsync(s, $"title {s.TitleInfo?.TitleId ?? 0}, next {next?.Id ?? 0} (level {next?.Lev ?? 0}, power {next?.Power ?? 0}), "
+        var next = Next(s.Profile.TitleInfo?.TitleId ?? 0);
+        await GmCommands.ReplyAsync(s, $"title {s.Profile.TitleInfo?.TitleId ?? 0}, next {next?.Id ?? 0} (level {next?.Lev ?? 0}, power {next?.Power ?? 0}), "
             + $"history power {PowerService.Total(PowerService.History(s))}, open {_functions.IsOpen(s, Function)}");
     }
 }

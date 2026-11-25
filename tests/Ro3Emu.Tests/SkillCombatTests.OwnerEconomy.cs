@@ -52,7 +52,7 @@ public sealed partial class SkillCombatTests
         try
         {
             await entered.Task.WaitAsync(Wait);
-            Assert.Equal(0, a.SkillPlans!.CurrentPlanIndex);
+            Assert.Equal(0, a.Combat.SkillPlans!.CurrentPlanIndex);
             Assert.Equal(0, DBSkillData.Parser.ParseFrom(Roles.LoadSkillPlans(a.Role!.Id)!).CurrentPlanIndex);
             competing = Gm("alice", "!item 1000000 1");
             await Loop.InvokeAsync(() =>
@@ -69,7 +69,7 @@ public sealed partial class SkillCombatTests
         finally { Accounts.BeforeOwnedCommitForTest = null; release.TrySetResult(); }
         await switching.WaitAsync(Wait);
         if (competing != null) await competing.WaitAsync(Wait);
-        Assert.Equal(1, a.SkillPlans!.CurrentPlanIndex);
+        Assert.Equal(1, a.Combat.SkillPlans!.CurrentPlanIndex);
         Assert.Equal(1, DBSkillData.Parser.ParseFrom(Roles.LoadSkillPlans(a.Role!.Id)!).CurrentPlanIndex);
         Assert.Equal(1, CountReceipts("cd13c/skill-switch"));
     }
@@ -112,7 +112,7 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         await Next(alice, BuffService.WorldTreeRevive, ItemWorldTreeReviveNtf.Parser);
         if (planChange != null) await planChange.WaitAsync(Wait);
-        Assert.Equal(1, a.SkillPlans!.CurrentPlanIndex);
+        Assert.Equal(1, a.Combat.SkillPlans!.CurrentPlanIndex);
         Assert.Equal(1, a.Items.Where(i => i.Entry == 1002004).Sum(i => i.Stack));
         Assert.Equal(1, CountReceipts("cd13c/cast-admit"));
         var catalog = EventEconomy.Catalog(_app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>());

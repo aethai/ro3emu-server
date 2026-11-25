@@ -50,34 +50,34 @@ public sealed partial class GenreService(
 
     private static Dictionary<int, int> CurrentChildren(GameSession s) => new()
     {
-        [Skill] = s.SkillPlans?.CurrentPlanIndex ?? 0,
-        [Attr] = s.StatPlans.Info.CurPlanIndex,
-        [Equip] = s.EquipmentPlans.CurrentEquipPlan,
-        [Card] = s.CardPlans?.CurrentPlan ?? 1,
-        [Totem] = s.Totems?.CurrentPlan ?? 0,
-        [Emblem] = s.Emblems.CurrentPlan,
+        [Skill] = s.Combat.SkillPlans?.CurrentPlanIndex ?? 0,
+        [Attr] = s.Profile.StatPlans.Info.CurPlanIndex,
+        [Equip] = s.Profile.EquipmentPlans.CurrentEquipPlan,
+        [Card] = s.Profile.CardPlans?.CurrentPlan ?? 1,
+        [Totem] = s.Profile.Totems?.CurrentPlan ?? 0,
+        [Emblem] = s.Profile.Emblems.CurrentPlan,
         [Pet] = checked((int)(s.Pets?.CurrentPlan ?? 0)),
-        [Talent] = checked((int)(s.SeasonTalent?.CurPlanId ?? 0)),
+        [Talent] = checked((int)(s.Season.SeasonTalent?.CurPlanId ?? 0)),
     };
 
     private static bool ValidName(string name) => !string.IsNullOrWhiteSpace(name) && !name.Any(char.IsControl)
         && name.EnumerateRunes().Count() <= NameMax;
 
-    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, GenreSync, s.Genre!.Clone());
+    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, GenreSync, s.Profile.Genre!.Clone());
 
     private int Gate(GameSession s) => !functions.IsOpen(s, FunctionGenre) ? ErrorCodes.FeatureUnavailable : 0;
 
     private sealed class Stage(GameSession s, SkillService skills)
     {
         public RoleProgress Progress { get; } = CharacterService.GenreCloneProgress(s.Progress!);
-        public BaseAttrInfo Attrs { get; } = s.StatPlans.Info.Clone();
+        public BaseAttrInfo Attrs { get; } = s.Profile.StatPlans.Info.Clone();
         public DBSkillData Skills { get; } = skills.Build(s);
-        public DBEquipInfo Equipment { get; } = s.EquipmentPlans.Clone();
-        public DBStorageHoleInfo Cards { get; } = s.CardPlans!.Clone();
-        public DBTotemInfo Totems { get; } = s.Totems!.Clone();
+        public DBEquipInfo Equipment { get; } = s.Profile.EquipmentPlans.Clone();
+        public DBStorageHoleInfo Cards { get; } = s.Profile.CardPlans!.Clone();
+        public DBTotemInfo Totems { get; } = s.Profile.Totems!.Clone();
         public DBPetInfo Pets { get; } = s.Pets!.Clone();
-        public EmblemService.EmblemState Echoes { get; } = JsonSerializer.Deserialize<EmblemService.EmblemState>(JsonSerializer.Serialize(s.Emblems))!;
-        public DBSeasonTalent Talents { get; } = s.SeasonTalent!.Clone();
+        public EmblemService.EmblemState Echoes { get; } = JsonSerializer.Deserialize<EmblemService.EmblemState>(JsonSerializer.Serialize(s.Profile.Emblems))!;
+        public DBSeasonTalent Talents { get; } = s.Season.SeasonTalent!.Clone();
         public List<InvItem> Items { get; } = [.. s.Items.Select(i => i.Clone())];
     }
 
@@ -93,9 +93,9 @@ public sealed partial class GenreService(
         if (selected.TryGetValue(Card, out int card) && (code = cards.StageGenrePlan(s, next.Cards, next.Items, card, replaced?.Contains(Card) == true)) != 0) return code;
         if (selected.TryGetValue(Totem, out int totem) && (totem != next.Totems.CurrentPlan || replaced?.Contains(Totem) == true))
         {
-            var old = s.Totems;
-            try { s.Totems = next.Totems; code = totems.ValidatePlan(s, totem); }
-            finally { s.Totems = old; }
+            var old = s.Profile.Totems;
+            try { s.Profile.Totems = next.Totems; code = totems.ValidatePlan(s, totem); }
+            finally { s.Profile.Totems = old; }
             if (code != 0) return code;
             next.Totems.CurrentPlan = totem;
             TotemService.ApplyMarkers(next.Items, next.Totems, skills.Clock.GetUtcNow().ToUnixTimeMilliseconds());
@@ -115,21 +115,21 @@ public sealed partial class GenreService(
     /// <summary>Temporarily project detached, validated state for the existing combat stat calculator; no await occurs.</summary>
     private T WithProjection<T>(GameSession s, Stage next, Func<T> read)
     {
-        var progress = s.Progress; var attr = s.StatPlans.Info; var skill = s.SkillPlans;
-        var equip = s.EquipmentPlans; var cards = s.CardPlans; var totem = s.Totems;
-        var pet = s.Pets; var echo = s.Emblems; var talent = s.SeasonTalent; var owned = s.Items;
+        var progress = s.Progress; var attr = s.Profile.StatPlans.Info; var skill = s.Combat.SkillPlans;
+        var equip = s.Profile.EquipmentPlans; var cards = s.Profile.CardPlans; var totem = s.Profile.Totems;
+        var pet = s.Pets; var echo = s.Profile.Emblems; var talent = s.Season.SeasonTalent; var owned = s.Items;
         try
         {
-            s.Progress = next.Progress; s.StatPlans.Info = next.Attrs; s.SkillPlans = next.Skills;
-            s.EquipmentPlans = next.Equipment; s.CardPlans = next.Cards; s.Totems = next.Totems;
-            s.Pets = next.Pets; s.Emblems = next.Echoes; s.SeasonTalent = next.Talents; s.Items = next.Items;
+            s.Progress = next.Progress; s.Profile.StatPlans.Info = next.Attrs; s.Combat.SkillPlans = next.Skills;
+            s.Profile.EquipmentPlans = next.Equipment; s.Profile.CardPlans = next.Cards; s.Profile.Totems = next.Totems;
+            s.Pets = next.Pets; s.Profile.Emblems = next.Echoes; s.Season.SeasonTalent = next.Talents; s.Items = next.Items;
             return read();
         }
         finally
         {
-            s.Progress = progress; s.StatPlans.Info = attr; s.SkillPlans = skill;
-            s.EquipmentPlans = equip; s.CardPlans = cards; s.Totems = totem;
-            s.Pets = pet; s.Emblems = echo; s.SeasonTalent = talent; s.Items = owned;
+            s.Progress = progress; s.Profile.StatPlans.Info = attr; s.Combat.SkillPlans = skill;
+            s.Profile.EquipmentPlans = equip; s.Profile.CardPlans = cards; s.Profile.Totems = totem;
+            s.Pets = pet; s.Profile.Emblems = echo; s.Season.SeasonTalent = talent; s.Items = owned;
         }
     }
 
@@ -153,17 +153,17 @@ public sealed partial class GenreService(
 
     private int ApplyCooldownError(GameSession s, Stage next)
     {
-        if (next.Skills.CurrentPlanIndex != s.SkillPlans!.CurrentPlanIndex)
+        if (next.Skills.CurrentPlanIndex != s.Combat.SkillPlans!.CurrentPlanIndex)
         {
             int error = skills.PlanSwitchCooldownError(s);
             if (error != 0) return error;
         }
-        if (next.Totems.CurrentPlan != s.Totems!.CurrentPlan)
+        if (next.Totems.CurrentPlan != s.Profile.Totems!.CurrentPlan)
         {
             int error = totems.PlanSwitchCooldownError(s);
             if (error != 0) return error;
         }
-        if (next.Echoes.CurrentPlan != s.Emblems.CurrentPlan)
+        if (next.Echoes.CurrentPlan != s.Profile.Emblems.CurrentPlan)
         {
             int error = emblems.PlanSwitchCooldownError(s);
             if (error != 0) return error;
@@ -176,7 +176,7 @@ public sealed partial class GenreService(
         bool skillChanged = false;
         {
             using var held = await CharacterService.Lock(s);
-            var state = s.Genre!;
+            var state = s.Profile.Genre!;
             var reply = new SwitchGenrePlanResp { IsApply = req.IsApply, TargetPlan = req.TargetPlan };
             reply.ChildSystem.Add(req.ChildSystem);
             int code = Gate(s);
@@ -199,7 +199,7 @@ public sealed partial class GenreService(
                 {
                     if (req.IsApply)
                     {
-                        bool changed = next.Skills.CurrentPlanIndex != s.SkillPlans!.CurrentPlanIndex;
+                        bool changed = next.Skills.CurrentPlanIndex != s.Combat.SkillPlans!.CurrentPlanIndex;
                         await CommitAsync(s, next, genre);
                         skillChanged = changed;
                     }
@@ -227,10 +227,10 @@ public sealed partial class GenreService(
     private async Task CommitAsync(GameSession s, Stage next, DBGenre genre)
     {
         long role = s.Role!.Id;
-        bool skillChanged = next.Skills.CurrentPlanIndex != s.SkillPlans!.CurrentPlanIndex;
-        bool totemChanged = next.Totems.CurrentPlan != s.Totems!.CurrentPlan;
-        bool emblemChanged = next.Echoes.CurrentPlan != s.Emblems.CurrentPlan;
-        bool talentChanged = next.Talents.CurPlanId != s.SeasonTalent!.CurPlanId;
+        bool skillChanged = next.Skills.CurrentPlanIndex != s.Combat.SkillPlans!.CurrentPlanIndex;
+        bool totemChanged = next.Totems.CurrentPlan != s.Profile.Totems!.CurrentPlan;
+        bool emblemChanged = next.Echoes.CurrentPlan != s.Profile.Emblems.CurrentPlan;
+        bool talentChanged = next.Talents.CurPlanId != s.Season.SeasonTalent!.CurPlanId;
         // History and item markers are part of the same detached result, before notifications may await.
         next.Echoes.HistorySeasonPower = Math.Max(next.Echoes.HistorySeasonPower,
             WithProjection(s, next, () => emblems.GenrePower(s, next.Echoes).SeasonPower));
@@ -255,14 +255,14 @@ public sealed partial class GenreService(
         await roles.CommitAsync(tx, "cd13b/genre-apply", receipts =>
         {
             ItemSnapshotWritePlan.ApplyGuids(next.Items, (long[])receipts[itemReceipt]!);
-            s.Genre = genre; s.Progress = next.Progress; s.StatPlans.Info = next.Attrs; s.SkillPlans = next.Skills;
-            s.EquipmentPlans = next.Equipment; s.CardPlans = next.Cards; s.Totems = next.Totems;
-            s.Emblems = next.Echoes; s.Pets = next.Pets; s.SeasonTalent = next.Talents; s.Items = next.Items;
+            s.Profile.Genre = genre; s.Progress = next.Progress; s.Profile.StatPlans.Info = next.Attrs; s.Combat.SkillPlans = next.Skills;
+            s.Profile.EquipmentPlans = next.Equipment; s.Profile.CardPlans = next.Cards; s.Profile.Totems = next.Totems;
+            s.Profile.Emblems = next.Echoes; s.Pets = next.Pets; s.Season.SeasonTalent = next.Talents; s.Items = next.Items;
             DateTime switchedAt = skills.Clock.GetUtcNow().UtcDateTime;
-            if (skillChanged) s.SkillPlanSwitchUtc = switchedAt;
-            if (totemChanged) s.TotemSwitchUtc = switchedAt;
-            if (emblemChanged) s.EmblemPlanSwitchUtc = switchedAt;
-            if (talentChanged) s.TalentPlanSwitchUtc = switchedAt;
+            if (skillChanged) s.Combat.SkillPlanSwitchUtc = switchedAt;
+            if (totemChanged) s.Profile.TotemSwitchUtc = switchedAt;
+            if (emblemChanged) s.Profile.EmblemPlanSwitchUtc = switchedAt;
+            if (talentChanged) s.Season.TalentPlanSwitchUtc = switchedAt;
         });
     }
 
@@ -276,7 +276,7 @@ public sealed partial class GenreService(
         await totems.SyncAsync(s);
         await totems.RefreshEffectsAsync(s);
         await pets.SyncGenrePlanAsync(s);
-        await emblems.SyncGenrePlanAsync(s, s.EmblemPower);
+        await emblems.SyncGenrePlanAsync(s, s.Profile.EmblemPower);
         await talents.SyncGenrePlanAsync(s);
         await character.ItemsChangedAsync(s, stats: true);
     }
@@ -285,10 +285,10 @@ public sealed partial class GenreService(
     {
         using var held = await CharacterService.Lock(s);
         int code = Gate(s);
-        if (code == 0 && (!s.Genre!.GenreMap.SystemMap.TryGetValue(req.TargetIndex, out _) || !ValidName(req.Name))) code = ErrorCodes.Parameter;
+        if (code == 0 && (!s.Profile.Genre!.GenreMap.SystemMap.TryGetValue(req.TargetIndex, out _) || !ValidName(req.Name))) code = ErrorCodes.Parameter;
         if (code == 0)
         {
-            var next = s.Genre!.Clone();
+            var next = s.Profile.Genre!.Clone();
             next.GenreMap.SystemMap[req.TargetIndex].PlanName = req.Name;
             try { await SaveGenreAsync(s, next); await SyncAsync(s); }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build rename failed"); code = ErrorCodes.Unknown; }
@@ -322,7 +322,7 @@ public sealed partial class GenreService(
         int code = Gate(s);
         if (code == 0)
         {
-            var next = s.Genre!.Clone(); next.IsNewSeasonNtf = false;
+            var next = s.Profile.Genre!.Clone(); next.IsNewSeasonNtf = false;
             try { await SaveGenreAsync(s, next); await SyncAsync(s); }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build season flag failed"); code = ErrorCodes.Unknown; }
         }
@@ -333,17 +333,17 @@ public sealed partial class GenreService(
     {
         using var held = await CharacterService.Lock(s);
         int code = Gate(s);
-        if (code == 0 && (!s.StatPlans.Info.AllPlanBaseProperty.TryGetValue(req.PlanId, out _)
+        if (code == 0 && (!s.Profile.StatPlans.Info.AllPlanBaseProperty.TryGetValue(req.PlanId, out _)
             || data.Row("JobConfig", req.ProfessionId) == null)) code = ErrorCodes.Parameter;
         if (code == 0)
         {
-            var next = s.StatPlans.Info.Clone();
+            var next = s.Profile.StatPlans.Info.Clone();
             next.AllPlanBaseProperty[req.PlanId].SkillGenre = req.ProfessionId;
             try
             {
                 var tx = roles.NewTransaction();
                 tx.RoleBlob(s.Role!.Id, "stat_plans", next.ToByteArray());
-                await roles.CommitAsync(tx, "cd13b/genre-school", _ => s.StatPlans.Info = next);
+                await roles.CommitAsync(tx, "cd13b/genre-school", _ => s.Profile.StatPlans.Info = next);
                 await character.SyncStatPlansAsync(s);
             }
             catch (Microsoft.Data.Sqlite.SqliteException e) { log.LogWarning(e, "Build school selection failed"); code = ErrorCodes.Unknown; }

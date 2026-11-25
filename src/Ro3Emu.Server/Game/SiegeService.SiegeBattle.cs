@@ -84,13 +84,13 @@ public sealed partial class SiegeService
             await Send(s, 30400, new EnterDungeonRsp());
             // DungeonConfig's default camp relation is client-side. The crystal is camp 2;
             // attackers use 1 and defenders 2 so opposite guilds can be targeted (inferred).
-            s.EventFaction = guild == record.Attack ? 1 : 2;
+            s.Instances.EventFaction = guild == record.Attack ? 1 : 2;
             bool entered;
             try { entered = await _instances.EnterAsync(battle.Room, s, 0); }
-            catch { s.EventFaction = 0; throw; }
+            catch { s.Instances.EventFaction = 0; throw; }
             if (!entered)
-            { s.EventFaction = 0; if (added) { record.Players.Remove(s.Role.Id); await SaveAsync(state); } return true; }
-            s.SiegeBattle = battle;
+            { s.Instances.EventFaction = 0; if (added) { record.Players.Remove(s.Role.Id); await SaveAsync(state); } return true; }
+            s.Instances.SiegeBattle = battle;
             await SiegeAdvanceStageAsync(battle);
             await SiegeSpawnAsync(battle);
         }
@@ -136,7 +136,7 @@ public sealed partial class SiegeService
 
     private async Task SiegeLoadedAsync(GameSession s)
     {
-        if (s.SiegeBattle is not { } battle || s.InstanceId != battle.Room.Id) return;
+        if (s.Instances.SiegeBattle is not { } battle || s.InstanceId != battle.Room.Id) return;
         if (!SiegeMember(s, battle)) { await _instances.LeaveAsync(s); return; }
         var p = battle.State.Players[s.Role!.Id];
         p.Loaded = true; await SaveAsync(state);
@@ -182,13 +182,13 @@ public sealed partial class SiegeService
 
     internal Task SiegeLeavingAsync(GameSession s)
     {
-        if (s.SiegeBattle != null) s.EventFaction = 0;
-        s.SiegeBattle = null;
+        if (s.Instances.SiegeBattle != null) s.Instances.EventFaction = 0;
+        s.Instances.SiegeBattle = null;
         return Task.CompletedTask;
     }
 
-    internal bool SiegeHostile(GameSession a, GameSession b) => a.SiegeBattle is { } battle
-        && ReferenceEquals(b.SiegeBattle, battle) && SiegeActive(battle) && SiegeMember(a, battle)
+    internal bool SiegeHostile(GameSession a, GameSession b) => a.Instances.SiegeBattle is { } battle
+        && ReferenceEquals(b.Instances.SiegeBattle, battle) && SiegeActive(battle) && SiegeMember(a, battle)
         && SiegeMember(b, battle) && OwnId(a) != OwnId(b);
 
     /// <summary>The crystal falls to the attackers in the Crystal stage only (inferred: the stage is named after it and comes
@@ -206,7 +206,7 @@ public sealed partial class SiegeService
     /// </summary>
     internal bool SiegeSkillLineBlocked(GameSession s, MonsterUnit? m, Vec3 origin, Vec3 target)
     {
-        if (s.SiegeBattle is not { } battle || battle.Room.Closed || s.SceneEntry != SiegeScene
+        if (s.Instances.SiegeBattle is not { } battle || battle.Room.Closed || s.SceneEntry != SiegeScene
             || _maps.Map(SiegeScene) is not { } map) return false;
         if (SiegeWallCrossed(battle.State, map, origin, target, skill: true)) return true;
         if (map.Nav is not { } nav || nav.CanWalk(origin.X, origin.Y, origin.Z, target.X, target.Z)) return false;
@@ -218,7 +218,7 @@ public sealed partial class SiegeService
     /// for a live, authorized attacker (inferred siege objective geometry).</summary>
     private bool SiegeCrystalBlockedEndpointAllowed(GameSession s, MonsterUnit m, Vec3 origin, Vec3 target)
     {
-        if (s.SiegeBattle is not { } battle || m != battle.Crystal || !SiegeActive(battle)
+        if (s.Instances.SiegeBattle is not { } battle || m != battle.Crystal || !SiegeActive(battle)
             || !SiegeMember(s, battle) || Own(s)?.Id != battle.State.Attack
             || m.InstanceId != battle.Room.Id || m.WorldScene != s.WorldScene
             || target.X != m.Pos.X || target.Y != m.Pos.Y || target.Z != m.Pos.Z
@@ -241,13 +241,13 @@ public sealed partial class SiegeService
 
     private async Task SiegeDamageRecordedAsync(GameSession s, MonsterUnit m, long amount)
     {
-        if (s.SiegeBattle is not { } battle || !SiegeActive(battle) || !SiegeMember(s, battle)
+        if (s.Instances.SiegeBattle is not { } battle || !SiegeActive(battle) || !SiegeMember(s, battle)
             || m.InstanceId != battle.Room.Id || s.Role == null) return;
         using var reservation = await EnterGateAsync("territory/siege damage", s);
         using var stagedTerritoryState = StageState();
         try
         {
-            if (!ReferenceEquals(s.SiegeBattle, battle) || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
+            if (!ReferenceEquals(s.Instances.SiegeBattle, battle) || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
             var p = battle.State.Players[s.Role.Id];
             p.Damage += Math.Max(0, amount);
             if (SiegeObjectPoint(battle, m) is int point)
@@ -268,13 +268,13 @@ public sealed partial class SiegeService
 
     private async Task SiegeHealRecordedAsync(GameSession s, long amount)
     {
-        if (s.SiegeBattle is not { } battle || !SiegeActive(battle) || !SiegeMember(s, battle)
+        if (s.Instances.SiegeBattle is not { } battle || !SiegeActive(battle) || !SiegeMember(s, battle)
             || s.Role == null) return;
         using var reservation = await EnterGateAsync("territory/siege heal", s);
         using var stagedTerritoryState = StageState();
         try
         {
-            if (!ReferenceEquals(s.SiegeBattle, battle) || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
+            if (!ReferenceEquals(s.Instances.SiegeBattle, battle) || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
             battle.State.Players[s.Role.Id].Healed += Math.Max(0, amount);
             await SaveAsync(state);
         }
@@ -289,7 +289,7 @@ public sealed partial class SiegeService
         try
         {
             if (!SiegeHostile(s, victim)) return;
-            var battle = s.SiegeBattle!;
+            var battle = s.Instances.SiegeBattle!;
             var attacker = battle.State.Players[s.Role!.Id]; var defender = battle.State.Players[victim.Role!.Id];
             attacker.Damage += Math.Max(0, amount); defender.Taken += Math.Max(0, amount);
             long[] helpers = [];
@@ -308,13 +308,13 @@ public sealed partial class SiegeService
 
     private async Task SiegeKilledAsync(GameSession s, MonsterUnit m)
     {
-        if (s.SiegeBattle is { } siege && m != siege.Crystal && SiegeObjectPoint(siege, m) is int point
+        if (s.Instances.SiegeBattle is { } siege && m != siege.Crystal && SiegeObjectPoint(siege, m) is int point
             && m.InstanceId == siege.Room.Id)
         {
             await SiegeObjectKilledAsync(s, siege, point);
             return;
         }
-        if (s.SiegeBattle is not { } battle || m != battle.Crystal || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
+        if (s.Instances.SiegeBattle is not { } battle || m != battle.Crystal || !SiegeActive(battle) || !SiegeMember(s, battle)) return;
         var role = s.Role;
         var attachment = s.Attachment;
         using var reservation = await EnterGateAsync("territory/siege crystal kill", s,
@@ -345,14 +345,14 @@ public sealed partial class SiegeService
             {
                 await RoleFanout.EachAsync(battle.Room.ActiveMembers.Select(m => m.Session), async s =>
                 {
-                    if (s.SiegeBattle == battle && !s.SceneLoading && !SiegeMember(s, battle))
+                    if (s.Instances.SiegeBattle == battle && !s.SceneLoading && !SiegeMember(s, battle))
                         await _instances.LeaveAsync(s);
                 });
                 // The attacker client waits 2s for the crystal and 5s for the result panel;
                 // keep the scene for a bounded presentation grace (inferred).
                 if (current.Settled && _clock.Now >= current.SettledAt + 30)
                     await RoleFanout.EachAsync(battle.Room.ActiveMembers.Select(m => m.Session), async s =>
-                    { if (s.SiegeBattle == battle && !s.SceneLoading) await _instances.LeaveAsync(s); });
+                    { if (s.Instances.SiegeBattle == battle && !s.SceneLoading) await _instances.LeaveAsync(s); });
                 else if (!current.Settled)
                 {
                     await SiegeObjectsClockAsync(battle);
@@ -444,10 +444,10 @@ public sealed partial class SiegeService
         var activeRoom = _siegeBattles.GetValueOrDefault(key);
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && run.Players.ContainsKey(s.Role.Id)), async s =>
         {
-            s.TerritoryWars = LoadRole(s.Role!.Id);
+            s.Instances.TerritoryWars = LoadRole(s.Role!.Id);
             // 44404 drives the client's current dungeon settlement UI. A historical participant
             // keeps earned mail/counters/history, but cannot settle a different current scene.
-            if (activeRoom == null || activeRoom.Room.Closed || !ReferenceEquals(s.SiegeBattle, activeRoom)
+            if (activeRoom == null || activeRoom.Room.Closed || !ReferenceEquals(s.Instances.SiegeBattle, activeRoom)
                 || !run.Players[s.Role.Id].Loaded || !SiegeMember(s, activeRoom)) return;
             try { await Send(s, SiegeResultNotify, new SiegeDungeonResultNtf { Result = 0, CityId = run.City, History = history.BattleInfo }); }
             catch (Exception e) when (e is IOException or ObjectDisposedException or System.Net.Sockets.SocketException)
@@ -567,7 +567,7 @@ public sealed partial class SiegeService
             else response.DungeonStatistics.AddRange(records.Select(SiegeStatistics));
             await Send(s, id, response); return true;
         }
-        if (s.SiegeBattle is not { } battle) return false;
+        if (s.Instances.SiegeBattle is not { } battle) return false;
         if (id == 30106) return true;
         if (!SiegeMember(s, battle)) return false;
         var report = SiegeStatistics(battle.State);

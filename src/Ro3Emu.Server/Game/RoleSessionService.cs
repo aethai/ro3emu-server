@@ -266,13 +266,13 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
     private async Task<Maps.MapPoint> InitializeSelectedRoleAsync(GameSession session, Role role)
     {
         deadlines.Attach(session);
-        session.SkillPlans = null; // each selected role loads its own 5025 state
-        session.SkillPlanSwitchUtc = default;
-        session.Lottery = null;
-        session.LotteryDay = 0;
-        session.Training = null;
+        session.Combat.SkillPlans = null; // each selected role loads its own 5025 state
+        session.Combat.SkillPlanSwitchUtc = default;
+        session.Activities.Lottery = null;
+        session.Activities.LotteryDay = 0;
+        session.Activities.Training = null;
         var arrival = scene.LoginPoint(role.SceneEntry, new Vec3 { X = role.X, Y = role.Y, Z = role.Z }, role.Face);
-        session.SceneRecoveryRequired = false;
+        session.WorldState.SceneRecoveryRequired = false;
         session.Handoff = null;
         session.LineNumber = 1;
         session.RuntimeKind = Maps.RuntimeMapKind.PublicLine;
@@ -280,28 +280,28 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.Position = new Vec3 { X = arrival.X, Y = arrival.Y, Z = arrival.Z };
         session.Face = arrival.Face;
         session.RolePositionReady = true;
-        session.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
+        session.WorldState.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
         session.Speed = data.JobAttributes(role.Career).GetValueOrDefault(AttrSpeed, DefaultSpeed);
-        session.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
-        session.DeferFunctionSync = true;
-        session.DeferTaskSync = true;
-        session.SkillProtocol = new();
-        session.SkillModeCds.Clear();
-        session.SkillCds.Clear();
+        session.WorldState.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
+        session.Profile.DeferFunctionSync = true;
+        session.Profile.DeferTaskSync = true;
+        session.Combat.SkillProtocol = new();
+        session.Combat.SkillModeCds.Clear();
+        session.Combat.SkillCds.Clear();
         session.Buffs.Clear();
         buffs.RestoreOffline(session, roles.LoadOfflineBuffs(role.Id));
         session.OfflineBuffsLoaded = true;
-        session.BuffEffectCds.Clear();
-        session.ImmuneDeathOffer = null;
-        session.ImmuneRecoveryUntilMs = 0;
+        session.Combat.BuffEffectCds.Clear();
+        session.Combat.ImmuneDeathOffer = null;
+        session.Combat.ImmuneRecoveryUntilMs = 0;
         session.StatusBits = 0;
         session.CurrentHp = null;
         session.CurrentSp = null;
         session.Dead = false;
-        session.CareerSpecial = null; session.CareerPendants = []; session.CareerMountPendant = 0;
-        session.Personal = null;
-        session.Mounts = null; session.MountState = new(); session.Wardrobe = null; session.Totems = null; session.Genre = null;
-        session.TotemSwitchUtc = default;
+        session.Profile.CareerSpecial = null; session.Profile.CareerPendants = []; session.Profile.CareerMountPendant = 0;
+        session.Social.Personal = null;
+        session.Mounts = null; session.Profile.MountState = new(); session.Profile.Wardrobe = null; session.Profile.Totems = null; session.Profile.Genre = null;
+        session.Profile.TotemSwitchUtc = default;
         session.SceneLoading = true;
         await systems.LoadAsync(session);
         log.LogInformation("Role {Name} ({Id}) of {Account} enters scene {Scene} at {X},{Z}", role.Name, role.Id, session.Account, role.SceneEntry, role.X, role.Z);
@@ -377,12 +377,12 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         // (inferred) Such a walk is dropped, without a correction (SkillCarry.Predates).
         if (session.Carry is { } carry && carry.Predates(walk.Pos, (long)NowMs())) return;
         if (!await scene.AcceptWalkAsync(session, walk)) return;
-        session.PreviousPosition = session.Position;
+        session.WorldState.PreviousPosition = session.Position;
         session.Position = walk.Pos;
         session.Face = walk.Face;
-        session.WalkDir = float.IsFinite(walk.Dir) ? walk.Dir : walk.Face;
-        session.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // also when the walk check is off
-        session.Walking = !walk.BStop && walk.SpeedRate > 0;
+        session.WorldState.WalkDir = float.IsFinite(walk.Dir) ? walk.Dir : walk.Face;
+        session.WorldState.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // also when the walk check is off
+        session.WorldState.Walking = !walk.BStop && walk.SpeedRate > 0;
         positions.MarkDirty(session, urgent: walk.BStop); // C/D 18: written lazily, never on the loop
         await systems.MovedAsync(session, walk);
     }
@@ -402,7 +402,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         if (session.Role is not { } role || session.InstanceId != 0) return;
         var p = session.Position;
         roles.SavePosition(role.Id, session.SceneEntry, p.X, p.Y, p.Z, session.Face);
-        session.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
+        session.WorldState.PositionSavedUtc = clock.GetUtcNow().UtcDateTime;
         positions.Persisted(session); // a durable barrier: no older lazy capture may follow it
     }
 
@@ -534,8 +534,8 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             EntityType = 3, // UT_Player
             Gender = role.Sex,
             Name = role.Name,
-            EntityCamp = session.EventFaction > 0 ? session.EventFaction : 1,
-            TeamId = session.UnitTeamId,
+            EntityCamp = session.Instances.EventFaction > 0 ? session.Instances.EventFaction : 1,
+            TeamId = session.WorldState.UnitTeamId,
             GuildId = session.Guild?.GuildId ?? 0,
             Face = face,
             MovementInfo = new MovementInfo
@@ -546,7 +546,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             },
             NotifyType = EntityBase.Types.NotifyType.All,
         };
-        entity.CurUseAppearances.Add(session.Wardrobe?.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value) ?? RoleProto.Appearances(role));
+        entity.CurUseAppearances.Add(session.Profile.Wardrobe?.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value) ?? RoleProto.Appearances(role));
         entity.CurRider = MountService.Rider(session);
         // AttributeConfig ids: STR..LUK 1-6, derived 101-116, HP/SP 2000/2001, level 2002 (CharacterService.Refresh).
         var properties = session.EntityProperties.Length > 0
@@ -557,7 +557,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         {
             entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = baseValue });
         }
-        entity.EquipInfo.Add(session.EquipLook);
+        entity.EquipInfo.Add(session.Profile.EquipLook);
         BuffService.PopulateEntity(session, entity);
         EmojiService.PopulateEntity(session, entity);
         CareerSpecialService.PopulateEntity(session, entity);

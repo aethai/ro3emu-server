@@ -15,9 +15,9 @@ public sealed partial class WardrobeService
     internal async Task<string> GmLightUpAllAsync(GameSession session)
     {
         using var _ = await CharacterService.Lock(session);
-        if (session.Wardrobe == null) return "The wardrobe is not loaded for this role.";
+        if (session.Profile.Wardrobe == null) return "The wardrobe is not loaded for this role.";
         await RefreshExpiredAsync(session);
-        var current = session.Wardrobe!;
+        var current = session.Profile.Wardrobe!;
         var looks = WardRobeConfig.All(_data).Select(r => (int)r.Id)
             .Where(id => id > 0 && !Owns(current, id) && Validate(session, current, id, requireOwned: false) == 0).ToList();
         if (looks.Count == 0) return "Every appearance is already unlocked.";
@@ -45,7 +45,7 @@ public sealed partial class WardrobeService
             }));
         await _roles.CommitAsync(tx, "wardrobe/gm-light-up-all", _ =>
         {
-            session.Wardrobe = next;
+            session.Profile.Wardrobe = next;
             ArmExpiry(session);
             ride?.Committed();
         });

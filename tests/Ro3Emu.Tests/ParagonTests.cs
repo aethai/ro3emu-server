@@ -87,7 +87,7 @@ public sealed class ParagonTests : IAsyncLifetime
     private async Task MaxOut(BotClient bot, params int[] slots)
     {
         foreach (int slot in slots)
-            while (Session(bot).Paragon!.Runegroup.GetValueOrDefault(slot)?.Points is not { } p || p < MaxLevel(slot))
+            while (Session(bot).Profile.Paragon!.Runegroup.GetValueOrDefault(slot)?.Points is not { } p || p < MaxLevel(slot))
                 Assert.Equal(0, await Allocate(bot, slot));
     }
 
@@ -168,7 +168,7 @@ public sealed class ParagonTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, ParagonService.Remove, ParagonLevelRuneRemoveResp.Parser)).Result);
         Assert.Single(Session(alice).Items, i => i.Entry == PrismGray);
         Assert.Equal(0, (await Sent(alice))!.Runegroup[6].Rune.ItemEntry); // an empty slot's rune, so the client drops the core
-        Assert.Equal(1, Session(alice).Paragon!.Runegroup[6].Points); // its point stays
+        Assert.Equal(1, Session(alice).Profile.Paragon!.Runegroup[6].Points); // its point stays
 
         // Back in, then a reset of star 3: 3, 5 and everything after them (4, 6, 9 ...) are emptied, the core returns.
         Assert.Equal(0, await Install(alice, 6, Session(alice).Items.Single(i => i.Entry == PrismGray).Guid));

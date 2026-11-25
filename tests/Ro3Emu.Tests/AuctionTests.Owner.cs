@@ -190,7 +190,7 @@ public sealed partial class AuctionTests
         try
         {
             await entered.Task.WaitAsync(Wait);
-            Assert.Equal(0, Session(alice).Auction?.PreBuyNum.GetValueOrDefault("4:5001:1200000") ?? 0);
+            Assert.Equal(0, Session(alice).Social.Auction?.PreBuyNum.GetValueOrDefault("4:5001:1200000") ?? 0);
             // The transport serializes one socket's requests; invoke this independent reader
             // directly on the loop to exercise the owner fence instead of the socket queue.
             query = Service<GameLoop>().InvokeAsync(() => Service<AuctionService>().PreStackAsync(Session(alice),

@@ -473,27 +473,27 @@ public sealed partial class BuffService : IGameTicker
             entity.BuffData.AddBuffs.Add(live.Select(Wire));
         }
         entity.ObjState = new AoiObjStateInfo { Data = Mask((ulong)p.StatusBits) };
-        entity.ObjForbid = new AoiObjForbidInfo { Data = Mask(p.ForbiddenBits) };
-        entity.ObjStagger = new AoiObjStaggerInfo { StaggerMask = p.StaggerBits };
+        entity.ObjForbid = new AoiObjForbidInfo { Data = Mask(p.Combat.ForbiddenBits) };
+        entity.ObjStagger = new AoiObjStaggerInfo { StaggerMask = p.Combat.StaggerBits };
     }
 
-    public bool HasForbidden(GameSession p, int ordinal) => p.ForbiddenOrdinals.Contains(ordinal)
-        || (p.ImmuneDeathOffer != null && ordinal == ForbiddenState.Damage)
-        || (p.ImmuneRecoveryUntilMs > _loop.NowMs
+    public bool HasForbidden(GameSession p, int ordinal) => p.Combat.ForbiddenOrdinals.Contains(ordinal)
+        || (p.Combat.ImmuneDeathOffer != null && ordinal == ForbiddenState.Damage)
+        || (p.Combat.ImmuneRecoveryUntilMs > _loop.NowMs
             && ordinal is ForbiddenState.Walk or ForbiddenState.CastSkill or ForbiddenState.NormalAttack or ForbiddenState.Damage);
 
     private async Task RefreshControlAsync(GameSession p)
     {
         if (p.Role == null) return;
-        ulong oldStatus = (ulong)p.StatusBits, oldForbidden = p.ForbiddenBits, oldStagger = p.StaggerBits;
+        ulong oldStatus = (ulong)p.StatusBits, oldForbidden = p.Combat.ForbiddenBits, oldStagger = p.Combat.StaggerBits;
         RecomputeControl(p);
-        if ((ulong)p.StatusBits == oldStatus && p.ForbiddenBits == oldForbidden && p.StaggerBits == oldStagger) return;
+        if ((ulong)p.StatusBits == oldStatus && p.Combat.ForbiddenBits == oldForbidden && p.Combat.StaggerBits == oldStagger) return;
         await ToPlayerAndViewersAsync(p, AoiAttrChange, new AOIAttrChange
         {
             EntityUuid = (ulong)p.Role.Id,
             StateInfo = new AoiObjStateInfo { Data = Mask((ulong)p.StatusBits) },
-            ForbidInfo = new AoiObjForbidInfo { Data = Mask(p.ForbiddenBits) },
-            StaggerInfo = new AoiObjStaggerInfo { StaggerMask = p.StaggerBits },
+            ForbidInfo = new AoiObjForbidInfo { Data = Mask(p.Combat.ForbiddenBits) },
+            StaggerInfo = new AoiObjStaggerInfo { StaggerMask = p.Combat.StaggerBits },
         });
         if (ControlChanged is { } changed) await changed(p);
     }
@@ -501,7 +501,7 @@ public sealed partial class BuffService : IGameTicker
     private void RecomputeControl(GameSession p)
     {
         ulong status = 0, forbidden = 0, stagger = 0;
-        p.ForbiddenOrdinals.Clear();
+        p.Combat.ForbiddenOrdinals.Clear();
         foreach (var buff in p.Buffs.Where(b => b.StateOrdinal is > 0 and < 33 && b.ExpireMs > _loop.NowMs))
         {
             status |= 1UL << (buff.StateOrdinal - 1); // inferred beyond the directly observed Battling(16) bit.
@@ -511,26 +511,26 @@ public sealed partial class BuffService : IGameTicker
                     if (GameData.Number(action) is { } ordinal)
                     {
                         int id = (int)ordinal;
-                        p.ForbiddenOrdinals.Add(id);
+                        p.Combat.ForbiddenOrdinals.Add(id);
                         forbidden |= ForbiddenMask(id);
                     }
             int staggerType = (int)GameData.Int(row, "_iStaggerType");
             if (staggerType is > 0 and < 64) stagger |= 1UL << staggerType; // LC_UnitSpecialStatus.lua:90-138.
         }
-        if (p.ImmuneDeathOffer != null)
+        if (p.Combat.ImmuneDeathOffer != null)
         {
             status |= 1UL << 24; // Invincible(25) while the 31134 choice is pending (inferred).
             forbidden |= ForbiddenMask(9);
         }
-        if (p.ImmuneRecoveryUntilMs > _loop.NowMs)
+        if (p.Combat.ImmuneRecoveryUntilMs > _loop.NowMs)
         {
             status |= (1UL << 24) | (1UL << 8) | (1UL << 9); // Invincible/CanNotMove/CanNotSkill.
             forbidden |= ForbiddenMask(3) | ForbiddenMask(4) | ForbiddenMask(5) | ForbiddenMask(9);
         }
-        p.StatusBits = (long)(((ulong)p.StatusBits & ~p.BuffStatusBits) | status);
-        p.BuffStatusBits = status;
-        p.ForbiddenBits = forbidden;
-        p.StaggerBits = stagger;
+        p.StatusBits = (long)(((ulong)p.StatusBits & ~p.Combat.BuffStatusBits) | status);
+        p.Combat.BuffStatusBits = status;
+        p.Combat.ForbiddenBits = forbidden;
+        p.Combat.StaggerBits = stagger;
     }
 
     // Lua_GameDefine.enum_ForbiddenState: masks are explicit and do not line up with every proto ordinal.

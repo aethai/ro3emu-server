@@ -22,19 +22,19 @@ public sealed partial class CardService
     private async Task<int> UseLibraryPageItemAsync(ItemActionUse use)
     {
         var s = use.Session;
-        if (s.Library == null) return ErrorCodes.FeatureUnavailable;
+        if (s.Profile.Library == null) return ErrorCodes.FeatureUnavailable;
         if (use.Count != 1) return ErrorCodes.Parameter;
         var pages = use.Effects.Select(e => e.Length > 1 ? (int)e[1] : 0).Distinct().ToList();
         if (pages.Any(page => _data.Row("LibraryPageConfig", page) is not { } row || GameData.Int(row, "_kPageItem") == 0))
             return ErrorCodes.ItemNoConfig;
-        if (pages.All(page => s.Library.Pages.TryGetValue(page, out var held) && held.State != LibraryPageState.None)) return ErrorCodes.AlreadyUnlocked;
-        var next = s.Library.Clone();
+        if (pages.All(page => s.Profile.Library.Pages.TryGetValue(page, out var held) && held.State != LibraryPageState.None)) return ErrorCodes.AlreadyUnlocked;
+        var next = s.Profile.Library.Clone();
         foreach (int page in pages.Where(page => !(next.Pages.TryGetValue(page, out var held) && held.State != LibraryPageState.None)))
             next.Pages[page] = new LibraryPageInfo { PageId = page, State = LibraryPageState.Gain };
         byte[] saved = next.ToByteArray();
-        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "library", saved), () => s.Library = next,
+        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "library", saved), () => s.Profile.Library = next,
             new { Pages = pages })) return ErrorCodes.ItemsShort;
-        await CharacterService.SyncAsync(s, LibrarySync, s.Library.Clone());
+        await CharacterService.SyncAsync(s, LibrarySync, s.Profile.Library.Clone());
         return 0;
     }
 }

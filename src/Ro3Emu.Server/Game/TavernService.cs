@@ -236,7 +236,7 @@ public sealed partial class TavernService : Messaging.IMessageModule, IGameTicke
                     if (online.TryGetValue(role, out var session))
                     {
                         member.OfflineSinceMs = 0;
-                        if (session.Tavern != null && Accrue(session, role, seconds)) flush.Add(session);
+                        if (session.Social.Tavern != null && Accrue(session, role, seconds)) flush.Add(session);
                     }
                     else if (member.OfflineSinceMs == 0) member.OfflineSinceMs = nowMs;
                     else if (nowMs - member.OfflineSinceMs >= OfflineGraceMs) dropped.Add(role);
@@ -254,7 +254,7 @@ public sealed partial class TavernService : Messaging.IMessageModule, IGameTicke
         _pendingSeconds[role] = pending;
         if (pending >= FlushSeconds) return true;
         // The day's quest completes on time, not at the next minute.
-        var state = Rolled(session.Tavern!);
+        var state = Rolled(session.Social.Tavern!);
         return !state.TodayComplete && state.TodaySeconds + (int)pending >= ActSeconds();
     }
 

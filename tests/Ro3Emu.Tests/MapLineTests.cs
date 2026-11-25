@@ -134,7 +134,7 @@ public sealed class MapLineTests : IAsyncLifetime
         long generation = a.SceneGeneration;
         // 30012 is also the client's failed-load recovery request. The old config-only acknowledgment is ambiguous.
         await alice.SendGameAsync(SceneService.SceneTeleport, new SceneTeleportReq { TargetMapId = 10100 });
-        await Until(() => a.SceneRecoveryRequired && Service<PublicLineManager>().Reserved(a) == null);
+        await Until(() => a.WorldState.SceneRecoveryRequired && Service<PublicLineManager>().Reserved(a) == null);
         Assert.True(a.SceneGeneration > generation);
         await OnLoop(() => Service<SceneService>().SceneLoadedAsync(a, new SceneLoadedReq { SceneId = 10100 }));
         Assert.DoesNotContain(a, Service<World>().PlayersIn(a.WorldScene));
@@ -143,7 +143,7 @@ public sealed class MapLineTests : IAsyncLifetime
         await using var reconnect = await InWorld("Alice", create: false);
         var current = Player("Alice"); Assert.Equal(0, current.InstanceId);
         Assert.Contains(Service<PublicLineManager>().Snapshot(current.SceneEntry), l => l.Map.LineNumber == current.LineNumber);
-        Assert.Null(current.Handoff); Assert.False(current.SceneRecoveryRequired);
+        Assert.Null(current.Handoff); Assert.False(current.WorldState.SceneRecoveryRequired);
     }
 
     [ClientDataFact]
@@ -182,10 +182,10 @@ public sealed class MapLineTests : IAsyncLifetime
             // Ro3Emu:SceneLoadTimeoutSeconds, 90 by default: a slow load past 30 s still finishes.
             _clock.Offset = TimeSpan.FromSeconds(31);
             Service<SceneService>().ExpireLineLoad(a);
-            Assert.False(a.SceneRecoveryRequired);
+            Assert.False(a.WorldState.SceneRecoveryRequired);
             _clock.Offset = TimeSpan.FromSeconds(91);
             Service<SceneService>().ExpireLineLoad(a);
-            Assert.True(a.SceneRecoveryRequired);
+            Assert.True(a.WorldState.SceneRecoveryRequired);
             Assert.Null(Service<PublicLineManager>().Reserved(a));
             return Task.CompletedTask;
         });
@@ -267,7 +267,7 @@ public sealed class MapLineTests : IAsyncLifetime
         finally { release.TrySetResult(); }
         await Until(() => !Service<CombatService>().HasPendingMapWork(old));
         await OnLoop(() => Service<PublicLineManager>().RetireEmptyAsync());
-        Assert.Empty(a.SkillObjects);
+        Assert.Empty(a.Combat.SkillObjects);
         // Unit maps are loop-owned: enumerating them from the test thread raced the loop ("collection was modified").
         var units = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits().ToList()));
         Assert.DoesNotContain(units, u => u.WorldScene == old.WorldScene);
@@ -285,6 +285,6 @@ public sealed class MapLineTests : IAsyncLifetime
             return Task.CompletedTask;
         });
         await Assert.ThrowsAsync<IOException>(() => OnLoop(() => Service<SceneService>().EnterSceneAsync(a, 10100, createLine: true)));
-        Assert.Null(Service<PublicLineManager>().Reserved(a)); Assert.True(a.SceneRecoveryRequired);
+        Assert.Null(Service<PublicLineManager>().Reserved(a)); Assert.True(a.WorldState.SceneRecoveryRequired);
     }
 }

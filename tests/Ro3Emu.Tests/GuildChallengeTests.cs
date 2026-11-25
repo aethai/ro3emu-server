@@ -180,7 +180,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
             var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == actor.Uid));
             if (hit.Dsts.Any(d => d.DstID == actor.Uid && d.IsDead)) return;
             Assert.True(swing < 20, "the basic attack never landed");
-            await OnLoop(() => { Session(bot).SkillCds.Clear(); Session(bot).SkillModeCds.Clear(); return Task.CompletedTask; });
+            await OnLoop(() => { Session(bot).Combat.SkillCds.Clear(); Session(bot).Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         }
     }
 
@@ -285,7 +285,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         Assert.Equal(aliceZeny + 5000, Session(alice).Progress!.Currency[1]);
         Assert.Equal(bobZeny + 5000, Session(bob).Progress!.Currency[1]);
         Assert.False((await Info(carol)).Data.DataInfo.DifficultyInfo[1].StageReward[1]); // personal reward availability
-        Assert.Empty(Session(carol).GuildChallenge!.Granted); // the absent member did not earn a personal clear
+        Assert.Empty(Session(carol).Instances.GuildChallenge!.Granted); // the absent member did not earn a personal clear
         var lots = Service<AuctionStore>().Items().Where(r => r.GuildId == guild).ToArray();
         Assert.NotEmpty(lots); Assert.All(lots, lot => { Assert.Equal(1003, lot.SrcType); Assert.Equal(2, lot.Eligible.Count); });
         var clear = Assert.Single(Service<GuildChallengeStore>().Clears());
@@ -338,7 +338,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         await Gm(alice, "!guildchallenge close");
         Assert.Equal(DungeonRes.Fail, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
         Assert.Empty(Service<GuildChallengeStore>().Clears()); Assert.Empty(Service<AuctionStore>().Items());
-        Assert.Empty(Session(alice).GuildChallenge!.Granted);
+        Assert.Empty(Session(alice).Instances.GuildChallenge!.Granted);
         Assert.Equal(ErrorCodes.ActivityPeriod, await Open(alice));
         Assert.Empty(Session(alice).DungeonAttempt!.Room.Monsters);
     }
@@ -374,7 +374,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         Assert.Equal(DungeonRes.Success, result.Res);
         Assert.Empty(result.Rewards);
         Assert.Equal(zeny, Session(alice).Progress!.Currency.GetValueOrDefault(1));
-        Assert.Empty(Session(alice).GuildChallenge!.Granted);
+        Assert.Empty(Session(alice).Instances.GuildChallenge!.Granted);
         var clear = Assert.Single(Service<GuildChallengeStore>().Clears());
         Assert.Empty(clear.Delivered); Assert.True(Service<GuildChallengeStore>().Load(guild).Complete);
         Assert.Single(Service<GuildChallengeStore>().Pending());
@@ -394,7 +394,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         Assert.Equal((1, -5000L, 5000L), SourceCurrency($"guild-challenge:deliver:{clear.Id}:{role}", role, 1));
         Assert.Equal((1, -1500L, 1500L), SourceCurrency($"guild-challenge:deliver:{clear.Id}:{role}", role, 102));
         Assert.Empty(Service<GuildChallengeStore>().Pending());
-        Assert.Single(Session(returned).GuildChallenge!.Granted); // recovered test entitlement is durable
+        Assert.Single(Session(returned).Instances.GuildChallenge!.Granted); // recovered test entitlement is durable
         Assert.False((await Info(returned)).Data.DataInfo.DifficultyInfo[1].StageReward[1]); // real occurrence is separate
         Assert.Single(Assert.Single(Service<GuildChallengeStore>().Clears()).Delivered);
         int lots = Service<AuctionStore>().Items().Count;
@@ -467,7 +467,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
             Assert.Empty(Service<GuildChallengeStore>().Pending());
             Assert.Equal(zeny + 5000, Session(returned).Progress!.Currency.GetValueOrDefault(1));
             Assert.Equal(contribution + 1500, Session(returned).Progress!.Currency.GetValueOrDefault(102));
-            Assert.Single(Session(returned).GuildChallenge!.Granted);
+            Assert.Single(Session(returned).Instances.GuildChallenge!.Granted);
             Assert.Equal((1, 5000L, 0L), SourceCurrency("guild-challenge:clear:" + clear.Id, role, 1));
             Assert.Equal((1, 1500L, 0L), SourceCurrency("guild-challenge:clear:" + clear.Id, role, 102));
             Assert.Equal((1, -5000L, 5000L), SourceCurrency($"guild-challenge:deliver:{clear.Id}:{role}", role, 1));

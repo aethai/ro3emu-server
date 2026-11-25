@@ -437,13 +437,13 @@ public sealed class MarketTransaction
         foreach (var ((role, column), value) in _blobs)
             if (_live.FirstOrDefault(s => s.Role?.Id == role) is { } session)
             {
-                if (column == "trade_info") session.Trade = Romsg.DBUserTradeInfo.Parser.ParseFrom(value);
-                else if (column == "stalls_info") session.Stalls = Romsg.DBStallsInfo.Parser.ParseFrom(value);
+                if (column == "trade_info") session.Social.Trade = Romsg.DBUserTradeInfo.Parser.ParseFrom(value);
+                else if (column == "stalls_info") session.Social.Stalls = Romsg.DBStallsInfo.Parser.ParseFrom(value);
             }
         foreach (var p in _participants.Values)
         {
             if (p.Session is not { Progress: { } progress } session || session.Role?.Id != p.RoleId) continue;
-            foreach (var item in p.Items.Where(i => p.Before.All(b => b.Guid != i.Guid))) session.NewItems.Add(item.Guid);
+            foreach (var item in p.Items.Where(i => p.Before.All(b => b.Guid != i.Guid))) session.Profile.NewItems.Add(item.Guid);
             session.Items = p.Items;
             progress.Currency.Clear();
             foreach (var (id, amount) in p.Currency) progress.Currency[id] = amount;
@@ -454,7 +454,7 @@ public sealed class MarketTransaction
     internal IEnumerable<Func<Task>> CaptureTradeNotices()
     {
         foreach (var ((role, column), _) in _blobs)
-            if (column == "trade_info" && _live.FirstOrDefault(s => s.Role?.Id == role) is { Trade: { } trade } session)
+            if (column == "trade_info" && _live.FirstOrDefault(s => s.Role?.Id == role) is { Social.Trade: { } trade } session)
                 yield return CharacterService.CaptureEconomicSync(session, TradeService.TradeSync, trade.Clone());
     }
 }

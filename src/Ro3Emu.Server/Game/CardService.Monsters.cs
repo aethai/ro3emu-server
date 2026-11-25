@@ -40,21 +40,21 @@ public sealed partial class CardService
         int result;
         using (await CharacterService.Lock(session))
         {
-            var entry = req.MonsterId is > 0 and <= int.MaxValue ? session.Library?.Monsters.GetValueOrDefault((int)req.MonsterId) : null;
-            result = session.Library == null ? ErrorCodes.Unknown
+            var entry = req.MonsterId is > 0 and <= int.MaxValue ? session.Profile.Library?.Monsters.GetValueOrDefault((int)req.MonsterId) : null;
+            result = session.Profile.Library == null ? ErrorCodes.Unknown
                 : !_functions.IsOpen(session, MonsterLibraryFunction) ? ErrorCodes.FunctionLocked
                 : entry == null ? ErrorCodes.CodexUnavailable
                 : entry.Unlock ? ErrorCodes.AlreadyUnlocked
                 : await CommitMonsterUnlockAsync(session, (int)req.MonsterId);
         }
-        if (result == 0) await CharacterService.SyncAsync(session, LibrarySync, session.Library!.Clone());
+        if (result == 0) await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library!.Clone());
         await session.SendGameAsync(LibraryMonsterUnlock, new LibraryMonsterUnlockResp { Result = result });
     }
 
     private async Task<int> CommitMonsterUnlockAsync(GameSession session, int monster)
     {
         long role = session.Role!.Id;
-        var next = session.Library!.Clone();
+        var next = session.Profile.Library!.Clone();
         next.Monsters[monster].Unlock = true;
         int points = (int)(Data.Config.PublicParams.Of(_data).LibraryMonsterUnlockReward ?? 0), item = (int)(Data.Config.PublicParams.Of(_data).LibraryOverviewPointID ?? 0);
         var plan = new AwardPlan(0, 0, points > 0 && item > 0 ? [new AwardGrant(item, points)] : []);
@@ -62,7 +62,7 @@ public sealed partial class CardService
         try
         {
             bool ok = await _character.ApplyAwardAsync(session, plan, persist: tx => _roles.SaveLibrary(role, bytes, tx),
-                stateLockHeld: true, committed: () => session.Library = next,
+                stateLockHeld: true, committed: () => session.Profile.Library = next,
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/library-award", $"library-monster/{role}/{monster}",
                     new { Version = 1, Monster = monster, Item = item, Points = points }));
             if (ok) _log.LogInformation("{Name} unlocks Codex monster {Monster}: {Points} x {Item}", session.Role.Name, monster, points, item);

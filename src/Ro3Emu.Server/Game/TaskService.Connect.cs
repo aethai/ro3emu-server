@@ -109,7 +109,7 @@ public sealed partial class TaskService
         if (seconds <= 0 || s.Role is not { } role || s.Attachment is not { } attachment || s.Tasks == null) return Task.CompletedTask;
         var mates = Mates(role.Id);
         bool together = _sessions.All().Any(o => o.Role is { } other && mates.Contains(other.Id) && o.WorldScene == s.WorldScene
-            && o.WildAfk is { Info: { IsHighMagnification: true, IsSuspended: false } });
+            && o.Activities.WildAfk is { Info: { IsHighMagnification: true, IsSuspended: false } });
         if (!together) return Task.CompletedTask;
         var total = _partyAfkSeconds.GetValue(attachment, _ => new StrongBox<long>());
         total.Value += seconds;

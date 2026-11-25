@@ -205,18 +205,18 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         long dagger = Stored(alice).Single(i => i.Entry == Dagger).Guid;
         await Equip(alice, dagger, 1);
-        await OnLoop(s => { s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1] = long.MaxValue; return Task.CompletedTask; });
+        await OnLoop(s => { s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1] = long.MaxValue; return Task.CompletedTask; });
         await Switch(alice, 1, ErrorCodes.ItemMissing);
         await OnLoop(s =>
         {
-            var grid = s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid;
+            var grid = s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid;
             grid[1] = dagger;
             grid[2] = dagger;
             return Task.CompletedTask;
         });
         await Switch(alice, 1, ErrorCodes.EquipSlot);
         Assert.Equal(1, Stored(alice).Single(i => i.Guid == dagger).Grid);
-        await OnLoop(s => { s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid.Clear(); return Task.CompletedTask; });
+        await OnLoop(s => { s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid.Clear(); return Task.CompletedTask; });
         await Gm($"!item {Shirt} 99"); // shirt already in bag: 100 occupied gear cells
         await Switch(alice, 1, ErrorCodes.BagFull);
         Assert.Equal(0, StoredPlans(alice).CurrentEquipPlan);

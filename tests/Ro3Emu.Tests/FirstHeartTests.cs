@@ -70,7 +70,7 @@ public sealed class FirstHeartTests : IAsyncLifetime
 
     private GameSession Session(BotClient bot) => Service<SessionRegistry>().All().Single(s => s.Account == bot.Account && s.Role != null);
 
-    private Task<FirstHeartTaskCfgData?> Cfg(GameSession s) => Read(() => s.FirstHeart?.ActivityData.GetValueOrDefault(1)?.Clone());
+    private Task<FirstHeartTaskCfgData?> Cfg(GameSession s) => Read(() => s.Activities.FirstHeart?.ActivityData.GetValueOrDefault(1)?.Clone());
 
     private async Task Until(GameSession s, Func<FirstHeartTaskCfgData, bool> reached, string what)
     {
@@ -169,7 +169,7 @@ public sealed class FirstHeartTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.RewardClaimed, await ClaimTask(alice, LevelTen));
         Assert.Equal(zeny + 5000, await Read(() => Service<CharacterService>().CountOf(s, Zeny)));
         Assert.Equal(1, (await Cfg(s))!.Scores);
-        long start = await Read(() => s.FirstHeart!.GetLvTime[1]);
+        long start = await Read(() => s.Activities.FirstHeart!.GetLvTime[1]);
         Assert.Equal(1, OwnedSourceCount($"firstheart/{s.Role!.Id}/{start}/task/{LevelTen}"));
     }
 
@@ -216,7 +216,7 @@ public sealed class FirstHeartTests : IAsyncLifetime
         await Until(s, cfg => Status(cfg, LoginSeven) == FirstHeartTaskState.Accept, "seven login days");
         Assert.Equal(0, await ClaimTask(alice, LevelFifty));
         Assert.Equal(ErrorCodes.TaskRequirements, await ClaimScore(alice, 1)); // one point is not three
-        long start = await Read(() => s.FirstHeart!.GetLvTime[1]);
+        long start = await Read(() => s.Activities.FirstHeart!.GetLvTime[1]);
         long role = s.Role!.Id;
         await alice.DisposeAsync();
 
@@ -228,7 +228,7 @@ public sealed class FirstHeartTests : IAsyncLifetime
         Assert.Equal(FirstHeartTaskState.Accept, all.Tasks[LoginSeven].Status);
         Assert.Equal(1, all.Scores);
         var s2 = Session(again);
-        Assert.Equal(start, await Read(() => s2.FirstHeart!.GetLvTime[1]));
+        Assert.Equal(start, await Read(() => s2.Activities.FirstHeart!.GetLvTime[1]));
         Assert.Equal(ErrorCodes.RewardClaimed, await ClaimTask(again, LevelFifty));
         Assert.Equal(1, OwnedSourceCount($"firstheart/{role}/{start}/task/{LevelFifty}"));
         Assert.Equal(0, await ClaimTask(again, LoginSeven));

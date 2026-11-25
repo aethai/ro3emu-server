@@ -124,7 +124,7 @@ public sealed class OpenContentTests : IAsyncLifetime
             services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null)));
         var functions = services.GetRequiredService<FunctionService>();
         Assert.False(await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(functions.ConditionMet(session, 21000010))));
-        var info = await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(session.NewActivities!.ActivityInfo[112]));
+        var info = await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(session.Activities.NewActivities!.ActivityInfo[112]));
         Assert.False(info.IsShielded);
     }
 
@@ -203,7 +203,7 @@ public sealed class OpenContentTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var clock = _app.Services.GetRequiredService<TerritoryWarsClock>();
         var state = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(
-            _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice").TerritoryEscort!));
+            _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice").Instances.TerritoryEscort!));
         Assert.True(clock.Cycle > 0);
         Assert.Equal(clock.Cycle, state.Cycle);
         Assert.Equal(clock.SeasonStart, state.SeasonStart);

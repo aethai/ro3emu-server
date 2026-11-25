@@ -63,7 +63,7 @@ public sealed partial class ValhallaService
     {
         var bytes = _roles.LoadHeroicSpirit(s.Role!.Id);
         // A role that never prayed: statue level 0 (the level-0 row exists, attribute 0; inferred start).
-        s.OdinStatue = bytes is { Length: > 0 } ? DBOdinStatue.Parser.ParseFrom(bytes) : new DBOdinStatue { Inited = 1 };
+        s.Instances.OdinStatue = bytes is { Length: > 0 } ? DBOdinStatue.Parser.ParseFrom(bytes) : new DBOdinStatue { Inited = 1 };
     }
 
     /// <summary>
@@ -73,7 +73,7 @@ public sealed partial class ValhallaService
     public async Task LoginAsync(GameSession s)
     {
         await SyncAsync(s);
-        if (DungeonService.ValhallaCleared(s.Dungeons).Any()) await _tasks.RefreshAsync(s);
+        if (DungeonService.ValhallaCleared(s.Instances.Dungeons).Any()) await _tasks.RefreshAsync(s);
     }
 
     private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, Sync, Snapshot(s));
@@ -81,8 +81,8 @@ public sealed partial class ValhallaService
     /// <summary>finishedChallenge: the client keeps only the key set (LC_DAL_Valhalla.lua:104-120); 1 per cleared layer.</summary>
     private static DBHeroicSpiritInfo Snapshot(GameSession s)
     {
-        var info = new DBHeroicSpiritInfo { OdinStatue = s.OdinStatue?.Clone() ?? new DBOdinStatue(), LatestChallengeId = s.ValhallaLatest };
-        foreach (long layer in DungeonService.ValhallaCleared(s.Dungeons)) info.FinishedChallenge[layer] = 1;
+        var info = new DBHeroicSpiritInfo { OdinStatue = s.Instances.OdinStatue?.Clone() ?? new DBOdinStatue(), LatestChallengeId = s.Instances.ValhallaLatest };
+        foreach (long layer in DungeonService.ValhallaCleared(s.Instances.Dungeons)) info.FinishedChallenge[layer] = 1;
         return info;
     }
 
@@ -102,11 +102,11 @@ public sealed partial class ValhallaService
     private int ChallengeError(GameSession s, long layerId, out JsonElement layer)
     {
         layer = default;
-        if (s.Role == null || s.Progress == null || s.Dungeons == null) return ErrorCodes.FeatureUnavailable;
+        if (s.Role == null || s.Progress == null || s.Instances.Dungeons == null) return ErrorCodes.FeatureUnavailable;
         if (!_functions.IsOpen(s, Function)) return ErrorCodes.FunctionLocked;
         if (_data.Row("HeroicSpiritLayerConfig", layerId) is not { } row) return ErrNoLayer;
         layer = row;
-        var cleared = DungeonService.ValhallaCleared(s.Dungeons).ToHashSet();
+        var cleared = DungeonService.ValhallaCleared(s.Instances.Dungeons).ToHashSet();
         if (cleared.Contains(layerId)) return ErrDone;
         long previous = GameData.Int(row, "_iPreLayer");
         if (previous != 0 && !cleared.Contains(previous)) return ErrPrevious;
@@ -127,7 +127,7 @@ public sealed partial class ValhallaService
             await WorldCoreService.ErrorAsync(s, Challenge, error);
             return;
         }
-        s.ValhallaLatest = req.ChallengeId;
+        s.Instances.ValhallaLatest = req.ChallengeId;
         await _dungeons.BeginValhallaAsync(s, plan!);
     }
 
@@ -144,13 +144,13 @@ public sealed partial class ValhallaService
     public async Task PrayAsync(GameSession s)
     {
         using var gate = await CharacterService.Lock(s);
-        int error = s.Role == null || s.OdinStatue == null ? ErrorCodes.FeatureUnavailable
+        int error = s.Role == null || s.Instances.OdinStatue == null ? ErrorCodes.FeatureUnavailable
             : !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked : 0;
         DBOdinStatue? next = null;
         (int Entry, long Count)[] cost = [];
         if (error == 0)
         {
-            var statue = s.OdinStatue!;
+            var statue = s.Instances.OdinStatue!;
             long need = LevelRow(statue.CurLv) is { } row ? GameData.Int(row, "_iExp") : 0;
             if (need <= 0) error = ErrorCodes.Parameter; // the last level (_iExp 0): the client says "Maximum value reached!"
             else
@@ -181,7 +181,7 @@ public sealed partial class ValhallaService
                     tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/valhalla-pray", cost, [],
                         new { saved.CurLv, saved.CurExp }));
                 },
-                Committed = () => s.OdinStatue = saved,
+                Committed = () => s.Instances.OdinStatue = saved,
             }) == null)
                 error = ErrCoins;
         }

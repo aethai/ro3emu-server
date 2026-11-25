@@ -54,7 +54,7 @@ public sealed partial class LotteryActivityTests
         int ticketBefore = session.Items.Where(i => i.Entry == 1250717).Sum(i => i.Stack);
         var itemsBefore = session.Items.GroupBy(i => i.Entry).ToDictionary(g => g.Key, g => g.Sum(i => i.Stack));
         var moneyBefore = session.Progress!.Currency.ToDictionary(pair => pair.Key, pair => pair.Value);
-        int countBefore = session.Lottery!.LotteryPool[201].DailyCount;
+        int countBefore = session.Activities.Lottery!.LotteryPool[201].DailyCount;
         long receiptsBefore = LotteryReceipts();
         var catalog = EventEconomy.Catalog(_app.Services.GetRequiredService<GameData>());
         string database = _app.Services.GetRequiredService<AccountStore>().DatabasePath;
@@ -74,7 +74,7 @@ public sealed partial class LotteryActivityTests
                 new LotteryReq { PoolId = 201, Type = ELotteryPoolType.GachaCountMin });
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(ticketBefore, session.Items.Where(i => i.Entry == 1250717).Sum(i => i.Stack));
-            Assert.Equal(countBefore, session.Lottery.LotteryPool[201].DailyCount);
+            Assert.Equal(countBefore, session.Activities.Lottery.LotteryPool[201].DailyCount);
             Assert.Equal(receiptsBefore, LotteryReceipts());
             await other.SendGameAsync(LotteryService.DrawRequest,
                 new LotteryReq { PoolId = 201, Type = ELotteryPoolType.GachaCountMin });
@@ -85,7 +85,7 @@ public sealed partial class LotteryActivityTests
         Assert.Equal(0, result.Result);
         Assert.Single(result.ItemList);
         Assert.Equal(ticketBefore - 1, session.Items.Where(i => i.Entry == 1250717).Sum(i => i.Stack));
-        Assert.Equal(countBefore + 1, session.Lottery.LotteryPool[201].DailyCount);
+        Assert.Equal(countBefore + 1, session.Activities.Lottery.LotteryPool[201].DailyCount);
         var item = result.ItemList[0];
         if (item.IsPet) Assert.True(session.Pets!.ListPet.ContainsKey(item.ItemId));
         else

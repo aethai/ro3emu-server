@@ -144,12 +144,12 @@ public sealed partial class FirstHeartService : IGameTicker
         return state;
     }
 
-    private bool Ready(GameSession s) => s.Role != null && s.FirstHeart != null;
+    private bool Ready(GameSession s) => s.Role != null && s.Activities.FirstHeart != null;
 
     // ------------------------------------------------------------------ state / 5049
 
     /// <summary>Before login nothing is shown: the state is read and brought up to date by <see cref="LoginAsync"/>.</summary>
-    public void Load(GameSession s) => s.FirstHeart = null;
+    public void Load(GameSession s) => s.Activities.FirstHeart = null;
 
     /// <summary>After achievements (their login day is counted): bring the saved state up to now, save, 5049.</summary>
     public async Task LoginAsync(GameSession s)
@@ -158,7 +158,7 @@ public sealed partial class FirstHeartService : IGameTicker
         var saved = bytes is { Length: > 0 } ? DBFirstHeartTaskActivityData.Parser.ParseFrom(bytes) : new DBFirstHeartTaskActivityData();
         var next = Evaluate(s, saved.Clone());
         if (!next.Equals(saved)) _roles.SaveFirstHeart(s.Role.Id, next.ToByteArray());
-        s.FirstHeart = next;
+        s.Activities.FirstHeart = next;
         await SyncAsync(s);
     }
 
@@ -170,7 +170,7 @@ public sealed partial class FirstHeartService : IGameTicker
     /// </summary>
     private async Task SyncAsync(GameSession s)
     {
-        if (s.FirstHeart is not { } state || !state.ActivityData.TryGetValue(Type, out var cfg)) return;
+        if (s.Activities.FirstHeart is not { } state || !state.ActivityData.TryGetValue(Type, out var cfg)) return;
         if (!s.Synced.ContainsKey(Sync) && cfg.GetRewards.Count == 0)
         {
             var wire = state.Clone();
@@ -213,7 +213,7 @@ public sealed partial class FirstHeartService : IGameTicker
         {
             if (!Ready(s) || _queued.Contains(s)) continue;
             if (s.Handoff != null) { _dirty.Add(s); continue; }
-            var current = s.FirstHeart!;
+            var current = s.Activities.FirstHeart!;
             if (current.ActivityData.GetValueOrDefault(Type)?.IsAllTaskComplete == true) continue;
             if (!Evaluate(s, current.Clone()).Equals(current)) PostRefresh(s);
         }
@@ -235,10 +235,10 @@ public sealed partial class FirstHeartService : IGameTicker
     /// <summary>Under the character lock: save the brought-up-to-date state when it changed.</summary>
     private bool Refresh(GameSession s)
     {
-        var next = Evaluate(s, s.FirstHeart!.Clone());
-        if (next.Equals(s.FirstHeart)) return false;
+        var next = Evaluate(s, s.Activities.FirstHeart!.Clone());
+        if (next.Equals(s.Activities.FirstHeart)) return false;
         _roles.SaveFirstHeart(s.Role!.Id, next.ToByteArray());
-        s.FirstHeart = next;
+        s.Activities.FirstHeart = next;
         return true;
     }
 
@@ -261,7 +261,7 @@ public sealed partial class FirstHeartService : IGameTicker
                     : 0;
                 if (result == 0)
                 {
-                    var next = s.FirstHeart!.Clone();
+                    var next = s.Activities.FirstHeart!.Clone();
                     var claimed = next.ActivityData[Type];
                     claimed.Tasks[req.TaskId].Status = FirstHeartTaskState.GetReward;
                     claimed.Scores += row!.Point;
@@ -291,7 +291,7 @@ public sealed partial class FirstHeartService : IGameTicker
                     : 0;
                 if (result == 0)
                 {
-                    var next = s.FirstHeart!.Clone();
+                    var next = s.Activities.FirstHeart!.Clone();
                     next.ActivityData[Type].GetRewards[req.RewardId] = Now; // the client reads only the key (inferred value)
                     result = await CommitClaimAsync(s, next, GameData.Int(row!.Value, "_iAward"), $"score/{req.RewardId}");
                 }
@@ -308,7 +308,7 @@ public sealed partial class FirstHeartService : IGameTicker
         if (!Ready(s)) return ErrorCodes.FeatureUnavailable;
         Refresh(s);
         if (type != Type) return ErrorCodes.Parameter;
-        if (!Open(s) || !s.FirstHeart!.ActivityData.TryGetValue(Type, out cfg)) return ErrorCodes.ActivityClosed;
+        if (!Open(s) || !s.Activities.FirstHeart!.ActivityData.TryGetValue(Type, out cfg)) return ErrorCodes.ActivityClosed;
         return 0;
     }
 
@@ -333,7 +333,7 @@ public sealed partial class FirstHeartService : IGameTicker
         {
             bool ok = await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, plan.Grants),
                 persist: tx => _roles.SaveFirstHeart(role, bytes, tx), stateLockHeld: true,
-                committed: () => s.FirstHeart = next,
+                committed: () => s.Activities.FirstHeart = next,
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/firstheart-award", source,
                     new { Version = 1, Claim = claim, Award = plan.AwardId }));
             if (!ok) _log.LogWarning("Seven-Day Goal {Claim} not paid for {Role}", claim, role);
@@ -356,13 +356,13 @@ public sealed partial class FirstHeartService : IGameTicker
         {
             changed = Ready(s) && Refresh(s); // a level just reached starts it before the command reads it
             if (!Ready(s)) reply = "No Seven-Day Goal state.";
-            else if (args is ["day", _] && !s.FirstHeart!.GetLvTime.ContainsKey(Type)) reply = "Seven-Day Goal not started (base level 10).";
+            else if (args is ["day", _] && !s.Activities.FirstHeart!.GetLvTime.ContainsKey(Type)) reply = "Seven-Day Goal not started (base level 10).";
             else if (args is ["day", var text] && int.TryParse(text, out int day) && day >= 1)
             {
-                var next = s.FirstHeart!.Clone();
+                var next = s.Activities.FirstHeart!.Clone();
                 next.GetLvTime[Type] = Now - (day - 1) * 86400L;
                 _roles.SaveFirstHeart(s.Role!.Id, next.ToByteArray());
-                s.FirstHeart = next;
+                s.Activities.FirstHeart = next;
                 Refresh(s);
                 changed = true;
                 reply = $"Seven-Day Goal: day {day} is open.";
@@ -371,16 +371,16 @@ public sealed partial class FirstHeartService : IGameTicker
             {
                 var next = Evaluate(s, new DBFirstHeartTaskActivityData());
                 _roles.SaveFirstHeart(s.Role!.Id, next.ToByteArray());
-                s.FirstHeart = next;
+                s.Activities.FirstHeart = next;
                 s.Synced.Remove(Sync);
                 changed = true;
                 reply = "Seven-Day Goal reset.";
             }
             else if (args is [] or ["info"])
             {
-                var cfg = s.FirstHeart!.ActivityData.GetValueOrDefault(Type);
+                var cfg = s.Activities.FirstHeart!.ActivityData.GetValueOrDefault(Type);
                 reply = cfg == null ? "Seven-Day Goal not started (base level 10)."
-                    : $"Seven-Day Goal day {DayNumber(s.FirstHeart.GetLvTime[Type])}, score {cfg.Scores}, tasks "
+                    : $"Seven-Day Goal day {DayNumber(s.Activities.FirstHeart.GetLvTime[Type])}, score {cfg.Scores}, tasks "
                         + string.Join(" ", cfg.Tasks.Values.OrderBy(t => t.TaskId).Select(t => $"{t.TaskId}:{(int)t.Status}"));
             }
             else reply = "Usage: !firstheart day <n> | reset | info";

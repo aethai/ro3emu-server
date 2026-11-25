@@ -98,10 +98,10 @@ public sealed partial class EmojiService : IGameTicker
     public async Task LoginAsync(GameSession session)
     {
         var saved = _roles.LoadEmojiPlay(session.Role!.Id);
-        session.EmojiPlay = saved != null ? DBEmojiPlayInfo.Parser.ParseFrom(saved) : new DBEmojiPlayInfo();
-        session.Emote = null;
+        session.Social.EmojiPlay = saved != null ? DBEmojiPlayInfo.Parser.ParseFrom(saved) : new DBEmojiPlayInfo();
+        session.Social.Emote = null;
         if (Recompute(session)) Save(session);
-        await CharacterService.SyncAsync(session, Sync, session.EmojiPlay.Clone());
+        await CharacterService.SyncAsync(session, Sync, session.Social.EmojiPlay.Clone());
         await LoginEmoticonsAsync(session);
     }
 
@@ -112,7 +112,7 @@ public sealed partial class EmojiService : IGameTicker
     /// </summary>
     private bool Recompute(GameSession session)
     {
-        var info = session.EmojiPlay!;
+        var info = session.Social.EmojiPlay!;
         var unlocked = _data.Table("PerformanceConfig").Values.Where(r => Unlocked(session, r))
             .Select(r => (int)GameData.Int(r, "_iID")).Where(id => id > 0).Order().ToList();
         bool changed = !info.EmojiUnlocks.SequenceEqual(unlocked);
@@ -133,7 +133,7 @@ public sealed partial class EmojiService : IGameTicker
             bool ok = type switch
             {
                 1002 => session.Progress?.Level >= param,
-                1104 => session.Wardrobe?.AllLightUpAppearances.ContainsKey((int)param) == true,
+                1104 => session.Profile.Wardrobe?.AllLightUpAppearances.ContainsKey((int)param) == true,
                 _ => false,
             };
             if (!ok) return false;
@@ -143,14 +143,14 @@ public sealed partial class EmojiService : IGameTicker
 
     private async Task RefreshUnlocksAsync(GameSession session)
     {
-        if (session.EmojiPlay == null || !Recompute(session)) return;
+        if (session.Social.EmojiPlay == null || !Recompute(session)) return;
         Save(session);
         await SyncAsync(session);
     }
 
-    private void Save(GameSession session) => _roles.SaveEmojiPlay(session.Role!.Id, session.EmojiPlay!.ToByteArray());
+    private void Save(GameSession session) => _roles.SaveEmojiPlay(session.Role!.Id, session.Social.EmojiPlay!.ToByteArray());
 
-    private Task SyncAsync(GameSession session) => CharacterService.SyncAsync(session, Sync, session.EmojiPlay!.Clone());
+    private Task SyncAsync(GameSession session) => CharacterService.SyncAsync(session, Sync, session.Social.EmojiPlay!.Clone());
 
     /// <summary>
     /// 82603. The idle tab lists the _iSort 4 rows of the player's sex or of none (Lua_CFG_PerformanceConfig.GetAllIDList);
@@ -159,14 +159,14 @@ public sealed partial class EmojiService : IGameTicker
     /// </summary>
     public async Task SetIdleAsync(GameSession session, SetIdleEmojiReq req)
     {
-        int result = session.EmojiPlay == null ? Busy
+        int result = session.Social.EmojiPlay == null ? Busy
             : req.EmojiId == 0 ? 0
             : PerformanceConfig.Get(_data, req.EmojiId) is not { } row ? NoConfig
             : row.Sort != IdleSort || (row.Sex != 0 && row.Sex != session.Role?.Sex) ? NoConfig
-            : !session.EmojiPlay.EmojiUnlocks.Contains(req.EmojiId) ? Locked : 0;
+            : !session.Social.EmojiPlay.EmojiUnlocks.Contains(req.EmojiId) ? Locked : 0;
         if (result == 0)
         {
-            session.EmojiPlay!.IdleEmojiID = req.EmojiId;
+            session.Social.EmojiPlay!.IdleEmojiID = req.EmojiId;
             Save(session);
         }
         await session.SendGameAsync(SetIdle, new SetIdleEmojiRsp { Result = result, EmojiId = req.EmojiId });
@@ -181,7 +181,7 @@ public sealed partial class EmojiService : IGameTicker
 
     public async Task CollectionAsync(GameSession session, int emojiId, bool add)
     {
-        var info = session.EmojiPlay;
+        var info = session.Social.EmojiPlay;
         int result = info == null ? Busy
             : Row(emojiId) is not { } row ? NoConfig
             : GameData.Int(row, "_iSort") == IdleSort ? NoConfig // idle emotes cannot be favourites (client 66031)
@@ -203,7 +203,7 @@ public sealed partial class EmojiService : IGameTicker
     {
         long now = NowMs;
         // The client's "ready" answer to our Prepare (LC_State_Unit_Emoji: Ready -> Readied -> START_PLAY).
-        if (session.Emote is { State: ObjectState.EObjectStateSmemojiPlayPrepare, Ready: false } prepared && prepared.EmojiId == req.EmojiId)
+        if (session.Social.Emote is { State: ObjectState.EObjectStateSmemojiPlayPrepare, Ready: false } prepared && prepared.EmojiId == req.EmojiId)
         {
             prepared.Ready = true;
             await session.SendGameAsync(StartPlay, new EmojiStartPlayRsp());
@@ -213,12 +213,12 @@ public sealed partial class EmojiService : IGameTicker
         int result = Validate(session, req.EmojiId, SingleSort, now);
         if (result == 0)
         {
-            session.LastEmoteRequestMs = now;
+            session.Social.LastEmoteRequestMs = now;
             // Switching single emotes while performing is allowed (LC_Skill_Function.CheckEmojiCanCast).
-            session.Emote = new Emote
+            session.Social.Emote = new Emote
             {
                 State = ObjectState.EObjectStateSmemojiPlayPrepare, EmojiId = req.EmojiId, StateMs = now,
-                CombatMark = session.LastCombatMs,
+                CombatMark = session.Combat.LastCombatMs,
             };
             _active.Add(session);
         }
@@ -229,16 +229,16 @@ public sealed partial class EmojiService : IGameTicker
     /// <summary>Common checks for starting or inviting to an emote of the given PerformanceConfig._iSort.</summary>
     private int Validate(GameSession session, int emojiId, int sort, long now)
     {
-        if (session.Role == null || session.EmojiPlay == null || session.SceneLoading) return Busy;
+        if (session.Role == null || session.Social.EmojiPlay == null || session.SceneLoading) return Busy;
         if (session.Dead) return Dead;
         if ((session.StatusBits & FightBit) != 0) return InCombat;
         if (Row(emojiId) is not { } row || GameData.Int(row, "_iSort") != sort) return NoConfig;
-        if (!session.EmojiPlay.EmojiUnlocks.Contains(emojiId)) return Locked;
+        if (!session.Social.EmojiPlay.EmojiUnlocks.Contains(emojiId)) return Locked;
         int sex = (int)GameData.Int(row, "_iSex");
         if (sex != 0 && sex != session.Role.Sex) return NoConfig;
         if (Forbidden(session.SceneEntry)) return ForbiddenHere;
-        if (now - session.LastEmoteRequestMs < GameData.Int(row, "_iPerformanceCD")) return TooFrequent;
-        if (session.Emote is { Targets.Length: > 0 }) return AlreadyPerforming; // in a duo
+        if (now - session.Social.LastEmoteRequestMs < GameData.Int(row, "_iPerformanceCD")) return TooFrequent;
+        if (session.Social.Emote is { Targets.Length: > 0 }) return AlreadyPerforming; // in a duo
         return 0;
     }
 
@@ -250,16 +250,16 @@ public sealed partial class EmojiService : IGameTicker
     private async Task PlayWhenReadyAsync(GameSession session)
     {
         var group = Group(session);
-        if (group.Any(s => s.Emote is not { State: ObjectState.EObjectStateSmemojiPlayPrepare, Ready: true })) return;
+        if (group.Any(s => s.Social.Emote is not { State: ObjectState.EObjectStateSmemojiPlayPrepare, Ready: true })) return;
         long now = NowMs;
         foreach (var member in group)
         {
-            var emote = member.Emote!;
+            var emote = member.Social.Emote!;
             emote.State = ObjectState.EObjectStateSmemojiPlay;
             emote.StateMs = now;
             long duration = Row(emote.EmojiId) is { } row ? GameData.Int(row, "_iDuration") : 0;
             emote.EndMs = duration > 0 ? now + duration : 0; // 0 = loop (Meditate) until something ends it
-            emote.CombatMark = member.LastCombatMs;
+            emote.CombatMark = member.Combat.LastCombatMs;
         }
         foreach (var member in group) await BroadcastStateAsync(member);
         foreach (var member in group) await QuestAsync(member);
@@ -269,9 +269,9 @@ public sealed partial class EmojiService : IGameTicker
     private List<GameSession> Group(GameSession session)
     {
         var group = new List<GameSession> { session };
-        foreach (long id in session.Emote?.Targets ?? [])
-            if (_sessions.ByRole(id) is { Emote: { } other } partner
-                && other.EmojiId == session.Emote!.EmojiId && other.Targets.Contains(session.Role!.Id))
+        foreach (long id in session.Social.Emote?.Targets ?? [])
+            if (_sessions.ByRole(id) is { Social.Emote: { } other } partner
+                && other.EmojiId == session.Social.Emote!.EmojiId && other.Targets.Contains(session.Role!.Id))
                 group.Add(partner);
         return group;
     }
@@ -285,12 +285,12 @@ public sealed partial class EmojiService : IGameTicker
     /// <summary>Ends the player's emote (and its duo partners'): 13 SMIdle with the old param as lastParam.</summary>
     public async Task EndAsync(GameSession session, bool silent = false)
     {
-        if (session.Emote == null) return;
+        if (session.Social.Emote == null) return;
         var group = Group(session);
         foreach (var member in group)
         {
-            var old = member.Emote;
-            member.Emote = null;
+            var old = member.Social.Emote;
+            member.Social.Emote = null;
             _active.Remove(member);
             if (old == null || silent && member == session) continue;
             await ToPlayerAndViewersAsync(member, new AOIAttrChange
@@ -314,7 +314,7 @@ public sealed partial class EmojiService : IGameTicker
 
     /// <summary>Movement ends a playing emote; walking in Prepare does not (the duo partner walks to its spot).</summary>
     public Task PlayerMovedAsync(GameSession session) =>
-        session.Emote is { State: ObjectState.EObjectStateSmemojiPlay } && session.Walking ? EndAsync(session) : Task.CompletedTask;
+        session.Social.Emote is { State: ObjectState.EObjectStateSmemojiPlay } && session.WorldState.Walking ? EndAsync(session) : Task.CompletedTask;
 
     private static StateParam Param(Emote emote)
     {
@@ -330,14 +330,14 @@ public sealed partial class EmojiService : IGameTicker
 
     private Task BroadcastStateAsync(GameSession session) => ToPlayerAndViewersAsync(session, new AOIAttrChange
     {
-        EntityUuid = (ulong)session.Role!.Id, BehaviorStateMachine = Info(session.Emote!),
+        EntityUuid = (ulong)session.Role!.Id, BehaviorStateMachine = Info(session.Social.Emote!),
     });
 
     /// <summary>The emote state and idle emote carried by the entity a viewer creates (31037, ENTITYSELF).</summary>
     public static void PopulateEntity(GameSession session, EntityBase entity)
     {
-        if (session.Emote is { } emote) entity.BehaviorStateMachineInfo = Info(emote);
-        if (session.EmojiPlay is { IdleEmojiID: > 0 } info) entity.IdleInfo = new AoiIdleInfo { EmojiId = info.IdleEmojiID };
+        if (session.Social.Emote is { } emote) entity.BehaviorStateMachineInfo = Info(emote);
+        if (session.Social.EmojiPlay is { IdleEmojiID: > 0 } info) entity.IdleInfo = new AoiIdleInfo { EmojiId = info.IdleEmojiID };
     }
 
     private async Task ToPlayerAndViewersAsync(GameSession p, IMessage body)
@@ -348,7 +348,7 @@ public sealed partial class EmojiService : IGameTicker
 
     /// <summary>Target 106903 CheckAreaAction [map, region, emojiId]: counted when the emote really plays.</summary>
     private Task QuestAsync(GameSession session) =>
-        _tasks.OnEmotePlayedAsync(session, session.Emote!.EmojiId,
+        _tasks.OnEmotePlayedAsync(session, session.Social.Emote!.EmojiId,
             (map, region) => session.SceneEntry == map && RegionsOf(map).TryGetValue(region, out var r) && r.Contains(session.Position));
 
     private Dictionary<long, Region> RegionsOf(long map)
@@ -381,7 +381,7 @@ public sealed partial class EmojiService : IGameTicker
     }
 
     private static bool Free(GameSession s) => !s.Dead && !s.SceneLoading && (s.StatusBits & FightBit) == 0
-        && s.Emote is not { Targets.Length: > 0 } && s.Emote is not { State: ObjectState.EObjectStateSmemojiPlayPrepare };
+        && s.Social.Emote is not { Targets.Length: > 0 } && s.Social.Emote is not { State: ObjectState.EObjectStateSmemojiPlayPrepare };
 
     public async Task InviteAsync(GameSession session, EmojiInviteReq req)
     {
@@ -396,7 +396,7 @@ public sealed partial class EmojiService : IGameTicker
                 : 0;
         var rsp = new EmojiInviteRsp { Result = result, EmojiId = req.EmojiId };
         if (result != 0) { await session.SendGameAsync(Invite, rsp); return; }
-        session.LastEmoteRequestMs = now;
+        session.Social.LastEmoteRequestMs = now;
         long expire = now + (Data.Config.PublicParams.Of(_data).InviteWaitingTime ?? 30_000);
         _invites.Add(new PendingInvite(session.Role!.Id, target!.Role!.Id, req.EmojiId, expire));
         rsp.ExpireTime = expire;
@@ -427,10 +427,10 @@ public sealed partial class EmojiService : IGameTicker
         // Both prepare: the inviter plays index 1 in place, the partner index 2 walks to its spot next to it.
         foreach (var (member, other, index) in new[] { (owner, session, 1), (session, owner, 2) })
         {
-            member.Emote = new Emote
+            member.Social.Emote = new Emote
             {
                 State = ObjectState.EObjectStateSmemojiPlayPrepare, EmojiId = req.EmojiId, PlayIndex = index,
-                Targets = [other.Role!.Id], StateMs = now, CombatMark = member.LastCombatMs,
+                Targets = [other.Role!.Id], StateMs = now, CombatMark = member.Combat.LastCombatMs,
             };
             _active.Add(member);
         }
@@ -472,10 +472,10 @@ public sealed partial class EmojiService : IGameTicker
         var ending = new List<GameSession>();
         foreach (var s in _active)
         {
-            var emote = s.Emote;
+            var emote = s.Social.Emote;
             if (emote == null || s.Role == null || !online.Contains(s)) { ending.Add(s); continue; }
-            bool partnerGone = emote.Targets.Any(id => Online(id) is not { Emote: { } other } || other.EmojiId != emote.EmojiId);
-            if (s.Dead || s.LastCombatMs != emote.CombatMark || partnerGone
+            bool partnerGone = emote.Targets.Any(id => Online(id) is not { Social.Emote: { } other } || other.EmojiId != emote.EmojiId);
+            if (s.Dead || s.Combat.LastCombatMs != emote.CombatMark || partnerGone
                 || emote.State == ObjectState.EObjectStateSmemojiPlay && emote.EndMs > 0 && now >= emote.EndMs
                 || emote.State == ObjectState.EObjectStateSmemojiPlayPrepare && now - emote.StateMs >= PrepareTimeoutMs)
                 ending.Add(s);
@@ -490,11 +490,11 @@ public sealed partial class EmojiService : IGameTicker
             {
                 foreach (var s in ending)
                 {
-                    if (!online.Contains(s) || s.Role == null) { _active.Remove(s); CancelInvites(s.Role?.Id ?? 0); if (s.Emote != null) await EndAsync(s, silent: true); continue; }
+                    if (!online.Contains(s) || s.Role == null) { _active.Remove(s); CancelInvites(s.Role?.Id ?? 0); if (s.Social.Emote != null) await EndAsync(s, silent: true); continue; }
                     await EndAsync(s);
                 }
                 if (recheck)
-                    foreach (var s in _sessions.All().Where(s => s.Role != null && s.EmojiPlay != null && s.Handoff == null))
+                    foreach (var s in _sessions.All().Where(s => s.Role != null && s.Social.EmojiPlay != null && s.Handoff == null))
                         await RefreshUnlocksAsync(s);
             }
             catch (Exception e) { _log.LogWarning(e, "emote tick"); }

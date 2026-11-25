@@ -82,11 +82,11 @@ public sealed class GuildHomeService : IGameTicker
         if (GuildId(s) is not { } id) return ErrorCodes.NotInGuild;
         guild = id;
         if (!_functions.IsOpen(s, GuildService.Function)) return ErrorCodes.FeatureUnavailable;
-        if (s.SceneLoading || s.Handoff is { Completing: false } || s.SceneRecoveryRequired
+        if (s.SceneLoading || s.Handoff is { Completing: false } || s.WorldState.SceneRecoveryRequired
             || s.SceneTransitionGate.CurrentCount == 0) return ErrorCodes.SwitchingScenes;
         if (s.InstanceId != 0 && s.SceneEntry == Scene && RoomOf(id)?.Id == s.InstanceId)
             return ErrorCodes.AlreadyInGuildHome;
-        if (s.InstanceId != 0 || s.TowerAttempt != null || s.DungeonAttempt != null) return ErrorCodes.DungeonBusy;
+        if (s.InstanceId != 0 || s.Instances.TowerAttempt != null || s.DungeonAttempt != null) return ErrorCodes.DungeonBusy;
         if (_dungeons.Preparing(s)) return ErrorCodes.DungeonPreparing;
         if (s.Dead) return ErrorCodes.FeatureUnavailable;
         if ((s.StatusBits & (1L << 15)) != 0) return ErrorCodes.ActionInBattle;

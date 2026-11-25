@@ -218,7 +218,7 @@ public sealed partial class CardRulesTests
             var bash = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == CardBash);
             Assert.True(Assert.Single(bash.Dsts).Damage > 0);
             Assert.Equal(target.Uid, bash.Dsts[0].DstID);
-            Assert.False(session.SkillCds.ContainsKey(20028)); // an extra cast starts no cooldown
+            Assert.False(session.Combat.SkillCds.ContainsKey(20028)); // an extra cast starts no cooldown
 
             await SwingOnce(alice, session, target); // inside the 2 s
             await Task.Delay(300);
@@ -466,14 +466,14 @@ public sealed partial class CardRulesTests
             await Cast(alice, skill, target);
             await Task.Delay(100);
             Assert.Equal(0, Resets(alice, group));
-            Assert.True(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
+            Assert.True(await OnLoop(() => session.Combat.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
             await Task.Delay(1000);
 
             effects.Roll = _ => 599;
             await Cast(alice, skill, target);
             await Eventually(() => Resets(alice, group) == 1, "the reset");
             var reset = System.Diagnostics.Stopwatch.StartNew();
-            Assert.False(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
+            Assert.False(await OnLoop(() => session.Combat.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
 
             await Cast(alice, skill, target); // refused by nothing: the cooldown is gone. But it is locked now.
             await Task.Delay(100);
@@ -579,7 +579,7 @@ public sealed partial class CardRulesTests
     private async Task AnswerRevive(BotClient bot, GameSession session, int expectedRow, bool take)
     {
         Assert.True(await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().TryPreventLethalAsync(session)));
-        Assert.Equal(expectedRow, session.ImmuneDeathOffer!.BuffConfigId);
+        Assert.Equal(expectedRow, session.Combat.ImmuneDeathOffer!.BuffConfigId);
         await bot.SendGameAsync(BuffService.ImmuneDeathConfirm, new PlayerConfirmImmuneDeadReq { IsConfirm = take });
         Assert.Equal(0, (await Next(bot, BuffService.ImmuneDeathConfirm, PlayerConfirmImmuneDeadRsp.Parser)).Result);
     }
@@ -600,7 +600,7 @@ public sealed partial class CardRulesTests
             var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == OsirisReduction));
             Assert.Equal(5000, shown.Buffs.Single(b => b.ConfigId == OsirisReduction).Duration);
             Assert.Equal(before + 3000, await OnLoop(() => Service<CharacterService>().Stats(session)[216]));
-            Assert.Equal(150_000, await OnLoop(() => session.BuffEffectCds.Values.Max() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 500) / 1000 * 1000);
+            Assert.Equal(150_000, await OnLoop(() => session.Combat.BuffEffectCds.Values.Max() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 500) / 1000 * 1000);
         }
     }
 
@@ -616,7 +616,7 @@ public sealed partial class CardRulesTests
             await Task.Delay(200);
             Assert.DoesNotContain(session.Buffs, b => b.ConfigId == OsirisReduction);
 
-            await OnLoop(() => { session.BuffEffectCds.Clear(); return 0; });
+            await OnLoop(() => { session.Combat.BuffEffectCds.Clear(); return 0; });
             await AtStar(session, Osiris, 2);
             await AnswerRevive(alice, session, 2052103, take: false);
             await Task.Delay(200);

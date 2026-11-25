@@ -302,7 +302,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         await alice.SendGameAsync(DungeonService.StatisticsCurrent, new GetDungeonStatisticsInDungeonReq());
         Assert.Equal(0, (await Next(alice, DungeonService.StatisticsCurrent,
             GetDungeonStatisticsInDungeonResp.Parser)).Result);
-        Assert.Empty(Session(alice).Dungeons!.Records);
+        Assert.Empty(Session(alice).Instances.Dungeons!.Records);
         Assert.Equal(0, Items(alice, 1250900));
         await Kill(alice, actor);
         foreach (var bot in new[] { alice, bob, carol })
@@ -634,7 +634,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         await Next(alice, DungeonService.Sync, DBMultiDungeonInfoIncrement.Parser, update => ClearPublished(update, 1));
         Assert.Equal(90000, Currency(alice, 2));
         Assert.Equal(100, Items(alice, 1250900));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var firstCounter = ((DBMultiDungeonInfo)Session(alice).Synced[DungeonService.Sync]).DungeonInfo[Multi].AwardInfo[0];
         Assert.Equal(2, firstCounter.TotalNumber);
         Assert.Equal(1, firstCounter.UseNumber);
@@ -654,7 +654,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         Assert.Equal(100, secondResult.Rewards[1250900]);
         Assert.Equal(180000, Currency(alice, 2));
         Assert.Equal(200, Items(alice, 1250900));
-        Assert.Equal(0, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(0, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var spentCounter = ((DBMultiDungeonInfo)Session(alice).Synced[DungeonService.Sync]).DungeonInfo[Multi].AwardInfo[0];
         Assert.Equal(2, spentCounter.UseNumber);
 
@@ -671,10 +671,10 @@ public sealed partial class DungeonTests : IAsyncLifetime
 
         _clock.Advance(TimeSpan.FromDays(1));
         await OnLoop(() => Service<DungeonService>().SyncAsync(Session(alice)));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         _clock.Advance(TimeSpan.FromDays(10));
         await OnLoop(() => Service<DungeonService>().SyncAsync(Session(alice)));
-        Assert.Equal(2, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(2, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var saved = JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons((long)alice.Self!.Uuid)!)!;
         Assert.Equal(2, saved.Allowances["50101:101:1"].Remaining);
 
@@ -724,7 +724,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
             Assert.Equal(180000, Currency(alice, 2));
             Assert.Equal(180000, Service<RoleStore>().LoadProgress(roleId).Currency.GetValueOrDefault(2));
             Assert.Equal(200, Items(alice, 1250900));
-            Assert.Equal(2, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+            Assert.Equal(2, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_dungeons"); }
         await OnLoop(() => Service<DungeonService>().DeliverPendingAsync(Session(alice)));
@@ -732,7 +732,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         Assert.Empty(Service<DungeonObligationStore>().Pending(roleId));
         Assert.Equal(270000, Currency(alice, 2));
         Assert.Equal(300, Items(alice, 1250900));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var recovered = JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons(roleId)!)!;
         Assert.Equal(1, recovered.Allowances["50101:101:1"].Remaining);
         await OnLoop(() => Service<DungeonService>().DeliverPendingAsync(Session(alice)));

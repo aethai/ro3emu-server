@@ -44,7 +44,7 @@ public sealed partial class TimedEventService(GameData data, TimeProvider time, 
         bool active = Active(id);
         if (_previous.TryGetValue(id, out bool was) && was == active) return;
         _previous[id] = active;
-        foreach (var s in _sessions.All().Where(s => s.Role != null && s.ActivitiesReady))
+        foreach (var s in _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady))
             _loop.PostOwned(s, () => NotifyAsync(s, id), "timed event test window");
     }
 
@@ -61,7 +61,7 @@ public sealed partial class TimedEventService(GameData data, TimeProvider time, 
         var response = new ActivityResp { ActivityId = req.ActivityId };
         int taskId = req.ReqParam?.NoviceReq?.TaskId ?? 0;
         int stage = StageFor(req.ActivityId, taskId);
-        response.Result = session.Role == null || !session.ActivitiesReady || !Active(req.ActivityId) ? ErrorCodes.FeatureUnavailable
+        response.Result = session.Role == null || !session.Activities.ActivitiesReady || !Active(req.ActivityId) ? ErrorCodes.FeatureUnavailable
             : req.ReqParam?.NoviceReq == null || stage == 0 ? ErrorCodes.Parameter
             : session.Tasks == null || !TaskService.IsDelivered(session, taskId) ? ErrorCodes.TaskRequirements : 0;
         response.RespParam = new ActivityRespParam { NoviceResp = new NoviceActivityResp { Result = response.Result, TaskId = taskId } };
@@ -75,7 +75,7 @@ public sealed partial class TimedEventService(GameData data, TimeProvider time, 
         using var scope = session.Role != null && _loop.Owners is { } owners
             ? await owners.EnterAsync("timed event upload", [ReservationKey.Role(session.Role.Id)]) : null;
         if (session.Owner != null) scope?.Context.Pin(session.Owner);
-        int result = session.Role == null || !session.ActivitiesReady || !Active(req.ActivityId) ? ErrorCodes.FeatureUnavailable
+        int result = session.Role == null || !session.Activities.ActivitiesReady || !Active(req.ActivityId) ? ErrorCodes.FeatureUnavailable
             : req.PlayerId != session.Role.Id || req.UploadParam?.NoviceActivity == null ? ErrorCodes.Parameter : 0;
         var response = new ActivityDataUploadResp
         {
@@ -96,7 +96,7 @@ public sealed partial class TimedEventService(GameData data, TimeProvider time, 
             bool active = Active(id);
             if (_previous.TryGetValue(id, out bool was) && was == active) continue;
             _previous[id] = active;
-            foreach (var s in _sessions.All().Where(s => s.Role != null && s.ActivitiesReady))
+            foreach (var s in _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady))
                 _loop.PostOwned(s, () => NotifyAsync(s, id), "timed event window");
         }
     }

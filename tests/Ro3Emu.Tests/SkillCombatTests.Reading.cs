@@ -31,8 +31,8 @@ public sealed partial class SkillCombatTests
         {
             dummy.StaysOutOfBattle = true; dummy.Hp = 1000000;
             dummy.X = a.Position.X + 1; dummy.Y = a.Position.Y; dummy.Z = a.Position.Z;
-            a.Energy[CombatService.BookPages].Value = pagesHeld;
-            a.Energy[CombatService.BookPages].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
+            a.Combat.Energy[CombatService.BookPages].Value = pagesHeld;
+            a.Combat.Energy[CombatService.BookPages].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
             if (reading) await _app.Services.GetRequiredService<BuffService>().AddAsync(a, CombatService.ReadingBuff, 60000, a.Role!.Id);
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1231201, TargetId = dummy.Uid, TargetPos = dummy.Pos, Face = 90 });
@@ -42,7 +42,7 @@ public sealed partial class SkillCombatTests
         long before = dummy.Hp;
         await Task.Delay(1500);
         if (dummy.Hp < before) hits++;
-        return (hits, a.Energy[CombatService.BookPages].Value);
+        return (hits, a.Combat.Energy[CombatService.BookPages].Value);
     }
 
     [ClientDataFact] // "triggers the corresponding skill effect one Extra time and consumes the corresponding Floors"

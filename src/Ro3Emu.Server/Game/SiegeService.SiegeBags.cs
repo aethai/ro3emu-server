@@ -59,7 +59,7 @@ public sealed partial class SiegeService
         if (id != SceneService.NpcInteraction) return false;
         var req = NpcInteractionReq.Parser.ParseFrom(body.Span);
         if ((req.NpcUid & SiegeBagUidMask) != SiegeBagUidBase) return false;
-        int code = s.SiegeBattle is { } battle && battle.Bags.TryGetValue(req.NpcUid, out var bag)
+        int code = s.Instances.SiegeBattle is { } battle && battle.Bags.TryGetValue(req.NpcUid, out var bag)
             ? SiegeBagInteraction(s, battle, bag, req) : ErrorCodes.NpcMissing;
         await Send(s, id, new NpcInteractionRsp { Result = code, Req = req });
         return true;

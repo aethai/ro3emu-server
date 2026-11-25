@@ -91,7 +91,7 @@ public sealed partial class AdventureGroupService
                 ? await SaveClaimOnlyAsync(s, next)
                 : await _character.ApplyAwardAsync(s, plan,
                     persist: tx => _roles.SaveAdventureGroup(role, bytes, tx),
-                    committed: () => s.AdventureGroupRole = next,
+                    committed: () => s.Activities.AdventureGroupRole = next,
                     ownedAward: new CharacterService.OwnedAwardSource("cd13e/advguild-award", $"advguild-level/{role}/{level}",
                         new { Version = 1, Group = g.Id, Level = level, Award = row.Award, plan.AwardId }));
         }

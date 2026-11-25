@@ -52,7 +52,7 @@ public sealed partial class SocialOutfitService
     public async Task LoginAsync(GameSession s)
     {
         var bytes = _roles.LoadSocialOutfit(s.Role!.Id);
-        s.SocialOutfit = bytes is { Length: > 0 } ? DBSocialOutfit.Parser.ParseFrom(bytes) : new DBSocialOutfit();
+        s.Social.SocialOutfit = bytes is { Length: > 0 } ? DBSocialOutfit.Parser.ParseFrom(bytes) : new DBSocialOutfit();
         await PruneAsync(s);
         await SyncAsync(s);
     }
@@ -60,7 +60,7 @@ public sealed partial class SocialOutfitService
     private Task SyncAsync(GameSession s)
     {
         ArmExpiry(s);
-        return CharacterService.SyncAsync(s, Sync, View(_data, s.Role!.Sex, s.Progress?.Career ?? s.Role.Career, s.SocialOutfit, Now));
+        return CharacterService.SyncAsync(s, Sync, View(_data, s.Role!.Sex, s.Progress?.Career ?? s.Role.Career, s.Social.SocialOutfit, Now));
     }
 
     /// <summary>The 5044 the client sees: the defaults, then the stored unlocks still in time and the worn choices.</summary>
@@ -128,7 +128,7 @@ public sealed partial class SocialOutfitService
     private async Task<int> UseUnlockItemAsync(ItemActionUse use)
     {
         var s = use.Session;
-        if (s.SocialOutfit == null || s.Role == null) return ErrorCodes.FeatureUnavailable;
+        if (s.Social.SocialOutfit == null || s.Role == null) return ErrorCodes.FeatureUnavailable;
         if (use.Count != 1) return ErrorCodes.Parameter;
         var picks = new List<(int Type, long Id, long Seconds)>();
         bool anyRow = false;
@@ -143,11 +143,11 @@ public sealed partial class SocialOutfitService
         if (!anyRow) return ErrorCodes.ItemNoConfig;
         if (picks.Count == 0) return ErrSex;
         long now = Now;
-        var view = View(_data, s.Role.Sex, s.Progress?.Career ?? s.Role.Career, s.SocialOutfit, now);
+        var view = View(_data, s.Role.Sex, s.Progress?.Career ?? s.Role.Career, s.Social.SocialOutfit, now);
         bool Permanently(int type, long id) => view.SocialOutfitContainer.TryGetValue(type, out var c)
             && c.SocialOutfitInfos.TryGetValue(id, out var o) && o.Status == Permanent;
         if (picks.All(p => Permanently(p.Type, p.Id))) return ErrAlreadyUnlocked;
-        var next = s.SocialOutfit.Clone();
+        var next = s.Social.SocialOutfit.Clone();
         foreach (var (type, id, seconds) in picks.Where(p => !Permanently(p.Type, p.Id)))
         {
             if (!next.SocialOutfitContainer.TryGetValue(type, out var container))
@@ -163,7 +163,7 @@ public sealed partial class SocialOutfitService
                 };
         }
         byte[] saved = next.ToByteArray();
-        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role.Id, "social_outfit", saved), () => s.SocialOutfit = next,
+        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role.Id, "social_outfit", saved), () => s.Social.SocialOutfit = next,
             new { SocialOutfit = picks.Select(p => new[] { p.Type, p.Id, p.Seconds }).ToArray() })) return ErrorCodes.ItemsShort;
         await SyncAsync(s);
         return 0;
@@ -180,18 +180,18 @@ public sealed partial class SocialOutfitService
     public async Task EquipAsync(GameSession s, EquipSocialOutfitReq req)
     {
         using var held = await CharacterService.Lock(s);
-        int err = s.SocialOutfit == null || s.Role == null ? ErrorCodes.FeatureUnavailable : 0;
+        int err = s.Social.SocialOutfit == null || s.Role == null ? ErrorCodes.FeatureUnavailable : 0;
         if (err == 0)
         {
             await PruneAsync(s);
-            var view = View(_data, s.Role!.Sex, s.Progress?.Career ?? s.Role.Career, s.SocialOutfit, Now);
+            var view = View(_data, s.Role!.Sex, s.Progress?.Career ?? s.Role.Career, s.Social.SocialOutfit, Now);
             int type = (int)req.Type;
             if (_data.Row("SocialOutfitConfig", req.CfgId) is not { } row || GameData.Int(row, "_iType") != type
                 || !view.SocialOutfitContainer.TryGetValue(type, out var owned) || !owned.SocialOutfitInfos.ContainsKey(req.CfgId))
                 err = ErrorCodes.Parameter;
             else if (view.SocialOutfitEquip.GetValueOrDefault(type)?.CfgId != req.CfgId)
             {
-                var next = s.SocialOutfit!.Clone();
+                var next = s.Social.SocialOutfit!.Clone();
                 next.SocialOutfitEquip[type] = new DBSocialOutfitEquip { CfgId = req.CfgId };
                 await CommitAsync(s, next, "equip");
             }
@@ -204,7 +204,7 @@ public sealed partial class SocialOutfitService
     public async Task RefreshAsync(GameSession s)
     {
         using var held = await CharacterService.Lock(s);
-        int err = s.SocialOutfit == null ? ErrorCodes.FeatureUnavailable : 0;
+        int err = s.Social.SocialOutfit == null ? ErrorCodes.FeatureUnavailable : 0;
         if (err == 0) await PruneAsync(s);
         await s.SendGameAsync(Refresh, new RefreshSocialOutfitRes { Err = err });
         if (err == 0) await SyncAsync(s);
@@ -218,7 +218,7 @@ public sealed partial class SocialOutfitService
     /// </summary>
     private void ArmExpiry(GameSession s)
     {
-        long next = s.SocialOutfit?.SocialOutfitContainer.Values.SelectMany(c => c.SocialOutfitInfos.Values)
+        long next = s.Social.SocialOutfit?.SocialOutfitContainer.Values.SelectMany(c => c.SocialOutfitInfos.Values)
             .Where(o => o.Status == TimeLimit).Select(o => o.ExpireTimestamp).DefaultIfEmpty().Min() ?? 0;
         if (next == 0) _deadlines.Cancel(s, ExpiryKey);
         else _deadlines.Set(s, ExpiryKey, DateTimeOffset.FromUnixTimeSeconds(next), (session, due, lease, ct) => ExpireAsync(session, lease));
@@ -227,7 +227,7 @@ public sealed partial class SocialOutfitService
     private async Task ExpireAsync(GameSession s, DeadlineLease lease)
     {
         using var held = await CharacterService.Lock(s);
-        if (!_deadlines.IsCurrent(s, lease) || s.SocialOutfit == null) return;
+        if (!_deadlines.IsCurrent(s, lease) || s.Social.SocialOutfit == null) return;
         await PruneAsync(s);
         await SyncAsync(s);
     }
@@ -236,7 +236,7 @@ public sealed partial class SocialOutfitService
     private async Task PruneAsync(GameSession s)
     {
         long now = Now;
-        var next = s.SocialOutfit!.Clone();
+        var next = s.Social.SocialOutfit!.Clone();
         bool changed = false;
         foreach (var (type, container) in next.SocialOutfitContainer.ToArray())
         {
@@ -256,6 +256,6 @@ public sealed partial class SocialOutfitService
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "social_outfit", next.ToByteArray());
-        await _roles.CommitAsync(transaction, "social-outfit/" + action, _ => s.SocialOutfit = next);
+        await _roles.CommitAsync(transaction, "social-outfit/" + action, _ => s.Social.SocialOutfit = next);
     }
 }

@@ -14,12 +14,12 @@ public sealed partial class DailyActivityService
         var rows = Rows(session).Clone();
         foreach (var project in EventProjections.Handlers) project(session, rows);
         // Testing UnlimitedRewards (TEST AID, not original): Dodo's chain shows its allowance whatever the stored row says.
-        if (_testing.UnlimitedRewards && session.Daily != null) UpdateRingCount(rows, session.Daily, unlimited: true);
+        if (_testing.UnlimitedRewards && session.Activities.Daily != null) UpdateRingCount(rows, session.Activities.Daily, unlimited: true);
         // Derived times are refreshed after owner projections, without resetting progress/quests or replacing
         // their nested ActivityInfo phase state. CharacterService emits only changed map fields in 5004.
         ProjectWindows(rows, seconds);
-        session.DailyWindowSampledAt = seconds;
-        session.DailyWindowRefreshAt = rows.ActivityData.Values.Select(r => r.EndTime).Where(end => end > seconds)
+        session.Activities.DailyWindowSampledAt = seconds;
+        session.Activities.DailyWindowRefreshAt = rows.ActivityData.Values.Select(r => r.EndTime).Where(end => end > seconds)
             .Append(ToUnix(now.Date.AddDays(1))) // custom weeks change at civil Monday, before the 05:00 reset
             .Min();
         return CharacterService.SyncAsync(session, ActivitySync, rows);
@@ -43,12 +43,12 @@ public sealed partial class DailyActivityService
 
     public async Task SyncEventsAsync(GameSession session)
     {
-        if (!session.DailyReady || session.DailyRows == null) return;
+        if (!session.Activities.DailyReady || session.Activities.DailyRows == null) return;
         using var gate = await TaskService.LockTasksAsync(session);
         // Another owner's projection (festival, activities) may run first after 05:00: it must not send the new
         // day's windows over the old day's progress, so a crossed boundary takes the full reset path.
         var now = _clock.GetLocalNow().DateTime;
-        if (session.Daily is { } state && (state.DailyEpoch < Boundary(now) || state.WeeklyEpoch < WeekBoundary(now)))
+        if (session.Activities.Daily is { } state && (state.DailyEpoch < Boundary(now) || state.WeeklyEpoch < WeekBoundary(now)))
             await ReconcileCoreAsync(session, now);
         else await SyncRowsAsync(session, now);
     }

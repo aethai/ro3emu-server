@@ -195,23 +195,23 @@ public sealed partial class CardRulesTests : IAsyncLifetime
             await Gm("alice", $"!item {Lunatic} 2");
             await Gm("alice", "!item 2 10000");
             long guid = session.Items.Single(i => i.Entry == Lunatic).Guid;
-            Assert.Equal(0, session.Library!.Cards[Lunatic].CardStar);
+            Assert.Equal(0, session.Profile.Library!.Cards[Lunatic].CardStar);
 
             // CardConfig tier 0 of Lunatic costs one pristine copy; the library reaches star 1 in the same commit.
             await alice.SendGameAsync(CardService.StarUp, new CardStarUpReq { SourceType = (CardLevelSourceType)1, Guid = guid });
             Assert.Equal(1, (await Next(alice, CardService.StarUp, CardStarUpResp.Parser)).NewStarNum);
-            Assert.Equal(1, session.Library.Cards[Lunatic].CardStar);
+            Assert.Equal(1, session.Profile.Library.Cards[Lunatic].CardStar);
             Assert.Equal(1, DBLibraryInfo.Parser.ParseFrom(Service<RoleStore>().LoadLibrary(role)).Cards[Lunatic].CardStar);
 
             // Returning the copy resets the copy, not the collection.
             await alice.SendGameAsync(CardService.Revert, new CardRevertReq { CardGuid = guid });
             Assert.Equal(0, (await Next(alice, CardService.Revert, CardRevertResp.Parser)).Result);
             Assert.Equal(0, session.Items.Single(i => i.Guid == guid).Attrs![502]);
-            Assert.Equal(1, session.Library.Cards[Lunatic].CardStar);
+            Assert.Equal(1, session.Profile.Library.Cards[Lunatic].CardStar);
 
             // A Flash copy (attr 530 = 1) owned before a relog: the login reconciliation records it.
             await Gm("alice", $"!item {flashable} 1");
-            Assert.Equal(0, session.Library.Cards[flashable].Treasured);
+            Assert.Equal(0, session.Profile.Library.Cards[flashable].Treasured);
             await Service<GameLoop>().InvokeAsync(() =>
             {
                 var card = session.Items.Single(i => i.Entry == flashable);
@@ -255,7 +255,7 @@ public sealed partial class CardRulesTests : IAsyncLifetime
         // A saved plan that names two same-name copies places only the first; the second socket stays empty.
         await Service<GameLoop>().InvokeAsync(() =>
         {
-            var plan = session.CardPlans!.StoragePlans[3];
+            var plan = session.Profile.CardPlans!.StoragePlans[3];
             plan.CardInfo.Clear();
             plan.CardInfo[1] = new DBInsertCardInfo();
             plan.CardInfo[1].CardSlotInfo[1] = new DBSlotItemInfo { ItemId = sameName, ItemBindInfo = new ItemBindInfo() };
@@ -349,7 +349,7 @@ public sealed partial class CardRulesTests : IAsyncLifetime
         await alice.SendGameAsync(CardService.SlotRemove, new EquipmentCardRemoveReq { EquipPos = (EquipGridType)6, SlotIndex = 1 });
         Assert.Equal(0, (await Next(alice, CardService.SlotRemove, EquipmentCardRemoveResp.Parser)).Result);
         await Eventually(() => session.Progress!.GrantedSkills.Count == 0, "revoked");
-        await OnLoop(() => { session.SkillCds.Clear(); session.SkillModeCds.Clear(); return 0; });
+        await OnLoop(() => { session.Combat.SkillCds.Clear(); session.Combat.SkillModeCds.Clear(); return 0; });
         await Task.Delay(800);
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2004001, Face = 0 });
         Assert.NotEqual(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -375,7 +375,7 @@ public sealed partial class CardRulesTests : IAsyncLifetime
         Assert.Equal(0, await Insert(alice, 6, 1, session.Items.Single(i => i.Entry == card).Guid));
         await Eventually(() => session.Buffs.Any(b => b.IsPassive && !b.IsTotemOwned && b.ConfigId == 2052001), "registered again");
         Assert.True(await Service<GameLoop>().InvokeAsync(() => Service<BuffService>().TryPreventLethalAsync(session)));
-        Assert.Equal(2052001, session.ImmuneDeathOffer!.BuffConfigId);
+        Assert.Equal(2052001, session.Combat.ImmuneDeathOffer!.BuffConfigId);
     }
 
     [ClientDataFact]
@@ -664,9 +664,9 @@ public sealed partial class CardRulesTests : IAsyncLifetime
             Assert.Equal(0, made.Result);
             Assert.Equal(craft == 11 ? 2010250 : 2010240, made.Item.ItemEntry);
         }
-        var counter = session.EquipmentPlans.CraftInfo[2001];
+        var counter = session.Profile.EquipmentPlans.CraftInfo[2001];
         Assert.Equal((2, 1, 1, 0, 12), (counter.Rank, counter.EquipType, counter.OrangeGuarantee, counter.RedGuarantee, counter.CraftCount));
-        Assert.Equal(12, session.EquipmentPlans.CraftRankCount[2]);
+        Assert.Equal(12, session.Profile.EquipmentPlans.CraftRankCount[2]);
         var saved = DBEquipInfo.Parser.ParseFrom(Service<RoleStore>().LoadEquipPlans(session.Role!.Id));
         Assert.Equal(counter, saved.CraftInfo[2001]);
         Assert.Equal(12, saved.CraftRankCount[2]);
@@ -694,11 +694,11 @@ public sealed partial class CardRulesTests : IAsyncLifetime
                 // Craft 6 is a natural orange: the forced one moves from craft 11 to craft 17 (11 crafts later).
                 Assert.Equal(craft is 6 or 17 ? 2010350 : 2010340, made.Item.ItemEntry);
                 int expected = craft is >= 6 and < 17 ? craft - 6 : craft == 17 ? 0 : craft;
-                Assert.Equal(expected, (await OnLoop(() => session.EquipmentPlans.CraftInfo[3001].Clone())).OrangeGuarantee);
+                Assert.Equal(expected, (await OnLoop(() => session.Profile.EquipmentPlans.CraftInfo[3001].Clone())).OrangeGuarantee);
             }
         }
         finally { crafting.CraftRoll = bound => Random.Shared.NextInt64(bound); }
-        Assert.Equal(17, session.EquipmentPlans.CraftInfo[3001].CraftCount);
+        Assert.Equal(17, session.Profile.EquipmentPlans.CraftInfo[3001].CraftCount);
         Assert.Equal(0, DBEquipInfo.Parser.ParseFrom(Service<RoleStore>().LoadEquipPlans(session.Role!.Id)).CraftInfo[3001].OrangeGuarantee);
     }
 }

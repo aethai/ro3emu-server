@@ -81,7 +81,7 @@ public sealed partial class SkillCombatTests
         var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
         int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
         while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
-        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         await CastAtAsync(bot, 1411801, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId)).Result);
         Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId && h.Dsts.Any(d => d.DstID == dummy.Uid)));
@@ -140,7 +140,7 @@ public sealed partial class SkillCombatTests
         var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
         int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
         while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
-        await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); mob.Hp = 1; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); mob.Hp = 1; return Task.CompletedTask; });
         await CastAtAsync(bot, 1411801, mob);
         var second = Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId);
         Assert.Same(second, await Task.WhenAny(second, Task.Delay(TimeSpan.FromSeconds(5))));
@@ -164,12 +164,12 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var (bot, a, dummy) = await ReadyAsync(alice, 1330, 13325, 1332501);
-        await Loop.InvokeAsync(() => { a.SkillCds[13323] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds[13323] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
         await CastAtAsync(bot, 1332501, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var deadline = DateTime.UtcNow + Wait;
-        while (a.SkillCds.ContainsKey(13323) && DateTime.UtcNow < deadline) await Task.Delay(50);
-        Assert.False(a.SkillCds.ContainsKey(13323));
+        while (a.Combat.SkillCds.ContainsKey(13323) && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.False(a.Combat.SkillCds.ContainsKey(13323));
     }
 
     [ClientDataFact] // Crescent Wheel: "For every 1 enemies hit, reduce Axe Tornado's Cooldown by 2 seconds"
@@ -180,11 +180,11 @@ public sealed partial class SkillCombatTests
         long start = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await Loop.InvokeAsync(async () =>
         {
-            a.SkillCds[16304] = start + 8000;
+            a.Combat.SkillCds[16304] = start + 8000;
             await CombatService.CutCooldownAsync(a, 16304, 2000);
-            Assert.Equal(start + 6000, a.SkillCds[16304]);
+            Assert.Equal(start + 6000, a.Combat.SkillCds[16304]);
             await CombatService.CutCooldownAsync(a, 16304, 60000);
-            Assert.False(a.SkillCds.ContainsKey(16304));
+            Assert.False(a.Combat.SkillCds.ContainsKey(16304));
         });
     }
 

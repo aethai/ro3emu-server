@@ -95,7 +95,7 @@ public sealed partial class DungeonTests
                 hit => hit.SrcID == (long)bob.Self!.Uuid && hit.Dsts.Any(d => d.DstID == actors[1].Uid && d.IsDead));
             foreach (var bot in new[] { alice, bob })
                 Assert.Equal((DungeonRes)1, (await Next(bot, DungeonService.Result, DungeonResNotify.Parser)).Res);
-            var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Dungeons!.Statistics[room]);
+            var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Instances.Dungeons!.Statistics[room]);
             var stats = report.SceneStatistics[room].RoleStatistics;
             Assert.Equal(1, stats[(long)alice.Self!.Uuid].KillNpcData[5300036].LongValue);
             Assert.Equal(1, stats[(long)bob.Self!.Uuid].KillNpcData[5300036].LongValue);

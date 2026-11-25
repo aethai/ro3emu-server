@@ -96,7 +96,7 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.True(saved.Length > 1);
         Assert.Equal(1, Receipts());
         Assert.Equal(1007, session.Progress!.Currency[1]);
-        Assert.Contains(saved[0].Guid, session.NewItems);
+        Assert.Contains(saved[0].Guid, session.Profile.NewItems);
         var closing = S3EconomyReader.Read(_dataDir, catalog);
         var ledger = S3EconomyReader.ReadLedger(_dataDir, catalog, opening, closing)!;
         Assert.Single(ledger.Receipts);
@@ -200,7 +200,7 @@ public sealed class AwardTests : IAsyncLifetime
         Assert.Equal(2, roles.LoadProgress(roleId).Level);
         Assert.Equal(2, roles.LoadProgress(roleId).Exp);
         Assert.Contains(987654321, JsonSerializer.Deserialize<TaskRuntimeState>(roles.LoadTaskRuntime(roleId)!)!.CompletedGuides);
-        Assert.Contains(987654321, session.TaskRuntime.CompletedGuides);
+        Assert.Contains(987654321, session.Activities.TaskRuntime.CompletedGuides);
 
         long expiry = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600;
         var bound = new AwardPlan(0, 0, [new AwardGrant(1200000, 2, 1), new AwardGrant(1200000, 1, 2, expiry)]);

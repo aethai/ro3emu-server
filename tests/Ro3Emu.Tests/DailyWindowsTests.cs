@@ -93,11 +93,11 @@ public sealed class DailyWindowsTests : IAsyncLifetime
         long boundary = _clock.Unix("2026-10-10 05:00:00");
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(15);
         while (DateTime.UtcNow < until && !await Service<GameLoop>().InvokeAsync(() =>
-            Task.FromResult(Session(first).Daily!.DailyEpoch >= boundary && Session(second).Daily!.DailyEpoch >= boundary)))
+            Task.FromResult(Session(first).Activities.Daily!.DailyEpoch >= boundary && Session(second).Activities.Daily!.DailyEpoch >= boundary)))
             await Task.Delay(50);
         await OnLoop(() =>
         {
-            Assert.True(Session(first).Daily!.DailyEpoch >= boundary && Session(second).Daily!.DailyEpoch >= boundary);
+            Assert.True(Session(first).Activities.Daily!.DailyEpoch >= boundary && Session(second).Activities.Daily!.DailyEpoch >= boundary);
             Assert.False(Session(first).DailyReconcileQueued || Session(second).DailyReconcileQueued);
             return Task.CompletedTask;
         });
@@ -219,7 +219,7 @@ public sealed class DailyWindowsTests : IAsyncLifetime
             Assert.True(sync.ActivityData[id].All.EndTime > _clock.GetUtcNow().ToUnixTimeSeconds());
         Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), sync.ActivityData[101].All.StartTime);
         Assert.Equal(_clock.Unix("2026-10-10 05:00:00"), sync.ActivityData[101].All.EndTime);
-        Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), Session(bot).Daily!.DailyEpoch);
+        Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), Session(bot).Activities.Daily!.DailyEpoch);
         // The client selects by the wire's opening timestamp in its zone, not the SeasonStart text.
         var opening = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(Service<ActivityClock>().ServerOpen), _clock.Zone);
         if (opening.DayOfWeek == DayOfWeek.Sunday)
@@ -240,9 +240,9 @@ public sealed class DailyWindowsTests : IAsyncLifetime
         await OnLoop(async () =>
         {
             var session = Session(bot);
-            session.DailyRows!.ActivityData[110].TaskCompleteTimes = 2;
-            session.DailyRows.ActivityData[110].Tasks[123] = 2;
-            session.Daily!.Rows = session.DailyRows.ToByteArray();
+            session.Activities.DailyRows!.ActivityData[110].TaskCompleteTimes = 2;
+            session.Activities.DailyRows.ActivityData[110].Tasks[123] = 2;
+            session.Activities.Daily!.Rows = session.Activities.DailyRows.ToByteArray();
             await Service<DailyActivityService>().SyncEventsAsync(session);
         });
         await Next(bot, s => s.ActivityData.TryGetValue(110, out var f) && f.Inc?.TaskCompleteTimes == 2);
@@ -255,7 +255,7 @@ public sealed class DailyWindowsTests : IAsyncLifetime
         Assert.False(update.ActivityData[110].Inc.HasTaskCompleteTimes);
         Assert.Empty(update.ActivityData[110].Inc.Tasks);
         Assert.False(update.ActivityData.ContainsKey(101));
-        Assert.Equal(2, Session(bot).DailyRows!.ActivityData[110].TaskCompleteTimes);
+        Assert.Equal(2, Session(bot).Activities.DailyRows!.ActivityData[110].TaskCompleteTimes);
     }
 
     [ClientDataFact]
@@ -271,7 +271,7 @@ public sealed class DailyWindowsTests : IAsyncLifetime
             Assert.False(update.SyncAllMark);
             Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), update.ActivityData[101].Inc.StartTime);
             Assert.Equal(_clock.Unix("2026-10-10 05:00:00"), update.ActivityData[101].Inc.EndTime);
-            Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), Session(bot).Daily!.DailyEpoch);
+            Assert.Equal(_clock.Unix("2026-10-09 05:00:00"), Session(bot).Activities.Daily!.DailyEpoch);
         }
         for (int i = 0; i < 100 && Service<SessionRegistry>().All().Any(s => s.Account == "windows"); i++) await Task.Delay(20);
         _clock.Set("2026-10-10 06:00:00");

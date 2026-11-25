@@ -90,7 +90,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
     public async Task LoginAsync(GameSession session)
     {
         if (session.Role == null) return;
-        session.Defense = _roles.LoadTimedActivity(session.Role.Id) is { } bytes
+        session.Instances.Defense = _roles.LoadTimedActivity(session.Role.Id) is { } bytes
             ? JsonSerializer.Deserialize<State>(bytes) ?? new State() : new State();
         await SettleClosedOwnedAsync(session);
     }
@@ -102,7 +102,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
         AddOwnGuildInfo(session, global);
         return new()
         {
-            ContributionPoint = session.Defense?.SeasonOpen == Opening() ? session.Defense.ContributionPoint : 0,
+            ContributionPoint = session.Instances.Defense?.SeasonOpen == Opening() ? session.Instances.Defense.ContributionPoint : 0,
             GlobalInfo = global,
         };
     }
@@ -161,7 +161,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
     public async Task<CommonActivityRes> HandleAsync(GameSession session, CommonActivityReq req)
     {
         var response = new CommonActivityRes { ActivityId = ActivityId, RequestId = req.RequestId };
-        if (session.Role == null || session.Progress == null || session.Defense == null || req.ActivityId != ActivityId)
+        if (session.Role == null || session.Progress == null || session.Instances.Defense == null || req.ActivityId != ActivityId)
         { response.Result = ErrorCodes.Parameter; return response; }
         long now = _clock.UtcNow.ToUnixTimeSeconds();
         if (session.Progress.Level < UnlockLevel || !_functions.IsOpen(session, Function)
@@ -260,7 +260,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
             }
         }
         if (roundChanged)
-            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.ActivitiesReady),
+            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady),
                 async s => { await SettleClosedOwnedAsync(s); await NotifyAsync(s); });
     }
 
@@ -388,10 +388,10 @@ public sealed partial class PronteraDefenseService : IGameTicker
 
     private async Task OnKilledAsync(GameSession killer, MonsterUnit monster)
     {
-        if (!_actors.ContainsKey(monster.Uid) || killer.Role == null || killer.Defense == null || _activeRound == 0
+        if (!_actors.ContainsKey(monster.Uid) || killer.Role == null || killer.Instances.Defense == null || _activeRound == 0
             || RoundAt(_clock.UtcNow.ToUnixTimeSeconds()) != _activeRound) return;
         var role = killer.Role;
-        var state = killer.Defense;
+        var state = killer.Instances.Defense;
         var attachment = killer.Attachment;
         var owner = killer.Owner;
         long? epoch = owner?.LifecycleEpoch;
@@ -400,7 +400,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
                 EventKey(), PointKey(monster.SceneEntry),
                 Ownership.ReservationKey.Entity("prontera_actor", monster.Uid.ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 Ownership.ReservationKey.Role(role.Id)]) : null;
-        if (!ReferenceEquals(killer.Role, role) || !ReferenceEquals(killer.Defense, state)
+        if (!ReferenceEquals(killer.Role, role) || !ReferenceEquals(killer.Instances.Defense, state)
             || !ReferenceEquals(killer.Attachment, attachment) || !ReferenceEquals(killer.Owner, owner)
             || owner?.LifecycleEpoch != epoch || RoundAt(_clock.UtcNow.ToUnixTimeSeconds()) != _activeRound
             || !_actors.ContainsKey(monster.Uid)) return;
@@ -412,7 +412,7 @@ public sealed partial class PronteraDefenseService : IGameTicker
         var tx = _roles.NewTransaction();
         tx.RoleBlob(role.Id, "timed_activity", JsonSerializer.SerializeToUtf8Bytes(next));
         await _roles.CommitAsync(tx, "prontera-defense/kill", _ =>
-        { killer.Defense = next; _actors.Remove(monster.Uid); });
+        { killer.Instances.Defense = next; _actors.Remove(monster.Uid); });
         await NotifyAsync(killer);
         if (_restore.Remove(monster.Uid, out long restore)) await RestoreAsync(monster.SceneEntry, restore);
     }
@@ -432,10 +432,10 @@ public sealed partial class PronteraDefenseService : IGameTicker
 
     private async Task SettleClosedOwnedAsync(GameSession session)
     {
-        if (session.Role == null || session.Defense == null) return;
+        if (session.Role == null || session.Instances.Defense == null) return;
         long roleId = session.Role.Id;
         Ownership.ReservationKey[] keys =
-            [Ownership.ReservationKey.Role(roleId), Ownership.ReservationKey.Lifecycle(roleId), .. SettlementKeys(roleId, session.Defense.SeasonOpen)];
+            [Ownership.ReservationKey.Role(roleId), Ownership.ReservationKey.Lifecycle(roleId), .. SettlementKeys(roleId, session.Instances.Defense.SeasonOpen)];
         if (_loop.Owners is { } owners)
             await owners.RunSessionAsync("defense/settle", keys, session, () => SettleClosedAsync(session));
         else await SettleClosedAsync(session);
@@ -443,14 +443,14 @@ public sealed partial class PronteraDefenseService : IGameTicker
 
     private async Task SettleClosedAsync(GameSession session)
     {
-        if (session.Role == null || session.Defense == null) return;
+        if (session.Role == null || session.Instances.Defense == null) return;
         foreach (int round in Enumerable.Range(1, 4))
         {
-            if (RoundWindowFor(session.Defense.SeasonOpen, round) is not { } w || _clock.UtcNow.ToUnixTimeSeconds() < w.End
-                || session.Defense.SettledRounds.Contains(round)
-                || session.Defense.RoundContribution.GetValueOrDefault(round) <= 0) continue;
-            long map = session.Defense.RoundMap.GetValueOrDefault(round, 10100);
-            var next = CopyState(session.Defense); next.SettledRounds.Add(round);
+            if (RoundWindowFor(session.Instances.Defense.SeasonOpen, round) is not { } w || _clock.UtcNow.ToUnixTimeSeconds() < w.End
+                || session.Instances.Defense.SettledRounds.Contains(round)
+                || session.Instances.Defense.RoundContribution.GetValueOrDefault(round) <= 0) continue;
+            long map = session.Instances.Defense.RoundMap.GetValueOrDefault(round, 10100);
+            var next = CopyState(session.Instances.Defense); next.SettledRounds.Add(round);
             // One award after actual contribution and round closure is an inferred eligibility rule.
             var constants = Data.Config.ActivityConstants.Of(_data);
             long group = (map == 10100 ? constants.PronteraDefenseMainCityDefendAward : constants.PronteraDefenseOtherCityDefendAward) ?? 0;
@@ -465,28 +465,28 @@ public sealed partial class PronteraDefenseService : IGameTicker
                         tx.WithEventEconomy(EventEconomy.ForRole(_data, session, "prontera-round",
                             $"prontera/round/{next.SeasonOpen}/{round}/{session.Role.Id}", [], plan.Grants,
                             new { Season = next.SeasonOpen, Round = round, Map = map }));
-                }, committed: () => session.Defense = next))
+                }, committed: () => session.Instances.Defense = next))
                 { await NotifyAsync(session); }
                 else _log.LogWarning("Prontera round {Round} reward transaction failed for {Role} on {Map}", round, session.Role.Id, map);
             }
             catch (AwardResolutionException e)
             { _log.LogWarning(e, "Prontera round {Round} reward {Group} rejected for {Role}", round, group, session.Role.Id); }
         }
-        if (session.Defense.SeasonOpen != Opening() && Enumerable.Range(1, 4).All(round =>
-            session.Defense.RoundContribution.GetValueOrDefault(round) <= 0
-            || session.Defense.SettledRounds.Contains(round)))
+        if (session.Instances.Defense.SeasonOpen != Opening() && Enumerable.Range(1, 4).All(round =>
+            session.Instances.Defense.RoundContribution.GetValueOrDefault(round) <= 0
+            || session.Instances.Defense.SettledRounds.Contains(round)))
         {
             var next = new State { SeasonOpen = Opening() };
             var tx = _roles.NewTransaction();
             tx.RoleBlob(session.Role.Id, "timed_activity", JsonSerializer.SerializeToUtf8Bytes(next));
-            await _roles.CommitAsync(tx, "prontera-defense/new-season", _ => session.Defense = next);
+            await _roles.CommitAsync(tx, "prontera-defense/new-season", _ => session.Instances.Defense = next);
             await NotifyAsync(session);
         }
     }
 
     private Task NotifyAsync(GameSession s) => Changed?.Invoke(s) ?? Task.CompletedTask;
     private Task NotifyAllAsync() => RoleFanout.EachAsync(
-        _sessions.All().Where(s => s.Role != null && s.ActivitiesReady), NotifyAsync);
+        _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady), NotifyAsync);
     private static State CopyState(State source) => JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(source))!;
 
     private long Opening() => _clock.TryWindow(TimeLimitId, out var start, out _) ? start.ToUnixTimeSeconds() : 0;

@@ -177,7 +177,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.TerritoryNotQualified, (await Next(a, 30400, EnterDungeonRsp.Parser)).Result);
         long outsideB = Session(b).SceneEntry, outsideC = Session(c).SceneEntry;
         long roleB = Session(b).Role!.Id;
-        int campBeforeRefusal = Session(b).TerritoryWars!.Camp;
+        int campBeforeRefusal = Session(b).Instances.TerritoryWars!.Camp;
         byte[]? roleBeforeRefusal = Service<RoleStore>().LoadTerritoryWars(roleB);
         var accounts = Service<AccountStore>();
         int refusedAdmissions = 0;
@@ -194,13 +194,13 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         }
         finally { accounts.BeforeCommitForTest = null; }
         Assert.Equal(1, Volatile.Read(ref refusedAdmissions));
-        Assert.Null(Session(b).TerritoryBattle);
+        Assert.Null(Session(b).Instances.TerritoryBattle);
         Assert.Equal(0, Session(b).InstanceId);
-        Assert.Equal(campBeforeRefusal, Session(b).TerritoryWars!.Camp);
+        Assert.Equal(campBeforeRefusal, Session(b).Instances.TerritoryWars!.Camp);
         Assert.Equal(roleBeforeRefusal, Service<RoleStore>().LoadTerritoryWars(roleB));
         await Enter(b, 3030401); await Enter(c, 3030401);
-        var battle = Session(b).TerritoryBattle!;
-        Assert.Same(battle, Session(c).TerritoryBattle); Assert.Equal(Session(b).InstanceId, Session(c).InstanceId);
+        var battle = Session(b).Instances.TerritoryBattle!;
+        Assert.Same(battle, Session(c).Instances.TerritoryBattle); Assert.Equal(Session(b).InstanceId, Session(c).InstanceId);
         Assert.True(wars.Hostile(Session(b), Session(c)));
         MonsterUnit objective = null!;
         await OnLoop(async () =>
@@ -297,7 +297,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
             Assert.Equal(0, m.Value.BelongGuild);
             Assert.Equal(editor.Points[m.Key].X, m.Value.Pos.X); Assert.Equal(editor.Points[m.Key].Z, m.Value.Pos.Z);
         });
-        var battle = Session(bot).TerritoryBattle!;
+        var battle = Session(bot).Instances.TerritoryBattle!;
         Assert.Equal(3030101, battle.State.Scene);
         await OnLoop(() =>
         {
@@ -333,7 +333,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         var back = await Next(bot, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser, sw => sw.SceneEntry != 3030101);
         await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = back.SceneEntry });
         await Next(bot, MsgId.SceneLoaded, SceneLoadedResp.Parser, s => s.SceneId == back.SceneEntry);
-        Assert.Null(Session(bot).TerritoryBattle);
+        Assert.Null(Session(bot).Instances.TerritoryBattle);
         var (again, remarkers) = await EnterStronghold();
         Assert.Equal(expected, again.GlobalPoints.Keys.Order().ToArray());
         Assert.Equal(EnumGlobalScenePoint.UnReady, again.GlobalPoints[34].Status);
@@ -443,8 +443,8 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
             Ro3Emu.Server.Game.Ownership.RoleOwnerState.RecoveryRequired);
         var healthy = Assert.Single(players, s => !ReferenceEquals(s, failed));
         string epoch = $"{Service<TerritoryWarsClock>().SeasonStart}:102";
-        Assert.NotEqual(epoch, failed.TerritoryWars!.Epoch);
-        Assert.Equal(epoch, healthy.TerritoryWars!.Epoch);
+        Assert.NotEqual(epoch, failed.Instances.TerritoryWars!.Epoch);
+        Assert.Equal(epoch, healthy.Instances.TerritoryWars!.Epoch);
         Assert.NotSame(priorActivity[healthy.Role!.Id], healthy.Synced[NewActivityService.ActivitySync]);
         var activity = Assert.IsType<DBNewActivityInfo>(healthy.Synced[NewActivityService.ActivitySync]);
         Assert.Equal(Service<TerritoryWarsClock>().Current.Type,
@@ -456,8 +456,8 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         // The committed fault fences one role, while another reconciliation still runs.
         await OnLoop(wars.ReconcileAsync);
         Assert.Equal(Ro3Emu.Server.Game.Ownership.RoleOwnerState.RecoveryRequired, failed.Owner!.State);
-        Assert.NotEqual(epoch, failed.TerritoryWars!.Epoch);
-        Assert.Equal(epoch, healthy.TerritoryWars!.Epoch);
+        Assert.NotEqual(epoch, failed.Instances.TerritoryWars!.Epoch);
+        Assert.Equal(epoch, healthy.Instances.TerritoryWars!.Epoch);
     }
 
     [Fact]
@@ -466,7 +466,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         await using var bot = await Bot("TerrSiegeSnap");
         await WaitSceneOnlinePublicationAsync(bot);
         var session = Session(bot);
-        var published = Assert.IsType<TerritoryWarsService.RoleState>(session.TerritoryWars);
+        var published = Assert.IsType<TerritoryWarsService.RoleState>(session.Instances.TerritoryWars);
         var originalPanel = Assert.IsType<DBRoleSiegeData>(session.Synced[5020]).Clone();
         var roles = Service<RoleStore>();
         var accounts = Service<AccountStore>();
@@ -492,7 +492,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
             Assert.Equal(originalPanel.HonorPoints, panel.HonorPoints);
             Assert.Equal(originalPanel.ValorPoints, panel.ValorPoints);
             Assert.Equal(originalPanel, Assert.IsType<DBRoleSiegeData>(session.Synced[5020]));
-            Assert.Same(published, session.TerritoryWars);
+            Assert.Same(published, session.Instances.TerritoryWars);
             Assert.Equal(0, Volatile.Read(ref blobReads));
         }
         finally { accounts.ReadSyncObserved = null; }
@@ -559,7 +559,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
         await OnLoop(async () =>
         {
             var session = Session(bot);
-            var expected = session.NewActivities!.ActivityInfo.Keys.Order().ToArray();
+            var expected = session.Activities.NewActivities!.ActivityInfo.Keys.Order().ToArray();
             foreach (long now in new[] { 1779535900L, 1779622200L })
             {
                 _clock.Set(now);

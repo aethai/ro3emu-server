@@ -152,7 +152,7 @@ public sealed partial class DungeonMatchService : IGameTicker
                 MatchEntryId = req.MatchEntryId,
                 MatchData = item.Data.Clone(), MatchStartTime = startSeconds
             });
-        if (item.Members.Length == 1 && s.DungeonSoloMatch)
+        if (item.Members.Length == 1 && s.Instances.DungeonSoloMatch)
         {
             list.Remove(item);
             if (list.Count == 0) _queue.Remove(item.Key);

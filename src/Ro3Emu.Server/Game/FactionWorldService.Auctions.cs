@@ -145,7 +145,7 @@ public sealed partial class FactionWorldService
     private async Task AuctionChangedAsync(IEnumerable<long> changed)
     {
         foreach (long guild in changed) await _guilds.RefreshResourceAsync(guild);
-        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.TerritoryWars != null), SendRanksAsync);
+        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Instances.TerritoryWars != null), SendRanksAsync);
         await PublishAsync();
     }
 

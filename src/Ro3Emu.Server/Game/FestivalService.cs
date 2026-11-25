@@ -195,7 +195,7 @@ public sealed partial class FestivalService : IGameTicker
         if (active.State == "Candidate" && !next!.Complete)
         {
             int maximum = _data.Row("DungeonConfig", Dungeon) is { } config ? checked((int)Math.Max(1, GameData.Int(config, "_iRoleCntLimit"))) : 20;
-            foreach (var s in _sessions.All().Where(s => s.Role != null && s.ActivitiesReady && s.DailyReady && _functions.IsOpen(s, Function)).OrderBy(s => s.Role!.Id))
+            foreach (var s in _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady && s.Activities.DailyReady && _functions.IsOpen(s, Function)).OrderBy(s => s.Role!.Id))
             {
                 if (next.Candidates.Count >= maximum) break;
                 changed |= next.Candidates.TryAdd(s.Role!.Id, new());
@@ -249,7 +249,7 @@ public sealed partial class FestivalService : IGameTicker
         {
             await EnsureRoundAsync();
             result = req.ActivityId != ActivityId || req.RainbowKoiBet == null || session.Role == null ? ErrorCodes.Parameter
-                : !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+                : !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
                 : !_functions.IsOpen(session, Function) ? ErrorCodes.FunctionLocked
                 : !_schedule.IsOpen(ActivityId) || Segment?.State != "Ready" || _current == null || _current.Complete ? ErrorCodes.ActivityPeriod
                 : !_current.Candidates.TryGetValue(req.RainbowKoiBet.TargetPlayerId, out var target) || target.GiveUp ? ErrorCodes.Parameter
@@ -281,7 +281,7 @@ public sealed partial class FestivalService : IGameTicker
         try
         {
             await EnsureRoundAsync();
-            int error = !session.ActivitiesReady ? ErrorCodes.FeatureUnavailable
+            int error = !session.Activities.ActivitiesReady ? ErrorCodes.FeatureUnavailable
                 : session.Role == null || !_functions.IsOpen(session, Function) ? ErrorCodes.FunctionLocked
                 : session.SceneLoading ? ErrorCodes.SwitchingScenes
                 : session.InstanceId != 0 ? ErrorCodes.DungeonBusy
@@ -402,7 +402,7 @@ public sealed partial class FestivalService : IGameTicker
         }
         finally { _gate.Release(); scope?.Dispose(); }
         if (deliver)
-            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.ActivitiesReady && s.DailyReady), DeliverAsync);
+            await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady && s.Activities.DailyReady), DeliverAsync);
         // The 5004 diff is empty unless the projected festival state moved (phase/segment boundary, candidates,
         // settlement); the per-session bet is synced by BetAsync and a login sends its own full projection.
         string projection = ProjectionKey();
@@ -410,7 +410,7 @@ public sealed partial class FestivalService : IGameTicker
         _lastProjection = projection;
         // Each session's projection is its own role-owned work: a role that is logging out (not admitting new
         // mutations) is skipped instead of aborting this realm pass for every later session.
-        foreach (var session in _sessions.All().Where(s => s.Role != null && s.ActivitiesReady && s.DailyReady))
+        foreach (var session in _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady && s.Activities.DailyReady))
             _loop.PostOwned(session, () => _daily.SyncEventsAsync(session), "festival projection");
     }
 
@@ -432,7 +432,7 @@ public sealed partial class FestivalService : IGameTicker
         if (r.Question >= r.Questions.Length) { await CompleteAsync(r); return; }
         int answer = _data.Row("RainbowKoiQuestionConfig", r.Questions[r.Question]) is { } question
             ? checked((int)GameData.Int(question, "_iQuestionAnswer")) : -1;
-        var online = _sessions.All().Where(s => s.Role != null && s.ActivitiesReady).ToDictionary(s => s.Role!.Id);
+        var online = _sessions.All().Where(s => s.Role != null && s.Activities.ActivitiesReady).ToDictionary(s => s.Role!.Id);
         var wrong = new List<Candidate>();
         foreach (var (id, c) in r.Candidates.Where(c => c.Value.Entered && !c.Value.Eliminated && !c.Value.GiveUp))
         {

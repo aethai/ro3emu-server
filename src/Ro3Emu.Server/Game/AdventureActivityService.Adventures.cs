@@ -83,7 +83,7 @@ public sealed partial class AdventureActivityService
     }
 
     private DBJourneyInfo Journey(GameSession session, long activityId) =>
-        session.NewActivities!.ActivityInfo[activityId].ActivityParam.Journey;
+        session.Activities.NewActivities!.ActivityInfo[activityId].ActivityParam.Journey;
 
     private PlayerActivitySeasonEve CreateSeasonEve()
     {
@@ -140,7 +140,7 @@ public sealed partial class AdventureActivityService
             || !nodeRow.TryGetProperty("_kPiecesID", out var pieces) || pieces.ValueKind != JsonValueKind.Array
             || req.Position < 1 || req.Position > pieces.GetArrayLength()
             || (long)(GameData.Number(pieces[req.Position - 1]) ?? 0) != req.ItemId) return ErrorCodes.Parameter;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.WorldExploration;
         if (!state.PhaseInfos.TryGetValue(req.PhaseCfgId, out var phase)
             || !phase.NodeInfos.TryGetValue(req.NodeCfgId, out var node)) return ErrorCodes.Parameter;
@@ -216,7 +216,7 @@ public sealed partial class AdventureActivityService
         if (ActivityError(session, activityId, 19) is var error and not 0) return error;
         if (_data.Row("SeasonEveWishConfig", req.WishId) is not { } wish || GameData.Int(wish, "_iId") != req.WishId) return ErrorCodes.Parameter;
         if (ReadEveGlobal(session, activityId).Progress < (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveTotalProgress ?? 0)) return ErrorCodes.TaskRequirements;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.SeasonEve;
         if (state.SelectWish != 0) return ErrorCodes.MailAlreadyClaimed;
         state.SelectWish = req.WishId;
@@ -239,7 +239,7 @@ public sealed partial class AdventureActivityService
         int index = Array.IndexOf(clueIds, req.ClueId) + 1;
         if (index < 1) return ErrorCodes.Parameter;
         long noteId = EveNoteType(index, checked((int)GameData.Int(chapter, "_iNoteTypeCount")));
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.SeasonEve;
         if (!state.ChapterInfo.TryGetValue(chapterId, out var progress)) return ErrorCodes.Parameter;
         res.IsFirst = !progress.Clues.ContainsKey(req.ClueId);
@@ -271,7 +271,7 @@ public sealed partial class AdventureActivityService
         if (req.NoteIds.Count != count || noteTypes < 1
             || Enumerable.Range(1, count).Any(index => !req.NoteIds.TryGetValue(index, out long selected)
                 || selected < 1 || selected > noteTypes)) return ErrorCodes.Parameter;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         if (!next.ActivityInfo[activityId].ActivityParam.SeasonEve.ChapterInfo.TryGetValue(req.ChapterId, out var progress))
             return ErrorCodes.Parameter;
         if (progress.IsFinish || progress.Clues.Count < GameData.Int(chapter, "_iClueCount")
@@ -303,7 +303,7 @@ public sealed partial class AdventureActivityService
         var award = EveProgressAwards().FirstOrDefault(x => x.Id == id);
         if (award.Id == 0) return ErrorCodes.Parameter;
         if (ReadEveGlobal(session, activityId).Progress < award.Threshold) return ErrorCodes.TaskRequirements;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.SeasonEve;
         if (state.ClaimedReward.ContainsKey(id)) return ErrorCodes.MailAlreadyClaimed;
         state.ClaimedReward[id] = true;
@@ -340,7 +340,7 @@ public sealed partial class AdventureActivityService
 
     private long EveChapterOpenTime(GameSession session, long activityId, JsonElement chapter)
     {
-        long start = session.NewActivities!.ActivityInfo[activityId].CurStartTime;
+        long start = session.Activities.NewActivities!.ActivityInfo[activityId].CurStartTime;
         if (_data.Row("LC_ConditionList", GameData.Int(chapter, "_iCondition")) is not { } condition
             || !condition.TryGetProperty("m_kSubConditionList", out var clauses)) return start;
         foreach (var clause in clauses.EnumerateArray())
@@ -355,7 +355,7 @@ public sealed partial class AdventureActivityService
     private DBSeasonEveInfo ReadEveGlobal(GameSession session, long activityId)
     {
         return _accounts.ReadSync<byte[]?>(new AdventureEveGlobalReadPlan(activityId,
-            session.NewActivities!.ActivityInfo[activityId].CycleStartTime)) is { } bytes
+            session.Activities.NewActivities!.ActivityInfo[activityId].CycleStartTime)) is { } bytes
             ? DBSeasonEveInfo.Parser.ParseFrom(bytes) : new DBSeasonEveInfo();
     }
 
@@ -369,7 +369,7 @@ public sealed partial class AdventureActivityService
     private static void SaveEveGlobal(GameSession session, long activityId, DBSeasonEveInfo global,
         Ro3Emu.Server.Accounts.Persistence.RoleItemPlanBuilder builder) =>
         builder.Add(new Ro3Emu.Server.Accounts.Persistence.ActivityEveGlobalPlan(activityId,
-            session.NewActivities!.ActivityInfo[activityId].CycleStartTime, global.ToByteArray()));
+            session.Activities.NewActivities!.ActivityInfo[activityId].CycleStartTime, global.ToByteArray()));
 
     private async Task ReconcileEveGlobalAsync(GameSession session, long activityId)
     {
@@ -390,7 +390,7 @@ public sealed partial class AdventureActivityService
 
     private bool AdvanceEveGlobal(GameSession session, long activityId, DBSeasonEveInfo global)
     {
-        var activity = session.NewActivities!.ActivityInfo[activityId];
+        var activity = session.Activities.NewActivities!.ActivityInfo[activityId];
         long start = activity.CycleStartTime, end = activity.CycleEndTime;
         long beforeTime = global.LastCalcTime, beforeProgress = global.Progress;
         int interval = (int)(Data.Config.ActivityConstants.Of(_data).SeasonEveProgressCheckInterval ?? 0);
@@ -463,7 +463,7 @@ public sealed partial class AdventureActivityService
     private async Task<int> JourneyEnterAsync(GameSession session, long activityId)
     {
         if (ActivityError(session, activityId, 15) is var error and not 0) return error;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var journey = next.ActivityInfo[activityId].ActivityParam.Journey;
         if (journey.ReportEnterTime > 0) return 0;
         journey.ReportEnterTime = Now;
@@ -473,7 +473,7 @@ public sealed partial class AdventureActivityService
     private async Task<int> JourneyPanelAsync(GameSession session, long activityId)
     {
         if (ActivityError(session, activityId, 15) is var error and not 0) return error;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         next.ActivityInfo[activityId].ActivityParam.Journey.IsOpenCompletePanel = true;
         return await CommitAdventureAsync(session, next);
     }
@@ -491,7 +491,7 @@ public sealed partial class AdventureActivityService
         // A durable dungeon source already earned this exact act while its activity was open.
         bool earnedVictory = serverVictory && journeySource != null;
         if (!earnedVictory && ActivityError(session, activityId, 15) is var error and not 0) return error;
-        var next = session.NewActivities!.Clone();
+        var next = session.Activities.NewActivities!.Clone();
         var journey = next.ActivityInfo[activityId].ActivityParam.Journey;
         long id = req.CompleteId;
         long nodeId = journey.CurNodeId;
@@ -734,7 +734,7 @@ public sealed partial class AdventureActivityService
         if (owner == null) await session.ActivityGate.WaitAsync();
         try
         {
-            if (!session.ActivitiesReady || session.NewActivities?.ActivityInfo.TryGetValue(112, out var activity) != true)
+            if (!session.Activities.ActivitiesReady || session.Activities.NewActivities?.ActivityInfo.TryGetValue(112, out var activity) != true)
                 return false;
             if (activity.Playbook != victory.PlayBook || activity.CurStartTime != victory.ActivityStart
                 || activity.CurEndTime != victory.ActivityEnd) return false;

@@ -45,7 +45,7 @@ public sealed partial class DungeonService
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "dungeons", JsonSerializer.SerializeToUtf8Bytes(state));
-        await _roles.CommitAsync(transaction, "dungeon/state", _ => s.Dungeons = state);
+        await _roles.CommitAsync(transaction, "dungeon/state", _ => s.Instances.Dungeons = state);
     }
 
     internal State CurrentState(State previous)
@@ -66,7 +66,7 @@ public sealed partial class DungeonService
 
     public async Task LoginAsync(GameSession s)
     {
-        s.Dungeons = _roles.LoadDungeons(s.Role!.Id) is { } bytes ? JsonSerializer.Deserialize<State>(bytes) ?? new() : new();
+        s.Instances.Dungeons = _roles.LoadDungeons(s.Role!.Id) is { } bytes ? JsonSerializer.Deserialize<State>(bytes) ?? new() : new();
         await DeliverPendingAsync(s);
         await SyncAsync(s);
     }
@@ -127,7 +127,7 @@ public sealed partial class DungeonService
 
     public async Task SyncAsync(GameSession s)
     {
-        if (s.Role == null || s.Dungeons == null) return;
+        if (s.Role == null || s.Instances.Dungeons == null) return;
         using var stateLock = await CharacterService.Lock(s);
         await SyncLockedAsync(s);
     }
@@ -135,8 +135,8 @@ public sealed partial class DungeonService
     /// <summary>ProgressHandlers already run under CharacterService.StateLock; never reacquire it in a callback.</summary>
     private async Task SyncLockedAsync(GameSession s)
     {
-        if (s.Role == null || s.Dungeons == null) return;
-        var state = CurrentState(s.Dungeons);
+        if (s.Role == null || s.Instances.Dungeons == null) return;
+        var state = CurrentState(s.Instances.Dungeons);
         // (inferred) A class change invalidates an old preference; keep 5062 and team cards consistent.
         var positions = PositionsFor(_data, s.Progress?.Career ?? s.Role.Career);
         if (state.JobPosition != 0 && !positions.Contains(state.JobPosition)) state.JobPosition = positions.FirstOrDefault();
@@ -174,7 +174,7 @@ public sealed partial class DungeonService
             info.DungeonInfo[id] = dungeon;
             info.MultiDungeonUnlockIndex[id] = dungeon.AwardInfo.Count;
         }
-        if (!JsonSerializer.SerializeToUtf8Bytes(state).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(s.Dungeons)))
+        if (!JsonSerializer.SerializeToUtf8Bytes(state).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(s.Instances.Dungeons)))
             await SaveAsync(s, state);
         await CharacterService.SyncAsync(s, Sync, info);
     }
@@ -182,13 +182,13 @@ public sealed partial class DungeonService
     /// <summary>Heartbeat refresh keeps online menu unlocks and daily/weekly reward windows current.</summary>
     public async Task ReconcileAsync(GameSession s)
     {
-        if (s.Dungeons == null) return;
+        if (s.Instances.Dungeons == null) return;
         if (s.DungeonAttempt is { } attempt) await RefreshBondsAsync(attempt);
         long minute = _clock.GetLocalNow().Ticks / TimeSpan.TicksPerMinute;
-        if (s.DungeonSyncMinute == minute) return;
+        if (s.Instances.DungeonSyncMinute == minute) return;
         await SyncAsync(s);
         await _functions.SyncAsync(s); // 3031 day gates can open while the player remains online.
-        s.DungeonSyncMinute = minute;
+        s.Instances.DungeonSyncMinute = minute;
     }
 
     public async Task SetPositionAsync(GameSession s, MultiDungeonSetJobPositionReq req)
@@ -196,12 +196,12 @@ public sealed partial class DungeonService
         using var owner = s.Owners == null || s.Role == null ? null
             : await s.Owners.EnterAsync("dungeon/position", Ownership.ReservationKey.Role(s.Role!.Id));
         // (verified) UI_Sys_Skill_PositioninglWidgetCtrl:228-248 only offers this class's positions.
-        int error = s.Dungeons == null || !PositionsFor(_data, s.Progress?.Career ?? 0).Contains(req.JobPosition) ? ErrorCodes.Parameter : 0;
+        int error = s.Instances.Dungeons == null || !PositionsFor(_data, s.Progress?.Career ?? 0).Contains(req.JobPosition) ? ErrorCodes.Parameter : 0;
         if (error == 0)
         {
             using (await CharacterService.Lock(s))
             {
-                var state = CurrentState(s.Dungeons!);
+                var state = CurrentState(s.Instances.Dungeons!);
                 state.JobPosition = req.JobPosition;
                 await SaveAsync(s, state);
             }
@@ -214,18 +214,18 @@ public sealed partial class DungeonService
     {
         using var owner = s.Owners == null || s.Role == null ? null
             : await s.Owners.EnterAsync("dungeon/guide", Ownership.ReservationKey.Role(s.Role!.Id));
-        if (s.Dungeons != null)
+        if (s.Instances.Dungeons != null)
         {
             using (await CharacterService.Lock(s))
             {
-                var state = CurrentState(s.Dungeons);
+                var state = CurrentState(s.Instances.Dungeons);
                 state.FirstSetted = req.GuideFlag;
                 await SaveAsync(s, state);
             }
             await SyncAsync(s);
         }
         await s.SendGameAsync(SetGuide, new MultiDungeonSetJobPositionGuideFlagResp
-        { Result = s.Dungeons == null ? ErrorCodes.Parameter : 0, GuideFlag = s.Dungeons?.FirstSetted ?? false });
+        { Result = s.Instances.Dungeons == null ? ErrorCodes.Parameter : 0, GuideFlag = s.Instances.Dungeons?.FirstSetted ?? false });
     }
 
     internal List<(int Entry, int Count, int Bind)>? Award(long group, GameSession s)

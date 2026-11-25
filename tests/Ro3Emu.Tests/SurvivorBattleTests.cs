@@ -498,7 +498,7 @@ public sealed partial class SurvivorBattleTests : IAsyncLifetime
         Assert.Equal(2, loss.TeamStatistics.ExtraData[1012001].LongValue);
         await OnLoop(() =>
         {
-            Assert.Equal(2, Session(alice).TimedBattle!.ChickenRank);
+            Assert.Equal(2, Session(alice).Instances.TimedBattle!.ChickenRank);
             Assert.Equal(0, Battles.ActiveMatchCountForTest);
             Assert.False(Session(alice).Synced.ContainsKey(TimedBattleService.RoundSync));
             return Task.CompletedTask;

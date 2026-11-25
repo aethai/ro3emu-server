@@ -48,7 +48,7 @@ public sealed class PetAoiTests
             Role = new Role(id, "acc", 1, name, 1, 1000, 1, 0, 0, 0, scene, x, 0, z, 0),
             SceneEntry = scene,
             Position = new Vec3 { X = x, Z = z },
-            PreviousPosition = new Vec3 { X = x, Z = z },
+            WorldState = { PreviousPosition = new Vec3 { X = x, Z = z } },
         };
     }
 
@@ -59,7 +59,7 @@ public sealed class PetAoiTests
 
     private static WalkReq To(GameSession owner, float x, float z, bool stop = false)
     {
-        owner.PreviousPosition = owner.Position;
+        owner.WorldState.PreviousPosition = owner.Position;
         owner.Position = new Vec3 { X = x, Z = z };
         return new WalkReq { Pos = owner.Position, BStop = stop, SpeedRate = 1, Dir = 90 };
     }
@@ -389,7 +389,7 @@ public sealed class PetAoiTests
 
         await new PetFollowerService(_world, null!, null!, Options.Create(new ServerOptions())).RefreshAsync(owner);
         await _world.JoinAsync(owner);
-        Assert.Null(owner.PetActor);
+        Assert.Null(owner.Profile.PetActor);
         Assert.Empty(_sink.Events);
     }
 
@@ -406,7 +406,7 @@ public sealed class PetAoiTests
 
         await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
-        Assert.Null(owner.PetActor);
+        Assert.Null(owner.Profile.PetActor);
         Assert.Empty(_sink.Events);
     }
 
@@ -423,7 +423,7 @@ public sealed class PetAoiTests
 
         await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
-        Assert.Null(owner.PetActor);
+        Assert.Null(owner.Profile.PetActor);
         Assert.Empty(_sink.Events);
     }
 }

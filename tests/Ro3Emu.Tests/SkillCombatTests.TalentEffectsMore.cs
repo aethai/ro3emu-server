@@ -31,8 +31,8 @@ public sealed partial class SkillCombatTests
         long without = await Loop.InvokeAsync(() => Task.FromResult(Character.Stats(a)[215]));
         long with = await Loop.InvokeAsync(async () =>
         {
-            a.CareerSpecial!.PendantSlot ??= new DBCareerSpecialPendantSlot();
-            a.CareerSpecial.PendantSlot.CartRemouldCfg = 1500100;
+            a.Profile.CareerSpecial!.PendantSlot ??= new DBCareerSpecialPendantSlot();
+            a.Profile.CareerSpecial.PendantSlot.CartRemouldCfg = 1500100;
             await Character.RefreshStatsAsync(a);
             return Character.Stats(a)[215];
         });
@@ -54,13 +54,13 @@ public sealed partial class SkillCombatTests
 
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1141801, TargetId = monster.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        Assert.True(a.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Assert.True(a.Combat.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         await Task.Delay(1500);
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1150401, TargetId = monster.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var reset = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser,
             n => n.Infos.Any(i => i.SkillId == 11418 && i.CdEndTimestampMs == i.CdStartTimestampMs));
         Assert.NotNull(reset);
-        Assert.False(a.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Assert.False(a.Combat.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 }

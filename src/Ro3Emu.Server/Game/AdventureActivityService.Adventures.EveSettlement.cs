@@ -25,10 +25,10 @@ public sealed partial class AdventureActivityService
             : _deadlines.Capture(session);
         long roleId = session.Role?.Id ?? 0;
         const long activityId = 117;
-        if (session.Role == null || session.NewActivities == null || session.ActivityRuntime == null
-            || !session.NewActivities.ActivityInfo.TryGetValue(activityId, out var info)
+        if (session.Role == null || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null
+            || !session.Activities.NewActivities.ActivityInfo.TryGetValue(activityId, out var info)
             || info.CycleStartTime <= 0 || info.CycleEndTime <= 0 || Now < info.CycleEndTime
-            || session.ActivityRuntime.EveSettledCycleStart == info.CycleStartTime) return;
+            || session.Activities.ActivityRuntime.EveSettledCycleStart == info.CycleStartTime) return;
         // EveWriteLeadSeconds makes this unreachable with the shared key unless an operation outlives the lead window;
         // fail before any write rather than at the commit's reservation check.
         if (_loop.Owners is { } owners && !owners.CurrentCovers(EveKey(info.CycleStartTime, writes: true)))
@@ -43,7 +43,7 @@ public sealed partial class AdventureActivityService
             if (!_deadlines.IsCurrent(session, lease) || session.Role?.Id != roleId) return;
             var global = ReadEveGlobal(session, activityId);
             AdvanceEveGlobal(session, activityId, global);
-            var next = session.NewActivities.Clone();
+            var next = session.Activities.NewActivities.Clone();
             var runtime = CloneRuntime(session);
             runtime.EveSettledCycleStart = info.CycleStartTime;
             bool entered = next.ActivityTypeState.TryGetValue(19, out var type)
@@ -94,8 +94,8 @@ public sealed partial class AdventureActivityService
             }, committed: () =>
             {
                 // A cancelled attachment cannot undo a committed settlement; publish its source before notices.
-                session.NewActivities = next;
-                session.ActivityRuntime = runtime;
+                session.Activities.NewActivities = next;
+                session.Activities.ActivityRuntime = runtime;
             });
         }
         finally { _adventureSocialGate.Release(); }

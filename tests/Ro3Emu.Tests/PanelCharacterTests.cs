@@ -49,7 +49,7 @@ public sealed class PanelCharacterTests : IAsyncLifetime
                 var blade = session.Items.Single(i => i.Entry == 3990002);
                 blade.Grid = 1;
                 blade.Enchantments[1] = new ItemEnchantment { Attr = { [103] = 10 } };
-                session.EquipLevels.Strength[1] = 4;
+                session.Profile.EquipLevels.Strength[1] = 4;
                 return Task.CompletedTask;
             });
 

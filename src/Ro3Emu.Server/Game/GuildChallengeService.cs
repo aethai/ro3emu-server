@@ -222,7 +222,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     private GuildStore.State? Guild(GameSession s) => s.Role == null ? null : _guilds.ForRole(s.Role.Id);
     private bool IsManager(GameSession s, GuildStore.State g) => g.Members.TryGetValue(s.Role!.Id, out var m)
         && Data.Config.PublicParams.Of(_data).GuildChallengeSet is { } ranks && ranks.Contains(m.Official);
-    private bool Available(GameSession s) => s.Progress != null && s.ActivitiesReady
+    private bool Available(GameSession s) => s.Progress != null && s.Activities.ActivitiesReady
         && s.SeasonState?.SeasonId == _seasons.SeasonId && s.SeasonState.PlayBookId == _seasons.PlayBook
         && _data.Row("DailyActivityConfig", Activity) is { } row && s.Progress.Level >= GameData.Int(row, "_iiLv")
         && _functions.IsOpen(s, GameData.Int(row, "_iFunction")) && Configs.Any();
@@ -289,7 +289,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         return state;
     }
 
-    private PersonalState Personal(GameSession s) => s.GuildChallenge ??= _roles.LoadGuildChallenge(s.Role!.Id) is { } bytes
+    private PersonalState Personal(GameSession s) => s.Instances.GuildChallenge ??= _roles.LoadGuildChallenge(s.Role!.Id) is { } bytes
         ? JsonSerializer.Deserialize<PersonalState>(bytes)! : new();
 
     internal GuildDungeonChallengeSync Snapshot(GameSession s)
@@ -340,7 +340,7 @@ public sealed partial class GuildChallengeService : IGameTicker
 
     public async Task LoginAsync(GameSession s)
     {
-        s.GuildChallenge = null;
+        s.Instances.GuildChallenge = null;
         Personal(s);
         // C/D 15: recovery of committed-but-undelivered clears (Realm, other members' bags) is realm maintenance.
         // The login requests it as its own operation, which runs right after the login releases its scope.
@@ -626,7 +626,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     {
         foreach (var (role, goods) in clear.Personal.Where(p => !clear.Delivered.Contains(p.Key)).ToArray())
         {
-            var s = _sessions.ByRole(role) is { GuildChallenge: not null } found ? found : null;
+            var s = _sessions.ByRole(role) is { Instances.GuildChallenge: not null } found ? found : null;
             if (s == null) continue; // durable earned entitlement is delivered on next login, even after leaving the guild
             using (await CharacterService.Lock(s))
             {
@@ -651,7 +651,7 @@ public sealed partial class GuildChallengeService : IGameTicker
                         tx.WithEconomy(Envelope(role, "guild-challenge-delivery",
                             $"guild-challenge:deliver:{clear.Id}:{role}", DeliveryEffects(role, goods, claimed)));
                     },
-                    Committed = () => { s.GuildChallenge = next; clear.Delivered = paid; clear.Personal = persisted.Personal; },
+                    Committed = () => { s.Instances.GuildChallenge = next; clear.Delivered = paid; clear.Personal = persisted.Personal; },
                     AsyncCommit = true,
                 });
                 if (granted == null) throw new InvalidOperationException("Guild Challenge personal award refused");
@@ -739,7 +739,7 @@ public sealed partial class GuildChallengeService : IGameTicker
             _testCycle = null;
             _schedule.TestWindows.Remove(Activity);
         }
-        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.DailyReady), async s =>
+        await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.Activities.DailyReady), async s =>
         {
             await _daily.SyncEventsAsync(s);
             if (Guild(s) is { } guild) await EnsureStateAsync(guild.Id, s.Role!.Id);

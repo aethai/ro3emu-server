@@ -150,7 +150,7 @@ public sealed partial class SkillService
     /// <summary>After a buff change: a follow-up status that came or went changes the wheel the client was sent.</summary>
     internal async Task RefreshFollowUpsAsync(GameSession session)
     {
-        if (session.SkillPlans == null || !session.Synced.ContainsKey(SkillDataSync) || ShownStatuses(session) == session.FollowUpsShown) return;
+        if (session.Combat.SkillPlans == null || !session.Synced.ContainsKey(SkillDataSync) || ShownStatuses(session) == session.FollowUpsShown) return;
         await SyncAsync(session);
     }
 }

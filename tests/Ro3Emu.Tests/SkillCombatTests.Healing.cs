@@ -17,7 +17,7 @@ public sealed partial class SkillCombatTests
     private async Task<(long Amount, DamageHitResult Result)> HealBob(Ro3Emu.Bot.BotClient alice, Ro3Emu.Bot.BotClient bob)
     {
         await Loop.InvokeAsync(() => Character.SetHpSpAsync(Session("bob"), 1, null));
-        Session("alice").SkillCds.Clear();
+        Session("alice").Combat.SkillCds.Clear();
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = HealSkill, TargetId = (long)bob.Self!.Uuid });
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, r => r.Result == 0);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);

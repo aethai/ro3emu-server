@@ -154,7 +154,7 @@ public sealed class PronteraDefenseInvaderTests : IAsyncLifetime
         });
         await UntilAsync(async () => await Defense() == MaxDefense - loss, "the kill's restore");
         await OnLoop(() => { Assert.DoesNotContain(victim, Invaders()); return true; });
-        Assert.Equal(1, await OnLoop(() => Session(bot).Defense!.ContributionPoint));
+        Assert.Equal(1, await OnLoop(() => Session(bot).Instances.Defense!.ContributionPoint));
 
         // 180 s in: point 21's second wave (four Thief Bugs; its rift 90 has no monster template) and point 22's
         // second wave (two Thief Bugs, one Angeling) join.

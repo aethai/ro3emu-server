@@ -81,13 +81,13 @@ public sealed partial class MonsterHuntService
     public void Load(GameSession s)
     {
         var bytes = _roles.LoadAreaConcur(s.Role!.Id);
-        s.AreaConcur = bytes is { Length: > 0 } ? DBAreaConcurInfo.Parser.ParseFrom(bytes) : new DBAreaConcurInfo();
-        s.AreaConcurPersisted = bytes ?? [];
+        s.Activities.AreaConcur = bytes is { Length: > 0 } ? DBAreaConcurInfo.Parser.ParseFrom(bytes) : new DBAreaConcurInfo();
+        s.Activities.AreaConcurPersisted = bytes ?? [];
     }
 
     public Task LoginAsync(GameSession s) => SyncAsync(s);
 
-    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, Sync, s.AreaConcur!.Clone());
+    private Task SyncAsync(GameSession s) => CharacterService.SyncAsync(s, Sync, s.Activities.AreaConcur!.Clone());
 
     // ------------------------------------------------------------------ kills
 
@@ -103,7 +103,7 @@ public sealed partial class MonsterHuntService
     private void StageKill(GameSession s, MonsterUnit monster, RewardSettlement settlement)
     {
         settlement.ResetHuntStage?.Invoke();
-        if (s.AreaConcur is not { } state || Counting(s) is not { } hunt) return;
+        if (s.Activities.AreaConcur is not { } state || Counting(s) is not { } hunt) return;
         long mapId = GameData.Int(hunt.Map, "_iID");
         var next = state.Clone();
         if (!next.MapInfo.TryGetValue(mapId, out var mapInfo)) next.MapInfo[mapId] = mapInfo = new AreaConcurMapInfo();
@@ -115,7 +115,7 @@ public sealed partial class MonsterHuntService
             if (info.CurScore < GameData.Int(row, "_iScoreLimit")) info.CurScore++;
         }
         if (next.Equals(state)) return;
-        byte[] before = s.AreaConcurPersisted, after = next.ToByteArray();
+        byte[] before = s.Activities.AreaConcurPersisted, after = next.ToByteArray();
         long role = s.Role!.Id;
         var priorEnlist = settlement.Enlist;
         var priorApplied = settlement.Applied;
@@ -129,10 +129,10 @@ public sealed partial class MonsterHuntService
         settlement.Applied = () =>
         {
             priorApplied?.Invoke();
-            if (!ReferenceEquals(s.AreaConcur, state)) return;
-            s.AreaConcur = next;
-            s.AreaConcurPersisted = after;
-            s.AreaConcurChanged = true;
+            if (!ReferenceEquals(s.Activities.AreaConcur, state)) return;
+            s.Activities.AreaConcur = next;
+            s.Activities.AreaConcurPersisted = after;
+            s.Activities.AreaConcurChanged = true;
         };
         settlement.HuntStaged = true;
         settlement.ResetHuntStage = () =>
@@ -147,8 +147,8 @@ public sealed partial class MonsterHuntService
     /// <summary>After the kill committed: the new counts reach the panel ("(Kills: N)").</summary>
     private async Task KilledAsync(GameSession s, MonsterUnit monster, IReadOnlyList<(int Entry, long Count)> granted)
     {
-        if (!s.AreaConcurChanged || s.AreaConcur == null) return;
-        s.AreaConcurChanged = false;
+        if (!s.Activities.AreaConcurChanged || s.Activities.AreaConcur == null) return;
+        s.Activities.AreaConcurChanged = false;
         await SyncAsync(s);
     }
 
@@ -198,7 +198,7 @@ public sealed partial class MonsterHuntService
     {
         using (await CharacterService.Lock(s))
         {
-            var state = s.AreaConcur;
+            var state = s.Activities.AreaConcur;
             var row = _data.Row("AreaConcurMonsterConfig", req.MonsterId);
             long areaId = row is { } r ? _areaOfMap.GetValueOrDefault(GameData.Int(r, "_iMap")) : 0;
             if (state != null && row is { } monster && Area(areaId) is { } area && AreaOpen(s, area))
@@ -229,7 +229,7 @@ public sealed partial class MonsterHuntService
     {
         using (await CharacterService.Lock(s))
         {
-            var state = s.AreaConcur;
+            var state = s.Activities.AreaConcur;
             if (state != null && Area(req.AreaId) is { } area && AreaOpen(s, area))
             {
                 long progress = AchievedInArea(state, req.AreaId, area);
@@ -268,7 +268,7 @@ public sealed partial class MonsterHuntService
         {
             bool ok = await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, plans.SelectMany(p => p.Grants)),
                 persist: tx => _roles.SaveAreaConcur(role, bytes, tx), stateLockHeld: true,
-                committed: () => { s.AreaConcur = next; s.AreaConcurPersisted = bytes; },
+                committed: () => { s.Activities.AreaConcur = next; s.Activities.AreaConcurPersisted = bytes; },
                 ownedAward: new CharacterService.OwnedAwardSource("cd13e/monsterhunt-award", $"monsterhunt/{role}/{claim}",
                     new { Version = 1, Claim = claim, Awards = plans.Select(p => p.AwardId).ToArray() }));
             if (!ok) _log.LogWarning("Monster Hunt {Claim} not paid for {Role}", claim, role);
@@ -280,5 +280,5 @@ public sealed partial class MonsterHuntService
     }
 
     /// <summary>TaskConfig target 318004 [318004, area, n]: the area's collection progress (claimed monster stages).</summary>
-    public static long AreaProgress(GameSession s, long areaId) => s.AreaConcur?.AreaInfo.GetValueOrDefault(areaId)?.CurScore ?? 0;
+    public static long AreaProgress(GameSession s, long areaId) => s.Activities.AreaConcur?.AreaInfo.GetValueOrDefault(areaId)?.CurScore ?? 0;
 }

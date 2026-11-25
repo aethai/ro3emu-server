@@ -34,7 +34,7 @@ public sealed class ApproachAttackTests
             combat.PlayerMoved(session); // a duplicate stop must leave the same attack running
             Assert.Same(attack, session.Attack);
             session.Position.X += 0.2f;
-            session.Walking = true;
+            session.WorldState.Walking = true;
             combat.PlayerMoved(session);
             Assert.Null(session.Attack); // deliberate movement still cancels it
         });
@@ -54,7 +54,7 @@ public sealed class ApproachAttackTests
             var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)bot.Self!.Uuid);
             await PrepareAsync(host, session, casting: false, ageMs, startedWalking);
             session.Position.X += distance;
-            session.Walking = walking;
+            session.WorldState.Walking = walking;
             host.Service<CombatService>().PlayerMoved(session);
             Assert.Null(session.Attack);
         });
@@ -84,7 +84,7 @@ public sealed class ApproachAttackTests
                 StartedWalking = true, WalkFromUtc = walkedFrom,
                 StartMs = now, ChantMs = 0, ActionMs = 60000,
             };
-        session.Walking = false;
+        session.WorldState.Walking = false;
         return session.Attack;
     }
 }

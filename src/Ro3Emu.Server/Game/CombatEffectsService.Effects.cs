@@ -532,7 +532,7 @@ public sealed partial class CombatEffectsService
             IntervalMs = Math.Max(50, intervalMs), NextTickMs = Now + intervalMs,
             Radius = (new SkillConfig(row).Range is [var range, ..] ? range : 150) / 100f,
         };
-        s.SkillObjects.Add(unit);
+        s.Combat.SkillObjects.Add(unit);
         await _world.AddUnitAsync(unit);
     }
 
@@ -773,8 +773,8 @@ public sealed partial class CombatEffectsService
         });
         // MoveAsync updates persistent position and AOI membership from the same authoritative destination.
         s.CarryBySkill(start, end, Now, ms);
-        s.LastWalkUtc = s.UtcNow; // the dash ends the walk it interrupted (GameSession.WalkReportLag)
-        s.Walking = false;
+        s.WorldState.LastWalkUtc = s.UtcNow; // the dash ends the walk it interrupted (GameSession.WalkReportLag)
+        s.WorldState.Walking = false;
         await _world.MoveAsync(s, new WalkReq { Pos = end, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
     }
 
@@ -854,7 +854,7 @@ public sealed partial class CombatEffectsService
             MoveType = 2, StartTimestampMs = Now, Face = p.Face, MoveTimeMs = Math.Max(1, ms),
         });
         p.CarryBySkill(start, end, Now, ms);
-        p.Walking = false;
+        p.WorldState.Walking = false;
         await _world.MoveAsync(p, new WalkReq { Pos = end, Dir = p.Face, Face = p.Face, BStop = true }, forceTeleport: true);
     }
 
@@ -939,10 +939,10 @@ public sealed partial class CombatEffectsService
             ProtectionDistanceType = protection, Charges = charges, WavesLeft = waves, TouchesLeft = touches,
         };
         if (atOnce > 0)
-            foreach (var old in s.SkillObjects.Where(o => !o.Removing && Script(o.Cast.Row) == script).OrderBy(o => o.Uid).SkipLast(atOnce - 1).ToArray())
+            foreach (var old in s.Combat.SkillObjects.Where(o => !o.Removing && Script(o.Cast.Row) == script).OrderBy(o => o.Uid).SkipLast(atOnce - 1).ToArray())
                 await RemoveSkillObjectAsync(old);
         foreach (int skill in Numbers(npcRow, "_kSkills").Select(v => (int)v)) unit.Skills.Add(skill);
-        s.SkillObjects.Add(unit);
+        s.Combat.SkillObjects.Add(unit);
         await _world.AddUnitAsync(unit);
         if (!CurrentCastMap(s, action)) { await RemoveSkillObjectAsync(unit); return true; }
         foreach (var tuple in Tuples(row, "_kBuff1"))
@@ -980,7 +980,7 @@ public sealed partial class CombatEffectsService
     {
         if (unit.Removing) return;
         unit.Removing = true;
-        unit.OwnerSession.SkillObjects.Remove(unit);
+        unit.OwnerSession.Combat.SkillObjects.Remove(unit);
         await _world.RemoveUnitAsync(unit);
     }
 
@@ -992,7 +992,7 @@ public sealed partial class CombatEffectsService
         s.Attack = null;
         if (s.SkillCast is { } cast) cast.Cancelled = true;
         s.SkillCast = null;
-        foreach (var unit in s.SkillObjects.ToArray()) await RemoveSkillObjectAsync(unit);
+        foreach (var unit in s.Combat.SkillObjects.ToArray()) await RemoveSkillObjectAsync(unit);
     }
 
     /// <summary>Safety Wall: "protecting up to ${3} allies within the area from incoming melee Physical" hits, logic[0] allies; Pneuma likewise, ranged

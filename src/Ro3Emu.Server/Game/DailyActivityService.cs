@@ -120,10 +120,10 @@ public sealed partial class DailyActivityService : IGameTicker
         bool resetDaily = state.DailyEpoch != 0 && state.DailyEpoch < daily;
         bool resetWeekly = state.WeeklyEpoch != 0 && state.WeeklyEpoch < weekly;
         // A completed AFK objective whose award was held must settle in its own period, also after reconnect.
-        if (resetDaily && WildAfkService.PendingDailyAward(session.WildAfk, state, taskInfo, rows))
+        if (resetDaily && WildAfkService.PendingDailyAward(session.Activities.WildAfk, state, taskInfo, rows))
         {
-            session.Daily = state;
-            session.DailyRows = rows;
+            session.Activities.Daily = state;
+            session.Activities.DailyRows = rows;
             return null;
         }
         if (resetDaily || resetWeekly)
@@ -154,8 +154,8 @@ public sealed partial class DailyActivityService : IGameTicker
         state.Rows = rows.ToByteArray();
         if (!resetDaily && !resetWeekly)
         {
-            session.Daily = state;
-            session.DailyRows = rows;
+            session.Activities.Daily = state;
+            session.Activities.DailyRows = rows;
             Save(session);
             return null;
         }
@@ -195,8 +195,8 @@ public sealed partial class DailyActivityService : IGameTicker
         }
         afk?.Committed();
         if (resetDaily) session.Progress.Currency[Liveness] = 0;
-        session.Daily = state;
-        session.DailyRows = rows;
+        session.Activities.Daily = state;
+        session.Activities.DailyRows = rows;
         return taskInfo;
     }
 
@@ -209,7 +209,7 @@ public sealed partial class DailyActivityService : IGameTicker
         await _tasks.EnsureDailyTrackingCoreAsync(session, TrackingTasks(session));
         await SyncRowsAsync(session);
         await SyncClaimsAsync(session);
-        session.DailyReady = true;
+        session.Activities.DailyReady = true;
     }
 
     public IEnumerable<long> TrackingTasks(GameSession session) => Defs().Values
@@ -221,11 +221,11 @@ public sealed partial class DailyActivityService : IGameTicker
     /// <summary>Preview an accepted daily tracking quest or any node of the active Dodo chain for atomic settlement.</summary>
     private DeliveryPlan? PrepareDelivery(GameSession session, long taskId)
     {
-        if (session.Daily == null || session.DailyRows == null) return null;
-        int start = session.Daily.ActiveRingStart;
+        if (session.Activities.Daily == null || session.Activities.DailyRows == null) return null;
+        int start = session.Activities.Daily.ActiveRingStart;
         bool ringNode = start > 0 && taskId >= start && taskId < start + 10;
         if (!ringNode && !ByTask().ContainsKey(taskId)) return null;
-        var before = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
+        var before = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
         var next = JsonSerializer.Deserialize<DailyState>(before)!;
         var rows = DBDailyActivityInfo.Parser.ParseFrom(next.Rows);
         bool repeat = false, changed = false;
@@ -260,7 +260,7 @@ public sealed partial class DailyActivityService : IGameTicker
     public async Task AcceptRingAsync(GameSession session, CommonDailyActivityReq req)
     {
         using var gate = await TaskService.LockTasksAsync(session);
-        if (session.Role == null || session.Progress == null || session.Daily == null || !session.DailyReady)
+        if (session.Role == null || session.Progress == null || session.Activities.Daily == null || !session.Activities.DailyReady)
         {
             await session.SendGameAsync(RingAccept, new CommonDailyActivityRes
             { Result = ErrorCodes.FeatureUnavailable, ActivityId = req.ActivityId, RequestId = req.RequestId });
@@ -269,24 +269,24 @@ public sealed partial class DailyActivityService : IGameTicker
         await ReconcileCoreAsync(session);
         int result = req.ActivityId != RingActivity || req.RunRingTaskAccept == null ? ErrorCodes.Parameter
             : !_functions.IsOpen(session, TodoFunction) || !_functions.IsOpen(session, RingFunction) ? ErrorCodes.FeatureUnavailable
-            : session.Daily is { ActiveRingStart: not 0 } ? ErrorCodes.TaskExists
-            : session.Daily == null || Remaining(session.Daily) <= 0 && !_testing.UnlimitedRewards ? ErrorCodes.AttemptsExhausted
+            : session.Activities.Daily is { ActiveRingStart: not 0 } ? ErrorCodes.TaskExists
+            : session.Activities.Daily == null || Remaining(session.Activities.Daily) <= 0 && !_testing.UnlimitedRewards ? ErrorCodes.AttemptsExhausted
             : 0;
         int start = 0;
         if (result == 0)
         {
             // Local-day index rotates over the three configured chain roots, independent of requestId (often zero).
-            int localDay = DateOnly.FromDateTime(SeasonService.Civil(session.Daily!.DailyEpoch, _clock.LocalTimeZone)).DayNumber;
+            int localDay = DateOnly.FromDateTime(SeasonService.Civil(session.Activities.Daily!.DailyEpoch, _clock.LocalTimeZone)).DayNumber;
             start = RingStarts[localDay % RingStarts.Length];
             var oldTasks = session.Tasks?.Clone();
-            var oldDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
+            var oldDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
             result = _tasks.AssignRing(session, start) ? 0 : ErrorCodes.TaskStatus;
             if (result == 0)
             {
-                session.Daily.ActiveRingStart = start;
-                UpdateRingCount(Rows(session), session.Daily, _testing.UnlimitedRewards);
-                session.Daily.Rows = Rows(session).ToByteArray();
-                var nextDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
+                session.Activities.Daily.ActiveRingStart = start;
+                UpdateRingCount(Rows(session), session.Activities.Daily, _testing.UnlimitedRewards);
+                session.Activities.Daily.Rows = Rows(session).ToByteArray();
+                var nextDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
                 bool committed;
                 try { committed = _roles.CommitRingAccept(session.Role!.Id, oldDaily, nextDaily, session.Tasks!.ToByteArray()); }
                 catch (Exception e)
@@ -297,8 +297,8 @@ public sealed partial class DailyActivityService : IGameTicker
                 if (!committed)
                 {
                     session.Tasks = oldTasks;
-                    session.Daily = JsonSerializer.Deserialize<DailyState>(oldDaily)!;
-                    session.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(session.Daily.Rows);
+                    session.Activities.Daily = JsonSerializer.Deserialize<DailyState>(oldDaily)!;
+                    session.Activities.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(session.Activities.Daily.Rows);
                     result = ErrorCodes.Unknown;
                 }
                 else
@@ -320,7 +320,7 @@ public sealed partial class DailyActivityService : IGameTicker
     public async Task ClaimAsync(GameSession session, StageRewardGainReq req)
     {
         using var gate = await TaskService.LockTasksAsync(session);
-        if (session.Role == null || session.Progress == null || session.Daily == null || !session.DailyReady)
+        if (session.Role == null || session.Progress == null || session.Activities.Daily == null || !session.Activities.DailyReady)
         {
             await session.SendGameAsync(StageGain, new StageRewardGainResp
             { Result = ErrorCodes.FeatureUnavailable, StageId = req.StageId });
@@ -334,7 +334,7 @@ public sealed partial class DailyActivityService : IGameTicker
             if (grant == null) result = ErrorCodes.RewardMissing;
             else
             {
-                var before = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
+                var before = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
                 var next = JsonSerializer.Deserialize<DailyState>(before)!;
                 next.Claims.Add(req.StageId);
                 var after = JsonSerializer.SerializeToUtf8Bytes(next);
@@ -354,7 +354,7 @@ public sealed partial class DailyActivityService : IGameTicker
     public async Task BatchClaimAsync(GameSession session, StageRewardBatchGainReq req)
     {
         using var gate = await TaskService.LockTasksAsync(session);
-        if (session.Role == null || session.Progress == null || session.Daily == null || !session.DailyReady)
+        if (session.Role == null || session.Progress == null || session.Activities.Daily == null || !session.Activities.DailyReady)
         {
             await session.SendGameAsync(StageBatchGain, new StageRewardBatchGainResp { Result = ErrorCodes.FeatureUnavailable, Req = req });
             return;
@@ -374,7 +374,7 @@ public sealed partial class DailyActivityService : IGameTicker
         }
         if (result == 0)
         {
-            var before = JsonSerializer.SerializeToUtf8Bytes(session.Daily);
+            var before = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily);
             var next = JsonSerializer.Deserialize<DailyState>(before)!;
             next.Claims.UnionWith(ids);
             var after = JsonSerializer.SerializeToUtf8Bytes(next);
@@ -415,7 +415,7 @@ public sealed partial class DailyActivityService : IGameTicker
             TodoStage when item == Liveness => _character.CountOf(session, Liveness) >= score,
             FashionStage => FashionScore(session) >= score,
             LibraryStage when item > 0 => _character.CountOf(session, (int)item) >= score,
-            ChickenStage when level > 0 => (session.TimedBattle?.ChickenRank ?? 1) is var rank && rank >= level
+            ChickenStage when level > 0 => (session.Instances.TimedBattle?.ChickenRank ?? 1) is var rank && rank >= level
                 && (rank > 1 || _character.CountOf(session, ChickenScore) > 0),
             PowerStage => Math.Max(PowerService.Total(PowerService.History(session)), PowerService.Total(PowerService.Current(session))) >= score,
             TreasureStage when item > 0 => _character.CountOf(session, (int)item) >= score,
@@ -424,11 +424,11 @@ public sealed partial class DailyActivityService : IGameTicker
         return reached == null ? ErrorCodes.RewardMissing
             : type == TodoStage && !_functions.IsOpen(session, TodoFunction) ? ErrorCodes.FeatureUnavailable
             : type == PowerStage && !_functions.IsOpen(session, PowerFunction) ? ErrorCodes.FeatureUnavailable
-            : session.Daily!.Claims.Contains(stageId) ? ErrorCodes.RewardClaimed
+            : session.Activities.Daily!.Claims.Contains(stageId) ? ErrorCodes.RewardClaimed
             : reached == true ? 0 : ErrorCodes.CurrencyShort;
     }
 
-    private long FashionScore(GameSession session) => session.Wardrobe?.AllLightUpAppearances.Values
+    private long FashionScore(GameSession session) => session.Profile.Wardrobe?.AllLightUpAppearances.Values
         .Where(a => a.OverdueTimeMs == 0)
         .Sum(a => _data.Row("WardRobeConfig", a.AppearanceId) is { } row ? GameData.Int(row, "_iFashionScore") : 0) ?? 0;
 
@@ -475,9 +475,9 @@ public sealed partial class DailyActivityService : IGameTicker
         int posted = 0;
         foreach (var session in _sessions.All())
         {
-            if (session.Daily is not { } state || !session.DailyReady || session.DailyReconcileQueued) continue;
+            if (session.Activities.Daily is not { } state || !session.Activities.DailyReady || session.DailyReconcileQueued) continue;
             if (state.DailyEpoch >= daily && state.WeeklyEpoch >= weekly
-                && seconds < session.DailyWindowRefreshAt && seconds >= session.DailyWindowSampledAt) continue;
+                && seconds < session.Activities.DailyWindowRefreshAt && seconds >= session.Activities.DailyWindowSampledAt) continue;
             if (posted++ == ResetsPerTick) break;
             session.DailyReconcileQueued = true;
             _loop.PostOwned(session, async () =>
@@ -495,7 +495,7 @@ public sealed partial class DailyActivityService : IGameTicker
     /// paces the realm's resets; every heartbeat starting its own role's reset would begin them all within seconds.</summary>
     public async Task ReconcileWindowsAsync(GameSession session)
     {
-        if (session.Daily is not { } state) return;
+        if (session.Activities.Daily is not { } state) return;
         var now = _clock.GetLocalNow().DateTime;
         if (state.DailyEpoch < Boundary(now) || state.WeeklyEpoch < WeekBoundary(now)) return;
         await ReconcileAsync(session);
@@ -510,25 +510,25 @@ public sealed partial class DailyActivityService : IGameTicker
     // The caller owns TaskLock; resetting or accepting a ring must not interleave with a staged quest award.
     private async Task ReconcileCoreAsync(GameSession session, DateTime? localNow = null)
     {
-        if (session.Daily == null || session.Role == null) return;
+        if (session.Activities.Daily == null || session.Role == null) return;
         var now = localNow ?? _clock.GetLocalNow().DateTime;
-        if (session.Daily.DailyEpoch >= Boundary(now) && session.Daily.WeeklyEpoch >= WeekBoundary(now))
+        if (session.Activities.Daily.DailyEpoch >= Boundary(now) && session.Activities.Daily.WeeklyEpoch >= WeekBoundary(now))
         {
             long seconds = ToUnix(now);
-            if (session.DailyReady && (seconds >= session.DailyWindowRefreshAt || seconds < session.DailyWindowSampledAt))
+            if (session.Activities.DailyReady && (seconds >= session.Activities.DailyWindowRefreshAt || seconds < session.Activities.DailyWindowSampledAt))
                 await SyncRowsAsync(session, now);
             return;
         }
-        if (session.Daily.DailyEpoch < Boundary(now) && BeforeReset is { } settle)
+        if (session.Activities.Daily.DailyEpoch < Boundary(now) && BeforeReset is { } settle)
             if (!await settle(session, Boundary(now)))
                 throw new InvalidOperationException("AFK daily award is pending; retry settlement before resetting its period.");
-        bool wasReady = session.DailyReady;
-        session.DailyReady = false;
+        bool wasReady = session.Activities.DailyReady;
+        session.Activities.DailyReady = false;
         try
         {
             // The running reset works on copies of this session's own state (no SQL re-read) and replaces it only
             // after its single commit. Without quest data the stored blob is carried through unchanged.
-            var current = JsonSerializer.Deserialize<DailyState>(JsonSerializer.SerializeToUtf8Bytes(session.Daily))!;
+            var current = JsonSerializer.Deserialize<DailyState>(JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily))!;
             current.Rows = Rows(session).ToByteArray();
             var quests = session.Tasks?.Clone() ?? DBTaskInfo.Parser.ParseFrom(_roles.LoadTasks(session.Role.Id) ?? []);
             var committed = await RolloverAsync(session, current, quests, now);
@@ -541,12 +541,12 @@ public sealed partial class DailyActivityService : IGameTicker
             await _character.ItemsChangedAsync(session, stats: false);
             await SyncRowsAsync(session, now);
             await SyncClaimsAsync(session);
-            session.DailyReady = wasReady;
+            session.Activities.DailyReady = wasReady;
             if (wasReady) await _functions.SyncAsync(session);
         }
         catch
         {
-            session.DailyReady = wasReady;
+            session.Activities.DailyReady = wasReady;
             throw;
         }
     }
@@ -579,25 +579,25 @@ public sealed partial class DailyActivityService : IGameTicker
     private static DBDailyActivityData NewRow(int id, long epoch) => new()
     { ActivityId = id, ActivityState = (EDailyState)1, LastRefreshTime = epoch };
 
-    private static DBDailyActivityInfo Rows(GameSession session) => session.DailyRows!;
+    private static DBDailyActivityInfo Rows(GameSession session) => session.Activities.DailyRows!;
 
     private void Save(GameSession session)
     {
-        if (session.Daily == null) return;
-        session.Daily.Rows = Rows(session).ToByteArray();
-        _roles.SaveDaily(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(session.Daily));
+        if (session.Activities.Daily == null) return;
+        session.Activities.Daily.Rows = Rows(session).ToByteArray();
+        _roles.SaveDaily(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily));
     }
 
     private async Task SyncClaimsAsync(GameSession session)
     {
         var info = new DBStageRewardInfo();
-        info.AllStageRewardsFinished.Add(session.Daily!.Claims.Order());
+        info.AllStageRewardsFinished.Add(session.Activities.Daily!.Claims.Order());
         if (info.AllStageRewardsFinished.Count > 0) { await CharacterService.SyncAsync(session, StageSync, info); return; }
         // NW_GameServerHandler.lua enables no_decode_default_array; LC_PbHelper.lua:1979-2112 iterates all.value.
         // Lua-pb allocates {} only when the packed value tag is present. An omitted list or all:{} leaves the
         // client's StageRewardReceiveMap nil (native client runtime NOT RUN).
-        long version = session.SyncVersions.GetValueOrDefault(StageSync) + 1;
-        session.SyncVersions[StageSync] = version;
+        long version = session.Profile.SyncVersions.GetValueOrDefault(StageSync) + 1;
+        session.Profile.SyncVersions[StageSync] = version;
         session.Synced[StageSync] = info;
         var full = AutoSync.Full(info, version).ToByteArray();
         await session.SendGameRawAsync(StageSync, [.. full, 0x52, 0x04, 0x0A, 0x02, 0x0A, 0x00]);

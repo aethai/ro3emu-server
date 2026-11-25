@@ -61,8 +61,8 @@ public sealed partial class WorldCoreService
         // As a skill's caster move (CombatService.MoveCasterAsync): the server is at the end at once, and a walk report
         // that predates the move is dropped (RoleSessionService.WalkAsync, SkillCarry).
         s.CarryBySkill(start, move.End, Now, move.MoveMs);
-        s.LastWalkUtc = _clock.GetUtcNow().UtcDateTime;
-        s.Walking = false;
+        s.WorldState.LastWalkUtc = _clock.GetUtcNow().UtcDateTime;
+        s.WorldState.Walking = false;
         await ToSelfAndViewersAsync(s, CombatService.SkillMove, new SkillStartMoveNotify
         {
             EntityID = (ulong)role.Id, StartPos = start, EndPos = move.End.Clone(), SkillConfigId = skillId, EffectId = move.EffectId,
@@ -203,7 +203,7 @@ public sealed partial class WorldCoreService
             move.MoveType = MovementType.MoveTypeMove; move.MoveDuration = 1000;
             move.MovementMove = new MovementMove { StartVelocity = new Vec3 { X = direction.X / length * speed, Y = direction.Y / length * speed, Z = direction.Z / length * speed }, AccVelocity = new Vec3() };
         }
-        s.PreviousPosition = s.Position; s.Position = pos.Clone(); s.Face = face; s.LastWalkUtc = _clock.GetUtcNow().UtcDateTime; s.Walking = false;
+        s.WorldState.PreviousPosition = s.Position; s.Position = pos.Clone(); s.Face = face; s.WorldState.LastWalkUtc = _clock.GetUtcNow().UtcDateTime; s.WorldState.Walking = false;
         _combat.PlayerMoved(s);
         var notify = new MovementChangeNtf { Uid = s.Role!.Id, TransType = transition, MovementInfo = move };
         await s.SendGameAsync(GameAoiSink.MovementChange, notify);

@@ -157,6 +157,16 @@ public sealed class CodeShapeTests
     }
 
     [Fact]
+    public void GameSessionPublicPropertiesStayWithinLimit()
+    {
+        int count = typeof(Ro3Emu.Server.Game.GameSession)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Length;
+        Assert.True(count <= 60, string.Create(CultureInfo.InvariantCulture,
+            $"GameSession grew to {count} public properties (limit 60). Move feature state to SessionSlot<T> or a domain state bag."));
+    }
+
+    [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
     {
         string body = string.Join('\n', Enumerable.Repeat("        x++;", 81));

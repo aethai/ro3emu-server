@@ -119,20 +119,20 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
         try
         {
             await staged.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(0, s.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(0, Count(role)); Assert.Equal(0, Claims());
+            Assert.Equal(0, s.Instances.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(0, Count(role)); Assert.Equal(0, Claims());
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(TowerService.ClaimFirstPass));
             gm = OnLoop(() => Service<GmCommands>().RunAsync(s, "!speed 701"));
             timer = OnLoop(() => Service<DungeonService>().SyncAsync(s));
             await gmDeferred.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await OnLoop(() => Service<DungeonService>().SetGuideAsync(other,
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = true })).WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.True(other.Dungeons!.FirstSetted);
+            Assert.True(other.Instances.Dungeons!.FirstSetted);
             Assert.False(gm.IsCompleted); Assert.False(timer.IsCompleted);
         }
         finally { release.TrySetResult(); }
         Assert.Equal(0, (await Next(alice, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser)).Result);
         await Task.WhenAll(gm!, timer!).WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.Equal(10, Count(role)); Assert.Equal(10, s.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(1, Claims());
+        Assert.Equal(10, Count(role)); Assert.Equal(10, s.Instances.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(1, Claims());
         Assert.Equal(1, Scalar($"SELECT COUNT(*) FROM operation_source WHERE source_key='tower-milestone/{role}/0/10'"));
         var closing = S3EconomyReader.Read(_directory, Catalog.Value);
         var ledger = S3EconomyReader.ReadLedger(_directory, Catalog.Value, opening, closing)!;
@@ -157,7 +157,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
             await bot.SendGameAsync(TowerService.ClaimFirstPass, new ClimbTowerClaimFirstPassRewardReq());
             Assert.Equal(ErrorCodes.Unknown, (await Next(bot, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser)).Result);
             Assert.Equal(before, Service<RoleStore>().LoadTower(role));
-            Assert.Equal(0, s.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(0, Count(role)); Assert.Equal(0, Claims());
+            Assert.Equal(0, s.Instances.Tower!.ServerFirstPassClaimedLayer); Assert.Equal(0, Count(role)); Assert.Equal(0, Claims());
             Assert.Equal(0, Scalar("SELECT COUNT(*) FROM operation_source WHERE source_key LIKE 'tower-milestone/%'"));
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_milestone"); }
@@ -183,7 +183,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
             {
                 Assert.True(s.Attachment!.Cancelled);
                 Assert.Equal(role, s.Role!.Id);
-                Assert.Equal(0, s.Tower!.ServerFirstPassClaimedLayer);
+                Assert.Equal(0, s.Instances.Tower!.ServerFirstPassClaimedLayer);
                 return Task.CompletedTask;
             });
             Assert.False(handover.IsCompleted); Assert.Equal(0, Claims());
@@ -204,8 +204,8 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
             [ReservationKey.Role(role)], s, () =>
         {
             // Legacy saved roster: removing a no-longer-owned pet remains a valid formation request.
-            s.Tower!.PetIds[0] = 10001;
-            Service<RoleStore>().SaveTower(role, s.Tower.ToByteArray());
+            s.Instances.Tower!.PetIds[0] = 10001;
+            Service<RoleStore>().SaveTower(role, s.Instances.Tower.ToByteArray());
             return Task.CompletedTask;
         }));
         byte[] before = Service<RoleStore>().LoadTower(role)!;
@@ -214,7 +214,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
         {
             var request = new SetClimTowerPetsReq(); request.Pets.Add([0, 0, 0, 0]);
             await Assert.ThrowsAsync<SqliteException>(() => OnLoop(() => Service<TowerService>().SetPetsAsync(s, request)));
-            Assert.Equal(before, s.Tower!.ToByteArray());
+            Assert.Equal(before, s.Instances.Tower!.ToByteArray());
             Assert.Equal(before, Service<RoleStore>().LoadTower(role));
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_tower_formation"); }
@@ -224,7 +224,7 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
     public async Task DungeonGuideRemainsDetachedUntilCommitAndFailureDoesNotPublishIt()
     {
         await using var bot = await Enter("Alice"); var s = Session(bot);
-        var before = s.Dungeons!;
+        var before = s.Instances.Dungeons!;
         var staged = Signal(); var release = Signal();
         await Barrier("dungeon/state", staged, release);
         var command = OnLoop(() => Service<DungeonService>().SetGuideAsync(s,
@@ -232,18 +232,18 @@ public sealed class Cd13eOwnerTests : IAsyncLifetime
         try
         {
             await staged.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Same(before, s.Dungeons); Assert.False(s.Dungeons!.FirstSetted);
+            Assert.Same(before, s.Instances.Dungeons); Assert.False(s.Instances.Dungeons!.FirstSetted);
             Assert.False(JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons(s.Role!.Id)!)!.FirstSetted);
         }
         finally { release.TrySetResult(); }
         await command.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.True(s.Dungeons!.FirstSetted);
+        Assert.True(s.Instances.Dungeons!.FirstSetted);
         FixtureSql.Execute(Service<AccountStore>(), "CREATE TRIGGER fail_dungeon_guide BEFORE UPDATE OF dungeons ON role BEGIN SELECT RAISE(ABORT,'guide rollback'); END");
         try
         {
             await Assert.ThrowsAsync<SqliteException>(() => OnLoop(() => Service<DungeonService>().SetGuideAsync(s,
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = false })));
-            Assert.True(s.Dungeons.FirstSetted);
+            Assert.True(s.Instances.Dungeons.FirstSetted);
             Assert.True(JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons(s.Role!.Id)!)!.FirstSetted);
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_dungeon_guide"); }

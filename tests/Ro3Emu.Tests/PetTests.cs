@@ -314,7 +314,7 @@ public sealed class PetTests : IAsyncLifetime
         });
         await bot.SendGameAsync(PetService.SwitchPlan, new PetSwitchPlanReq { TargetIndex = 2 });
         Assert.Equal(0, (await Next(bot, PetService.SwitchPlan, PetSwitchPlanResp.Parser)).Result);
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         await Next(bot, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(bobo.Uuid));
         await Next(viewer, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(bobo.Uuid));
         await bot.SendGameAsync(PetService.SwitchPlan, new PetSwitchPlanReq { TargetIndex = 0 });
@@ -331,7 +331,7 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, PetService.StateUpdate, PetStateUpdateResp.Parser)).Result);
         await Next(bot, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(newUid));
         await Next(viewer, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(newUid));
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
     }
 
     [ClientDataFact]
@@ -487,7 +487,7 @@ public sealed class PetTests : IAsyncLifetime
         await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
         {
             using var held = await CharacterService.Lock(Session);
-            Session.Lottery!.PityRecords[permanentKey] = new LotteryPityRecord { PityCount = 59, MustCount = 60 };
+            Session.Activities.Lottery!.PityRecords[permanentKey] = new LotteryPityRecord { PityCount = 59, MustCount = 60 };
             await Task.CompletedTask;
         });
         await Gm("!item 1250709 2");
@@ -495,15 +495,15 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, PetService.GenerateEgg, PetGenEggRes.Parser)).Result);
         var egg = Saved(bot).IncubationSlot[1].IncubateInfo[10009];
         Assert.Contains(egg.AwardId, GuaranteedItems(permanentDraw));
-        var record = Session.Lottery!.PityRecords[permanentKey];
+        var record = Session.Activities.Lottery!.PityRecords[permanentKey];
         Assert.Equal((0, 60, 1), (record.PityCount, record.MustCount, record.HitPityCount));
         await bot.SendGameAsync(PetService.GenerateEgg, new PetGenEggReq { RoundId = 10008, SlotId = 1 });
         Assert.Equal(0, (await Next(bot, PetService.GenerateEgg, PetGenEggRes.Parser)).Result);
-        var limited = Session.Lottery.PityRecords[(int)limitedDraw];
+        var limited = Session.Activities.Lottery.PityRecords[(int)limitedDraw];
         Assert.Equal(1, limited.TotalCount);
         Assert.Equal(GuaranteedItems(limitedDraw).Contains(Saved(bot).IncubationSlot[1].IncubateInfo[10008].AwardId) ? 0 : 1,
             limited.PityCount);
-        Assert.Equal(0, Session.Lottery.PityRecords[permanentKey].PityCount);
+        Assert.Equal(0, Session.Activities.Lottery.PityRecords[permanentKey].PityCount);
     }
 
     private static long[] Flat(JsonElement row, string key) =>
@@ -766,7 +766,7 @@ public sealed class PetTests : IAsyncLifetime
         await Gm("!lvl 40");
         await bot.SendGameAsync(PetService.StateUpdate, new PetStateUpdateReq { PetId = 10001, Target = (PetStateSource_Type)2, TargetSlotIndex = 1 });
         Assert.Equal(0, (await Next(bot, PetService.StateUpdate, PetStateUpdateResp.Parser)).Result);
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         await bot.SendGameAsync(PetService.ChangePlanName, new PetChangePlanNameReq { TargetIndex = 0, Name = "Support" });
         Assert.Equal(0, (await Next(bot, PetService.ChangePlanName, PetChangePlanNameResp.Parser)).Result);
         Assert.Equal("Support", Saved(bot).SetupPlans[0].PlanName);
@@ -845,7 +845,7 @@ public sealed class PetTests : IAsyncLifetime
         await Next(again, 5017, DBPetInfoIncrement.Parser);
         Assert.Equal(10001, Saved(again).SetupPlans[0].SetUpPets[1]);
         Assert.False(_app.Services.GetRequiredService<FunctionService>().IsOpen(Session, 33));
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         Assert.DoesNotContain(again.Inbox.Snapshot(), e => e.IsGame(31037) && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Any(b => b.EntityType == 7));
     }
 

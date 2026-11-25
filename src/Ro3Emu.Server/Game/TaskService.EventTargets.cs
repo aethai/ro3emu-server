@@ -35,7 +35,7 @@ public sealed partial class TaskService
 
     /// <summary>A World Exploration phase's totalRate (basis points), -1 before the activity's state exists.</summary>
     private static long MovementRate(GameSession s, long phase) =>
-        s.NewActivities?.ActivityInfo.Values.Select(a => a.ActivityParam?.WorldExploration)
+        s.Activities.NewActivities?.ActivityInfo.Values.Select(a => a.ActivityParam?.WorldExploration)
             .FirstOrDefault(w => w?.PhaseInfos.ContainsKey(phase) == true) is { } world ? world.PhaseInfos[phase].TotalRate : -1;
 
     /// <summary>TerritoryWarsService.BattleSettled: the guild's season points moved (106609).</summary>

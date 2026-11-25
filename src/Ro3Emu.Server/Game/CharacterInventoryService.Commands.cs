@@ -24,7 +24,7 @@ public sealed partial class CharacterInventoryService
     private static DBEquipInfo? PrunedEquipmentPlans(GameSession session, IReadOnlyList<InvItem> items)
     {
         var owned = items.Select(i => i.Guid).ToHashSet();
-        var next = session.EquipmentPlans.Clone();
+        var next = session.Profile.EquipmentPlans.Clone();
         bool changed = false;
         foreach (var plan in next.EquipPlans.Values)
             foreach (int grid in plan.ItemsEquipGrid.Where(p => !owned.Contains(p.Value)).Select(p => p.Key).ToArray())
@@ -52,17 +52,17 @@ public sealed partial class CharacterInventoryService
         {
             ApplyStagedItems(session, nextItems, (long[])receipts[itemReceipt]!);
             if (progress != null) CopyProgress(session.Progress!, progress);
-            if (pruned != null) session.EquipmentPlans = pruned;
+            if (pruned != null) session.Profile.EquipmentPlans = pruned;
             apply?.Invoke();
         });
     }
 
     internal Task CommitBagAsync(GameSession session, string operation, DBItemsInfo next) =>
         CommitCharacterAsync(session, operation, blobs: new Dictionary<string, byte[]> { ["bag_state"] = next.ToByteArray() },
-            apply: () => session.BagState.Info = next);
+            apply: () => session.Profile.BagState.Info = next);
 
     internal Task CommitStatsAsync(GameSession session, string operation, RoleProgress progress, BaseAttrInfo plans) =>
         CommitCharacterAsync(session, operation, progress: progress,
             blobs: new Dictionary<string, byte[]> { ["stat_plans"] = plans.ToByteArray() },
-            apply: () => session.StatPlans.Info = plans);
+            apply: () => session.Profile.StatPlans.Info = plans);
 }

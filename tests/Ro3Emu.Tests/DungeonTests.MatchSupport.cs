@@ -20,12 +20,12 @@ public sealed partial class DungeonTests
         Assert.Equal(ErrorCodes.Parameter, (await Next(alice, DungeonService.SetJobPosition, MultiDungeonSetJobPositionResp.Parser)).Result);
         await alice.SendGameAsync(DungeonService.SetJobPosition, new MultiDungeonSetJobPositionReq { JobPosition = 103 });
         Assert.Equal(0, (await Next(alice, DungeonService.SetJobPosition, MultiDungeonSetJobPositionResp.Parser)).Result);
-        Assert.Equal(103, Session(alice).Dungeons!.JobPosition);
+        Assert.Equal(103, Session(alice).Instances.Dungeons!.JobPosition);
         await OnLoop(async () =>
         {
-            Session(alice).Dungeons = null;
+            Session(alice).Instances.Dungeons = null;
             await Service<DungeonService>().LoginAsync(Session(alice));
-            Assert.Equal(103, Session(alice).Dungeons!.JobPosition);
+            Assert.Equal(103, Session(alice).Instances.Dungeons!.JobPosition);
         });
         await Party(alice, bob);
         var roster = await Next(bob, TeamService.TeamAll, TeamTotalDetailInfo.Parser, m => m.MemberList.Count == 2);
@@ -37,7 +37,7 @@ public sealed partial class DungeonTests
             m => m.MemberList.TryGetValue((long)alice.Self.Uuid, out var card)
                 && TeamMultiDungeonInfo.Parser.ParseFrom(card.MultiDungeonBytes).JobPosition == 101);
         Assert.Equal(1100, update.MemberList[(long)alice.Self.Uuid].Job);
-        Assert.Equal(101, Session(alice).Dungeons!.JobPosition);
+        Assert.Equal(101, Session(alice).Instances.Dungeons!.JobPosition);
     }
 
     [ClientDataFact]
@@ -125,7 +125,7 @@ public sealed partial class DungeonTests
             foreach (var f in combat.IncomingDamageAdjusters.Handlers) taken = await f(boss, Session(alice), DamageHitResult.Normal, taken);
             Assert.Equal(10500, dealt);
             Assert.Equal(9500, taken);
-            Assert.Empty(Session(alice).Dungeons!.Records); // buffs do not mint completion rewards
+            Assert.Empty(Session(alice).Instances.Dungeons!.Records); // buffs do not mint completion rewards
         });
         // Leaving the party while staying inside cannot retain a five-class party bonus.
         await eric.SendGameAsync(TeamService.TeamLeave, new LeaveTeamReq());

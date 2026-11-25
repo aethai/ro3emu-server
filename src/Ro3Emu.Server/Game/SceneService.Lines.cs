@@ -27,7 +27,7 @@ public sealed partial class SceneService
             || req.SceneEntry != 0 && req.SceneEntry != s.SceneEntry
             || req.PlayerUUID != 0 && req.PlayerUUID != (ulong)s.Role!.Id
             || (int)req.ESource is < 0 or > 2 ? ErrorCodes.Parameter
-            : s.SceneLoading || s.Handoff != null || s.SceneRecoveryRequired || s.SceneTransitionGate.CurrentCount == 0
+            : s.SceneLoading || s.Handoff != null || s.WorldState.SceneRecoveryRequired || s.SceneTransitionGate.CurrentCount == 0
                 ? ErrorCodes.SwitchingScenes
             : (s.StatusBits & (1L << 15)) != 0 ? ErrorCodes.ActionInBattle
             : s.Dead || req.Linenum == s.LineNumber ? ErrorCodes.Parameter : 0;
@@ -45,7 +45,7 @@ public sealed partial class SceneService
     {
         if (handoff.Reservation is { } reservation) lines.Release(s, reservation);
         if (s.Handoff != handoff) return;
-        s.SceneRecoveryRequired = true;
+        s.WorldState.SceneRecoveryRequired = true;
         s.SceneLoading = true;
         s.Handoff = null;
         ++s.SceneGeneration;
@@ -54,7 +54,7 @@ public sealed partial class SceneService
 
     public void DisconnectLine(GameSession s)
     {
-        s.SceneRecoveryRequired = true;
+        s.WorldState.SceneRecoveryRequired = true;
         s.SceneLoading = true;
         s.Handoff = null;
         ++s.SceneGeneration;

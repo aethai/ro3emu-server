@@ -136,7 +136,7 @@ public sealed partial class AuctionContentTests
         prebuy.BiddingItems.Add(new BatchBiddingAuctionItem { AuctionId = queued.Id, Price = queued.Price, OpType = BiddingType.Auto });
         await carol.SendGameAsync(AuctionService.BatchBid, prebuy);
         Assert.Equal(0, (await Next(carol, AuctionService.BatchBid, BatchBiddingAuctionRes.Parser)).Result);
-        Assert.Equal(1, Session(carol).Auction!.PreBuyNum[$"2:2:{queued.Entry}"]);
+        Assert.Equal(1, Session(carol).Social.Auction!.PreBuyNum[$"2:2:{queued.Entry}"]);
         await carol.SendGameAsync(AuctionService.PreStack, new PreAuctionItemStackQueryReq
         { AuctionType = AuctionType.World, QueryItemTypes = { (int)Ro3Emu.Server.Data.GameData.Int(Service<Ro3Emu.Server.Data.GameData>().Row("AuctionConfig", queued.Entry)!.Value, "_iType") } });
         var stack = (await Next(carol, AuctionService.PreStack, PreAuctionItemStackQueryRes.Parser)).PreItems[queued.Entry];

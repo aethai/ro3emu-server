@@ -374,7 +374,7 @@ internal sealed class CombatGmCommands(
     {
         s.GmCombat = on ? s.GmCombat | flag : s.GmCombat & ~flag;
         if (on && flag == GmCombatSwitches.NoCooldown)
-            foreach (int group in s.SkillCds.Keys.Concat(s.SkillModeCds.Keys.Select(k => k.Group)).Distinct().ToArray())
+            foreach (int group in s.Combat.SkillCds.Keys.Concat(s.Combat.SkillModeCds.Keys.Select(k => k.Group)).Distinct().ToArray())
                 await CombatService.ResetCooldownAsync(s, group);
         string what = flag switch
         {

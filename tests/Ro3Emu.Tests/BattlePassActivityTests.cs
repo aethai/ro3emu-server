@@ -93,7 +93,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
 
         await Gm(alice, "!item 920132 2000");
         await Reconcile(alice);
-        Assert.Equal(1, Session(alice).NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass.Level);
+        Assert.Equal(1, Session(alice).Activities.NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass.Level);
         var free = await Common(alice, new CommonActivityReq
         {
             ActivityId = 9201, BattlePassClaimReward = new BattlePassClaimRewardReq { RewardType = 0, Levels = { 1 } },
@@ -111,7 +111,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
 
         await Gm(alice, "!item 920703 1");
         await Reconcile(alice);
-        Assert.True(Session(alice).NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass.Premium);
+        Assert.True(Session(alice).Activities.NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass.Premium);
         Assert.Equal(0, (await Common(alice, new CommonActivityReq
         {
             ActivityId = 9201, BattlePassClaimReward = new BattlePassClaimRewardReq { RewardType = 1, Levels = { 1 } },
@@ -123,7 +123,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
         })).Result);
         await alice.DisposeAsync();
         await using var again = await InWorld("Alice", create: false);
-        var saved = Session(again).NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass;
+        var saved = Session(again).Activities.NewActivities!.ActivityInfo[9201].ActivityParam.BattlePass;
         Assert.Equal(1, saved.Level);
         Assert.True(saved.Premium);
         Assert.True(saved.UnlockPageViewed);
@@ -145,7 +145,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
         });
         Assert.Equal(0, bought.Result);
         Assert.Equal(2, bought.BattlePassBuyLevel.ActualCount);
-        Assert.Equal(2, Session(alice).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Level);
+        Assert.Equal(2, Session(alice).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Level);
         Assert.Equal(before - 20, Session(alice).Progress!.Currency[1]);
         Assert.Equal(ErrorCodes.BattlePassLevel, (await Common(alice, new CommonActivityReq
         {
@@ -167,7 +167,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bob, MailService.ClaimMail, ClaimMailRsp.Parser)).Result);
         await Gm(bob, "!lvl 99");
         await Reconcile(bob);
-        Assert.True(Session(bob).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
+        Assert.True(Session(bob).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
         Assert.Equal(0, Session(bob).Progress!.Currency.GetValueOrDefault(703));
     }
 
@@ -184,7 +184,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
         await Gm(alice, "!item 701 1");
         await Gm(alice, "!item 702 1");
         await Reconcile(alice);
-        var month = Session(alice).NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
+        var month = Session(alice).Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
         Assert.Equal(31, month.Infos[1001].LastDays); // client parser displays lastDays - 1
         Assert.Equal(31, month.Infos[1002].LastDays);
         var claim = new CommonActivityReq
@@ -199,7 +199,7 @@ public sealed class BattlePassActivityTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.MonthCardClaimed, (await Common(again, claim)).Result);
         _clock.AdvanceDays(1);
         await Reconcile(again);
-        Assert.False(Session(again).NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[1001].DayAward);
+        Assert.False(Session(again).Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard.Infos[1001].DayAward);
         Assert.Equal(0, (await Common(again, claim)).Result);
         _clock.AdvanceDays(30);
         await Reconcile(again);

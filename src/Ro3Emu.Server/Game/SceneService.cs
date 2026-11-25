@@ -111,7 +111,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         if (data.Row("DungeonConfig", scene) != null && instanceId == 0) return false;
         // (inferred) A scene the client lacks a Unity scene or its scene-editor module for never loads.
         if (map != null && !worldData.ClientCanEnter(scene)) return false;
-        if (s.SceneRecoveryRequired || s.Handoff is { Completing: false }) return false;
+        if (s.WorldState.SceneRecoveryRequired || s.Handoff is { Completing: false }) return false;
         if (s.Handoff is { Completing: true } completing && completing.Destination.SceneEntry == scene)
         {
             // A private return recovery may be superseded after its ACK, but cannot turn into a different
@@ -150,7 +150,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         var handoff = new SceneHandoff(++s.SceneGeneration, destination, clock.GetUtcNow().AddSeconds(LoadTimeoutSeconds), reservation)
         { AdmissionValid = transfer?.Valid };
         s.Handoff = handoff;
-        bool CurrentTransfer() => s.Handoff == handoff && !s.SceneRecoveryRequired
+        bool CurrentTransfer() => s.Handoff == handoff && !s.WorldState.SceneRecoveryRequired
             && ReferenceEquals(s.Role, role) && ReferenceEquals(s.Attachment, lease)
             && lease?.Cancelled != true && handoff.AdmissionValid?.Invoke(s) != false;
         try
@@ -161,20 +161,20 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             if (!CurrentTransfer())
             {
                 if (reservation != null) lines.Release(s, reservation);
-                if (s.Handoff == handoff && !s.SceneRecoveryRequired) RequireReconnect(s, handoff);
+                if (s.Handoff == handoff && !s.WorldState.SceneRecoveryRequired) RequireReconnect(s, handoff);
                 return false;
             }
             s.Attack = null;
-            s.LockTarget = 0;
+            s.Combat.LockTarget = 0;
             s.SceneEntry = scene;
             s.InstanceId = instanceId;
             s.RuntimeKind = destination.Kind;
             s.LineNumber = destination.LineNumber;
             s.Position = new Vec3 { X = arrival.X, Y = arrival.Y, Z = arrival.Z };
-            s.PreviousPosition = s.Position;
+            s.WorldState.PreviousPosition = s.Position;
             s.Face = arrival.Face;
-            s.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // the walk before the switch is over (GameSession.WalkReportLag)
-            s.Walking = false;
+            s.WorldState.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // the walk before the switch is over (GameSession.WalkReportLag)
+            s.WorldState.Walking = false;
             s.SceneLoading = true;
             if (instanceId == 0)
             {
@@ -182,7 +182,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
                 await monsters.EnsureSpawnedAsync(destination);
                 if (!CurrentTransfer())
                 {
-                    if (s.Handoff == handoff && !s.SceneRecoveryRequired) RequireReconnect(s, handoff);
+                    if (s.Handoff == handoff && !s.WorldState.SceneRecoveryRequired) RequireReconnect(s, handoff);
                     return false;
                 }
             }
@@ -245,7 +245,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
         bool CurrentScene() => ReferenceEquals(s.Role, role) && ReferenceEquals(s.Attachment, lease)
             && lease?.Cancelled != true && s.Handoff == handoff
             && handoff != null && s.SceneGeneration == handoff.Generation && s.RuntimeMap == handoff.Destination
-            && !s.SceneRecoveryRequired && handoff.AdmissionValid?.Invoke(s) != false;
+            && !s.WorldState.SceneRecoveryRequired && handoff.AdmissionValid?.Invoke(s) != false;
         bool valid = s.Role != null && s.SceneLoading && handoff is { Completing: false }
             && req.SceneId == s.SceneEntry && CurrentScene();
         // Claim before the first yield: two acknowledgments cannot run the publication twice.
@@ -510,11 +510,11 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
             TransType = MovesOnSurface(s.SceneEntry) ? MovementTransitionType.MoveTransResetPos : MovementTransitionType.MoveTransForceTeleport,
             MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = clock.GetUtcNow().ToUnixTimeMilliseconds() },
         });
-        s.PreviousPosition = s.Position;
+        s.WorldState.PreviousPosition = s.Position;
         s.Position = pos;
         s.Face = at.Face;
-        s.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
-        s.Walking = false;
+        s.WorldState.LastWalkUtc = clock.GetUtcNow().UtcDateTime;
+        s.WorldState.Walking = false;
         await world.MoveAsync(s, new WalkReq { Pos = pos, Face = at.Face, BStop = true, SpeedRate = 1 }, forceTeleport: true);
         if (AfterTeleport != null) await AfterTeleport(s);
     }

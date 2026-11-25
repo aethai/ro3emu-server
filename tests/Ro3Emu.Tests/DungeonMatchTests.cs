@@ -155,7 +155,7 @@ public sealed class DungeonMatchTests : IAsyncLifetime
         long soloParty = await Party(alice); // GM solo keeps an existing one-member party's real identity.
         await Start(alice);
         await Gm(alice, "!dungeonsolo off");
-        Assert.False(Session(alice).DungeonSoloMatch);
+        Assert.False(Session(alice).Instances.DungeonSoloMatch);
         Assert.False((await Next(alice, DungeonMatchService.CancelNotify, CancelMatchNotify.Parser)).ManualCancel);
         Assert.False(Service<DungeonMatchService>().Owns(Session(alice)));
         await Gm(alice, "!dungeonsolo on");
@@ -298,7 +298,7 @@ public sealed class DungeonMatchTests : IAsyncLifetime
         await alice.SwitchRoleAsync();
         await Until(() => !Service<DungeonMatchService>().Owns(original), "match ownership cleared after role switch");
         await alice.EnterWorldAsync(role);
-        Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonSoloMatch)));
+        Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).Instances.DungeonSoloMatch)));
         await Start(alice);
         Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<DungeonMatchService>().Owns(Session(alice)))));
         await alice.SendGameAsync(DungeonMatchService.CancelMatch, new CancelMatchReq

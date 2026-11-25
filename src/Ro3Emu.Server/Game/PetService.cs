@@ -159,14 +159,14 @@ public sealed partial class PetService
             Persist = tx =>
             {
                 tx.RoleBlob(s.Role!.Id, "pets", next.ToByteArray());
-                if (lottery != null) tx.RoleBlob(s.Role.Id, "lottery", LotteryService.Pack(lottery, s.LotteryDay));
+                if (lottery != null) tx.RoleBlob(s.Role.Id, "lottery", LotteryService.Pack(lottery, s.Activities.LotteryDay));
                 tx.WithEconomy(_character.FamilyEconomy(s, "cd13b/pet-" + kind, cost, grants,
                     new { StateHash = Convert.ToHexString(SHA256.HashData(next.ToByteArray())) }));
             },
             Committed = () =>
             {
                 s.Pets = next;
-                if (lottery != null) s.Lottery = lottery;
+                if (lottery != null) s.Activities.Lottery = lottery;
             },
             AsyncCommit = true,
         }) != null;

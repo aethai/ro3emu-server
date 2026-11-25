@@ -34,7 +34,7 @@ public sealed partial class SceneService
     internal async Task SpawnTreasureNpcAsync(GameSession session)
     {
         if (session.Role == null || session.SceneLoading) return;
-        var hunt = session.ActivityRuntime.AdventureTreasure;
+        var hunt = session.Activities.ActivityRuntime.AdventureTreasure;
         if (hunt.PointId == 0 || hunt.Began + 10800 <= clock.GetUtcNow().ToUnixTimeSeconds()
             || TreasurePoint(hunt.PointId) is not { } target || target.Scene != session.SceneEntry
             || data.Row("NPCConfig", TreasureNpcId) is not { } npcRow) return;
@@ -72,7 +72,7 @@ public sealed partial class SceneService
     {
         if (session.Role == null || req.NpcUid != TreasureUid(session)
             || Data.Config.NPCConfig.Get(data, TreasureNpcId) is not { } npc || !npc.InteractId.Contains(req.InteractionId)) return false;
-        var hunt = session.ActivityRuntime.AdventureTreasure;
+        var hunt = session.Activities.ActivityRuntime.AdventureTreasure;
         int result = hunt.PointId == 0 || TreasurePoint(hunt.PointId) is not { } target
             ? ErrorCodes.NpcMissing
             : session.SceneLoading || target.Scene != session.SceneEntry ? ErrorCodes.SwitchingScenes

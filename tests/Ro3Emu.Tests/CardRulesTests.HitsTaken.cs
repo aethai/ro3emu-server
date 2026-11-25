@@ -120,7 +120,7 @@ public sealed partial class CardRulesTests
     {
         await Service<GameLoop>().InvokeAsync(async () =>
         {
-            caster.SkillCds.Clear(); caster.SkillModeCds.Clear(); caster.SwingLockUntilMs = 0; caster.SkillCast = null;
+            caster.Combat.SkillCds.Clear(); caster.Combat.SkillModeCds.Clear(); caster.SwingLockUntilMs = 0; caster.SkillCast = null;
             await Service<CharacterService>().SetHpSpAsync(target, long.MaxValue, null);
             if (refillCaster) await Service<CharacterService>().SetHpSpAsync(caster, long.MaxValue, long.MaxValue);
         });
@@ -740,7 +740,7 @@ public sealed partial class CardRulesTests
     /// <summary>A Mage's Fire Bolt on the wire (31102): the chant its 31100 says.</summary>
     private async Task<(long Session, int ChantMs)> StartFireBolt(BotClient bot, GameSession session, MonsterUnit target)
     {
-        await OnLoop(() => { session.SkillCds.Clear(); session.SkillModeCds.Clear(); session.SkillCast = null; return 0; });
+        await OnLoop(() => { session.Combat.SkillCds.Clear(); session.Combat.SkillModeCds.Clear(); session.SkillCast = null; return 0; });
         await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = FireBolt, TargetId = target.Uid });
         var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
         Assert.Equal(0, accepted.Result);

@@ -73,7 +73,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
             return current;
         });
 
-        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily!);
+        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily!);
         var afterState = JsonSerializer.Deserialize<DailyActivityService.DailyState>(beforeDaily)!;
         afterState.Claims.Add(987654);
         byte[] afterDaily = JsonSerializer.SerializeToUtf8Bytes(afterState);
@@ -172,7 +172,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         };
         await SetAutoDecompose(bot, filter);
         Assert.NotNull(roles.LoadAutoDecompose(role));
-        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily!);
+        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily!);
         var afterState = JsonSerializer.Deserialize<DailyActivityService.DailyState>(beforeDaily)!;
         afterState.Claims.Add(987655);
         byte[] afterDaily = JsonSerializer.SerializeToUtf8Bytes(afterState);

@@ -57,10 +57,10 @@ public sealed class LifeItemPublicationTests : IAsyncLifetime
                 if (!ReferenceEquals(changed, session)) return;
                 calls++;
                 if (calls != 1) return;
-                Assert.Equal(1, session.LifeJob!.MagicFoodTimes[1001801]);
-                long cooldown = session.ItemCds[1001801];
+                Assert.Equal(1, session.Season.LifeJob!.MagicFoodTimes[1001801]);
+                long cooldown = session.Combat.ItemCds[1001801];
                 Assert.True(cooldown > 0);
-                Assert.Equal(cooldown, session.BagState.Info.ItemCds!.Data[1001801]);
+                Assert.Equal(cooldown, session.Profile.BagState.Info.ItemCds!.Data[1001801]);
             }
             using (character.StateChanged.Subscribe(Observe))
                 await character.UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });

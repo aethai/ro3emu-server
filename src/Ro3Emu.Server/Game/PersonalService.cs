@@ -70,7 +70,7 @@ public sealed partial class PersonalService
         var bytes = _roles.LoadPersonal(s.Role!.Id);
         var info = bytes is { Length: > 0 } ? DBPersonalInfo.Parser.ParseFrom(bytes) : new DBPersonalInfo();
         Shape(info);
-        s.Personal = info;
+        s.Social.Personal = info;
         await SyncAsync(s);
     }
 
@@ -83,7 +83,7 @@ public sealed partial class PersonalService
     /// </summary>
     public async Task SyncAsync(GameSession s)
     {
-        if (s.Personal == null) return;
+        if (s.Social.Personal == null) return;
         var now = Build(s);
         if (!s.Synced.ContainsKey(Sync) && now.UpvoteTimes.Count == 0)
         {
@@ -101,11 +101,11 @@ public sealed partial class PersonalService
         return SyncAsync(s);
     }
 
-    private Task RefreshAsync(GameSession s) => s.Personal != null && s.Synced.ContainsKey(Sync) ? SyncAsync(s) : Task.CompletedTask;
+    private Task RefreshAsync(GameSession s) => s.Social.Personal != null && s.Synced.ContainsKey(Sync) ? SyncAsync(s) : Task.CompletedTask;
 
     private DBPersonalInfo Build(GameSession s)
     {
-        var info = s.Personal!.Clone();
+        var info = s.Social.Personal!.Clone();
         foreach (var (type, ids) in Unlocks(s))
         {
             var unlock = new DBPersonalUnlockInfo();
@@ -200,7 +200,7 @@ public sealed partial class PersonalService
         if (result == 0) result = Validate(s, req.Info!);
         if (result == 0)
         {
-            var next = s.Personal!.Clone();
+            var next = s.Social.Personal!.Clone();
             var plan = req.Info!.Clone();
             plan.PlanName = next.PlanInfos[req.PlanId].PlanName;
             next.PlanInfos[req.PlanId] = plan;
@@ -216,9 +216,9 @@ public sealed partial class PersonalService
         using var held = await CharacterService.Lock(s);
         int result = Gate(s);
         if (result == 0 && !Preset(req.PlanId)) result = ErrPreset;
-        if (result == 0 && s.Personal!.CurPlanId != req.PlanId)
+        if (result == 0 && s.Social.Personal!.CurPlanId != req.PlanId)
         {
-            var next = s.Personal.Clone();
+            var next = s.Social.Personal.Clone();
             next.CurPlanId = req.PlanId;
             await CommitAsync(s, next, "current");
         }
@@ -240,9 +240,9 @@ public sealed partial class PersonalService
         if (result == 0 && !Preset(req.PlanId)) result = ErrPreset;
         if (result == 0 && (name.Trim().Length == 0 || length > (double)(Data.Config.PublicParams.Of(_data).PersonalTemplateLimit ?? 7))) result = ErrNameLength;
         if (result == 0 && Sensitive(name)) result = ErrNameSensitive;
-        if (result == 0 && s.Personal!.PlanInfos[req.PlanId].PlanName != name)
+        if (result == 0 && s.Social.Personal!.PlanInfos[req.PlanId].PlanName != name)
         {
-            var next = s.Personal.Clone();
+            var next = s.Social.Personal.Clone();
             next.PlanInfos[req.PlanId].PlanName = name;
             await CommitAsync(s, next, "name");
         }
@@ -256,7 +256,7 @@ public sealed partial class PersonalService
 
     /// <summary>A theme, background or action a 620 item unlocked: stored in DBPersonalInfo.unlockInfos.</summary>
     private static bool ItemUnlocked(GameSession s, int type, int id) =>
-        s.Personal?.UnlockInfos.TryGetValue(type, out var unlocks) == true && unlocks.UnlockMap.GetValueOrDefault(id);
+        s.Social.Personal?.UnlockInfos.TryGetValue(type, out var unlocks) == true && unlocks.UnlockMap.GetValueOrDefault(id);
 
     /// <summary>
     /// 620 UnlockPersonalDecoration [620, enum_PersonalUnlockType, id]: 2120001..2120003 [620,4,1003..1005] a card theme,
@@ -270,7 +270,7 @@ public sealed partial class PersonalService
     private async Task<int> UseDecorationItemAsync(ItemActionUse use)
     {
         var s = use.Session;
-        if (s.Personal == null || s.Progress == null) return ErrorCodes.FeatureUnavailable;
+        if (s.Social.Personal == null || s.Progress == null) return ErrorCodes.FeatureUnavailable;
         var picks = use.Effects.Select(e => (Type: e.Length > 1 ? (int)e[1] : 0, Id: e.Length > 2 ? (int)e[2] : 0)).ToList();
         foreach (var (type, id) in picks)
         {
@@ -284,14 +284,14 @@ public sealed partial class PersonalService
             if (row == null) return ErrConfig;
         }
         if (picks.All(p => IsUnlocked(s, p.Type, p.Id))) return ErrUnlocked;
-        var next = s.Personal.Clone();
+        var next = s.Social.Personal.Clone();
         foreach (var (type, id) in picks)
         {
             if (!next.UnlockInfos.TryGetValue(type, out var unlocks)) next.UnlockInfos[type] = unlocks = new DBPersonalUnlockInfo();
             unlocks.UnlockMap[id] = true;
         }
         byte[] saved = next.ToByteArray();
-        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "personal", saved), () => s.Personal = next,
+        if (!await _character.CommitItemActionAsync(use, tx => tx.RoleBlob(s.Role!.Id, "personal", saved), () => s.Social.Personal = next,
             new { Personal = picks.Select(p => new[] { p.Type, p.Id }).ToArray() })) return ErrorCodes.ItemsShort;
         await SyncAsync(s);
         return 0;
@@ -321,12 +321,12 @@ public sealed partial class PersonalService
         if (result == 0 && target == s.Role!.Id) result = ErrUpvoteSelf;
         if (result == 0 && (target <= 0 || await _roles.GetAsync(target) == null
             || (await _roles.ReadRevisionVectorAsync(target)).Deleted)) result = ErrParameter;
-        if (result == 0 && s.Personal!.UpvoteTimes.ContainsKey(target)) result = ErrUpvoted;
-        if (result == 0 && s.Personal!.UpvoteTimes.Count > 0
-            && now - s.Personal.UpvoteTimes.Values.Max() < (double)(Data.Config.PublicParams.Of(_data).PersonalLikeCD ?? 1000)) result = ErrUpvoteCooldown;
+        if (result == 0 && s.Social.Personal!.UpvoteTimes.ContainsKey(target)) result = ErrUpvoted;
+        if (result == 0 && s.Social.Personal!.UpvoteTimes.Count > 0
+            && now - s.Social.Personal.UpvoteTimes.Values.Max() < (double)(Data.Config.PublicParams.Of(_data).PersonalLikeCD ?? 1000)) result = ErrUpvoteCooldown;
         if (result == 0)
         {
-            var next = s.Personal!.Clone();
+            var next = s.Social.Personal!.Clone();
             next.UpvoteTimes[target] = now;
             var transaction = _roles.NewTransaction();
             var liked = _roles.LoadPersonalUpvotes(target, transaction) is { Length: > 0 } stored
@@ -334,7 +334,7 @@ public sealed partial class PersonalService
             liked.Infos[s.Role!.Id] = now;
             transaction.RoleBlob(s.Role.Id, "personal", next.ToByteArray());
             _roles.SavePersonalUpvotes(target, liked.ToByteArray(), transaction);
-            await _roles.CommitAsync(transaction, "personal/upvote", _ => s.Personal = next);
+            await _roles.CommitAsync(transaction, "personal/upvote", _ => s.Social.Personal = next);
         }
         await s.SendGameAsync(Upvote, new UpvotePersonalResp { Result = result, Req = req });
         if (result == 0) await SyncAsync(s);
@@ -399,7 +399,7 @@ public sealed partial class PersonalService
     /// <summary>(inferred) The popularity week starts on Monday 05:00 realm time, as the guild activity week.</summary>
     public static long WeekStartMs(TimeProvider clock) => GameCalendar.WeekStart(clock).ToUnixTimeMilliseconds();
 
-    private int Gate(GameSession s) => s.Personal == null || s.Progress == null ? ErrorCodes.FeatureUnavailable
+    private int Gate(GameSession s) => s.Social.Personal == null || s.Progress == null ? ErrorCodes.FeatureUnavailable
         : !_functions.IsOpen(s, Function) ? ErrFunction : 0;
 
     private static bool Preset(int plan) => plan is >= 1 and <= Presets;
@@ -423,7 +423,7 @@ public sealed partial class PersonalService
         if (info.RoleInfos.Count > (double)(Data.Config.PublicParams.Of(_data).PersonalMaxCharacter ?? 1)) return ErrParameter;
         // The pose list is PerformanceConfig (UI_Sys_Personal_EditRoleAction_ListWidgetCtrl reads m_kCFG_PerformanceConfig),
         // so a pose is one of the role's unlocked emotes (5006 emojiUnlocks); the client preselects one (50001) unasked.
-        if (info.RoleInfos.Any(r => r.ActionId != 0 && s.EmojiPlay?.EmojiUnlocks.Contains(r.ActionId) != true
+        if (info.RoleInfos.Any(r => r.ActionId != 0 && s.Social.EmojiPlay?.EmojiUnlocks.Contains(r.ActionId) != true
             && !IsUnlocked(s, UnlockAction, r.ActionId))) return ErrLocked;
         if (info.DecalInfos.Count > (double)(Data.Config.PublicParams.Of(_data).PersonalMaxSticker ?? 20)) return ErrParameter;
         // Stickers are currencies of item subtype 123 (ItemSubTypePersonalDecal); each placement uses one.
@@ -442,6 +442,6 @@ public sealed partial class PersonalService
     {
         var transaction = _roles.NewTransaction();
         transaction.RoleBlob(s.Role!.Id, "personal", next.ToByteArray());
-        await _roles.CommitAsync(transaction, "personal/" + action, _ => s.Personal = next);
+        await _roles.CommitAsync(transaction, "personal/" + action, _ => s.Social.Personal = next);
     }
 }

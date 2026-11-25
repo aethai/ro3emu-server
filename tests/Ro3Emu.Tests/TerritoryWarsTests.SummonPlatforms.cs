@@ -26,7 +26,7 @@ public sealed partial class TerritoryWarsTests
         await Bid(a, 1400); await Bid(others[0], 1300); await Bid(others[1], 1200); await Bid(b, 1100);
         _clock.Set(1779362200); await OnLoop(wars.ReconcileAsync); // stage 7: the auction settled.
         await Enter(a, 3030101); await Enter(b, 3030101);
-        _clock.Set(Session(a).TerritoryBattle!.State.Start + 1); await OnLoop(wars.ReconcileAsync);
+        _clock.Set(Session(a).Instances.TerritoryBattle!.State.Start + 1); await OnLoop(wars.ReconcileAsync);
         return (a, b, others, ga, gb);
     }
 
@@ -55,8 +55,8 @@ public sealed partial class TerritoryWarsTests
         await using var c = others[0];
         await using var d = others[1];
         var wars = Service<TerritoryWarsService>();
-        var battle = Session(a).TerritoryBattle!;
-        Assert.Same(battle, Session(b).TerritoryBattle);
+        var battle = Session(a).Instances.TerritoryBattle!;
+        Assert.Same(battle, Session(b).Instances.TerritoryBattle);
         long activator = Session(a).Role!.Id;
         Assert.Equal(0, await AssignSelf(a, WartimeToolType.Vehicle));
 
@@ -135,7 +135,7 @@ public sealed partial class TerritoryWarsTests
         await using var __ = b;
         await using var c = others[0];
         await using var d = others[1];
-        var battle = Session(b).TerritoryBattle!;
+        var battle = Session(b).Instances.TerritoryBattle!;
         long activator = Session(b).Role!.Id;
         var ring = await Ring(battle, 83);
         Assert.Equal(0L, ring.Guild); // nobody holds the stronghold yet

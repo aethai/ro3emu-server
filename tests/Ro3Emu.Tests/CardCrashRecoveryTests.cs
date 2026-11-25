@@ -63,7 +63,7 @@ public sealed class CardCrashRecoveryTests
             await Task.Delay(20);
         app.Services.GetRequiredService<TaskService>().BeforeProgress = session =>
         {
-            if (session.Library?.Cards.TryGetValue(card, out var value) != true || !value.TreasureUnlock)
+            if (session.Profile.Library?.Cards.TryGetValue(card, out var value) != true || !value.TreasureUnlock)
                 return Task.CompletedTask;
             PublishBarrier(barrier, role, card);
             return Task.Delay(Timeout.InfiniteTimeSpan);

@@ -103,7 +103,7 @@ public sealed partial class RaidTrialsService
             await SaveServerInfoAsync(next);
         }
         // A first clear can unlock a Sacred Blessing for everyone: refresh the online 5062s.
-        foreach (var session in _sessions.All().Where(s => s.Dungeons != null && s.Role != null))
+        foreach (var session in _sessions.All().Where(s => s.Instances.Dungeons != null && s.Role != null))
             _loop.PostOwned(session, () => SyncAsync(session), "dungeon blessing sync");
     }
 
@@ -163,12 +163,12 @@ public sealed partial class RaidTrialsService
     {
         var boss = BossOf(req.MultiDungeonId, req.MarkId);
         long level = boss is { } row && Blessing(row) is { } blessing ? blessing.Info.UnlockSacredBlessingID : 0;
-        int error = s.Dungeons == null || level == 0 ? ErrorCodes.Parameter : 0;
+        int error = s.Instances.Dungeons == null || level == 0 ? ErrorCodes.Parameter : 0;
         if (error == 0)
         {
             using (await CharacterService.Lock(s))
             {
-                var state = CurrentState(s.Dungeons!);
+                var state = CurrentState(s.Instances.Dungeons!);
                 state.BlessingsSeen[GameData.Int(boss!.Value, "_iBoss")] = level;
                 await SaveAsync(s, state);
             }
@@ -260,9 +260,9 @@ public sealed partial class RaidTrialsService
         if (s.Owner != null) scope?.Context.Pin(s.Owner);
         var ids = BossOf(req.MultiDungeonId, req.MarkId) is { } boss ? TrialIds(boss) : [];
         var wanted = req.HonorIds.Distinct().ToArray();
-        int error = s.Role == null || s.Dungeons == null || wanted.Length == 0 || wanted.Any(id => !ids.Contains(id))
+        int error = s.Role == null || s.Instances.Dungeons == null || wanted.Length == 0 || wanted.Any(id => !ids.Contains(id))
             ? ErrorCodes.Parameter
-            : wanted.Any(id => CurrentState(s.Dungeons).Honors.GetValueOrDefault(key)?.GetValueOrDefault(id) != HonorFinished)
+            : wanted.Any(id => CurrentState(s.Instances.Dungeons).Honors.GetValueOrDefault(key)?.GetValueOrDefault(id) != HonorFinished)
                 ? ErrorCodes.RewardClaimed : 0;
         foreach (long id in error == 0 ? wanted : [])
         {
@@ -272,7 +272,7 @@ public sealed partial class RaidTrialsService
             try { if (awardId > 0) plan = _awards.ResolveDirect(s, awardId); }
             catch (AwardResolutionException e) { _log.LogWarning(e, "Final Trial award {Award} rejected", awardId); }
             if (plan == null || plan.Grants.Count == 0) { error = ErrorCodes.RewardMissing; break; }
-            var next = CurrentState(s.Dungeons!);
+            var next = CurrentState(s.Instances.Dungeons!);
             if (!next.Honors.TryGetValue(key, out var honors)) next.Honors[key] = honors = [];
             honors[id] = HonorReceived;
             var bytes = JsonSerializer.SerializeToUtf8Bytes(next);
@@ -283,10 +283,10 @@ public sealed partial class RaidTrialsService
                         tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "dungeon/honor-award",
                             $"dungeon/honor-award/{s.Role.Id}/{key}/{id}/{next.SeasonStart}", [], plan.Grants,
                             new { Multi = req.MultiDungeonId, Mark = req.MarkId, Honor = id, Award = awardId }));
-                }, committed: () => s.Dungeons = next))
+                }, committed: () => s.Instances.Dungeons = next))
             { error = ErrorCodes.Unknown; break; }
         }
-        if (wanted.Length > 0 && s.Dungeons != null) await SyncAsync(s);
+        if (wanted.Length > 0 && s.Instances.Dungeons != null) await SyncAsync(s);
         await s.SendGameAsync(ClaimHonor, new MultiDungeonClaimHonorAwardResp { Result = error });
     }
 

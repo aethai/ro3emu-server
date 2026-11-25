@@ -49,7 +49,7 @@ public sealed partial class DungeonTests
         {
             await OnLoop(() =>
             {
-                Session(alice).SkillCds.Clear(); Session(alice).SkillModeCds.Clear(); Session(alice).SkillCast = null;
+                Session(alice).Combat.SkillCds.Clear(); Session(alice).Combat.SkillModeCds.Clear(); Session(alice).SkillCast = null;
                 ship.Hp = 1;
                 return Task.CompletedTask;
             });
@@ -62,7 +62,7 @@ public sealed partial class DungeonTests
         // 3 the boarders in three groups, 4 the Evil Boss. The end of stage 2 puts the gunner down; the last shot has
         // long ended for a player who walks over to the first boarder.
         await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser, n => n.DataInfo.EType == InteractInfo.Types.EState.Idle);
-        await OnLoop(() => { Session(alice).SkillCast = null; Session(alice).SkillCds.Clear(); return Task.CompletedTask; });
+        await OnLoop(() => { Session(alice).SkillCast = null; Session(alice).Combat.SkillCds.Clear(); return Task.CompletedTask; });
         for (int group = 0; group < 3; group++)
         {
             await Stage(alice, 3 + group, quest: 3);

@@ -79,8 +79,8 @@ public sealed class LifeJobTests : IAsyncLifetime
         Assert.Equal(2, savedItems.Length); Assert.All(savedItems, i => Assert.Equal(1, i.Stack));
         Assert.Equal(before, roles.LoadLifeJob(id));
         await b.EnterWorldAsync(id);
-        Assert.Equal(1, await OnLoop("alice", s => s.LifeJob!.ActiveLifejob[1]));
-        Assert.Single(await OnLoop("alice", s => s.LifeJob!.ActiveLifejob));
+        Assert.Equal(1, await OnLoop("alice", s => s.Season.LifeJob!.ActiveLifejob[1]));
+        Assert.Single(await OnLoop("alice", s => s.Season.LifeJob!.ActiveLifejob));
     }
 
     [ClientDataFact]
@@ -100,8 +100,8 @@ public sealed class LifeJobTests : IAsyncLifetime
         await b.SendGameAsync(LifeJobService.HealthOne, new GetHealthCostReq { Id = 20001, Type = 0 });
         var one = await Next(b, LifeJobService.HealthNotify, GetHealthCostNtf.Parser);
         Assert.NotEmpty(one.CollectHealthCost); Assert.NotEmpty(one.ForgeHealthCost);
-        Assert.Equal(500, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
-        Assert.Empty(await OnLoop("alice", s => s.LifeJob!.ActiveLifejob));
+        Assert.Equal(500, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
+        Assert.Empty(await OnLoop("alice", s => s.Season.LifeJob!.ActiveLifejob));
         Assert.Equal(0, await OnLoop("alice", s => s.Progress!.Currency.GetValueOrDefault(5)));
         await b.SendGameAsync(LifeJobService.CheckCollect, new GetHealthCostAllReq()); // msgtable request has no fields
         Assert.Equal(ErrorCodes.Parameter, (await Next(b, LifeJobService.CheckCollect, CheckCanCollectNtf.Parser)).Result);
@@ -118,12 +118,12 @@ public sealed class LifeJobTests : IAsyncLifetime
             Assert.Equal(0, reply.Result); Assert.Equal(1, reply.ForgeNum);
             Assert.True(reply.OutputItemMap[1].Items.Where(i => i.ItemEntry is 1001101 or 1001201).Sum(i => i.Stack) >= 2);
             Assert.All(reply.OutputItemMap[1].Items, i => { Assert.NotEqual(112001, i.ItemEntry); Assert.True(i.ItemGuid > 0); });
-            var state = await OnLoop("alice", s => (s.LifeJob!.Clone(), s.Restrictions!.Clone(), s.Items.Where(i => i.Entry == 1293022).Sum(i => i.Stack)));
+            var state = await OnLoop("alice", s => (s.Season.LifeJob!.Clone(), s.Season.Restrictions!.Clone(), s.Items.Where(i => i.Entry == 1293022).Sum(i => i.Stack)));
             Assert.Equal(1, state.Item1.LifeJobInfoMap[2].JobLevel); Assert.Equal(150, state.Item1.LifeJobInfoMap[2].JobExp);
             Assert.Equal(480, state.Item2.RestrictCount[1004].Count); Assert.Equal(8, state.Item3);
             await b.SendGameAsync(LifeJobService.StartForge, new StartForgeReq { ItemUniqueId = 20001, ItemNum = 1 });
             Assert.NotEqual(0, (await Next(b, LifeJobService.StartForge, StartForgeResp.Parser)).Result);
-            Assert.Equal(480, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
+            Assert.Equal(480, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
         }
         await using var again = await InWorld("Alice", false);
         var life = await Next(again, LifeJobService.LifeSync, DBLifeJobInfoIncrement.Parser);
@@ -154,7 +154,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         await b.SendGameAsync(LifeJobService.StartForge, new StartForgeReq { ItemUniqueId = 20001, ItemNum = 1 });
         Assert.Equal(ErrorCodes.Parameter, (await Next(b, LifeJobService.StartForge, StartForgeResp.Parser)).Result);
         var failed = await Craft(b, 2); Assert.NotEqual(0, failed.Result);
-        Assert.Equal(500, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
+        Assert.Equal(500, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
         Assert.Equal(8, await OnLoop("alice", s => s.Items.Where(i => i.Entry == 1293022).Sum(i => i.Stack)));
     }
 
@@ -171,7 +171,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         Assert.Equal(100, await OnLoop("alice", s => LifeJobService.DailyEnergyUsed(s, 1004)));
         Assert.Equal(20, await OnLoop("alice", s => s.Progress!.Currency.GetValueOrDefault(5)));
         Assert.Equal(0, (await Craft(b, 1)).Result);
-        Assert.Equal(1, await OnLoop("alice", s => s.DailyRows!.ActivityData[107].TaskCompleteTimes));
+        Assert.Equal(1, await OnLoop("alice", s => s.Activities.DailyRows!.ActivityData[107].TaskCompleteTimes));
         Assert.Equal(20, await OnLoop("alice", s => s.Progress!.Currency.GetValueOrDefault(5)));
     }
 
@@ -204,8 +204,8 @@ public sealed class LifeJobTests : IAsyncLifetime
             Assert.Equal(6, await OnLoop("alice", s => s.Items.Single(i => i.Entry == 1291002).Stack));
             await b.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 4 });
             Assert.Equal(0, (await Next(b, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
-            Assert.Equal(4500, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
-            Assert.Equal(5, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1005].Count));
+            Assert.Equal(4500, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
+            Assert.Equal(5, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1005].Count));
             Assert.Equal(2, await OnLoop("alice", s => s.Items.Single(i => i.Entry == 1291002).Stack));
         }
         await using var again = await InWorld("Alice", false);
@@ -227,7 +227,7 @@ public sealed class LifeJobTests : IAsyncLifetime
             attack = await OnLoop("alice", s => s.EntityProperties.Single(p => p.Id == 103).Value);
             await b.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 50 });
             Assert.Equal(0, (await Next(b, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
-            Assert.Equal(50, await OnLoop("alice", s => s.LifeJob!.MagicFoodTimes[1001801]));
+            Assert.Equal(50, await OnLoop("alice", s => s.Season.LifeJob!.MagicFoodTimes[1001801]));
             Assert.Equal(attack + 200, await OnLoop("alice", s => s.EntityProperties.Single(p => p.Id == 103).Value));
             await _server.AdvanceAsync(TimeSpan.FromMilliseconds(3100));
             await b.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
@@ -244,14 +244,14 @@ public sealed class LifeJobTests : IAsyncLifetime
     {
         await using var b = await InWorld("Alice"); Assert.Equal(0, await Learn(b, "alice", 1, 1));
         await Next(b, LifeJobService.LifeSync, DBLifeJobInfoIncrement.Parser, m => m.LifeJobInfoMap.ContainsKey(1));
-        Assert.Equal(1, await OnLoop("alice", s => s.LifeJob!.LifeJobInfoMap[1].JobLevel));
-        Assert.True(await OnLoop("alice", s => s.LifeJob!.LifeJobInfoMap[1].GatherInfo.ItemDetails.ContainsKey(100100)));
-        Assert.Empty(await OnLoop("alice", s => s.LifeJob!.LifeJobInfoMap[1].BuildInfo.RecipeList));
+        Assert.Equal(1, await OnLoop("alice", s => s.Season.LifeJob!.LifeJobInfoMap[1].JobLevel));
+        Assert.True(await OnLoop("alice", s => s.Season.LifeJob!.LifeJobInfoMap[1].GatherInfo.ItemDetails.ContainsKey(100100)));
+        Assert.Empty(await OnLoop("alice", s => s.Season.LifeJob!.LifeJobInfoMap[1].BuildInfo.RecipeList));
         Assert.True(await OnLoop("alice", s => _server.Service<FunctionService>().ConditionMet(s, 7000079)));
         Assert.NotEqual(0, await Switch(b, 5, 1));
         await Gm("alice", "!item 1291000 1"); Assert.Equal(0, await Switch(b, 5, 1));
         Assert.False(await OnLoop("alice", s => _server.Service<FunctionService>().ConditionMet(s, 7000079)));
-        Assert.Equal(1, await OnLoop("alice", s => s.LifeJob!.LifeJobInfoMap[1].JobLevel));
+        Assert.Equal(1, await OnLoop("alice", s => s.Season.LifeJob!.LifeJobInfoMap[1].JobLevel));
     }
 
     /// <summary>
@@ -268,7 +268,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
-            s.LifeJob!.LifeJobInfoMap[1].JobLevel = 3;
+            s.Season.LifeJob!.LifeJobInfoMap[1].JobLevel = 3;
             Assert.Equal(0, await life.CompleteGatherAsync(s, 100100, sceneEntry: 10522, pointId: 312));
         });
         Assert.Equal(0, await OnLoop("alice", s => life.CheckGather(s, 100200)));
@@ -303,7 +303,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
-            s.LifeJob!.LifeJobInfoMap[job].JobLevel = level;
+            s.Season.LifeJob!.LifeJobInfoMap[job].JobLevel = level;
             // The first gather of the first tier is what brings the level's unlocks in.
             Assert.Equal(0, await life.CompleteGatherAsync(s, job == 1 ? 100100 : 300100));
             long before = s.Items.Where(i => mainItems.Contains(i.Entry)).Sum(i => (long)i.Stack);
@@ -329,9 +329,9 @@ public sealed class LifeJobTests : IAsyncLifetime
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
-            s.LifeJob!.LifeJobInfoMap[1].JobExp = exp;
+            s.Season.LifeJob!.LifeJobInfoMap[1].JobExp = exp;
             Assert.Equal(0, await life.CompleteGatherAsync(s, 100100));
-            return (s.LifeJob.LifeJobInfoMap[1].JobLevel, s.LifeJob.LifeJobInfoMap[1].JobExp);
+            return (s.Season.LifeJob.LifeJobInfoMap[1].JobLevel, s.Season.LifeJob.LifeJobInfoMap[1].JobExp);
         });
 
         Assert.Equal((1L, 220L), await Gather(0));
@@ -353,11 +353,11 @@ public sealed class LifeJobTests : IAsyncLifetime
             role = (long)b.Self!.Uuid; Assert.Equal(0, await Learn(b, "alice", 1, 1));
             await OnLoop("alice", s =>
             {
-                s.LifeJob!.LifeJobInfoMap[1].JobLevel = 3;
-                s.LifeJob.LifeJobInfoMap[1].GatherInfo.ItemDetails[100200] = 1;
+                s.Season.LifeJob!.LifeJobInfoMap[1].JobLevel = 3;
+                s.Season.LifeJob.LifeJobInfoMap[1].GatherInfo.ItemDetails[100200] = 1;
                 var store = _server.Service<RoleStore>();
-                store.SaveLifeJob(role, s.LifeJob.ToByteArray(), s.Restrictions!.ToByteArray(),
-                    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(s.LifeRuntime));
+                store.SaveLifeJob(role, s.Season.LifeJob.ToByteArray(), s.Season.Restrictions!.ToByteArray(),
+                    System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(s.Season.LifeRuntime));
                 return 0;
             });
         }
@@ -413,14 +413,14 @@ public sealed class LifeJobTests : IAsyncLifetime
             {
                 var cd = Assert.Single((await Next(b, CharacterService.ItemsCdNotify, ItemsCDNotify.Parser)).Items);
                 Assert.Equal(entry, cd.ItemId); Assert.True(cd.ItemCd > 0); itemCd = cd.ItemCd;
-                Assert.Equal(1, await OnLoop("alice", s => s.LifeJob!.MagicFoodTimes[entry]));
+                Assert.Equal(1, await OnLoop("alice", s => s.Season.LifeJob!.MagicFoodTimes[entry]));
                 var saved = DBItemsInfo.Parser.ParseFrom(_server.Service<RoleStore>().LoadBagState(role)!);
                 Assert.Equal(itemCd, saved.ItemCds.Data[entry]);
             }
             else
             {
-                Assert.Equal(1500, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
-                Assert.Equal(5, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1005].Count));
+                Assert.Equal(1500, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
+                Assert.Equal(5, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1005].Count));
             }
             await b.SendGameAsync(CharacterService.ShortcutBarUse, new ShortcutBarUseReq { SlotIndex = 0 });
             Assert.Equal(ErrorCodes.ItemMissing, (await Next(b, CharacterService.ShortcutBarUse, ShortcutBarUseRes.Parser)).Result);
@@ -430,10 +430,10 @@ public sealed class LifeJobTests : IAsyncLifetime
         Assert.DoesNotContain(await OnLoop("alice", s => s.Items.Select(i => i.Entry).ToArray()), id => id == entry);
         if (entry == 1001801)
         {
-            Assert.Equal(1, await OnLoop("alice", s => s.LifeJob!.MagicFoodTimes[entry]));
+            Assert.Equal(1, await OnLoop("alice", s => s.Season.LifeJob!.MagicFoodTimes[entry]));
             Assert.Equal(itemCd, DBItemsInfo.Parser.ParseFrom(_server.Service<RoleStore>().LoadBagState(role)!).ItemCds.Data[entry]);
         }
-        else Assert.Equal(1500, await OnLoop("alice", s => s.Restrictions!.RestrictCount[1004].Count));
+        else Assert.Equal(1500, await OnLoop("alice", s => s.Season.Restrictions!.RestrictCount[1004].Count));
     }
 
     [ClientDataFact]
@@ -448,7 +448,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
-            s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0;
+            s.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0;
             await life.SyncRestrictionsAsync(s);
             Assert.Equal(5000, ((DBRestrictInfo)s.Synced[LifeJobService.RestrictSync]).RestrictCount[LifeJobService.VigorId].Count);
             Assert.Equal(0, await life.CompleteGatherAsync(s, 100100, sceneEntry: 10522, pointId: 312));
@@ -456,7 +456,7 @@ public sealed class LifeJobTests : IAsyncLifetime
 
         var spent = await OnLoop("alice", s => (
             Currency: s.Progress!.Currency.GetValueOrDefault(LifeJobService.VigorCurrencyId),
-            Vigor: s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count,
+            Vigor: s.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count,
             Shown: ((DBRestrictInfo)s.Synced[LifeJobService.RestrictSync]).RestrictCount[LifeJobService.VigorId].Count));
         Assert.Equal(5980, spent.Currency);
         Assert.Equal(0, spent.Vigor);
@@ -475,7 +475,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         var session = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
         for (int use = 1; use <= 11; use++)
         {
-            await loop.InvokeAsync(() => { session.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0; return Task.CompletedTask; });
+            await loop.InvokeAsync(() => { session.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0; return Task.CompletedTask; });
             await b.SendGameAsync(CharacterService.ItemUse, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
             Assert.Equal(use <= 10 ? 0 : CharacterService.ErrUseTimes, (await Next(b, CharacterService.ItemUse, ItemUseResp.Parser)).Result);
         }
@@ -510,14 +510,14 @@ public sealed class LifeJobTests : IAsyncLifetime
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
-            s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0;
+            s.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count = 0;
             Assert.Equal(0, await life.CompleteGatherAsync(s, 100100, sceneEntry: 10522, pointId: 312));
         });
 
         var spent = await OnLoop("alice", s => (
             Currency: s.Progress!.Currency.GetValueOrDefault(LifeJobService.VigorCurrencyId),
-            Vigor: s.Restrictions!.RestrictCount[LifeJobService.VigorId].Count,
-            Used: s.Restrictions.RestrictCount[LifeJobService.VigorId].HistoryUseCount,
+            Vigor: s.Season.Restrictions!.RestrictCount[LifeJobService.VigorId].Count,
+            Used: s.Season.Restrictions.RestrictCount[LifeJobService.VigorId].HistoryUseCount,
             Daily: LifeJobService.DailyEnergyUsed(s, LifeJobService.VigorId)));
         Assert.Equal(0, spent.Currency);
         Assert.Equal(0, spent.Vigor);
@@ -534,7 +534,7 @@ public sealed class LifeJobTests : IAsyncLifetime
         long role = (long)b.Self!.Uuid;
         var roles = _server.Service<RoleStore>();
         long guid = await OnLoop("alice", s => s.Items.Single(i => i.Entry == entry).Guid);
-        var before = await OnLoop("alice", s => (Life: s.LifeJob!.ToByteArray(), Restrict: s.Restrictions!.ToByteArray(), Bag: s.BagState.Info.ToByteArray()));
+        var before = await OnLoop("alice", s => (Life: s.Season.LifeJob!.ToByteArray(), Restrict: s.Season.Restrictions!.ToByteArray(), Bag: s.Profile.BagState.Info.ToByteArray()));
         var savedBag = roles.LoadBagState(role);
         FixtureSql.Execute(_server.Service<AccountStore>(),
             "CREATE TRIGGER reject_item_cooldown BEFORE UPDATE OF bag_state ON role BEGIN SELECT RAISE(ABORT,'cooldown rollback test'); END");
@@ -543,10 +543,10 @@ public sealed class LifeJobTests : IAsyncLifetime
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             await _server.Service<CharacterService>().UseItemAsync(s, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         }));
-        var after = await OnLoop("alice", s => (Life: s.LifeJob!.ToByteArray(), Restrict: s.Restrictions!.ToByteArray(), Bag: s.BagState.Info.ToByteArray()));
+        var after = await OnLoop("alice", s => (Life: s.Season.LifeJob!.ToByteArray(), Restrict: s.Season.Restrictions!.ToByteArray(), Bag: s.Profile.BagState.Info.ToByteArray()));
         Assert.Equal(before.Life, after.Life); Assert.Equal(before.Restrict, after.Restrict); Assert.Equal(before.Bag, after.Bag);
         Assert.Equal(1, await OnLoop("alice", s => s.Items.Single(i => i.Guid == guid).Stack));
-        Assert.Equal(0, await OnLoop("alice", s => s.ItemCds.GetValueOrDefault(entry)));
+        Assert.Equal(0, await OnLoop("alice", s => s.Combat.ItemCds.GetValueOrDefault(entry)));
         Assert.Equal(1, _server.Service<ItemStore>().Load(role).Single(i => i.Guid == guid).Stack);
         Assert.Equal(before.Life, roles.LoadLifeJob(role)); Assert.Equal(before.Restrict, roles.LoadLifeRestrict(role));
         Assert.Equal(savedBag, roles.LoadBagState(role));
@@ -582,8 +582,8 @@ public sealed class LifeJobTests : IAsyncLifetime
                 await character.UseItemAsync(s, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         }));
         Assert.Equal("post-commit hook test", failure.Message);
-        var state = await OnLoop("alice", s => (Cd: s.ItemCds.GetValueOrDefault(1001801), BagCd: s.BagState.Info.ItemCds?.Data.GetValueOrDefault(1001801) ?? 0,
-            Stack: s.Items.Single(i => i.Guid == guid).Stack, Food: s.LifeJob!.MagicFoodTimes[1001801]));
+        var state = await OnLoop("alice", s => (Cd: s.Combat.ItemCds.GetValueOrDefault(1001801), BagCd: s.Profile.BagState.Info.ItemCds?.Data.GetValueOrDefault(1001801) ?? 0,
+            Stack: s.Items.Single(i => i.Guid == guid).Stack, Food: s.Season.LifeJob!.MagicFoodTimes[1001801]));
         Assert.True(state.Cd > 0); Assert.Equal(state.Cd, state.BagCd);
         Assert.Equal(1, state.Stack); Assert.Equal(1, state.Food);
         var roles = _server.Service<RoleStore>();
@@ -599,14 +599,14 @@ public sealed class LifeJobTests : IAsyncLifetime
         var roles = _server.Service<RoleStore>();
         FixtureSql.Execute(_server.Service<AccountStore>(),
             "CREATE TRIGGER reject_life BEFORE UPDATE OF lifejob ON role BEGIN SELECT RAISE(ABORT,'life rollback test'); END");
-        var before = await OnLoop("alice", s => (s.LifeJob!.ToByteArray(), s.Items.Select(i => (i.Guid, i.Entry, i.Stack)).ToArray()));
+        var before = await OnLoop("alice", s => (s.Season.LifeJob!.ToByteArray(), s.Items.Select(i => (i.Guid, i.Entry, i.Stack)).ToArray()));
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => _server.Service<GameLoop>().InvokeAsync(async () =>
         {
             var s = _server.Service<SessionRegistry>().All().Single(s => s.Account == "alice");
             using var gate = await CharacterService.Lock(s);
             await _server.Service<LifeJobService>().CompleteGatherAsync(s, 100100, sceneEntry: 10522, pointId: 312);
         }));
-        var after = await OnLoop("alice", s => (s.LifeJob!.ToByteArray(), s.Items.Select(i => (i.Guid, i.Entry, i.Stack)).ToArray(), s.Restrictions!.RestrictCount[1004].Count));
+        var after = await OnLoop("alice", s => (s.Season.LifeJob!.ToByteArray(), s.Items.Select(i => (i.Guid, i.Entry, i.Stack)).ToArray(), s.Season.Restrictions!.RestrictCount[1004].Count));
         Assert.Equal(before.Item1, after.Item1); Assert.Equal(before.Item2, after.Item2); Assert.Equal(500, after.Item3);
         long role = (long)b.Self!.Uuid;
         Assert.Equal(before.Item1, roles.LoadLifeJob(role));

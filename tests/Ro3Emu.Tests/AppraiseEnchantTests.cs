@@ -375,12 +375,12 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
         var scroll = await Give(Scroll, stack);
         await Gm("alice", "!item 2 10000");
         string before = Snapshot();
-        long version = Session().SyncVersions[CharacterService.ItemsSync];
+        long version = Session().Profile.SyncVersions[CharacterService.ItemsSync];
         string target = failCurrency ? $"role WHEN NEW.id = {Session().Role!.Id}" : $"item WHEN NEW.guid = {gear.Guid}";
         ExecuteSql($"CREATE TRIGGER fail_enchant BEFORE UPDATE ON {target} BEGIN SELECT RAISE(ABORT, 'injected enchant write failure'); END;");
         Assert.Equal(ErrorCodes.Unknown, (await Apply(alice, gear.Guid, scroll.Guid)).Result);
         Assert.Equal(before, Snapshot());
-        Assert.Equal(version, Session().SyncVersions[CharacterService.ItemsSync]);
+        Assert.Equal(version, Session().Profile.SyncVersions[CharacterService.ItemsSync]);
         ExecuteSql("DROP TRIGGER fail_enchant;");
         Assert.Equal(0, (await Apply(alice, gear.Guid, scroll.Guid)).Result);
         // A completed task award may have replaced the inventory snapshot since Give returned.
@@ -454,7 +454,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
 
         static void Deploy(GameSession s, long mark, int echoes, int lit)
         {
-            s.Emblems.Plans[s.Emblems.CurrentPlan].Slots.Clear();
+            s.Profile.Emblems.Plans[s.Profile.Emblems.CurrentPlan].Slots.Clear();
             s.Items.RemoveAll(i => i.Entry == echo);
             for (int slot = 1; slot <= echoes; slot++)
             {
@@ -465,7 +465,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
                 };
                 for (int i = 0; i < lit; i++) item.Attrs[1021 + i] = mark;
                 s.Items.Add(item);
-                s.Emblems.Plans[s.Emblems.CurrentPlan].Slots[slot] = item.Guid;
+                s.Profile.Emblems.Plans[s.Profile.Emblems.CurrentPlan].Slots[slot] = item.Guid;
             }
         }
     }

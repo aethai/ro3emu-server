@@ -171,7 +171,7 @@ public sealed class SkillBuffTests : IAsyncLifetime
         Assert.True(offer.ExpireTimestampMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         await alice.SendGameAsync(BuffService.ImmuneDeathConfirm, new PlayerConfirmImmuneDeadReq { IsConfirm = true });
         Assert.Equal(0, (await Next(alice, BuffService.ImmuneDeathConfirm, PlayerConfirmImmuneDeadRsp.Parser)).Result);
-        Assert.Null(session.ImmuneDeathOffer);
+        Assert.Null(session.Combat.ImmuneDeathOffer);
         Assert.False(session.Dead);
     }
 
@@ -185,21 +185,21 @@ public sealed class SkillBuffTests : IAsyncLifetime
         await Next(alice, BuffService.ImmuneDeathNotify, PlayerOnEnterImmuneDeadNotify.Parser);
         await Run(() =>
         {
-            session.ImmuneDeathOffer = session.ImmuneDeathOffer! with { ExpiresMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 30000 };
+            session.Combat.ImmuneDeathOffer = session.Combat.ImmuneDeathOffer! with { ExpiresMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 30000 };
             return Task.CompletedTask;
         });
-        var pending = session.ImmuneDeathOffer;
+        var pending = session.Combat.ImmuneDeathOffer;
         await alice.SendGameAsync(SceneService.SceneTeleport, new SceneTeleportReq { TargetMapId = 10100 });
         Assert.Equal(0, (await Next(alice, SceneService.SceneTeleport, SceneTeleportRsp.Parser)).Result);
         await Next(alice, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser, m => m.SceneEntry == 10100);
         await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 10100 });
         await Next(alice, MsgId.EntitySelf, EntitySelf.Parser);
-        Assert.Same(pending, session.ImmuneDeathOffer);
+        Assert.Same(pending, session.Combat.ImmuneDeathOffer);
         await alice.SendGameAsync(BuffService.ImmuneDeathConfirm, new PlayerConfirmImmuneDeadReq { IsConfirm = false });
         Assert.Equal(0, (await Next(alice, BuffService.ImmuneDeathConfirm, PlayerConfirmImmuneDeadRsp.Parser)).Result);
         await Next(alice, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, m => m.BDead);
         Assert.True(session.Dead);
-        Assert.Null(session.ImmuneDeathOffer);
+        Assert.Null(session.Combat.ImmuneDeathOffer);
     }
 
     [ClientDataFact]
@@ -217,11 +217,11 @@ public sealed class SkillBuffTests : IAsyncLifetime
             x => x.EnergyConfigId == 540001 && x.EnergyValue == 1);
         Assert.Equal(1, charged.EnergyValue);
         await Run(() => Buffs.ReconcileEnergyAsync(session)); // ordinary same-job progress callback cannot refill
-        Assert.Equal(1, session.Energy[540001].Value);
+        Assert.Equal(1, session.Combat.Energy[540001].Value);
         await Gm("alice", "!job 4400");
         var newJob = await Next(alice, BuffService.EnergyNotify, PlayerEnergyNotify.Parser, x => x.EnergyConfigId == 440001);
         Assert.Equal(2, newJob.EnergyValue);
-        Assert.False(session.Energy.ContainsKey(540001));
+        Assert.False(session.Combat.Energy.ContainsKey(540001));
     }
 
     /// <summary>EnergyConfig 540001 recovers 1 every 7.5 s (_iAutoRecoverInterval 7500). Recovery changes only the role's own
@@ -240,7 +240,7 @@ public sealed class SkillBuffTests : IAsyncLifetime
         var recovered = PlayerEnergyNotify.Parser.ParseFrom((await alice.Inbox.WaitAsync(e => e.IsGame(BuffService.EnergyNotify) &&
             PlayerEnergyNotify.Parser.ParseFrom(e.Body) is { EnergyConfigId: 540001, EnergyValue: 2 }, TimeSpan.FromSeconds(15))).Body);
         Assert.Equal((EPlayerEnergyChangeReason)1, recovered.ChangeReason);
-        Assert.Equal(2, session.Energy[540001].Value);
+        Assert.Equal(2, session.Combat.Energy[540001].Value);
         var loop = _app.Services.GetRequiredService<GameLoop>();
         var report = System.Text.Json.JsonSerializer.SerializeToNode(
             await loop.InvokeAsync(() => Task.FromResult(loop.Owners!.Snapshot())))!;

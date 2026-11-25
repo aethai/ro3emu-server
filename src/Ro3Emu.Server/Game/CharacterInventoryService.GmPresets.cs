@@ -22,7 +22,7 @@ public sealed partial class CharacterInventoryService
         if (stats.Any(v => v is < 1 or > MaxStat)) return $"Recommended stats {string.Join('/', stats)} are out of range.";
         if (stats.Sum(StatCost) > TotalPoints(p)) return $"Recommended stats {string.Join('/', stats)} cost more than the role's {TotalPoints(p)} points.";
         stats.CopyTo(p.Stats, 0);
-        var plans = session.StatPlans.Info.Clone();
+        var plans = session.Profile.StatPlans.Info.Clone();
         plans.AllPlanBaseProperty[plans.CurPlanIndex] = CurrentPlan(p, plans.AllPlanBaseProperty[plans.CurPlanIndex]);
         await CommitStatsAsync(session, "gm-profession-stats", p, plans);
         await SendStatPlanAsync(session);

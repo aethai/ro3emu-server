@@ -34,7 +34,7 @@ public sealed partial class RaidTrialsService
     /// on to the next boss - where the live attempt no longer exists.
     /// </summary>
     private static DungeonStatisticsInfoWithDungeon? NewestStored(GameSession s) =>
-        s.Dungeons is { Statistics.Count: > 0 } state
+        s.Instances.Dungeons is { Statistics.Count: > 0 } state
             ? DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(state.Statistics.MaxBy(entry => entry.Key).Value) : null;
 
     /// <summary>30110's per-role rows of one report.</summary>
@@ -100,7 +100,7 @@ public sealed partial class RaidTrialsService
             foreach (long id in req.StaisticsIds.Distinct())
             {
                 if (s.DungeonAttempt is { } a && a.Room.Id == id) msg.DungeonStatistics.Add(StatisticsOf(a));
-                else if (s.Dungeons?.Statistics.TryGetValue(id, out var bytes) == true)
+                else if (s.Instances.Dungeons?.Statistics.TryGetValue(id, out var bytes) == true)
                     msg.DungeonStatistics.Add(DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(bytes));
             }
             if (msg.DungeonStatistics.Count == 0) msg.Result = ErrorCodes.NoPermission;
@@ -111,9 +111,9 @@ public sealed partial class RaidTrialsService
     public Task QueryResultAsync(GameSession s, QueryDungeonResultReq req)
     {
         var response = new QueryDungeonResultResp(); // Schema has no error field. Unknown/foreign result ids stay absent.
-        if (req.ResultIds.Count <= 20 && s.Dungeons != null)
+        if (req.ResultIds.Count <= 20 && s.Instances.Dungeons != null)
             foreach (var id in req.ResultIds.Distinct())
-                if (s.Dungeons.Results.TryGetValue(id, out var bytes)) response.Results.Add(DBDungeonResultData.Parser.ParseFrom(bytes));
+                if (s.Instances.Dungeons.Results.TryGetValue(id, out var bytes)) response.Results.Add(DBDungeonResultData.Parser.ParseFrom(bytes));
         return s.SendGameAsync(QueryResult, response);
     }
 
@@ -143,9 +143,9 @@ public sealed partial class RaidTrialsService
     /// </summary>
     public async Task StoreExternalResultAsync(GameSession s, DungeonResultNotify notice)
     {
-        if (s.Role == null || s.Dungeons == null) return;
+        if (s.Role == null || s.Instances.Dungeons == null) return;
         using var stateLock = await CharacterService.Lock(s);
-        var state = CurrentState(s.Dungeons);
+        var state = CurrentState(s.Instances.Dungeons);
         var info = notice.ResultInfo;
         var result = new DBDungeonResultData
         {

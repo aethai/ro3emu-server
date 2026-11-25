@@ -10,7 +10,7 @@ public sealed partial class SkillCombatTests
 
     private async Task CastAndWait(Ro3Emu.Bot.BotClient bot, int skill, Ro3Emu.Server.Maps.MonsterUnit target)
     {
-        await Loop.InvokeAsync(() => { Session("alice").SkillCds.Clear(); Session("alice").SkillModeCds.Clear(); return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { Session("alice").Combat.SkillCds.Clear(); Session("alice").Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
         await CastAtAsync(bot, skill, target);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == target.Uid));
@@ -33,10 +33,10 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var (bot, a, dummy) = await ReadyAsync(alice, 5400, 15302, 1530201);
-        await Loop.InvokeAsync(() => { a.Energy[540002].Value = 4; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.Energy[540002].Value = 4; return Task.CompletedTask; });
         await CastAndWait(bot, 1530201, dummy);
-        Assert.Equal(0, a.Energy[540002].Value);
-        Assert.False(a.SkillCds.ContainsKey(15302));
+        Assert.Equal(0, a.Combat.Energy[540002].Value);
+        Assert.False(a.Combat.SkillCds.ContainsKey(15302));
     }
 
     [ClientDataFact] // Vulcan Arm: "Every 15 casts": one cast loads nothing
@@ -74,10 +74,10 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var (bot, a, dummy) = await ReadyAsync(alice, 1400, 11315, 1131501);
-        await Loop.InvokeAsync(() => { a.Energy[140001].Value = 5; a.Energy[140002].Value = 0; a.Energy[140002].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Combat.Energy[140001].Value = 5; a.Combat.Energy[140002].Value = 0; a.Combat.Energy[140002].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
         await CastAndWait(bot, 1131501, dummy);
-        Assert.Equal(0, a.Energy[140001].Value);
-        Assert.Equal(1, a.Energy[140002].Value);
+        Assert.Equal(0, a.Combat.Energy[140001].Value);
+        Assert.Equal(1, a.Combat.Energy[140002].Value);
     }
 
     [ClientDataFact] // Flame Launcher: Cannon Enhance switches Arm Cannon's mode until spent, so its slot counts nothing down and the buffs carry no time

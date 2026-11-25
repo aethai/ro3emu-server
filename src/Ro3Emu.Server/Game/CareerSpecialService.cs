@@ -46,17 +46,17 @@ public sealed partial class CareerSpecialService
     }
 
     /// <summary>The mount slot's lease entitles MountService's battle slot 2.</summary>
-    public static bool IsLeasedMount(GameSession s, long id) => id != 0 && s.CareerSpecial?.MountsSlot?.CartRemouldCfg == id;
+    public static bool IsLeasedMount(GameSession s, long id) => id != 0 && s.Profile.CareerSpecial?.MountsSlot?.CartRemouldCfg == id;
 
     /// <summary>TaskConfig target 309003 RentCareerSpecialSubType [309003, _iSubType]: a lease of that subtype is held now.</summary>
     public static bool HoldsSubType(GameSession s, GameData data, long subType) =>
-        s.CareerSpecial is { } info && new[] { info.PendantSlot?.CartRemouldCfg ?? 0, info.MountsSlot?.CartRemouldCfg ?? 0 }
+        s.Profile.CareerSpecial is { } info && new[] { info.PendantSlot?.CartRemouldCfg ?? 0, info.MountsSlot?.CartRemouldCfg ?? 0 }
             .Any(id => id != 0 && data.Row("CartRemouldTable", id) is { } row && GameData.Int(row, "_iSubType") == subType);
 
     /// <summary>EntityBase.pendantInfo of the leased items (self and AOI). Piles 1 is inferred: these rows have _iMaxLayer 0.</summary>
     public static void PopulateEntity(GameSession s, EntityBase entity)
     {
-        foreach (int pendant in s.CareerPendants) entity.PendantInfo[pendant] = Pendant(s, pendant);
+        foreach (int pendant in s.Profile.CareerPendants) entity.PendantInfo[pendant] = Pendant(s, pendant);
     }
 
     /// <summary>
@@ -67,10 +67,10 @@ public sealed partial class CareerSpecialService
     private static PendantData Pendant(GameSession s, int pendant) => new()
     {
         PendantId = pendant, Piles = 1,
-        IsHide = pendant == s.CareerMountPendant && MountService.Rider(s) == s.CareerSpecial?.MountsSlot?.CartRemouldCfg,
+        IsHide = pendant == s.Profile.CareerMountPendant && MountService.Rider(s) == s.Profile.CareerSpecial?.MountsSlot?.CartRemouldCfg,
     };
 
-    private Task RideChangedAsync(GameSession s) => s.CareerMountPendant == 0 ? Task.CompletedTask : PendantsAsync(s, s.CareerPendants);
+    private Task RideChangedAsync(GameSession s) => s.Profile.CareerMountPendant == 0 ? Task.CompletedTask : PendantsAsync(s, s.Profile.CareerPendants);
 
     // ------------------------------------------------------------------ load / 5002
 
@@ -81,12 +81,12 @@ public sealed partial class CareerSpecialService
         var info = bytes is { Length: > 0 } ? DBCareerSpecial.Parser.ParseFrom(bytes) : new DBCareerSpecial();
         Shape(info);
         if (Repair(s, info)) _roles.SaveCareerSpecial(s.Role.Id, info.ToByteArray());
-        s.CareerSpecial = info;
+        s.Profile.CareerSpecial = info;
         SetPendants(s, info);
     }
 
     /// <summary>5002: the equipment window reads SpecialPropData.pendantSlot/mountsSlot unguarded, so it always goes out.</summary>
-    public Task LoginAsync(GameSession s) => CharacterService.SyncAsync(s, Sync, s.CareerSpecial!.Clone());
+    public Task LoginAsync(GameSession s) => CharacterService.SyncAsync(s, Sync, s.Profile.CareerSpecial!.Clone());
 
     // Both slots always present: the Lua handlers compare cartRemouldCfg with 0 (LC_DAL_Equipment.lua:515-560).
     private static void Shape(DBCareerSpecial info)
@@ -102,8 +102,8 @@ public sealed partial class CareerSpecialService
 
     private void SetPendants(GameSession s, DBCareerSpecial info)
     {
-        s.CareerMountPendant = PendantOf(info.MountsSlot.CartRemouldCfg);
-        s.CareerPendants = [.. new[] { PendantOf(info.PendantSlot.CartRemouldCfg), s.CareerMountPendant }.Where(p => p != 0).Distinct()];
+        s.Profile.CareerMountPendant = PendantOf(info.MountsSlot.CartRemouldCfg);
+        s.Profile.CareerPendants = [.. new[] { PendantOf(info.PendantSlot.CartRemouldCfg), s.Profile.CareerMountPendant }.Where(p => p != 0).Distinct()];
     }
 
     /// <summary>Who may lease: LC_EquipmentHelper.CanWearProfessionItem, plus the unused _iTaskId (error 1104).</summary>
@@ -148,18 +148,18 @@ public sealed partial class CareerSpecialService
         long id = req.CartRemouldCfgId;
         var row = Row(id);
         int type = row is { } r ? (int)GameData.Int(r, "_iType") : 0;
-        int result = s.CareerSpecial == null ? ErrorCodes.FeatureUnavailable
+        int result = s.Profile.CareerSpecial == null ? ErrorCodes.FeatureUnavailable
             : row == null || type is not (PendantType or MountType) ? ErrMissing
             : !_functions.IsOpen(s, Function) ? ErrorCodes.FunctionLocked
             : Entitlement(s, row);
-        long previous = result != 0 ? 0 : type == PendantType ? s.CareerSpecial!.PendantSlot.CartRemouldCfg : s.CareerSpecial!.MountsSlot.CartRemouldCfg;
+        long previous = result != 0 ? 0 : type == PendantType ? s.Profile.CareerSpecial!.PendantSlot.CartRemouldCfg : s.Profile.CareerSpecial!.MountsSlot.CartRemouldCfg;
         // Trading the cart for a non-cart would strand pack 100 (the client's own 23034 rule, inferred for a swap).
         if (result == 0 && previous != id && IsCart(previous) && !IsCart(id) && CartHasItems(s)) result = ErrCartNotEmpty;
         bool changed = result == 0 && previous != id;
-        var shown = s.CareerPendants;
+        var shown = s.Profile.CareerPendants;
         if (changed)
         {
-            var next = s.CareerSpecial!.Clone();
+            var next = s.Profile.CareerSpecial!.Clone();
             if (type == PendantType) next.PendantSlot.CartRemouldCfg = id;
             else next.MountsSlot.CartRemouldCfg = id;
             await CommitAsync(s, next, "lease", type == MountType ? BattleSlot(s, id, previous) : null);
@@ -175,16 +175,16 @@ public sealed partial class CareerSpecialService
         long id = req.CartRemouldCfgId;
         var row = Row(id);
         int type = row is { } r ? (int)GameData.Int(r, "_iType") : 0;
-        long held = s.CareerSpecial == null ? 0 : type == PendantType ? s.CareerSpecial.PendantSlot.CartRemouldCfg
-            : type == MountType ? s.CareerSpecial.MountsSlot.CartRemouldCfg : 0;
-        int result = s.CareerSpecial == null ? ErrorCodes.FeatureUnavailable
+        long held = s.Profile.CareerSpecial == null ? 0 : type == PendantType ? s.Profile.CareerSpecial.PendantSlot.CartRemouldCfg
+            : type == MountType ? s.Profile.CareerSpecial.MountsSlot.CartRemouldCfg : 0;
+        int result = s.Profile.CareerSpecial == null ? ErrorCodes.FeatureUnavailable
             : row == null || type is not (PendantType or MountType) ? ErrMissing
             : held != id ? ErrNotLeased
             : IsCart(id) && CartHasItems(s) ? ErrCartNotEmpty : 0;
-        var shown = s.CareerPendants;
+        var shown = s.Profile.CareerPendants;
         if (result == 0)
         {
-            var next = s.CareerSpecial!.Clone();
+            var next = s.Profile.CareerSpecial!.Clone();
             if (type == PendantType) next.PendantSlot.CartRemouldCfg = 0;
             else next.MountsSlot.CartRemouldCfg = 0;
             await CommitAsync(s, next, "cancel", type == MountType ? BattleSlot(s, 0, id) : null);
@@ -222,7 +222,7 @@ public sealed partial class CareerSpecialService
         }));
         await _roles.CommitAsync(tx, "career-special/" + action, _ =>
         {
-            s.CareerSpecial = next;
+            s.Profile.CareerSpecial = next;
             SetPendants(s, next);
             if (nextMounts != null) s.Mounts = nextMounts;
         });
@@ -235,7 +235,7 @@ public sealed partial class CareerSpecialService
         if (mountSlot) await _mounts.PublishAsync(s);
         // A talent can depend on the leased pendant (Falcon's Might: SpecialEffect type 20 on the falcon's subtype).
         else await _character.RefreshStatsAsync(s);
-        if (!shown.SequenceEqual(s.CareerPendants)) await PendantsAsync(s, shown);
+        if (!shown.SequenceEqual(s.Profile.CareerPendants)) await PendantsAsync(s, shown);
         foreach (var handler in _character.StateChanged.Handlers) handler(s);
     }
 
@@ -246,8 +246,8 @@ public sealed partial class CareerSpecialService
     private async Task PendantsAsync(GameSession s, int[] shown)
     {
         var packet = new PendantUpdate { EntityID = s.Role!.Id };
-        foreach (int pendant in s.CareerPendants) packet.PendantInfo[pendant] = Pendant(s, pendant);
-        foreach (int gone in shown.Except(s.CareerPendants)) packet.PendantInfo[gone] = new PendantData { PendantId = gone, Piles = 1, IsHide = true };
+        foreach (int pendant in s.Profile.CareerPendants) packet.PendantInfo[pendant] = Pendant(s, pendant);
+        foreach (int gone in shown.Except(s.Profile.CareerPendants)) packet.PendantInfo[gone] = new PendantData { PendantId = gone, Piles = 1, IsHide = true };
         await s.SendGameAsync(WorldEffectsService.Pendant, packet);
         if (!s.Owners!.AllowsPresentation(s)) return;
         foreach (var viewer in _world.Viewers(s))
@@ -263,14 +263,14 @@ public sealed partial class CareerSpecialService
 
     private async Task ReconcileCoreAsync(GameSession s)
     {
-        if (s.CareerSpecial == null || s.Role == null) return;
+        if (s.Profile.CareerSpecial == null || s.Role == null) return;
         using var gate = await CharacterService.Lock(s);
-        if (s.CareerSpecial == null) return;
-        var next = s.CareerSpecial.Clone();
+        if (s.Profile.CareerSpecial == null) return;
+        var next = s.Profile.CareerSpecial.Clone();
         long oldMount = next.MountsSlot.CartRemouldCfg;
         if (!Repair(s, next)) return;
         bool mountSlot = oldMount != next.MountsSlot.CartRemouldCfg;
-        var shown = s.CareerPendants;
+        var shown = s.Profile.CareerPendants;
         await CommitAsync(s, next, "repair", mountSlot ? BattleSlot(s, 0, oldMount) : null);
         await PublishAsync(s, mountSlot, shown);
     }

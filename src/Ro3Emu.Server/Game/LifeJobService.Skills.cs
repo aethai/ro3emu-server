@@ -14,7 +14,7 @@ public sealed partial class LifeJobService
 
     private IEnumerable<LifeSkill> SelectedSkills(GameSession s, DBLifeJobInfo? selectedLife = null)
     {
-        if ((selectedLife ?? s.LifeJob) is not { } life) yield break;
+        if ((selectedLife ?? s.Season.LifeJob) is not { } life) yield break;
         foreach (long job in life.ActiveLifejob.Values.Distinct())
         {
             if (!life.LifeJobInfoMap.TryGetValue(job, out var info)) continue;
@@ -43,7 +43,7 @@ public sealed partial class LifeJobService
     private static long Extra(LifeSkill skill, int at) => skill.Extra.Length > at ? skill.Extra[at] : 0;
     private static bool Chance(long perHundredThousand) => Random.Shared.NextInt64(100_000)
         < Math.Clamp(perHundredThousand, 0, 100_000);
-    private bool BothActiveOfType(GameSession s, long type) => s.LifeJob is { } life
+    private bool BothActiveOfType(GameSession s, long type) => s.Season.LifeJob is { } life
         && life.ActiveLifejob.Count == 2 && life.ActiveLifejob.Values.All(job =>
             _data.Row("LifeJobConfig", job) is { } row && GameData.Int(row, "_iType") == type);
     private static bool HasCategory(JsonElement row, bool forge, long category) => category > 0
@@ -114,7 +114,7 @@ public sealed partial class LifeJobService
     /// <summary>Ordinary restriction cap plus selected title skills; threshold/title interpretation is inferred.</summary>
     private long VigorLimit(GameSession s, DBLifeJobInfo? nextLife = null)
     {
-        var life = nextLife ?? s.LifeJob;
+        var life = nextLife ?? s.Season.LifeJob;
         long limit = RestrictMax(VigorId);
         foreach (var skill in SelectedSkills(s, life))
         {

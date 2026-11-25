@@ -101,7 +101,7 @@ public sealed class SkillProtocolTests : IAsyncLifetime
             // different from the selected level 1 in the active manual wheel slot.
             session.Progress!.Skills[10011] = 2;
             session.Progress.SkillBar[3] = 10011;
-            var plan = session.SkillPlans!.SkillAssignPlans[session.SkillPlans.CurrentPlanIndex];
+            var plan = session.Combat.SkillPlans!.SkillAssignPlans[session.Combat.SkillPlans.CurrentPlanIndex];
             while (plan.ManualLoadSkill.Count < 3) plan.ManualLoadSkill.Add(new SkillData());
             plan.ManualLoadSkill[2] = new SkillData { SkillId = 10011, SkillLevel = 1 };
             return Task.CompletedTask;
@@ -126,7 +126,7 @@ public sealed class SkillProtocolTests : IAsyncLifetime
 
         await alice.SendGameAsync(CombatService.TrainingOperation, new BattleTrainingGroundOpReq { OpType = (BattleTrainingGroundOpType)1 });
         Assert.Equal(0, (await Next(alice, CombatService.TrainingOperation, BattleTrainingGroundOpResp.Parser)).Result);
-        Assert.True(session.SkillProtocol.TrainingPaused);
+        Assert.True(session.Combat.SkillProtocol.TrainingPaused);
         int before = alice.Inbox.Snapshot().Count(e => e.IsGame(CombatService.DamageStatistics));
         var actual = new Romsg.DamageStatistics
         {

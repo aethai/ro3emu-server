@@ -235,7 +235,7 @@ public sealed partial class GatheringService : IGameTicker, Messaging.INpcIntera
     private static int PersonalCount(GameSession session, GatheringUnit node)
     {
         int live = node.PersonalCounts.GetValueOrDefault(session.Role!.Id);
-        int saved = session.LifeJob?.GeneralCollectionTimesByMap.GetValueOrDefault(node.SceneEntry)?
+        int saved = session.Season.LifeJob?.GeneralCollectionTimesByMap.GetValueOrDefault(node.SceneEntry)?
             .Times.GetValueOrDefault(node.Source.Id) ?? 0;
         return Math.Max(live, saved);
     }
@@ -566,7 +566,7 @@ public sealed partial class GatheringService : IGameTicker, Messaging.INpcIntera
     {
         var node = pending.Node;
         if (session.Role == null || session.SceneLoading || session.Dead || session.SceneEntry != node.SceneEntry
-            || session.WorldScene != node.WorldScene || session.LastCombatMs >= pending.StartedMs
+            || session.WorldScene != node.WorldScene || session.Combat.LastCombatMs >= pending.StartedMs
             || !_runtimes.TryGetValue(node.RuntimeMap, out var owner) || owner.Retired
             || !_nodes.ContainsKey(node.Uid) || node.Depleted || !Near(session, node)
             || Moved(session.Position, pending.StartPosition)) return ErrorCodes.NpcMissing;

@@ -56,8 +56,8 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         if (day == _gameDay) return;
         _gameDay = day;
         foreach (var session in _sessions.All())
-            if (session.Role != null && session.Shop is { Bought.Count: > 0 })
-                _loop.PostOwned(session, () => session.Shop != null && session.Role != null ? SyncAsync(session) : Task.CompletedTask);
+            if (session.Role != null && session.Social.Shop is { Bought.Count: > 0 })
+                _loop.PostOwned(session, () => session.Social.Shop != null && session.Role != null ? SyncAsync(session) : Task.CompletedTask);
     }
 
     /// <summary>Saved per role: purchase counters with the period they were counted in, and favourites.</summary>
@@ -78,11 +78,11 @@ public sealed partial class ShopService(GameData data, CharacterService characte
     public async Task LoginAsync(GameSession session)
     {
         var saved = _roles.LoadShop(session.Role!.Id);
-        session.Shop = saved != null ? JsonSerializer.Deserialize<ShopState>(saved) ?? new ShopState() : new ShopState();
+        session.Social.Shop = saved != null ? JsonSerializer.Deserialize<ShopState>(saved) ?? new ShopState() : new ShopState();
         // Before explicit rollover existed all seasonal counters used the empty lifetime key in season 1.
         // Preserve that purchase history in cycle 1; a later cycle naturally resets its seasonal allowance.
         bool migrated = false;
-        foreach (var (id, counter) in session.Shop.Bought)
+        foreach (var (id, counter) in session.Social.Shop.Bought)
             if (counter.Period == "" && _data.Row("ShopCommodityConfig", id) is { } row && Family(row) == 5)
             { counter.Period = "S1"; migrated = true; }
         if (migrated) Save(session);
@@ -93,13 +93,13 @@ public sealed partial class ShopService(GameData data, CharacterService characte
     private Task SyncAsync(GameSession session)
     {
         var info = new DBShopInfo { ShoppingCartProtocolVersion = 0 }; // 0: the client keeps its own appearance cart
-        foreach (var (id, counter) in session.Shop!.Bought)
+        foreach (var (id, counter) in session.Social.Shop!.Bought)
             if (Current(session, id, counter) is var n and > 0) info.CommodityBuyTimes[id] = n;
-        foreach (var id in session.Shop.Favorites) info.CollectCommodities[id] = true; // removed favourites are deleted keys
+        foreach (var id in session.Social.Shop.Favorites) info.CollectCommodities[id] = true; // removed favourites are deleted keys
         return CharacterService.SyncAsync(session, ShopSync, info);
     }
 
-    private void Save(GameSession session) => _roles.SaveShop(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(session.Shop));
+    private void Save(GameSession session) => _roles.SaveShop(session.Role!.Id, JsonSerializer.SerializeToUtf8Bytes(session.Social.Shop));
 
     // ---- buying ----
 
@@ -137,7 +137,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             : count < 1 ? new(ErrorCodes.Parameter, "bad count")
             : Unavailable(session, c);
         int unit = row is { } r ? UnitPrice(session, r) : 0;
-        int bought = row is { } r2 ? Current(session, commodityId, session.Shop!.Bought.GetValueOrDefault(commodityId)) : 0;
+        int bought = row is { } r2 ? Current(session, commodityId, session.Social.Shop!.Bought.GetValueOrDefault(commodityId)) : 0;
         if (error == null && GameData.Int(row!.Value, "_iPurchaseNum") is var limit and > 0 && (long)bought + count > limit) error = new(ErrorCodes.PurchaseLimit, $"limit {bought}/{limit}");
         if (error == null && (long)bought + count > int.MaxValue) error = new(ErrorCodes.Parameter, "counter overflow");
         int appearance = row is { } r3 ? (int)GameData.Int(r3, "_iAppearanceId") : 0;
@@ -146,7 +146,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         {
             int currency = PaymentItem(row!.Value);
             var cost = currency > 0 && unit > 0 ? new[] { (currency, (long)unit) } : [];
-            var next = Copy(session.Shop!);
+            var next = Copy(session.Social.Shop!);
             next.Bought[commodityId] = new Counter { Count = bought + 1, Period = Period(Family(row.Value), session) };
             long awardGroup = GameData.Int(row.Value, "_iAppearanceAwardId");
             AwardPlan? bonus = null;
@@ -157,7 +157,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             {
                 int code = await _wardrobe.BuyFromShopLockedAsync(session, appearance, Parts(row.Value), cost, bonus,
                     persistShop: tx => tx.RoleBlob(session.Role!.Id, "shop", JsonSerializer.SerializeToUtf8Bytes(next)),
-                    committedShop: () => session.Shop = next,
+                    committedShop: () => session.Social.Shop = next,
                     shopOutcome: new
                     {
                         Commodity = commodityId, Count = 1, Unit = unit, Payment = currency, Appearance = appearance,
@@ -173,7 +173,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             if ((long)perUnit * count > int.MaxValue) error = new(ErrorCodes.Parameter, "quantity overflow");
             else
             {
-                var next = Copy(session.Shop!);
+                var next = Copy(session.Social.Shop!);
                 next.Bought[commodityId] = new Counter { Count = bought + count, Period = Period(Family(row.Value), session) };
                 var economy = NpcPurchase(session, row.Value, commodityId, count, unit, currency, entry,
                     perUnit, bought, next.Bought[commodityId]) ?? _character.FamilyEconomy(session, "cd13a/shop-buy",
@@ -192,7 +192,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
                         tx.RoleBlob(session.Role!.Id, "shop", JsonSerializer.SerializeToUtf8Bytes(next));
                         tx.WithEconomy(economy);
                     },
-                    Committed = () => session.Shop = next,
+                    Committed = () => session.Social.Shop = next,
                     AsyncCommit = true,
                 }) == null)
                     error = new(_character.ShortageOf(session, cost), "payment short");
@@ -201,7 +201,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         _log.LogInformation("{Name} buys {Count}x commodity {Id} at {Unit} (quote {Quote}): {Result}", session.Role!.Name, count, commodityId, unit, quote, error?.Why ?? "ok");
         if (error is { } fail) return (fail.Code, unit, bought);
 
-        return (0, unit, session.Shop!.Bought[commodityId].Count);
+        return (0, unit, session.Social.Shop!.Bought[commodityId].Count);
     }
 
     /// <summary>
@@ -401,8 +401,8 @@ public sealed partial class ShopService(GameData data, CharacterService characte
         {
             var next = new ShopState
             {
-                Favorites = [.. session.Shop!.Favorites],
-                Bought = session.Shop.Bought.ToDictionary(p => p.Key, p => new Counter { Count = p.Value.Count, Period = p.Value.Period }),
+                Favorites = [.. session.Social.Shop!.Favorites],
+                Bought = session.Social.Shop.Bought.ToDictionary(p => p.Key, p => new Counter { Count = p.Value.Count, Period = p.Value.Period }),
             };
             if (req.OpType == CollectOperateType.Add) next.Favorites.Add(req.CommodityId);
             else next.Favorites.Remove(req.CommodityId);
@@ -410,7 +410,7 @@ public sealed partial class ShopService(GameData data, CharacterService characte
             tx.ItemDelta(session.Role!.Id, session.Items, session.Items);
             tx.RoleBlob(session.Role.Id, "shop", JsonSerializer.SerializeToUtf8Bytes(next));
             tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/shop-favorite", [], [], next));
-            await _roles.CommitAsync(tx, "shop/favorite", _ => session.Shop = next);
+            await _roles.CommitAsync(tx, "shop/favorite", _ => session.Social.Shop = next);
             await SyncAsync(session);
         }
         await session.SendGameAsync(CommodityCollect, new CommodityCollectResp { Result = code, CommodityId = req.CommodityId, NpcId = req.NpcId, OpType = req.OpType });

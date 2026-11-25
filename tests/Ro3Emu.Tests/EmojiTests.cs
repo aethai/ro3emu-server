@@ -196,7 +196,7 @@ public sealed class EmojiTests : IAsyncLifetime
         await loop.InvokeAsync(async () =>
         {
             var s = registry.All().Single(x => x.Role?.Name == "Alice");
-            s.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
+            s.Profile.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
             await emoji.LoginAsync(s);
         });
         Assert.Equal(10005, (await PlayAsync(alice, 10005)).BehaviorStateMachine.Param.EmojiPlay.EmojiId); // Moon Dance, unworn
@@ -227,7 +227,7 @@ public sealed class EmojiTests : IAsyncLifetime
         await loop.InvokeAsync(async () =>
         {
             var s = registry.All().Single(x => x.Role?.Name == "Alice");
-            s.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
+            s.Profile.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
             await emoji.LoginAsync(s);
         });
         await alice.SendGameAsync(EmojiService.Invite, new EmojiInviteReq { Uuids = { Id(bob) }, EmojiId = Duo });
@@ -259,7 +259,7 @@ public sealed class EmojiTests : IAsyncLifetime
         // Only Alice ready: nothing plays. Bob ready too: both play with the same start time.
         await alice.SendGameAsync(EmojiService.StartPlay, new EmojiStartPlayReq { EmojiId = Duo });
         await Next(alice, EmojiService.StartPlay, EmojiStartPlayRsp.Parser);
-        Assert.False(await loop.InvokeAsync(() => Task.FromResult(registry.All().Single(x => x.Role?.Name == "Alice").Emote!.State
+        Assert.False(await loop.InvokeAsync(() => Task.FromResult(registry.All().Single(x => x.Role?.Name == "Alice").Social.Emote!.State
             == ObjectState.EObjectStateSmemojiPlay)));
         await bob.SendGameAsync(EmojiService.StartPlay, new EmojiStartPlayReq { EmojiId = Duo });
         var a = await State(alice, Id(alice), ObjectState.EObjectStateSmemojiPlay);
@@ -283,7 +283,7 @@ public sealed class EmojiTests : IAsyncLifetime
         await loop.InvokeAsync(async () =>
         {
             var s = registry.All().Single(x => x.Role?.Name == "Alice");
-            s.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
+            s.Profile.Wardrobe!.AllLightUpAppearances[40050030] = new DBAppearanceInfo { AppearanceId = 40050030 };
             await _app.Services.GetRequiredService<EmojiService>().LoginAsync(s);
         });
         await alice.SendGameAsync(EmojiService.Invite, new EmojiInviteReq { Uuids = { Id(bob) }, EmojiId = Duo });

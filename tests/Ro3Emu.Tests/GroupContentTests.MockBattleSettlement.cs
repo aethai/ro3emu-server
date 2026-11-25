@@ -53,7 +53,7 @@ public sealed partial class GroupContentTests
 
     private Task<TimedBattleService.State> CasualState(BotClient bot) => Service<GameLoop>().InvokeAsync(() =>
         Task.FromResult(JsonSerializer.Deserialize<TimedBattleService.State>(
-            JsonSerializer.SerializeToUtf8Bytes(Session(bot).TimedBattle!))!));
+            JsonSerializer.SerializeToUtf8Bytes(Session(bot).Instances.TimedBattle!))!));
 
     private TimedBattleService.State SavedCasualState(long role) => Service<RoleStore>().LoadTimedBattle(role) is { } bytes
         ? JsonSerializer.Deserialize<TimedBattleService.State>(bytes)! : new TimedBattleService.State();
@@ -260,7 +260,7 @@ public sealed partial class GroupContentTests
         await using var alice = await InWorld("Alice");
         await OnLoop(() =>
         {
-            var state = Session(alice).Dungeons!;
+            var state = Session(alice).Instances.Dungeons!;
             state.Statistics[1] = new DungeonStatisticsInfoWithDungeon { StatisticsId = 1, DungeonId = 9999 }.ToByteArray();
             state.Results["1"] = new DBDungeonResultData { ResultId = "1", ServerId = 1, DungeonId = 1, DungeonEntryId = 9999 }.ToByteArray();
             return Task.CompletedTask;
