@@ -53,7 +53,7 @@ public sealed partial class CombatService
         // controlled: otherwise its cleanse could never be used when it is needed.
         if ((_buffs.HasForbidden(s, ForbiddenState.CastSkill) || _buffs.HasForbidden(s, ForbiddenState.NormalAttack)) && !GuardianPetRules.DispelsControl(skill)
             && !GuardianShinobiDispel(s, skill).Any()
-            || MatchSkillRule?.Invoke(s, skill.Id) == false) return ErrorCodes.SkillBadState;
+            || EvaluateMatchSkillRule(s, skill.Id) == false) return ErrorCodes.SkillBadState;
         if (GameData.Int(skill.Active, "_iBasicType") != 1 || GameData.Int(skill.Effect, "_iBasicType") != 1)
             return ErrorCodes.SkillPassive;
         // These families have no configured cost. Never let an extra cast bypass an unfamiliar cost shape.
@@ -230,7 +230,7 @@ public sealed partial class CombatService
         }
         // (inferred) Ally means non-hostile player; owner first, then distance/ID. Original team scope is unverified.
         return [.. _world.PlayersIn(s.WorldScene).Where(p => p.Role != null && !p.Dead && !p.SceneLoading && !p.SceneRecoveryRequired
-                && PlayerHostile?.Invoke(s, p) != true && PlayerHostile?.Invoke(p, s) != true && !CanPlayerHit(s, p) && !CanPlayerHit(p, s)
+                && !IsPlayerHostile(s, p) && !IsPlayerHostile(p, s) && !CanPlayerHit(s, p) && !CanPlayerHit(p, s)
                 && Distance(s.Position, p.Position) <= radius)
             .OrderBy(p => p == s ? 0 : 1).ThenBy(p => Distance(s.Position, p.Position))
             .ThenBy(p => p.Role!.Id).Take(maximum)];

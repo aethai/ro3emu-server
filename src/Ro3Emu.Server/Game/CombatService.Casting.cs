@@ -95,12 +95,12 @@ public sealed partial class CombatService
             : row == null ? ErrorCodes.SkillUnknown
             : req.OpUnitId != 0 && req.OpUnitId != s.Role.Id && owned == null ? ErrorCodes.SkillRequirements
             : !float.IsFinite(req.Face) || req.TargetPos is { } pos && !Finite(pos) ? ErrorCodes.Parameter : 0;
-        int? own = null;
+        (ICombatRule Rule, int Result)? own = null;
         if (error == 0)
         {
             req.SkillId = (int)GameData.Int(row!.Value, "_iID");
-            own = owned == null ? OwnSkillAdmit?.Invoke(s, req.SkillId) : null;
-            if (own is { } ownError && ownError != 0) error = ownError;
+            own = owned == null ? TryAdmitOwnSkill(s, req.SkillId) : null;
+            if (own is { Result: var ownError } && ownError != 0) error = ownError;
             else if (own == null && (owned != null ? !owned.Skills.Contains(req.SkillId)
                 : !Learned(s, row!.Value) && s.GmCastSkill != request.SkillId && !GrantedSkill.Handlers.Any(granted => granted(s, req.SkillId))))
                 error = ErrorCodes.SkillNotLearned;
@@ -182,7 +182,7 @@ public sealed partial class CombatService
             _eventAttacks[s] = new EventAttack(playerTarget, loopSkill,
                 Now + lead + SkillMs(s, row.Value) + ChantMs(s, row.Value) + 1,
                 s.Position.X, s.Position.Z);
-        if (own != null) await OwnSkillCast!(s, req.SkillId);
+        if (own is { Rule: var ownRule }) await ownRule.CastOwnSkillAsync(s, req.SkillId);
         else await StartCooldownAsync(s, row.Value, SkillConfig.Get(_data, request.SkillId) is { } asked ? (int)asked.Mode : null);
         // A follow-up's cast spends the status that offered it (SkillService.FollowUps).
         if (own == null && owned == null && _skills.FollowUpStatus(s, new SkillConfig(row.Value)) is { } offered) await _buffs.RemoveAsync(s, offered);
@@ -403,7 +403,7 @@ public sealed partial class CombatService
     {
         if (GameData.Int(row, "_iID") == (Data.Config.PublicParams.Of(_data).WorldTreeSkillId ?? 0)) return true; // paid item skill, LC_ReviveHelper.
         // A Survivor Battle career owns the match skill set (TimedBattleService.Chicken), not the job tree.
-        if (MatchSkillRule?.Invoke(s, (int)GameData.Int(row, "_iID")) is { } granted) return granted;
+        if (EvaluateMatchSkillRule(s, (int)GameData.Int(row, "_iID")) is { } granted) return granted;
         if (new SkillConfig(row) is var skill && skill.IsNormalAttack(_data)) return _skills.MayCastAttack(s, skill);
         return _skills.Level(s.Progress!, (int)GameData.Int(row, "_iSkillID")) >= GameData.Int(row, "_iLevel");
     }
@@ -541,7 +541,7 @@ public sealed partial class CombatService
         // nothing (auto-combat kept re-casting at a target the client saw as free). A siege keeps its (inferred) walls
         // through SkillLineBlocked.
         if (new SkillConfig(row).PassBlock == 2
-            && SkillLineBlocked?.Invoke(s, release == 1 ? monster : null, origin, targetPosition) == true)
+            && IsSkillLineBlocked(s, release == 1 ? monster : null, origin, targetPosition))
             return ErrorCodes.SkillBlocked;
         return 0;
     }

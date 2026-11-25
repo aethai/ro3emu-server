@@ -280,7 +280,7 @@ public sealed partial class SiegeTests
         var a = Session(attack);
         float y = run.Objects[GatePoint].Y;
         Vec3 At(float x, float z) => new() { X = x, Y = y, Z = z };
-        bool SkillBlocked(Vec3 from, Vec3 to) => Service<CombatService>().SkillLineBlocked!(a, null, from, to);
+        bool SkillBlocked(Vec3 from, Vec3 to) => Service<CombatService>().IsSkillLineBlocked(a, null, from, to);
         bool WalkBlocked(Vec3 from, Vec3 to) => Service<SceneService>().WalkBlocked!(a, from, to);
 
         // Prepare: the attackers' camp, the gateway's two gate walls, the ladder ends, barricades and fortresses.

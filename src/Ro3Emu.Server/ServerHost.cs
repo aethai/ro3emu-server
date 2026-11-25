@@ -82,6 +82,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<TimedTodoSchedule>();
         builder.Services.AddSingleton<PronteraDefenseService>();
         builder.Services.AddSingleton<TimedBattleService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TimedBattleService>());
         builder.Services.AddSingleton<DungeonMatchService>();
         builder.Services.AddSingleton<FestivalService>();
         builder.Services.AddSingleton<RankRewardService>();
@@ -102,6 +103,7 @@ public static partial class ServerHost
         builder.Services.AddSingleton<SocialOutfitService>();
         builder.Services.AddSingleton<AchievementService>();
         builder.Services.AddSingleton<TeamService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TeamService>());
         builder.Services.AddSingleton<MvpService>();
         builder.Services.AddSingleton<CardService>();
         builder.Services.AddSingleton<CardEffects>();
@@ -142,12 +144,16 @@ public static partial class ServerHost
         builder.Services.AddSingleton<DungeonObligationStore>();
         builder.Services.AddSingleton<PraiseService>();
         builder.Services.AddSingleton<CasualBattleService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<CasualBattleService>());
         builder.Services.AddSingleton<DungeonService>();
         builder.Services.AddSingleton<TerritoryWarsClock>();
         builder.Services.AddSingleton<TerritoryWarsService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TerritoryWarsService>());
         builder.Services.AddSingleton<TerritoryEscortService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TerritoryEscortService>());
         builder.Services.AddSingleton<GuildLeagueCalendar>();
         builder.Services.AddSingleton<GuildLeagueService>();
+        builder.Services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<GuildLeagueService>());
         builder.Services.AddSingleton<TowerService>();
         builder.Services.AddSingleton<ValhallaService>();
         builder.Services.AddSingleton<MonsterHuntService>();
@@ -307,11 +313,8 @@ public static partial class ServerHost
         app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
         app.Services.GetRequiredService<TimedEventService>();
         app.Services.GetRequiredService<PronteraDefenseService>();
-        var timedBattles = app.Services.GetRequiredService<TimedBattleService>();
-        var casual = app.Services.GetRequiredService<CasualBattleService>();
-        app.Services.GetRequiredService<CombatService>().SetEventPvPHandlers(
-            (a, b) => timedBattles.CanFight(a, b) || casual.CanFight(a, b),
-            async (killer, victim) => { await timedBattles.PlayerKilledAsync(killer, victim); await casual.PlayerKilledAsync(killer, victim); });
+        app.Services.GetRequiredService<TimedBattleService>();
+        app.Services.GetRequiredService<CasualBattleService>();
         app.Services.GetRequiredService<FestivalService>();
         app.Services.GetRequiredService<TrainingService>();
         app.Services.GetRequiredService<GuildHomeService>();
@@ -332,14 +335,8 @@ public static partial class ServerHost
         var ranks = app.Services.GetRequiredService<RankService>();
         territory.GloryBoardRank = role => ranks.RankOfAsync(RankService.BattleGlory, role);
         app.Services.GetRequiredService<GuildService>().ItemDataOf = escort.GuildItems;
-        var territoryCombat = app.Services.GetRequiredService<CombatService>();
         var league = app.Services.GetRequiredService<GuildLeagueService>(); // 30410-30412 hooks, battlefield scene/combat hooks
-        var partyTeams = app.Services.GetRequiredService<TeamService>();
-        territoryCombat.SameParty = (x, y) => x.Role is { } xr && y.Role is { } yr
-            && partyTeams.TeamOf(xr.Id).TeamId is var team and not 0 && partyTeams.TeamOf(yr.Id).TeamId == team;
-        territoryCombat.PlayerHostile = (a, b) => territory.Hostile(a, b) || escort.Hostile(a, b) || territory.WorldHostile(a, b)
-            || league.Hostile(a, b);
-        territoryCombat.MonsterTargetAllowed = (s, m) => territory.CanHitObjective(s, m) && escort.CanHitCart(s, m) && league.CanHit(s, m);
+        app.Services.GetRequiredService<CombatService>().BindRules(app.Services.GetServices<ICombatRule>());
         app.Services.GetRequiredService<WorldEffectsService>(); // scene/monster effect hooks before clients connect
         app.Services.GetRequiredService<WorldCoreService>();
         app.Services.GetRequiredService<WorldInteractionService>();

@@ -54,9 +54,9 @@ public sealed partial class CombatService
             await handler(s, row);
             if (!CurrentCastMap(s, action)) return;
         }
-        if (OwnSkillLanded != null && OwnSkillAdmit?.Invoke(s, action.Request.SkillId) != null)
+        if (TryAdmitOwnSkill(s, action.Request.SkillId) is { Rule: var ownRule })
         {
-            await OwnSkillLanded(s, row);
+            await ownRule.LandOwnSkillAsync(s, row);
             return;
         }
         // A flying mount's take-off/landing only moves its rider; their enemy-selector templates hit nobody.
@@ -254,7 +254,7 @@ public sealed partial class CombatService
                 var around = field != null || new SkillConfig(row).Release is SkillRelease.DragRect or SkillRelease.DragCircle
                     ? center : action.Origin;
                 allies.AddRange(_world.PlayersIn(s.WorldScene).Where(p => !p.Dead && (Relation(row, true, p == s) || ReachesAlliesDespiteSelector(script))
-                    && (!PartyOnly(script) || p == s || SameParty?.Invoke(s, p) == true)
+                    && (!PartyOnly(script) || p == s || IsSameParty(s, p))
                     && (field != null && new SkillConfig(row).Range.Length > 1 ? SkillAreaContains(row, action.Origin, center, action.Request.Face, p.Position)
                         : p == s || radius > 0 && Distance(p.Position, around) <= radius))
                     .OrderBy(p => OutsideThePartyAsLast(s, p, script)).ThenBy(p => Distance(p.Position, around))

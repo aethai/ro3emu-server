@@ -18,8 +18,10 @@ namespace Ro3Emu.Server.Game;
 /// registered tournament are one realm blob (guild_league); a running match lives in memory and is committed with its
 /// outcome. Reconstructed server choices are marked (inferred) with the reason.
 /// </summary>
-public sealed partial class GuildLeagueService : IGameTicker
+public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
 {
+    bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) => Hostile(attacker, defender);
+    bool ICombatRule.CanHitMonster(GameSession attacker, MonsterUnit target) => CanHit(attacker, target);
     public const uint MgrData = 30410, Info = 30411, GroupInfo = 30412, ResultNotify = 30414, SyncNotify = 30415,
         TitleNotify = 30432, EventNotify = 30433;
     public const int Function = 60;

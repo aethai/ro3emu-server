@@ -104,7 +104,7 @@ public sealed partial class CardRulesTests
         }
         await Service<GameLoop>().InvokeAsync(async () =>
         {
-            Service<CombatService>().SetEventPvPHandlers((source, target) => source != target, (_, _) => Task.CompletedTask);
+            Service<CombatService>().OverrideRulesForTest(new DelegateCombatRule { EventCanFight = (source, target) => source != target });
             Service<CombatService>().Rolls = new FixedRolls(crit: false);
             await Service<SceneService>().TeleportInMapAsync(b, new MapPoint(a.Position.X + 2, a.Position.Y, a.Position.Z, b.Face));
             foreach (var p in new[] { a, b })
@@ -344,7 +344,7 @@ public sealed partial class CardRulesTests
         {
             int attack = await OnLoop(() => Service<SkillService>().CurrentAttack(a));
             Assert.True((await CastAt(alice, a, attack, b)).Damage > 0);
-            await OnLoop(() => { Service<CombatService>().SetEventPvPHandlers((_, _) => false, (_, _) => Task.CompletedTask); return 0; });
+            await OnLoop(() => { Service<CombatService>().OverrideRulesForTest(new DelegateCombatRule { EventCanFight = (_, _) => false }); return 0; });
             await Task.Delay(300);
             Assert.DoesNotContain(alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)), h => h.SrcID == b.Role!.Id);
 

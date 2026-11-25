@@ -13,17 +13,11 @@ public sealed partial class CombatService
 {
     private sealed record EventAttack(GameSession Target, int SkillId, long NextSwing, float StartX, float StartZ);
     private readonly Dictionary<GameSession, EventAttack> _eventAttacks = [];
-    private Func<GameSession, GameSession, bool>? _eventCanFight;
-    private Func<GameSession, GameSession, Task>? _eventPlayerKilled;
-
-    public void SetEventPvPHandlers(Func<GameSession, GameSession, bool> canFight,
-        Func<GameSession, GameSession, Task> playerKilled)
-    { _eventCanFight = canFight; _eventPlayerKilled = playerKilled; }
 
     private bool CanEventHit(GameSession source, GameSession target) => source != target
         && source.Role != null && target.Role != null && !source.Dead && !target.Dead
         && !source.SceneLoading && !target.SceneLoading && source.InstanceId != 0
-        && source.InstanceId == target.InstanceId && _eventCanFight?.Invoke(source, target) == true;
+        && source.InstanceId == target.InstanceId && CanEventFight(source, target);
 
     private bool CanPlayerHit(GameSession source, GameSession target) =>
         CanEventHit(source, target) || CanTerritoryHit(source, target);
@@ -118,7 +112,7 @@ public sealed partial class CombatService
                     if (!ReferenceEquals(target.Role, targetRole)) continue;
                     await PlayerDiesAsync(target);
                     if (effective <= 0 || !CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)) continue;
-                    if (eventFight && _eventPlayerKilled != null) await _eventPlayerKilled(source, target);
+                    if (eventFight) await NotifyEventPlayerKilledAsync(source, target);
                     foreach (var handler in PlayerKilled.Handlers)
                     {
                         if (!CurrentPlayerHit(source, target, attackerRole, targetRole, sceneId)) break;

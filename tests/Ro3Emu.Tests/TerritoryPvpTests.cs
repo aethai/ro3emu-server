@@ -111,7 +111,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             var victim = Session(enemy);
             source.Position = victim.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == victim;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == victim });
             combat.PvpDealt.Subscribe((a, b, amount, lethal) => { if (a == source && b == victim) dealt.Add((amount, lethal)); });
             combat.PlayerKilled.Subscribe((a, b) =>
             {
@@ -181,7 +181,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == target;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == target });
             combat.PvpDealt.Subscribe((a, b, amount, dead) =>
             {
                 if (a == source && b == target) dealt.Add((amount, dead));
@@ -247,7 +247,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => hostile && a == source && b == target });
             combat.PvpDealt.Subscribe((a, b, _, _) => { if (a == source && b == target) scoredHits++; });
             combat.PlayerKilled.Subscribe((a, b) =>
             {
@@ -315,7 +315,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             var target = Session(victim);
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == target;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == target });
             combat.PvpDealt.Subscribe((a, b, _, lethal) =>
             {
                 if (a == source && b == target && lethal) source.SceneLoading = true; // departure during hit publication
@@ -370,7 +370,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => hostile && a == source && b == target });
             combat.CastLanded.Subscribe((a, _) =>
             {
                 if (a == source) landed.TrySetResult();
@@ -444,7 +444,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             Assert.NotNull(probe);
             probe.Hp = 1;
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => (a == firstSession || a == secondSession) && b == victimSession;
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => (a == firstSession || a == secondSession) && b == victimSession });
             combat.PvpDealt.Subscribe((a, b, amount, lethal) =>
             {
                 if (b == victimSession) dealt.Add((a, amount, lethal));

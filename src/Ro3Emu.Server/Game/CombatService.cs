@@ -235,14 +235,6 @@ public sealed partial class CombatService : IGameTicker
     /// <summary>Territory and escort owners observe effective hostile-player damage and its lethal transition.</summary>
     public SyncHook<GameSession, GameSession, long, bool> PvpDealt { get; } = new("Combat.PvpDealt");
     public AsyncHook<GameSession, GameSession> PlayerKilled { get; } = new("Combat.PlayerKilled");
-    public Func<GameSession, GameSession, bool>? PlayerHostile { get; set; }
-    public Func<GameSession, MonsterUnit, bool>? MonsterTargetAllowed { get; set; }
-    /// <summary>
-    /// Whether something stands between the caster and the target of a skill that walls stop (_iPassBlock 2): the
-    /// monster aimed at (null for a ground or player target), the caster's and the target's positions. Unset, nothing
-    /// does (see <see cref="ValidateTarget"/>).
-    /// </summary>
-    public Func<GameSession, MonsterUnit?, Vec3, Vec3, bool>? SkillLineBlocked { get; set; }
 
     /// <summary>A monster damaged a player; the flag says the hit was lethal (MVP statistics).</summary>
     public SyncHook<MonsterUnit, GameSession, long, bool> Taken { get; } = new("Combat.Taken");
@@ -274,16 +266,6 @@ public sealed partial class CombatService : IGameTicker
     /// null without one), whether it is a skill's or a swing's hit rather than a tick, an environment or a fixed amount, the damage.</summary>
     internal OrderedHook<Func<GameSession, JsonElement?, bool, long, long>> PlayerDamageAdjusters { get; } = new("Combat.PlayerDamageAdjusters");
     public AsyncHook<GameSession> PlayerRevived { get; } = new("Combat.PlayerRevived");
-    /// <summary>A match owner decides which skills a participant may cast (true/false), or defers (null).</summary>
-    public Func<GameSession, int, bool?>? MatchSkillRule { get; set; }
-    /// <summary>
-    /// A skill a feature owns outright (the war commander's): null for any other skill, else 0 to cast it or the refusal.
-    /// Such a cast skips the job-tree check and the SkillConfig cooldowns; <see cref="OwnSkillCast"/> runs in their place
-    /// once the cast is accepted, and <see cref="OwnSkillLanded"/> resolves it instead of the generic effects.
-    /// </summary>
-    public Func<GameSession, int, int?>? OwnSkillAdmit { get; set; }
-    public Func<GameSession, int, Task>? OwnSkillCast { get; set; }
-    public Func<GameSession, JsonElement, Task>? OwnSkillLanded { get; set; }
 
     /// <summary>
     /// Run in order once a player's own cast is accepted, before its timeline starts; each returns the milliseconds that

@@ -73,7 +73,7 @@ public sealed class BuffHitEffectTests
             var a = sessions.All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid);
             var b = sessions.All().Single(s => s.Role?.Id == (long)bob.Self!.Uuid);
             var combat = host.Service<CombatService>();
-            combat.SameParty = (_, _) => true;
+            using var _ = combat.AddRuleForTest(new DelegateCombatRule { SameParty = (_, _) => true });
             await host.Service<GameLoop>().InvokeAsync(() =>
             {
                 b.Position = a.Position.Clone();

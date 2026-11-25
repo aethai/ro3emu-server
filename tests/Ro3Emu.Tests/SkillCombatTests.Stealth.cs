@@ -28,8 +28,10 @@ public sealed partial class SkillCombatTests
         }
         await Loop.InvokeAsync(async () =>
         {
-            _app.Services.GetRequiredService<CombatService>().SetEventPvPHandlers((source, target) => source == a && target == b,
-                (_, _) => Task.CompletedTask);
+            _app.Services.GetRequiredService<CombatService>().AddRuleForTest(new DelegateCombatRule
+            {
+                EventCanFight = (source, target) => source == a && target == b,
+            });
             await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(b,
                 new MapPoint(a.Position.X + 2, a.Position.Y, a.Position.Z, b.Face));
             await Character.SetHpSpAsync(b, long.MaxValue, long.MaxValue);

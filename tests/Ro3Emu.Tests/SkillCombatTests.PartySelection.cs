@@ -16,20 +16,15 @@ public sealed partial class SkillCombatTests
         var (a, b) = (Session("alice"), Session("bob"));
         a.GmCastSkill = skill;
         var combat = _app.Services.GetRequiredService<CombatService>();
-        var before = combat.SameParty;
-        combat.SameParty = (x, y) => sameParty;
-        try
-        {
-            await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
-            await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
-            Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-            var deadline = DateTime.UtcNow + Wait;
-            while (!a.Buffs.Any(x => x.ConfigId == buff) && DateTime.UtcNow < deadline) await Task.Delay(50);
-            Assert.Contains(a.Buffs, x => x.ConfigId == buff);
-            await Task.Delay(200);
-            return b.Buffs.Any(x => x.ConfigId == buff);
-        }
-        finally { combat.SameParty = before; }
+        using var partyRule = combat.OverrideRulesForTest(new DelegateCombatRule { SameParty = (_, _) => sameParty });
+        await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var deadline = DateTime.UtcNow + Wait;
+        while (!a.Buffs.Any(x => x.ConfigId == buff) && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.Contains(a.Buffs, x => x.ConfigId == buff);
+        await Task.Delay(200);
+        return b.Buffs.Any(x => x.ConfigId == buff);
     }
 
     [ClientDataFact] // Sacred Lily: "You and Party Members": a stranger stands aside
@@ -61,18 +56,13 @@ public sealed partial class SkillCombatTests
         var (a, b) = (Session("alice"), Session("bob"));
         a.GmCastSkill = skill;
         var combat = _app.Services.GetRequiredService<CombatService>();
-        var before = combat.SameParty;
-        combat.SameParty = (x, y) => sameParty;
-        try
-        {
-            await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
-            await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
-            var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
-            Assert.Equal(0, accepted.Result);
-            var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
-            return (hit, a.Role!.Id, b.Role!.Id);
-        }
-        finally { combat.SameParty = before; }
+        using var partyRule = combat.OverrideRulesForTest(new DelegateCombatRule { SameParty = (_, _) => sameParty });
+        await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
+        return (hit, a.Role!.Id, b.Role!.Id);
     }
 
     [ClientDataFact] // Magnificat: no damage to list, yet its hit effect plays on the caster and on each ally the buff reached

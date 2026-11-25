@@ -335,7 +335,7 @@ public sealed partial class SkillCombatTests
         await Loop.InvokeAsync(() =>
         {
             victim.Position = new Vec3 { X = start.X + dx, Y = start.Y, Z = start.Z + dz };
-            Combat.PlayerHostile = (a, b) => a == source && b == victim;
+            Combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == victim });
             return Task.CompletedTask;
         });
         var before = victim.Position.Clone();
