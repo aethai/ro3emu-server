@@ -13,9 +13,11 @@ public sealed class RepositoryClient : IDisposable
     readonly HttpClient _http;
     readonly bool _ownsClient;
     readonly string? _refused;
+    readonly string? _channelPublicKeyPem;
 
-    public RepositoryClient(Uri baseUri, HttpMessageHandler? handler = null)
+    public RepositoryClient(Uri baseUri, HttpMessageHandler? handler = null, string? channelPublicKeyPem = null)
     {
+        _channelPublicKeyPem = string.IsNullOrWhiteSpace(channelPublicKeyPem) ? null : channelPublicKeyPem;
         _refused = Allowed(baseUri) ? null
             : $"The update server address {baseUri.GetLeftPart(UriPartial.Authority)} does not use https, so its files " +
               "cannot be trusted. Ask the server's owner for its https address.";
@@ -59,9 +61,29 @@ public sealed class RepositoryClient : IDisposable
             throw new PatcherException($"Channel '{channel}' does not exist on the update server.");
         }
         response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        return await JsonSerializer.DeserializeAsync<ChannelInfo>(stream, Json.Compact, ct)
+        byte[] jsonBytes = await response.Content.ReadAsByteArrayAsync(ct);
+        if (_channelPublicKeyPem is { } publicKey)
+        {
+            using var sigRequest = new HttpRequestMessage(HttpMethod.Get, ChannelSignature.SignatureRelative(channel));
+            sigRequest.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+            using var sigResponse = await _http.SendAsync(sigRequest, ct);
+            if (!sigResponse.IsSuccessStatusCode)
+            {
+                throw new PatcherException($"Channel '{channel}' is missing its signature on the update server.");
+            }
+            byte[] sigBytes = await sigResponse.Content.ReadAsByteArrayAsync(ct);
+            if (!ChannelSignature.Verify(jsonBytes, sigBytes, publicKey))
+            {
+                throw new PatcherException($"Channel '{channel}' failed signature verification and cannot be trusted.");
+            }
+        }
+        var info = JsonSerializer.Deserialize<ChannelInfo>(jsonBytes, Json.Compact)
             ?? throw new PatcherException("The update server returned an empty channel.");
+        if (_channelPublicKeyPem != null && !string.Equals(info.Channel, channel, StringComparison.Ordinal))
+        {
+            throw new PatcherException($"Channel signature is for '{info.Channel}', not '{channel}'.");
+        }
+        return info;
     }
 
     public async Task<(Manifest Manifest, byte[] Raw)> GetManifestAsync(ChannelInfo channel, CancellationToken ct)

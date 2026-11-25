@@ -3,5 +3,5 @@
 # number when you add tests; never lower one: CI refuses a lower number than in the parent commit.
 # Linux and Windows both have to meet it; the patcher runs one more test on Windows.
 server 1211
-patcher 26
+patcher 31
 setup 148

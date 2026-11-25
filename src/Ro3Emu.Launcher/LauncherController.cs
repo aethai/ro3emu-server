@@ -39,7 +39,7 @@ public sealed partial class LauncherController : ILauncherController
         _pickFolder = pickFolder;
         _gameRunningChanged = gameRunningChanged;
         _settings = UserSettings.ForRepository(config.RepositoryUrl);
-        _repo = new RepositoryClient(new Uri(config.RepositoryUrl));
+        _repo = new RepositoryClient(new Uri(config.RepositoryUrl), channelPublicKeyPem: config.ChannelPublicKey);
         _layout = new InstallLayout(_settings.ClientDirectory ?? Path.Combine(Path.GetDirectoryName(exePath)!, "Client"));
     }
 
