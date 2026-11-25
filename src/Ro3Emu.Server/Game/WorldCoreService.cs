@@ -293,7 +293,7 @@ public sealed partial class WorldCoreService : IGameTicker
         var response = new MiniMapMsg();
         foreach (var p in _world.PlayersIn(s.WorldScene).Where(Ready))
             response.MiniInfo.Add(new MiniMapInfo { Uid = (ulong)p.Role!.Id, Pos = p.Position.Clone(), Camp = 1, Hp = (ulong)Math.Max(0, _character.Stats(p)[2000]) });
-        foreach (var m in _world.AllUnits().OfType<MonsterUnit>().Where(m => m.WorldScene == s.WorldScene && !m.Dead))
+        foreach (var m in s.VisibleUnits.OfType<MonsterUnit>().Where(m => !m.Dead))
             response.MiniInfo.Add(new MiniMapInfo { Uid = (ulong)m.Uid, Pos = m.Pos, Camp = (ulong)(m.CampOverride ?? m.Template.Camp), NpcConfigId = (ulong)m.Template.NpcId, Hp = (ulong)Math.Max(0, m.Hp) });
         await s.SendGameAsync(MiniMap, response);
     }

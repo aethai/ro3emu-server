@@ -389,4 +389,38 @@ public sealed partial class TradeTests : IAsyncLifetime
         await loop.InvokeAsync(() => trade.TickMaintenanceAsync());
         Assert.Equal(passes + 1, trade.MaintenancePasses); // a market commit since the last pass
     }
+
+    [ClientDataFact]
+    public async Task SellerCanDelistUsingBaseSkuIdAndAllInventoryFindsDivineTotems()
+    {
+        await using var seller = await InWorld("TotemSeller");
+        await using var buyer = await InWorld("TotemBuyer");
+        await Gm("totemseller", "!lvl 30"); await Gm("totembuyer", "!lvl 30");
+        await Gm("totemseller", "!item 17500101 1"); await Gm("totemseller", "!item 2 50000");
+        long guid = Assert.Single(Items(seller), i => i.Entry == 17500101).Guid;
+
+        await seller.SendGameAsync(TradeService.PutOn, new TradePutOnItemReq
+        { ItemGuid = guid, ItemPrice = 5000, CurrencyType = 1, Quantity = 1 });
+        var listed = await Next(seller, TradeService.PutOn, TradePutOnItemResp.Parser);
+        Assert.Equal(0, listed.Result);
+        var booth = Assert.Single(listed.BoothInfos);
+        Assert.False(string.IsNullOrEmpty(booth.BaseSkuId));
+        Assert.Equal(booth.SkuId, booth.BaseSkuId);
+
+        // Client queries AllInventory with special=0 (None) for Divine Totems even though SpecialTypeOf marks type 7.
+        var allReq = new CQueryAllItemInventoryInfoByItemIdRequest();
+        allReq.ItemInfo[0] = new TradeSpecialTypeInfo { Itemid = { "17500101" } };
+        await buyer.SendGameAsync(TradeService.QueryAllInventory, allReq);
+        var allResp = await Next(buyer, TradeService.QueryAllInventory, CAllItemInventoryInfoByItemIdResponse.Parser);
+        var info = Assert.Single(allResp.Data.ItemInfo[0].ItemInventoryInfos);
+        Assert.Equal(1, info.InventoryQuantity);
+
+        // Client sends CCommodityInfo.base_sku_id as TradePutOffItemReq.skuId when delisting.
+        await seller.SendGameAsync(TradeService.PutOff, new TradePutOffItemReq
+        { ItemId = 17500101, SkuId = booth.BaseSkuId, Quantity = 1 });
+        var delisted = await Next(seller, TradeService.PutOff, TradePutOffItemResp.Parser);
+        Assert.Equal(0, delisted.Result);
+        Assert.Empty(delisted.BoothInfos);
+        Assert.Contains(await Mail(seller, (long)seller.Self!.Uuid), m => m.Template == 1066);
+    }
 }
