@@ -10,8 +10,18 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed class CharacterStatsService(CharacterService character, GameData data, World world)
 {
+    private const uint OnePropertyChange = CharacterService.OnePropertyChange;
+    private const uint AoiAttrChange = CharacterService.AoiAttrChange;
+    private const int EquipInfoSlots = CharacterService.EquipInfoSlots;
+    private const int MaxHp = CharacterService.MaxHp, MaxSp = CharacterService.MaxSp, Speed = CharacterService.Speed,
+        BaseAspd = CharacterService.BaseAspd, Hp = CharacterService.Hp, Sp = CharacterService.Sp, Lv = CharacterService.Lv;
+
+    /// <summary>Always in the self property list, even when no table contributes to them.</summary>
+    private static readonly int[] SelfProperties = [1, 2, 3, 4, 5, 6, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, Hp, Sp, Lv];
+    private static readonly int[] AoiProperties = [MaxHp, Hp, MaxSp, Sp, Speed, Lv, 2003];
+
     // ---- entity data ----
 
     /// <summary>
@@ -42,9 +52,9 @@ public sealed partial class CharacterService
             Rolebase = new RolePublicBaseInfo
             {
                 Roleid = role.Id, Name = role.Name, Career = p.Career, BaseLevel = p.Level,
-                JobLevel = p.JobLevel, Gender = role.Sex, Title = TitleOf?.Invoke(session) ?? 0
+                JobLevel = p.JobLevel, Gender = role.Sex, Title = character.TitleOf?.Invoke(session) ?? 0
             },
-            EquipInfo = BuildEquip(session),
+            EquipInfo = character.BuildEquip(session),
             Selfproperty = new AllProperty { EntityID = role.Id },
         };
         info.Rolebase.Appearances.Add(session.Wardrobe?.CurUseAppearances.ToDictionary(a => a.Key, a => a.Value) ?? RoleProto.Appearances(role));
@@ -54,24 +64,13 @@ public sealed partial class CharacterService
     }
 
     /// <summary>EntityBase.equipInfo: ItemConfig ids of grids 1..7, 0 for empty.</summary>
-    private static long[] EquipInfo(GameSession session)
+    internal static long[] EquipInfo(GameSession session)
     {
         var slots = new long[EquipInfoSlots];
-        foreach (var item in Equipped(session))
+        foreach (var item in CharacterInventoryService.Equipped(session))
             if (item.Grid is >= 1 and <= EquipInfoSlots) slots[item.Grid - 1] = item.Entry;
         return slots;
     }
-
-    /// <summary>
-    /// Every number of the character window, the client's way (StatCalculator): raw contributions
-    /// from AttriBaseLvConfig[career*1000+level], JobConfig._kAttri, worn gear (EquipConfig._kBasicAttribute) and
-    /// AttributeConversionConfig per point of STR..LUK (_kAttribute2 for ranged jobs), grouped and rounded up.
-    /// Current HP/SP come from the session (full when unset).
-    /// </summary>
-    /// <summary>Set by ServerHost: the loop's <see cref="GameLoop.WorkSerial"/>. Unset, nothing is memoized.</summary>
-    internal Func<long>? WorkSerial { get; set; }
-    /// <summary>Set by ServerHost: the loop's 50 ms <see cref="GameLoop.TickSerial"/>.</summary>
-    internal Func<long>? TickSerial { get; set; }
 
     /// <summary>Max ticks (4 * 50 ms = 200 ms) a hot-path memoized build sheet may be reused while all tracked inputs match.</summary>
     private const long StatsMemoMaxTickAge = 4;
@@ -87,7 +86,7 @@ public sealed partial class CharacterService
     /// equipment) the sheet is fresh.</summary>
     internal void ReuseStatsInThisWork(GameSession session)
     {
-        if (WorkSerial?.Invoke() is { } serial) session.StatsReuseSerial = serial;
+        if (character.WorkSerial?.Invoke() is { } serial) session.StatsReuseSerial = serial;
     }
 
     /// <summary>
@@ -100,9 +99,9 @@ public sealed partial class CharacterService
     public StatSheet Stats(GameSession session)
     {
         var p = session.Progress!;
-        long serial = WorkSerial?.Invoke() ?? -1;
+        long serial = character.WorkSerial?.Invoke() ?? -1;
         if (serial != session.StatsReuseSerial) serial = -1; // not in a hot path's work: always fresh
-        long tick = TickSerial?.Invoke() ?? serial;
+        long tick = character.TickSerial?.Invoke() ?? serial;
         StatSheet sheet;
         if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo
             && tick >= memo.Tick && tick - memo.Tick <= StatsMemoMaxTickAge
@@ -121,7 +120,7 @@ public sealed partial class CharacterService
         long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
         sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
         sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
-        foreach (var provider in DynamicProperties.Handlers)
+        foreach (var provider in character.DynamicProperties.Handlers)
             foreach (var (id, value) in provider(session))
             {
                 // Independent active shield owners (totems and timed buffs) contribute to property 2003.
@@ -151,7 +150,7 @@ public sealed partial class CharacterService
         var raw = new Dictionary<int, double>();
         void Add(long id, double v) => raw[(int)id] = raw.GetValueOrDefault((int)id) + v;
 
-        var matchAttributes = MatchAttributes?.Invoke(session);
+        var matchAttributes = character.MatchAttributes?.Invoke(session);
         if (matchAttributes != null)
         {
             // A Survivor Battle career replaces the character's own build for the match (TimedBattleService.Chicken):
@@ -218,12 +217,13 @@ public sealed partial class CharacterService
     /// <summary>The character's own raw contributions (gear, cards, talents, buffs, level and job rows, conversions).</summary>
     private void AddOwnAttributes(GameSession session, RoleProgress p, Action<long, double> Add)
     {
+        var inv = character.Inventory;
         var baseStats = new double[6];
         for (int i = 0; i < 6; i++) baseStats[i] = p.Stats[i];
-        foreach (var item in Equipped(session))
+        foreach (var item in CharacterInventoryService.Equipped(session))
         {
-            if (EquipRow(item.Entry) is not { } equip) continue;
-            foreach (var (id, v) in BaseAttributes(item, equip).Concat(EquipmentAffixes.Entries(item)))
+            if (inv.EquipRow(item.Entry) is not { } equip) continue;
+            foreach (var (id, v) in CharacterInventoryService.BaseAttributes(item, equip).Concat(EquipmentAffixes.Entries(item)))
             {
                 if (id is >= 1 and <= 6) baseStats[id - 1] += v;
                 else Add(id, v);
@@ -244,20 +244,20 @@ public sealed partial class CharacterService
         }
         // Grid levels: StrengthenTable / RefiningTable _kAttr are totals at a level, counted for a
         // worn grid (inferred); resonance (§5) adds the reached Strengthen/RefiningEffectTable row's _kEffect.
-        foreach (var item in Equipped(session).Where(i => i.Grid <= EquipInfoSlots))
+        foreach (var item in CharacterInventoryService.Equipped(session).Where(i => i.Grid <= EquipInfoSlots))
         {
-            foreach (var row in new[] { StrengthenRow(item.Grid, session.EquipLevels.Strength.GetValueOrDefault(item.Grid)), RefineRow(item.Grid, session.EquipLevels.Refine.GetValueOrDefault(item.Grid)) })
+            foreach (var row in new[] { inv.StrengthenRow(item.Grid, session.EquipLevels.Strength.GetValueOrDefault(item.Grid)), inv.RefineRow(item.Grid, session.EquipLevels.Refine.GetValueOrDefault(item.Grid)) })
                 if (row is { } r)
                     foreach (var (id, v) in GameData.Pairs(r, "_kAttr")) Add(id, v);
         }
         foreach (var table in new[] { "StrengthenEffectTable", "RefiningEffectTable" })
-            if (ResonanceRow(session, table) is { } effect)
+            if (inv.ResonanceRow(session, table) is { } effect)
                 foreach (var (id, v) in GameData.Pairs(effect, "_kEffect")) Add(id, v);
         foreach (var card in EquipmentStunts.ActiveCards(session, data))
         {
-            int tier = (int)(card.Attrs?.GetValueOrDefault(AttrCardStar) ?? 0);
-            int level = (int)(card.Attrs?.GetValueOrDefault(AttrCardLevel) ?? 0);
-            if (CardRow(card.Entry, tier) is not { } cardRow) continue;
+            int tier = (int)(card.Attrs?.GetValueOrDefault(CharacterInventoryService.AttrCardStar) ?? 0);
+            int level = (int)(card.Attrs?.GetValueOrDefault(CharacterInventoryService.AttrCardLevel) ?? 0);
+            if (inv.CardRow(card.Entry, tier) is not { } cardRow) continue;
             foreach (var (id, v) in GameData.Pairs(cardRow, "_kBasicAttribute"))
             {
                 if (id is >= 1 and <= 6) baseStats[id - 1] += v;
@@ -266,7 +266,7 @@ public sealed partial class CharacterService
             if (data.Row("ItemConfig", card.Entry) is { } itemRow)
             {
                 long part = GameData.Int(itemRow, "_iCardPart"), quality = GameData.Int(itemRow, "_iQuality");
-                if (CardUpgradeRow(level, part, quality) is { } upgrade)
+                if (inv.CardUpgradeRow(level, part, quality) is { } upgrade)
                     foreach (var (id, v) in GameData.Pairs(upgrade, "_iAttr"))
                     {
                         if (id is >= 1 and <= 6) baseStats[id - 1] += v;
@@ -284,12 +284,12 @@ public sealed partial class CharacterService
             }
         // LC_SeasonTalent's property overview reads the selected plan's target-level effect once.
         // Base stats 1..6 must feed conversion below; other attrs enter StatCalculator as raw contributions (inferred).
-        foreach (var (id, value) in TalentAttributes?.Invoke(session) ?? [])
+        foreach (var (id, value) in character.TalentAttributes?.Invoke(session) ?? [])
         {
             if (id is >= 1 and <= 6) baseStats[id - 1] += value;
             else Add(id, value);
         }
-        foreach (var provider in ExtraAttributes.Handlers)
+        foreach (var provider in character.ExtraAttributes.Handlers)
             foreach (var (id, value) in provider(session))
             {
                 if (id is >= 1 and <= 6) baseStats[id - 1] += value;
@@ -336,21 +336,6 @@ public sealed partial class CharacterService
     /// <summary>Stats changed outside this service (buffs): the window, HP bars and the AOI.</summary>
     public Task RefreshStatsAsync(GameSession session) => SendStatsAsync(session);
 
-    /// <summary>The role's title rank (TitleService) for RolePublicBaseInfo.title.</summary>
-    public Func<GameSession, long>? TitleOf { get; set; }
-
-    /// <summary>Configured contributions from other owned systems (pet lineup/collection).</summary>
-    public OrderedHook<Func<GameSession, IEnumerable<(long Id, double Value)>>> ExtraAttributes { get; } = new("CharacterService.ExtraAttributes");
-
-    /// <summary>A match owner's replacement build (null: the character's own), e.g. a Survivor Battle career.</summary>
-    public Func<GameSession, IReadOnlyList<(long Id, double Value)>?>? MatchAttributes { get; set; }
-
-    /// <summary>Runtime properties such as an absorb shield, projected on full stats and late AOI snapshots.</summary>
-    public OrderedHook<Func<GameSession, IEnumerable<(int Id, long Value)>>> DynamicProperties { get; } = new("CharacterService.DynamicProperties");
-
-    /// <summary>Set by BuffService: puts a buff on the player (item use action 203).</summary>
-    public Func<GameSession, int, int, Task>? GiveBuff { get; set; }
-
     /// <summary>
     /// EAttrModType.EAttrModTypeBase in 31008 attrModTypes: the client (LC_DAL_PlayerInfo._changeProperty) then floats
     /// each changed attribute ("HP 37" with an up arrow, UI_Sys_Main_PowerChangeWidget). It shows the popups only for
@@ -359,7 +344,7 @@ public sealed partial class CharacterService
     private const int AttrModTypeBase = 0;
 
     /// <param name="showChange">Base level up or committed stat points: the client floats the attribute changes.</param>
-    private async Task SendStatsAsync(GameSession session, bool showChange = false)
+    internal async Task SendStatsAsync(GameSession session, bool showChange = false)
     {
         var oldIds = session.EntityProperties.Select(p => (int)p.Id).ToHashSet();
         Refresh(session);
@@ -402,7 +387,7 @@ public sealed partial class CharacterService
         await ToSelfAndViewersAsync(session, AoiAttrChange, aoi);
     }
 
-    private async Task ToSelfAndViewersAsync(GameSession session, uint msgId, IMessage body)
+    internal async Task ToSelfAndViewersAsync(GameSession session, uint msgId, IMessage body)
     {
         await session.SendGameAsync(msgId, body);
         if (!session.Owners!.AllowsPresentation(session)) return;

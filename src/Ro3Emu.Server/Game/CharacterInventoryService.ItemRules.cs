@@ -6,12 +6,9 @@ using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     // ---- item use: requirements, use-time limits and award boxes ----
-
-    /// <summary>The realm clock of the 05:00 use-time periods; ItemBoxService assigns the host's TimeProvider.</summary>
-    internal TimeProvider UseClock { get; set; } = TimeProvider.System;
 
     /// <summary>
     /// The end of a new instance of an _iTimeBoundEnum 1 item (enum_ItemTimeBoundType.AcquireTime), unix seconds; 0 for any
@@ -23,7 +20,7 @@ public sealed partial class CharacterService
     /// end is stored as BindExpire with no binding: ItemBindInfo.expireTimeStamp counts only for itemBindType 2, and the
     /// item rows, stacking rules and the use refusal already carry that value.
     /// </summary>
-    private long AcquireExpiry(int entry) =>
+    internal long AcquireExpiry(int entry) =>
         ItemConfig.Get(data, entry) is { TimeBoundEnum: AcquireTimeBound, TimeBoundPara: [var minutes, ..] }
             ? UseClock.GetUtcNow().ToUnixTimeSeconds() + minutes * 60 : 0;
 
@@ -84,7 +81,7 @@ public sealed partial class CharacterService
     private static DateTime WeekOf(DateTime gameDay) => gameDay.Date.AddDays(-(((int)gameDay.DayOfWeek + 6) % 7));
 
     /// <summary>The counts of the periods still running: what 5009 useTimes shows and the limit checks.</summary>
-    private Dictionary<int, int> CurrentUseTimes(DBItemsInfo info)
+    internal Dictionary<int, int> CurrentUseTimes(DBItemsInfo info)
     {
         var result = new Dictionary<int, int>();
         if (!info.UseTimes.TryGetValue(UseTimesStampKey, out int stamp)) return result;

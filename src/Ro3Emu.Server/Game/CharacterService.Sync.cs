@@ -67,7 +67,7 @@ public sealed partial class CharacterService
     /// handler creates (LC_DAL_Item._processStoragePack); the change handler returns while it does not exist. So when
     /// the first card goes into a socket and the client was sent no storagePack, 5009 goes out whole again.
     /// </summary>
-    private async Task SyncItemsAsync(GameSession session, Func<bool>? stillOwner = null)
+    internal async Task SyncItemsAsync(GameSession session, Func<bool>? stillOwner = null)
     {
         var now = BuildItems(session);
         // Rebuild after dropping the old snapshot: retained empty packs have no sortedIndex in a full
@@ -88,7 +88,7 @@ public sealed partial class CharacterService
     /// builds each pack's grid from the full sync only, so gear sent into a pack missing at login (a new character's
     /// first unequipped gear: the starter weapon and shirt are worn, so pack 2 is absent) is stored but never shown.
     /// </summary>
-    private static bool ResendItemsWholeIfNeeded(GameSession session, DBItemsInfo now)
+    internal static bool ResendItemsWholeIfNeeded(GameSession session, DBItemsInfo now)
     {
         if (session.Synced.GetValueOrDefault(ItemsSync) is DBItemsInfo sent
             && (now.StoragePack != null && sent.StoragePack == null || now.PackInfo.Keys.Any(k => !sent.PackInfo.ContainsKey(k))))
@@ -100,7 +100,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>5066: PlayerBasicInfo (id and career are mandatory); exp is the progress inside the level.</summary>
-    private static RoleBaseInfo BuildBaseInfo(GameSession session)
+    internal static RoleBaseInfo BuildBaseInfo(GameSession session)
     {
         var p = session.Progress!;
         var role = session.Role!;
@@ -129,7 +129,7 @@ public sealed partial class CharacterService
     /// 5009: bag packs and currencies. A pack the client has stays present (empty) when its last item goes: a full
     /// pack without items decodes to nil and the bag code crashes on it.
     /// </summary>
-    private DBItemsInfo BuildItems(GameSession session)
+    internal DBItemsInfo BuildItems(GameSession session)
     {
         var p = session.Progress!;
         var info = new DBItemsInfo { AutoDecomposeSetting = session.AutoDecompose.Clone() };
@@ -172,7 +172,7 @@ public sealed partial class CharacterService
     }
 
     /// <summary>5007: equipped instances, the plan grid, refine levels of grids 1..7.</summary>
-    private DBEquipInfo BuildEquip(GameSession session)
+    internal DBEquipInfo BuildEquip(GameSession session)
     {
         var info = session.EquipmentPlans.Clone();
         var levels = session.EquipLevels;
@@ -187,7 +187,7 @@ public sealed partial class CharacterService
         return info;
     }
 
-    private static long NextVersion(GameSession session, uint msgId)
+    internal static long NextVersion(GameSession session, uint msgId)
     {
         lock (session.SyncVersions)
         {
@@ -204,7 +204,7 @@ public sealed partial class CharacterService
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested || stillOwner?.Invoke() == false) { return null; }
     }
 
-    private static async Task<IDisposable> LockAsync(GameSession session, IReadOnlyList<Ownership.ReservationKey>? additionalKeys = null,
+    internal static async Task<IDisposable> LockAsync(GameSession session, IReadOnlyList<Ownership.ReservationKey>? additionalKeys = null,
         CancellationToken cancellation = default)
     {
         if (session.Progress == null) throw new InvalidOperationException("not in game");
@@ -231,7 +231,7 @@ public sealed partial class CharacterService
         return new Releaser(session.StateLock, scope);
     }
 
-    private sealed class Releaser(SemaphoreSlim gate, IDisposable? scope = null) : IDisposable
+    internal sealed class Releaser(SemaphoreSlim gate, IDisposable? scope = null) : IDisposable
     {
         public void Dispose() { gate.Release(); scope?.Dispose(); }
     }

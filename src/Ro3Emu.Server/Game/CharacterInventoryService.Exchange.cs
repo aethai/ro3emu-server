@@ -8,9 +8,12 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
+using AttributedGood = Ro3Emu.Server.Game.CharacterService.AttributedGood;
+using FirstCardSightPlan = Ro3Emu.Server.Game.CharacterService.FirstCardSightPlan;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     // ---- bag: remove, pay and exchange ----
 
@@ -132,9 +135,6 @@ public sealed partial class CharacterService
     public Task<List<InvItem>?> ExchangeAsync(GameSession session, IReadOnlyList<(int Entry, long Count)> cost,
         IReadOnlyList<(int Entry, int Count)> goods) =>
         ExchangeAsync(session, new ExchangeRequest { Cost = cost, Goods = goods });
-
-    /// <summary>A paid/refunded card cost with the original item's binding and card type.</summary>
-    internal readonly record struct AttributedGood(int Entry, int Count, int BindType, long BindExpire, int CardType);
 
     /// <summary>
     /// ExchangeAsync with StateLock already held. Costs, grants and an optional caller mutation share one transaction;

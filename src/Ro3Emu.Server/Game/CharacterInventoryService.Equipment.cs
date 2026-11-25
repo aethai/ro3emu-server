@@ -10,7 +10,7 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     // ---- grid levels (EquipmentService changes them) ----
 
@@ -32,7 +32,7 @@ public sealed partial class CharacterService
     /// <summary>The highest resonance row whose _kRequest [grids, level] holds over grids 1..7 (strengthen or refine levels).</summary>
     /// <summary>CardUpgradeConfig row for (level, part, quality): the first match in table order, indexed once (the
     /// stat sheet used to scan all 720 rows for every equipped card on every call).</summary>
-    private JsonElement? CardUpgradeRow(long level, long part, long quality)
+    internal JsonElement? CardUpgradeRow(long level, long part, long quality)
     {
         _cardUpgradeRows ??= data.Table("CardUpgradeConfig").Values
             .GroupBy(r => (GameData.Int(r, "_iLevel"), GameData.Int(r, "_iParts"), GameData.Int(r, "_iQuality")))
@@ -54,7 +54,7 @@ public sealed partial class CharacterService
 
     private readonly Dictionary<string, (JsonElement Row, long Grids, long Level)[]> _resonanceRows = [];
 
-    private JsonElement? ResonanceRow(GameSession session, string table)
+    internal JsonElement? ResonanceRow(GameSession session, string table)
     {
         var levels = table.StartsWith("Strengthen") ? session.EquipLevels.Strength : session.EquipLevels.Refine;
         JsonElement? best = null;
@@ -87,10 +87,10 @@ public sealed partial class CharacterService
     /// actual EquipAttriGroupConfig / EquipSpecialGroupConfig pools; unappraised instances defer affixes until 31401.
     /// Base rolls remain per instance, including before appraisal (inferred generation timing).
     /// </summary>
-    private Dictionary<int, long>? RollAttrs(int entry) => EquipmentAffixes.Create(entry, data);
+    internal Dictionary<int, long>? RollAttrs(int entry) => EquipmentAffixes.Create(entry, data);
 
     /// <summary>A worn item's base attributes: its rolled values, or EquipConfig's minimums for an instance without them.</summary>
-    private static IEnumerable<(long Id, double Value)> BaseAttributes(InvItem item, JsonElement equip)
+    internal static IEnumerable<(long Id, double Value)> BaseAttributes(InvItem item, JsonElement equip)
     {
         if (item.Attrs is not { } attrs || !attrs.ContainsKey(AttrKeyStart)) return GameData.Pairs(equip, "_kBasicAttribute");
         var list = new List<(long, double)>();
@@ -100,7 +100,7 @@ public sealed partial class CharacterService
 
     // ---- cards (CardService moves them) ----
 
-    private const int AttrCardLevel = 501, AttrCardStar = 502, AttrCardType = 530;
+    internal const int AttrCardLevel = 501, AttrCardStar = 502, AttrCardType = 530;
 
     /// <summary>ItemConfig type 4 / subtype 400.</summary>
     public bool IsCard(int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 4 && GameData.Int(row, "_iSubType") == 400;
@@ -111,7 +111,7 @@ public sealed partial class CharacterService
     public static int CardGrid(int grid, int socket) => -(grid * 10 + socket);
 
     /// <summary>CardConfig row of a card item at a tier (star): _kBasicAttribute feeds the stat pipeline.</summary>
-    private JsonElement? CardRow(int entry, int tier)
+    internal JsonElement? CardRow(int entry, int tier)
     {
         _cardRows ??= data.Table("CardConfig").Values.GroupBy(r => (GameData.Int(r, "_iCardID"), GameData.Int(r, "_iTier"))).ToDictionary(g => g.Key, g => g.First());
         return _cardRows.TryGetValue((entry, tier), out var row) ? row : null;
@@ -119,16 +119,16 @@ public sealed partial class CharacterService
 
     private Dictionary<(long, long), JsonElement>? _cardRows;
 
-    private bool IsEquipment(int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == ItemTypeEquip;
+    internal bool IsEquipment(int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == ItemTypeEquip;
 
     /// <summary>LC_ItemProtoParse.ParseEquipInfo: only itemInfos[3] == 1 is appraised.</summary>
     internal static bool IsAppraised(InvItem item) => item.Attrs?.GetValueOrDefault(AttrAppraise) == 1;
 
     // ---- equipment ----
 
-    private static IEnumerable<InvItem> Equipped(GameSession session) => session.Items.Where(i => i.Grid > 0);
+    internal static IEnumerable<InvItem> Equipped(GameSession session) => session.Items.Where(i => i.Grid > 0);
 
-    private JsonElement? EquipRow(int entry) =>
+    internal JsonElement? EquipRow(int entry) =>
         data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iEquipId") is var equipId and > 0 ? data.Row("EquipConfig", equipId) : null;
 
     /// <summary>

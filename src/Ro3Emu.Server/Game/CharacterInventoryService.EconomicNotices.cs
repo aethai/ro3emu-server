@@ -3,7 +3,7 @@ using Romsg;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class CharacterService
+public sealed partial class CharacterInventoryService
 {
     /// <summary>Loop-only publication for converted economic owners. Finish auxiliary plan pruning
     /// and freeze packet deltas before releasing participants; transport cannot change owner state.</summary>

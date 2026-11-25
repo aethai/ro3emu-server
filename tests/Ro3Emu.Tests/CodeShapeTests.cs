@@ -14,11 +14,15 @@ public sealed class CodeShapeTests
     private const int MaxMethodLines = 80;
     private const int MaxGameMethodParams = 10;
     private const int ManyDependencies = 15;
+    private const int MaxClassDependencies = 20;
+    private const int MaxGameClassLines = 2500;
     private const int MaxLineLength = 200;
 
     private const int MethodsOver80Lines = 94;
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 26;
+    private const int ClassesOver20Dependencies = 4;
+    private const int ClassesOver2500LinesInGame = 1;
     private const int RoleNullForgiving = 961;
     private const int LinesOver200Chars = 92;
     private const int ExposedHookLists = 0;
@@ -54,6 +58,16 @@ public sealed class CodeShapeTests
     public void ClassesWith15OrMoreDependenciesOnlyGoDown() =>
         AssertRatchet(nameof(ClassesWith15OrMoreDependencies), ClassesWith15OrMoreDependencies,
             ServerSnapshot.Value.HeavyClasses);
+
+    [Fact]
+    public void NoClassExceeds20Dependencies() =>
+        AssertRatchet(nameof(ClassesOver20Dependencies), ClassesOver20Dependencies,
+            ServerSnapshot.Value.OverloadedClasses);
+
+    [Fact]
+    public void NoGameClassExceeds2500Lines() =>
+        AssertRatchet(nameof(ClassesOver2500LinesInGame), ClassesOver2500LinesInGame,
+            ServerSnapshot.Value.OversizedGameClasses);
 
     [Fact]
     public void RoleNullForgivingAccessesOnlyGoDown() =>
@@ -158,6 +172,8 @@ public sealed class CodeShapeTests
         Assert.Single(snapshot.LongMethods);
         Assert.Single(snapshot.WideGameMethods);
         Assert.Single(snapshot.HeavyClasses);
+        Assert.Empty(snapshot.OverloadedClasses);
+        Assert.Empty(snapshot.OversizedGameClasses);
         Assert.Single(snapshot.RoleBangs);
         Assert.Single(snapshot.LongLines);
         Assert.Equal(2, snapshot.HookLists.Count);
@@ -203,6 +219,7 @@ public sealed class CodeShapeTests
         List<string> longMethods = [];
         List<string> wideGameMethods = [];
         Dictionary<string, (int Params, string Location)> maxDepsByType = new(StringComparer.Ordinal);
+        Dictionary<string, (int Lines, int Files)> gameClassLines = new(StringComparer.Ordinal);
         List<string> roleBangs = [];
         List<string> longLines = [];
         List<string> hookLists = [];
@@ -223,6 +240,7 @@ public sealed class CodeShapeTests
             CollectLongMethods(relPath, root, longMethods);
             if (inGame) CollectWideMethods(relPath, root, wideGameMethods);
             CollectHeavyTypes(relPath, root, maxDepsByType);
+            if (inGame) CollectGameClassLines(root, gameClassLines);
             CollectRoleBangs(relPath, root, roleBangs);
             if (inGame) CollectHookLists(relPath, root, hookLists);
             if (inGame) CollectNumericIsOpen(relPath, root, numericIsOpen);
@@ -244,8 +262,29 @@ public sealed class CodeShapeTests
                     "{0} ({1} deps) at {2}", kv.Key, kv.Value.Params, kv.Value.Location)),
         ];
 
-        return new(longMethods, wideGameMethods, heavyClasses, roleBangs, longLines, hookLists,
-            numericIsOpen, numericStatIndexers, numericRouteMaps, numericSendGame, systemClockCalls, adHocResetOffsets);
+        List<string> overloadedClasses =
+        [
+            .. maxDepsByType
+                .Where(kv => kv.Value.Params > MaxClassDependencies)
+                .OrderByDescending(kv => kv.Value.Params)
+                .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => string.Format(CultureInfo.InvariantCulture,
+                    "{0} ({1} deps) at {2}", kv.Key, kv.Value.Params, kv.Value.Location)),
+        ];
+
+        List<string> oversizedGameClasses =
+        [
+            .. gameClassLines
+                .Where(kv => kv.Value.Lines > MaxGameClassLines)
+                .OrderByDescending(kv => kv.Value.Lines)
+                .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => string.Format(CultureInfo.InvariantCulture,
+                    "{0} ({1} lines across {2} file(s))", kv.Key, kv.Value.Lines, kv.Value.Files)),
+        ];
+
+        return new(longMethods, wideGameMethods, heavyClasses, overloadedClasses, oversizedGameClasses,
+            roleBangs, longLines, hookLists, numericIsOpen, numericStatIndexers, numericRouteMaps,
+            numericSendGame, systemClockCalls, adHocResetOffsets);
     }
 
     private static bool IsConfigTableView(string relPath) =>
@@ -316,6 +355,20 @@ public sealed class CodeShapeTests
             int line = type.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
             if (!maxDepsByType.TryGetValue(key, out var existing) || count > existing.Params)
                 maxDepsByType[key] = (count, string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+        }
+    }
+
+    private static void CollectGameClassLines(SyntaxNode root,
+        Dictionary<string, (int Lines, int Files)> gameClassLines)
+    {
+        foreach (var type in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
+        {
+            if (type.Parent is TypeDeclarationSyntax) continue;
+            var span = type.GetLocation().GetLineSpan();
+            int lines = span.EndLinePosition.Line - span.StartLinePosition.Line + 1;
+            string key = QualifiedTypeName(type);
+            gameClassLines.TryGetValue(key, out var existing);
+            gameClassLines[key] = (existing.Lines + lines, existing.Files + 1);
         }
     }
 
@@ -583,6 +636,8 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> LongMethods,
         IReadOnlyList<string> WideGameMethods,
         IReadOnlyList<string> HeavyClasses,
+        IReadOnlyList<string> OverloadedClasses,
+        IReadOnlyList<string> OversizedGameClasses,
         IReadOnlyList<string> RoleBangs,
         IReadOnlyList<string> LongLines,
         IReadOnlyList<string> HookLists,
