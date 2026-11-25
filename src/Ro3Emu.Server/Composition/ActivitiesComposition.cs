@@ -64,7 +64,10 @@ internal static class ActivitiesComposition
         timedBattles.BindChicken(app.Services.GetRequiredService<ChickenBattleService>());
         timedBattles.BindChickenEncounters(app.Services.GetRequiredService<ChickenEncounterService>());
         timedBattles.BindRift(app.Services.GetRequiredService<RiftBattleService>());
-        app.Services.GetRequiredService<CasualBattleService>();
+        app.Services.GetRequiredService<CasualBattleService>().WireBattleHooks(
+            app.Services.GetRequiredService<CombatService>(),
+            app.Services.GetRequiredService<PraiseService>(),
+            timedBattles);
         app.Services.GetRequiredService<FestivalService>();
         app.Services.GetRequiredService<TrainingService>();
     }
@@ -90,6 +93,10 @@ internal static class ActivitiesComposition
         var testing = app.Services.GetRequiredService<TestingSwitches>();
         var daily = app.Services.GetRequiredService<DailyActivityService>();
         var dungeons = app.Services.GetRequiredService<DungeonService>();
+        var casual = app.Services.GetRequiredService<CasualBattleService>();
+
+        gm.Register("casual", "open|close|start|at <s> (Mock Battle test aid: sign-ups outside the window, start the battle now"
+            + " (alone while open), jump the own match to <s> seconds after its start)", casual.GmAsync);
 
         gm.Register("rift", "| new | party [min] | <star 1-6> [boss name] (Rift Crisis test aid: status, new round, "
             + "smallest party, or a stone next to you)", rifts.RiftGmAsync);

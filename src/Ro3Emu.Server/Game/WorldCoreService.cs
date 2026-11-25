@@ -82,10 +82,9 @@ public sealed partial class WorldCoreService : IGameTicker
     private readonly ulong _serverOpenSeconds;
 
     public WorldCoreService(World world, WorldData worldData, GameData data, RoleStore roles, SessionRegistry sessions,
-        SceneService scene, CharacterService character, CombatService combat, BuffService buffs, MonsterService monsters, TeamService teams,
-        GameLoop loop, TimeProvider clock, GmCommands gm, DungeonService dungeons, SeasonService seasons,
-        DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines, ChatService chat,
-        MountService mounts)
+        SceneService scene, CharacterService character, CombatService combat, BuffService buffs, TeamService teams,
+        GameLoop loop, TimeProvider clock, DungeonService dungeons, SeasonService seasons,
+        DailyActivityService daily, SeasonRefineService seasonRefine, FirstHeartService firstHeart, PersonalService personal, PublicLineManager lines)
     {
         this._world = world; this._worldData = worldData; this._data = data; this._roles = roles; this._sessions = sessions;
         this._scene = scene; this._character = character; this._combat = combat; this._buffs = buffs; this._teams = teams; this._clock = clock;
@@ -99,27 +98,26 @@ public sealed partial class WorldCoreService : IGameTicker
         _serverOpenSeconds = (ulong)seasons.StartTime;
         scene.AddOwnedAfterLoaded(LoadedAsync);
         scene.Leaving.Subscribe(LeavingAsync);
-        monsters.TargetChanged.Subscribe(TargetChangedAsync);
         combat.ReviveOffer = OfferReviveAsync;
         combat.ReviveCheck = dungeons.ExternalReviveError;
         dungeons.SetCustomData = SetCustomAsync;
         combat.ReviveItemSkill = ReviveItemSkillAsync;
         combat.MountFlightSwitch = MountFlightSwitchAsync;
-        mounts.LandFlyingRider = ForceLandAsync;
         character.WingJump = WingJumpAsync;
         character.RegisterItemAction(TaskJumpMapAction, UseQuestWingAsync);
         scene.QueuePublicAdmission = QueueAdmissionAsync;
         scene.PreferredLine = PreferredLine;
-        lines.HasPendingWork.Subscribe(monsters.HasPendingWork);
-        lines.HasPendingWork.Subscribe(combat.HasPendingMapWork);
-        lines.Retiring.Subscribe(monsters.RetireRuntimeAsync);
-        lines.Retiring.Subscribe(chat.RetireLineAsync);
-        lines.Retiring.Subscribe(key => { _sceneVariables.Remove(key.WorldScene); return Task.CompletedTask; });
-        gm.Register("line", "[n|new|info] (TEST AID)", scene.LineCommandAsync);
-        gm.Register("worldcustom", "id value", async (s, a) => await SetCustomAsync(s, new CustomData
-        { Id = long.Parse(a[0]), CustomParam = new CustomParam { Tp = (CustomParam.Types.ParamType)3, LongParam = long.Parse(a[1]) } }));
-        gm.Register("worldleave", "seconds", (s, a) => BeginTemporaryLeaveAsync(s, int.Parse(a[0])));
-        gm.Register("scenevar", "id value", (s, a) => SetSceneVariableAsync(s.WorldScene, new CommonPublicVar { VarId = int.Parse(a[0]), Vi64 = { long.Parse(a[1]) } }));
+    }
+
+    internal void WireWorldHooks(MonsterService monsters, ChatService chat, MountService mounts)
+    {
+        monsters.TargetChanged.Subscribe(TargetChangedAsync);
+        mounts.LandFlyingRider = ForceLandAsync;
+        _lines.HasPendingWork.Subscribe(monsters.HasPendingWork);
+        _lines.HasPendingWork.Subscribe(_combat.HasPendingMapWork);
+        _lines.Retiring.Subscribe(monsters.RetireRuntimeAsync);
+        _lines.Retiring.Subscribe(chat.RetireLineAsync);
+        _lines.Retiring.Subscribe(key => { _sceneVariables.Remove(key.WorldScene); return Task.CompletedTask; });
     }
 
     private long Now => _clock.GetUtcNow().ToUnixTimeMilliseconds();

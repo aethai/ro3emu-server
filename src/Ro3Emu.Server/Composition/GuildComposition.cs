@@ -97,6 +97,10 @@ internal static class GuildComposition
         var guildService = app.Services.GetRequiredService<GuildService>();
         var challenge = app.Services.GetRequiredService<GuildChallengeService>();
         var hunting = app.Services.GetRequiredService<GuildHuntingService>();
+        var league = app.Services.GetRequiredService<GuildLeagueService>();
+
+        gm.Register("league", "register | fill | status (Guild League test aid: register the current or next tournament now; "
+            + "fill your guild's elite roster now; show it)", league.GmAsync);
 
         gm.Register("guildchallenge", "open|close (test aid)", async (s, a) =>
         {

@@ -72,8 +72,8 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
     private readonly WorldData _worldData;
     private readonly CharacterService _character;
     private readonly RewardService _rewards;
-    private readonly TimedBattleService _timedBattles;
-    private readonly PraiseService _praise;
+    private TimedBattleService _timedBattles = null!;
+    private PraiseService _praise = null!;
     private readonly GameLoop _loop;
     private readonly RoleStore _roles;
     private readonly AccountStore _accounts;
@@ -150,25 +150,28 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
 
     public CasualBattleService(GameData data, ActivityClock activityClock, TimeProvider time, FunctionService functions,
         TeamService teams, SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData worldData,
-        CharacterService character, RewardService rewards, TimedBattleService timedBattles, PraiseService praise,
-        CombatService combat, DungeonService dungeons, GameLoop loop, GmCommands gm, RoleStore roles, AccountStore accounts,
-        BuffService buffs, MonsterService monsters, World world, ILogger<CasualBattleService> log)
+        CharacterService character, RewardService rewards, DungeonService dungeons, GameLoop loop, RoleStore roles,
+        AccountStore accounts, BuffService buffs, MonsterService monsters, World world, ILogger<CasualBattleService> log)
     {
         this._data = data; this._activityClock = activityClock; this._time = time; this._functions = functions; this._teams = teams;
         this._sessions = sessions; this._instances = instances; this._scene = scene; this._worldData = worldData;
-        this._character = character; this._rewards = rewards; this._timedBattles = timedBattles; this._praise = praise;
+        this._character = character; this._rewards = rewards;
         this._loop = loop; this._roles = roles; this._accounts = accounts; this._dungeons = dungeons; this._log = log;
         this._buffs = buffs; this._monsters = monsters; this._world = world;
         _obligations = new RoleObligations<CasualBattleObligationRow>("Mock Battle payout", accounts, loop, time, Online,
             s => s.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
         scene.Loaded.Subscribe(LoadedAsync);
         scene.Leaving.Subscribe(LeavingAsync);
+        dungeons.CurrentStatisticsOwner = s => Live(s) is { } m ? Statistics(m) : null;
+    }
+
+    internal void WireBattleHooks(CombatService combat, PraiseService praise, TimedBattleService timedBattles)
+    {
+        _praise = praise;
+        _timedBattles = timedBattles;
         combat.PvpDealt.Subscribe(Dealt);
         combat.Healed.Subscribe((s, n) => { if (Live(s) is { } m) m.Players[s].Healing += n; });
-        dungeons.CurrentStatisticsOwner = s => Live(s) is { } m ? Statistics(m) : null;
         HookArena(combat);
-        gm.Register("casual", "open|close|start|at <s> (Mock Battle test aid: sign-ups outside the window, start the battle now"
-            + " (alone while open), jump the own match to <s> seconds after its start)", GmAsync);
     }
 
     private long Now => _time.GetUtcNow().ToUnixTimeSeconds();
@@ -877,7 +880,7 @@ public sealed partial class CasualBattleService : IGameTicker, ICombatRule
         await _obligations.DeliverPendingAsync(s, roleId, () => s.Role?.Id == roleId);
     }
 
-    private async Task GmAsync(GameSession s, string[] args)
+    internal async Task GmAsync(GameSession s, string[] args)
     {
         switch (args.FirstOrDefault()?.ToLowerInvariant())
         {
