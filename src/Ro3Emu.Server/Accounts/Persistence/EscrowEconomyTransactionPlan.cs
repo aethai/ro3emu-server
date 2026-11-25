@@ -100,6 +100,7 @@ internal sealed class EscrowEconomyTransactionPlan(RoleItemPlan child, EscrowEco
             string name = part.GetType().Name;
             if (name is not ("MarketItemsWritePlan" or "MarketCurrencyWritePlan" or "MarketBlobWritePlan" or
                 "MarketRecordWritePlan" or "MarketRecordGuardPlan" or "MarketRoleGuardPlan" or
+                "TradeListingSellerCountGuardPlan" or
                 "RoleBlobGuardPlan" or "RoleBlobWritePlan" or "RoleProgressWritePlan" or
                 "ItemDeltaWritePlan" or "ItemSnapshotWritePlan" or "ItemAwardUpsertPlan" or
                 "RoleAwardStatePlan" or "FinancialMailAppendPlan" or "AuctionItemWritePlan" or

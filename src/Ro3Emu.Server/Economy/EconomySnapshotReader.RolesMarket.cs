@@ -404,6 +404,30 @@ public static partial class EconomySnapshotReader
                     });
                 });
             }
+            if (tables.Contains("trade_listing"))
+            {
+                using var listingCmd = Command("SELECT sku,data FROM trade_listing ORDER BY sku");
+                using var lr = listingCmd.ExecuteReader();
+                while (lr.Read())
+                {
+                    Guard("market/trade_listing/row/" + rowIndex++, () =>
+                    {
+                        string id = SqlText(lr, 0), data = SqlText(lr, 1), key = "market/trade_listing/" + id;
+                        Measure("trade_listing", Encoding.UTF8.GetByteCount(data), true);
+                        Guard(key, () =>
+                        {
+                            using var doc = Json(data);
+                            var row = doc.RootElement;
+                            if (row.ValueKind != JsonValueKind.Object) throw new JsonException("Expected trade listing object.");
+                            Fields(row, "Sku Spu SellerId Entry Currency UnitPrice Quantity SaleTimeMs PublicUntilMs ExpiresAtMs SpecialType Item");
+                            long seller = Long(row, "SellerId"), quantity = Long(row, "Quantity");
+                            if (!Try(row, "Item", out var item) || Long(item, "Stack") != quantity || Long(item, "Entry") != Long(row, "Entry"))
+                                throw new FormatException("Trade listing item/quantity mismatch.");
+                            Item(item, Role(seller, key), EconomyCompartment.TradeListing, key);
+                        });
+                    });
+                }
+            }
         }
     }
 }

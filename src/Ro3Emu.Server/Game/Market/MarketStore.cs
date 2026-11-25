@@ -371,6 +371,61 @@ public sealed class MarketTransaction
         _writes = true;
     }
 
+    public int SellerListingCount(long sellerId)
+    {
+        int count = _accounts.ReadSync<int>(new TradeListingSellerCountReadPlan(sellerId));
+        _plan.Guard(new TradeListingSellerCountGuardPlan(sellerId, count));
+        return count;
+    }
+
+    public List<TradeService.Listing> ListingsBySeller(long sellerId) =>
+        DeserializeListings(_accounts.ReadSync<List<(string Sku, string Data)>>(new TradeListingBySellerReadPlan(sellerId)));
+
+    public List<TradeService.Listing> ListingsBySpu(string spu, int? unitPrice = null) =>
+        DeserializeListings(_accounts.ReadSync<List<(string Sku, string Data)>>(new TradeListingBySpuReadPlan(spu, unitPrice)));
+
+    public List<TradeService.Listing> ListingsBySkus(IEnumerable<string> skus) =>
+        DeserializeListings(_accounts.ReadSync<List<(string Sku, string Data)>>(new TradeListingBySkusReadPlan([.. skus])));
+
+    public (List<TradeService.Listing> Rows, int TotalCount) QueryListingsPage(int? entry, int? specialType, long? sellerId,
+        string? sku, bool publicity, long nowMs, bool priceDesc, int pageNo, int pageSize)
+    {
+        var page = _accounts.ReadSync<TradeListingPage>(new TradeListingPageReadPlan(
+            entry, specialType, sellerId, sku, publicity, nowMs, priceDesc, pageNo, pageSize));
+        var rows = new List<TradeService.Listing>(page.Rows.Count);
+        foreach (string json in page.Rows)
+            if (JsonSerializer.Deserialize<TradeService.Listing>(json) is { } listing) rows.Add(listing);
+        return (rows, page.TotalCount);
+    }
+
+    internal Dictionary<(int Entry, int SpecialType), TradeListingSummary> QueryListingInventory(int[] entries,
+        int? specialType, bool publicity, long nowMs) =>
+        _accounts.ReadSync<Dictionary<(int Entry, int SpecialType), TradeListingSummary>>(
+            new TradeListingInventoryReadPlan(entries, specialType, publicity, nowMs));
+
+    public (List<TradeService.Listing> Matured, List<TradeService.Listing> Expired, long NextDueMs) QueryDueListings(long nowMs)
+    {
+        var snap = _accounts.ReadSync<TradeListingDueSnapshot>(new TradeListingDueReadPlan(nowMs));
+        return (DeserializeListings(snap.Matured), DeserializeListings(snap.Expired), snap.NextDueMs);
+    }
+
+    public List<TradeService.Sale> QueryHistoryPage(long? buyerId, long? sellerId, int[] entries, int pageNo, int pageSize)
+    {
+        var raw = _accounts.ReadSync<List<string>>(new TradeHistoryPageReadPlan(buyerId, sellerId, entries, pageNo, pageSize));
+        var list = new List<TradeService.Sale>(raw.Count);
+        foreach (string json in raw)
+            if (JsonSerializer.Deserialize<TradeService.Sale>(json) is { } sale) list.Add(sale);
+        return list;
+    }
+
+    private static List<TradeService.Listing> DeserializeListings(List<(string Sku, string Data)> rows)
+    {
+        var list = new List<TradeService.Listing>(rows.Count);
+        foreach (var (_, json) in rows)
+            if (JsonSerializer.Deserialize<TradeService.Listing>(json) is { } listing) list.Add(listing);
+        return list;
+    }
+
     public byte[]? LoadBlob(long id, string column)
     {
         CheckColumn(column);

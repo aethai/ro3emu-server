@@ -31,7 +31,7 @@ public sealed partial class TradeService
             if (req.Quantity < 1 || req.Quantity > item.Stack || req.Quantity > GameData.Int(row, "_iShelveLimit")
                 || req.Quantity > GameData.Int(row, "_iTradeStackMaxNum")) return ErrorCodes.TradeSaleQuantity;
             if (!ValidPrice(row, req.ItemPrice)) return ErrorCodes.TradePrice;
-            if (Active(tx).Count(l => l.SellerId == owner.RoleId) >= s.Social.Trade!.StallsNum) return ErrorCodes.TradeSpace;
+            if (tx.SellerListingCount(owner.RoleId) >= s.Social.Trade!.StallsNum) return ErrorCodes.TradeSpace;
             listingFee = ListingFee(req.ItemPrice, req.Quantity, req.CurrencyType);
             if (listingFee < 0) return ErrorCodes.TradeRequest;
             // UI_Sys_TradeSalePanelCtrl:476-491 checks the fee against item 2, regardless of sale currency.
@@ -109,18 +109,19 @@ public sealed partial class TradeService
             // ordinary pooled stock. Keep the opcode from bypassing publicity or queue rules.
             if (GameData.Int(config.Value, "_iTradeType") != (premium ? 1 : 2)) return ErrorCodes.TradeRequest;
             if (quantity > GameData.Int(config.Value, "_iBuyLimit")) return ErrorCodes.TradeQuantity;
-            var available = Active(tx).Where(l => l.Entry == entry && l.UnitPrice == quote);
+            List<Listing> candidates;
             if (premium)
             {
                 if (string.IsNullOrEmpty(sku)) return ErrorCodes.TradeRequest;
-                available = available.Where(l => l.Sku == sku);
+                var single = tx.Get<Listing>(Listings, sku);
+                candidates = single is { Quantity: > 0 } && single.Entry == entry && single.UnitPrice == quote
+                    ? [single] : [];
             }
             else
             {
                 if (string.IsNullOrEmpty(spu)) return ErrorCodes.TradeRequest;
-                available = available.Where(l => l.Spu == spu);
+                candidates = [.. tx.ListingsBySpu(spu, quote).Where(l => l.Entry == entry)];
             }
-            var candidates = available.ToList();
             if (candidates.Count == 0) return ErrorCodes.TradeBuyFailed;
             if (candidates.All(l => l.SellerId == s.Role!.Id)) return ErrorCodes.TradeOwnListing;
             if (candidates.Where(l => l.SellerId != s.Role!.Id).All(l => l.PublicUntilMs > NowMs))
@@ -269,7 +270,7 @@ public sealed partial class TradeService
     private async Task<List<Listing>> OwnRows(GameSession s)
     {
         var result = new List<Listing>();
-        await market.RunAsync(s, tx => { result = [.. Active(tx).Where(l => l.SellerId == s.Role!.Id)]; return 0; });
+        await market.RunAsync(s, tx => { result = tx.ListingsBySeller(s.Role!.Id); return 0; });
         return result;
     }
 

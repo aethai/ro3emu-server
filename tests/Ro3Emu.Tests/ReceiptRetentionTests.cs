@@ -399,7 +399,7 @@ public sealed class ReceiptRetentionTests : IDisposable
             "role", "item", "server_state", "tower_first_pass",
             "friend", "friend_apply", "blacklist", "friend_metadata", "friend_chat_group", "friend_chat_member",
             "recent_team_peer", "adventure_group", "adventure_group_member",
-            "market_record", "auction_item", "auction_run", "auction_bonus", "auction_source", "auction_prebuy",
+            "market_record", "trade_listing", "auction_item", "auction_run", "auction_bonus", "auction_source", "auction_prebuy",
             "guild", "guild_member", "guild_market", "guild_recovery", "guild_event",
             "guild_caravan_member", "guild_caravan_version", "guild_campfire", "guild_hunting",
             "guild_challenge", "guild_challenge_clear",
