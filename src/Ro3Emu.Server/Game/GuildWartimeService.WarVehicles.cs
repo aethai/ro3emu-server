@@ -4,6 +4,8 @@ using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 
+using IWarMachineSite = Ro3Emu.Server.Game.GuildService.IWarMachineSite;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -15,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// (LC_DAL_Guild.ReceiveGuildVehicleUseRsp); the vehicle itself arrives through the AOI and is boarded by its interactions
 /// (TerritoryWarsService.WarVehicles).
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint VehicleUse = 32281;
     private const long UseSkillEffect = 606;

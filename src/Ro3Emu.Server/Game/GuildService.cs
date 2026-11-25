@@ -20,9 +20,131 @@ namespace Ro3Emu.Server.Game;
 /// </summary>
 public sealed partial class GuildService(GameData data, GuildStore store, RoleStore roles, SessionRegistry sessions,
     CharacterService character, FunctionService functions, ChatService chat, IOptions<ServerOptions> options,
-    TimeProvider clock, Ownership.OwnerRegistry ownerRegistry, AwardService awards, GameLoop loop, SceneService scene,
-    TeamService teams, MailService mail, ILogger<GuildService> log)
+    TimeProvider clock, Ownership.OwnerRegistry ownerRegistry, GameLoop loop, MailService mail, ILogger<GuildService> log)
 {
+    internal GameData GameData => data;
+    internal GuildStore Store => store;
+    internal RoleStore Roles => roles;
+    internal CharacterService Character => character;
+    internal FunctionService Functions => functions;
+    internal ChatService Chat => chat;
+    internal TimeProvider Clock => clock;
+    internal Ownership.OwnerRegistry OwnerRegistry => ownerRegistry;
+    internal GameLoop Loop => loop;
+    internal MailService Mail => mail;
+    internal ILogger<GuildService> Log => log;
+
+    internal GuildWartimeService Wartime { get; private set; } = null!;
+    internal void BindWartime(GuildWartimeService wartime) => Wartime = wartime;
+
+    // ---- Wartime, market, activity, item actions, league elites, rally, and broad email facades ----
+
+    public const uint TakeActivityBonus = GuildWartimeService.TakeActivityBonus,
+        ReceiveWeekActiveReward = GuildWartimeService.ReceiveWeekActiveReward,
+        MoneyRank = GuildWartimeService.MoneyRank;
+    public const int ErrActivityShort = GuildWartimeService.ErrActivityShort,
+        ErrActivityClaimed = GuildWartimeService.ErrActivityClaimed,
+        ErrActivityRewardId = GuildWartimeService.ErrActivityRewardId,
+        ErrDividendClaimed = GuildWartimeService.ErrDividendClaimed;
+    public const uint BroadEmail = GuildWartimeService.BroadEmail;
+    public const uint BuyCommodity = GuildWartimeService.BuyCommodity;
+    internal const int UnlockBadgeAction = GuildWartimeService.UnlockBadgeAction,
+        MemberPackageAction = GuildWartimeService.MemberPackageAction;
+    public const int ErrStorePosition = GuildWartimeService.ErrStorePosition,
+        ErrStoreFunds = GuildWartimeService.ErrStoreFunds,
+        ErrStoreLimit = GuildWartimeService.ErrStoreLimit;
+    public const uint EliteSave = GuildWartimeService.EliteSave, EliteQuery = GuildWartimeService.EliteQuery,
+        EliteTeam = GuildWartimeService.EliteTeam, EliteChange = GuildWartimeService.EliteChange;
+    public const uint Convene = GuildWartimeService.Convene, ConveneNotify = GuildWartimeService.ConveneNotify,
+        ConfirmConvene = GuildWartimeService.ConfirmConvene;
+    public const int ErrRallyExpired = GuildWartimeService.ErrRallyExpired,
+        ErrRallyArea = GuildWartimeService.ErrRallyArea,
+        ErrRallyCooldown = GuildWartimeService.ErrRallyCooldown,
+        ErrRallyTargetArea = GuildWartimeService.ErrRallyTargetArea;
+    public const uint WartimeStore = GuildWartimeService.WartimeStore, ToolAssign = GuildWartimeService.ToolAssign,
+        ToolExchange = GuildWartimeService.ToolExchange, ToolList = GuildWartimeService.ToolList,
+        ToolPermission = GuildWartimeService.ToolPermission, ToolChange = GuildWartimeService.ToolChange;
+    public const uint Prepay = GuildWartimeService.Prepay, BuildCannon = GuildWartimeService.BuildCannon,
+        CancelPrepay = GuildWartimeService.CancelPrepay, VehicleUse = GuildWartimeService.VehicleUse;
+    internal const int FirearmSlots = GuildWartimeService.FirearmSlots, VehicleSlots = GuildWartimeService.VehicleSlots;
+
+    /// <summary>The siege side of building a cannon (TerritoryWarsService.WarMachines).</summary>
+    public interface IWarMachineSite
+    {
+        /// <summary>0, or 530 (<see cref="ErrorCodes.GuildCannonPlace"/>) when the blueprint stands where the client
+        /// would refuse it.</summary>
+        int CheckPlace(GameSession builder, JsonElement cannon, Vec3 pos);
+        /// <summary>The builder's 32702: BuildingCannon with <paramref name="state"/>, Idle when null.</summary>
+        Task BuildStateAsync(GameSession builder, BuildCannonState? state);
+        /// <summary>The cannon raised for a builder still fighting there; its unit id, or 0.</summary>
+        Task<long> RaiseAsync(GameSession builder, JsonElement cannon, Vec3 pos, float face);
+        /// <summary>The vehicle NPC <paramref name="npcId"/> raised beside its owner still fighting there; its unit id, or 0.</summary>
+        Task<long> RaiseVehicleAsync(GameSession owner, int npcId);
+        /// <summary>A cannon or vehicle of a running siege still stands.</summary>
+        bool Standing(long machine);
+        /// <summary>Destroys a standing cannon or vehicle; whoever is on it gets off first.</summary>
+        Task RemoveAsync(long machine);
+        /// <summary>The repair zone of a repair item's GVG_S0_RepairArea skill at the member's feet; false if it could not stand.</summary>
+        Task<bool> RaiseRepairZoneAsync(GameSession user, int item, long skill);
+    }
+
+    public Func<GameSession, int>? WarSideOf { get => Wartime.WarSideOf; set => Wartime.WarSideOf = value; }
+    public IWarMachineSite? WarMachines { get => Wartime.WarMachines; set => Wartime.WarMachines = value; }
+    internal Func<Task>? AfterMarketNoticeSendForTest { get => Wartime.AfterMarketNoticeSendForTest; set => Wartime.AfterMarketNoticeSendForTest = value; }
+    internal int LeagueEliteMax => Wartime.LeagueEliteMax;
+
+    internal long WeekActivityOf(GuildStore.State g) => Wartime.WeekActivityOf(g);
+    internal long LastWeekActivityOf(GuildStore.State g) => Wartime.LastWeekActivityOf(g);
+    public Task DepositAsync(GameSession s) => Wartime.DepositAsync(s);
+    public Task ReceiveWeekRewardAsync(GameSession s, ReceiveGuildWeekActiveRewardReq req) => Wartime.ReceiveWeekRewardAsync(s, req);
+    public Task TakeActivityBonusAsync(GameSession s) => Wartime.TakeActivityBonusAsync(s);
+    public Task MoneyRankAsync(GameSession s) => Wartime.MoneyRankAsync(s);
+    public Task BroadEmailAsync(GameSession s, GuildBroadEmailReq req) => Wartime.BroadEmailAsync(s, req);
+    public Task BuyCommodityAsync(GameSession s, BuyGuildCommodityReq req) => Wartime.BuyCommodityAsync(s, req);
+    internal static Dictionary<int, long> LeagueElites(GuildStore.State g) => GuildWartimeService.LeagueElites(g);
+    internal static bool IsLeagueElite(GuildStore.State g, long role) => GuildWartimeService.IsLeagueElite(g, role);
+    public Task EliteQueryAsync(GameSession s) => Wartime.EliteQueryAsync(s);
+    public Task EliteSaveAsync(GameSession s, QuickJoinEliteGroupReq req) => Wartime.EliteSaveAsync(s, req);
+    internal Task<int> FillLeagueElitesAsync(long guildId, Func<GuildStore.Member, bool> eligible) => Wartime.FillLeagueElitesAsync(guildId, eligible);
+    public Task EliteTeamAsync(GameSession s) => Wartime.EliteTeamAsync(s);
+    public Task MarketAsync(GameSession s, uint id, ReadOnlyMemory<byte> body) => Wartime.MarketAsync(s, id, body);
+    public Task ConveneAsync(GameSession s) => Wartime.ConveneAsync(s);
+    public Task ConfirmConveneAsync(GameSession s, ConfirmConveneReq req) => Wartime.ConfirmConveneAsync(s, req);
+    internal Task MachineGoneAsync(long role, long machine) => Wartime.MachineGoneAsync(role, machine);
+    internal static WartimeToolType ToolOf(GuildStore.State g, long role) => GuildWartimeService.ToolOf(g, role);
+    internal IReadOnlyDictionary<int, int> WartimeStock(GuildStore.State g) => Wartime.WartimeStock(g);
+    public Task PrepayAsync(GameSession s, GuildWartimeStorePrepayReq req) => Wartime.PrepayAsync(s, req);
+    public Task CancelPrepayAsync(GameSession s) => Wartime.CancelPrepayAsync(s);
+    public Task BuildCannonAsync(GameSession s, GuildAttackCityBuildReq req) => Wartime.BuildCannonAsync(s, req);
+    public Task ToolListAsync(GameSession s) => Wartime.ToolListAsync(s);
+    public Task ToolAssignAsync(GameSession s, GuildWartimeToolBelongOperReq req) => Wartime.ToolAssignAsync(s, req);
+    public Task ToolExchangeAsync(GameSession s, GuildWartimeToolExchangeOperReq req) => Wartime.ToolExchangeAsync(s, req);
+    internal int VehicleNpc(int item) => Wartime.VehicleNpc(item);
+    internal long RepairSkill(int item) => Wartime.RepairSkill(item);
+    public Task VehicleUseAsync(GameSession s, GuildVehicleUseReq req) => Wartime.VehicleUseAsync(s, req);
+    internal WartimeToolType ToolOfRole(GameSession s) => Wartime.ToolOfRole(s);
+
+    private long WeekStart => Wartime.WeekStart;
+    private long DayStart => Wartime.DayStart;
+    private long CurActivity(GuildStore.State g) => Wartime.WeekActivityOf(g);
+    private long LastWeekActivity(GuildStore.State g, GuildStore.Member m) => Wartime.LastWeekActivity(g, m);
+    private GuildActivityInfo ActivityInfo(GuildStore.State g) => Wartime.ActivityInfo(g);
+    private void HookDeposits() => Wartime.HookDeposits();
+    private Task PushDividendAsync(GameSession s, GuildStore.State g) => Wartime.PushDividendAsync(s, g);
+    private int BroadEmailsToday(GuildStore.State g) => Wartime.BroadEmailsToday(g);
+    private void HookItemActions() => Wartime.HookItemActions();
+    private bool IconUnlocked(GuildStore.State? g, JsonElement row) => Wartime.IconUnlocked(g, row);
+    private static IEnumerable<UnLockHeadIcon> UnlockedIcons(GuildStore.State g) => GuildWartimeService.UnlockedIcons(g);
+    private IEnumerable<ShopCommodityInfo> StoreCounts(GuildStore.State g) => Wartime.StoreCounts(g);
+    private Task PushElitesAsync(GuildStore.State g, IReadOnlySet<long> before) => Wartime.PushElitesAsync(g, before);
+    private static bool DropElite(GuildStore.State g, long role) => GuildWartimeService.DropElite(g, role);
+    private Task<bool> TakeMachinesAsync(GuildStore.State g, long role) => Wartime.TakeMachinesAsync(g, role);
+    private static bool ReturnPrepay(GuildStore.State g, long role) => GuildWartimeService.ReturnPrepay(g, role);
+    private Task PushStoreAsync(GuildStore.State g) => Wartime.PushStoreAsync(g);
+    private Task SendWartimeAsync(GameSession s, GuildStore.State g) => Wartime.SendWartimeAsync(s, g);
+    private static Task ClearWartimeAsync(GameSession s) => GuildWartimeService.ClearWartimeAsync(s);
+    private static List<(WartimeToolType Type, int Index)> DropWartime(GuildStore.State g, long role) => GuildWartimeService.DropWartime(g, role);
+    private Task PushToolChangesAsync(GuildStore.State g, List<(WartimeToolType Type, int Index)> changed) => Wartime.PushToolChangesAsync(g, changed);
     public const int Function = 13;
     public const uint GuildSync = 5047, Create = 32210, Recommend = 32211, HelperList = 32212, Full = 32213, MemberChange = 32214;
     public const uint CheckSensitive = 10003;
@@ -46,12 +168,13 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
 
     private readonly Dictionary<long, Invitation> _invites = [];
     private long _nextToken = clock.GetUtcNow().ToUnixTimeMilliseconds();
+    internal long NextToken() => ++_nextToken;
     private sealed record Invitation(long GuildId, long Recipient, long Inviter, long ExpiresMs);
     // The injected clock, as WeekStart: membership times compared with the guild week must share its calendar.
-    private long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
-    private long NowSec() => clock.GetUtcNow().ToUnixTimeSeconds();
-    private GameSession? Online(long id) => sessions.All().FirstOrDefault(s => s.Role?.Id == id);
-    private GuildStore.State? Own(GameSession session) => session.Role == null ? null : store.ForRole(session.Role.Id);
+    internal long NowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
+    internal long NowSec() => clock.GetUtcNow().ToUnixTimeSeconds();
+    internal GameSession? Online(long id) => sessions.All().FirstOrDefault(s => s.Role?.Id == id);
+    internal GuildStore.State? Own(GameSession session) => session.Role == null ? null : store.ForRole(session.Role.Id);
 
     private async Task LoginCoreAsync(GameSession session)
     {
@@ -83,7 +206,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         await PushMember(guild, member, GuildMemberInfoChangeNtf.Types.ChangeType.Update, online ? 0 : member.RoleId);
     }
 
-    private DBRoleGuildInfo Personal(long roleId) => roles.LoadGuildInfo(roleId) is { } bytes
+    internal DBRoleGuildInfo Personal(long roleId) => roles.LoadGuildInfo(roleId) is { } bytes
         ? DBRoleGuildInfo.Parser.ParseFrom(bytes) : new DBRoleGuildInfo();
 
     private static DBRoleGuildInfo WithoutGuild(DBRoleGuildInfo prior) => new()
@@ -93,7 +216,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         MultiApplicationTime = prior.MultiApplicationTime,
     };
 
-    private Task SyncRole(GameSession session)
+    internal Task SyncRole(GameSession session)
     {
         var info = session.Guild ?? new DBRoleGuildInfo();
         // Last week's chests expired with the week (UITips 17019); the client shows any key as received.
@@ -126,7 +249,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     }
 
     internal static GuildHeadIcon Icon(GuildStore.State g) => new() { BackgroundType = g.Background, IconType = g.Icon };
-    private static GuildResource Resource(GuildStore.State g) => new()
+    internal static GuildResource Resource(GuildStore.State g) => new()
     {
         Money = g.Money, Contribute = g.Contribute, Materials = g.Materials,
         Reputation = g.Reputation, AuctionMaterials = g.AuctionMaterials,
@@ -327,7 +450,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         return 0;
     }
 
-    private bool Sensitive(string text) => options.Value.GuildBlockedWords.Any(word =>
+    internal bool Sensitive(string text) => options.Value.GuildBlockedWords.Any(word =>
         !string.IsNullOrWhiteSpace(word) && text.Contains(word, StringComparison.OrdinalIgnoreCase));
 
     private static bool AllNumeric(string text) => text.Length > 0 &&
@@ -1084,7 +1207,7 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
             Resource = Resource(guild)
         }) : Task.CompletedTask;
 
-    private async Task PushBase(GuildStore.State g, GuildBaseInfoChangeNtf change)
+    internal async Task PushBase(GuildStore.State g, GuildBaseInfoChangeNtf change)
     {
         foreach (var m in g.Members.Values)
             if (Online(m.RoleId) is { } peer) await peer.SendGameAsync(BaseChange, change);

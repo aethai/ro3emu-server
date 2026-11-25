@@ -12,7 +12,7 @@ namespace Ro3Emu.Server.Game;
 /// BuyGuildCommodity for the Guild Store (ShopConfig 2702, shop class enum_GuildBuildingShopClassID.Marketplace) whose
 /// three commodities are the member packs 1211101..1211103.
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint BuyCommodity = 32301;
     internal const int UnlockBadgeAction = 113, MemberPackageAction = 114;
@@ -25,7 +25,7 @@ public sealed partial class GuildService
     private bool _itemActionsHooked;
 
     /// <summary>On the first guild login, as HookDeposits: the item actions reserve the actor's own guild keys.</summary>
-    private void HookItemActions()
+    internal void HookItemActions()
     {
         if (_itemActionsHooked) return;
         _itemActionsHooked = true;
@@ -36,10 +36,10 @@ public sealed partial class GuildService
     private static bool DefaultIcon(System.Text.Json.JsonElement row) => GameData.Int(row, "_iDefaultUnlock") == 1;
 
     /// <summary>A GuildIconConfig frame or design the guild may pick: unlocked by default or by a 113 item.</summary>
-    private bool IconUnlocked(GuildStore.State? g, System.Text.Json.JsonElement row) =>
+    internal bool IconUnlocked(GuildStore.State? g, System.Text.Json.JsonElement row) =>
         DefaultIcon(row) || g?.UnlockedHeadIcons.ContainsKey(GameData.Int(row, "_iID")) == true;
 
-    private static IEnumerable<UnLockHeadIcon> UnlockedIcons(GuildStore.State g) =>
+    internal static IEnumerable<UnLockHeadIcon> UnlockedIcons(GuildStore.State g) =>
         g.UnlockedHeadIcons.OrderBy(p => p.Key).Select(p => new UnLockHeadIcon { Id = (int)p.Key, Removetime = p.Value });
 
     /// <summary>
@@ -139,7 +139,7 @@ public sealed partial class GuildService
     // ------------------------------------------------------------------ 32301 Guild Store
 
     /// <summary>This week's guild-wide Guild Store purchases, every commodity of the store listed (0 when none).</summary>
-    private IEnumerable<ShopCommodityInfo> StoreCounts(GuildStore.State g)
+    internal IEnumerable<ShopCommodityInfo> StoreCounts(GuildStore.State g)
     {
         bool current = g.ShopCommodityWeek == WeekStart;
         return data.Table("ShopCommodityConfig").Values.Where(r => GameData.Int(r, "_iClassID") == GuildStoreClass)

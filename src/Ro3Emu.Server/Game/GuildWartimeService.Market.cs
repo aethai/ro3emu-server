@@ -7,7 +7,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     private long MarketNowMs() => clock.GetUtcNow().ToUnixTimeMilliseconds();
     internal Func<Task>? AfterMarketNoticeSendForTest { get; set; }

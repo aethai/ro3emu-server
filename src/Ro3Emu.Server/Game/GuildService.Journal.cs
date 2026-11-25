@@ -21,11 +21,12 @@ public sealed partial class GuildService
 {
     public const uint Events = 32228;
     private const int EvApproved = 1, EvLeft = 2, EvKicked = 3, EvPosition = 4, EvLeader = 6, EvJoined = 8,
-        EvBuilding = 9, EvPurchase = 12, EvFounded = 13, EvAuction = 14;
-    private const int GuildMaterialItem = 126; // LC_GuildHelper.GUILD_MATERIALS_ITEM_ID
+        EvBuilding = 9, EvFounded = 13, EvAuction = 14;
+    internal const int EvPurchase = 12;
+    internal const int GuildMaterialItem = 126; // LC_GuildHelper.GUILD_MATERIALS_ITEM_ID
 
-    private static LanguageParam Str(string value) => new() { Tp = LanguageParamType.Str, StrParam = value };
-    private static LanguageParam Int(long value) => new() { Tp = LanguageParamType.Int, IntParam = value };
+    internal static LanguageParam Str(string value) => new() { Tp = LanguageParamType.Str, StrParam = value };
+    internal static LanguageParam Int(long value) => new() { Tp = LanguageParamType.Int, IntParam = value };
 
     internal static byte[] JournalRow(int cfgId, long[] players, long? nowMs, params LanguageParam[] values)
     {
@@ -39,7 +40,7 @@ public sealed partial class GuildService
     }
 
     /// <summary>Queue a journal row on the guild; it commits with the guild's next save.</summary>
-    private void Journal(GuildStore.State g, int cfgId, long[] players, params LanguageParam[] values)
+    internal void Journal(GuildStore.State g, int cfgId, long[] players, params LanguageParam[] values)
     {
         store.JournalCap = (int)Math.Clamp((Data.Config.GuildSettings.Of(data).GuildEventDateMaxNum ?? 500), 1, 10_000);
         g.PendingEvents.Add(JournalRow(cfgId, players, NowMs(), values));

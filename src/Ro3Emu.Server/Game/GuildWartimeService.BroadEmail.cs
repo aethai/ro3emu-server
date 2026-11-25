@@ -14,15 +14,15 @@ namespace Ro3Emu.Server.Game;
 /// (inferred) Each letter is raw Guild Mail (category 3) from the member, titled with the guild's current name: MailConfig
 /// 1019 "Guild Group Mail" carries an unrelated body (an MVP reissue) and a template would replace the sender with its NPC.
 /// </summary>
-public sealed partial class GuildService
+public sealed partial class GuildWartimeService
 {
     public const uint BroadEmail = 32241;
     private const int SendMailRight = 6;
 
     /// <summary>Today's 05:00 local, unix seconds (the group mail count's reset).</summary>
-    private long DayStart => GameCalendar.DayStart(clock).ToUnixTimeSeconds();
+    internal long DayStart => GameCalendar.DayStart(clock).ToUnixTimeSeconds();
 
-    private int BroadEmailsToday(GuildStore.State g) => g.BroadEmailDay == DayStart ? g.BroadEmailCount : 0;
+    internal int BroadEmailsToday(GuildStore.State g) => g.BroadEmailDay == DayStart ? g.BroadEmailCount : 0;
 
     public Task BroadEmailAsync(GameSession s, GuildBroadEmailReq req) => RunGuildAsync(s, [], [], () => BroadEmailCoreAsync(s, req));
 
