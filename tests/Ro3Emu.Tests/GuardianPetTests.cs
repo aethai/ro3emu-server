@@ -447,8 +447,8 @@ public sealed class GuardianPetTests
             var row = JsonSerializer.SerializeToElement(new { _iID = SecondChild, _iSystemType = 41, _kSkillCategory = DamageCategory });
             foreach (var handler in f.Combat.DealtAsync) await handler(f.Session, target, row, 19);
             Assert.Equal(1200, target.SlowMovementBp);
-            Assert.InRange(target.SlowMovementExpireMs - MonsterService.NowMs, 2000, 3000);
-            Assert.Equal(220, target.SpeedCm(MonsterService.NowMs));
+            Assert.InRange(target.SlowMovementExpireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 2000, 3000);
+            Assert.Equal(220, target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         });
     }
 
@@ -582,7 +582,7 @@ public sealed class GuardianPetTests
             var monster = await f.SpawnMonsterAsync();
             if (guardian) await buffs.AddGuardianAsync(monster, Slow, 5000, f.Session.Role!.Id);
             else await buffs.AddSupportAsync(monster, Slow, 5000, f.Session.Role!.Id);
-            Assert.Equal(125, monster.SpeedCm(MonsterService.NowMs));
+            Assert.Equal(125, monster.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         });
     }
 

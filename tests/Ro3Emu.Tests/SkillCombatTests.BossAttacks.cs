@@ -94,10 +94,10 @@ public sealed partial class SkillCombatTests
         await Loop.InvokeAsync(() => _app.Services.GetRequiredService<MonsterService>().Attack!(bug, Session("alice")));
         await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == bug.Uid && u.SkillID == 4300201);
         var combat = _app.Services.GetRequiredService<CombatService>();
-        await Loop.InvokeAsync(() => combat.BossCooldownStartedAsync(bug, 4300201, MonsterService.NowMs + 2000));
+        await Loop.InvokeAsync(() => combat.BossCooldownStartedAsync(bug, 4300201, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 2000));
         Assert.DoesNotContain(4300201, bug.BossSkillCds.Keys);
         // A boss skill still reaches the panel: 4301201 "Pyroblast".
-        await Loop.InvokeAsync(() => combat.BossCooldownStartedAsync(bug, 4301201, MonsterService.NowMs + 30000));
+        await Loop.InvokeAsync(() => combat.BossCooldownStartedAsync(bug, 4301201, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 30000));
         var shown = await Next(alice, CombatService.BossSkillCd, BossSkillShowCdNotify.Parser, n => n.BossUId == bug.Uid);
         Assert.Equal(4301201, shown.SkillId);
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.BossSkillCd)

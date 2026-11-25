@@ -56,7 +56,7 @@ public sealed partial class BuffService
         foreach (var halo in _halos) if (halo.Guid == buff.Guid && ReferenceEquals(halo.Carrier, carrier)) return;
         _halos.Add(new HaloInstance
         {
-            Carrier = carrier, CarrierId = carrier.Role.Id, Guid = buff.Guid, Rule = rule, NextMs = MonsterService.NowMs,
+            Carrier = carrier, CarrierId = carrier.Role.Id, Guid = buff.Guid, Rule = rule, NextMs = _loop.NowMs,
         });
     }
 

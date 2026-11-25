@@ -59,7 +59,7 @@ public sealed partial class TerritoryWarsService
                 BornTimeMs = BornMs, NotifyType = EntityBase.Types.NotifyType.All, EntityCamp = Template?.Camp ?? 1,
                 MovementInfo = new MovementInfo
                 {
-                    Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs,
+                    Pos = Pos, Face = Face, ServerTime = NowMs,
                     MoveType = MovementType.MoveTypeNone
                 },
             };
@@ -154,7 +154,7 @@ public sealed partial class TerritoryWarsService
             {
                 Uid = ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial), SceneEntry = b.Room.SceneEntry,
                 InstanceId = b.Room.Id, X = at.X, Y = at.Y, Z = at.Z, Face = at.Face, PointId = pointId,
-                Template = _monsters.Template(ScenePointNpc), BornMs = MonsterService.NowMs,
+                Template = _monsters.Template(ScenePointNpc), BornMs = _loop.NowMs,
             };
             if (!await _instances.AddPropAsync(b.Room, unit)) return;
             b.ScenePointActors[pointId] = unit;

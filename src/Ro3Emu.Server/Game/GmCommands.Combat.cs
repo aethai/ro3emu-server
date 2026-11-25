@@ -337,7 +337,7 @@ public sealed partial class GmCommands
     {
         IReadOnlyList<ActiveBuff>? list = e.Player is { } p ? p.Buffs : e.Unit is { } unit ? Buffs.UnitBuffs(unit) : null;
         if (list == null) return Missing(e);
-        long now = MonsterService.NowMs;
+        long now = services.GetRequiredService<GameLoop>().NowMs;
         var live = list.Where(b => b.ExpireMs > now).ToList();
         if (live.Count == 0) return $"{Name(e)} has no buffs.";
         return $"{Name(e)}: " + string.Join(", ", live.Select(b =>

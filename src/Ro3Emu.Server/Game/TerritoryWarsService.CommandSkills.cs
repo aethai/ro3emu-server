@@ -70,7 +70,7 @@ public sealed partial class TerritoryWarsService
         public HashSet<long> Accepted { get; } = [];
     }
 
-    private static long CommandNow => MonsterService.NowMs;
+    private long CommandNow => _loop.NowMs;
 
     private static Dictionary<int, CommandSkillRule> CommandRules(GameSession s) => s.SiegeBattle != null ? SiegeCommandSkills : TerritoryCommandSkills;
 
@@ -131,7 +131,7 @@ public sealed partial class TerritoryWarsService
 
     private static Task SendCommandSkillsAsync(CommandSide side, GameSession anyMember) =>
         RoleFanout.EachAsync(side.Members, p => p.SendGameAsync(CommandSkillNotify,
-            CommandSkillSnapshot(CommandSkillsOf(side), CommandRules(anyMember), CommandNow)));
+            CommandSkillSnapshot(CommandSkillsOf(side), CommandRules(anyMember), anyMember.NowMs)));
 
     /// <summary>CombatService.OwnSkillLanded: the landed command skill's effect on the caster's side.</summary>
     private async Task CommandSkillLandedAsync(GameSession s, JsonElement row)

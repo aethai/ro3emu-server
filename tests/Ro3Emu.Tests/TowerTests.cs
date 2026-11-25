@@ -146,7 +146,7 @@ public sealed class TowerTests : IAsyncLifetime
                 // Controlled combat fixture: shorten the fight after asserting the configured spawn HP.
                 // The ordinary 31102 cast and shared damage/death callbacks still determine the outcome.
                 monster.Hp = 1;
-                monster.Advance(MonsterService.NowMs);
+                monster.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 monster.Moving = false;
                 monster.NextRoamMs = long.MaxValue;
                 position = monster.Pos;

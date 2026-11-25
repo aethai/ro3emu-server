@@ -43,7 +43,7 @@ public sealed partial class TerritoryWarsService
         {
             Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Owner = Owner, AiMasterEntityId = (ulong)Owner,
             EntityCamp = Camp, GuildId = Guild, State = EntityState.Alive, BornTimeMs = BornMs, Face = Face, NotifyType = EntityBase.Types.NotifyType.All,
-            MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone },
+            MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone },
         };
     }
 
@@ -52,7 +52,7 @@ public sealed partial class TerritoryWarsService
     {
         if (WarRoomOf(user) is not { } battle || user.Role is not { } role || battle.Room.Closed
             || NPCConfig.Get(_data, RepairZoneNpc) is not { } npc || SkillConfig.Get(_data, skill) is not { } row) return false;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         var zone = new RepairZoneUnit
         {
             Uid = RepairZoneUidBase | Interlocked.Increment(ref _repairSerial), SceneEntry = user.SceneEntry, InstanceId = battle.Room.Id,
@@ -78,7 +78,7 @@ public sealed partial class TerritoryWarsService
     /// guild, in a territory battle every camp is 1), the others lose its buff; at its end it leaves.</summary>
     private async Task RepairTickAsync(InstanceService.Room room, RepairZoneUnit zone)
     {
-        bool live = !room.Closed && !zone.Removed && MonsterService.NowMs < zone.EndMs;
+        bool live = !room.Closed && !zone.Removed && _loop.NowMs < zone.EndMs;
         foreach (var (vehicle, _) in _vehicles.Values.Where(v => v.Room == room).ToList())
         {
             bool inside = live && !vehicle.Dead && !vehicle.Removed && vehicle.Camp == zone.Camp && vehicle.Guild == zone.Guild

@@ -24,7 +24,7 @@ public sealed partial class BuffService
     /// <summary>What the role's logout commit keeps. A buff with a live shield is not kept: its amount came from its caster.</summary>
     internal byte[] OfflineState(GameSession p)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         OfflineBuff[] kept = [.. p.Buffs
             .Where(b => !b.IsPassive && !b.IsTotemOwned && !b.IsGuardianOwned && b.ShieldRemaining == 0 && b.ExpireMs > now && SurvivesLogout(b.ConfigId) != null)
             .Select(b => new OfflineBuff(b.ConfigId, b.ExpireMs, b.DurationMs, b.SourceId, b.PileCount, [.. b.Changes.Select(c => new OfflineChange(c.Attr, c.Value))]))];
@@ -38,7 +38,7 @@ public sealed partial class BuffService
         OfflineBuff[]? saved;
         try { saved = JsonSerializer.Deserialize<OfflineBuffState>(state)?.Buffs; }
         catch (JsonException) { return; }
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var kept in saved ?? [])
         {
             if (kept.ExpireMs <= now || SurvivesLogout(kept.ConfigId) is not { } config) continue;

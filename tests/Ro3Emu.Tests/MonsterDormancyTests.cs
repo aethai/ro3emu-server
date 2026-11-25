@@ -16,7 +16,7 @@ public sealed class MonsterDormancyTests
             var (monster, map) = await UnseenAsync(host, bot, template => template with { RoamDistance = 5 });
             monster.NextRoamMs = 0;
             host.Service<MonsterService>().Tick(monster, map);
-            Assert.True(monster.NextRoamMs > MonsterService.NowMs);
+            Assert.True(monster.NextRoamMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             Assert.False(monster.Moving);
         });
     }

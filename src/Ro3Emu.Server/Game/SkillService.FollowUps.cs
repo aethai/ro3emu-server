@@ -38,7 +38,7 @@ public sealed partial class SkillService
     }
 
     private static bool Live(GameSession session, long status) =>
-        session.Buffs.Any(b => b.ConfigId == status && b.ExpireMs > MonsterService.NowMs);
+        session.Buffs.Any(b => b.ConfigId == status && b.ExpireMs > session.NowMs);
 
     /// <summary>The row a wheel slot holding <paramref name="rowId"/> shows now. The statuses chain, each follow-up row giving
     /// the next (Shadow Guard, Thousand Shadows, Shadow Loop), and a cast spends the status before it: the slot shows the row
@@ -65,7 +65,7 @@ public sealed partial class SkillService
     /// <summary>The live status that offers this row's group and level (a mode row of it included), or null.</summary>
     internal ActiveBuff? FollowUpStatus(GameSession session, SkillConfig row)
     {
-        long now = MonsterService.NowMs;
+        long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         foreach (var buff in session.Buffs)
             if (buff.ExpireMs > now && FollowUps.TryGetValue(buff.ConfigId, out long named)
                 && SkillConfig.Get(_data, named) is { } next && next.SkillId == row.SkillId && next.Level == row.Level)
@@ -82,7 +82,7 @@ public sealed partial class SkillService
     }
 
     private string ShownStatuses(GameSession session) =>
-        string.Join(',', session.Buffs.Where(b => b.ExpireMs > MonsterService.NowMs && FollowUps.ContainsKey(b.ConfigId)).Select(b => b.ConfigId).Order())
+        string.Join(',', session.Buffs.Where(b => b.ExpireMs > _clock.GetUtcNow().ToUnixTimeMilliseconds() && FollowUps.ContainsKey(b.ConfigId)).Select(b => b.ConfigId).Order())
         + "|" + ShownModes(session);
 
     private Dictionary<(long Group, long Level, long Mode), long>? _modeRows;
@@ -98,7 +98,7 @@ public sealed partial class SkillService
     {
         end = 0;
         bool given = false, untilSpent = false;
-        long now = MonsterService.NowMs;
+        long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         int group = (int)row.SkillId;
         var tags = SkillParameterRules.CategoriesOf(_data, row.Row);
         foreach (var buff in session.Buffs)

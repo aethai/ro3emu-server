@@ -388,7 +388,7 @@ public sealed partial class MapTests : IAsyncLifetime
             var player = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
             var boss = _app.Services.GetRequiredService<World>().Map(player.WorldScene).Units.OfType<MonsterUnit>()
                 .Single(m => m.Uid == (long)angeling.Uuid);
-            boss.Advance(MonsterService.NowMs);
+            boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             boss.Moving = false;
             boss.NextRoamMs = long.MaxValue;
             await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,
@@ -445,7 +445,7 @@ public sealed partial class MapTests : IAsyncLifetime
                     .Single(m => m.Uid == (long)angeling.Uuid);
                 Assert.False(player.Dead);
                 Assert.False(boss.Dead);
-                boss.Advance(MonsterService.NowMs);
+                boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 boss.Moving = false;
                 boss.NextRoamMs = long.MaxValue;
                 await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,
@@ -732,7 +732,7 @@ public sealed partial class MapTests : IAsyncLifetime
                 var player = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
                 var boss = _app.Services.GetRequiredService<World>().Map(player.WorldScene).Units.OfType<MonsterUnit>()
                     .Single(m => m.Uid == uid);
-                boss.Advance(MonsterService.NowMs);
+                boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 boss.Moving = false;
                 boss.NextRoamMs = long.MaxValue;
                 await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,

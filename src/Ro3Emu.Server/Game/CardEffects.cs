@@ -60,6 +60,7 @@ public sealed class CardEffects
     private readonly SkillService _skills;
     private readonly CombatService _combat;
     private readonly SessionRegistry _sessions;
+    private readonly TimeProvider _clock;
     private readonly ConditionalWeakTable<GameSession, Runtime> _runtime = [];
 
     private sealed class Runtime
@@ -92,10 +93,11 @@ public sealed class CardEffects
     internal Func<int, int> Roll { get; set; } = bound => Random.Shared.Next(bound);
 
     public CardEffects(GameData data, CharacterService character, BuffService buffs, CardService cards, CombatService combat,
-        SceneService scenes, SkillService skills, SessionRegistry sessions)
+        SceneService scenes, SkillService skills, SessionRegistry sessions, TimeProvider clock)
     {
         this._data = data;
         this._sessions = sessions;
+        this._clock = clock;
         this._skills = skills;
         this._character = character;
         this._buffs = buffs;
@@ -200,7 +202,7 @@ public sealed class CardEffects
     private bool Ready(GameSession s, long family, long cooldownMs)
     {
         var state = _runtime.GetOrCreateValue(s);
-        long now = MonsterService.NowMs;
+        long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         lock (state)
         {
             if (state.Cooldowns.GetValueOrDefault(family) > now) return false;
@@ -324,7 +326,7 @@ public sealed class CardEffects
         foreach (var passive in Passives(s).DistinctBy(p => p.Id))
         {
             var buff = new BuffConfig(passive.Row);
-            if (buff.BuffId == Ladybug && buff.LogicData is [var bp, ..] && s.Buffs.Any(b => b.StateOrdinal == SilencedState && b.ExpireMs > MonsterService.NowMs))
+            if (buff.BuffId == Ladybug && buff.LogicData is [var bp, ..] && s.Buffs.Any(b => b.StateOrdinal == SilencedState && b.ExpireMs > _clock.GetUtcNow().ToUnixTimeMilliseconds()))
                 reduction += bp;
             else if (buff.BuffId is ShadowNullify or CardNullify && directHit && SkillShieldRules.IsMagic(row) && buff.LogicData is [var chance, ..]
                 && Description(passive.Row) is [_, var cooldown, ..] && Roll(10000) < chance && Ready(s, buff.BuffId, (long)(cooldown * 1000)))
@@ -496,7 +498,7 @@ public sealed class CardEffects
     {
         if (cast.Cd <= 0 || cast.IsNormalAttack(_data)) return;
         int group = (int)cast.SkillId;
-        long now = MonsterService.NowMs;
+        long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         if (!s.SkillModeCds.Any(c => c.Key.Group == group && c.Value > now)) return;
         foreach (var passive in passives.DistinctBy(p => p.Id))
         {
@@ -574,7 +576,7 @@ public sealed class CardEffects
         if (passive.LogicData is not [var id, var ms]) return 0;
         var state = _runtime.GetOrCreateValue(s);
         if (result is DamageHitResult.Critical or DamageHitResult.DoubleCritical) state.NextHitArmed = ((int)id, (int)ms);
-        long now = MonsterService.NowMs;
+        long now = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         if (s.Buffs.FirstOrDefault(b => b.ConfigId == id && b.ExpireMs > now && !ReferenceEquals(b, state.NextHitSpent)) is not { } live
             || BuffConfig.Get(_data, id)?.LogicData is not [var raise, ..]) return 0;
         state.NextHitSpent = live;

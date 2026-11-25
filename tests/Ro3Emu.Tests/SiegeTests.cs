@@ -322,7 +322,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
             await defense.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = returned.SceneEntry });
             Assert.Equal(0, (await Next(defense, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
             await Next(defense, MsgId.EntitySelf, EntitySelf.Parser);
-            // CombatService's action tail uses MonsterService.NowMs (real time), not this test's window clock.
+            // CombatService's action tail uses DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() (real time), not this test's window clock.
             await Task.Delay(1200);
             // The crystal falls in the Crystal stage: after Prepare, the gate and the inner city's three guardians.
             _clock.Set(_siege.Start + 301);

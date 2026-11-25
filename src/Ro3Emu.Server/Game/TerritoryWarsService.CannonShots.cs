@@ -28,7 +28,7 @@ public sealed partial class TerritoryWarsService
         if (use?.UseSkillParam is not { } cast || cast.SkillId != cfg.SkillId || use.BulletExtraParam.Count == 0
             || use.BulletExtraParam.Count > Math.Max(1, cfg.SingleShotNum)) return ErrorCodes.NpcParameter;
         if (SkillConfig.Get(_data, cfg.SkillId) is not { } skill || unit.Removed || s.Dead) return ErrorCodes.NpcParameter;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (now < unit.ReadyMs) return ErrorCodes.SkillCooldown;
         if (unit.Bullets <= 0) return ErrorCodes.SkillCostShort;
         unit.Bullets--;
@@ -75,7 +75,7 @@ public sealed partial class TerritoryWarsService
         {
             Uid = CannonUidBase | BulletUidFlag | Interlocked.Increment(ref _bulletSerial), SceneEntry = unit.SceneEntry,
             InstanceId = unit.InstanceId, X = start.X, Y = start.Y, Z = start.Z, Face = unit.Face, NpcId = (int)npc,
-            Shooter = s.Role.Id, Camp = unit.Camp, Velocity = velocity, Gravity = (float)gravity, LaunchMs = MonsterService.NowMs,
+            Shooter = s.Role.Id, Camp = unit.Camp, Velocity = velocity, Gravity = (float)gravity, LaunchMs = _loop.NowMs,
             FlightMs = (int)(flight * 1000), EntityType = (int)row.NPCType,
         };
         if (!await _instances.AddPropAsync(standing.Room, bullet)) return null;

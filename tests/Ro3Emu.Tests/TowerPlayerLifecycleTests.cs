@@ -207,7 +207,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         await OnLoop(async () =>
         {
             foreach (var monster in Session.TowerAttempt!.Monsters) monster.Dead = true;
-            Session.LastCombatMs = MonsterService.NowMs;
+            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15; // suppress out-of-combat regen during the return assertion
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(Session, wounded, spentSp);
@@ -345,7 +345,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long wounded = Service<CharacterService>().Stats(Session)[101] / 2;
         await OnLoop(() =>
         {
-            Session.LastCombatMs = MonsterService.NowMs;
+            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Service<CharacterService>().SetHpSpAsync(Session, wounded, null);
@@ -360,7 +360,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.False((await Next(bot, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
         await OnLoop(() =>
         {
-            Session.LastCombatMs = MonsterService.NowMs;
+            Session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Task.CompletedTask;

@@ -78,7 +78,7 @@ public sealed partial class TerritoryWarsService
             {
                 Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = 1, Face = Face, State = EntityState.Alive,
                 BornTimeMs = BornMs, NotifyType = EntityBase.Types.NotifyType.All, EntityCamp = Template?.Camp ?? 1, GuildId = Guild,
-                MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone },
+                MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone },
             };
             entity.CustomDatas.AddRange(Data());
             if (Template is { } t)
@@ -148,7 +148,7 @@ public sealed partial class TerritoryWarsService
         {
             Uid = ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial), SceneEntry = b.Room.SceneEntry,
             InstanceId = b.Room.Id, X = spot?.X ?? at.X, Y = spot?.Y ?? at.Y, Z = spot?.Z ?? at.Z, Face = at.Face,
-            PointId = pointId, NpcId = npc, Template = _monsters.Template(npc), BornMs = MonsterService.NowMs,
+            PointId = pointId, NpcId = npc, Template = _monsters.Template(npc), BornMs = _loop.NowMs,
             Guild = PlatformHolder(b, pointId), Total = (Data.Config.GvgConstants.Of(_data).GVGFieldOccupyAmount ?? 30),
         };
         if (!await _instances.AddPropAsync(b.Room, ring)) return null;

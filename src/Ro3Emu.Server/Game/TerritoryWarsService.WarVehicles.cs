@@ -69,7 +69,7 @@ public sealed partial class TerritoryWarsService
             Uid = VehicleUidBase | Interlocked.Increment(ref _vehicleSerial), SceneEntry = room.SceneEntry, InstanceId = room.Id,
             X = spot.X, Y = spot.Y, Z = spot.Z, Face = spot.Face, NpcId = npcId, Owner = owner, Camp = camp, Guild = guild,
             CampOverride = (int)camp, Name = npc.Name is [var nameId, ..] ? _data.Text(nameId) : "",
-            Template = template, Group = group, Home = home, Hp = template.MaxHp, BornTimeMs = MonsterService.NowMs,
+            Template = template, Group = group, Home = home, Hp = template.MaxHp, BornTimeMs = _loop.NowMs, Clock = _loop.Time,
             SeatRows = seats, Seats = new GameSession?[seats.Length],
             SeatTypes = [.. seats.Select(seat => VehicleSeatConfig.Get(_data, seat)?.Type ?? 0)],
             // As a cannon: damage stays until the repair zone mends it, and a hit does not lock or leash it.

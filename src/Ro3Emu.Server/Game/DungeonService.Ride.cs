@@ -156,7 +156,7 @@ public sealed partial class DungeonService
             return false;
         }
         TimeSpan delay = a.Riders.Count > 0 ? Paced(RideStartDelayMs) : step.RideAlone ? Paced(RideAloneDelayMs) : TimeSpan.Zero;
-        var ride = new Ride(path, carrier, length, a.StepGeneration, MonsterService.NowMs + (long)delay.TotalMilliseconds,
+        var ride = new Ride(path, carrier, length, a.StepGeneration, _loop.NowMs + (long)delay.TotalMilliseconds,
             Paced((int)(length / speed * 1000)).TotalMilliseconds)
         {
             DriveTo = step.DriveAfter, SpeedCm = step.RideSpeedPercent != 100 ? (long)MathF.Round(speed * 100) : 0, Alone = step.RideAlone,
@@ -238,7 +238,7 @@ public sealed partial class DungeonService
         {
             Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = old.SceneEntry, InstanceId = old.InstanceId,
             X = old.X, Y = old.Y, Z = old.Z, Face = old.Face, NpcId = old.NpcId, Point = old.Point, EntityType = old.EntityType,
-            Camp = old.Camp, Name = old.Name, Template = old.Template, BornMs = MonsterService.NowMs, CarrySpeed = old.CarrySpeed,
+            Camp = old.Camp, Name = old.Name, Template = old.Template, BornMs = _loop.NowMs, CarrySpeed = old.CarrySpeed,
         };
         a.RetiredActors.Add(old.Uid);
         await _instances.RemovePropAsync(a.Room, old);
@@ -252,7 +252,7 @@ public sealed partial class DungeonService
         if (a.Settled || a.Room.Closed || a.StepGeneration != ride.Generation) return;
         // The ride's own speed, before the first move: the client walks the carrier, and its driver drives it, at attribute 113.
         if (ride.Walked < 0) await SetCarrierSpeedAsync(ride.Carrier, ride.SpeedCm);
-        double done = Math.Min(1.0, (MonsterService.NowMs - ride.StartMs) / Math.Max(1.0, ride.DurationMs));
+        double done = Math.Min(1.0, (_loop.NowMs - ride.StartMs) / Math.Max(1.0, ride.DurationMs));
         float walked = (float)(done * ride.Length);
         // The position follows the wall clock, so a late tick (a loaded loop) jumps ahead: the riders still pass every
         // point of the route walked since the last tick instead of being moved straight across its corners.
@@ -334,7 +334,7 @@ public sealed partial class DungeonService
         await member.SendGameAsync(GameAoiSink.MovementChange, new MovementChangeNtf
         {
             Uid = member.Role!.Id, TransType = MovementTransitionType.MoveTransServerControl,
-            MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = MonsterService.NowMs },
+            MovementInfo = new MovementInfo { Pos = pos, Face = at.Face, ServerTime = _loop.NowMs },
         });
         member.PreviousPosition = member.Position;
         member.Position = pos;
@@ -359,14 +359,14 @@ public sealed partial class DungeonService
                 ? new MovementChangeNtf
                 {
                     Uid = ride.Carrier.Uid, TransType = MovementTransitionType.MoveTransServerControl,
-                    MovementInfo = new MovementInfo { Pos = new Vec3 { X = to.X, Y = to.Y, Z = to.Z }, Face = face, ServerTime = MonsterService.NowMs },
+                    MovementInfo = new MovementInfo { Pos = new Vec3 { X = to.X, Y = to.Y, Z = to.Z }, Face = face, ServerTime = _loop.NowMs },
                 }
                 : new MovementChangeNtf
                 {
                     Uid = ride.Carrier.Uid, TransType = MovementTransitionType.MoveTransNormal,
                     MovementInfo = new MovementInfo
                     {
-                        Pos = new Vec3 { X = from.X, Y = from.Y, Z = from.Z }, ServerTime = MonsterService.NowMs,
+                        Pos = new Vec3 { X = from.X, Y = from.Y, Z = from.Z }, ServerTime = _loop.NowMs,
                         MoveDuration = (int)Math.Max(1, metres / speed * 1000), Face = face, MoveType = MovementType.MoveTypeWalk,
                         MovementWalk = new MovementWalk { Dir = face, Speed = speed, Acc = 0, EndHeight = to.Y },
                     },

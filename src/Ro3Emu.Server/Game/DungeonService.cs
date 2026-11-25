@@ -581,7 +581,7 @@ public sealed partial class DungeonService
     private async Task StartAsync(Attempt a)
     {
         if (a.Started || a.Settled || a.Room.Closed) return;
-        a.Started = true; a.StartedAt = _loop.Now; a.StartMs = MonsterService.NowMs;
+        a.Started = true; a.StartedAt = _loop.Now; a.StartMs = _loop.NowMs;
         if (StartBattleScenes.Contains(a.Plan.SceneEntry) && a.Plan.Multi != null)
         {
             // A Realm of the Gods raid opens with its preparation phase: the leader's Start Battle (30125) or the
@@ -596,7 +596,7 @@ public sealed partial class DungeonService
 
     private async Task BeginFightAsync(Attempt a)
     {
-        a.StartedAt = _loop.Now; a.StartMs = MonsterService.NowMs;
+        a.StartedAt = _loop.Now; a.StartMs = _loop.NowMs;
         await BroadcastAsync(a, BaseInfo, Snapshot(a));
         await SpawnWaveAsync(a);
         StartRaidTrials(a);

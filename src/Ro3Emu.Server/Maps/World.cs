@@ -54,6 +54,8 @@ public interface IAoiSink
 /// </summary>
 public sealed partial class World(IAoiSink sink, GameLoop loop, ILogger<World> log)
 {
+    internal TimeProvider Clock => loop.Time;
+    internal long NowMs => loop.NowMs;
     internal void TrackDetached(string name, Func<Task> work) => loop.TrackRuntimeDetached(name, work);
     /// <summary>Map units are the client's world coordinates (spawn 156,192 on a ~300-unit field).</summary>
     public const float ViewRadius = 60f;

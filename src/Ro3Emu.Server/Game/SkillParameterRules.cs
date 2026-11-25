@@ -110,7 +110,7 @@ internal static class SkillParameterRules
 
     internal static bool HasBuffGroup(GameSession session, GameData data, long group)
     {
-        long now = MonsterService.NowMs;
+        long now = session.NowMs;
         foreach (var buff in session.Buffs)
             if (buff.ExpireMs > now && BuffConfig.Get(data, buff.ConfigId) is { } row
                 && (row.BuffId == group || group == BattleChantGroup && row.BuffId == EnhancedBattleChantGroup)) return true;
@@ -120,7 +120,7 @@ internal static class SkillParameterRules
     private static SessionCache Cache(GameSession session, GameData data)
     {
         var cache = Sessions.GetOrCreateValue(session);
-        long now = MonsterService.NowMs;
+        long now = session.NowMs;
         // A cheap fingerprint of what Active depends on: which buffs, their piles and whether each is still live, the
         // talent modifiers and, when one needs a weapon, what the hands hold.
         long signature = 17;

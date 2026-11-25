@@ -119,7 +119,7 @@ public sealed partial class CombatService
     {
         foreach (var buff in s.Buffs)
         {
-            if (buff.ExpireMs <= Now) continue;
+            if (buff.ExpireMs <= s.NowMs) continue;
             switch (buff.ConfigId / 100)
             {
                 case 11002 or 20921: return 4;
@@ -145,7 +145,7 @@ public sealed partial class CombatService
         int element = NeutralArmor;
         foreach (var buff in p.Buffs)
         {
-            if (buff.ExpireMs <= Now) continue;
+            if (buff.ExpireMs <= p.NowMs) continue;
             int group = buff.ConfigId / 100;
             if (group == PietyGroup) return HolyArmor;
             if (group is not (ArmorElementGroup or AngelingArmorGroup) || BuffConfig.Get(_data, buff.ConfigId)?.LogicData is not [var held, ..]) continue;

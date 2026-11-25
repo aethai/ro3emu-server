@@ -61,7 +61,7 @@ internal sealed class CompanionUnit(CompanionUnit.Kit kit, World world, CombatSe
     public required float HomeZ { get; init; }
     public long Hp { get; set; } = kit.Template.MaxHp;
     public bool Dead { get; set; }
-    public long BornMs { get; init; } = MonsterService.NowMs;
+    public long BornMs { get; init; } = world.NowMs;
     /// <summary>The participant its hits and kills are credited to (null: the run is over).</summary>
     public required Func<GameSession?> Credit { get; init; }
     /// <summary>Called once when it falls; its owner removes it.</summary>
@@ -95,7 +95,7 @@ internal sealed class CompanionUnit(CompanionUnit.Kit kit, World world, CombatSe
     public override void Tick(MapInstance map, GameTime time)
     {
         if (Dead || Hp <= 0) return;
-        long now = MonsterService.NowMs;
+        long now = world.NowMs;
         if (now < _nextAttackMs) return;
         if (_target is not { Dead: false, Hp: > 0 } || now >= _nextSearchMs)
         {
@@ -206,7 +206,7 @@ internal sealed class CompanionUnit(CompanionUnit.Kit kit, World world, CombatSe
             NotifyType = EntityBase.Types.NotifyType.All,
             MovementInfo = new MovementInfo
             {
-                Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone
+                Pos = Pos, Face = Face, ServerTime = world.NowMs, MoveType = MovementType.MoveTypeNone
             },
         };
         // The head bar's attributes, as a monster-type scene actor carries them, with its current HP.

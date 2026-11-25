@@ -26,7 +26,7 @@ public sealed partial class BuffService
     public async Task<bool> TryPreventLethalAsync(GameSession p)
     {
         if (p.Role == null || p.Dead) return false;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (p.ImmuneDeathOffer is { } pending)
         {
             if (pending.ExpiresMs > now) return true;
@@ -73,7 +73,7 @@ public sealed partial class BuffService
     public async Task ConfirmImmuneDeathAsync(GameSession p, PlayerConfirmImmuneDeadReq req)
     {
         var offer = p.ImmuneDeathOffer;
-        bool valid = offer != null && offer.ExpiresMs >= MonsterService.NowMs && !p.Dead;
+        bool valid = offer != null && offer.ExpiresMs >= _loop.NowMs && !p.Dead;
         await p.SendGameAsync(ImmuneDeathConfirm, new PlayerConfirmImmuneDeadRsp
         {
             Result = valid ? 0 : ErrorCodes.Parameter,
@@ -96,7 +96,7 @@ public sealed partial class BuffService
         int percent = (int)Math.Clamp(DescriptionNumber(desc, 1, 100), 1, 100);
         if (group == 20520)
         {
-            p.ImmuneRecoveryUntilMs = MonsterService.NowMs + 3000;
+            p.ImmuneRecoveryUntilMs = _loop.NowMs + 3000;
             p.ImmuneRecoveryPercent = (int)Math.Clamp(DescriptionNumber(desc, 4, 20), 1, 100);
             await _character.SetHpSpAsync(p, 1, null);
         }

@@ -33,7 +33,7 @@ public sealed class SkillObject : WorldUnit
     {
         Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Owner = OwnerId,
         AiMasterEntityId = (ulong)OwnerId, EntityCamp = 1, State = EntityState.Alive, BornTimeMs = Cast.StartMs,
-        Face = Face, MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs },
+        Face = Face, MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs },
         NotifyType = EntityBase.Types.NotifyType.All,
     };
 }

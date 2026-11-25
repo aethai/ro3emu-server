@@ -529,7 +529,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
     {
         var alice = Session("alice");
         alice.Progress!.Skills[13326] = level;
-        alice.SkillCds[13326] = MonsterService.NowMs + 60000;
+        alice.SkillCds[13326] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
         return Task.CompletedTask;
     });
 

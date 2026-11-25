@@ -13,7 +13,7 @@ public sealed partial class CombatService
     private static long GuardianOutgoingDamage(GameSession source, JsonElement row, long damage)
     {
         int element = (int)Math.Clamp(GameData.Int(row, "_iEleType"), 1, AttributeId.ElementCount);
-        double bonus = source.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > Now
+        double bonus = source.Buffs.Where(b => b.IsGuardianOwned && b.ExpireMs > source.NowMs
                 && (b.ConfigId / 100 != GuardianGroup.WildcatCharge || !IsGuardianEffect(row) && !row.TryGetProperty("_ro3GuardianFixedHit", out _)))
             .SelectMany(b => b.Changes).Where(c => RaisesDamage(c.Attr, element)).Sum(c => c.Value);
         return damage <= 0 ? 0 : (long)Math.Clamp(Math.Floor(damage * Math.Max(0, 1 + bonus / 10000)), 0, long.MaxValue);

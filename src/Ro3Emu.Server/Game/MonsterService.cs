@@ -36,6 +36,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         this._data = data;
         this._loop = loop;
         this._log = log;
+        _tickNowMs = loop.NowMs;
         world.UnitRemoved.Add(unit =>
         {
             if (unit is MonsterUnit monster && _spawns.TryGetValue(monster.RuntimeMap, out var owner))
@@ -85,7 +86,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     public Func<MonsterUnit, GameSession, Task>? Attack { get; set; }
     public Func<MonsterUnit, TowerPetUnit, Task>? AttackPet { get; set; }
 
-    public static long NowMs => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private long NowMs => _loop.NowMs;
 
     public MonsterTemplate? Template(int npcId)
     {
@@ -309,7 +310,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     /// <summary>Owned deadlines can be dropped immediately when a runtime retires.</summary>
     // MonsterService.Tick(GameTime) stamps it once per loop tick for the dormant path of the map ticks.
-    private long _tickNowMs = NowMs;
+    private long _tickNowMs;
 
     public void Tick(GameTime time)
     {

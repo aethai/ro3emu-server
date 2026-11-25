@@ -18,7 +18,7 @@ internal sealed class ChickenNpcUnit : WorldUnit
     {
         Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = 2, Name = Name, EntityCamp = 3, Face = Face,
         State = EntityState.Alive, NotifyType = EntityBase.Types.NotifyType.All,
-        MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs, MoveType = MovementType.MoveTypeNone },
+        MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone },
     };
 }
 

@@ -33,7 +33,7 @@ public sealed partial class MapTests
             {
                 var player = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
                 var boss = MergedBoss((long)angeling.Uuid);
-                boss.Advance(MonsterService.NowMs);
+                boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 boss.Moving = false;
                 boss.NextRoamMs = boss.NextSwingMs = boss.NextChaseMs = long.MaxValue;
                 await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,

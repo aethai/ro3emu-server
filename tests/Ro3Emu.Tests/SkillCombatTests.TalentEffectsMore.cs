@@ -54,13 +54,13 @@ public sealed partial class SkillCombatTests
 
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1141801, TargetId = monster.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        Assert.True(a.SkillModeCds.GetValueOrDefault((11418, 0)) > MonsterService.NowMs);
+        Assert.True(a.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         await Task.Delay(1500);
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1150401, TargetId = monster.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var reset = await Next(alice, CombatService.SkillCdUpdate, SkillCdNotify.Parser,
             n => n.Infos.Any(i => i.SkillId == 11418 && i.CdEndTimestampMs == i.CdStartTimestampMs));
         Assert.NotNull(reset);
-        Assert.False(a.SkillModeCds.GetValueOrDefault((11418, 0)) > MonsterService.NowMs);
+        Assert.False(a.SkillModeCds.GetValueOrDefault((11418, 0)) > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 }

@@ -62,7 +62,7 @@ public sealed partial class SkillCombatTests
         var (alice, monsters) = await Ranger((10, 0), (17.5f, 2.5f), (8, 8), (-3, 0), (5, 3.5f), (19, 0));
         await using var _ = alice;
         var session = Session("alice");
-        long cast = MonsterService.NowMs;
+        long cast = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         long id = await CastMyriadStars(alice);
         await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, hit => hit.SessionId == id);
         var buff = await Loop.InvokeAsync(() => Task.FromResult(session.Buffs.Single(b => b.ConfigId == MyriadStarsBuffLv1)));

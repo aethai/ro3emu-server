@@ -81,6 +81,6 @@ public sealed partial class SkillCombatTests
         var back = await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)a.Role!.Id);
         Assert.InRange(MonsterService.Distance(start.X, start.Z, back.EndPos.X, back.EndPos.Z), 0f, 0.1f);
         await alice.Inbox.WaitAsync(e => e.IsGame(SkillService.SkillDataSync) && SentSlot(a, 3).Shown == 1532901, Wait);
-        Assert.Contains(a.SkillModeCds, c => c.Key.Group == 15329 && c.Value > MonsterService.NowMs); // its own cooldown starts at the return
+        Assert.Contains(a.SkillModeCds, c => c.Key.Group == 15329 && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); // its own cooldown starts at the return
     }
 }

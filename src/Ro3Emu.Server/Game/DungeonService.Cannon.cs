@@ -53,7 +53,7 @@ public sealed partial class DungeonService
             Uid = unit.Uid, TransType = MovementTransitionType.MoveTransNormal,
             MovementInfo = new MovementInfo
             {
-                Pos = new Vec3 { X = from.X, Y = from.Y, Z = from.Z }, ServerTime = MonsterService.NowMs,
+                Pos = new Vec3 { X = from.X, Y = from.Y, Z = from.Z }, ServerTime = _loop.NowMs,
                 MoveDuration = duration, Face = face, MoveType = MovementType.MoveTypeWalk,
                 MovementWalk = new MovementWalk { Dir = face, Speed = speed, Acc = 0, EndHeight = to.Y },
             },

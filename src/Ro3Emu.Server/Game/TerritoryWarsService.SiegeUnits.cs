@@ -172,7 +172,7 @@ public sealed partial class TerritoryWarsService
     {
         if (ram.March is not { Arrived: true } || battle.Objects.GetValueOrDefault(SiegeGatePoint) is not { Dead: false } gate
             || SiegeProtected(gate)) return;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (now < ram.NextSwingMs) return;
         long tick = NPCConfig.Get(_data, SiegeRamNpc) is { } npc && AIConfig.Get(_data, npc.Ai) is { AttackTickTime: > 0 } ai
             ? ai.AttackTickTime : 1000;
@@ -190,7 +190,7 @@ public sealed partial class TerritoryWarsService
     /// </summary>
     private async Task SiegeArchersShootAsync(SiegeRun battle)
     {
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         var ladders = SiegeLadders.Select(l => battle.Objects.GetValueOrDefault(l.Point)).OfType<MonsterUnit>()
             .Where(l => !l.Dead && l.Hp > 0).ToList();
         if (ladders.Count == 0) return;

@@ -64,7 +64,7 @@ public sealed partial class CasualBattleService
             InstanceId = m.Room.Id, X = spot.X, Y = spot.Y, Z = spot.Z, Face = spot.Face, NpcId = Madogear,
             Owner = m.Players[s].Id, Camp = camp, CampOverride = camp, Name = npc.Name is [var nameId, ..] ? _data.Text(nameId) : "",
             Template = template, Group = new SpawnGroup(-1, false, 1, 0, [], [home]), Home = home, Hp = template.MaxHp,
-            BornTimeMs = MonsterService.NowMs, SeatRows = seats, Seats = new GameSession?[seats.Length],
+            BornTimeMs = _loop.NowMs, Clock = _loop.Time, SeatRows = seats, Seats = new GameSession?[seats.Length],
             SeatTypes = [.. seats.Select(seat => VehicleSeatConfig.Get(_data, seat)?.Type ?? 0)],
             KeepsDamage = true, StaysOutOfBattle = true,
         };

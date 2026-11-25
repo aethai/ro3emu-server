@@ -129,7 +129,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetHpSpAsync(victim, 1, null);
             // This verifies effective damage against exactly 1 HP. Exclude the unrelated five-second
             // out-of-combat regeneration tick while the wire requests below are in flight.
-            victim.LastCombatMs = MonsterService.NowMs;
+            victim.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victim.StatusBits |= 1L << 15;
             victim.NoRegenUntilMs = long.MaxValue; // fighting does not pause regeneration
         });
@@ -201,7 +201,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             });
             Service<CharacterService>().ExtraAttributes.Add(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
-            target.LastCombatMs = MonsterService.NowMs;
+            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<BuffService>().AddSupportAsync(target, 2354401, 30000, 1L << 51, shield);
@@ -266,7 +266,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             character.ExtraAttributes.Add(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
             maximum = character.Stats(target)[101];
             await character.SetHpSpAsync(target, maximum, null);
-            target.LastCombatMs = MonsterService.NowMs;
+            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             var buffs = Service<BuffService>();
@@ -390,7 +390,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
                 if (p == target) deaths++;
                 return Task.CompletedTask;
             });
-            target.LastCombatMs = MonsterService.NowMs;
+            target.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
@@ -442,7 +442,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetLevelAsync(firstSession, 99, null); // defense counts the attacker's level (DefenseFactor)
             await Service<CharacterService>().SetLevelAsync(secondSession, 99, null);
             await Service<CharacterService>().SetHpSpAsync(victimSession, 300, null);
-            victimSession.LastCombatMs = MonsterService.NowMs;
+            victimSession.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victimSession.StatusBits |= 1L << 15;
             victimSession.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             Assert.Equal(300, victimSession.CurrentHp);

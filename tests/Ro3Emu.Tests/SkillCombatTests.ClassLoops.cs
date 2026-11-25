@@ -74,7 +74,7 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var (bot, a, dummy) = await ReadyAsync(alice, 1400, 11315, 1131501);
-        await Loop.InvokeAsync(() => { a.Energy[140001].Value = 5; a.Energy[140002].Value = 0; a.Energy[140002].NextRecoverMs = MonsterService.NowMs + 60000; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.Energy[140001].Value = 5; a.Energy[140002].Value = 0; a.Energy[140002].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
         await CastAndWait(bot, 1131501, dummy);
         Assert.Equal(0, a.Energy[140001].Value);
         Assert.Equal(1, a.Energy[140002].Value);

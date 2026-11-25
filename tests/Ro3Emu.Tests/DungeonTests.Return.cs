@@ -452,7 +452,7 @@ public sealed partial class DungeonTests
         await OnLoop(async () =>
         {
             foreach (var monster in session.DungeonAttempt!.Room.Monsters) monster.Dead = true;
-            session.LastCombatMs = MonsterService.NowMs;
+            session.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             session.StatusBits |= 1L << 15;
             session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(session, hp, sp);

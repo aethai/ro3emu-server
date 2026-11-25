@@ -15,7 +15,7 @@ public sealed partial class SkillCombatTests
         var monsters = _app.Services.GetRequiredService<MonsterService>();
         await Loop.InvokeAsync(async () =>
         {
-            long now = MonsterService.NowMs;
+            long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             dummy.FromX = dummy.X; dummy.FromY = dummy.Y; dummy.FromZ = dummy.Z;
             dummy.ToX = dummy.X + 100; dummy.ToY = dummy.Y; dummy.ToZ = dummy.Z;
             dummy.StartMs = now - 1000; dummy.EndMs = now + 9000; dummy.SegmentSpeed = 10;

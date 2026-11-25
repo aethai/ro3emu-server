@@ -345,14 +345,14 @@ public sealed partial class PronteraDefenseService : IGameTicker
 
     private Task OnRevivedAsync(GameSession session)
     {
-        if (session.Role is { } role) _revivedAt[role.Id] = MonsterService.NowMs;
+        if (session.Role is { } role) _revivedAt[role.Id] = _loop.NowMs;
         return Task.CompletedTask;
     }
 
     internal bool RecentlyRevived(GameSession session)
     {
         if (session.Role is not { } role || !_revivedAt.TryGetValue(role.Id, out long at)) return false;
-        if (MonsterService.NowMs - at < ReviveGraceMs) return true;
+        if (_loop.NowMs - at < ReviveGraceMs) return true;
         _revivedAt.TryRemove(new KeyValuePair<long, long>(role.Id, at));
         return false;
     }

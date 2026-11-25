@@ -131,7 +131,7 @@ public sealed class WorldEffectsService
         await _world.ToUnitViewersAsync(unit, Turning, new ContinueTurningChangeNtf
         {
             Uid = unit.Uid, TurningInfo = new ContinueTurningInfo
-            { Face = face, ServerTime = MonsterService.NowMs, AngleSpeed = degreesPerSecond, TurnDuration = durationMs },
+            { Face = face, ServerTime = _loop.NowMs, AngleSpeed = degreesPerSecond, TurnDuration = durationMs },
         });
         return true;
     }

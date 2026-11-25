@@ -356,7 +356,7 @@ public sealed class PowerService : IGameTicker
         await SaveAsync(s, snapshot);
         if (s.Role != role || !ReferenceEquals(s.Attachment, attachment)) return;
         s.Power = snapshot;
-        s.PowerPublishedMs = MonsterService.NowMs;
+        s.PowerPublishedMs = _loop.NowMs;
         await s.SendGameAsync(ChangeNtf, new PlayerChangePowerNtf
         {
             CurPower = total.Clone(),
@@ -424,7 +424,7 @@ public sealed class PowerService : IGameTicker
             for (int i = 0; i < slice; i++) probe.Add(all[(_sweepIndex + i) % all.Count]);
             _sweepIndex = (_sweepIndex + slice) % all.Count;
         }
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         foreach (var s in probe)
         {
             if (!Live(s) || _queued.Contains(s)) continue;

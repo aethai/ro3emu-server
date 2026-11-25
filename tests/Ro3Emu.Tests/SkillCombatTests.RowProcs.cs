@@ -80,7 +80,7 @@ public sealed partial class SkillCombatTests
         var first = a.SkillCast!;
         var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
         int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
-        while (MonsterService.NowMs < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
+        while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
         await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); return Task.CompletedTask; });
         await CastAtAsync(bot, 1411801, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId)).Result);
@@ -139,7 +139,7 @@ public sealed partial class SkillCombatTests
         var first = a.SkillCast!;
         var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
         int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
-        while (MonsterService.NowMs < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
+        while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < first.StartMs + yield - CombatService.SwingJitterMs + 10) await Task.Delay(2);
         await Loop.InvokeAsync(() => { a.SkillCds.Clear(); a.SkillModeCds.Clear(); mob.Hp = 1; return Task.CompletedTask; });
         await CastAtAsync(bot, 1411801, mob);
         var second = Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId);
@@ -164,7 +164,7 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var (bot, a, dummy) = await ReadyAsync(alice, 1330, 13325, 1332501);
-        await Loop.InvokeAsync(() => { a.SkillCds[13323] = MonsterService.NowMs + 60000; return Task.CompletedTask; });
+        await Loop.InvokeAsync(() => { a.SkillCds[13323] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000; return Task.CompletedTask; });
         await CastAtAsync(bot, 1332501, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var deadline = DateTime.UtcNow + Wait;
@@ -177,7 +177,7 @@ public sealed partial class SkillCombatTests
     {
         await using var alice = await InWorld("Alice");
         var a = Session("alice");
-        long start = MonsterService.NowMs;
+        long start = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         await Loop.InvokeAsync(async () =>
         {
             a.SkillCds[16304] = start + 8000;

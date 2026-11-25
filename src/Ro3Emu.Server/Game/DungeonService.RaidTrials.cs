@@ -98,7 +98,7 @@ public sealed partial class DungeonService
         try
         {
             var boss = TrialBoss(a);
-            long now = MonsterService.NowMs;
+            long now = _loop.NowMs;
             if (boss == null || boss.Target == null)
             {
                 // Out of combat (not engaged yet, or reset): the trial in play ends without a verdict, the clock restarts.
@@ -143,7 +143,7 @@ public sealed partial class DungeonService
         var trial = raid.Script.Trials[index];
         var fighters = Fighters(a);
         if (fighters.Length == 0) return;
-        long now = MonsterService.NowMs, window = PacedMs(trial.WindowMs);
+        long now = _loop.NowMs, window = PacedMs(trial.WindowMs);
         var run = new TrialRun { Trial = trial, Index = index, Boss = boss, EndsAtMs = now + window, Players = fighters.Length };
         raid.Active = run;
         raid.NextDueMs[index] = trial.EveryMs > 0 ? now + window + PacedMs(trial.EveryMs) : long.MaxValue;
@@ -229,7 +229,7 @@ public sealed partial class DungeonService
     /// <summary>A player's colour in the trial: the first of its colour buffs the player carries (-1: none).</summary>
     private static int ColorOf(GameSession p, ReconstructedDungeons.RaidTrial trial)
     {
-        long now = MonsterService.NowMs;
+        long now = p.NowMs;
         for (int i = 0; i < trial.Colors.Count; i++)
             if (p.Buffs.Any(b => b.ConfigId == trial.Colors[i] && b.ExpireMs > now)) return i;
         return -1;
@@ -300,7 +300,7 @@ public sealed partial class DungeonService
             Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = a.Plan.SceneEntry,
             InstanceId = a.Room.Id, X = at.X, Y = at.Y, Z = at.Z, Face = at.Face, NpcId = npc, Point = 0,
             EntityType = type, Camp = row.Camp, Name = type == 2 && row.Name.Length > 0 ? _data.Text(row.Name[0]) : "",
-            Template = type == 1 ? _monsters.Template(npc) : null, BornMs = MonsterService.NowMs,
+            Template = type == 1 ? _monsters.Template(npc) : null, BornMs = _loop.NowMs,
         };
         // Its standing buffs as a monster has them from birth (NPCConfig _kBornEventBuff: a bell's glow, a circle's note), then
         // the trial's own; only rows the client has.
@@ -374,7 +374,7 @@ public sealed partial class DungeonService
         await s.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = code, Req = req });
         if (code != 0) return true;
         if (o.Spec.Use == ReconstructedDungeons.TrialUse.Color && o.Color >= 0)
-            await SetColorAsync(s, run.Trial, o.Color, (int)Math.Max(1000, run.EndsAtMs - MonsterService.NowMs + 2000), run.Boss.Uid);
+            await SetColorAsync(s, run.Trial, o.Color, (int)Math.Max(1000, run.EndsAtMs - _loop.NowMs + 2000), run.Boss.Uid);
         else if (o.Spec.Use == ReconstructedDungeons.TrialUse.Warp)
         {
             var kind = run.Objects.Where(x => ReferenceEquals(x.Spec, o.Spec) && !x.Gone).ToList();
@@ -410,7 +410,7 @@ public sealed partial class DungeonService
     {
         if (damage <= 0 || Active(s) is not { Raid.Active: { } run } a || run.Over || run.Trial.Rule != Rule.Carry
             || !ReferenceEquals(m, run.Boss) || run.Trial.Carry.Buff <= 0) return;
-        if (s.Buffs.FirstOrDefault(b => b.ConfigId == run.Trial.Carry.Buff && b.ExpireMs > MonsterService.NowMs) is not { } carried) return;
+        if (s.Buffs.FirstOrDefault(b => b.ConfigId == run.Trial.Carry.Buff && b.ExpireMs > _loop.NowMs) is not { } carried) return;
         await _buffs.RemoveAsync(s, carried);
         foreach (var o in run.Objects) o.Gone = true;
         await EndTrialAsync(a, run, judge: true);
@@ -443,7 +443,7 @@ public sealed partial class DungeonService
         if (run.Over || a.Raid is not { } raid) return;
         run.Over = true;
         if (ReferenceEquals(raid.Active, run)) raid.Active = null;
-        raid.QuietUntilMs = MonsterService.NowMs + PacedMs(TrialGapMs);
+        raid.QuietUntilMs = _loop.NowMs + PacedMs(TrialGapMs);
         var trial = run.Trial;
         var boss = run.Boss;
         var fighters = Fighters(a);
@@ -459,7 +459,7 @@ public sealed partial class DungeonService
                 await TrialOutcomeAsync(a, run, success, passed, fighters, left);
         }
         if (run.ShowSession != 0 && (!judge || trial.Success?.Stagger is not > 0)) await _combat.InterruptBossShowAsync(boss, run.ShowSession);
-        if (trial.Hold && boss.BusyUntilMs > MonsterService.NowMs && trial.Success?.StaggerMs is not > 0) boss.BusyUntilMs = MonsterService.NowMs;
+        if (trial.Hold && boss.BusyUntilMs > _loop.NowMs && trial.Success?.StaggerMs is not > 0) boss.BusyUntilMs = _loop.NowMs;
         foreach (var o in run.Objects)
         {
             if (o.Unit is MonsterUnit m) _trialMonsters.TryRemove(m.Uid, out _);
@@ -487,7 +487,7 @@ public sealed partial class DungeonService
         var objects = run.Objects.Where(o => !o.Gone && !o.Pickup).ToArray();
         bool Inside(GameSession p, TrialUnit o) => InTrialArea(o, trial.Radius, p.Position.X, p.Position.Z);
         bool Matches(GameSession p, TrialUnit o) => !o.Spec.Match || o.Color < 0 || ColorOf(p, trial) == o.Color;
-        bool Carrier(GameSession p) => trial.Carry.Buff > 0 && p.Buffs.Any(b => b.ConfigId == trial.Carry.Buff && b.ExpireMs > MonsterService.NowMs);
+        bool Carrier(GameSession p) => trial.Carry.Buff > 0 && p.Buffs.Any(b => b.ConfigId == trial.Carry.Buff && b.ExpireMs > p.NowMs);
         bool IsMarked(GameSession p) => run.Marked.Contains(p.Role!.Id);
         var failing = new List<GameSession>();
         bool party = false;
@@ -562,7 +562,7 @@ public sealed partial class DungeonService
         {
             if (run.ShowSession != 0) await _combat.InterruptBossShowAsync(boss, run.ShowSession);
             run.ShowSession = 0;
-            long until = MonsterService.NowMs + PacedMs(outcome.StaggerMs);
+            long until = _loop.NowMs + PacedMs(outcome.StaggerMs);
             boss.BusyUntilMs = until;
             if (outcome.Stagger > 0) await _combat.PlayBossShowAsync(boss, (int)outcome.Stagger, (int)PacedMs(outcome.StaggerMs));
         }
@@ -596,7 +596,7 @@ public sealed partial class DungeonService
             throw new ArgumentException($"list | 1-{raid.Script.Trials.Count} | stop");
         if (raid.Active is { } previous) await EndTrialAsync(a, previous, judge: false);
         if (boss.Target == null) _monsters.Engage(boss, s);
-        if (raid.EngagedAtMs == 0) raid.EngagedAtMs = MonsterService.NowMs;
+        if (raid.EngagedAtMs == 0) raid.EngagedAtMs = _loop.NowMs;
         await StartTrialAsync(a, raid, n - 1, boss);
         await GmCommands.ReplyAsync(s, $"Trial {n} '{raid.Script.Trials[n - 1].Name}' started (test aid).");
     }

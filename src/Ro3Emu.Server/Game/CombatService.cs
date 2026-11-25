@@ -355,7 +355,7 @@ public sealed partial class CombatService : IGameTicker
         WireCompanions();
     }
 
-    private static long Now => MonsterService.NowMs;
+    private long Now => _loop.NowMs;
 
     // ---- requests ----
 

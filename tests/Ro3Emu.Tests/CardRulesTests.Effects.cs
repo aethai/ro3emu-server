@@ -466,14 +466,14 @@ public sealed partial class CardRulesTests
             await Cast(alice, skill, target);
             await Task.Delay(100);
             Assert.Equal(0, Resets(alice, group));
-            Assert.True(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > MonsterService.NowMs)));
+            Assert.True(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
             await Task.Delay(1000);
 
             effects.Roll = _ => 599;
             await Cast(alice, skill, target);
             await Eventually(() => Resets(alice, group) == 1, "the reset");
             var reset = System.Diagnostics.Stopwatch.StartNew();
-            Assert.False(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > MonsterService.NowMs)));
+            Assert.False(await OnLoop(() => session.SkillModeCds.Any(c => c.Key.Group == group && c.Value > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
 
             await Cast(alice, skill, target); // refused by nothing: the cooldown is gone. But it is locked now.
             await Task.Delay(100);
@@ -600,7 +600,7 @@ public sealed partial class CardRulesTests
             var shown = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == OsirisReduction));
             Assert.Equal(5000, shown.Buffs.Single(b => b.ConfigId == OsirisReduction).Duration);
             Assert.Equal(before + 3000, await OnLoop(() => Service<CharacterService>().Stats(session)[216]));
-            Assert.Equal(150_000, await OnLoop(() => session.BuffEffectCds.Values.Max() - MonsterService.NowMs + 500) / 1000 * 1000);
+            Assert.Equal(150_000, await OnLoop(() => session.BuffEffectCds.Values.Max() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 500) / 1000 * 1000);
         }
     }
 

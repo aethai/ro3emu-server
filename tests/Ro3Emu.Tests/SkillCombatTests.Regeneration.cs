@@ -19,7 +19,7 @@ public sealed partial class SkillCombatTests
         {
             var s = Session("alice");
             s.StatusBits |= 1L << 15; // fighting, and staying so for the whole test
-            s.LastCombatMs = MonsterService.NowMs + 60000;
+            s.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
             await Character.SetHpSpAsync(s, null, 1);
         });
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(7);

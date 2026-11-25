@@ -65,14 +65,14 @@ public sealed partial class SkillCombatTests
         await EquipGuardian(alice, 12001, 1612001, slot: 2);
         var target = await Target("alice", stationary: true);
         await Loop.InvokeAsync(() => { target.Hp = 100000; return Task.CompletedTask; });
-        int speed = target.SpeedCm(MonsterService.NowMs);
+        int speed = target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 2346101, TargetId = target.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 2346201);
         Assert.Contains(hit.Dsts, d => d.DstID == target.Uid && d.Damage > 0 && !d.IsDead);
         Assert.Equal(1500, target.SlowMovementBp);
-        Assert.InRange(target.SlowMovementExpireMs - MonsterService.NowMs, 500, 2000);
-        Assert.True(target.SpeedCm(MonsterService.NowMs) < speed);
+        Assert.InRange(target.SlowMovementExpireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 500, 2000);
+        Assert.True(target.SpeedCm(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) < speed);
     }
 
     [ClientDataFact]

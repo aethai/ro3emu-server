@@ -20,7 +20,7 @@ internal sealed class MvpFieldUnit : WorldUnit
     {
         Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Owner = Boss.Uid,
         AiMasterEntityId = (ulong)Boss.Uid, EntityCamp = Boss.CampOverride ?? Boss.Template.Camp, State = EntityState.Alive,
-        BornTimeMs = BornMs, Face = Face, MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs },
+        BornTimeMs = BornMs, Face = Face, MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs },
         NotifyType = EntityBase.Types.NotifyType.All,
     };
 }
@@ -176,7 +176,7 @@ public sealed partial class MvpService
             {
                 SrcID = boss.Uid, SkillID = plan.Skill, TargetId = target?.Role?.Id ?? 0,
                 TargetPos = plan.Kind == BossSkillKind.Field && target != null ? target.Position.Clone() : boss.Pos,
-                Face = boss.Face, SkillMs = plan.ActionMs, StartTime = MonsterService.NowMs,
+                Face = boss.Face, SkillMs = plan.ActionMs, StartTime = _loop.NowMs,
             });
             switch (plan.Kind)
             {
@@ -214,7 +214,7 @@ public sealed partial class MvpService
                 await _world.ToUnitViewersAsync(m, CombatService.UseInSkill, new UseInSkillInfo
                 {
                     SrcID = m.Uid, SkillID = plan.BlastSkill, TargetPos = m.Pos, Face = m.Face,
-                    SkillMs = (int)GameData.Int(blast, "_iActionTime"), StartTime = MonsterService.NowMs,
+                    SkillMs = (int)GameData.Int(blast, "_iActionTime"), StartTime = _loop.NowMs,
                 });
             }
             else if (boss.Target is { } target) _monsters.Engage(m, target);
@@ -277,7 +277,7 @@ public sealed partial class MvpService
     {
         var spec = plan.Field!;
         if (_data.Row("NPCConfig", spec.Npc) is not { } npcRow) return;
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         var field = new MvpFieldUnit
         {
             Uid = FieldUidBase | ++_fieldSerial, SceneEntry = boss.SceneEntry, InstanceId = boss.InstanceId, RuntimeMap = boss.RuntimeMap,
@@ -303,7 +303,7 @@ public sealed partial class MvpService
         var targets = _world.PlayersIn(field.WorldScene)
             .Where(p => p.Role != null && !p.Dead && MonsterService.Distance(field, p) <= spec.Radius).ToArray();
         if (targets.Length > 0) await _combat.MonsterSkillHitAsync(boss, row, targets, field.Uid);
-        if (MonsterService.NowMs + spec.TickMs > field.EndMs) await RemoveFieldAsync(st, field);
+        if (_loop.NowMs + spec.TickMs > field.EndMs) await RemoveFieldAsync(st, field);
         else Schedule(st, TimeSpan.FromMilliseconds(spec.TickMs), () => TickFieldAsync(st, boss, field, plan), boss);
     }
 

@@ -32,7 +32,7 @@ public sealed partial class SkillCombatTests
             dummy.StaysOutOfBattle = true; dummy.Hp = 1000000;
             dummy.X = a.Position.X + 1; dummy.Y = a.Position.Y; dummy.Z = a.Position.Z;
             a.Energy[CombatService.BookPages].Value = pagesHeld;
-            a.Energy[CombatService.BookPages].NextRecoverMs = MonsterService.NowMs + 60000;
+            a.Energy[CombatService.BookPages].NextRecoverMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
             if (reading) await _app.Services.GetRequiredService<BuffService>().AddAsync(a, CombatService.ReadingBuff, 60000, a.Role!.Id);
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1231201, TargetId = dummy.Uid, TargetPos = dummy.Pos, Face = 90 });

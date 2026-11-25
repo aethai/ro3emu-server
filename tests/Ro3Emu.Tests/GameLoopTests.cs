@@ -480,6 +480,44 @@ public sealed class GameLoopTests : IAsyncLifetime
         await Assert.ThrowsAsync<ObjectDisposedException>(() => loop.StartAsync(default));
     }
 
+    [Fact]
+    public async Task LoopReadsMonotonicAndWallClockFromInjectedTimeProvider()
+    {
+        var start = new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+        var clock = new SteppingTimeProvider(start);
+        using var loop = new GameLoop(NullLogger<GameLoop>.Instance, time: clock);
+        Assert.Equal(TimeSpan.Zero, loop.Now);
+        Assert.Equal(start.ToUnixTimeMilliseconds(), loop.NowMs);
+        Assert.Equal(start.ToUnixTimeSeconds(), loop.NowSec);
+
+        await loop.StartAsync(default);
+        try
+        {
+            clock.Advance(TimeSpan.FromSeconds(5));
+            Assert.Equal(TimeSpan.FromSeconds(5), loop.Now);
+            Assert.Equal(start.AddSeconds(5).ToUnixTimeMilliseconds(), loop.NowMs);
+            Assert.Equal(start.AddSeconds(5).ToUnixTimeSeconds(), loop.NowSec);
+        }
+        finally
+        {
+            await loop.StopAsync(default);
+        }
+    }
+
+    private sealed class SteppingTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = start;
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+        public override long GetTimestamp() => Interlocked.Read(ref _ticks);
+        public void Advance(TimeSpan delta)
+        {
+            _utcNow += delta;
+            Interlocked.Add(ref _ticks, delta.Ticks);
+        }
+    }
+
     private sealed class CountingTicker(GameLoop loop) : IGameTicker
     {
         public int Ticks;

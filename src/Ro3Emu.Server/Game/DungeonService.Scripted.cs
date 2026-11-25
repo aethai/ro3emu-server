@@ -61,7 +61,7 @@ public sealed partial class DungeonService
                 NotifyType = EntityBase.Types.NotifyType.All,
                 MovementInfo = new MovementInfo
                 {
-                    Pos = Pos, Face = Face, ServerTime = MonsterService.NowMs,
+                    Pos = Pos, Face = Face, ServerTime = NowMs,
                     MoveType = MovementType.MoveTypeNone
                 },
             };
@@ -145,7 +145,7 @@ public sealed partial class DungeonService
                 Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = a.Plan.SceneEntry,
                 InstanceId = a.Room.Id, X = at.X + spec.Dx, Y = at.Y, Z = at.Z + spec.Dz, Face = at.Face, NpcId = spec.NpcId, Point = spec.Point,
                 EntityType = type, Camp = GameData.Int(row, "_iCamp"), Name = type == 2 ? _data.TextOf(row, "_kName") : "",
-                Template = type == 1 ? _monsters.Template(spec.NpcId) : null, BornMs = MonsterService.NowMs,
+                Template = type == 1 ? _monsters.Template(spec.NpcId) : null, BornMs = _loop.NowMs,
                 CarrySpeed = _data.Row("VehicleConfig", spec.NpcId) != null && NPCConfig.Get(_data, spec.NpcId) is { } carrier
                     && UnitConfig.Get(_data, carrier.UnitId) is { } carrierUnit ? (long)carrierUnit.Speed : 0,
             };

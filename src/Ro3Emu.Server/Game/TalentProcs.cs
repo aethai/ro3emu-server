@@ -374,7 +374,7 @@ public sealed partial class TalentProcs
     private bool Ready(GameSession s, long buff, long cooldownMs)
     {
         var ready = _readyAt.GetOrCreateValue(s);
-        long now = MonsterService.NowMs;
+        long now = _loop.NowMs;
         if (ready.GetValueOrDefault(buff) > now) return false;
         if (cooldownMs > 0) ready[buff] = now + cooldownMs;
         return true;
