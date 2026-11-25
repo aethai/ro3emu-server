@@ -110,7 +110,7 @@ public sealed partial class TerritoryWarsService
         foreach (var (id, role) in roleChanges) SaveRole(id, role, transaction);
         string settlementKey = $"{_clock.Epoch}:{r.Round}:{r.Zone}";
         var awards = roleChanges.ToDictionary(pair => pair.Key, pair => pair.Value.Pending[settlementKey]);
-        if (PendingSource(awards, "battle-settle", $"territory-battle-settle:{next.Epoch}:{r.Round}:{r.Zone}") is { } reward)
+        if (TerritoryWarsEconomy.PendingSource(_data, _loop.NowMs, awards, "battle-settle", $"territory-battle-settle:{next.Epoch}:{r.Round}:{r.Zone}") is { } reward)
             transaction.WithEventEconomy(reward);
         await _roles.CommitAsync(transaction, "territory/settle");
         PublishCommitted(next);
@@ -137,7 +137,7 @@ public sealed partial class TerritoryWarsService
             _loop.PostLegacy(async () => { await EndPlatformsAsync(room); await EndWarMachinesAsync(room.Room); });
         await PublishAsync();
     }
-    private void AddRankAward(List<Grant> grants, string table, int rank, GameSession s)
+    internal void AddRankAward(List<Grant> grants, string table, int rank, GameSession s)
     {
         foreach (var row in _data.Table(table).Values)
         {
@@ -148,7 +148,7 @@ public sealed partial class TerritoryWarsService
             AddAward(grants, GameData.Int(row, "_iAwardGroupID"), s); break;
         }
     }
-    private void AddAward(List<Grant> grants, long group, GameSession s)
+    internal void AddAward(List<Grant> grants, long group, GameSession s)
     {
         long id = group;
         if (_data.Row("MultiverseGroupConfig", group) is { } mg)
@@ -197,68 +197,5 @@ public sealed partial class TerritoryWarsService
         }
         else return false;
         return true;
-    }
-
-    /// <summary>TerritoryWorldDropItemCarryLimit/MaterialNPC and supply dialogue select currency 133 and the donor NPC.</summary>
-    private async Task SubmitDropAsync(GameSession s)
-    {
-        var guild = Own(s);
-        var npc = _maps.Map(s.SceneEntry)?.Npcs.FirstOrDefault(n => n.NpcId == (Data.Config.PublicParams.Of(_data).TerritoryWorldMaterialNPC ?? 200052)
-            && MonsterService.Distance(n.X, n.Z, s.Position.X, s.Position.Z) <= 5);
-        if (guild == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryGuild); return; }
-        if (s.Dead || s.SceneLoading || npc == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryInvalidPoint); return; }
-        using var held = await CharacterService.Lock(s);
-        guild = Own(s);
-        if (guild == null) { await Error(s, SubmitDrop, ErrorCodes.TerritoryGuild); return; }
-        long count = s.Progress!.Currency.GetValueOrDefault(133);
-        if (count <= 0) { await Error(s, SubmitDrop, ErrorCodes.Parameter); return; }
-        var role = LoadRole(s.Role!.Id); var next = Copy(state);
-        role.Donated = checked(role.Donated + count); role.Donations[_clock.Now] = checked(role.Donations.GetValueOrDefault(_clock.Now) + count);
-        next.Donations[s.Role.Id] = role.Donated;
-        guild.Materials = checked(guild.Materials + count); // carried supply -> guild material 126, one-to-one (inferred).
-        if (await _character.ExchangeLockedAsync(s, new ExchangeRequest
-        {
-            Cost = [(133, count)],
-            Sync = false,
-            Popup = false,
-            Persist = tx =>
-        {
-            _guildStore.EnlistSave(guild, tx); SaveRole(s.Role.Id, role, tx); Save(next, tx);
-            tx.WithEventEconomy(new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
-                s.Account!, s.Role.Id, "event/territory-submit-drop",
-                $"territory-submit-drop:{next.Epoch}:{s.Role.Id}:{role.Donated}",
-                _loop.NowMs,
-                [new(new(EconomyAssetKind.Currency, 133), count)],
-                [new(new(EconomyAssetKind.GuildResource, 3), count)],
-                [new(new(EconomyOwnerKind.Role, s.Role.Id.ToString()), new(EconomyAssetKind.Currency, 133), -count),
-                 new(new(EconomyOwnerKind.Guild, guild.Id.ToString()), new(EconomyAssetKind.GuildResource, 3), count)],
-                JsonSerializer.SerializeToUtf8Bytes(new { Kind = "submit-drop", Role = s.Role.Id, Guild = guild.Id, Count = count })));
-        },
-            AsyncCommit = true,
-        }) == null) { await Error(s, SubmitDrop, ErrorCodes.Parameter); return; }
-        PublishCommitted(next); s.TerritoryWars = role;
-        await _character.ItemsChangedAsync(s, false);
-        await _guilds.RefreshResourceAsync(guild.Id);
-        await Send(s, SubmitDrop, new NullArg());
-    }
-    private Task WarHallAsync(GameSession s)
-    {
-        var guild = Own(s);
-        if (guild == null) return Send(s, WarHall, new TerritoryWarsWarHallGetInfoResp { Result = ErrorCodes.TerritoryGuild });
-        var utc = DateTimeOffset.FromUnixTimeSeconds(_clock.Now).UtcDateTime;
-        long week = new DateTimeOffset(utc.Date.AddDays(-((int)utc.DayOfWeek + 6) % 7), TimeSpan.Zero).ToUnixTimeSeconds();
-        long month = new DateTimeOffset(new DateTime(utc.Year, utc.Month, 1), TimeSpan.Zero).ToUnixTimeSeconds();
-        TerritoryWarsWarHallDonateRankGroup Group(long start)
-        {
-            var g = new TerritoryWarsWarHallDonateRankGroup();
-            foreach (var member in guild.Members.Values)
-            {
-                var r = LoadRole(member.RoleId);
-                long count = r.Donations.Where(x => x.Key >= start).Sum(x => x.Value);
-                if (count > 0) g.Entries.Add(new TerritoryWarsWarHallDonateRankEntry { PlayerId = member.RoleId, GuildPosition = member.Official, DonateCount = count });
-            }
-            var ordered = g.Entries.OrderByDescending(x => x.DonateCount).ThenBy(x => x.PlayerId).ToArray(); g.Entries.Clear(); g.Entries.AddRange(ordered); return g;
-        }
-        return Send(s, WarHall, new TerritoryWarsWarHallGetInfoResp { WeekRank = Group(week), MonthRank = Group(month), SeasonRank = Group(_clock.SeasonStart) });
     }
 }

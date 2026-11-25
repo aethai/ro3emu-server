@@ -9,7 +9,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class TerritoryWarsService
 {
-    private const uint GlobalObjectNotify = 30115;
+    internal const uint GlobalObjectNotify = 30115;
     public sealed class BattleState
     {
         public int Zone { get; set; }
@@ -103,8 +103,8 @@ public sealed partial class TerritoryWarsService
         public long EnterAt;
         public long AwaySince;
     }
-    private static int BattleKey(int round, int zone) => round * 100 + zone;
-    private TerritoryWarsClock.Stage? WarStage(int round) => _clock.RoundStage(round, round == 1 ? 6 : round == 2 ? 10 : 14);
+    internal static int BattleKey(int round, int zone) => round * 100 + zone;
+    internal TerritoryWarsClock.Stage? WarStage(int round) => _clock.RoundStage(round, round == 1 ? 6 : round == 2 ? 10 : 14);
     private IEnumerable<int> BattleZones(int round) => Zones.Where(z => GameData.Int(z, "_iType") == (round == 1 ? 3 : round == 2 ? 2 : 1)).Select(z => (int)Id(z));
 
     /// <summary>30400 is the shared dungeon ingress; all qualification and scene selection are server derived.</summary>
@@ -323,8 +323,8 @@ public sealed partial class TerritoryWarsService
         }
         finally { b.Spawning = false; }
     }
-    private bool Active(Battle b) => !b.State.Settled && _clock.Now >= b.State.Start && _clock.Now < b.State.End;
-    private bool Member(GameSession s, Battle b) => s.Role != null && s.InstanceId == b.Room.Id && !s.SceneLoading
+    internal bool Active(Battle b) => !b.State.Settled && _clock.Now >= b.State.Start && _clock.Now < b.State.End;
+    internal bool Member(GameSession s, Battle b) => s.Role != null && s.InstanceId == b.Room.Id && !s.SceneLoading
         && b.Room.ActiveMembers.Any(m => ReferenceEquals(m.Session, s))
         && b.State.Players.TryGetValue(s.Role.Id, out var p) && OwnId(s) == p.Guild && b.State.Guilds.Contains(p.Guild);
     public bool Hostile(GameSession a, GameSession b) => SiegeHostile(a, b) || a.TerritoryBattle is { } battle && ReferenceEquals(b.TerritoryBattle, battle)
@@ -682,7 +682,7 @@ public sealed partial class TerritoryWarsService
     {
         foreach (var buff in s.Buffs.Where(b => b.ConfigId == id).ToArray()) await _buffs.RemoveAsync(s, buff);
     }
-    private Task SyncSiegeAsync(GameSession s, RoleState? committedRole = null)
+    internal Task SyncSiegeAsync(GameSession s, RoleState? committedRole = null)
     {
         var r = s.TerritoryWars = committedRole ?? LoadRole(s.Role!.Id);
         var info = new DBRoleSiegeData

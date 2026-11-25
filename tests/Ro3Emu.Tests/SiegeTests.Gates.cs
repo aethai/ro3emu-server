@@ -222,7 +222,8 @@ public sealed partial class SiegeTests
             await attack.SendGameAsync(CombatService.SkillInterrupt, new SkillInterruptReq());
             await Next(attack, CombatService.SkillInterrupt, SkillInterruptResp.Parser);
             // A swing cancelled by a move holds the next one (CombatService.CancelCastAsync).
-            while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < a.SwingLockUntilMs) await Task.Delay(20);
+            if (_clock.NowMs < a.SwingLockUntilMs) _clock.AdvanceMs(a.SwingLockUntilMs - _clock.NowMs + 50);
+            while (_clock.NowMs < a.SwingLockUntilMs) { _clock.AdvanceMs(50); await Task.Delay(20); }
             await OnLoop(() => Service<SceneService>().TeleportInMapAsync(a, new MapPoint(m.X + 1.5f, m.Y, m.Z, 270)));
             await attack.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = m.Uid });
             Assert.Equal(0, (await Next(attack, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -238,11 +239,11 @@ public sealed partial class SiegeTests
         var guardian = run.Objects[38];
         long guardianHp = await HitFromBeside(guardian);
         Assert.True(guardianHp < guardian.Template.MaxHp);
-        for (int i = 0; i < 50 && guardian.Target == null; i++) await Task.Delay(100);
+        for (int i = 0; i < 50 && guardian.Target == null; i++) { _clock.AdvanceMs(100); await Task.Delay(100); }
         Assert.Same(a, guardian.Target); // the hit engages a fighting object by now...
         Assert.Null(gate.Target); // ...but never the gate, which was hit first
         await OnLoop(() => Service<SceneService>().TeleportInMapAsync(a, new MapPoint(guardian.X + 60, guardian.Y, guardian.Z, 0)));
-        await Task.Delay(2500); // monster ticks (real time): the guardian gives up and stands at home again
+        await Until(() => guardian.Target == null && !guardian.Returning);
         Assert.Null(guardian.Target);
         Assert.False(guardian.Returning);
 

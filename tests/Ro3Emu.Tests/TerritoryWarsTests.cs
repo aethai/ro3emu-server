@@ -20,9 +20,10 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(12);
     private sealed class Clock : TimeProvider
     {
-        private long _seconds = 1779535900; // round 2 free auction, exported absolute calendar.
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeSeconds(Interlocked.Read(ref _seconds));
-        public void Set(long value) => Interlocked.Exchange(ref _seconds, value);
+        private long _ms = 1779535900L * 1000; // round 2 free auction, exported absolute calendar.
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeMilliseconds(Interlocked.Read(ref _ms));
+        public void Set(long value) => Interlocked.Exchange(ref _ms, value * 1000);
+        public void AdvanceMs(long ms) => Interlocked.Add(ref _ms, ms);
     }
     private readonly Clock _clock = new();
     private WebApplication _app = null!;
@@ -483,9 +484,7 @@ public sealed partial class TerritoryWarsTests : IAsyncLifetime
             {
                 // Reconcile must publish an actual full panel, even though its values have not changed.
                 session.Synced.Remove(5020);
-                typeof(TerritoryWarsService).GetField("_siegePublishedState",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                    .SetValue(wars, "");
+                Service<SiegeService>().ResetPublishedStateForTest();
                 await wars.ReconcileAsync();
             });
             var panel = DBRoleSiegeDataIncrement.Parser.ParseFrom((await refresh.WaitAsync(Wait)).Body);
