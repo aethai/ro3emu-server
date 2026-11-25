@@ -64,6 +64,7 @@ internal static partial class CoreComposition
         services.AddSingleton<World>();
         services.AddSingleton<WorldData>();
         services.AddSingleton<SceneService>();
+        services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<SceneService>());
         services.AddSingleton<WorldEffectsService>();
         services.AddSingleton<WorldCoreService>();
         services.AddSingleton<WorldCommonService>();

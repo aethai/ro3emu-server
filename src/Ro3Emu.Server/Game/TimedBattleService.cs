@@ -15,8 +15,11 @@ namespace Ro3Emu.Server.Game;
 /// exported EatChickenMatchConfig/DragonIslandMatchConfig scenes and specialized population/team sizes.
 /// CombatService calls CanFight/PlayerKilledAsync for actual opposing-player combat.
 /// </summary>
-public sealed partial class TimedBattleService : IGameTicker, ICombatRule
+public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messaging.INpcInteractionHandler
 {
+    int Messaging.INpcInteractionHandler.Order => 400;
+    Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request) =>
+        TryInteractAsync(session, request);
     bool ICombatRule.CanEventFight(GameSession attacker, GameSession defender) => CanFight(attacker, defender);
     Task ICombatRule.OnEventPlayerKilledAsync(GameSession killer, GameSession victim) => PlayerKilledAsync(killer, victim);
     bool? ICombatRule.AllowMatchSkill(GameSession session, int skillId) => MatchSkillRule(session, skillId);

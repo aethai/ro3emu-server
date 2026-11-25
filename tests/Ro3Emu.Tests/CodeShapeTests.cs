@@ -18,17 +18,18 @@ public sealed class CodeShapeTests
     private const int MaxGameClassLines = 2500;
     private const int MaxLineLength = 200;
 
-    private const int MethodsOver80Lines = 88;
+    private const int MethodsOver80Lines = 83;
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 25;
     private const int ClassesOver20Dependencies = 0;
     private const int ClassesOver2500LinesInGame = 0;
     private const int RoleNullForgiving = 961;
-    private const int LinesOver200Chars = 91;
+    private const int LinesOver200Chars = 85;
     private const int ExposedHookLists = 0;
     private const int NumericIsOpenCalls = 0;
     private const int NumericStatIndexers = 0;
-    private const int NumericRouteMaps = 78;
+    private const int NumericRouteMaps = 0;
+    private const int PragmaCs1998InServer = 0;
     private const int NumericSendGameCalls = 48;
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
@@ -92,6 +93,10 @@ public sealed class CodeShapeTests
     [Fact]
     public void NumericRouteMapsOnlyGoDown() =>
         AssertRatchet(nameof(NumericRouteMaps), NumericRouteMaps, ServerSnapshot.Value.NumericRouteMaps);
+
+    [Fact]
+    public void NoPragmaCs1998InServer() =>
+        AssertRatchet(nameof(PragmaCs1998InServer), PragmaCs1998InServer, ServerSnapshot.Value.PragmaCs1998);
 
     [Fact]
     public void NumericSendGameCallsOnlyGoDown() =>
@@ -226,6 +231,7 @@ public sealed class CodeShapeTests
         List<string> numericIsOpen = [];
         List<string> numericStatIndexers = [];
         List<string> numericRouteMaps = [];
+        List<string> pragmaCs1998 = [];
         List<string> numericSendGame = [];
         List<string> systemClockCalls = [];
         List<string> adHocResetOffsets = [];
@@ -234,6 +240,7 @@ public sealed class CodeShapeTests
         {
             if (IsConfigTableView(relPath)) continue;
             CollectLongLines(relPath, text, longLines);
+            CollectPragmaCs1998(relPath, text, pragmaCs1998);
             var root = CSharpSyntaxTree.ParseText(text, path: relPath).GetRoot();
             bool inGame = relPath.StartsWith("Game/", StringComparison.Ordinal);
 
@@ -283,12 +290,24 @@ public sealed class CodeShapeTests
         ];
 
         return new(longMethods, wideGameMethods, heavyClasses, overloadedClasses, oversizedGameClasses,
-            roleBangs, longLines, hookLists, numericIsOpen, numericStatIndexers, numericRouteMaps,
+            roleBangs, longLines, hookLists, numericIsOpen, numericStatIndexers, numericRouteMaps, pragmaCs1998,
             numericSendGame, systemClockCalls, adHocResetOffsets);
     }
 
     private static bool IsConfigTableView(string relPath) =>
         relPath.Replace('/', Path.DirectorySeparatorChar).StartsWith(ConfigTablesDir, StringComparison.Ordinal);
+
+    private static void CollectPragmaCs1998(string relPath, string text, List<string> target)
+    {
+        using var reader = new StringReader(text);
+        int lineNumber = 0;
+        while (reader.ReadLine() is { } line)
+        {
+            lineNumber++;
+            if (line.Contains("CS1998", StringComparison.Ordinal) && line.Contains("#pragma", StringComparison.Ordinal))
+                target.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, lineNumber));
+        }
+    }
 
     private static void CollectLongLines(string relPath, string text, List<string> target)
     {
@@ -644,6 +663,7 @@ public sealed class CodeShapeTests
         IReadOnlyList<string> NumericIsOpen,
         IReadOnlyList<string> NumericStatIndexers,
         IReadOnlyList<string> NumericRouteMaps,
+        IReadOnlyList<string> PragmaCs1998,
         IReadOnlyList<string> NumericSendGame,
         IReadOnlyList<string> SystemClockCalls,
         IReadOnlyList<string> AdHocResetOffsets);

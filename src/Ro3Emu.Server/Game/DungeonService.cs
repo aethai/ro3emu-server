@@ -20,8 +20,11 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     FunctionService functions, SeasonService seasons, InstanceService instances, TeamService teams,
     SessionRegistry sessions, RewardService rewards, AuctionService auctions, GuildStore guilds, CombatService combat,
     GameLoop loop, ILogger<DungeonService> log, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
-    PraiseService praise, TestingSwitches testing)
+    PraiseService praise, TestingSwitches testing) : Messaging.INpcInteractionHandler
 {
+    int Messaging.INpcInteractionHandler.Order => 200;
+    Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request) =>
+        TryInteractAsync(session, request);
     public const uint Sync = 5062, Enter = 30400, BaseInfo = 30401, Leave = 30402, Result = 30403, Event = 30404,
         Confirm = 30406, ClientEvent = 30106, CreateResult = 30107, EnterSceneResult = 30108,
         Reset = 30124, ReadyQueue = 42033, TeamInfo = 30441, ConfirmReminder = 42047, ConfirmReminderNotify = 42046,

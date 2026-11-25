@@ -14,11 +14,21 @@ namespace Ro3Emu.Server.Game;
 /// existing award transaction, including source state, costs, bound items and virtual EXP. ActivityGate
 /// serializes source requests; CharacterService owns inventory locking. Cash-shop orders: NewActivityService.Purchases.
 /// </summary>
-public sealed partial class NewActivityService
+public sealed partial class NewActivityService : Messaging.INpcInteractionHandler
 {
+    int Messaging.INpcInteractionHandler.Order => 100;
+    async Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request)
+    {
+        if (await TryConchAsync(session, request)) return true;
+        await InterruptConchAsync(session);
+        return false;
+    }
     public const uint ActivitySync = 5013, WorldExplorationSync = 5042, MonthCardSync = 5054;
     public const uint GetList = 82951, GetReward = 82975, Common = 82976, Notify = 82977;
     public const uint LevelAward = 83200, FunctionPreviewAward = 83201;
+    public const uint PreSubmit = 82960, PreGetData = 82961, PreReceive = 82962, FragmentAsk = 82963,
+        FragmentSend = 82964, FragmentCraft = 82965, FragmentProgress = 82966, FragmentAskFinished = 82967,
+        WorldFill = 83450;
 
     /// <summary>Territory owns type-22 war state; this service retains the complete 5013 catalogue and calendar.</summary>
     public Func<GameSession, PlayerActivityTerritoryWar>? TerritoryWarState { get; set; }

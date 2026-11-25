@@ -18,6 +18,10 @@ public sealed partial class GenreService(
     FunctionService functions, SessionRegistry sessions, GameData data, ILogger<GenreService> log)
 {
     public const uint GenreSync = 5008;
+    public const uint Seek = 82800, Respond = 82801, SendPlan = 82802, SaveRec = 82803, DeleteRec = 82804,
+        DeleteSeeker = 82805, SwitchPlan = 82806, Code = 82807, MyRecs = 82808, Others = 82809, Concrete = 82810,
+        RespondCode = 82812, ApplyRec = 82813, RenamePlan = 82816, Property = 82823, RenameRec = 82824,
+        PlanPower = 82825, Season = 82826, School = 82827, QueryRecs = 82828;
     private const int PlanCount = 5; // (inferred) PublicParamConfig.SchemeNum, zero-based Build labels.
     private const int NameMax = 8; // PublicParamConfig.SchemeNameNumMax.
     private const int Skill = 1, Attr = 2, Equip = 3, Card = 4, Totem = 5, Emblem = 6, Pet = 7, Talent = 8;

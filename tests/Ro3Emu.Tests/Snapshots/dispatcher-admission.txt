@@ -748,9 +748,9 @@
 82334	session role:WholeRole dispatcher/82334	refused
 82335	economic dispatcher/economic request	refused
 82336	economic dispatcher/economic request	refused
-82337	session role:WholeRole dispatcher/unrouted	refused
+82337	session Realm:legacy: dispatcher/unrouted	refused
 82338	session role:WholeRole dispatcher/82338	refused
-82339	session role:WholeRole dispatcher/unrouted	refused
+82339	session Realm:legacy: dispatcher/unrouted	refused
 82340	session role:WholeRole dispatcher/82340	refused
 82341	session Realm:legacy: dispatcher/unrouted	refused
 82342	session Realm:legacy: dispatcher/unrouted	refused
@@ -884,7 +884,7 @@
 82812	economic dispatcher/economic request	refused
 82813	economic dispatcher/economic request	refused
 82816	economic dispatcher/economic request	refused
-82822	economic dispatcher/economic request	refused
+82822	session Realm:legacy: dispatcher/unrouted	refused
 82823	economic dispatcher/economic request	refused
 82824	economic dispatcher/economic request	refused
 82825	economic dispatcher/economic request	refused
@@ -1052,7 +1052,7 @@
 83904	economic dispatcher/economic request	refused
 83905	economic dispatcher/economic request	refused
 83906	economic dispatcher/economic request	refused
-83907	economic dispatcher/economic request	refused
+83907	session Realm:legacy: dispatcher/unrouted	refused
 83908	economic dispatcher/economic request	refused
 84000	session Realm:legacy: dispatcher/84000	refused
 84011	session Realm:legacy: dispatcher/84011	refused
