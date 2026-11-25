@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Cryptography;
@@ -45,9 +46,9 @@ public static class Launcher
         long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var proof = string.Join("\r\n",
             "RO3_LAUNCH_PROOF_V1",
-            game.Id.ToString(),
-            now.ToString(),
-            (now + 30).ToString(),
+            game.Id.ToString(CultureInfo.InvariantCulture),
+            now.ToString(CultureInfo.InvariantCulture),
+            (now + 30).ToString(CultureInfo.InvariantCulture),
             Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32))) + "\r\n";
         var bytes = Encoding.ASCII.GetBytes(proof);
         pipe.Write(bytes, 0, bytes.Length);

@@ -114,7 +114,7 @@ internal sealed class Options
                 case "--no-panel": o.Ports = o.Ports with { Panel = 0 }; break;
                 case "-h": case "--help": o.Command = "help"; break;
                 default:
-                    if (args[i].StartsWith("--")) throw new SetupException($"Unknown option {args[i]}.", "Run RO3Emu.exe help.");
+                    if (args[i].StartsWith("--", StringComparison.Ordinal)) throw new SetupException($"Unknown option {args[i]}.", "Run RO3Emu.exe help.");
                     o.Positional.Add(args[i]);
                     break;
             }

@@ -70,21 +70,23 @@ internal static class DiagnosticsZip
 
     private static string SystemInfo(string? clientDir)
     {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
         var s = new StringBuilder();
-        s.AppendLine($"RO3Emu {typeof(DiagnosticsZip).Assembly.GetName().Version}");
-        s.AppendLine($"time {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}");
-        s.AppendLine($"os {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}), runtime {RuntimeInformation.FrameworkDescription}");
-        s.AppendLine($"cpus {Environment.ProcessorCount}, memory {GC.GetGCMemoryInfo().TotalAvailableMemoryBytes >> 20} MB");
-        s.AppendLine($"app {SetupHome.AppDir}");
-        s.AppendLine($"home {SetupHome.Root}");
-        s.AppendLine($"client {clientDir ?? "(none)"}");
+        s.AppendLine(inv, $"RO3Emu {typeof(DiagnosticsZip).Assembly.GetName().Version}");
+        s.AppendLine(inv, $"time {DateTime.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        s.AppendLine(inv, $"os {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}), runtime {RuntimeInformation.FrameworkDescription}");
+        s.AppendLine(inv, $"cpus {Environment.ProcessorCount}, memory {GC.GetGCMemoryInfo().TotalAvailableMemoryBytes >> 20} MB");
+        s.AppendLine(inv, $"app {SetupHome.AppDir}");
+        s.AppendLine(inv, $"home {SetupHome.Root}");
+        s.AppendLine(inv, $"client {clientDir ?? "(none)"}");
         foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady && d.DriveType == DriveType.Fixed))
-            s.AppendLine($"drive {drive.Name} {drive.DriveFormat} free {drive.AvailableFreeSpace >> 20} MB of {drive.TotalSize >> 20} MB");
+            s.AppendLine(inv, $"drive {drive.Name} {drive.DriveFormat} free {drive.AvailableFreeSpace >> 20} MB of {drive.TotalSize >> 20} MB");
         return s.ToString();
     }
 
     private static string ManagedListing(string clientDir)
     {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
         var s = new StringBuilder();
         foreach (var dir in new[] { Path.Combine(clientDir, "ro3_Data", "Managed"), Path.Combine(clientDir, "ro3emu-backup") })
         {
@@ -95,9 +97,9 @@ internal static class DiagnosticsZip
                 try
                 {
                     using var stream = File.OpenRead(file);
-                    s.AppendLine($"{Path.GetFileName(file)}\t{stream.Length}\t{Convert.ToHexStringLower(SHA256.HashData(stream))}");
+                    s.AppendLine(inv, $"{Path.GetFileName(file)}\t{stream.Length}\t{Convert.ToHexStringLower(SHA256.HashData(stream))}");
                 }
-                catch (Exception e) { s.AppendLine($"{Path.GetFileName(file)}\t{e.Message}"); }
+                catch (Exception e) { s.AppendLine(inv, $"{Path.GetFileName(file)}\t{e.Message}"); }
             }
         }
         return s.ToString();
