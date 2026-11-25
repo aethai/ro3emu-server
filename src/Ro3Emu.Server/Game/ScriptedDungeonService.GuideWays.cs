@@ -26,7 +26,7 @@ public sealed partial class ScriptedDungeonService
     /// </summary>
     internal DungeonVar? GuideWays(Attempt a)
     {
-        if (a.Plan.Multi != null || a.GuildChallenge != null || a.Dracula != null
+        if (a.Plan.Multi != null || a.Mode != null
             || new DungeonConfig(a.Plan.Config).RoleCntLimit != 1) return null;
         if (_catalog.GuideRoutes(a.Plan.SceneEntry) is not { Count: > 0 } routes) return null;
         var ways = new DungeonVar { VarId = GuideWayVar };

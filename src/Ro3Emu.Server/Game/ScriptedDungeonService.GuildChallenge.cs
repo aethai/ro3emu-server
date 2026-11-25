@@ -11,7 +11,7 @@ public sealed partial class ScriptedDungeonService
 {
     /// <summary>Whale's 30400 enters a guild-owned preparation room, using the ordinary scene/AOI pipeline.</summary>
     internal async Task<Attempt?> EnterGuildChallengeAsync(GameSession s, DungeonCatalog.Plan plan,
-        GuildChallengeService.Run run, Attempt? existing)
+        IDungeonMode mode, Attempt? existing)
     {
         var a = existing;
         if (a == null)
@@ -20,7 +20,7 @@ public sealed partial class ScriptedDungeonService
             a = new Attempt
             {
                 Room = room, Plan = plan, Leader = s.Role!.Id, TeamId = 0,
-                PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId, GuildChallenge = run
+                PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId, Mode = mode
             };
         }
         else if (!_instances.AddParticipant(a.Room, s, continuation: s.DungeonAttempt is { Settled: true })) return null;

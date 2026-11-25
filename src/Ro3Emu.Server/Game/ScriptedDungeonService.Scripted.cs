@@ -164,14 +164,13 @@ public sealed partial class ScriptedDungeonService
             : req.SceneConfigId != 0 && req.SceneConfigId != s.SceneEntry ? ErrorCodes.NpcParameter
             : !_catalog.Interactions(actor.NpcId).Contains(req.InteractionId) ? ErrorCodes.NpcParameter
             : MonsterService.Distance(s.Position.X, s.Position.Z, actor.X, actor.Z) > SceneActorReach ? ErrorCodes.NpcTooFar
-            : a!.Dracula is { } lair ? lair.Owner.InteractionError(a, s, actor.NpcId) : 0;
+            : a!.Mode is { } mode ? mode.InteractionError(a, s, actor.NpcId) : 0;
         _log.LogInformation("{Name} interacts {Interaction} with scene actor {Npc} {Uid} (scene {Scene}, config scene {ConfigScene}, "
             + "distance {Distance:0.0} m): {Result}", s.Role?.Name, req.InteractionId, actor?.NpcId, req.NpcUid, s.SceneEntry,
             req.SceneConfigId, actor == null ? -1 : MonsterService.Distance(s.Position.X, s.Position.Z, actor.X, actor.Z), code);
         await s.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = code, Req = req });
         if (code != 0) return true;
-        // Dracula's Lair: a bush search may find the key; its finder is the rescuer, the only one the cage opens for.
-        if (a!.Dracula is { } dracula) await dracula.Owner.InteractedAsync(a, s, actor!.NpcId);
+        if (a!.Mode is { } modeAfter) await modeAfter.OnInteractedAsync(a, s, actor!.NpcId);
         await BoardCannonAsync(a!, s, actor!, req.InteractionId);
         await SeatRiderAsync(a!, s, actor!, (int)req.InteractionId);
         var events = new List<(Kind, long)> { (Kind.Interaction, req.InteractionId) };

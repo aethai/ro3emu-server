@@ -16,7 +16,7 @@ public sealed partial class ScriptedDungeonService
     /// so members arrive one by one: the first entry creates the room and later ones join it, keeping their outside return
     /// point from the guild home (InstanceService continuation).
     /// </summary>
-    internal async Task<Attempt?> EnterDraculaAsync(GameSession s, DungeonCatalog.Plan plan, DraculaWeddingService.Run run,
+    internal async Task<Attempt?> EnterDraculaAsync(GameSession s, DungeonCatalog.Plan plan, IDungeonMode mode,
         Attempt? existing)
     {
         var a = existing;
@@ -26,7 +26,7 @@ public sealed partial class ScriptedDungeonService
             a = new Attempt
             {
                 Room = room, Plan = plan, Leader = s.Role!.Id, TeamId = 0,
-                PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId, Dracula = run
+                PlayBook = _seasons.PlayBook, SeasonId = _seasons.SeasonId, Mode = mode
             };
         }
         else if (!_instances.AddParticipant(a.Room, s, continuation: true)) return null;
