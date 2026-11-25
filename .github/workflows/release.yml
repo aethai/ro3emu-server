@@ -1,12 +1,13 @@
 name: release
 
-# A tag v* builds the two release archives (tools/release/pack.ps1) and attaches them to a draft release. A manual
-# run with a version does the same for the commit it runs on; publishing that draft creates the tag. With publish, a
-# manual run publishes the release itself (creating the tag), with the given notes.
+# A tag v* builds the two release archives (tools/release/pack.ps1), writes SHA256SUMS, generates SLSA build
+# provenance attestations, and attaches them to a draft release. A manual run from main with a version does the same
+# for that commit; publishing that draft creates the tag. With publish, a manual run from main publishes the release
+# itself (creating the tag), with the given notes.
 # CI has no game client, so the client hooks/loc DLLs come from prebuilt/client: built against the 20 Oct 2026 client
 # with `pwsh tools/release/pack.ps1 -UpdatePrebuiltClientDlls` and committed; pack.ps1 refuses them
-# when they were built from other hooks/loc sources than the tagged ones. Run tools/release/smoke.ps1 locally (it needs
-# the clients) before publishing the draft.
+# when they were built from other hooks/loc sources or DLL bytes than the tagged ones. Run tools/release/smoke.ps1
+# locally (it needs the clients) before publishing the draft.
 on:
   push:
     tags: ['v*']
@@ -34,8 +35,8 @@ concurrency:
 
 jobs:
   # Publishing a draft pushes its tag, which starts this workflow again; a tag whose release is already published needs
-  # nothing more (the API finds published releases by tag, not drafts). A manual run for a published version fails
-  # here, before building anything.
+  # nothing more (the API finds published releases by tag, not drafts). A manual run for a published version, or a
+  # release cut from a branch other than main, fails here before building anything.
   published:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -45,8 +46,13 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || (inputs.version && format('v{0}', inputs.version) || '') }}
         run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$TAG" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Releases may only be created from refs/heads/main (got $GITHUB_REF)."
+            exit 1
+          fi
           if [ -n "$TAG" ] && gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > /dev/null 2>&1; then
             if [ "$GITHUB_REF_TYPE" != tag ]; then
               echo "::error::$TAG is already published; choose a new version."
@@ -63,13 +69,15 @@ jobs:
     if: needs.published.outputs.exists != 'true'
     runs-on: windows-latest
     permissions:
-      contents: write # gh release create
+      contents: write     # gh release create
+      id-token: write     # actions/attest-build-provenance
+      attestations: write # actions/attest-build-provenance
     env:
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || (inputs.version && format('v{0}', inputs.version) || '') }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
         with:
           global-json-file: global.json
           # The projects target net10.0: the SDK of global.json builds them, the .NET 10 runtime runs their tests.
@@ -80,6 +88,8 @@ jobs:
             **/*.csproj
       - name: Server tests
         run: dotnet test tests/Ro3Emu.Tests -c Release --filter "Category!=Slow&Category!=Flaky"
+      - name: Patcher tests
+        run: dotnet test tests/Ro3Emu.Patcher.Tests -c Release
       - name: Setup tests
         run: dotnet test tests/Ro3Emu.Setup.Tests -c Release --filter "Category!=Slow"
       - name: Pack
@@ -88,14 +98,33 @@ jobs:
           $version = if ($env:TAG) { $env:TAG.TrimStart('v') } else { '0.0.0' }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Version '$version' is not major.minor.patch" }
           ./tools/release/pack.ps1 -UsePrebuiltClientDlls -Version $version
-      - uses: actions/upload-artifact@v7
+      - name: Write SHA256SUMS
+        shell: pwsh
+        run: |
+          $files = @('RO3Emu-win-x64.zip', 'RO3Emu-server-linux-x64.tar.gz')
+          $lines = foreach ($name in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path 'dist' $name)).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          [IO.File]::WriteAllText((Join-Path (Resolve-Path 'dist').Path 'SHA256SUMS'), ($lines -join "`n") + "`n", [Text.UTF8Encoding]::new($false))
+          Get-Content dist/SHA256SUMS
+      - name: Attest build provenance
+        if: env.TAG != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/RO3Emu-win-x64.zip
+            dist/RO3Emu-server-linux-x64.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ro3emu-release
           path: |
             dist/RO3Emu-win-x64.zip
             dist/RO3Emu-server-linux-x64.tar.gz
+            dist/SHA256SUMS
       - name: Release
         if: env.TAG != ''
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ inputs.notes }}
@@ -104,4 +133,4 @@ jobs:
           $notes = if ($env:NOTES) { $env:NOTES } else { 'Download RO3Emu-win-x64.zip, extract it and double-click RO3Emu.exe. Server hosts on Linux: RO3Emu-server-linux-x64.tar.gz.' }
           Set-Content -Path release-notes.md -Value $notes -Encoding utf8
           $draft = if ($env:PUBLISH -eq 'true') { @() } else { @('--draft') }
-          gh release create "$env:TAG" dist/RO3Emu-win-x64.zip dist/RO3Emu-server-linux-x64.tar.gz @draft --target "$env:GITHUB_SHA" --title "RO3Emu $env:TAG" --notes-file release-notes.md
+          gh release create "$env:TAG" dist/RO3Emu-win-x64.zip dist/RO3Emu-server-linux-x64.tar.gz dist/SHA256SUMS @draft --target "$env:GITHUB_SHA" --title "RO3Emu $env:TAG" --notes-file release-notes.md
