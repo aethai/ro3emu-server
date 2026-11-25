@@ -163,7 +163,7 @@ CombatService.GrantedSkill (6)
 CombatService.Healed (3)
   DungeonService.<BindSubsystems> lambda
   ChickenBattleService.ChickenHealed
-  CasualBattleService.<.ctor> lambda
+  CasualBattleService.<WireBattleHooks> lambda
 CombatService.HealedAsync (3)
   TerritoryWarsService.BattleHealRecordedAsync
   SiegeService.SiegeHealRecordedAsync
@@ -331,7 +331,7 @@ PublicLineManager.Retiring (6)
   MvpService.RetireLineAsync
   MonsterService.RetireRuntimeAsync
   ChatService.RetireLineAsync
-  WorldCoreService.<.ctor> lambda
+  WorldCoreService.<WireWorldHooks> lambda
 RewardService.ExtraKillDrops (3)
   ParagonService.StarCoreDrops
   TitleService.CrestDrops

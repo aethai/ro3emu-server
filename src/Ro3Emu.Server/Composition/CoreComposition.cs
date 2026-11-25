@@ -176,7 +176,10 @@ internal static partial class CoreComposition
     public static void WireWorld(WebApplication app)
     {
         app.Services.GetRequiredService<WorldEffectsService>(); // scene/monster effect hooks before clients connect
-        app.Services.GetRequiredService<WorldCoreService>();
+        app.Services.GetRequiredService<WorldCoreService>().WireWorldHooks(
+            app.Services.GetRequiredService<MonsterService>(),
+            app.Services.GetRequiredService<ChatService>(),
+            app.Services.GetRequiredService<MountService>());
         app.Services.GetRequiredService<WorldInteractionService>();
     }
 
@@ -194,6 +197,14 @@ internal static partial class CoreComposition
         var scene = app.Services.GetRequiredService<SceneService>();
         var world = app.Services.GetRequiredService<World>();
         var worldData = app.Services.GetRequiredService<WorldData>();
+        var worldCore = app.Services.GetRequiredService<WorldCoreService>();
+
+        gm.Register("line", "[n|new|info] (TEST AID)", scene.LineCommandAsync);
+        gm.Register("worldcustom", "id value", async (s, a) => await worldCore.SetCustomAsync(s, new Romsg.CustomData
+        { Id = long.Parse(a[0]), CustomParam = new Romsg.CustomParam { Tp = (Romsg.CustomParam.Types.ParamType)3, LongParam = long.Parse(a[1]) } }));
+        gm.Register("worldleave", "seconds", (s, a) => worldCore.BeginTemporaryLeaveAsync(s, int.Parse(a[0])));
+        gm.Register("scenevar", "id value", (s, a) => worldCore.SetSceneVariableAsync(s.WorldScene,
+            new Romsg.CommonPublicVar { VarId = int.Parse(a[0]), Vi64 = { long.Parse(a[1]) } }));
 
         // GmFlyToTarget [target id]: next to a player (role id), a monster or other world unit, or an NPC.
         gm.RegisterOp(GmCommands.OpFlyToTarget, async (s, args) =>

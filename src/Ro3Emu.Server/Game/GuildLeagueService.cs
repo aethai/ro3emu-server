@@ -34,7 +34,6 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
     private readonly FunctionService _functions;
     private readonly SeasonService _seasons;
     private readonly GuildLeagueCalendar _calendar;
-    private readonly SessionRegistry _sessions;
     private readonly InstanceService _instances;
     private readonly SceneService _scene;
     private readonly WorldData _maps;
@@ -136,22 +135,21 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
     }
 
     public GuildLeagueService(GameData data, AccountStore accounts, RoleStore roles, GuildStore guilds, GuildService guildService,
-        FunctionService functions, SeasonService seasons, GuildLeagueCalendar calendar, SessionRegistry sessions,
+        FunctionService functions, SeasonService seasons, GuildLeagueCalendar calendar,
         InstanceService instances, SceneService scene, WorldData maps, CombatService combat, BuffService buffs, MailService mail,
-        AuctionService auctions, World world, GmCommands gm, IOptions<ServerOptions> options, TimeProvider clock, GameLoop loop, ILogger<GuildLeagueService> log)
+        AuctionService auctions, World world, IOptions<ServerOptions> options, TimeProvider clock, GameLoop loop, ILogger<GuildLeagueService> log)
     {
         this._data = data; this._accounts = accounts; this._roles = roles; this._guilds = guilds; this._guildService = guildService;
-        this._functions = functions; this._seasons = seasons; this._calendar = calendar; this._sessions = sessions;
+        this._functions = functions; this._seasons = seasons; this._calendar = calendar;
         this._instances = instances; this._scene = scene; this._maps = maps; this._combat = combat; this._buffs = buffs;
         this._mail = mail; this._auctions = auctions; this._world = world; this._options = options; this._clock = clock; this._loop = loop; this._log = log;
         _state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.GuildLeague)) is { } saved
             ? JsonSerializer.Deserialize<LeagueState>(saved)! : new();
         guildService.League = new GuildService.LeagueHooks(MgrDataCoreAsync, InfoCoreAsync, GroupInfoCoreAsync);
         HookBattle();
-        gm.Register("league", "register | fill | status (Guild League test aid: register the current or next tournament now; fill your guild's elite roster now; show it)", GmAsync);
     }
 
-    private async Task GmAsync(GameSession s, string[] args)
+    internal async Task GmAsync(GameSession s, string[] args)
     {
         string reply;
         if (args.Length > 0 && args[0] == "register") reply = await RegisterNowAsync();
