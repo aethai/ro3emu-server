@@ -214,9 +214,9 @@ public sealed class OpenContentTests : IAsyncLifetime
     {
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!season 102");
-        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent keeps playbook 101"));
+        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent keeps playbook 101", StringComparison.Ordinal));
         await Gm("alice", "!seasonnext 102 2026-11-01");
-        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent: there is no season rollover"));
+        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent: there is no season rollover", StringComparison.Ordinal));
         Assert.Equal(101, _app.Services.GetRequiredService<SeasonService>().PlayBook);
     }
 }

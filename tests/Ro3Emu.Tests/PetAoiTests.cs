@@ -154,7 +154,7 @@ public sealed class PetAoiTests
         await _world.TurnAsync(owner, 45);
         Assert.True(pet.IsMoving);
         Assert.Equal(45f, pet.Face);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001", StringComparison.Ordinal)));
         Assert.DoesNotContain(_sink.Events, e => e.Contains("~pet:"));
 
         var shortJump = To(owner, 106, 100, stop: true);
@@ -169,7 +169,7 @@ public sealed class PetAoiTests
         await _world.TurnAsync(owner, 90);
         Assert.Equal(90f, pet.Face);
         Assert.InRange(Distance(pet.Position, owner.Position), 2.99f, 3.01f);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001"))); // turn reaches owner and peer
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001", StringComparison.Ordinal))); // turn reaches owner and peer
         Assert.DoesNotContain(_sink.Events, e => e.Contains("~pet:"));
 
         _sink.Events.Clear();
@@ -193,18 +193,18 @@ public sealed class PetAoiTests
         var start = To(owner, 100, 100);
         await _world.MoveAsync(owner, start);
         Assert.True(pet.IsMoving);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
         Assert.Equal(MovementType.MoveTypeWalk, GameAoiSink.PetMovement(owner, pet, start).MovementInfo.MoveType);
 
         _sink.Events.Clear();
         await _world.MoveAsync(owner, To(owner, 100, 100));
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
 
         _sink.Events.Clear();
         var stop = To(owner, 100, 100, stop: true);
         await _world.MoveAsync(owner, stop);
         Assert.False(pet.IsMoving);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
         Assert.Equal(MovementType.MoveTypeNone, GameAoiSink.PetMovement(owner, pet, stop).MovementInfo.MoveType);
 
         _sink.Events.Clear();

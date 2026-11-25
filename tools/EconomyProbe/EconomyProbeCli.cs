@@ -11,6 +11,9 @@ namespace Ro3Emu.EconomyProbe;
 /// <summary>E01 offline evidence only. Readers pin SQLite/WAL transactions; no repair or checkpoint is issued.</summary>
 public static class EconomyProbeCli
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions StrictJson = new() { RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true };
+
     public static int Run(string[] args)
     {
         try
@@ -55,7 +58,7 @@ public static class EconomyProbeCli
                 return Exit(verdict);
             }
             var opening = JsonSerializer.Deserialize<SnapshotArtifact>(File.ReadAllBytes(args[4]),
-                new JsonSerializerOptions { RespectRequiredConstructorParameters = true, RespectNullableAnnotations = true })?.Snapshot
+                StrictJson)?.Snapshot
                 ?? throw new InvalidDataException("Opening input is not an EconomyProbe snapshot artifact.");
             EconomyLedgerWindow? window = opening.Cut.CommitSequence is { } start && snapshot.Cut.CommitSequence is { } end
                 ? EconomyLedgerReader.Read(database, catalog, snapshot.Cut.RealmId, start, end) : null;
@@ -121,7 +124,7 @@ public static class EconomyProbeCli
         if (File.Exists(jsonPath) || File.Exists(markdownPath)) throw new IOException("Output artifacts already exist; use a new prefix.");
         Directory.CreateDirectory(Path.GetDirectoryName(jsonPath)!);
         using (var stream = new FileStream(jsonPath, FileMode.CreateNew, FileAccess.Write))
-            JsonSerializer.Serialize(stream, artifact, new JsonSerializerOptions { WriteIndented = true });
+            JsonSerializer.Serialize(stream, artifact, IndentedJson);
         using (var stream = new FileStream(markdownPath, FileMode.CreateNew, FileAccess.Write))
         using (var writer = new StreamWriter(stream)) writer.Write(markdown);
         Console.WriteLine($"JSON: {jsonPath}\nMarkdown: {markdownPath}");
@@ -151,7 +154,7 @@ public static class EconomyProbeCli
             HoldingRows = snapshot.Holdings.Count, AssetDenominations = snapshot.Holdings.Select(x => x.Asset).Distinct().Count(),
             snapshot.Metrics, DecodeMilliseconds = timings, snapshot.Issues, snapshot.UncoveredMutationFamilies,
             Verdict = result.Verdict.ToString(), CheckIssues = result.Issues
-        }, new JsonSerializerOptions { WriteIndented = true }));
+        }, IndentedJson));
         return Exit(result.Verdict);
     }
 

@@ -93,10 +93,10 @@ internal sealed class AuctionReadPlan(AuctionReadKind kind, long id = 0, bool pe
             case AuctionReadKind.SourceExists:
                 using (var cmd = DbSql.Command(db, tx, "SELECT 1 FROM auction_source WHERE source_key=$key"))
                 {
-                    cmd.Parameters.AddWithValue("$key", sourceKey ?? throw new ArgumentNullException(nameof(sourceKey)));
+                    cmd.Parameters.AddWithValue("$key", sourceKey ?? throw new InvalidOperationException("Source key is required."));
                     return cmd.ExecuteScalar() is not null;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported auction read kind.");
         }
     }
 

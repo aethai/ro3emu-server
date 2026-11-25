@@ -668,7 +668,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
         return type.FullName?.Split('.').Last() ?? type.Name;
     }
 
-    private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox");
+    private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox", StringComparison.Ordinal);
 
     /// <summary>Counts the work the loop runs: each queued item, timer and ticker gets a new number. A memo keyed by it
     /// (CharacterService.Stats) can never outlive the work it was made in.</summary>

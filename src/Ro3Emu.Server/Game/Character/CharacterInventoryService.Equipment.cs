@@ -56,7 +56,7 @@ public sealed partial class CharacterInventoryService
 
     internal JsonElement? ResonanceRow(GameSession session, string table)
     {
-        var levels = table.StartsWith("Strengthen") ? session.Profile.EquipLevels.Strength : session.Profile.EquipLevels.Refine;
+        var levels = table.StartsWith("Strengthen", StringComparison.Ordinal) ? session.Profile.EquipLevels.Strength : session.Profile.EquipLevels.Refine;
         JsonElement? best = null;
         foreach (var (row, grids, level) in ResonanceRows(table))
         {

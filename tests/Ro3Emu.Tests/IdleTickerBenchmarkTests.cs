@@ -12,6 +12,8 @@ namespace Ro3Emu.Tests;
 /// <summary>Focused, opt-in real-session idle attribution. Includes posted work, not just Tick's enqueue cost.</summary>
 public sealed class IdleTickerBenchmarkTests
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     private sealed class Clock : TimeProvider
     {
         private long _ticks = new DateTimeOffset(2026, 10, 9, 10, 13, 0, TimeSpan.Zero).Ticks;
@@ -140,7 +142,7 @@ public sealed class IdleTickerBenchmarkTests
             var scenes = app.Services.GetRequiredService<SessionRegistry>().All()
                 .Where(s => s.Role != null && !s.SceneLoading).GroupBy(s => s.SceneEntry)
                 .ToDictionary(g => g.Key, g => g.Count());
-            await File.WriteAllTextAsync(output, JsonSerializer.Serialize(new { sessions = count, scenes, samples, rows }, new JsonSerializerOptions { WriteIndented = true }));
+            await File.WriteAllTextAsync(output, JsonSerializer.Serialize(new { sessions = count, scenes, samples, rows }, IndentedJson));
         }
         finally
         {

@@ -79,7 +79,7 @@ public sealed class MergedEconomyEnvelopeTests : IDisposable
     private RoleItemPlanBuilder Plan(string kind)
     {
         var tx = _roles.NewTransaction();
-        bool reward = kind == "monster-kill", family = kind.StartsWith("cd13b/"), isEvent = kind.StartsWith("event/");
+        bool reward = kind == "monster-kill", family = kind.StartsWith("cd13b/", StringComparison.Ordinal), isEvent = kind.StartsWith("event/", StringComparison.Ordinal);
         int cost = reward ? 0 : family ? 3 : 10;
         int itemCount = reward ? 0 : family ? 1 : 2;
         var before = _items.Load(_role);

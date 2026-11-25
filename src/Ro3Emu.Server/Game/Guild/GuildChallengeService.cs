@@ -752,7 +752,7 @@ public sealed partial class GuildChallengeService : IGameTicker
         && (Now >= RunOf(a)!.End || !_schedule.IsOpen(Activity)
             || a.SeasonId != _seasons.SeasonId || a.PlayBook != _seasons.PlayBook))];
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         if (_sweeping || Now == _lastSweep) return;
         _lastSweep = Now;

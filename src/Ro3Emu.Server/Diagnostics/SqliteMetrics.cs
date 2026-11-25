@@ -100,7 +100,8 @@ public static unsafe class SqliteMetrics
     {
         var frames = new StackTrace(2, false).GetFrames()
             .Select(f => f.GetMethod())
-            .Where(m => m?.DeclaringType?.Namespace?.StartsWith("Ro3Emu.Server.Game") == true || m?.DeclaringType?.Namespace?.StartsWith("Ro3Emu.Server.Maps") == true)
+            .Where(m => m?.DeclaringType?.Namespace?.StartsWith("Ro3Emu.Server.Game", StringComparison.Ordinal) == true
+                || m?.DeclaringType?.Namespace?.StartsWith("Ro3Emu.Server.Maps", StringComparison.Ordinal) == true)
             .Select(m => (m!.DeclaringType!.DeclaringType ?? m.DeclaringType)!.Name + "." + m.Name.Replace("MoveNext", m.DeclaringType!.Name))
             .Take(3);
         return string.Join(" < ", frames);

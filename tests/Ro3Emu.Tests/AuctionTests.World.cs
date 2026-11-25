@@ -125,7 +125,7 @@ public sealed partial class AuctionContentTests
             Assert.Empty(r.Joined);
         });
         Assert.All(moved.GroupBy(r => r.Entry), g => Assert.True(g.Count() <= 10));
-        Assert.DoesNotContain(Mailbox(alice).Letters, m => m.DeliveryKey.StartsWith("auction:"));
+        Assert.DoesNotContain(Mailbox(alice).Letters, m => m.DeliveryKey.StartsWith("auction:", StringComparison.Ordinal));
         Assert.Empty((await Count(bob, AuctionType.Guild)).AuctionSrcTypeCount[(long)AuctionType.Guild].SrcTypeCount);
         Assert.NotEmpty((await Count(carol, AuctionType.World)).AuctionSrcTypeCount[(long)AuctionType.World].ItemTypeCount);
 
@@ -165,7 +165,7 @@ public sealed partial class AuctionContentTests
         var closing = AuctionCut();
         var ledger = AuctionWindow(opening, closing);
         // (Other realm sources, e.g. stall upkeep, also run during the 41 simulated minutes.)
-        var lotSources = ledger.Legs.Where(x => x.Kind == EconomyLegKind.Source && x.Location.Key.StartsWith("auction/lot/")).ToArray();
+        var lotSources = ledger.Legs.Where(x => x.Kind == EconomyLegKind.Source && x.Location.Key.StartsWith("auction/lot/", StringComparison.Ordinal)).ToArray();
         Assert.Equal(guildLots.Select(r => $"auction/lot/{r.Id}").Order(), lotSources.Select(x => x.Location.Key).Order());
         Assert.Equal((long)guildLots.Length, lotSources.Sum(x => x.Delta));
         var check = EconomyExactnessChecker.Check(opening, closing, ledger);

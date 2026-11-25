@@ -71,10 +71,6 @@ dotnet_diagnostic.CA1001.severity = suggestion
 dotnet_diagnostic.CA1051.severity = suggestion
 # 390: specify IFormatProvider
 dotnet_diagnostic.CA1305.severity = suggestion
-# 55: specify StringComparison for correctness
-dotnet_diagnostic.CA1310.severity = suggestion
-# 1: use nameof
-dotnet_diagnostic.CA1507.severity = suggestion
 # 64: identifiers should not contain underscores
 dotnet_diagnostic.CA1707.severity = suggestion
 # 5: identifiers should not have an incorrect suffix
@@ -83,10 +79,6 @@ dotnet_diagnostic.CA1711.severity = suggestion
 dotnet_diagnostic.CA1716.severity = suggestion
 # 4: identifiers should not contain type names
 dotnet_diagnostic.CA1720.severity = suggestion
-# 16: parameter names should match the base declaration
-dotnet_diagnostic.CA1725.severity = suggestion
-# 1: do not initialize unnecessarily
-dotnet_diagnostic.CA1805.severity = suggestion
 # 163: mark members as static
 dotnet_diagnostic.CA1822.severity = suggestion
 # 370: use LoggerMessage delegates
@@ -95,12 +87,8 @@ dotnet_diagnostic.CA1848.severity = suggestion
 dotnet_diagnostic.CA1859.severity = suggestion
 # 100: avoid constant arrays as arguments
 dotnet_diagnostic.CA1861.severity = suggestion
-# 10: cache and reuse JsonSerializerOptions
-dotnet_diagnostic.CA1869.severity = suggestion
 # 142: avoid potentially expensive logging
 dotnet_diagnostic.CA1873.severity = suggestion
-# 15: instantiate argument exceptions correctly
-dotnet_diagnostic.CA2208.severity = suggestion
 # 28: naming rule violations (fields persisted by name, see above)
 dotnet_diagnostic.IDE1006.severity = suggestion
 

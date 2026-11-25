@@ -58,7 +58,7 @@ public sealed class InstallerTests : IAsyncLifetime
     {
         long from = 0, to = body.Length - 1;
         var range = context.Request.Headers.Range.ToString();
-        var parts = range.StartsWith("bytes=") ? range[6..].Split('-') : [];
+        var parts = range.StartsWith("bytes=", StringComparison.Ordinal) ? range[6..].Split('-') : [];
         if (parts.Length == 2 && long.TryParse(parts[0], out var start))
         {
             if (start >= body.Length) { context.Response.StatusCode = 416; return; }
@@ -234,7 +234,7 @@ public sealed class InstallerTests : IAsyncLifetime
         var installer = Installer();
         await installer.ApplyAsync(installer.MakePlan(await installer.FetchAsync(), game), game);
         AssertInstalled(game, content);
-        Assert.Contains(_requests, r => r.StartsWith("b/" + path + " bytes=") && !r.EndsWith("bytes=0-"));
+        Assert.Contains(_requests, r => r.StartsWith("b/" + path + " bytes=", StringComparison.Ordinal) && !r.EndsWith("bytes=0-", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -311,7 +311,7 @@ public sealed class InstallerTests : IAsyncLifetime
         var installer = Installer();
         var manifests = await installer.FetchAsync();
         Assert.NotNull(manifests.Delta);
-        var plan = installer.MakePlan(manifests, game, path => path.EndsWith("HUD.dll"));
+        var plan = installer.MakePlan(manifests, game, path => path.EndsWith("HUD.dll", StringComparison.Ordinal));
         Assert.Equal(Sha(Zip(packages["d"])), Assert.Single(plan.Packages).Id);
         await installer.ApplyAsync(plan, game);
         Assert.Equal(newDll, File.ReadAllBytes(Path.Combine(game, "ro3_Data/Managed/HUD.dll")));

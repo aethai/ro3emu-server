@@ -98,7 +98,7 @@ internal sealed class GuildReadPlan(GuildReadKind kind, long id = 0, string name
                     cmd.Parameters.AddWithValue("$id", id);
                     return cmd.ExecuteScalar() != null;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported guild read kind.");
         }
     }
 

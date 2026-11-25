@@ -51,8 +51,8 @@ public sealed partial class AuctionTests
         Assert.All(check.Assets, value => Assert.Equal("0", value.Residual));
         Assert.All(check.Locations, value => Assert.Equal("0", value.Residual));
         Assert.Equal(0, Service<AuctionStore>().Get(lot.Id)!.Reserve);
-        Assert.Single(Mailbox(alice).Letters, m => m.DeliveryKey.StartsWith($"auction:{lot.Id}:outbid:"));
-        Assert.Single(Mailbox(bob).Letters, m => m.DeliveryKey.StartsWith($"auction:{lot.Id}:cancel:"));
+        Assert.Single(Mailbox(alice).Letters, m => m.DeliveryKey.StartsWith($"auction:{lot.Id}:outbid:", StringComparison.Ordinal));
+        Assert.Single(Mailbox(bob).Letters, m => m.DeliveryKey.StartsWith($"auction:{lot.Id}:cancel:", StringComparison.Ordinal));
     }
 
     [Fact]

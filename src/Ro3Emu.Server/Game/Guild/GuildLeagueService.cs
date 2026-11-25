@@ -420,7 +420,7 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule, IStar
     /// <summary>Tests: the per-second work of <paramref name="at"/> and any reconcile it started are done.</summary>
     internal bool Idle(long at) => _lastSweep == at && !_sweeping && !_settling;
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = Now;
         if (_sweeping || now == _lastSweep) return;

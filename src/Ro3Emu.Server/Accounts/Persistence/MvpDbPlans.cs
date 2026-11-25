@@ -145,7 +145,7 @@ internal sealed class MvpReadPlan(MvpReadKind kind, long player = 0) : DbReadPla
                     return reader.Read() ? new MvpCounterRow(reader.GetInt64(0), reader.GetInt64(1),
                         reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4)) : null;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported MVP read kind.");
         }
     }
 }
@@ -204,7 +204,7 @@ internal sealed class MvpWritePlan : DbPlan
                     cmd.Parameters.AddWithValue("$l", _counters.Last);
                     return cmd.ExecuteNonQuery();
                 }
-            default: throw new ArgumentOutOfRangeException();
+            default: throw new InvalidOperationException("Unsupported MVP write kind.");
         }
     }
 }

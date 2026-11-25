@@ -12,6 +12,8 @@ namespace Ro3Emu.Tests;
 /// then EXP save boundary; no sockets, random rolls, hooks or load traffic participate.</summary>
 public sealed class KillEconomyMeasurementTests(ITestOutputHelper output)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     [Fact]
     public void FixedKillBeforeAfterCommitCountLatencyAndQueueAge()
     {
@@ -44,7 +46,7 @@ public sealed class KillEconomyMeasurementTests(ITestOutputHelper output)
             Boundary = "start of frozen kill settlement through acknowledgement of final durable commit; no presentation",
             Runtime = Environment.Version.ToString(), Note = "Shared host microfixture, no performance assertion or load qualification"
         };
-        string json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        string json = JsonSerializer.Serialize(report, IndentedJson);
         string artifacts = Path.Combine(root, ".loadtest-temp", "e04-measurements"); Directory.CreateDirectory(artifacts);
         string path = Path.Combine(artifacts, "fixed-kill-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".json");
         File.WriteAllText(path, json); output.WriteLine(path); output.WriteLine(json);

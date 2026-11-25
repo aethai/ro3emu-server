@@ -16,7 +16,7 @@ public sealed record RunnerOptions(string Scenario, int Bots, int TargetBots, in
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--server-local") { local = true; continue; }
-            if (!args[i].StartsWith("--") || i + 1 >= args.Length) throw new ArgumentException($"Invalid argument {args[i]}");
+            if (!args[i].StartsWith("--", StringComparison.Ordinal) || i + 1 >= args.Length) throw new ArgumentException($"Invalid argument {args[i]}");
             values[args[i]] = args[++i];
         }
         string scenario = values.GetValueOrDefault("--scenario")?.ToUpperInvariant() ?? throw new ArgumentException("--scenario required");

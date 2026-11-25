@@ -247,7 +247,7 @@ public sealed class S3EconomyTests
         var result = EconomyExactnessChecker.Check(Cut(1, Coins(Alice, 3)), Cut(3, Coins(Alice, 3)), ledger);
         Assert.Equal("0", Assert.Single(result.Assets).Residual);
         Assert.Equal(EconomyVerdict.Fail, result.Verdict);
-        Assert.Contains(result.Issues, x => x.Key.StartsWith("balance/2/"));
+        Assert.Contains(result.Issues, x => x.Key.StartsWith("balance/2/", StringComparison.Ordinal));
     }
 
     [Fact]
