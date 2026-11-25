@@ -2,13 +2,15 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
 /// A cannon volley: the bullets the client aimed (bulletExtraParam: gravity in cm/s^2, as LC_GVGFireCannon multiplies
 /// _fGravity by 100, speed in cm/s, the direction), flown as bullet units and exploded where they land.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     /// <summary>(inferred) The longest flight followed; a shot that never comes down within it explodes there.</summary>
     private const double MaxFlightSeconds = 12;
@@ -136,35 +138,5 @@ public sealed partial class TerritoryWarsService
             if (player != s && !player.Dead && player.Role != null && _combat.Hostile(s, player)
                 && MonsterService.Distance(player.Position.X, player.Position.Z, landing.X, landing.Z) <= radius)
                 await _combat.CastExtraOnPlayerAsync(s, skill, player);
-    }
-
-    /// <summary>A cannon bullet in flight (NPCConfig _iNPCType 10): its entity carries the whole ballistic move.</summary>
-    internal sealed class CannonBullet : WorldUnit
-    {
-        public required int NpcId { get; init; }
-        public required long Shooter { get; init; }
-        public required long Camp { get; init; }
-        public required Vec3 Velocity { get; init; }
-        public required float Gravity { get; init; }
-        public required long LaunchMs { get; init; }
-        public required int FlightMs { get; init; }
-        public required int EntityType { get; init; }
-
-        public Vec3 At(double t) => new()
-        {
-            X = (float)(X + Velocity.X * t), Y = (float)(Y + Velocity.Y * t - Gravity * t * t / 2), Z = (float)(Z + Velocity.Z * t),
-        };
-
-        public override EntityBase Entity() => new()
-        {
-            Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Owner = Shooter, EntityCamp = Camp,
-            Face = Face, State = EntityState.Alive, NotifyType = EntityBase.Types.NotifyType.All,
-            MovementInfo = new MovementInfo
-            {
-                Pos = new Vec3 { X = X, Y = Y, Z = Z }, Face = Face, ServerTime = LaunchMs, MoveDuration = FlightMs,
-                MoveType = MovementType.MoveTypeMove,
-                MovementMove = new MovementMove { StartVelocity = Velocity.Clone(), AccVelocity = new Vec3 { Y = -Gravity } },
-            },
-        };
     }
 }

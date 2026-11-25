@@ -3,6 +3,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -16,22 +18,13 @@ namespace Ro3Emu.Server.Game;
 /// draws (LC_Movement_MoveSyncMove: pos + v t + a t^2 / 2), and it explodes where it lands. The quit button (action 5004
 /// QuitStatus) or the exit interaction (_iExitInteractID) leaves.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
-    public const uint NpcSkillCd = 32705;
-    /// <summary>DirtyDataConfig 4900014 GVGCannonBulletRestNum (Long, on the cannon: its skill cost [6, 4900014, 1]) and
-    /// 4900006 CameraFollowBullet_ListLong (on the shooter, sync scope 0: bullet uid, camera distance cm, x, y).</summary>
-    private const long BulletRestNum = 4900014, CameraFollowBullet = 4900006;
     private const int CannonStatusType = 2;
     private const int FireButton = 2;
-    /// <summary>LC_ConditionList sub-condition types of the enter condition (4900001): CheckBuilder, CheckCamp, and
-    /// 12001 the gameplay status, inverted (not already in one).</summary>
-    internal const long CheckBuilder = 2201, CheckCamp = 2200, InStatus = 12001;
     private const long BulletUidFlag = 1L << 40;
     private long _bulletSerial;
     private readonly Dictionary<GameSession, CannonUnit> _operators = [];
-
-    internal static long CampOf(GameSession s) => s.EventFaction > 0 ? s.EventFaction : 1;
 
     /// <summary>32700 on a cannon and 32703 from its operator; anything else goes on to its usual owner.</summary>
     public async Task<bool> CannonSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body)
@@ -148,9 +141,6 @@ public sealed partial class TerritoryWarsService
         var cd = new SkillCdInfo { SkillId = cfg.SkillId, CdStartTimestampMs = unit.CdStartMs, CdEndTimestampMs = unit.ReadyMs };
         return Send(s, NpcSkillCd, new NpcSkillsCdNotify { NpcUid = unit.Uid, SkillCds = { [cfg.SkillId] = cd } });
     }
-
-    private static CustomData CannonLong(long id, long value) =>
-        new() { Id = id, CustomParam = new CustomParam { Tp = CustomParam.Types.ParamType.Long, LongParam = value } };
 
     /// <summary>32703 of the operator: the quit button leaves, the fire button fires; anything else is refused.</summary>
     private async Task<int> CannonActionAsync(GameSession s, CannonUnit unit, UseInteractActionReq req)

@@ -1,6 +1,8 @@
 using System.Globalization;
 using Romsg;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -22,20 +24,10 @@ namespace Ro3Emu.Server.Game;
 /// The state lives on the battle and ends with it. A full mark slot list answers ErrorCodes.Parameter (inferred: the
 /// client stops at 10 itself, UIWord 44102).
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
-    public const uint SetMark = 30407, MarkNotify = 30408, GatherMark = 30431, CommandMark = 30436, CommandMarkNotify = 30437;
     private const uint SystemBroadcast = 1022;
     private const int BattlefieldCommandRight = 12, MarkSlots = 10, CommandMarkSlots = 6, GatherChat = 4110041;
-
-    /// <summary>One battle's marks, by side (guild) or by party.</summary>
-    internal sealed class CommandBoard
-    {
-        public Dictionary<long, Vec3?[]> CommanderMarks { get; } = [];
-        public Dictionary<long, Vec3?[]> TeamMarks { get; } = [];
-        public Dictionary<long, long[]> CommandMarks { get; } = [];
-        public Dictionary<long, CommandSkillState> Skills { get; } = [];
-    }
 
     private readonly record struct CommandSide(CommandBoard Board, long Guild, GameSession[] Members);
 
@@ -89,7 +81,7 @@ public sealed partial class TerritoryWarsService
     private static (DungeonMarkType Type, int Slot) FromGlobalMarkId(int id) =>
         ((DungeonMarkType)((id - 1) / MarkSlots + 1), (id - 1) % MarkSlots);
 
-    private async Task SetMarkAsync(GameSession s, DungeonSetMarkPosReq req)
+    internal async Task SetMarkAsync(GameSession s, DungeonSetMarkPosReq req)
     {
         var response = new DungeonSetMarkPosRsp { BDel = req.BDel, Pos = req.Pos };
         var type = req.Pos?.MarkType ?? DungeonMarkType.DungeonMarkNone;
@@ -113,7 +105,7 @@ public sealed partial class TerritoryWarsService
             await RoleFanout.EachAsync(MarkAudience(s, side!.Value, type), p => p.SendGameAsync(MarkNotify, MarkSnapshot(slots, type)));
     }
 
-    private async Task GatherAsync(GameSession s, DungeonGatherMarkPosReq req)
+    internal async Task GatherAsync(GameSession s, DungeonGatherMarkPosReq req)
     {
         var response = new DungeonGatherMarkPosRsp { GatherType = req.GatherType, Pos = req.Pos, GatherGuid = req.GatherGuid };
         CommandSide? side = CommandSideOf(s);
@@ -133,7 +125,7 @@ public sealed partial class TerritoryWarsService
         await RoleFanout.EachAsync(MarkAudience(s, side!.Value, type), p => p.SendGameAsync(SystemBroadcast, chat));
     }
 
-    private async Task CommandMarkAsync(GameSession s, GvgWarUpdateCommandMarkReq req)
+    internal async Task CommandMarkAsync(GameSession s, GvgWarUpdateCommandMarkReq req)
     {
         CommandSide? side = CommandSideOf(s);
         int result = 0;

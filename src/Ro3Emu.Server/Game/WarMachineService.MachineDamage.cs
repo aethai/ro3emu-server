@@ -1,6 +1,8 @@
 using Romsg;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -11,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// whoever is on it back on foot, its owner's Tactics slot shows nothing in use any more (32285, 32286) and its wreck
 /// leaves after NPCConfig _iBodyRemainTime.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     /// <summary>The one-point spawn group of a raised machine (no respawn), as MonsterService.SpawnSingleAsync makes.</summary>
     private static (SpawnGroup Group, SpawnPoint Home) MachineHome(int npcId, MapPoint at)
@@ -19,22 +21,6 @@ public sealed partial class TerritoryWarsService
         var point = new SpawnPoint(-1, at.X, at.Y, at.Z, at.Face, npcId);
         return (new SpawnGroup(-1, false, 1, 0, [], [point]), point);
     }
-
-    /// <summary>Max HP, current HP and level, as a monster's entity carries them.</summary>
-    private static void AddMachineHealth(EntityBase entity, MonsterUnit unit)
-    {
-        foreach (var (idx, value) in new (long, long)[]
-                 { (101, unit.Template.MaxHp), (2000, unit.Dead ? 0 : unit.Hp), (2002, unit.Template.Level) })
-            entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-    }
-
-    /// <summary>The camp of a cannon or vehicle, or null for any other unit.</summary>
-    internal static long? MachineCamp(MonsterUnit m) => m switch
-    {
-        CannonUnit cannon => cannon.Camp,
-        VehicleUnit vehicle => vehicle.Camp,
-        _ => null,
-    };
 
     /// <summary>
     /// A member of the running siege hits a machine of the other camp only (LC_CommonCondition.CheckCamp compares
@@ -71,7 +57,7 @@ public sealed partial class TerritoryWarsService
     /// them, and their owners' slots show nothing in use (32285, 32286), as when they are destroyed. The machines only
     /// serve the battle; the client's machine UI (the battle bag, the Instrument button) belongs to its dungeon's widgets.
     /// </summary>
-    private async Task EndWarMachinesAsync(InstanceService.Room room)
+    internal async Task EndWarMachinesAsync(InstanceService.Room room)
     {
         foreach (var (uid, cannon) in _cannons.Where(p => p.Value.Room == room).ToList())
         {

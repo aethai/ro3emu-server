@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -15,14 +17,10 @@ namespace Ro3Emu.Server.Game;
 /// tells friend from enemy by guild (LC_CampRelationStrategy_TerritoryWars: the head info Guild, else custom data 104
 /// BelongGuild), so a machine there belongs to its builder's guild.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     /// <summary>enum_DungeonGameplayType TerritoryWars (Lua_GameDefine).</summary>
     private const long TerritoryWarsGameplay = 18;
-    /// <summary>enum_CustomData BelongGuild (Lua_CustomDataDefine): a unit's guild when its head info has none.</summary>
-    private const long BelongGuild = 104;
-
-    internal enum WarKind { Siege, Territory }
 
     /// <summary>
     /// The battle room a member fights in with war machines. <paramref name="Side"/> is GuildService.WarSideOf's: 1 attack
@@ -63,20 +61,4 @@ public sealed partial class TerritoryWarsService
     /// </summary>
     private bool OwnSide(GameSession s, long camp, long guild) =>
         WarRoomOf(s) is { Kind: WarKind.Territory } war ? war.Guild == guild : camp == CampOf(s);
-
-    /// <summary>The guild of a cannon or vehicle, or null for any other unit.</summary>
-    private static long? MachineGuild(MonsterUnit m) => m switch
-    {
-        CannonUnit cannon => cannon.Guild,
-        VehicleUnit vehicle => vehicle.Guild,
-        _ => null,
-    };
-
-    /// <summary>A machine's guild on its entity: guildId (EntityBase 59) and custom data 104 BelongGuild.</summary>
-    private static void AddMachineGuild(EntityBase entity, long guild)
-    {
-        if (guild == 0) return;
-        entity.GuildId = guild;
-        entity.CustomDatas.Add(CannonLong(BelongGuild, guild));
-    }
 }

@@ -4,6 +4,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -15,7 +17,7 @@ namespace Ro3Emu.Server.Game;
 /// it carries BuffConfig 4903501 "Madogear Pilot Repair" ("The Madogear Pilot is being repaired.") and heals its
 /// T_AXadd0_etc [2, 100, 101, 2]: 100 / 10 000 of its own (2: the recipient's) attribute 101, max HP, each second.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     private const int RepairZoneNpc = 4901010, RepairBuff = 4903501;
     private const string RepairFormula = "T_AXadd0_etc";
@@ -26,26 +28,6 @@ public sealed partial class TerritoryWarsService
     private long _repairSerial;
     /// <summary>The vehicles a zone repairs now (they carry its buff).</summary>
     private readonly Dictionary<VehicleUnit, RepairZoneUnit> _repairing = [];
-
-    /// <summary>A repair zone on the ground: NPCConfig 4901010 of the member's camp until <see cref="EndMs"/>.</summary>
-    internal sealed class RepairZoneUnit : WorldUnit
-    {
-        public required int NpcId { get; init; }
-        public required int EntityType { get; init; }
-        public required long Owner { get; init; }
-        public required long Camp { get; init; }
-        public required long Guild { get; init; }
-        public required float Radius { get; init; }
-        public required long BornMs { get; init; }
-        public required long EndMs { get; init; }
-
-        public override EntityBase Entity() => new()
-        {
-            Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = EntityType, Owner = Owner, AiMasterEntityId = (ulong)Owner,
-            EntityCamp = Camp, GuildId = Guild, State = EntityState.Alive, BornTimeMs = BornMs, Face = Face, NotifyType = EntityBase.Types.NotifyType.All,
-            MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone },
-        };
-    }
 
     /// <summary>GuildService.WarMachines: the zone of a repair item stands at the member's feet in their battle.</summary>
     private async Task<bool> RaiseRepairZoneAsync(GameSession user, int item, long skill)

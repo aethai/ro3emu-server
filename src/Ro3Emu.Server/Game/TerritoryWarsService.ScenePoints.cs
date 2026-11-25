@@ -11,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 public sealed partial class TerritoryWarsService
 {
     public const uint ScenePointNotify = 30129;
-    private const long StrongholdScene = 3030101;
+    internal const long StrongholdScene = 3030101;
     /// <summary>UnitConfig 4905010 "据点战-交互点" (stronghold battle interaction point): NPCConfig MutiInteractMainNpc
     /// (_iNPCSubType 250), unselectable, no name or HP bar, _iNeedNotifyGlobalData 1.</summary>
     private const int ScenePointNpc = 4905010;
@@ -19,6 +19,7 @@ public sealed partial class TerritoryWarsService
     /// through a double array, TerritoryWarsService.SiegeBags.cs SiegeBagUidBase), and above the tower pets' range.</summary>
     private const long ScenePointUidBase = 1L << 52;
     private long _scenePointSerial;
+    internal long NextScenePointUid() => ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial);
 
     /// <summary>
     /// Config/Dungeon/DungeonLua_3030101.lua UIModule_NpcData {spawnPointId: [4905010, eObjectType]}, read by
@@ -83,7 +84,7 @@ public sealed partial class TerritoryWarsService
         });
 
     /// <summary>A record saved before 30129 existed has no stored points and reads the defaults.</summary>
-    private static IReadOnlyDictionary<int, ScenePoint> ScenePointsOf(BattleState r) =>
+    internal static IReadOnlyDictionary<int, ScenePoint> ScenePointsOf(BattleState r) =>
         r.ScenePoints.Count > 0 ? r.ScenePoints : DefaultScenePoints(r.Scene);
 
     private static GlobalScenePointDataNotify ScenePointMessage(BattleState r, IReadOnlyCollection<int>? only = null)
@@ -98,7 +99,7 @@ public sealed partial class TerritoryWarsService
         return msg;
     }
 
-    private static IEnumerable<GameSession> LoadedMembers(Battle b) => b.Room.ActiveMembers.Select(m => m.Session)
+    internal static IEnumerable<GameSession> LoadedMembers(Battle b) => b.Room.ActiveMembers.Select(m => m.Session)
         .Where(s => ReferenceEquals(s.TerritoryBattle, b) && s.InstanceId == b.Room.Id && !s.SceneLoading);
 
     /// <summary>
@@ -171,7 +172,7 @@ public sealed partial class TerritoryWarsService
     /// owner, which revival points read. No original rule that changes a point is known; the only caller is the
     /// !twpoint test aid.
     /// </summary>
-    private async Task SetScenePointAsync(Battle b, int pointId, EnumGlobalScenePoint status, long readyTime, long owner)
+    internal async Task SetScenePointAsync(Battle b, int pointId, EnumGlobalScenePoint status, long readyTime, long owner)
     {
         if (b.State.ScenePoints.Count == 0) b.State.ScenePoints = DefaultScenePoints(b.State.Scene);
         if (!b.State.ScenePoints.TryGetValue(pointId, out var p)) return;

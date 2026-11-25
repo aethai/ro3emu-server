@@ -54,6 +54,30 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     internal Dictionary<string, SiegeRun> SiegeBattles => _siegeBattles;
     internal SiegeService Siege { get; private set; } = null!;
     internal void BindSiege(SiegeService siege) => Siege = siege;
+    internal WarMachineService Machines { get; private set; } = null!;
+    internal void BindMachines(WarMachineService machines) => Machines = machines;
+
+    // ---- war machines & command facades (owned by WarMachineService) ----
+
+    internal System.Collections.Concurrent.ConcurrentDictionary<long, (VehicleUnit Unit, InstanceService.Room Room)> Vehicles => Machines.Vehicles;
+    public Task<bool> CannonSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body) => Machines.CannonSharedAsync(s, id, body);
+    public Task<bool> VehicleSharedAsync(GameSession s, uint id, ReadOnlyMemory<byte> body) => Machines.VehicleSharedAsync(s, id, body);
+    public Task VehicleMovedAsync(GameSession s, WalkReq walk) => Machines.VehicleMovedAsync(s, walk);
+    public Task PlatformMovedAsync(GameSession s) => Machines.PlatformMovedAsync(s);
+    internal Task SendCommandBoardAsync(GameSession s) => Machines.SendCommandBoardAsync(s);
+    internal bool MachineHittable(GameSession s, SiegeRun battle, long camp) => Machines.MachineHittable(s, battle, camp);
+    internal VehicleUnit? NewVehicle(int npcId, InstanceService.Room room, MapPoint spot, long owner, long camp, long guild) =>
+        Machines.NewVehicle(npcId, room, spot, owner, camp, guild);
+    private int? CommandSkillAdmit(GameSession s, int skill) => Machines.CommandSkillAdmit(s, skill);
+    private Task CommandSkillCastAsync(GameSession s, int skill) => Machines.CommandSkillCastAsync(s, skill);
+    private Task CommandSkillLandedAsync(GameSession s, JsonElement row) => Machines.CommandSkillLandedAsync(s, row);
+    private Task SetMarkAsync(GameSession s, DungeonSetMarkPosReq req) => Machines.SetMarkAsync(s, req);
+    private Task GatherAsync(GameSession s, DungeonGatherMarkPosReq req) => Machines.GatherAsync(s, req);
+    private Task CommandMarkAsync(GameSession s, GvgWarUpdateCommandMarkReq req) => Machines.CommandMarkAsync(s, req);
+    private Task TeleportResponseAsync(GameSession s, DungeonTeleportResponseReq req) => Machines.TeleportResponseAsync(s, req);
+    private Task PlatformClockAsync(Battle b, long elapsed) => Machines.PlatformClockAsync(b, elapsed);
+    private Task EndPlatformsAsync(Battle b) => Machines.EndPlatformsAsync(b);
+    private Task EndWarMachinesAsync(InstanceService.Room room) => Machines.EndWarMachinesAsync(room);
 
     // ---- siege facades (owned by SiegeService) ----
 
@@ -86,7 +110,6 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private readonly RoleStore _roles;
     private readonly GuildStore _guildStore;
     private readonly GuildService _guilds;
-    private readonly TeamService _teams;
     private readonly CharacterService _character;
     private readonly FunctionService _functions;
     private readonly TerritoryWarsClock _clock;
@@ -226,13 +249,13 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         GuildService guilds, CharacterService character, FunctionService functions, TerritoryWarsClock clock,
         SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData maps, World world,
         MonsterService monsters, CombatService combat, BuffService buffs, RewardService rewards, MailService mail, NewActivityService activities,
-        TeamService teams, AwardService awards, GameLoop loop, ILogger<TerritoryWarsService> log)
+        AwardService awards, GameLoop loop, ILogger<TerritoryWarsService> log)
     {
         this._data = data; this._accounts = accounts; this._roles = roles; this._guildStore = guildStore;
         this._guilds = guilds; this._character = character; this._functions = functions; this._clock = clock;
         this._sessions = sessions; this._instances = instances; this._scene = scene; this._maps = maps;
         this._world = world; this._monsters = monsters; this._buffs = buffs; this._combat = combat; this._awards = awards; this._rewards = rewards; this._mail = mail;
-        this._activities = activities; this._teams = teams;
+        this._activities = activities;
         activities.TerritoryWarState = BuildActivityState;
         this._loop = loop; this._log = log;
         state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryWars)) is { } saved
@@ -242,33 +265,18 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         scene.LoadedKeys.Subscribe(SceneKeys);
         scene.Leaving.Subscribe(LeavingAsync);
         scene.Leaving.Subscribe(GloryLeavingAsync);
-        scene.Leaving.Subscribe(CannonLeavingAsync);
-        scene.Leaving.Subscribe(VehicleLeavingAsync);
         combat.Killed.Subscribe(KilledAsync);
         combat.Killed.Subscribe(WorldKilledAsync);
         combat.PlayerDied.Subscribe(DiedAsync);
         // DiedAsync publishes the battle's own countdown for a recorded participant.
         combat.ReviveInfoOwners.Subscribe(s => s.TerritoryBattle is { } battle && s.Role is { } role && battle.State.Players.ContainsKey(role.Id));
         combat.PlayerDied.Subscribe(WorldDiedAsync);
-        combat.PlayerDied.Subscribe(CannonDiedAsync);
-        combat.PlayerDied.Subscribe(VehicleDiedAsync);
-        combat.PlayerDied.Subscribe(PlatformLeavingAsync);
-        scene.Leaving.Subscribe(PlatformLeavingAsync);
-        world.PlayerEntered.Add(PlatformActivatorSeenAsync);
-        combat.GrantedSkill.Subscribe(SeatSkill);
-        combat.AfterLethalPublication.Subscribe(MachineDestroyedAsync);
-        combat.Killed.Subscribe(MachineKilledAsync);
-        SiegeSettled.Subscribe(SiegeMachinesSettled);
-        world.PlayerEntered.Add(VehicleRiderSeenAsync);
         combat.EventDamageRecorded.Subscribe(DamageRecordedAsync);
-        combat.EventDamageRecorded.Subscribe(MachineDamageRecordedAsync);
         combat.PvpDealtAsync.Subscribe(PvpRecordedAsync);
         combat.HealedAsync.Subscribe(BattleHealRecordedAsync);
         combat.PlayerKilled.Subscribe(GloryKilledAsync);
         combat.PvpDealtAsync.Subscribe(GloryHitAsync);
         character.StateChanged.Subscribe(s => _ = SyncGloryAsync(s));
-        guilds.WarSideOf = WarSide;
-        guilds.WarMachines = new MachineSite(this);
     }
 
     public sealed class RoleState

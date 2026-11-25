@@ -323,8 +323,8 @@ public sealed partial class TerritoryWarsService
         }
         finally { b.Spawning = false; }
     }
-    private bool Active(Battle b) => !b.State.Settled && _clock.Now >= b.State.Start && _clock.Now < b.State.End;
-    private bool Member(GameSession s, Battle b) => s.Role != null && s.InstanceId == b.Room.Id && !s.SceneLoading
+    internal bool Active(Battle b) => !b.State.Settled && _clock.Now >= b.State.Start && _clock.Now < b.State.End;
+    internal bool Member(GameSession s, Battle b) => s.Role != null && s.InstanceId == b.Room.Id && !s.SceneLoading
         && b.Room.ActiveMembers.Any(m => ReferenceEquals(m.Session, s))
         && b.State.Players.TryGetValue(s.Role.Id, out var p) && OwnId(s) == p.Guild && b.State.Guilds.Contains(p.Guild);
     public bool Hostile(GameSession a, GameSession b) => SiegeHostile(a, b) || a.TerritoryBattle is { } battle && ReferenceEquals(b.TerritoryBattle, battle)

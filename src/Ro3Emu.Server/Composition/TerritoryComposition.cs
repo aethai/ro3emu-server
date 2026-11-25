@@ -10,6 +10,7 @@ internal static class TerritoryComposition
     {
         services.AddSingleton<TerritoryWarsClock>();
         services.AddSingleton<TerritoryWarsService>();
+        services.AddSingleton<WarMachineService>();
         services.AddSingleton<SiegeService>();
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TerritoryWarsService>());
         services.AddSingleton<TerritoryEscortService>();
@@ -21,6 +22,7 @@ internal static class TerritoryComposition
     public static void WireTerritoryCore(WebApplication app)
     {
         var territory = app.Services.GetRequiredService<TerritoryWarsService>();
+        territory.BindMachines(app.Services.GetRequiredService<WarMachineService>());
         territory.BindSiege(app.Services.GetRequiredService<SiegeService>());
         var escort = app.Services.GetRequiredService<TerritoryEscortService>();
         escort.OwnerOf = territory.OwnerOf;

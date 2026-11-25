@@ -3,6 +3,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -10,34 +12,17 @@ namespace Ro3Emu.Server.Game;
 /// units, raising and removal, and who may board them. The seats themselves (boarding, getting off, seat changes, the
 /// driver's walk, the seat's buttons and skills) are VehicleSeats, shared with Mock Battle's Madogear.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     /// <summary>Vehicle unit ids: next to the cannons', below 2^53.</summary>
     private const long VehicleUidBase = (1L << 49) | (1L << 48);
     private const int VehicleStatusType = VehicleSeats.StatusType;
-    /// <summary>LC_ConditionDefine CheckGVGPermission.</summary>
-    internal const long GvgPermission = 2202;
     private long _vehicleSerial;
     private long _vehicleBuffGuid = (1L << 56) | (1L << 54);
     private readonly ConcurrentDictionary<long, (VehicleUnit Unit, InstanceService.Room Room)> _vehicles = new();
     internal ConcurrentDictionary<long, (VehicleUnit Unit, InstanceService.Room Room)> Vehicles => _vehicles;
     private VehicleSeats? _vehicleSeats;
     private VehicleSeats VehicleRiders => _vehicleSeats ??= new VehicleSeats(_data, _world, Send);
-
-    /// <summary>A war vehicle: its owner (the member who used the item), camp, guild, seats and the gunners' aim. A
-    /// monster unit for the combat, as a cannon.</summary>
-    internal sealed class VehicleUnit : SeatedVehicle
-    {
-        public required long Guild { get; init; }
-
-        public override EntityBase Entity()
-        {
-            var entity = SeatedEntity();
-            AddMachineHealth(entity, this);
-            AddMachineGuild(entity, Guild);
-            return entity;
-        }
-    }
 
     /// <summary>
     /// GuildService.WarMachines: the vehicle NPC beside its owner (inferred: 2 m in front, as GVG_S0_BuildMecha is a

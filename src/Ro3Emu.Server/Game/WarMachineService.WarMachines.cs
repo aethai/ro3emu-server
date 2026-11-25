@@ -5,6 +5,8 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -12,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// what): where a member may reserve and build them, and the cannons standing in a siege or a type-18 territory battle
 /// (TerritoryWarsService.WarRooms).
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     /// <summary>Cannon unit ids: their own namespace below 2^53 (see DungeonService.SceneActorUidBase).</summary>
     private const long CannonUidBase = 1L << 49;
@@ -26,55 +28,8 @@ public sealed partial class TerritoryWarsService
     /// </summary>
     private int WarSide(GameSession s) => WarRoomOf(s)?.Side ?? 0;
 
-    /// <summary>
-    /// A built cannon: NPCConfig _iNPCType 2 (sub type 102), so the client creates it as an NPC and keeps it in its
-    /// GVGCannon group (LC_GVGBuildCannon keeps new blueprints out of its _iExclusiveRadius). Its entity names the
-    /// builder as <c>owner</c> and carries the builder's camp: interaction 4900005 checks both (LC_CommonCondition
-    /// CheckBuilder, the head info Owner, and CheckCamp, EntityCamp). NPCConfig _kBornEventBuff are its standing buffs. It is
-    /// a monster unit for the combat (MonsterService.MachineTemplate): the other side damages and destroys it. (inferred)
-    /// It also carries the builder's guild (guildId and BelongGuild), which tells the sides apart in a territory battle.
-    /// </summary>
-    internal sealed class CannonUnit : MonsterUnit
-    {
-        public required int NpcId { get; init; }
-        public required long Builder { get; init; }
-        public required long Camp { get; init; }
-        public required long Guild { get; init; }
-        /// <summary>The builder's name: the client titles a GVGCANNON (NPCConfig _iNPCSubType 102) with a name
-        /// "${1}'s ${2}" (LC_Unit_NPC.GetUnitName, UIWords 61000: this name, then the NPC's _kName), as its own
-        /// blueprint does with the local player's (LC_GVGBuildCannon).</summary>
-        public required string Name { get; init; }
-        /// <summary>Its GVGCannonConfig row.</summary>
-        public required long ConfigId { get; init; }
-        public List<BuffInfo> Buffs { get; } = [];
-        /// <summary>The player on it (its builder), shots left (_iBulletNumLimit) and the cannon skill's cooldown.</summary>
-        public GameSession? Operator { get; set; }
-        public long Bullets { get; set; }
-        public long CdStartMs { get; set; }
-        public long ReadyMs { get; set; }
-
-        public override EntityBase Entity()
-        {
-            var entity = new EntityBase
-            {
-                Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = 2, Name = Name, EntityCamp = Camp,
-                Owner = Builder, Face = Face, State = Dead ? EntityState.Dead : EntityState.Alive,
-                NotifyType = EntityBase.Types.NotifyType.All,
-                MovementInfo = new MovementInfo
-                {
-                    Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone
-                },
-            };
-            AddMachineHealth(entity, this);
-            if (Buffs.Count > 0) entity.BuffData = new AoIBuffInfo { AddBuffs = { Buffs.Select(b => b.Clone()) } };
-            entity.CustomDatas.Add(CannonLong(BulletRestNum, Bullets));
-            AddMachineGuild(entity, Guild);
-            return entity;
-        }
-    }
-
     /// <summary>GuildService.WarMachines for the siege and the type-18 territory battles.</summary>
-    private sealed class MachineSite(TerritoryWarsService owner) : GuildService.IWarMachineSite
+    private sealed class MachineSite(WarMachineService owner) : GuildService.IWarMachineSite
     {
         /// <summary>
         /// The client's checks (LC_GVGBuildCannon): the blueprint stays within _iBuildRadius of where its builder

@@ -2,6 +2,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -17,7 +19,7 @@ namespace Ro3Emu.Server.Game;
 /// guild (TerritoryWarsService.WarVehicles.cs), and ChatConfig 4111018-4111020 announce it; when the vehicle is gone the
 /// platform recharges and 4111013-4111015 announce it ready again.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
     private const int SummonPlatformType = 9;
     /// <summary>NPCConfig MutiInteractSubNpc (_iNPCSubType 251, UnitConfig 35004 "跳舞位置圈", a ring to stand in):
@@ -28,8 +30,6 @@ public sealed partial class TerritoryWarsService
     /// <summary>The platform of scene group 82 "载具-防守方" (vehicle, defending side); 49 and 57 are groups 48/53
     /// "载具-交互组" (vehicle interaction group).</summary>
     private const int DefendersPlatform = 83;
-    /// <summary>enum_CustomData InteractionProgress, InteractionCurrentProgress, InteractionRate (Lua_CustomDataDefine).</summary>
-    private const long InteractionProgress = 10000, InteractionCurrentProgress = 10001, InteractionRate = 10002;
     /// <summary>GameplayStatusConfig _iStatusType 18: enum_InteractState TerritoryWarsInteract.</summary>
     private const long MultiPersonStatusType = 18;
     /// <summary>LC_ConditionDefine CheckSameAtkGuild; LC_ConditionList m_eType OR (enum_NodeType).</summary>
@@ -50,44 +50,6 @@ public sealed partial class TerritoryWarsService
 
     private sealed record Activation(Battle Battle, PlatformRing Ring, long Interaction, Vec3 Start);
 
-    /// <summary>A platform's ring: the guild activating it (or, for the defenders' platform, the guild allowed to), and
-    /// the progress its entity carries.</summary>
-    internal sealed class PlatformRing : WorldUnit
-    {
-        public required int PointId { get; init; }
-        public required int NpcId { get; init; }
-        public MonsterTemplate? Template { get; init; }
-        public long BornMs { get; init; }
-        public long Guild { get; set; }
-        public long Total { get; init; }
-        public long Progress { get; set; }
-        public long Rate { get; set; }
-        public HashSet<GameSession> Activators { get; } = [];
-
-        public IEnumerable<CustomData> Data()
-        {
-            yield return CannonLong(BelongGuild, Guild);
-            yield return CannonLong(InteractionProgress, Total);
-            yield return CannonLong(InteractionCurrentProgress, Progress);
-            yield return CannonLong(InteractionRate, Rate);
-        }
-
-        public override EntityBase Entity()
-        {
-            var entity = new EntityBase
-            {
-                Uuid = (ulong)Uid, EntityTemplateID = (ulong)NpcId, EntityType = 1, Face = Face, State = EntityState.Alive,
-                BornTimeMs = BornMs, NotifyType = EntityBase.Types.NotifyType.All, EntityCamp = Template?.Camp ?? 1, GuildId = Guild,
-                MovementInfo = new MovementInfo { Pos = Pos, Face = Face, ServerTime = NowMs, MoveType = MovementType.MoveTypeNone },
-            };
-            entity.CustomDatas.AddRange(Data());
-            if (Template is { } t)
-                foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level) })
-                    entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            return entity;
-        }
-    }
-
     /// <summary>NpcLevelPointRespawnConfig rows of the stronghold scene that place a vehicle (NPCConfig _iNPCSubType 103):
     /// platform point -> vehicle NPC.</summary>
     private Dictionary<int, int> PlatformVehicleNpcs() => _platformVehicleNpcs ??= NpcLevelPointRespawnConfig.All(_data)
@@ -106,7 +68,7 @@ public sealed partial class TerritoryWarsService
     /// The one-second battle clock for the platforms: a ready platform has its ring and fills with its activators; an
     /// activated one recharges once its vehicle is gone; a recharged one is ready again.
     /// </summary>
-    private async Task PlatformClockAsync(Battle b, long elapsed)
+    internal async Task PlatformClockAsync(Battle b, long elapsed)
     {
         foreach (var point in Platforms(b).ToList())
         {
@@ -146,7 +108,7 @@ public sealed partial class TerritoryWarsService
         int npc = pointId == DefendersPlatform ? GuildRingNpc : OpenRingNpc;
         ring = new PlatformRing
         {
-            Uid = ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial), SceneEntry = b.Room.SceneEntry,
+            Uid = NextScenePointUid(), SceneEntry = b.Room.SceneEntry,
             InstanceId = b.Room.Id, X = spot?.X ?? at.X, Y = spot?.Y ?? at.Y, Z = spot?.Z ?? at.Z, Face = at.Face,
             PointId = pointId, NpcId = npc, Template = _monsters.Template(npc), BornMs = _loop.NowMs,
             Guild = PlatformHolder(b, pointId), Total = (Data.Config.GvgConstants.Of(_data).GVGFieldOccupyAmount ?? 30),
@@ -337,7 +299,7 @@ public sealed partial class TerritoryWarsService
 
     /// <summary>(inferred) The settlement ends the activations and takes the rings away; the platforms' vehicles leave with
     /// the other machines (EndWarMachinesAsync).</summary>
-    private async Task EndPlatformsAsync(Battle b)
+    internal async Task EndPlatformsAsync(Battle b)
     {
         foreach (int point in b.PlatformRings.Keys.ToList()) await RemoveRingAsync(b, point);
         b.PlatformVehicles.Clear();

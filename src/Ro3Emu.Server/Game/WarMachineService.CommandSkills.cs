@@ -3,6 +3,8 @@ using Romsg;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -28,11 +30,8 @@ namespace Ro3Emu.Server.Game;
 /// Inferred: a charge recovers skillRecoverCd after it was used, one at a time; each use starts skillCd and the common
 /// cooldown; an arrival lands at the commander's position at the cast.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class WarMachineService
 {
-    public const uint CommandSkillNotify = 30439, TeleportInvite = 30118, TeleportResponse = 30119, TeleportClear = 30120,
-        TeleportCount = 30122;
-    internal const int BlessingOfLight = 4909001, BattleCommand = 4909101, DefendTheGlory = 4909201, EmergencyCall = 4909301;
     private const long CommandCommonCdMs = 5000, CallMs = 20000;
     private const int CallMaxPlayers = 20, CommandReviveRate = 7000;
 
@@ -51,24 +50,6 @@ public sealed partial class TerritoryWarsService
         [BlessingOfLight] = new(2, 180000, 180000), [BattleCommand] = new(1, 360000, 360000),
         [DefendTheGlory] = new(1, 600000, 600000), [EmergencyCall] = new(1, 900000, 900000),
     };
-
-    /// <summary>One side's command skills: the charges and cooldowns, and its open Emergency Call.</summary>
-    internal sealed class CommandSkillState
-    {
-        public Dictionary<int, DungeonCommandSkillInfo> Skills { get; } = [];
-        public long CommonCdStart { get; set; }
-        public long CommonCdEnd { get; set; }
-        public EmergencyCallState? Call { get; set; }
-    }
-
-    internal sealed class EmergencyCallState
-    {
-        public long Inviter { get; init; }
-        public Vec3 Origin { get; init; } = new();
-        public long Until { get; init; }
-        public HashSet<long> Invited { get; } = [];
-        public HashSet<long> Accepted { get; } = [];
-    }
 
     private long CommandNow => _loop.NowMs;
 
@@ -91,7 +72,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>CombatService.OwnSkillAdmit: null unless a command skill, else 0 or the refusal.</summary>
-    private int? CommandSkillAdmit(GameSession s, int skill)
+    internal int? CommandSkillAdmit(GameSession s, int skill)
     {
         if (!SiegeCommandSkills.ContainsKey(skill)) return null;
         if (CommandSideOf(s) is not { } side || !CommandRules(s).TryGetValue(skill, out var rule)) return ErrorCodes.SkillRequirements;
@@ -103,7 +84,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>CombatService.OwnSkillCast: the accepted cast spends a charge and starts the cooldowns.</summary>
-    private async Task CommandSkillCastAsync(GameSession s, int skill)
+    internal async Task CommandSkillCastAsync(GameSession s, int skill)
     {
         if (CommandSideOf(s) is not { } side || !CommandRules(s).TryGetValue(skill, out var rule)) return;
         var state = CommandSkillsOf(side);
@@ -134,7 +115,7 @@ public sealed partial class TerritoryWarsService
             CommandSkillSnapshot(CommandSkillsOf(side), CommandRules(anyMember), anyMember.NowMs)));
 
     /// <summary>CombatService.OwnSkillLanded: the landed command skill's effect on the caster's side.</summary>
-    private async Task CommandSkillLandedAsync(GameSession s, JsonElement row)
+    internal async Task CommandSkillLandedAsync(GameSession s, JsonElement row)
     {
         if (CommandSideOf(s) is not { } side || s.Role is not { } role) return;
         var config = new SkillConfig(row);
@@ -202,7 +183,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>30119: an invited ally accepts the call and lands at the commander.</summary>
-    private async Task TeleportResponseAsync(GameSession s, DungeonTeleportResponseReq req)
+    internal async Task TeleportResponseAsync(GameSession s, DungeonTeleportResponseReq req)
     {
         CommandSide? side = CommandSideOf(s);
         var call = side is { } open ? CommandSkillsOf(open).Call : null;
