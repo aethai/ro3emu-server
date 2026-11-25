@@ -1,6 +1,9 @@
 using Romsg;
 using static Ro3Emu.Server.Game.ChickenRules;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -10,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// team list (5036 RoundRoleStatus.Watch). 82675 starts the client's countdown; when it runs out the server binds the
 /// camera (the client does nothing at 0). 82640 switches to another living teammate.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     public const uint ChangeWatch = 82640, WatchNotify = 82675;
 

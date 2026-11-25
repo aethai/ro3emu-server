@@ -43,7 +43,7 @@ public sealed partial class TimedBattleService
     // DungeonVariableConfig 304 CCampScoreList, 925 CDragonBreathPlayerID.
     private const int CampScoreVar = 304, SoulCarrierVar = 925;
 
-    private sealed class DragonRun
+    internal sealed class DragonRun
     {
         public int Stage;
         public readonly Dictionary<int, long> CampScore = new() { [1] = 0, [2] = 0 };

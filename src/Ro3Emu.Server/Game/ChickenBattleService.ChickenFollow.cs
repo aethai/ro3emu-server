@@ -1,6 +1,9 @@
 using Romsg;
 using static Ro3Emu.Server.Game.ChickenRules;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -8,7 +11,7 @@ namespace Ro3Emu.Server.Game;
 /// teammate (and lands with it), or invites teammates to follow it. The client sends only 82628; the team's relation
 /// comes back whole in 82673 and an invitation in 82674.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenBattleService
 {
     public const uint SelectFollow = 82628, FollowNotify = 82673, InviteFollowNotify = 82674;
 
@@ -98,7 +101,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>A player who leaves drops out of the follow relation (its followers stop following).</summary>
-    private async Task DropFollowAsync(Match match, ChickenRun run, GameSession player)
+    internal async Task DropFollowAsync(Match match, ChickenRun run, GameSession player)
     {
         long id = match.Participants[player].Id;
         bool changed = run.Follow.Remove(id);

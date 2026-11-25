@@ -103,7 +103,7 @@ CombatService.BossAreaLanded (1)
 CombatService.CardHitReactions (1)
   CardEffects.ReflectAsync
 CombatService.CastLanded (4)
-  TimedBattleService.ChickenCastAsync
+  ChickenBattleService.ChickenCastAsync
   CasualBattleService.CastLandedAsync
   TotemEffects.OnCastAsync
   StealthEffects.BackSlideCamouflageAsync
@@ -162,7 +162,7 @@ CombatService.GrantedSkill (6)
   WarMachineService.SeatSkill
 CombatService.Healed (3)
   DungeonService.<.ctor> lambda
-  TimedBattleService.ChickenHealed
+  ChickenBattleService.ChickenHealed
   CasualBattleService.<.ctor> lambda
 CombatService.HealedAsync (3)
   TerritoryWarsService.BattleHealRecordedAsync
@@ -180,7 +180,7 @@ CombatService.Killed (21)
   PronteraDefenseService.OnKilledAsync
   MvpService.OnKilledAsync
   NewActivityService.OnTreasureMonsterKilledAsync
-  TimedBattleService.OnePieceKilledAsync
+  RiftBattleService.OnePieceKilledAsync
   TimedBattleService.DragonBossKilledAsync
   CasualBattleService.MonsterKilledAsync
   GuildCampfireService.KilledAsync
@@ -205,8 +205,8 @@ CombatService.PlayerDamageAdjusters (1)
 CombatService.PlayerDied (15)
   DungeonService.PlayerDiedAsync
   NewActivityService.InterruptConchAsync
-  TimedBattleService.ChickenDiedAsync
-  TimedBattleService.OnePieceDiedAsync
+  ChickenBattleService.ChickenDiedAsync
+  RiftBattleService.OnePieceDiedAsync
   CasualBattleService.DiedAsync
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.DiedAsync
@@ -229,7 +229,7 @@ CombatService.PlayerRevived (2)
 CombatService.PvpDamageAdjusters (1)
   CardEffects.AdjustPvpDamage
 CombatService.PvpDealt (3)
-  TimedBattleService.ChickenDealt
+  ChickenBattleService.ChickenDealt
   CasualBattleService.Dealt
   TerritoryEscortService.PvpRecorded
 CombatService.PvpDealtAsync (6)
@@ -243,7 +243,7 @@ CombatService.PvpHitLanded (1)
   CardEffects.OnPvpHitAsync
 CombatService.ReviveInfoOwners (5)
   DungeonService.<.ctor> lambda
-  TimedBattleService.OwnsRevive
+  ChickenBattleService.OwnsRevive
   CasualBattleService.<HookArena> lambda
   TerritoryWarsService.<.ctor> lambda
   GuildLeagueService.<HookBattle> lambda
@@ -297,7 +297,7 @@ GuildService.RightsChanged (1)
   GuildVoiceService.OnRightsChanged
 LifeJobService.ProjectedRestrictions (2)
   ExplorationNoteDrops.Remaining
-  TimedBattleService.RiftRestriction
+  RiftBattleService.RiftRestriction
 MonsterService.Born (1)
   MvpService.ApplyBornBuffsAsync
 MonsterService.TargetChanged (2)

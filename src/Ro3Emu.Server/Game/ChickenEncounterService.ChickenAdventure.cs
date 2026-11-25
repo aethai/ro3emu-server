@@ -4,6 +4,8 @@ using Ro3Emu.Server.Data;
 using static Ro3Emu.Server.Game.ChickenRules;
 using Ro3Emu.Server.Data.Config;
 
+using Match = Ro3Emu.Server.Game.TimedBattleService.Match;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -18,7 +20,7 @@ namespace Ro3Emu.Server.Game;
 /// die count and places (scene-editor region 899), that one die serves one player and goes away, the deck key (the
 /// match), and the server's own pick of the first cards when the countdown ends.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class ChickenEncounterService
 {
     public const uint AdventureSelect = 83421, AdventureRefresh = 83422, AdventureSync = 5039;
     private const int MagicDie = 15000301, AdventureEvent = 10001;
@@ -28,17 +30,7 @@ public sealed partial class TimedBattleService
     private const float DieX = 426, DieZ = 415, DieRadius = 400;
     private const int DiePerPlayers = 10, MinDice = 2;
 
-    private sealed class AdventureOffer
-    {
-        public required long OperateId { get; init; }
-        public required int PoolId { get; init; }
-        public required int ChooseCount { get; init; }
-        public required long EndSec { get; init; }
-        public int RefreshCount;
-        public long[] Cards = [];
-    }
-
-    private async Task SpawnDiceAsync(Match match, ChickenRun run)
+    internal async Task SpawnDiceAsync(Match match, ChickenRun run)
     {
         if (_data.Row("NPCConfig", MagicDie) is not { } row || _data.Row("AdventureEventConfig", AdventureEvent) == null) return;
         int count = Math.Max(MinDice, match.Players.Length / DiePerPlayers);
@@ -48,7 +40,7 @@ public sealed partial class TimedBattleService
             if (WalkablePoint(x, z) is not { } at) continue;
             var unit = new ChickenNpcUnit
             {
-                Uid = ChestUidBase | Interlocked.Increment(ref _chestSerial), SceneEntry = ChickenScene, InstanceId = match.Room!.Id,
+                Uid = NextChestUid(), SceneEntry = ChickenScene, InstanceId = match.Room!.Id,
                 X = at.X, Y = at.Y, Z = at.Z, Face = (float)(run.Rng.NextDouble() * 360), NpcId = MagicDie, Name = NpcName(row),
             };
             if (await _instances.AddPropAsync(match.Room, unit)) run.Dice.Add(unit);
@@ -89,7 +81,7 @@ public sealed partial class TimedBattleService
         Chicken(session) is (_, var run, _) ? [.. run.Dice.Select(d => (d.Uid, d.X, d.Z))] : [];
 
     /// <summary>32700 on a Magic Die in reach: a new offer for this player, and the die is gone.</summary>
-    private async Task<bool> TryDieInteractAsync(GameSession session, NpcInteractionReq req)
+    internal async Task<bool> TryDieInteractAsync(GameSession session, NpcInteractionReq req)
     {
         if (Chicken(session) is not (var match, var run, var me) || run.Dice.FirstOrDefault(d => d.Uid == req.NpcUid) is not { } die) return false;
         int result = ErrorCodes.Parameter;
@@ -220,7 +212,7 @@ public sealed partial class TimedBattleService
 
     /// <summary>Per second: an offer whose countdown ran out takes its first cards (the client's own fallback pick,
     /// UI_Sys_Chicken_AdventurePanelCtrl._checkCountAandAutoSelect), with an unasked 83421 reply so the queue clears.</summary>
-    private async Task TickAdventureAsync(Match match, ChickenRun run, long now)
+    internal async Task TickAdventureAsync(Match match, ChickenRun run, long now)
     {
         long sec = now / 1000;
         foreach (var (player, me) in run.Players.ToArray())
@@ -236,7 +228,7 @@ public sealed partial class TimedBattleService
     /// the open offers (cards keyed 0..n-1: the panel loops `for i = 0, #cards`; endTime in seconds), and the event's
     /// trigger count. AutoSync sends the change since the last send, the whole object the first time.
     /// </summary>
-    private Task SyncAdventureAsync(Match match, GameSession session, ChickenPlayer me)
+    internal Task SyncAdventureAsync(Match match, GameSession session, ChickenPlayer me)
     {
         if (session.Role == null || !InRoom(match).Contains(session) || Deck() is not { } deck) return Task.CompletedTask;
         var info = new DBAdventureInfo { CurActiveFunctionId = deck.Pool, CurActiveSourceId = match.Room!.Id };
@@ -261,6 +253,6 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>Leaving the match: the deck goes away (the client clears its own queue on leaving too).</summary>
-    private static Task ClearAdventureAsync(GameSession session) =>
+    internal static Task ClearAdventureAsync(GameSession session) =>
         session.Synced.ContainsKey(AdventureSync) ? CharacterService.SyncAsync(session, AdventureSync, new DBAdventureInfo()) : Task.CompletedTask;
 }

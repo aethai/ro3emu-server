@@ -8,6 +8,9 @@ using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 
+using Obligations = Ro3Emu.Server.Game.TimedBattleService.Obligations;
+using State = Ro3Emu.Server.Game.TimedBattleService.State;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -17,9 +20,8 @@ namespace Ro3Emu.Server.Game;
 /// (UI_Sys_Dungeon_PreparePanelCtrl._refreshOnePieceInfo) shows the stone, its boss and stars from
 /// hiddenTreasureInitData; when everyone confirmed with 30406 the whole party enters one room.
 /// </summary>
-public sealed partial class TimedBattleService
+public sealed partial class RiftBattleService
 {
-    public const int RiftFunction = 95;
     /// <summary>
     /// PublicParamConfig.OnePieceExtraRewardRestric: RestrictConfig 1020, 10 with _iRecoverType 1 (PBRestrictRecoverType
     /// Daily). Its count is what is left: the dialog, vault and prepare panel show it as "Reward Count"; at 0 the clear
@@ -71,10 +73,8 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>32700 for a Rift stone and one of its NPCConfig _iInteractID entries.</summary>
-    public async Task<bool> TryInteractAsync(GameSession session, NpcInteractionReq req)
+    public async Task<bool> TryRiftInteractAsync(GameSession session, NpcInteractionReq req)
     {
-        if (await TryChestInteractAsync(session, req) || await TryShopInteractAsync(session, req)
-            || await TryDieInteractAsync(session, req)) return true;
         if (!IsRiftUid(req.NpcUid)) return false;
         using var scope = session.Role != null && _loop.Owners is { } owners
             ? await owners.EnterAsync("timed battle onepiece interaction", [ReservationKey.Role(session.Role.Id)]) : null;
@@ -177,10 +177,10 @@ public sealed partial class TimedBattleService
         };
     }
 
-    private Task SyncRiftRestrictAsync(GameSession session) => _life.SyncRestrictionsAsync(session);
+    internal Task SyncRiftRestrictAsync(GameSession session) => _life.SyncRestrictionsAsync(session);
 
     /// <summary>83350 for the player's current map: the tracker's "Remaining on the current channel" and its countdown.</summary>
-    private async Task SendOnePieceMapAsync(GameSession session)
+    internal async Task SendOnePieceMapAsync(GameSession session)
     {
         bool open = session.Progress?.Level >= 44 && _schedule.IsOpen(200) && _functions.IsOpen(session, RiftFunction) && _riftRound >= 0;
         await session.SendGameAsync(OnePieceMap, new HiddenTreasureMapInfoNotify
@@ -441,7 +441,7 @@ public sealed partial class TimedBattleService
     /// <summary>Members of the run still in its room (dead or alive).</summary>
     private GameSession[] Present(Treasure a) => [.. a.Members.Where(m => _treasure.GetValueOrDefault(m) == a && m.InstanceId == a.Room.Id && m.Role != null)];
 
-    private async Task OnePieceLoadedAsync(GameSession session)
+    internal async Task OnePieceLoadedAsync(GameSession session)
     {
         if (session.InstanceId == 0)
         {
@@ -475,7 +475,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>A member who leaves gives up its share; the run ends when nobody is left or everyone left is dead.</summary>
-    private Task OnePieceLeavingAsync(GameSession session)
+    internal Task OnePieceLeavingAsync(GameSession session)
     {
         if (!_treasure.TryGetValue(session, out var a) || session.InstanceId != a.Room.Id) return Task.CompletedTask;
         _treasure.Remove(session);
@@ -505,7 +505,7 @@ public sealed partial class TimedBattleService
     }
 
     /// <summary>NoRevive: a dead member's own 31013 is refused; skill and item resurrection by others stays open.</summary>
-    private bool InRiftFight(GameSession session) =>
+    internal bool InRiftFight(GameSession session) =>
         _treasure.GetValueOrDefault(session) is { Settled: false } a && a.Room.Id == session.InstanceId;
 
     private async Task OnePieceKilledAsync(GameSession killer, MonsterUnit monster)
@@ -672,7 +672,7 @@ public sealed partial class TimedBattleService
         };
     }
 
-    private long TreasureDay()
+    internal long TreasureDay()
     {
         var now = TimeZoneInfo.ConvertTime(_time.GetUtcNow(), _time.LocalTimeZone);
         return now.Year * 10000L + now.Month * 100 + now.Day;
@@ -722,5 +722,5 @@ public sealed partial class TimedBattleService
         return result;
     }
 
-    private void TickOnePiece(long now) => TickRift();
+    internal void TickOnePiece(long now) => TickRift();
 }
