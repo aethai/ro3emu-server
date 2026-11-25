@@ -148,238 +148,281 @@ public sealed partial class CharacterInventoryService
     internal async Task<List<InvItem>?> ExchangeLockedAsync(GameSession session, ExchangeRequest request) =>
         await ExchangeOwnedCoreAsync(session, RequireOwnedRole(session), request);
 
+    private sealed class ExchangeStaging
+    {
+        public required GameSession Session;
+        public required ExchangeRequest Request;
+        public required Ownership.AttachmentLease? Attachment;
+        public required CharacterService.LifeItemExchangeScope? LifeUse;
+        public required List<(int Entry, long Count)> Need;
+        public required List<(InvItem Item, int Count)> Picked;
+        public required RoleProgress NextProgress;
+        public required RoleProgress LiveProgress;
+        public required List<InvItem> OriginalItems;
+        public required InvItem[] OriginalItemReferences;
+        public required long[] OriginalNewItems;
+        public required RoleProgress BeforeProgress;
+        public required InvItem[] BeforeItems;
+        public required List<InvItem> StagedItems;
+        public required RoleProgress StagedProgress;
+        public required (int Level, long Exp, int JobLevel, long JobExp) OriginalProgress;
+        public required Romsg.GetRewardNotify Reward;
+        public readonly List<InvItem> Granted = [];
+        public readonly List<ShownGood> Shown = [];
+        public readonly List<(int Entry, int Count)> PostCommitHooks = [];
+        public ItemAutoDecomposeTipsNtf Decomposed = new();
+        public RoleItemPlanBuilder Builder = null!;
+        public int ItemReceipt;
+        public FirstCardSightPlan? CardSight;
+        public DBEquipInfo? PrunedPlans;
+    }
+
     /// <summary>Checked owned Core for the complete payment, grant and optional caller plan.</summary>
     private async Task<List<InvItem>?> ExchangeOwnedCoreAsync(GameSession session, Ownership.OwnerContext context,
         ExchangeRequest request)
     {
-        var cost = request.Cost;
-        var goods = request.Goods;
-        var instances = request.Instances;
-        bool popup = request.Popup;
-        bool sync = request.Sync;
-        var persist = request.Persist;
-        long reservedGuid = request.ReservedGuid;
-        var attributedGoods = request.AttributedGoods;
-        var itemUpdate = request.ItemUpdate;
-        var boundGoods = request.BoundGoods;
-        var exactGoods = request.ExactGoods;
-        var currencyGoods = request.CurrencyGoods;
-        long baseExp = request.BaseExp;
-        long jobExp = request.JobExp;
-        var committed = request.Committed;
-        bool asyncCommit = request.AsyncCommit;
-        var appliedBeforeNotify = request.AppliedBeforeNotify;
-        var rewardSettlement = request.RewardSettlement;
-        var stageItems = request.StageItems;
-        var stageAfterGoods = request.StageAfterGoods;
-        var economy = request.Economy;
         context.AssertRole(session.Role!.Id);
         context.BindPresentation(session);
-        var attachment = session.Attachment;
         var lifeUse = LifeItemExchange.Value;
         if (lifeUse is null || !lifeUse.Active || !ReferenceEquals(lifeUse.Session, session) || lifeUse.Committed) lifeUse = null;
-        if (baseExp < 0 || jobExp < 0) throw new ArgumentOutOfRangeException(nameof(request));
+        if (request.BaseExp < 0 || request.JobExp < 0) throw new ArgumentOutOfRangeException(nameof(request));
         var nextProgress = CloneProgress(session.Progress!);
-        if (baseExp > 0 || jobExp > 0) ApplyExp(nextProgress, baseExp, jobExp);
-        var need = cost.GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => c.Count))).ToList();
+        if (request.BaseExp > 0 || request.JobExp > 0) ApplyExp(nextProgress, request.BaseExp, request.JobExp);
+        if (!TryValidateExchangeCosts(session, request, out var need, out var picked)) return null;
+        if (request.ItemUpdate is { } update && !request.AsyncCommit)
+        {
+            ApplyItemExchange(session, need, picked, update);
+            if (request.Sync) await SyncItemsAsync(session);
+            return [];
+        }
+        var p = session.Progress!;
+        var originalItems = session.Items;
+        var staging = new ExchangeStaging
+        {
+            Session = session, Request = request, Attachment = session.Attachment, LifeUse = lifeUse,
+            Need = need, Picked = picked, NextProgress = nextProgress, LiveProgress = p,
+            OriginalItems = originalItems, OriginalItemReferences = [.. originalItems],
+            OriginalNewItems = [.. session.Profile.NewItems],
+            BeforeProgress = CloneProgress(p), BeforeItems = [.. originalItems.Select(item => item.Clone())],
+            StagedItems = [.. originalItems.Select(item => item.Clone())], StagedProgress = CloneProgress(p),
+            OriginalProgress = (p.Level, p.Exp, p.JobLevel, p.JobExp),
+            Reward = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id },
+        };
+        StageExchangeMutation(staging);
+        await CommitExchangeAsync(staging);
+        if (request.RewardSettlement?.DeferPresentation == true)
+            request.RewardSettlement.Presentation = () => PresentExchangeAsync(staging);
+        else await PresentExchangeAsync(staging);
+        return staging.Granted;
+    }
+
+    private bool TryValidateExchangeCosts(GameSession session, ExchangeRequest request,
+        out List<(int Entry, long Count)> need, out List<(InvItem Item, int Count)> picked)
+    {
+        long reservedGuid = request.ReservedGuid;
+        var needList = request.Cost.GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => c.Count))).ToList();
+        var pickedList = new List<(InvItem Item, int Count)>();
+        need = needList;
+        picked = pickedList;
         long Available(int entry) => CountOf(session, entry) -
-            (session.Items.Any(i => i.Guid == reservedGuid && i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i)) ? 1 : 0);
-        if (need.Any(c => c.Count < 0 || Available(c.Entry) < c.Count)) return null;
-        var picked = new List<(InvItem Item, int Count)>();
-        foreach (var (guid, count) in instances ?? new Dictionary<long, int>())
+            (session.Items.Any(i => i.Guid == reservedGuid && i.Grid == 0 && i.Entry == entry
+                && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i)) ? 1 : 0);
+        if (needList.Any(c => c.Count < 0 || Available(c.Entry) < c.Count)) return false;
+        foreach (var (guid, count) in request.Instances ?? new Dictionary<long, int>())
         {
             if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is not { } item
                 || EmblemService.IsReserved(session, item) || TotemService.IsReserved(session, item)
-                || count < 1 || count > item.Stack - (guid == reservedGuid ? 1 : 0)) return null;
-            picked.Add((item, count));
+                || count < 1 || count > item.Stack - (guid == reservedGuid ? 1 : 0)) return false;
+            pickedList.Add((item, count));
         }
         // Explicit GUID costs and entry costs share the same bag: reserve both before consuming either.
-        if (need.Any(c => Available(c.Entry) - picked.Where(p => p.Item.Entry == c.Entry).Sum(p => (long)p.Count) < c.Count)) return null;
-        if (itemUpdate is { } update)
+        if (needList.Any(c => Available(c.Entry) - pickedList.Where(p => p.Item.Entry == c.Entry).Sum(p => (long)p.Count) < c.Count))
+            return false;
+        if (request.ItemUpdate is { } update)
         {
-            if ((!asyncCommit && persist != null) || goods.Count != 0 || attributedGoods is { Count: > 0 } || boundGoods is { Count: > 0 }
-                || exactGoods is { Count: > 0 } || currencyGoods is { Count: > 0 } ||
-                baseExp != 0 || jobExp != 0 ||
-                need.Any(c => data.Row("ItemConfig", c.Entry) is { } r && GameData.Int(r, "_iType") == ItemTypeCurrency))
+            if ((!request.AsyncCommit && request.Persist != null) || request.Goods.Count != 0
+                || request.AttributedGoods is { Count: > 0 } || request.BoundGoods is { Count: > 0 }
+                || request.ExactGoods is { Count: > 0 } || request.CurrencyGoods is { Count: > 0 }
+                || request.BaseExp != 0 || request.JobExp != 0
+                || needList.Any(c => data.Row("ItemConfig", c.Entry) is { } r && GameData.Int(r, "_iType") == ItemTypeCurrency))
                 throw new InvalidOperationException("An item update requires an item-only exchange.");
-            if (!session.Items.Contains(update.Item) || picked.Any(selected => selected.Item.Guid == update.Item.Guid)
-                || need.Any(c => c.Entry == update.Item.Entry && c.Count > 0)) return null;
-            if (!asyncCommit)
-            {
-                ApplyItemExchange(session, need, picked, update);
-                if (sync) await SyncItemsAsync(session);
-                return [];
-            }
+            if (!session.Items.Contains(update.Item) || pickedList.Any(selected => selected.Item.Guid == update.Item.Guid)
+                || needList.Any(c => c.Entry == update.Item.Entry && c.Count > 0)) return false;
         }
-        var p = session.Progress!;
-        var reward = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
-        var granted = new List<InvItem>();
-        var shown = new List<ShownGood>();
-        var postCommitHooks = new List<(int Entry, int Count)>();
-        var decomposed = new ItemAutoDecomposeTipsNtf();
-        // Stage under the checked owner and old StateLock, but restore the published owner before
-        // admitting the writer command. Callers can retain references to surviving card/equipment items.
-        var originalItems = session.Items;
-        var originalItemReferences = originalItems.ToArray();
-        var originalNewItems = session.Profile.NewItems.ToArray();
-        var beforeProgress = CloneProgress(p);
-        var beforeItems = originalItems.Select(item => item.Clone()).ToArray();
-        var stagedItems = originalItems.Select(item => item.Clone()).ToList();
-        var stagedProgress = CloneProgress(p);
-        var stagedPicked = picked.Select(choice =>
-            (stagedItems.Single(item => item.Guid == choice.Item.Guid), choice.Count)).ToList();
-        var originalProgress = (p.Level, p.Exp, p.JobLevel, p.JobExp);
-        RoleItemPlanBuilder builder;
-        int itemReceipt;
-        FirstCardSightPlan? cardSight;
-        DBEquipInfo? prunedPlans = null;
-        session.Items = stagedItems;
-        session.Progress = stagedProgress;
+        return true;
+    }
+
+    private void StageExchangeMutation(ExchangeStaging s)
+    {
+        var session = s.Session;
+        var request = s.Request;
+        var stagedPicked = s.Picked.Select(choice =>
+            (s.StagedItems.Single(item => item.Guid == choice.Item.Guid), choice.Count)).ToList();
+        session.Items = s.StagedItems;
+        session.Progress = s.StagedProgress;
         try
         {
-            PayExchange(session, need, stagedPicked, reservedGuid, persist: false);
-            stageItems?.Invoke(stagedItems);
-            if (itemUpdate is { } stagedUpdate)
-                stagedItems.Single(item => item.Guid == stagedUpdate.Item.Guid).Attrs = new(stagedUpdate.Attrs);
-            foreach (var (entry, count, bind) in goods.Select(g => (g.Entry, g.Count, Bind: 0)).Concat(boundGoods ?? []).Where(g => g.Count > 0))
+            PayExchange(session, s.Need, stagedPicked, request.ReservedGuid, persist: false);
+            request.StageItems?.Invoke(s.StagedItems);
+            if (request.ItemUpdate is { } stagedUpdate)
+                s.StagedItems.Single(item => item.Guid == stagedUpdate.Item.Guid).Attrs = new(stagedUpdate.Attrs);
+            StageExchangeGoods(s);
+            if (request.RewardSettlement?.AutoDecompose == true)
             {
-                bool currency;
-                var pieces = AddItemCore(session, entry, count, out currency, persist: false, notifyItemGained: false, bind: bind);
-                granted.AddRange(pieces);
-                if (!currency) postCommitHooks.Add((entry, count));
-                shown.Add(new ShownGood(entry, count, bind, IsEquipment(entry) ? pieces : []));
-                reward.RewardType.Add(1);
-            }
-            foreach (var grant in attributedGoods ?? [])
-            {
-                foreach (var item in AddAttributedCore(session, grant, persist: false))
-                {
-                    granted.Add(item);
-                }
-                if (grant.Count > 0 && data.Row("ItemConfig", grant.Entry) is { } row && GameData.Int(row, "_iType") != ItemTypeCurrency)
-                    postCommitHooks.Add((grant.Entry, grant.Count));
-            }
-            foreach (var source in exactGoods ?? [])
-            {
-                var row = data.Row("ItemConfig", source.Entry)!.Value;
-                int pack = EmblemService.IsEmblem(data, source.Entry) ? 5 : ConfigPack(row);
-                var item = source.Clone();
-                item.Guid = 0; // (inferred) claimed copy has a fresh bag identity.
-                item.Grid = 0;
-                item.Pack = pack;
-                item.Sort = NextSort(session, pack);
-                session.Items.Add(item);
-                granted.Add(item);
-                postCommitHooks.Add((item.Entry, item.Stack));
-                shown.Add(new ShownGood(item.Entry, item.Stack, item.BindType, [item]));
-            }
-            foreach (var (entry, amount) in currencyGoods ?? new Dictionary<int, long>())
-                stagedProgress.Currency[entry] = checked(stagedProgress.Currency.GetValueOrDefault(entry) + amount);
-            if (baseExp > 0 || jobExp > 0)
-                (stagedProgress.Level, stagedProgress.Exp, stagedProgress.JobLevel, stagedProgress.JobExp) =
-                    (nextProgress.Level, nextProgress.Exp, nextProgress.JobLevel, nextProgress.JobExp);
-            if (rewardSettlement?.AutoDecompose == true)
-            {
-                decomposed = StageAutoDecomposeAward(session, stagedItems, stagedProgress, granted,
-                    beforeItems.ToDictionary(i => i.Guid, i => i.Stack), postCommitHooks);
-                granted.RemoveAll(item => !stagedItems.Contains(item));
+                s.Decomposed = StageAutoDecomposeAward(session, s.StagedItems, s.StagedProgress, s.Granted,
+                    s.BeforeItems.ToDictionary(i => i.Guid, i => i.Stack), s.PostCommitHooks);
+                s.Granted.RemoveAll(item => !s.StagedItems.Contains(item));
             }
             // Tower clear goods retain their existing non-auto-decompose rule but join this kill's one commit.
-            rewardSettlement?.BeforeAdditionalGoods?.Invoke();
-            foreach (var (entry, count) in rewardSettlement?.AdditionalGoods ?? [])
+            request.RewardSettlement?.BeforeAdditionalGoods?.Invoke();
+            foreach (var (entry, count) in request.RewardSettlement?.AdditionalGoods ?? [])
             {
                 foreach (var item in AddItemCore(session, entry, count, out _, persist: false, notifyItemGained: false))
-                    granted.Add(item);
-                if (!IsCurrency(entry)) postCommitHooks.Add((entry, count));
+                    s.Granted.Add(item);
+                if (!IsCurrency(entry)) s.PostCommitHooks.Add((entry, count));
             }
-            stageAfterGoods?.Invoke(stagedItems);
-            builder = roles.NewTransaction();
-            itemReceipt = builder.ItemDelta(session.Role!.Id, beforeItems, stagedItems);
-            builder.Progress(session.Role.Id, stagedProgress);
-            persist?.Invoke(builder);
-            lifeUse?.Persist(builder);
-            cardSight = StageFirstCardSight?.Invoke(session, [.. postCommitHooks.Select(g => g.Entry)],
-                rewardSettlement?.LibraryMonster ?? 0);
-            cardSight?.Persist(builder);
-            if (builder.HasCharacterFamilyEconomy && (prunedPlans = PrunedEquipmentPlans(session, stagedItems)) != null)
-                builder.RoleBlob(session.Role.Id, "equip_plans", prunedPlans.ToByteArray());
-            rewardSettlement?.EnlistAfterCards?.Invoke(builder);
-            if (rewardSettlement != null && economy != null)
+            request.StageAfterGoods?.Invoke(s.StagedItems);
+            var builder = roles.NewTransaction();
+            s.ItemReceipt = builder.ItemDelta(session.Role!.Id, s.BeforeItems, s.StagedItems);
+            builder.Progress(session.Role.Id, s.StagedProgress);
+            request.Persist?.Invoke(builder);
+            s.LifeUse?.Persist(builder);
+            s.CardSight = StageFirstCardSight?.Invoke(session, [.. s.PostCommitHooks.Select(g => g.Entry)],
+                request.RewardSettlement?.LibraryMonster ?? 0);
+            s.CardSight?.Persist(builder);
+            if (builder.HasCharacterFamilyEconomy && (s.PrunedPlans = PrunedEquipmentPlans(session, s.StagedItems)) != null)
+                builder.RoleBlob(session.Role.Id, "equip_plans", s.PrunedPlans.ToByteArray());
+            request.RewardSettlement?.EnlistAfterCards?.Invoke(builder);
+            if (request.RewardSettlement != null && request.Economy != null)
                 throw new InvalidOperationException("Reward settlement already supplies its economy envelope.");
-            if (economy != null) builder.WithEconomy(economy);
-            if (rewardSettlement != null)
-                builder.WithEconomy(RewardMutation(session, rewardSettlement, beforeProgress, stagedProgress,
-                    need, [.. goods, .. (boundGoods ?? []).Select(g => (g.Entry, g.Count)), .. rewardSettlement.AdditionalGoods],
-                    baseExp, jobExp, decomposed));
+            if (request.Economy != null) builder.WithEconomy(request.Economy);
+            if (request.RewardSettlement != null)
+                builder.WithEconomy(RewardMutation(session, request.RewardSettlement, s.BeforeProgress, s.StagedProgress,
+                    s.Need, [.. request.Goods, .. (request.BoundGoods ?? []).Select(g => (g.Entry, g.Count)),
+                        .. request.RewardSettlement.AdditionalGoods],
+                    request.BaseExp, request.JobExp, s.Decomposed));
+            s.Builder = builder;
         }
         finally
         {
-            session.Items = originalItems;
-            session.Progress = p;
+            session.Items = s.OriginalItems;
+            session.Progress = s.LiveProgress;
         }
-        void PublishExchange(object?[] receipts)
+    }
+
+    private void StageExchangeGoods(ExchangeStaging s)
+    {
+        var session = s.Session;
+        var request = s.Request;
+        var regularGoods = request.Goods.Select(g => (g.Entry, g.Count, Bind: 0))
+            .Concat(request.BoundGoods ?? []).Where(g => g.Count > 0);
+        foreach (var (entry, count, bind) in regularGoods)
         {
-            try
-            {
-                ItemSnapshotWritePlan.ApplyGuids(stagedItems, (long[])receipts[itemReceipt]!);
-                // Apply the complete committed snapshot without replacing surviving item objects held by callers.
-                var surviving = originalItems.ToDictionary(item => item.Guid);
-                var mapped = new Dictionary<InvItem, InvItem>(ReferenceEqualityComparer.Instance);
-                originalItems.Clear();
-                foreach (var item in stagedItems)
-                {
-                    if (surviving.TryGetValue(item.Guid, out var live))
-                    {
-                        CopyItem(live, item);
-                        mapped[item] = live;
-                        originalItems.Add(live);
-                    }
-                    else { mapped[item] = item; originalItems.Add(item); }
-                }
-                for (int i = 0; i < granted.Count; i++) granted[i] = mapped[granted[i]];
-                CopyProgress(p, stagedProgress);
-                if (baseExp > 0 || jobExp > 0) foreach (var credited in ExpCredited.Handlers) credited(session, baseExp, jobExp);
-                if (rewardSettlement != null) rewardSettlement.Committed = true;
-                foreach (var item in granted) session.Profile.NewItems.Add(item.Guid);
-                cardSight?.Apply();
-                if (prunedPlans != null) session.Profile.EquipmentPlans = prunedPlans;
-                if (lifeUse != null)
-                {
-                    lifeUse.Committed = true;
-                    lifeUse.Publish();
-                }
-                // Publish the owner's committed in-memory state before any notification can yield or fail.
-                committed?.Invoke();
-                appliedBeforeNotify?.Invoke();
-            }
-            catch
-            {
-                // A failed Apply cannot undo SQL. Restore the previous bag/progress view; the async
-                // commit adapter quarantines the owner before any other operation can use that view.
-                originalItems.Clear();
-                for (int i = 0; i < originalItemReferences.Length; i++)
-                {
-                    CopyItem(originalItemReferences[i], beforeItems[i]);
-                    originalItems.Add(originalItemReferences[i]);
-                }
-                CopyProgress(p, beforeProgress);
-                session.Profile.NewItems.Clear();
-                foreach (long guid in originalNewItems) session.Profile.NewItems.Add(guid);
-                throw;
-            }
+            var pieces = AddItemCore(session, entry, count, out bool currency, persist: false, notifyItemGained: false, bind: bind);
+            s.Granted.AddRange(pieces);
+            if (!currency) s.PostCommitHooks.Add((entry, count));
+            s.Shown.Add(new ShownGood(entry, count, bind, IsEquipment(entry) ? pieces : []));
+            s.Reward.RewardType.Add(1);
         }
+        foreach (var grant in request.AttributedGoods ?? [])
+        {
+            foreach (var item in AddAttributedCore(session, grant, persist: false)) s.Granted.Add(item);
+            if (grant.Count > 0 && data.Row("ItemConfig", grant.Entry) is { } row && GameData.Int(row, "_iType") != ItemTypeCurrency)
+                s.PostCommitHooks.Add((grant.Entry, grant.Count));
+        }
+        foreach (var source in request.ExactGoods ?? [])
+        {
+            var row = data.Row("ItemConfig", source.Entry)!.Value;
+            int pack = EmblemService.IsEmblem(data, source.Entry) ? 5 : ConfigPack(row);
+            var item = source.Clone();
+            item.Guid = 0; // (inferred) claimed copy has a fresh bag identity.
+            item.Grid = 0;
+            item.Pack = pack;
+            item.Sort = NextSort(session, pack);
+            session.Items.Add(item);
+            s.Granted.Add(item);
+            s.PostCommitHooks.Add((item.Entry, item.Stack));
+            s.Shown.Add(new ShownGood(item.Entry, item.Stack, item.BindType, [item]));
+        }
+        foreach (var (entry, amount) in request.CurrencyGoods ?? new Dictionary<int, long>())
+            s.StagedProgress.Currency[entry] = checked(s.StagedProgress.Currency.GetValueOrDefault(entry) + amount);
+        if (request.BaseExp > 0 || request.JobExp > 0)
+            (s.StagedProgress.Level, s.StagedProgress.Exp, s.StagedProgress.JobLevel, s.StagedProgress.JobExp) =
+                (s.NextProgress.Level, s.NextProgress.Exp, s.NextProgress.JobLevel, s.NextProgress.JobExp);
+    }
+
+    private void PublishExchangeSnapshot(ExchangeStaging s, object?[] receipts)
+    {
+        var session = s.Session;
+        var request = s.Request;
+        try
+        {
+            ItemSnapshotWritePlan.ApplyGuids(s.StagedItems, (long[])receipts[s.ItemReceipt]!);
+            // Apply the complete committed snapshot without replacing surviving item objects held by callers.
+            var surviving = s.OriginalItems.ToDictionary(item => item.Guid);
+            var mapped = new Dictionary<InvItem, InvItem>(ReferenceEqualityComparer.Instance);
+            s.OriginalItems.Clear();
+            foreach (var item in s.StagedItems)
+            {
+                if (surviving.TryGetValue(item.Guid, out var live))
+                {
+                    CopyItem(live, item);
+                    mapped[item] = live;
+                    s.OriginalItems.Add(live);
+                }
+                else { mapped[item] = item; s.OriginalItems.Add(item); }
+            }
+            for (int i = 0; i < s.Granted.Count; i++) s.Granted[i] = mapped[s.Granted[i]];
+            CopyProgress(s.LiveProgress, s.StagedProgress);
+            if (request.BaseExp > 0 || request.JobExp > 0)
+                foreach (var credited in ExpCredited.Handlers) credited(session, request.BaseExp, request.JobExp);
+            if (request.RewardSettlement != null) request.RewardSettlement.Committed = true;
+            foreach (var item in s.Granted) session.Profile.NewItems.Add(item.Guid);
+            s.CardSight?.Apply();
+            if (s.PrunedPlans != null) session.Profile.EquipmentPlans = s.PrunedPlans;
+            if (s.LifeUse != null)
+            {
+                s.LifeUse.Committed = true;
+                s.LifeUse.Publish();
+            }
+            // Publish the owner's committed in-memory state before any notification can yield or fail.
+            request.Committed?.Invoke();
+            request.AppliedBeforeNotify?.Invoke();
+        }
+        catch
+        {
+            // A failed Apply cannot undo SQL. Restore the previous bag/progress view; the async
+            // commit adapter quarantines the owner before any other operation can use that view.
+            s.OriginalItems.Clear();
+            for (int i = 0; i < s.OriginalItemReferences.Length; i++)
+            {
+                CopyItem(s.OriginalItemReferences[i], s.BeforeItems[i]);
+                s.OriginalItems.Add(s.OriginalItemReferences[i]);
+            }
+            CopyProgress(s.LiveProgress, s.BeforeProgress);
+            session.Profile.NewItems.Clear();
+            foreach (long guid in s.OriginalNewItems) session.Profile.NewItems.Add(guid);
+            throw;
+        }
+    }
+
+    private async Task CommitExchangeAsync(ExchangeStaging s)
+    {
+        var session = s.Session;
+        var request = s.Request;
         try
         {
             // The specialized item-use scope also carries Mount/Wardrobe cooldowns. Those
             // converted family envelopes enlist bag_state; ordinary Life exchanges stay guarded.
-            if (asyncCommit && lifeUse != null && !builder.HasAsyncFamilyEconomy)
+            if (request.AsyncCommit && s.LifeUse != null && !s.Builder.HasAsyncFamilyEconomy)
                 throw new InvalidOperationException("Life exchange is not an asynchronous owner family.");
             // Converted family envelopes, E04 rewards and 13e owned grants use owned admission. E05a shops opt the original
             // E01 receipt shape into that path with asyncCommit; other legacy callers retain the sync adapter.
-            if (builder.HasEconomy && !builder.HasAsyncFamilyEconomy && !asyncCommit && rewardSettlement == null && economy == null)
+            if (s.Builder.HasEconomy && !s.Builder.HasAsyncFamilyEconomy && !request.AsyncCommit
+                && request.RewardSettlement == null && request.Economy == null)
             {
-                var receipts = roles.Commit(builder, "character/exchange");
-                try { PublishExchange(receipts); }
+                var receipts = roles.Commit(s.Builder, "character/exchange");
+                try { PublishExchangeSnapshot(s, receipts); }
                 catch (Exception error)
                 {
                     // SQL has committed. The restored live snapshot must not admit another command or cleanup save.
@@ -390,7 +433,7 @@ public sealed partial class CharacterInventoryService
                     throw;
                 }
             }
-            else await roles.CommitAsync(builder, "character/exchange", PublishExchange);
+            else await roles.CommitAsync(s.Builder, "character/exchange", receipts => PublishExchangeSnapshot(s, receipts));
         }
         catch (EconomyOutcomeUnknownException error)
         {
@@ -402,45 +445,46 @@ public sealed partial class CharacterInventoryService
                 error.OperationId, session.Role!.Id);
             throw;
         }
-        async Task PresentExchangeAsync()
+    }
+
+    private async Task PresentExchangeAsync(ExchangeStaging s)
+    {
+        var session = s.Session;
+        var request = s.Request;
+        if (s.Attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, s.Attachment)) return;
+        // A hook may persist auxiliary state on another connection. A hook failure cannot undo the committed grant.
+        foreach (var (entry, count) in s.PostCommitHooks)
+            foreach (var handler in ItemGained.Handlers)
+                try { handler(session, entry, count); }
+                catch (Exception e) { log.LogError(e, "ItemGained hook failed after committed exchange for item {Entry}", entry); }
+        if (request.Sync) await SyncItemsAsync(session); // else the caller sends 5009 (ItemsChangedAsync) when it fits
+        if (s.Decomposed.DecomposeItemInfo.Count > 0)
+            await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, s.Decomposed);
+        // Built after commit: only then does a new piece carry the bag instance id the quick-equip offer needs.
+        foreach (var good in s.Shown) s.Reward.Rewards.AddRange(GainedInfos(s.Granted, good));
+        foreach (var (entry, amount) in request.CurrencyGoods ?? new Dictionary<int, long>()) AddVirtualReward(s.Reward, entry, amount);
+        if (s.Reward.Rewards.Count > 0 && s.Reward.RewardType.Count == 0) s.Reward.RewardType.Add(1);
+        if (request.BaseExp > 0 || request.JobExp > 0)
         {
-            if (attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)) return;
-            // A hook may persist auxiliary state on another connection. A hook failure cannot undo the committed grant.
-            foreach (var (entry, count) in postCommitHooks)
-                foreach (var handler in ItemGained.Handlers)
-                    try { handler(session, entry, count); }
-                    catch (Exception e) { log.LogError(e, "ItemGained hook failed after committed exchange for item {Entry}", entry); }
-            if (sync) await SyncItemsAsync(session); // else the caller sends 5009 (ItemsChangedAsync) when it fits
-            if (decomposed.DecomposeItemInfo.Count > 0)
-                await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, decomposed);
-            // Built after commit: only then does a new piece carry the bag instance id the quick-equip offer needs.
-            foreach (var good in shown) reward.Rewards.AddRange(GainedInfos(granted, good));
-            foreach (var (entry, amount) in currencyGoods ?? new Dictionary<int, long>()) AddVirtualReward(reward, entry, amount);
-            if (reward.Rewards.Count > 0 && reward.RewardType.Count == 0) reward.RewardType.Add(1);
-            if (baseExp > 0 || jobExp > 0)
+            if (request.RewardSettlement?.CommandKind == "monster-kill")
             {
-                if (rewardSettlement?.CommandKind == "monster-kill")
-                {
-                    var floatReward = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id, RewardType = { 1 } };
-                    AddVirtualReward(floatReward, BaseExpItem, baseExp);
-                    AddVirtualReward(floatReward, JobExpItem, jobExp);
-                    await session.SendGameAsync(GetRewardNotify, floatReward);
-                }
-                if (p.Level != originalProgress.Level || p.JobLevel != originalProgress.JobLevel) await AfterLevelChangeAsync(session, persist: false);
-                else await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
-                AddVirtualReward(reward, BaseExpItem, baseExp);
-                AddVirtualReward(reward, JobExpItem, jobExp);
-                if (reward.RewardType.Count == 0) reward.RewardType.Add(1);
+                var floatReward = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id, RewardType = { 1 } };
+                AddVirtualReward(floatReward, BaseExpItem, request.BaseExp);
+                AddVirtualReward(floatReward, JobExpItem, request.JobExp);
+                await session.SendGameAsync(GetRewardNotify, floatReward);
             }
-            if (popup && reward.Rewards.Count > 0) await session.SendGameAsync(GetRewardNotify, reward);
-            // LifeJob publishes its committed life/restriction state after Exchange returns. Its ItemsChangedAsync
-            // runs this first notification once those fields agree with the already committed bag and cooldown.
-            if (lifeUse != null) lifeUse.PendingStateChanged = [.. StateChanged.Handlers];
-            else foreach (var handler in StateChanged.Handlers) handler(session);
+            if (s.LiveProgress.Level != s.OriginalProgress.Level || s.LiveProgress.JobLevel != s.OriginalProgress.JobLevel)
+                await AfterLevelChangeAsync(session, persist: false);
+            else await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
+            AddVirtualReward(s.Reward, BaseExpItem, request.BaseExp);
+            AddVirtualReward(s.Reward, JobExpItem, request.JobExp);
+            if (s.Reward.RewardType.Count == 0) s.Reward.RewardType.Add(1);
         }
-        if (rewardSettlement?.DeferPresentation == true) rewardSettlement.Presentation = PresentExchangeAsync;
-        else await PresentExchangeAsync();
-        return granted;
+        if (request.Popup && s.Reward.Rewards.Count > 0) await session.SendGameAsync(GetRewardNotify, s.Reward);
+        // LifeJob publishes its committed life/restriction state after Exchange returns. Its ItemsChangedAsync
+        // runs this first notification once those fields agree with the already committed bag and cooldown.
+        if (s.LifeUse != null) s.LifeUse.PendingStateChanged = [.. StateChanged.Handlers];
+        else foreach (var handler in StateChanged.Handlers) handler(session);
     }
 
     /// <summary>One granted good of an exchange's 31322 notice, with the bag pieces that describe it.</summary>

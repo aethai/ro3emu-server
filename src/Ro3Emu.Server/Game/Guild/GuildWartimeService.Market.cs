@@ -151,271 +151,306 @@ public sealed partial class GuildWartimeService
     private async Task<Func<Task>?> MarketCoreAsync(GameSession s, uint id, ReadOnlyMemory<byte> body,
         GuildStore.MarketState market, GuildStore.State? guild, long now, OwnerNotices notices)
     {
-        Func<Task>? reply = null;
         int gate = MarketGate(s, guild, id is MarketList or MarketUnlist or MarketBuy or MarketUpdate);
-        switch (id)
+        return id switch
         {
-            case MarketBooth:
-                {
-                    GuildStore.MarketStall[] booths = guild == null ? [] : [.. market.Stalls.Where(x => x.GuildId == guild.Id)];
-                    var rsp = new GetBlackMarketBoothRsp
-                    {
-                        Result = gate != 0 ? gate : booths.Length == 0 ? ErrorCodes.GuildMissing : 0,
-                        RecentAvgPrice = market.RecentAvgPrice
-                    };
-                    rsp.Booths.AddRange(booths.Select(x => new BlackMarketBoothInfo
-                    {
-                        StallUniqueId = x.Id,
-                        UnitPrice = x.UnitPrice, TotalCount = x.TotalCount, RemainCount = x.RemainCount,
-                        DisplayAvailableTimeMs = x.AvailableMs, ExpireTimeMs = x.ExpiresMs
-                    }));
-                    rsp.PriceHistory.AddRange(market.PriceHistory.Select(x => new BlackMarketPriceHistoryInfo
-                    { AvgPrice = x.Average, DateHour = x.DateHour }));
-                    reply = () => s.SendGameAsync(id, rsp);
-                    break;
-                }
-            case MarketItems:
-                {
-                    var items = market.Stalls.Where(x => x.AvailableMs <= now && x.ExpiresMs > now && x.RemainCount > 0)
-                        .GroupBy(x => x.UnitPrice).OrderBy(x => x.Key).ToArray();
-                    var rsp = new GetBlackMarketItemsRsp
-                    {
-                        Result = gate != 0 ? gate : items.Length == 0 ? ErrorCodes.GuildMissing : 0,
-                        RecentAvgPrice = market.RecentAvgPrice
-                    };
-                    rsp.Items.AddRange(items.Select(x => new BlackMarketBigStack
-                    { UnitPrice = x.Key, TotalRemainCount = x.Sum(y => y.RemainCount) }));
-                    rsp.PriceHistory.AddRange(market.PriceHistory.Select(x => new BlackMarketPriceHistoryInfo
-                    { AvgPrice = x.Average, DateHour = x.DateHour }));
-                    reply = () => s.SendGameAsync(id, rsp);
-                    break;
-                }
-            case MarketList:
-                {
-                    var req = ListOnBlackMarketReq.Parser.ParseFrom(body.Span);
-                    int code = gate != 0 ? gate : CheckMarketPrice(req.UnitPrice, market);
-                    long step = (Data.Config.PublicParams.Of(data).BlackMarketSellStep ?? 10);
-                    if (code == 0 && (step <= 0 || req.Count <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
-                    if (code == 0 && market.Stalls.Count(x => x.GuildId == guild!.Id) >= (Data.Config.PublicParams.Of(data).BlackMarketStallCount ?? 6)) code = ErrorCodes.GuildFull;
-                    if (code == 0 && market.LastListedMs.GetValueOrDefault(guild!.Id)
-            + (Data.Config.PublicParams.Of(data).BlackMarketListCooldownSec ?? 1) * 1000 > MarketNowMs())
-                        code = ErrorCodes.Cooldown;
-                    if (code == 0 && guild!.Materials < req.Count) code = ErrorCodes.ItemsShort;
-                    if (code == 0)
-                    {
-                        long listedAt = MarketNowMs();
-                        var delay = (Data.Config.PublicParams.Of(data).BlackMarketDelayRangeSec ?? [300, 600]);
-                        long seconds = delay.Length == 0 ? 300 : Math.Max(0, delay[0]);
-                        guild!.Materials -= req.Count;
-                        market.Stalls.Add(new GuildStore.MarketStall
-                        {
-                            Id = $"stall-{++market.NextId}", GuildId = guild.Id,
-                            UnitPrice = req.UnitPrice, TotalCount = req.Count, RemainCount = req.Count, CreatedMs = listedAt,
-                            AvailableMs = listedAt + seconds * 1000, ExpiresMs = listedAt + (Data.Config.PublicParams.Of(data).BlackMarketItemValidSec ?? 86400) * 1000
-                        });
-                        market.LastListedMs[guild.Id] = listedAt;
-                        if (!await store.SaveMarketAsync(market, [guild], MarketEconomy(s, "list", req))) code = ErrorCodes.GuildMissing;
-                        else CaptureMarketResources(notices, guild);
-                    }
-                    var response = new ListOnBlackMarketRsp { Result = code };
-                    reply = () => s.SendGameAsync(id, response);
-                    break;
-                }
-            case MarketUnlist:
-                {
-                    var req = UnlistFromBlackMarketReq.Parser.ParseFrom(body.Span);
-                    var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
-                    int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : 0;
-                    long cap = (Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000);
-                    if (code == 0 && !req.Confirm && guild!.Materials > cap - stall!.RemainCount) code = ErrorCodes.Parameter;
-                    if (code == 0)
-                    {
-                        long before = guild!.Materials;
-                        guild!.Materials = Math.Min(cap, guild.Materials + stall!.RemainCount);
-                        var economy = MarketEconomy(s, "unlist", new
-                        {
-                            Request = req, Cap = cap, Before = before,
-                            Escrow = stall.RemainCount, Stored = guild.Materials
-                        });
-                        MarketDiscard(economy, checked(before + stall.RemainCount - guild.Materials));
-                        market.Stalls.Remove(stall);
-                        if (!await store.SaveMarketAsync(market, [guild], economy)) code = ErrorCodes.GuildMissing;
-                        else CaptureMarketResources(notices, guild);
-                    }
-                    var response = new UnlistFromBlackMarketRsp { Result = code };
-                    reply = () => s.SendGameAsync(id, response);
-                    break;
-                }
-            case MarketBuy:
-                {
-                    var req = BuyBlackMarketItemReq.Parser.ParseFrom(body.Span);
-                    int code = gate != 0 ? gate : req.UnitPrice <= 0 || req.BuyCount <= 0 ? ErrorCodes.Parameter : 0;
-                    var stalls = market.Stalls.Where(x => x.UnitPrice == req.UnitPrice && x.AvailableMs <= now
-                        && x.ExpiresMs > now && x.RemainCount > 0 && x.GuildId != guild?.Id)
-                        .OrderBy(x => x.CreatedMs).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
-                    if (code == 0 && stalls.Sum(x => (decimal)x.RemainCount) < req.BuyCount) code = ErrorCodes.ItemsShort;
-                    long total = 0;
-                    if (code == 0) { try { total = checked(req.UnitPrice * req.BuyCount); } catch (OverflowException) { code = ErrorCodes.Parameter; } }
-                    if (code == 0 && guild!.Money < total) code = ErrorCodes.GuildFundsShort;
-                    long cap = (Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000);
-                    if (code == 0 && !req.Confirm && guild!.Materials > cap - req.BuyCount) code = ErrorCodes.Parameter;
-                    if (code == 0)
-                    {
-                        var sellers = new Dictionary<long, GuildStore.State>();
-                        long selectedRemain = req.BuyCount;
-                        foreach (var stall in stalls)
-                        {
-                            if (selectedRemain == 0) break;
-                            if (!sellers.ContainsKey(stall.GuildId))
-                            {
-                                var seller = store.Get(stall.GuildId);
-                                if (seller == null) { code = ErrorCodes.GuildMissing; break; }
-                                sellers.Add(stall.GuildId, seller);
-                            }
-                            selectedRemain -= Math.Min(selectedRemain, stall.RemainCount);
-                        }
-                        if (code == 0)
-                        {
-                            var prospectiveCredit = new Dictionary<long, decimal>();
-                            long previewRemain = req.BuyCount;
-                            foreach (var stall in stalls)
-                            {
-                                if (previewRemain == 0) break;
-                                long count = Math.Min(previewRemain, stall.RemainCount);
-                                decimal amount = (decimal)count * req.UnitPrice;
-                                decimal fee = decimal.Truncate(amount * (Data.Config.PublicParams.Of(data).BlackMarketFeeRate ?? 250) / 10000m);
-                                prospectiveCredit[stall.GuildId] = prospectiveCredit.GetValueOrDefault(stall.GuildId) + amount - fee;
-                                previewRemain -= count;
-                            }
-                            if (prospectiveCredit.Any(x => x.Value < 0 || x.Value > long.MaxValue - sellers[x.Key].Money))
-                                code = ErrorCodes.Parameter;
-                        }
-                        if (code == 0)
-                        {
-                            long remain = req.BuyCount, tradedAt = MarketNowMs(), totalFees = 0;
-                            long beforeMaterials = guild!.Materials;
-                            foreach (var stall in stalls)
-                            {
-                                if (remain == 0) break;
-                                long count = Math.Min(remain, stall.RemainCount);
-                                long amount = checked(count * req.UnitPrice);
-                                // BlackMarketFeeRate=250 uses the project's 10000-unit percentage convention (inferred).
-                                long fee = (long)((decimal)amount * (Data.Config.PublicParams.Of(data).BlackMarketFeeRate ?? 250) / 10000m);
-                                totalFees = checked(totalFees + fee);
-                                var seller = sellers[stall.GuildId];
-                                seller.Money = checked(seller.Money + amount - fee);
-                                stall.RemainCount -= count;
-                                remain -= count;
-                                market.Trades.Add(new GuildStore.MarketTrade
-                                {
-                                    Id = $"order-{++market.NextId}",
-                                    SellerGuildId = seller.Id, BuyerGuildId = guild!.Id, UnitPrice = req.UnitPrice,
-                                    Count = count, Fee = fee, TimeMs = tradedAt
-                                });
-                            }
-                            market.Stalls.RemoveAll(x => x.RemainCount == 0);
-                            guild!.Money -= total;
-                            Journal(guild, EvPurchase, [s.Role!.Id], Str(s.Role.Name), Int(total), Int(req.BuyCount), Int(GuildMaterialItem));
-                            guild.Materials = (long)Math.Min(cap, (decimal)guild.Materials + req.BuyCount);
-                            market.RecentPrices.Add(req.UnitPrice);
-                            int sample = (int)Math.Clamp((Data.Config.PublicParams.Of(data).BlackMarketRecentAvgSample ?? 10), 1, 1000);
-                            while (market.RecentPrices.Count > sample) market.RecentPrices.RemoveAt(0);
-                            market.RecentAvgPrice = (long)(market.RecentPrices.Sum(x => (decimal)x) / market.RecentPrices.Count);
-                            int hour = (int)(tradedAt / 3_600_000);
-                            if (market.PriceHistory.LastOrDefault()?.DateHour == hour)
-                                market.PriceHistory[^1].Average = market.RecentAvgPrice;
-                            else market.PriceHistory.Add(new GuildStore.MarketPrice { Average = market.RecentAvgPrice, DateHour = hour });
-                            if (market.PriceHistory.Count > 168) market.PriceHistory.RemoveRange(0, market.PriceHistory.Count - 168);
-                            var economy = MarketEconomy(s, "buy", new
-                            {
-                                Request = req, Cap = cap,
-                                Before = beforeMaterials, Stored = guild.Materials, Paid = total, Fee = totalFees,
-                                Sellers = sellers.Keys.Order().ToArray()
-                            });
-                            if (totalFees > 0) economy.Sink(new(EconomyAssetKind.GuildResource, EconomyDenominations.GuildMoney),
-                                totalFees, EconomyReason.GuildMarketFee);
-                            MarketDiscard(economy, checked(beforeMaterials + req.BuyCount - guild.Materials));
-                            if (!await store.SaveMarketAsync(market, [guild, .. sellers.Values], economy)) code = ErrorCodes.GuildMissing;
-                            else
-                            {
-                                CaptureMarketResources(notices, [guild, .. sellers.Values]);
-                                foreach (var seller in sellers.Values)
-                                    foreach (var member in seller.Members.Values)
-                                        if (Online(member.RoleId) is { } peer)
-                                        {
-                                            var packet = new BlackMarketSellRecordNtf();
-                                            notices.Add(peer, () => peer.SendGameAsync(MarketSellRecordNtf, packet));
-                                        }
-                            }
-                        }
-                    }
-                    var response = new BuyBlackMarketItemRsp { Result = code };
-                    reply = () => s.SendGameAsync(id, response);
-                    break;
-                }
-            case MarketSellRecords:
-                {
-                    var records = market.Trades.Where(x => x.SellerGuildId == guild?.Id).OrderByDescending(x => x.TimeMs).ToArray();
-                    var rsp = new GetBlackMarketSellRecordsRsp { Result = gate != 0 ? gate : records.Length == 0 ? ErrorCodes.GuildMissing : 0 };
-                    rsp.Records.AddRange(records.Select(x => new BlackMarketSellRecordInfo
-                    {
-                        OrderId = x.Id,
-                        UnitPrice = x.UnitPrice, Count = x.Count, Fee = x.Fee, CounterpartGuildId = x.BuyerGuildId,
-                        TradeTimeMs = x.TimeMs, IsRead = x.Read
-                    }));
-                    if (gate == 0 && records.Length > 0)
-                    {
-                        foreach (var record in records) record.Read = true;
-                        await store.SaveMarketAsync(market, [], MarketEconomy(s, "read-sales", new { Guild = guild!.Id }));
-                    }
-                    reply = () => s.SendGameAsync(id, rsp);
-                    break;
-                }
-            case MarketBuyRecords:
-                {
-                    var records = market.Trades.Where(x => x.BuyerGuildId == guild?.Id).OrderByDescending(x => x.TimeMs).ToArray();
-                    var rsp = new GetBlackMarketBuyRecordsRsp { Result = gate != 0 ? gate : records.Length == 0 ? ErrorCodes.GuildMissing : 0 };
-                    rsp.Records.AddRange(records.Select(x => new BlackMarketBuyRecordInfo
-                    {
-                        OrderId = x.Id,
-                        UnitPrice = x.UnitPrice, Count = x.Count, TradeTimeMs = x.TimeMs
-                    }));
-                    reply = () => s.SendGameAsync(id, rsp);
-                    break;
-                }
-            case MarketUpdate:
-                {
-                    var req = UpdateBlackMarketBoothReq.Parser.ParseFrom(body.Span);
-                    var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
-                    int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : CheckMarketPrice(req.UnitPrice, market);
-                    long step = (Data.Config.PublicParams.Of(data).BlackMarketSellStep ?? 10);
-                    if (code == 0 && (req.Count <= 0 || step <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
-                    long difference = stall == null ? 0 : req.Count - stall.RemainCount;
-                    if (code == 0 && difference > 0 && guild!.Materials < difference) code = ErrorCodes.ItemsShort;
-                    long cap = (Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000);
-                    if (code == 0 && difference < 0 && !req.Confirm && guild!.Materials > cap + difference) code = ErrorCodes.Parameter;
-                    if (code == 0)
-                    {
-                        long before = guild!.Materials;
-                        guild!.Materials = difference > 0 ? guild.Materials - difference : Math.Min(cap, guild.Materials - difference);
-                        stall!.UnitPrice = req.UnitPrice;
-                        stall.TotalCount += difference;
-                        stall.RemainCount = req.Count;
-                        var economy = MarketEconomy(s, "update", new
-                        {
-                            Request = req, Cap = cap, Before = before,
-                            Difference = difference, Stored = guild.Materials
-                        });
-                        MarketDiscard(economy, checked(before - difference - guild.Materials));
-                        if (!await store.SaveMarketAsync(market, [guild], economy)) code = ErrorCodes.GuildMissing;
-                        else CaptureMarketResources(notices, guild);
-                    }
-                    var response = new UpdateBlackMarketBoothRsp { Result = code };
-                    reply = () => s.SendGameAsync(id, response);
-                    break;
-                }
+            MarketBooth => MarketBoothReply(s, id, gate, market, guild),
+            MarketItems => MarketItemsReply(s, id, gate, market, now),
+            MarketList => await MarketListAsync(s, id, body, gate, market, guild, notices),
+            MarketUnlist => await MarketUnlistAsync(s, id, body, gate, market, guild, notices),
+            MarketBuy => await MarketBuyAsync(s, id, body, gate, market, guild, now, notices),
+            MarketSellRecords => await MarketSellRecordsAsync(s, id, gate, market, guild),
+            MarketBuyRecords => MarketBuyRecordsReply(s, id, gate, market, guild),
+            MarketUpdate => await MarketUpdateAsync(s, id, body, gate, market, guild, notices),
+            _ => null
+        };
+    }
+
+    private static Func<Task> MarketBoothReply(GameSession s, uint id, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild)
+    {
+        GuildStore.MarketStall[] booths = guild == null ? [] : [.. market.Stalls.Where(x => x.GuildId == guild.Id)];
+        var rsp = new GetBlackMarketBoothRsp
+        {
+            Result = gate != 0 ? gate : booths.Length == 0 ? ErrorCodes.GuildMissing : 0,
+            RecentAvgPrice = market.RecentAvgPrice
+        };
+        rsp.Booths.AddRange(booths.Select(x => new BlackMarketBoothInfo
+        {
+            StallUniqueId = x.Id,
+            UnitPrice = x.UnitPrice, TotalCount = x.TotalCount, RemainCount = x.RemainCount,
+            DisplayAvailableTimeMs = x.AvailableMs, ExpireTimeMs = x.ExpiresMs
+        }));
+        rsp.PriceHistory.AddRange(market.PriceHistory.Select(x => new BlackMarketPriceHistoryInfo
+        { AvgPrice = x.Average, DateHour = x.DateHour }));
+        return () => s.SendGameAsync(id, rsp);
+    }
+
+    private static Func<Task> MarketItemsReply(GameSession s, uint id, int gate,
+        GuildStore.MarketState market, long now)
+    {
+        var items = market.Stalls.Where(x => x.AvailableMs <= now && x.ExpiresMs > now && x.RemainCount > 0)
+            .GroupBy(x => x.UnitPrice).OrderBy(x => x.Key).ToArray();
+        var rsp = new GetBlackMarketItemsRsp
+        {
+            Result = gate != 0 ? gate : items.Length == 0 ? ErrorCodes.GuildMissing : 0,
+            RecentAvgPrice = market.RecentAvgPrice
+        };
+        rsp.Items.AddRange(items.Select(x => new BlackMarketBigStack
+        { UnitPrice = x.Key, TotalRemainCount = x.Sum(y => y.RemainCount) }));
+        rsp.PriceHistory.AddRange(market.PriceHistory.Select(x => new BlackMarketPriceHistoryInfo
+        { AvgPrice = x.Average, DateHour = x.DateHour }));
+        return () => s.SendGameAsync(id, rsp);
+    }
+
+    private async Task<Func<Task>> MarketListAsync(GameSession s, uint id, ReadOnlyMemory<byte> body, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild, OwnerNotices notices)
+    {
+        var req = ListOnBlackMarketReq.Parser.ParseFrom(body.Span);
+        int code = gate != 0 ? gate : CheckMarketPrice(req.UnitPrice, market);
+        var pub = Data.Config.PublicParams.Of(data);
+        long step = pub.BlackMarketSellStep ?? 10;
+        if (code == 0 && (step <= 0 || req.Count <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
+        if (code == 0 && market.Stalls.Count(x => x.GuildId == guild!.Id) >= (pub.BlackMarketStallCount ?? 6))
+            code = ErrorCodes.GuildFull;
+        if (code == 0 && market.LastListedMs.GetValueOrDefault(guild!.Id) + (pub.BlackMarketListCooldownSec ?? 1) * 1000 > MarketNowMs())
+            code = ErrorCodes.Cooldown;
+        if (code == 0 && guild!.Materials < req.Count) code = ErrorCodes.ItemsShort;
+        if (code == 0)
+        {
+            long listedAt = MarketNowMs();
+            var delay = pub.BlackMarketDelayRangeSec ?? [300, 600];
+            long seconds = delay.Length == 0 ? 300 : Math.Max(0, delay[0]);
+            guild!.Materials -= req.Count;
+            market.Stalls.Add(new GuildStore.MarketStall
+            {
+                Id = $"stall-{++market.NextId}", GuildId = guild.Id,
+                UnitPrice = req.UnitPrice, TotalCount = req.Count, RemainCount = req.Count, CreatedMs = listedAt,
+                AvailableMs = listedAt + seconds * 1000,
+                ExpiresMs = listedAt + (pub.BlackMarketItemValidSec ?? 86400) * 1000
+            });
+            market.LastListedMs[guild.Id] = listedAt;
+            if (!await store.SaveMarketAsync(market, [guild], MarketEconomy(s, "list", req))) code = ErrorCodes.GuildMissing;
+            else CaptureMarketResources(notices, guild);
         }
-        return reply;
+        var response = new ListOnBlackMarketRsp { Result = code };
+        return () => s.SendGameAsync(id, response);
+    }
+
+    private async Task<Func<Task>> MarketUnlistAsync(GameSession s, uint id, ReadOnlyMemory<byte> body, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild, OwnerNotices notices)
+    {
+        var req = UnlistFromBlackMarketReq.Parser.ParseFrom(body.Span);
+        var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
+        int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : 0;
+        long cap = Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
+        if (code == 0 && !req.Confirm && guild!.Materials > cap - stall!.RemainCount) code = ErrorCodes.Parameter;
+        if (code == 0)
+        {
+            long before = guild!.Materials;
+            guild!.Materials = Math.Min(cap, guild.Materials + stall!.RemainCount);
+            var economy = MarketEconomy(s, "unlist", new
+            {
+                Request = req, Cap = cap, Before = before,
+                Escrow = stall.RemainCount, Stored = guild.Materials
+            });
+            MarketDiscard(economy, checked(before + stall.RemainCount - guild.Materials));
+            market.Stalls.Remove(stall);
+            if (!await store.SaveMarketAsync(market, [guild], economy)) code = ErrorCodes.GuildMissing;
+            else CaptureMarketResources(notices, guild);
+        }
+        var response = new UnlistFromBlackMarketRsp { Result = code };
+        return () => s.SendGameAsync(id, response);
+    }
+
+    private async Task<Func<Task>> MarketBuyAsync(GameSession s, uint id, ReadOnlyMemory<byte> body, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild, long now, OwnerNotices notices)
+    {
+        var req = BuyBlackMarketItemReq.Parser.ParseFrom(body.Span);
+        int code = gate != 0 ? gate : req.UnitPrice <= 0 || req.BuyCount <= 0 ? ErrorCodes.Parameter : 0;
+        var stalls = market.Stalls.Where(x => x.UnitPrice == req.UnitPrice && x.AvailableMs <= now
+            && x.ExpiresMs > now && x.RemainCount > 0 && x.GuildId != guild?.Id)
+            .OrderBy(x => x.CreatedMs).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
+        if (code == 0 && stalls.Sum(x => (decimal)x.RemainCount) < req.BuyCount) code = ErrorCodes.ItemsShort;
+        long total = 0;
+        if (code == 0)
+        {
+            try { total = checked(req.UnitPrice * req.BuyCount); }
+            catch (OverflowException) { code = ErrorCodes.Parameter; }
+        }
+        if (code == 0 && guild!.Money < total) code = ErrorCodes.GuildFundsShort;
+        long cap = Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
+        if (code == 0 && !req.Confirm && guild!.Materials > cap - req.BuyCount) code = ErrorCodes.Parameter;
+        if (code == 0)
+        {
+            code = ResolveMarketBuySellers(req, stalls, out var sellers);
+            if (code == 0)
+                code = await CommitMarketBuyAsync(s, req, market, guild!, stalls, sellers, total, cap, notices);
+        }
+        var response = new BuyBlackMarketItemRsp { Result = code };
+        return () => s.SendGameAsync(id, response);
+    }
+
+    private int ResolveMarketBuySellers(BuyBlackMarketItemReq req, GuildStore.MarketStall[] stalls,
+        out Dictionary<long, GuildStore.State> sellers)
+    {
+        var sellerMap = new Dictionary<long, GuildStore.State>();
+        sellers = sellerMap;
+        long selectedRemain = req.BuyCount;
+        foreach (var stall in stalls)
+        {
+            if (selectedRemain == 0) break;
+            if (!sellerMap.ContainsKey(stall.GuildId))
+            {
+                var seller = store.Get(stall.GuildId);
+                if (seller == null) return ErrorCodes.GuildMissing;
+                sellerMap.Add(stall.GuildId, seller);
+            }
+            selectedRemain -= Math.Min(selectedRemain, stall.RemainCount);
+        }
+        var prospectiveCredit = new Dictionary<long, decimal>();
+        long previewRemain = req.BuyCount;
+        long feeRate = Data.Config.PublicParams.Of(data).BlackMarketFeeRate ?? 250;
+        foreach (var stall in stalls)
+        {
+            if (previewRemain == 0) break;
+            long count = Math.Min(previewRemain, stall.RemainCount);
+            decimal amount = (decimal)count * req.UnitPrice;
+            decimal fee = decimal.Truncate(amount * feeRate / 10000m);
+            prospectiveCredit[stall.GuildId] = prospectiveCredit.GetValueOrDefault(stall.GuildId) + amount - fee;
+            previewRemain -= count;
+        }
+        return prospectiveCredit.Any(x => x.Value < 0 || x.Value > long.MaxValue - sellerMap[x.Key].Money)
+            ? ErrorCodes.Parameter : 0;
+    }
+
+    private async Task<int> CommitMarketBuyAsync(GameSession s, BuyBlackMarketItemReq req, GuildStore.MarketState market,
+        GuildStore.State guild, GuildStore.MarketStall[] stalls, Dictionary<long, GuildStore.State> sellers,
+        long total, long cap, OwnerNotices notices)
+    {
+        long remain = req.BuyCount, tradedAt = MarketNowMs(), totalFees = 0;
+        long beforeMaterials = guild.Materials;
+        var pub = Data.Config.PublicParams.Of(data);
+        long feeRate = pub.BlackMarketFeeRate ?? 250;
+        foreach (var stall in stalls)
+        {
+            if (remain == 0) break;
+            long count = Math.Min(remain, stall.RemainCount);
+            long amount = checked(count * req.UnitPrice);
+            // BlackMarketFeeRate=250 uses the project's 10000-unit percentage convention (inferred).
+            long fee = (long)((decimal)amount * feeRate / 10000m);
+            totalFees = checked(totalFees + fee);
+            var seller = sellers[stall.GuildId];
+            seller.Money = checked(seller.Money + amount - fee);
+            stall.RemainCount -= count;
+            remain -= count;
+            market.Trades.Add(new GuildStore.MarketTrade
+            {
+                Id = $"order-{++market.NextId}",
+                SellerGuildId = seller.Id, BuyerGuildId = guild.Id, UnitPrice = req.UnitPrice,
+                Count = count, Fee = fee, TimeMs = tradedAt
+            });
+        }
+        market.Stalls.RemoveAll(x => x.RemainCount == 0);
+        guild.Money -= total;
+        Journal(guild, EvPurchase, [s.Role!.Id], Str(s.Role.Name), Int(total), Int(req.BuyCount), Int(GuildMaterialItem));
+        guild.Materials = (long)Math.Min(cap, (decimal)guild.Materials + req.BuyCount);
+        RecordMarketPriceSample(market, req.UnitPrice, tradedAt, (int)Math.Clamp(pub.BlackMarketRecentAvgSample ?? 10, 1, 1000));
+        var economy = MarketEconomy(s, "buy", new
+        {
+            Request = req, Cap = cap,
+            Before = beforeMaterials, Stored = guild.Materials, Paid = total, Fee = totalFees,
+            Sellers = sellers.Keys.Order().ToArray()
+        });
+        if (totalFees > 0) economy.Sink(new(EconomyAssetKind.GuildResource, EconomyDenominations.GuildMoney),
+            totalFees, EconomyReason.GuildMarketFee);
+        MarketDiscard(economy, checked(beforeMaterials + req.BuyCount - guild.Materials));
+        if (!await store.SaveMarketAsync(market, [guild, .. sellers.Values], economy)) return ErrorCodes.GuildMissing;
+        CaptureMarketResources(notices, [guild, .. sellers.Values]);
+        foreach (var seller in sellers.Values)
+            foreach (var member in seller.Members.Values)
+                if (Online(member.RoleId) is { } peer)
+                {
+                    var packet = new BlackMarketSellRecordNtf();
+                    notices.Add(peer, () => peer.SendGameAsync(MarketSellRecordNtf, packet));
+                }
+        return 0;
+    }
+
+    private static void RecordMarketPriceSample(GuildStore.MarketState market, long unitPrice, long tradedAt, int sample)
+    {
+        market.RecentPrices.Add(unitPrice);
+        while (market.RecentPrices.Count > sample) market.RecentPrices.RemoveAt(0);
+        market.RecentAvgPrice = (long)(market.RecentPrices.Sum(x => (decimal)x) / market.RecentPrices.Count);
+        int hour = (int)(tradedAt / 3_600_000);
+        if (market.PriceHistory.LastOrDefault()?.DateHour == hour)
+            market.PriceHistory[^1].Average = market.RecentAvgPrice;
+        else market.PriceHistory.Add(new GuildStore.MarketPrice { Average = market.RecentAvgPrice, DateHour = hour });
+        if (market.PriceHistory.Count > 168) market.PriceHistory.RemoveRange(0, market.PriceHistory.Count - 168);
+    }
+
+    private async Task<Func<Task>> MarketSellRecordsAsync(GameSession s, uint id, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild)
+    {
+        var records = market.Trades.Where(x => x.SellerGuildId == guild?.Id).OrderByDescending(x => x.TimeMs).ToArray();
+        var rsp = new GetBlackMarketSellRecordsRsp { Result = gate != 0 ? gate : records.Length == 0 ? ErrorCodes.GuildMissing : 0 };
+        rsp.Records.AddRange(records.Select(x => new BlackMarketSellRecordInfo
+        {
+            OrderId = x.Id,
+            UnitPrice = x.UnitPrice, Count = x.Count, Fee = x.Fee, CounterpartGuildId = x.BuyerGuildId,
+            TradeTimeMs = x.TimeMs, IsRead = x.Read
+        }));
+        if (gate == 0 && records.Length > 0)
+        {
+            foreach (var record in records) record.Read = true;
+            await store.SaveMarketAsync(market, [], MarketEconomy(s, "read-sales", new { Guild = guild!.Id }));
+        }
+        return () => s.SendGameAsync(id, rsp);
+    }
+
+    private static Func<Task> MarketBuyRecordsReply(GameSession s, uint id, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild)
+    {
+        var records = market.Trades.Where(x => x.BuyerGuildId == guild?.Id).OrderByDescending(x => x.TimeMs).ToArray();
+        var rsp = new GetBlackMarketBuyRecordsRsp { Result = gate != 0 ? gate : records.Length == 0 ? ErrorCodes.GuildMissing : 0 };
+        rsp.Records.AddRange(records.Select(x => new BlackMarketBuyRecordInfo
+        {
+            OrderId = x.Id,
+            UnitPrice = x.UnitPrice, Count = x.Count, TradeTimeMs = x.TimeMs
+        }));
+        return () => s.SendGameAsync(id, rsp);
+    }
+
+    private async Task<Func<Task>> MarketUpdateAsync(GameSession s, uint id, ReadOnlyMemory<byte> body, int gate,
+        GuildStore.MarketState market, GuildStore.State? guild, OwnerNotices notices)
+    {
+        var req = UpdateBlackMarketBoothReq.Parser.ParseFrom(body.Span);
+        var stall = market.Stalls.FirstOrDefault(x => x.Id == req.StallUniqueId && x.GuildId == guild?.Id);
+        int code = gate != 0 ? gate : stall == null ? ErrorCodes.Parameter : CheckMarketPrice(req.UnitPrice, market);
+        long step = Data.Config.PublicParams.Of(data).BlackMarketSellStep ?? 10;
+        if (code == 0 && (req.Count <= 0 || step <= 0 || req.Count % step != 0)) code = ErrorCodes.Parameter;
+        long difference = stall == null ? 0 : req.Count - stall.RemainCount;
+        if (code == 0 && difference > 0 && guild!.Materials < difference) code = ErrorCodes.ItemsShort;
+        long cap = Data.Config.GuildSettings.Of(data).GuildMaterialsMax ?? 1000000;
+        if (code == 0 && difference < 0 && !req.Confirm && guild!.Materials > cap + difference) code = ErrorCodes.Parameter;
+        if (code == 0)
+        {
+            long before = guild!.Materials;
+            guild!.Materials = difference > 0 ? guild.Materials - difference : Math.Min(cap, guild.Materials - difference);
+            stall!.UnitPrice = req.UnitPrice;
+            stall.TotalCount += difference;
+            stall.RemainCount = req.Count;
+            var economy = MarketEconomy(s, "update", new
+            {
+                Request = req, Cap = cap, Before = before,
+                Difference = difference, Stored = guild.Materials
+            });
+            MarketDiscard(economy, checked(before - difference - guild.Materials));
+            if (!await store.SaveMarketAsync(market, [guild], economy)) code = ErrorCodes.GuildMissing;
+            else CaptureMarketResources(notices, guild);
+        }
+        var response = new UpdateBlackMarketBoothRsp { Result = code };
+        return () => s.SendGameAsync(id, response);
     }
 
     private async Task ExpireMarketAsync(GuildStore.MarketState market, HashSet<string> expiredIds,

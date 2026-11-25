@@ -194,117 +194,146 @@ internal sealed class ProgressionEconomyTransactionPlan(RoleItemPlan child, Econ
         Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
         Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after)
     {
-        static Dictionary<EconomyAsset, long> Sum(IReadOnlyList<EconomyQuantity> quantities)
-        {
-            var values = new Dictionary<EconomyAsset, long>();
-            foreach (var q in quantities) values[q.Asset] = checked(values.GetValueOrDefault(q.Asset) + q.Quantity);
-            return values;
-        }
-        var costs = Sum(mutation.Costs);
-        var goods = Sum(mutation.Goods);
+        var costs = SumQuantities(mutation.Costs);
+        var goods = SumQuantities(mutation.Goods);
         var legs = new List<EconomyLeg>();
         int edge = 0;
         var reasons = Reasons(mutation.CommandKind);
         foreach (var asset in before.Keys.Select(x => x.Asset).Concat(after.Keys.Select(x => x.Asset))
             .Concat(costs.Keys).Concat(goods.Keys).Distinct().OrderBy(x => x.Kind).ThenBy(x => x.Id))
+            BuildAssetLegs(asset, before, after, costs.GetValueOrDefault(asset), goods.GetValueOrDefault(asset),
+                reasons, legs, ref edge);
+        ChainItemFingerprints(legs, before, after);
+        return legs;
+    }
+
+    private static Dictionary<EconomyAsset, long> SumQuantities(IReadOnlyList<EconomyQuantity> quantities)
+    {
+        var values = new Dictionary<EconomyAsset, long>();
+        foreach (var q in quantities) values[q.Asset] = checked(values.GetValueOrDefault(q.Asset) + q.Quantity);
+        return values;
+    }
+
+    private void BuildAssetLegs(EconomyAsset asset,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after,
+        long cost, long good, (EconomyReason Cost, EconomyReason Goods) reasons, List<EconomyLeg> legs, ref int edge)
+    {
+        var opening = before.Values.Where(x => x.Asset == asset).OrderBy(x => x.Location.Key, StringComparer.Ordinal)
+            .Select(x => new Remaining(x)).ToArray();
+        var closing = after.Values.Where(x => x.Asset == asset).OrderBy(x => x.Location.Key, StringComparer.Ordinal)
+            .Select(x => new Remaining(x)).ToArray();
+        long oldTotal = opening.Sum(x => x.Quantity), newTotal = closing.Sum(x => x.Quantity);
+        if (checked(newTotal - oldTotal) != checked(good - cost))
+            throw new InvalidOperationException($"Family semantic cost/goods disagree with committed asset {asset}.");
+        var matches = new List<(EconomyHolding Old, EconomyHolding New, long Quantity)>();
+        // Retain exact item instances before assigning a semantic debit. Otherwise an emblem feed
+        // with the same entry as its target could debit the target GUID instead of the removed feed.
+        foreach (var old in opening)
+            foreach (var next in closing.Where(x => x.Quantity > 0 &&
+                (asset.Kind == EconomyAssetKind.Item
+                    ? x.Holding.Location.Instance == old.Holding.Location.Instance
+                    : x.Holding.Location == old.Holding.Location)))
+            {
+                long amount = Math.Min(old.Quantity, next.Quantity);
+                if (amount == 0) break;
+                matches.Add((old.Holding, next.Holding, amount));
+                old.Quantity -= amount; next.Quantity -= amount;
+            }
+        ConsumeSemanticDeltas(asset, opening, closing, matches, before, after, ref cost, ref good, reasons, legs);
+        EmitRemainingTransfers(asset, opening, closing, matches, before, after, legs, ref edge);
+    }
+
+    private void ConsumeSemanticDeltas(EconomyAsset asset, Remaining[] opening, Remaining[] closing,
+        List<(EconomyHolding Old, EconomyHolding New, long Quantity)> matches,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after,
+        ref long cost, ref long good, (EconomyReason Cost, EconomyReason Goods) reasons, List<EconomyLeg> legs)
+    {
+        foreach (var item in opening)
         {
-            var opening = before.Values.Where(x => x.Asset == asset).OrderBy(x => x.Location.Key, StringComparer.Ordinal)
-                .Select(x => new Remaining(x)).ToArray();
-            var closing = after.Values.Where(x => x.Asset == asset).OrderBy(x => x.Location.Key, StringComparer.Ordinal)
-                .Select(x => new Remaining(x)).ToArray();
-            long cost = costs.GetValueOrDefault(asset), good = goods.GetValueOrDefault(asset);
-            long oldTotal = opening.Sum(x => x.Quantity), newTotal = closing.Sum(x => x.Quantity);
-            if (checked(newTotal - oldTotal) != checked(good - cost))
-                throw new InvalidOperationException($"Family semantic cost/goods disagree with committed asset {asset}.");
-            var matches = new List<(EconomyHolding Old, EconomyHolding New, long Quantity)>();
-            // Retain exact item instances before assigning a semantic debit. Otherwise an emblem feed
-            // with the same entry as its target could debit the target GUID instead of the removed feed.
-            foreach (var old in opening)
-                foreach (var next in closing.Where(x => x.Quantity > 0 &&
-                    (asset.Kind == EconomyAssetKind.Item
-                        ? x.Holding.Location.Instance == old.Holding.Location.Instance
-                        : x.Holding.Location == old.Holding.Location)))
-                {
-                    long amount = Math.Min(old.Quantity, next.Quantity);
-                    if (amount == 0) break;
-                    matches.Add((old.Holding, next.Holding, amount));
-                    old.Quantity -= amount; next.Quantity -= amount;
-                }
-            foreach (var item in opening)
+            long amount = Math.Min(cost, item.Quantity);
+            if (amount == 0) continue;
+            AddLeg(legs, EconomyLegKind.Sink, reasons.Cost, asset, item.Holding.Location, -amount, 0,
+                item.Holding.Fingerprint, after.GetValueOrDefault((asset, item.Holding.Location))?.Fingerprint);
+            item.Quantity -= amount; cost -= amount;
+        }
+        foreach (var item in closing)
+        {
+            long amount = Math.Min(good, item.Quantity);
+            if (amount == 0) continue;
+            AddLeg(legs, EconomyLegKind.Source, reasons.Goods, asset, item.Holding.Location, amount, 0,
+                before.GetValueOrDefault((asset, item.Holding.Location))?.Fingerprint, item.Holding.Fingerprint);
+            item.Quantity -= amount; good -= amount;
+        }
+        // A same-denomination cost and result can cancel visibly. Bind any remaining overlap to
+        // concrete retained holdings rather than dropping either side of the semantic intent.
+        if (cost > 0 && good > 0)
+            for (int i = 0; i < matches.Count; i++)
             {
-                long amount = Math.Min(cost, item.Quantity);
+                var match = matches[i];
+                long amount = Math.Min(Math.Min(cost, good), match.Quantity);
                 if (amount == 0) continue;
-                Add(EconomyLegKind.Sink, reasons.Cost, asset, item.Holding.Location, -amount, 0,
-                    item.Holding.Fingerprint,
-                    after.GetValueOrDefault((asset, item.Holding.Location))?.Fingerprint);
-                item.Quantity -= amount; cost -= amount;
+                AddLeg(legs, EconomyLegKind.Sink, reasons.Cost, asset, match.Old.Location, -amount, 0,
+                    match.Old.Fingerprint, match.Old.Fingerprint);
+                AddLeg(legs, EconomyLegKind.Source, reasons.Goods, asset, match.New.Location, amount, 0,
+                    match.New.Fingerprint, match.New.Fingerprint);
+                matches[i] = (match.Old, match.New, match.Quantity - amount);
+                cost -= amount; good -= amount;
+                if (cost == 0 || good == 0) break;
             }
-            foreach (var item in closing)
+        if (cost != 0 || good != 0) throw new InvalidOperationException("Semantic amount exceeds concrete holdings.");
+    }
+
+    private void EmitRemainingTransfers(EconomyAsset asset, Remaining[] opening, Remaining[] closing,
+        List<(EconomyHolding Old, EconomyHolding New, long Quantity)> matches,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after,
+        List<EconomyLeg> legs, ref int edge)
+    {
+        // Residual units have no semantic source/sink and therefore require an explicit transfer.
+        foreach (var old in opening.Where(x => x.Quantity > 0))
+            while (old.Quantity > 0)
             {
-                long amount = Math.Min(good, item.Quantity);
-                if (amount == 0) continue;
-                Add(EconomyLegKind.Source, reasons.Goods, asset, item.Holding.Location, amount, 0,
-                    before.GetValueOrDefault((asset, item.Holding.Location))?.Fingerprint,
-                    item.Holding.Fingerprint);
-                item.Quantity -= amount; good -= amount;
+                var next = closing.Where(x => x.Quantity > 0)
+                    .OrderByDescending(x => asset.Kind == EconomyAssetKind.Item &&
+                        x.Holding.Location.Instance == old.Holding.Location.Instance)
+                    .ThenByDescending(x => x.Holding.Location == old.Holding.Location).FirstOrDefault();
+                if (next is null) throw new InvalidOperationException("Unmatched family asset holding.");
+                long amount = Math.Min(old.Quantity, next.Quantity);
+                matches.Add((old.Holding, next.Holding, amount));
+                old.Quantity -= amount; next.Quantity -= amount;
             }
-            // A same-denomination cost and result can cancel visibly. Bind any remaining overlap to
-            // concrete retained holdings rather than dropping either side of the semantic intent.
-            if (cost > 0 && good > 0)
-                for (int i = 0; i < matches.Count; i++)
-                {
-                    var match = matches[i];
-                    long amount = Math.Min(Math.Min(cost, good), match.Quantity);
-                    if (amount == 0) continue;
-                    Add(EconomyLegKind.Sink, reasons.Cost, asset, match.Old.Location, -amount, 0,
-                        match.Old.Fingerprint, match.Old.Fingerprint);
-                    Add(EconomyLegKind.Source, reasons.Goods, asset, match.New.Location, amount, 0,
-                        match.New.Fingerprint, match.New.Fingerprint);
-                    matches[i] = (match.Old, match.New, match.Quantity - amount);
-                    cost -= amount; good -= amount;
-                    if (cost == 0 || good == 0) break;
-                }
-            if (cost != 0 || good != 0) throw new InvalidOperationException("Semantic amount exceeds concrete holdings.");
-            // Residual units have no semantic source/sink and therefore require an explicit transfer.
-            foreach (var old in opening.Where(x => x.Quantity > 0))
-                while (old.Quantity > 0)
-                {
-                    var next = closing.Where(x => x.Quantity > 0)
-                        .OrderByDescending(x => asset.Kind == EconomyAssetKind.Item &&
-                            x.Holding.Location.Instance == old.Holding.Location.Instance)
-                        .ThenByDescending(x => x.Holding.Location == old.Holding.Location).FirstOrDefault();
-                    if (next is null) throw new InvalidOperationException("Unmatched family asset holding.");
-                    long amount = Math.Min(old.Quantity, next.Quantity);
-                    matches.Add((old.Holding, next.Holding, amount));
-                    old.Quantity -= amount; next.Quantity -= amount;
-                }
-            if (closing.Any(x => x.Quantity != 0)) throw new InvalidOperationException("Unmatched family closing asset.");
-            foreach (var match in matches)
+        if (closing.Any(x => x.Quantity != 0)) throw new InvalidOperationException("Unmatched family closing asset.");
+        foreach (var match in matches)
+        {
+            if (match.Quantity == 0) continue;
+            if (match.Old.Location == match.New.Location)
             {
-                if (match.Quantity == 0) continue;
-                if (match.Old.Location == match.New.Location)
-                {
-                    if (match.Old.Fingerprint != match.New.Fingerprint &&
-                        !legs.Any(leg => leg.Asset == asset && leg.Location == match.Old.Location) &&
-                        !matches.Any(other => other.Old.Location != other.New.Location &&
-                            (other.Old.Location == match.Old.Location ||
-                             other.New.Location == match.Old.Location)))
-                        Add(EconomyLegKind.Metadata, EconomyReason.ItemMetadata, asset, match.Old.Location,
-                            0, 0, match.Old.Fingerprint, match.New.Fingerprint);
-                }
-                else
-                {
-                    int pair = ++edge;
-                    Add(EconomyLegKind.Transfer, EconomyReason.InventoryRelocation, asset,
-                        match.Old.Location, -match.Quantity, pair, match.Old.Fingerprint,
-                        after.GetValueOrDefault((asset, match.Old.Location))?.Fingerprint);
-                    Add(EconomyLegKind.Transfer, EconomyReason.InventoryRelocation, asset,
-                        match.New.Location, match.Quantity, pair,
-                        before.GetValueOrDefault((asset, match.New.Location))?.Fingerprint,
-                        match.New.Fingerprint);
-                }
+                if (match.Old.Fingerprint != match.New.Fingerprint &&
+                    !legs.Any(leg => leg.Asset == asset && leg.Location == match.Old.Location) &&
+                    !matches.Any(other => other.Old.Location != other.New.Location &&
+                        (other.Old.Location == match.Old.Location || other.New.Location == match.Old.Location)))
+                    AddLeg(legs, EconomyLegKind.Metadata, EconomyReason.ItemMetadata, asset, match.Old.Location,
+                        0, 0, match.Old.Fingerprint, match.New.Fingerprint);
+            }
+            else
+            {
+                int pair = ++edge;
+                AddLeg(legs, EconomyLegKind.Transfer, EconomyReason.InventoryRelocation, asset,
+                    match.Old.Location, -match.Quantity, pair, match.Old.Fingerprint,
+                    after.GetValueOrDefault((asset, match.Old.Location))?.Fingerprint);
+                AddLeg(legs, EconomyLegKind.Transfer, EconomyReason.InventoryRelocation, asset,
+                    match.New.Location, match.Quantity, pair,
+                    before.GetValueOrDefault((asset, match.New.Location))?.Fingerprint, match.New.Fingerprint);
             }
         }
+    }
+
+    private static void ChainItemFingerprints(List<EconomyLeg> legs,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,
+        Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> after)
+    {
         // One item location may emit several debit/credit legs (for example a stack split into
         // multiple socket GUIDs). Chain each fingerprint through that location's leg order.
         foreach (var group in legs.Select((leg, index) => (leg, index))
@@ -325,14 +354,13 @@ internal sealed class ProgressionEconomyTransactionPlan(RoleItemPlan child, Econ
                 };
             }
         }
-        return legs;
-
-        void Add(EconomyLegKind kind, EconomyReason reason, EconomyAsset asset, EconomyLocation location,
-            long delta, int edgeNumber, string? prior, string? next) =>
-            legs.Add(new EconomyLeg(0, mutation.OperationId, legs.Count, kind, reason, asset, location,
-                delta, edgeNumber, BeforeFingerprint: asset.Kind == EconomyAssetKind.Item ? prior : null,
-                AfterFingerprint: asset.Kind == EconomyAssetKind.Item ? next : null, SourceKey: mutation.SourceKey));
     }
+
+    private void AddLeg(List<EconomyLeg> legs, EconomyLegKind kind, EconomyReason reason, EconomyAsset asset,
+        EconomyLocation location, long delta, int edgeNumber, string? prior, string? next) =>
+        legs.Add(new EconomyLeg(0, mutation.OperationId, legs.Count, kind, reason, asset, location,
+            delta, edgeNumber, BeforeFingerprint: asset.Kind == EconomyAssetKind.Item ? prior : null,
+            AfterFingerprint: asset.Kind == EconomyAssetKind.Item ? next : null, SourceKey: mutation.SourceKey));
 
     private sealed class Remaining(EconomyHolding holding)
     {

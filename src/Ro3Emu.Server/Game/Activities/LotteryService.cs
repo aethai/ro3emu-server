@@ -264,124 +264,143 @@ public sealed partial class LotteryService
                 return;
             }
             var row = _data.Row("DrawConfig", request.PoolId);
-            var source = session.Activities.Lottery ?? new DBLotteryData();
             long day = _activityClock.Day(_clock.GetUtcNow().ToUnixTimeSeconds());
-            var next = Project(session, source, session.Activities.LotteryDay != day);
+            var next = Project(session, session.Activities.Lottery ?? new DBLotteryData(), session.Activities.LotteryDay != day);
             var response = new LotteryResp
             {
                 Type = request.Type,
                 PoolData = next.LotteryPool.GetValueOrDefault(request.PoolId)?.Clone() ?? new LotteryPoolData { PoolId = request.PoolId }
             };
-            int code = 0;
-            if (row == null || request.PoolId <= 0) code = ErrorCodes.Parameter;
-            else if (!response.PoolData.IsOpen) code = ErrorCodes.ActivityClosed;
-            string field = request.Type switch
-            {
-                ELotteryPoolType.GachaCountMin => "_kMinRoll",
-                ELotteryPoolType.GachaCountMid => "_kMidRoll",
-                ELotteryPoolType.GachaCountMax => "_kMaxRoll",
-                _ => "",
-            };
-            long[] mode = row is { } valid && field.Length > 0 ? Flat(valid, field) : [];
-            if (code == 0 && (mode.Length != 2 || mode[0] <= 0 || mode[1] <= 0 || mode[1] > 50)) code = ErrorCodes.Parameter;
-            int count = code == 0 ? (int)mode[1] : 0;
-            int ticket = code == 0 ? checked((int)mode[0]) : 0;
-            long[] limit = row is { } configured ? Flat(configured, "_kMaxCnt") : [];
-            if (code == 0 && (limit.Length != 2 || limit[0] is not (1 or 2) || limit[1] <= 0
-                || (long)response.PoolData.DailyCount + count > limit[1])) code = ErrorCodes.AttemptsExhausted;
-            if (code == 0 && _character.CountOf(session, ticket) < count) code = ErrorCodes.ItemsShort;
-            if (code == 0 && session.Pets == null) code = ErrorCodes.FeatureUnavailable;
+            int code = ValidateDraw(session, request, row, response.PoolData, out int ticket, out int count);
             if (code == 0)
             {
                 var petState = session.Pets!.Clone();
                 var goods = new List<AwardGrant>();
-                var groups = Flat(row!.Value, "_kSubBanner").ToHashSet();
-                var guaranteed = Flat(row.Value, "_kGuaranteedBanner").ToHashSet();
-                int pityKey = checked((int)GameData.Int(row.Value, "_iType"));
-                if (!next.PityRecords.TryGetValue(pityKey, out var pity)) next.PityRecords[pityKey] = pity = new LotteryPityRecord();
-                int guarantee = checked((int)GameData.Int(row.Value, "_iGuaranteedCnt"));
-                for (int index = 0; index < count; index++)
-                {
-                    bool forced = guarantee > 0 && pity.PityCount + 1 >= guarantee;
-                    var outcome = Roll(forced ? guaranteed : groups);
-                    if (outcome == null) { code = ErrorCodes.ItemNoConfig; break; }
-                    bool hit = guaranteed.Contains(outcome.Group);
-                    pity.TotalCount++;
-                    pity.PityCount = hit ? 0 : pity.PityCount + 1;
-                    pity.MustCount = guarantee;
-                    if (forced) pity.HitPityCount++;
-                    var result = new LotteryItemData
-                    {
-                        ItemId = outcome.Id, ItemCount = outcome.Count,
-                        IsPet = outcome.Kind == 1, PoolId = request.PoolId
-                    };
-                    if (outcome.Kind == 1)
-                    {
-                        if (!_pets.TryStageLotteryPet(petState, outcome.Id, out var broken)) { code = ErrorCodes.PetNoConfig; break; }
-                        if (broken is { } material)
-                        {
-                            result.IsBroken = true;
-                            goods.Add(new AwardGrant(material.Entry, material.Count));
-                        }
-                    }
-                    else goods.Add(new AwardGrant(outcome.Id, outcome.Count));
-                    response.ItemList.Add(result);
-                }
+                code = RollDrawOutcomes(row!.Value, request, count, next, petState, goods, response, out int pityKey, out var pity);
                 if (code == 0)
-                {
-                    long[] bonus = Flat(row.Value, "_kRollNum");
-                    if (bonus is [> 0, > 0] && _data.Row("ItemConfig", bonus[0]) != null)
-                        goods.Add(new AwardGrant(checked((int)bonus[0]), checked((int)(bonus[1] * count))));
-                    next.LotteryPool[request.PoolId].DailyCount += count;
-                    next.DailyRecord[request.PoolId] = new LotteryModuleDailyCount { Count = next.LotteryPool[request.PoolId].DailyCount };
-                    _pets.FinalizeLotteryPets(petState);
-                    byte[] saved = Pack(next, day), petBytes = petState.ToByteArray();
-                    // A draw with a pet result is the E05b pet family envelope (pet legs and refunds); any other draw is the
-                    // 13f event envelope. One builder carries one envelope.
-                    bool petDraw = response.ItemList.Any(result => result.IsPet);
-                    var familyEconomy = petDraw
-                        ? _pets.LotteryEconomy(session, request.PoolId, ticket, count, petState, saved,
-                            [.. goods.Select(grant => (grant.Entry, grant.Count))], response.ItemList)
-                        : null;
-                    // The client sends no request ID. The source is the server-admitted draw sequence;
-                    // a later request starts a new sequence only after this commit publishes pity state.
-                    string sourceKey = $"lottery/draw/{role.Id}/{pityKey}/{pity.TotalCount}";
-                    var resolved = response.ItemList.Select(item => new
-                    {
-                        item.ItemId, item.ItemCount, item.IsPet, item.IsBroken, item.PoolId
-                    }).ToArray();
-                    var economy = petDraw ? null : EventEconomy.ForRole(_data, session, "lottery-draw", sourceKey,
-                        [(ticket, (long)count)], goods,
-                        new
-                        {
-                            request.PoolId, Type = (int)request.Type, Day = day, Results = resolved,
-                            Lottery = Convert.ToBase64String(saved), Pets = Convert.ToBase64String(petBytes)
-                        });
-                    if (!await _character.ApplyAwardAsync(session, new AwardPlan(0, 0, goods),
-                            costs: [(ticket, count)], persist: transaction =>
-                            {
-                                transaction.RoleBlob(session.Role!.Id, "lottery", saved);
-                                transaction.RoleBlob(session.Role.Id, "pets", petBytes);
-                                if (economy != null) transaction.WithEventEconomy(economy);
-                            }, stateLockHeld: true, committed: () =>
-                            {
-                                session.Activities.Lottery = next;
-                                session.Activities.LotteryDay = day;
-                                session.Pets = petState;
-                            }, familyEconomy: familyEconomy)) code = ErrorCodes.ItemsShort;
-                    else
-                    {
-                        await CharacterService.SyncAsync(session, LotterySync, next.Clone());
-                        await _pets.SyncLotteryPetsAsync(session);
-                        response.PoolData = next.LotteryPool[request.PoolId].Clone();
-                        foreach (var (key, value) in next.PityRecords) response.PityRecords[key] = value.Clone();
-                    }
-                }
+                    code = await CommitDrawAsync(new DrawCommit(session, role, request, row.Value, day, next, petState,
+                        goods, ticket, count, pityKey, pity, response));
             }
             if (code != 0) response.ItemList.Clear();
             response.Result = code;
             await session.SendGameAsync(DrawRequest, response);
         }
         finally { session.ActivityGate.Release(); }
+    }
+
+    private sealed record DrawCommit(GameSession Session, Role Role, LotteryReq Request, JsonElement Row, long Day,
+        DBLotteryData Next, DBPetInfo PetState, List<AwardGrant> Goods, int Ticket, int Count, int PityKey,
+        LotteryPityRecord Pity, LotteryResp Response);
+
+    private int ValidateDraw(GameSession session, LotteryReq request, JsonElement? row, LotteryPoolData pool,
+        out int ticket, out int count)
+    {
+        ticket = count = 0;
+        if (row == null || request.PoolId <= 0) return ErrorCodes.Parameter;
+        if (!pool.IsOpen) return ErrorCodes.ActivityClosed;
+        string field = request.Type switch
+        {
+            ELotteryPoolType.GachaCountMin => "_kMinRoll",
+            ELotteryPoolType.GachaCountMid => "_kMidRoll",
+            ELotteryPoolType.GachaCountMax => "_kMaxRoll",
+            _ => "",
+        };
+        long[] mode = field.Length > 0 ? Flat(row.Value, field) : [];
+        if (mode.Length != 2 || mode[0] <= 0 || mode[1] <= 0 || mode[1] > 50) return ErrorCodes.Parameter;
+        count = (int)mode[1];
+        ticket = checked((int)mode[0]);
+        long[] limit = Flat(row.Value, "_kMaxCnt");
+        if (limit.Length != 2 || limit[0] is not (1 or 2) || limit[1] <= 0 || (long)pool.DailyCount + count > limit[1])
+            return ErrorCodes.AttemptsExhausted;
+        if (_character.CountOf(session, ticket) < count) return ErrorCodes.ItemsShort;
+        return session.Pets == null ? ErrorCodes.FeatureUnavailable : 0;
+    }
+
+    private int RollDrawOutcomes(JsonElement row, LotteryReq request, int count, DBLotteryData next, DBPetInfo petState,
+        List<AwardGrant> goods, LotteryResp response, out int pityKey, out LotteryPityRecord pity)
+    {
+        var groups = Flat(row, "_kSubBanner").ToHashSet();
+        var guaranteed = Flat(row, "_kGuaranteedBanner").ToHashSet();
+        pityKey = checked((int)GameData.Int(row, "_iType"));
+        if (!next.PityRecords.TryGetValue(pityKey, out pity!)) next.PityRecords[pityKey] = pity = new LotteryPityRecord();
+        int guarantee = checked((int)GameData.Int(row, "_iGuaranteedCnt"));
+        for (int index = 0; index < count; index++)
+        {
+            bool forced = guarantee > 0 && pity.PityCount + 1 >= guarantee;
+            var outcome = Roll(forced ? guaranteed : groups);
+            if (outcome == null) return ErrorCodes.ItemNoConfig;
+            bool hit = guaranteed.Contains(outcome.Group);
+            pity.TotalCount++;
+            pity.PityCount = hit ? 0 : pity.PityCount + 1;
+            pity.MustCount = guarantee;
+            if (forced) pity.HitPityCount++;
+            var result = new LotteryItemData
+            {
+                ItemId = outcome.Id, ItemCount = outcome.Count,
+                IsPet = outcome.Kind == 1, PoolId = request.PoolId
+            };
+            if (outcome.Kind == 1)
+            {
+                if (!_pets.TryStageLotteryPet(petState, outcome.Id, out var broken)) return ErrorCodes.PetNoConfig;
+                if (broken is { } material)
+                {
+                    result.IsBroken = true;
+                    goods.Add(new AwardGrant(material.Entry, material.Count));
+                }
+            }
+            else goods.Add(new AwardGrant(outcome.Id, outcome.Count));
+            response.ItemList.Add(result);
+        }
+        return 0;
+    }
+
+    private async Task<int> CommitDrawAsync(DrawCommit draw)
+    {
+        var (session, role, request, row, day, next, petState, goods, ticket, count, pityKey, pity, response) = draw;
+        long[] bonus = Flat(row, "_kRollNum");
+        if (bonus is [> 0, > 0] && _data.Row("ItemConfig", bonus[0]) != null)
+            goods.Add(new AwardGrant(checked((int)bonus[0]), checked((int)(bonus[1] * count))));
+        next.LotteryPool[request.PoolId].DailyCount += count;
+        next.DailyRecord[request.PoolId] = new LotteryModuleDailyCount { Count = next.LotteryPool[request.PoolId].DailyCount };
+        _pets.FinalizeLotteryPets(petState);
+        byte[] saved = Pack(next, day), petBytes = petState.ToByteArray();
+        // A draw with a pet result is the E05b pet family envelope (pet legs and refunds); any other draw is the
+        // 13f event envelope. One builder carries one envelope.
+        bool petDraw = response.ItemList.Any(result => result.IsPet);
+        var familyEconomy = petDraw
+            ? _pets.LotteryEconomy(session, request.PoolId, ticket, count, petState, saved,
+                [.. goods.Select(grant => (grant.Entry, grant.Count))], response.ItemList)
+            : null;
+        // The client sends no request ID. The source is the server-admitted draw sequence;
+        // a later request starts a new sequence only after this commit publishes pity state.
+        string sourceKey = $"lottery/draw/{role.Id}/{pityKey}/{pity.TotalCount}";
+        var resolved = response.ItemList.Select(item => new
+        {
+            item.ItemId, item.ItemCount, item.IsPet, item.IsBroken, item.PoolId
+        }).ToArray();
+        var economy = petDraw ? null : EventEconomy.ForRole(_data, session, "lottery-draw", sourceKey,
+            [(ticket, (long)count)], goods,
+            new
+            {
+                request.PoolId, Type = (int)request.Type, Day = day, Results = resolved,
+                Lottery = Convert.ToBase64String(saved), Pets = Convert.ToBase64String(petBytes)
+            });
+        if (!await _character.ApplyAwardAsync(session, new AwardPlan(0, 0, goods),
+                costs: [(ticket, count)], persist: transaction =>
+                {
+                    transaction.RoleBlob(role.Id, "lottery", saved);
+                    transaction.RoleBlob(role.Id, "pets", petBytes);
+                    if (economy != null) transaction.WithEventEconomy(economy);
+                }, stateLockHeld: true, committed: () =>
+                {
+                    session.Activities.Lottery = next;
+                    session.Activities.LotteryDay = day;
+                    session.Pets = petState;
+                }, familyEconomy: familyEconomy)) return ErrorCodes.ItemsShort;
+        await CharacterService.SyncAsync(session, LotterySync, next.Clone());
+        await _pets.SyncLotteryPetsAsync(session);
+        response.PoolData = next.LotteryPool[request.PoolId].Clone();
+        foreach (var (key, value) in next.PityRecords) response.PityRecords[key] = value.Clone();
+        return 0;
     }
 }

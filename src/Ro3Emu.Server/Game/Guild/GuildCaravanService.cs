@@ -892,65 +892,8 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                     if (s.Owner is { } owner) scope.Context.Pin(owner);
                     try
                     {
-                        if (!ReferenceEquals(s.Role, helperRole) || !ReferenceEquals(s.Attachment, helperAttachment)
-                            || !ReferenceEquals(s.Owner, helperOwner) || s.Owner?.LifecycleEpoch != helperEpoch
-                            || Guild(s)?.Id != guild.Id) throw new CaravanMembershipChangedException();
-                        var own = await EnsureAsync(s, guild);
-                        var target = guild.Members.ContainsKey(req.PlayerID) ? Read(req.PlayerID) : null;
-                        var sku = target == null ? null : Slot(target, req.SkuIndex);
-                        resp.Result = req.PlayerID == helperId ? ErrorCodes.CaravanSelfHelp
-                            : target == null || target.GuildId != guild.Id ? ErrorCodes.GuildMemberMissing
-                            : req.DayVersion != Version(guild.Id, own.Day) ? ErrorCodes.CaravanOrderExpired
-                            : sku == null ? ErrorCodes.Parameter : 0;
-                        if (resp.Result == 0 && target!.Day != own.Day) resp.Result = ErrorCodes.CaravanOrderExpired;
-                        if (resp.Result == 0 && sku!.Status != 2) resp.Result = ErrorCodes.CaravanRequestMissing;
-                        if (resp.Result == 0 && own.HelpOtherCount >= (Data.Config.GuildSettings.Of(_data).GuildTransportHelpDayNum ?? 3))
-                            resp.Result = ErrorCodes.CaravanHelpLimit;
-                        if (resp.Result == 0 && _data.Row("GuildTransportConfig", sku!.CfgId) is { } row)
-                        {
-                            int entry = (int)GameData.Int(row, "_iItem"), count = (int)GameData.Int(row, "_iNum");
-                            long targetAward = SlotAward(sku, target!.CurRound);
-                            long helperAward = GameData.Int(row, "_iAward");
-                            if (entry <= 0 || count <= 0 || targetAward <= 0 || helperAward <= 0) resp.Result = ErrorCodes.Unknown;
-                            else
-                            {
-                                var targetNext = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(target))!;
-                                var slot = targetNext.Skus.Single(x => x.Index == req.SkuIndex);
-                                slot.Status = 1; slot.HelperName = helperName; slot.HelperId = helperId; slot.ReqHelpTime = 0;
-                                var targetOnline = _sessions.ByRole(req.PlayerID);
-                                var targetPlan = _awards.ResolveForProgress(targetOnline?.Progress ?? _roles.LoadProgress(req.PlayerID), targetAward);
-                                // The helper books the recipient's configured award now; personal grants remain pending.
-                                targetNext.PendingAwards.Add(new PendingAward
-                                {
-                                    SourceKey = $"guild-caravan:help:{guild.Id}:{req.PlayerID}:{target.Day}:{target.CurRound}:{req.SkuIndex}",
-                                    GuildId = guild.Id, GuildBooked = true,
-                                    Grants = [.. targetPlan.Grants.Select(g => new PendingGrant
-                                    { Entry = g.Entry, Count = g.Count, BindType = g.BindType, ExpireTimeStamp = g.ExpireTimeStamp })]
-                                });
-                                long targetFunds = targetPlan.Grants.Where(g => g.Entry == 104).Sum(g => (long)g.Count);
-                                long targetContribution = targetPlan.Grants.Where(g => g.Entry == 102).Sum(g => (long)g.Count);
-                                var reward = await ExchangeAwardAsync(s, own, helperAward, guild.Id, [(entry, count)],
-                                    next => next.HelpOtherCount++, tx =>
-                                    {
-                                        EnlistMemberSave(tx, req.PlayerID, guild.Id, targetNext, true);
-                                        if (targetFunds > 0 || targetContribution > 0)
-                                            _guilds.EnlistCaravanReward(guild.Id, req.PlayerID, targetFunds, targetContribution, tx);
-                                    }, valid: () => _guilds.ForRole(req.PlayerID)?.Id == guild.Id,
-                                    deferResourceRefresh: true,
-                                    stateLockHeld: scope.CharacterLocked,
-                                    sourceKey: $"guild-caravan:help:{guild.Id}:{req.PlayerID}:{target.Day}:{target.CurRound}:{req.SkuIndex}",
-                                    extraEffects: PendingCreationEffects(req.PlayerID, guild.Id, targetPlan));
-                                if (reward == null) resp.Result = ErrorCodes.ItemsShort;
-                                else
-                                {
-                                    resp.ItemId = entry; resp.ItemNum = count;
-                                    committedOwn = own;
-                                    committedTarget = targetNext;
-                                    refreshResources = targetFunds > 0 || targetContribution > 0
-                                        || reward.Rewards.Any(item => item.ItemEntry is 102 or 104);
-                                }
-                            }
-                        }
+                        (committedOwn, committedTarget, refreshResources) = await CommitHelpOtherLockedAsync(
+                            s, guild, req, resp, helperRole, helperAttachment, helperOwner, helperEpoch, scope.CharacterLocked);
                     }
                     catch (CaravanMembershipChangedException) { resp.Result = ErrorCodes.NotInGuild; }
                 }
@@ -969,61 +912,121 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
                         && Read(helperId) is { } currentOwn && currentOwn.GuildId == guild.Id)
                         await PublishAsync(s, currentOwn);
                 }
-                // Delivery is intentionally outside the helper's two-role reservation and old guild gate.
-                // A guild migration may replace the recipient's order while its StateLock is unavailable.
-                if (_sessions.ByRole(req.PlayerID) is { } online
-                    && online.Attachment?.Cancelled != true && online.Owner?.State != RoleOwnerState.Quiescing
-                    && Guild(online)?.Id == guild.Id)
-                {
-                    var recipientRole = online.Role;
-                    var recipientAttachment = online.Attachment;
-                    var recipientOwner = online.Owner;
-                    long? recipientEpoch = recipientOwner?.LifecycleEpoch;
-                    try
-                    {
-                        // Wait for the recipient's character gate before reserving its role and order.
-                        // A kick/join can replace the order while the target is unavailable.
-                        using (var delivery = await EnterWithCharacterGateAsync(
-                            "guild-caravan/recipient-delivery", guild.Id, online, req.PlayerID))
-                            if (Read(req.PlayerID) is { } currentPending)
-                                await DeliverPendingAsync(online, currentPending, currentPending.GuildId,
-                                    delivery.CharacterLocked);
-                        if (ReferenceEquals(online.Role, recipientRole)
-                            && ReferenceEquals(online.Attachment, recipientAttachment)
-                            && ReferenceEquals(online.Owner, recipientOwner)
-                            && online.Owner?.LifecycleEpoch == recipientEpoch
-                            && _sessions.All().Any(x => ReferenceEquals(x, online))
-                            && Guild(online)?.Id == guild.Id)
-                        {
-                            using var noticeScope = _loop.Owners is { } recipientOwners
-                                ? await recipientOwners.EnterAsync("guild-caravan/recipient-notice",
-                                    [Ownership.ReservationKey.Role(req.PlayerID)]) : null;
-                            if (ReferenceEquals(online.Role, recipientRole)
-                                && ReferenceEquals(online.Attachment, recipientAttachment)
-                                && ReferenceEquals(online.Owner, recipientOwner)
-                                && online.Owner?.LifecycleEpoch == recipientEpoch
-                                && _sessions.All().Any(x => ReferenceEquals(x, online))
-                                && Guild(online)?.Id == guild.Id
-                                && Read(req.PlayerID) is { } currentOrder && currentOrder.GuildId == guild.Id)
-                            {
-                                await ShowCoreAsync(online, currentOrder);
-                                await online.SendGameAsync(HelpNotify, new GuildCatShopHelpNotify { HelperName = helperName });
-                            }
-                        }
-                    }
-                    catch (OperationCanceledException) when (recipientAttachment?.Cancelled == true
-                        || !ReferenceEquals(online.Attachment, recipientAttachment)
-                        || !ReferenceEquals(online.Owner, recipientOwner)
-                        || !_sessions.All().Any(x => ReferenceEquals(x, online)))
-                    {
-                        // The helper payment and pending grant already committed. A detached
-                        // recipient can claim it at login; preserve the helper's success reply.
-                        _log.LogDebug("Guild caravan recipient {Role} detached after committed help", req.PlayerID);
-                    }
-                }
+                await NotifyHelpOtherRecipientAsync(guild.Id, req.PlayerID, helperName);
             }
         }
         await s.SendGameAsync(HelpOther, resp);
+    }
+
+    private async Task<(State? Own, State? Target, bool RefreshResources)> CommitHelpOtherLockedAsync(
+        GameSession s, GuildStore.State guild, GuildCatShopItemHelpOtherReq req, GuildCatShopItemHelpOtherResp resp,
+        Role helperRole, Ownership.AttachmentLease? helperAttachment, Ownership.RoleOwner? helperOwner,
+        long? helperEpoch, bool characterLocked)
+    {
+        if (!ReferenceEquals(s.Role, helperRole) || !ReferenceEquals(s.Attachment, helperAttachment)
+            || !ReferenceEquals(s.Owner, helperOwner) || s.Owner?.LifecycleEpoch != helperEpoch
+            || Guild(s)?.Id != guild.Id) throw new CaravanMembershipChangedException();
+        long helperId = helperRole.Id;
+        var own = await EnsureAsync(s, guild);
+        var target = guild.Members.ContainsKey(req.PlayerID) ? Read(req.PlayerID) : null;
+        var sku = target == null ? null : Slot(target, req.SkuIndex);
+        resp.Result = req.PlayerID == helperId ? ErrorCodes.CaravanSelfHelp
+            : target == null || target.GuildId != guild.Id ? ErrorCodes.GuildMemberMissing
+            : req.DayVersion != Version(guild.Id, own.Day) ? ErrorCodes.CaravanOrderExpired
+            : sku == null ? ErrorCodes.Parameter : 0;
+        if (resp.Result == 0 && target!.Day != own.Day) resp.Result = ErrorCodes.CaravanOrderExpired;
+        if (resp.Result == 0 && sku!.Status != 2) resp.Result = ErrorCodes.CaravanRequestMissing;
+        if (resp.Result == 0 && own.HelpOtherCount >= (Data.Config.GuildSettings.Of(_data).GuildTransportHelpDayNum ?? 3))
+            resp.Result = ErrorCodes.CaravanHelpLimit;
+        if (resp.Result != 0 || _data.Row("GuildTransportConfig", sku!.CfgId) is not { } row) return (null, null, false);
+        int entry = (int)GameData.Int(row, "_iItem"), count = (int)GameData.Int(row, "_iNum");
+        long targetAward = SlotAward(sku, target!.CurRound);
+        long helperAward = GameData.Int(row, "_iAward");
+        if (entry <= 0 || count <= 0 || targetAward <= 0 || helperAward <= 0)
+        {
+            resp.Result = ErrorCodes.Unknown;
+            return (null, null, false);
+        }
+        var targetNext = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(target))!;
+        var slot = targetNext.Skus.Single(x => x.Index == req.SkuIndex);
+        slot.Status = 1; slot.HelperName = helperRole.Name; slot.HelperId = helperId; slot.ReqHelpTime = 0;
+        var targetOnline = _sessions.ByRole(req.PlayerID);
+        var targetPlan = _awards.ResolveForProgress(targetOnline?.Progress ?? _roles.LoadProgress(req.PlayerID), targetAward);
+        string helpSource = $"guild-caravan:help:{guild.Id}:{req.PlayerID}:{target.Day}:{target.CurRound}:{req.SkuIndex}";
+        // The helper books the recipient's configured award now; personal grants remain pending.
+        targetNext.PendingAwards.Add(new PendingAward
+        {
+            SourceKey = helpSource, GuildId = guild.Id, GuildBooked = true,
+            Grants = [.. targetPlan.Grants.Select(g => new PendingGrant
+            { Entry = g.Entry, Count = g.Count, BindType = g.BindType, ExpireTimeStamp = g.ExpireTimeStamp })]
+        });
+        long targetFunds = targetPlan.Grants.Where(g => g.Entry == 104).Sum(g => (long)g.Count);
+        long targetContribution = targetPlan.Grants.Where(g => g.Entry == 102).Sum(g => (long)g.Count);
+        var reward = await ExchangeAwardAsync(s, own, helperAward, guild.Id, [(entry, count)],
+            next => next.HelpOtherCount++, tx =>
+            {
+                EnlistMemberSave(tx, req.PlayerID, guild.Id, targetNext, true);
+                if (targetFunds > 0 || targetContribution > 0)
+                    _guilds.EnlistCaravanReward(guild.Id, req.PlayerID, targetFunds, targetContribution, tx);
+            }, valid: () => _guilds.ForRole(req.PlayerID)?.Id == guild.Id,
+            deferResourceRefresh: true, stateLockHeld: characterLocked,
+            sourceKey: helpSource, extraEffects: PendingCreationEffects(req.PlayerID, guild.Id, targetPlan));
+        if (reward == null) { resp.Result = ErrorCodes.ItemsShort; return (null, null, false); }
+        resp.ItemId = entry; resp.ItemNum = count;
+        bool refreshResources = targetFunds > 0 || targetContribution > 0
+            || reward.Rewards.Any(item => item.ItemEntry is 102 or 104);
+        return (own, targetNext, refreshResources);
+    }
+
+    private async Task NotifyHelpOtherRecipientAsync(long guildId, long recipientId, string helperName)
+    {
+        // Delivery is intentionally outside the helper's two-role reservation and old guild gate.
+        // A guild migration may replace the recipient's order while its StateLock is unavailable.
+        if (_sessions.ByRole(recipientId) is not { } online
+            || online.Attachment?.Cancelled == true || online.Owner?.State == RoleOwnerState.Quiescing
+            || Guild(online)?.Id != guildId) return;
+        var recipientRole = online.Role;
+        var recipientAttachment = online.Attachment;
+        var recipientOwner = online.Owner;
+        long? recipientEpoch = recipientOwner?.LifecycleEpoch;
+        try
+        {
+            // Wait for the recipient's character gate before reserving its role and order.
+            // A kick/join can replace the order while the target is unavailable.
+            using (var delivery = await EnterWithCharacterGateAsync(
+                "guild-caravan/recipient-delivery", guildId, online, recipientId))
+                if (Read(recipientId) is { } currentPending)
+                    await DeliverPendingAsync(online, currentPending, currentPending.GuildId, delivery.CharacterLocked);
+            if (!ReferenceEquals(online.Role, recipientRole)
+                || !ReferenceEquals(online.Attachment, recipientAttachment)
+                || !ReferenceEquals(online.Owner, recipientOwner)
+                || online.Owner?.LifecycleEpoch != recipientEpoch
+                || !_sessions.All().Any(x => ReferenceEquals(x, online))
+                || Guild(online)?.Id != guildId) return;
+            using var noticeScope = _loop.Owners is { } recipientOwners
+                ? await recipientOwners.EnterAsync("guild-caravan/recipient-notice",
+                    [Ownership.ReservationKey.Role(recipientId)]) : null;
+            if (ReferenceEquals(online.Role, recipientRole)
+                && ReferenceEquals(online.Attachment, recipientAttachment)
+                && ReferenceEquals(online.Owner, recipientOwner)
+                && online.Owner?.LifecycleEpoch == recipientEpoch
+                && _sessions.All().Any(x => ReferenceEquals(x, online))
+                && Guild(online)?.Id == guildId
+                && Read(recipientId) is { } currentOrder && currentOrder.GuildId == guildId)
+            {
+                await ShowCoreAsync(online, currentOrder);
+                await online.SendGameAsync(HelpNotify, new GuildCatShopHelpNotify { HelperName = helperName });
+            }
+        }
+        catch (OperationCanceledException) when (recipientAttachment?.Cancelled == true
+            || !ReferenceEquals(online.Attachment, recipientAttachment)
+            || !ReferenceEquals(online.Owner, recipientOwner)
+            || !_sessions.All().Any(x => ReferenceEquals(x, online)))
+        {
+            // The helper payment and pending grant already committed. A detached
+            // recipient can claim it at login; preserve the helper's success reply.
+            _log.LogDebug("Guild caravan recipient {Role} detached after committed help", recipientId);
+        }
     }
 
     public async Task DepartAsync(GameSession s)
