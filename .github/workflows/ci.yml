@@ -30,6 +30,11 @@ jobs:
       # Layout rules are in .editorconfig. Fix locally with: dotnet format whitespace --folder
       - name: Check C# layout
         run: dotnet format whitespace --folder --verify-no-changes
+      - name: Check JavaScript syntax
+        run: |
+          find src/Ro3Emu.Panel/www src/Ro3Emu.Launcher/ui -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
 
   # Rebuilds everything that builds without the client with the baseline rules as warnings, and fails when a rule's
   # count no longer matches the one in .editorconfig, or when .editorconfig got looser than in the parent commit
