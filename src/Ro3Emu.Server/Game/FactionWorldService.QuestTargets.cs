@@ -1,3 +1,5 @@
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,15 +15,11 @@ namespace Ro3Emu.Server.Game;
 /// (<see cref="GloryAssistWindowMs"/>, the world's rule) before the killing blow; the hits are kept in memory only.</item>
 /// </list>
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
     /// <summary>The siege's tracker step from the Gate stage on: its stage 200000 is passed (0 in Prepare).</summary>
     private const int SiegeFightStep = 1;
     private const int RatingTarget = 200001, AssistsTarget = 210003;
-
-    /// <summary>A loaded siege participant's dungeon task tracker changed (TaskService.OnDungeonRun): scene, instance,
-    /// step. Listeners post their work.</summary>
-    public SyncHook<GameSession, long, long, int> SiegeTracked { get; } = new("TerritoryWarsService.SiegeTracked");
 
     /// <summary>106609: the season points of the role's guild, 0 without a guild.</summary>
     public long GuildWarPoints(GameSession s) =>

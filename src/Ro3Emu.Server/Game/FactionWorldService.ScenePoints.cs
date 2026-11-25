@@ -1,6 +1,8 @@
 using Romsg;
 using Ro3Emu.Server.Maps;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -8,15 +10,8 @@ namespace Ro3Emu.Server.Game;
 /// state and the 4905010 marker actors are reconstructed from client data; what each object does is not in the client
 /// and is not invented here (docs/systems/territory-wars.md, "Stronghold gameplay points").
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
-    public const uint ScenePointNotify = 30129;
-    internal const long StrongholdScene = 3030101;
-    /// <summary>UnitConfig 4905010 "据点战-交互点" (stronghold battle interaction point): NPCConfig MutiInteractMainNpc
-    /// (_iNPCSubType 250), unselectable, no name or HP bar, _iNeedNotifyGlobalData 1.</summary>
-    private const int ScenePointNpc = 4905010;
-    /// <summary>Marker uids: below 2^53, so a double holds them exactly (the client's interaction manager passes uuids
-    /// through a double array, TerritoryWarsService.SiegeBags.cs SiegeBagUidBase), and above the tower pets' range.</summary>
     private const long ScenePointUidBase = 1L << 52;
     private long _scenePointSerial;
     internal long NextScenePointUid() => ScenePointUidBase | Interlocked.Increment(ref _scenePointSerial);
@@ -33,50 +28,12 @@ public sealed partial class TerritoryWarsService
         [63] = 11, [66] = 11, [74] = 7, [81] = 12, [83] = 9, [85] = 12, [86] = 12,
     };
 
-    /// <summary>One GlobalScenePointData (MG_Dungeon.proto:362-367): status is EnumGlobalScenePoint, ReadyTime is
-    /// epoch milliseconds (UI_Sys_TerritoryWars_MapWidgetCtrl.lua:462-470 divides it by 1000 against GetSystemTime).</summary>
-    public sealed class ScenePoint
-    {
-        public int Id { get; set; }
-        public int Type { get; set; }
-        public int Status { get; set; }
-        public long ReadyTime { get; set; }
-        public long Owner { get; set; }
-    }
-
-    /// <summary>The marker actor at a gameplay point: NPCType 1, so the client creates it as a monster-type entity
-    /// (as DungeonService.SceneActorUnit), carrying its template HP so it is not shown dead.</summary>
-    internal sealed class ScenePointUnit : WorldUnit
-    {
-        public required int PointId { get; init; }
-        public MonsterTemplate? Template { get; init; }
-        public long BornMs { get; init; }
-
-        public override EntityBase Entity()
-        {
-            var entity = new EntityBase
-            {
-                Uuid = (ulong)Uid, EntityTemplateID = ScenePointNpc, EntityType = 1, Face = Face, State = EntityState.Alive,
-                BornTimeMs = BornMs, NotifyType = EntityBase.Types.NotifyType.All, EntityCamp = Template?.Camp ?? 1,
-                MovementInfo = new MovementInfo
-                {
-                    Pos = Pos, Face = Face, ServerTime = NowMs,
-                    MoveType = MovementType.MoveTypeNone
-                },
-            };
-            if (Template is { } t)
-                foreach (var (idx, value) in new (long, long)[] { (101, t.MaxHp), (2000, t.MaxHp), (2002, t.Level) })
-                    entity.Property.Add(new AoIProperty { Idx = idx, Data = value, BaseData = value });
-            return entity;
-        }
-    }
-
     /// <summary>
     /// The initial state of every point (inferred): ready, no countdown, no owner. The client treats ready and an
     /// unReady point without readyTime alike (Available, LC_DAL_TerritoryWars.lua:3238-3256 and
     /// LC_TerritoryWars_GameplayPointHelper.lua:160-190); which objects start unavailable or owned is not exported.
     /// </summary>
-    private static Dictionary<int, ScenePoint> DefaultScenePoints(long scene) => scene != StrongholdScene ? []
+    internal static Dictionary<int, ScenePoint> DefaultScenePoints(long scene) => scene != StrongholdScene ? []
         : StrongholdGameplayPoints.ToDictionary(p => p.Key, p => new ScenePoint
         {
             Id = p.Key, Type = p.Value,
@@ -106,7 +63,7 @@ public sealed partial class TerritoryWarsService
     /// The full point set on every load of the battle scene: the client deletes TerritoryWarsScenePointInfo on each
     /// scene switch (LC_DAL_TerritoryWars.lua:500-510) and never asks for it (30129 has no client send site).
     /// </summary>
-    private async Task SendScenePointsAsync(GameSession s, Battle b)
+    internal async Task SendScenePointsAsync(GameSession s, Battle b)
     {
         if (ScenePointsOf(b.State).Count == 0) return;
         await Send(s, ScenePointNotify, ScenePointMessage(b.State));
@@ -144,7 +101,7 @@ public sealed partial class TerritoryWarsService
     /// global-data flag make the marker the point's actor (inferred: no spawn row names it, unlike the guardians,
     /// stele, vehicles and vanguard of NpcLevelPointRespawnConfig 4905001-4905011). Markers are props, never targets.
     /// </summary>
-    private async Task SpawnScenePointsAsync(Battle b)
+    internal async Task SpawnScenePointsAsync(Battle b)
     {
         if (b.Room.Closed || b.State.Settled || _maps.Map(b.State.Scene) is not { } map) return;
         var added = new List<int>();

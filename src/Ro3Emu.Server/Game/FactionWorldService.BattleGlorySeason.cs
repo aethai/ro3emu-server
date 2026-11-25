@@ -12,9 +12,8 @@ namespace Ro3Emu.Server.Game;
 /// inferred: the client only shows the result. WorldState.GlorySettle keeps the seasons still to pay, so a failed or
 /// interrupted settlement is retried by the reconciliation.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
-    public const int GlorySeasonMail = 1090;
     private bool _glorySettling;
     private long _glorySettleRetryAt;
 
@@ -71,7 +70,7 @@ public sealed partial class TerritoryWarsService
             var recipient = _sessions.All().FirstOrDefault(s => s.Role?.Id == role)
                 ?? new GameSession(null!, null!) { Role = _roles.Get(role), Progress = _roles.LoadProgress(role) };
             if (recipient.Role == null) continue;
-            var goods = new List<Grant>();
+            var goods = new List<TerritoryWarsService.Grant>();
             AddRankAward(goods, "SiegeSettlementHonorAward", place, recipient);
             if (goods.Count == 0) continue;
             var attachments = goods.GroupBy(g => (g.Entry, g.Bind))
@@ -80,7 +79,7 @@ public sealed partial class TerritoryWarsService
             {
                 using var scope = _loop.Owners is { } owners
                     ? await owners.EnterAsync("territory/battle merit season mail", Ownership.ReservationKey.Role(role)) : null;
-                await _mail.SendTemplateOnceAsync(role, GlorySeasonMail, attachments, $"battle-merit-season:{epoch}:{role}",
+                await _mail.SendTemplateOnceAsync(role, TerritoryWarsService.GlorySeasonMail, attachments, $"battle-merit-season:{epoch}:{role}",
                     _ => { }, scope?.Context, contentParams: [place]);
             }
             catch (Exception e) when (e is not OperationCanceledException)

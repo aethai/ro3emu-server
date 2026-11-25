@@ -76,7 +76,7 @@ CharacterService.StateChanged (9)
   TaskService.QueueRefresh
   LifeJobService.SyncVigorChange
   NewActivityService.QueueRefresh
-  TerritoryWarsService.<.ctor> lambda
+  FactionWorldService.<.ctor> lambda
   AchievementService.QueueRecheck
   FirstHeartService.MarkDirty
   PowerService.Queue
@@ -186,7 +186,7 @@ CombatService.Killed (21)
   GuildCampfireService.KilledAsync
   GuildHuntingService.KilledAsync
   TerritoryWarsService.KilledAsync
-  TerritoryWarsService.WorldKilledAsync
+  FactionWorldService.WorldKilledAsync
   WarMachineService.MachineKilledAsync
   SiegeService.SiegeKilledAsync
   TerritoryEscortService.CartKilledAsync
@@ -210,7 +210,7 @@ CombatService.PlayerDied (15)
   CasualBattleService.DiedAsync
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.DiedAsync
-  TerritoryWarsService.WorldDiedAsync
+  FactionWorldService.WorldDiedAsync
   WarMachineService.CannonDiedAsync
   WarMachineService.VehicleDiedAsync
   WarMachineService.PlatformLeavingAsync
@@ -220,7 +220,7 @@ CombatService.PlayerDied (15)
   EmojiService.<.ctor> lambda
 CombatService.PlayerKilled (4)
   TaskService.OnFactionPlayerKilledAsync
-  TerritoryWarsService.GloryKilledAsync
+  FactionWorldService.GloryKilledAsync
   TerritoryEscortService.PlayerKilledAsync
   TalentProcs.OnPlayerKilledAsync
 CombatService.PlayerRevived (2)
@@ -234,7 +234,7 @@ CombatService.PvpDealt (3)
   TerritoryEscortService.PvpRecorded
 CombatService.PvpDealtAsync (6)
   TerritoryWarsService.PvpRecordedAsync
-  TerritoryWarsService.GloryHitAsync
+  FactionWorldService.GloryHitAsync
   SiegeService.SiegePvpRecordedAsync
   GuildLeagueService.PvpAsync
   CardEffects.<.ctor> lambda
@@ -368,7 +368,7 @@ SceneService.Leaving (28)
   TrainingService.<.ctor> lambda
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.LeavingAsync
-  TerritoryWarsService.GloryLeavingAsync
+  FactionWorldService.GloryLeavingAsync
   WarMachineService.CannonLeavingAsync
   WarMachineService.VehicleLeavingAsync
   WarMachineService.PlatformLeavingAsync
@@ -396,7 +396,7 @@ SceneService.Loaded (25)
   AdventureGroupService.OnSceneLoadedAsync
   WildAfkService.<.ctor> lambda
   TerritoryWarsService.LoadedAsync
-  TerritoryWarsService.WorldLoadedAsync
+  FactionWorldService.WorldLoadedAsync
   SiegeService.SiegeLoadedAsync
   TerritoryEscortService.SceneLoadedAsync
   GuildLeagueService.LoadedAsync

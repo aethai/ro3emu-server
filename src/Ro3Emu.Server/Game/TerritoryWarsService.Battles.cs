@@ -104,7 +104,7 @@ public sealed partial class TerritoryWarsService
         public long AwaySince;
     }
     internal static int BattleKey(int round, int zone) => round * 100 + zone;
-    private TerritoryWarsClock.Stage? WarStage(int round) => _clock.RoundStage(round, round == 1 ? 6 : round == 2 ? 10 : 14);
+    internal TerritoryWarsClock.Stage? WarStage(int round) => _clock.RoundStage(round, round == 1 ? 6 : round == 2 ? 10 : 14);
     private IEnumerable<int> BattleZones(int round) => Zones.Where(z => GameData.Int(z, "_iType") == (round == 1 ? 3 : round == 2 ? 2 : 1)).Select(z => (int)Id(z));
 
     /// <summary>30400 is the shared dungeon ingress; all qualification and scene selection are server derived.</summary>

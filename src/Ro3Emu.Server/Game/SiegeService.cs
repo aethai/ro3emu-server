@@ -56,6 +56,7 @@ public sealed partial class SiegeService
     }
 
     internal void ResetTestWindow() => _siegeTestOpen = null;
+    internal void ResetPublishedStateForTest() => _siegePublishedState = "";
 
     private GameData _data => _territory.GameData;
     private AccountStore _accounts => _territory.AccountStore;

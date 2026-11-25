@@ -2,9 +2,11 @@ using System.Text.Json;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
     private JsonElement? ResultRule(int id) => _data.Table("TerritoryWarResultRuleConfig").Values
         .Where(r => GameData.Int(r, "_iRuleID") == id).Select(r => (JsonElement?)r).FirstOrDefault();
@@ -44,7 +46,7 @@ public sealed partial class TerritoryWarsService
     /// actual capture/hold score then guild id; territorial ownership itself remains per-map. These
     /// finalists determine the next phase's reserved incumbent seats, not who may place a paid bid.
     /// </summary>
-    private async Task ApplyBattleResultRulesAsync()
+    internal async Task ApplyBattleResultRulesAsync()
     {
         foreach (var stage in _clock.Stages.Where(s => s.Type is 6 or 10 or 14 && s.EndTime <= _clock.Now))
         {

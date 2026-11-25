@@ -2,46 +2,13 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
-    public sealed class AuctionRound
-    {
-        public int Round { get; set; }
-        public long FinalEnd { get; set; }
-        public bool Settled { get; set; }
-        public Dictionary<int, AuctionZone> Zones { get; set; } = [];
-        public Dictionary<long, AutoBidPlan> Auto { get; set; } = [];
-    }
-    public sealed class AuctionZone
-    {
-        public int Id { get; set; }
-        public int Seats { get; set; }
-        public List<BidEntry> Entries { get; set; } = [];
-        public HashSet<long> Bidded { get; set; } = [];
-    }
-    public sealed class BidEntry
-    {
-        public long GuildId { get; set; }
-        public long Amount { get; set; }
-        public long Time { get; set; }
-        public bool Occupier { get; set; }
-        public bool Legacy { get; set; }
-        public long EscortScore { get; set; }
-    }
-    public sealed class AutoBidPlan
-    {
-        public long Creator { get; set; }
-        public int Zone { get; set; }
-        public long Initial { get; set; }
-        public long Maximum { get; set; }
-        public int Style { get; set; }
-        public int State { get; set; }
-        public long Next { get; set; }
-    }
-
-    private AuctionRound? Round() => state.Rounds.GetValueOrDefault(_clock.Current.Round);
+    internal AuctionRound? Round() => state.Rounds.GetValueOrDefault(_clock.Current.Round);
     private static bool Bidding(int type) => type is 4 or 8 or 12 or 16 or 17 or 18;
     private static bool Final(int type) => type is 16 or 17 or 18;
     private IEnumerable<int> AuctionZones(int round) => Zones.Where(z => GameData.Int(z, "_iType") == (round == 3 ? 1 : 2)).Select(z => (int)Id(z));
@@ -164,7 +131,7 @@ public sealed partial class TerritoryWarsService
         return (0, treasury.Keys.ToArray());
     }
 
-    private async Task BidAsync(GameSession s, TerritoryAuctionBidReq req)
+    internal async Task BidAsync(GameSession s, TerritoryAuctionBidReq req)
     {
         var g = Own(s);
         int error = BidEligibility(s, g, Round(), req.ZoneId, false);
@@ -182,7 +149,7 @@ public sealed partial class TerritoryWarsService
         await PublishAsync();
     }
 
-    private Task SendRanksAsync(GameSession s)
+    internal Task SendRanksAsync(GameSession s)
     {
         var round = Round() ?? NewRound(Math.Clamp(_clock.Current.Round, 1, 3));
         var own = Own(s);
@@ -204,7 +171,7 @@ public sealed partial class TerritoryWarsService
 
     private int LegacyZone(int id) => ZoneType(id) == 2 ? id : _data.Row("WarzoneConfig", id) is { } old && GameData.Int(old, "_iType") == 2
         ? Zones.Where(z => GameData.Int(z, "_iType") == 2).OrderBy(Id).Skip(id - 2).Select(z => (int)Id(z)).FirstOrDefault() : id;
-    private async Task LegacyBidAsync(GameSession s, TerritoryWarsAuctionReq req)
+    internal async Task LegacyBidAsync(GameSession s, TerritoryWarsAuctionReq req)
     {
         int zone = LegacyZone(req.StateId);
         var g = Own(s);
@@ -239,7 +206,7 @@ public sealed partial class TerritoryWarsService
         }
         return info;
     }
-    private Task LegacyQueryAsync(GameSession s, GetTerritoryWarsAuctionInfoReq req)
+    internal Task LegacyQueryAsync(GameSession s, GetTerritoryWarsAuctionInfoReq req)
     {
         var response = new GetTerritoryWarsAuctionInfoResp { Info = new() };
         var r = Round() ?? NewRound(Math.Clamp(_clock.Current.Round, 1, 3));
@@ -254,7 +221,7 @@ public sealed partial class TerritoryWarsService
         var range = (style == 1 ? pp.TerritoryAuctionAutoBidDelayAggressive : style == 2 ? pp.TerritoryAuctionAutoBidDelaySteady : pp.TerritoryAuctionAutoBidDelayStealth) ?? [];
         return range.Length == 2 ? Random.Shared.NextInt64(range[0], range[1] + 1) : 5;
     }
-    private async Task AutoSetAsync(GameSession s, TerritoryAutoBidSetReq req)
+    internal async Task AutoSetAsync(GameSession s, TerritoryAutoBidSetReq req)
     {
         var g = Own(s);
         int error = BidEligibility(s, g, Round(), req.ZoneId, false, setting: true);
@@ -274,7 +241,7 @@ public sealed partial class TerritoryWarsService
         await Send(s, AutoSet, new TerritoryAutoBidSetRes());
         await NotifyAutoGuildAsync(g.Id);
     }
-    private async Task AutoCancelAsync(GameSession s, TerritoryAutoBidCancelReq req)
+    internal async Task AutoCancelAsync(GameSession s, TerritoryAutoBidCancelReq req)
     {
         var g = Own(s);
         if (g == null || !Right(g, s.Role!.Id, GuildRight.BlackMarket)) { await Error(s, AutoCancel, ErrorCodes.NoPermission); return; }
@@ -287,7 +254,7 @@ public sealed partial class TerritoryWarsService
     }
     private Task NotifyAutoGuildAsync(long id) => RoleFanout.EachAsync(
         _sessions.All().Where(s => s.Role != null && Own(s)?.Id == id), SendAutoAsync);
-    private Task SendAutoAsync(GameSession s)
+    internal Task SendAutoAsync(GameSession s)
     {
         var auto = Round()?.Auto.GetValueOrDefault(Own(s)?.Id ?? 0);
         return Send(s, AutoNotify, auto == null ? new TerritoryAutoBidSettingChangeNtf() : new TerritoryAutoBidSettingChangeNtf
@@ -296,7 +263,7 @@ public sealed partial class TerritoryWarsService
         });
     }
 
-    private async Task AuctionClockAsync()
+    internal async Task AuctionClockAsync()
     {
         var stage = _clock.Current;
         if (stage.Type is 3 or 4 or 7 or 8 or 11 or 12 or 16 or 17 or 18 && !state.Rounds.ContainsKey(stage.Round))

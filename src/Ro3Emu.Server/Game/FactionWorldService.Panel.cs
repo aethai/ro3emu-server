@@ -1,3 +1,5 @@
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -5,19 +7,10 @@ namespace Ro3Emu.Server.Game;
 /// the battles running now and the siege cities. Built on the game loop, where the service's state changes, so the
 /// panel never reads it while a transition is half done.
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
     /// <summary>The siege cities that have an owner source (SiegeZone): the main city and its three prefectures.</summary>
     private static readonly int[] PanelSiegeCities = [1001, 1101, 1102, 1103];
-
-    internal sealed record PanelBattle(int Zone, int Round, long Start, long End, IReadOnlyDictionary<long, long> Scores, int Players);
-
-    /// <param name="Stage">The siege stage while the city's siege runs (0 Prepare to 3 Crystal); -1 otherwise.</param>
-    internal sealed record PanelSiegeCity(int City, int Zone, long Attack, long Defense, int Stage, bool Settled, long Winner);
-
-    internal sealed record PanelView(TerritoryWarsClock.Stage Current, IReadOnlyList<TerritoryWarsClock.Stage> Stages, long Now,
-        IReadOnlyDictionary<int, long> Owners, IReadOnlyList<PanelBattle> Battles, (long Start, long End)? SiegeWindow,
-        IReadOnlyList<PanelSiegeCity> Cities);
 
     /// <summary>On the loop: the committed map, the battles of the stage in force and the siege cities.</summary>
     internal PanelView PanelSnapshot()

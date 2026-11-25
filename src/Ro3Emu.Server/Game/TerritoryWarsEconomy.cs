@@ -1,16 +1,19 @@
 using System.Globalization;
 using System.Text.Json;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Economy;
+using static Ro3Emu.Server.Game.TerritoryWarsService;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class TerritoryWarsService
+/// <summary>Event-economy ledger mutations for Territory Wars, auctions, drops, and Royal City Siege settlements.</summary>
+internal static class TerritoryWarsEconomy
 {
-    private EventEconomyMutation? PendingSource(IReadOnlyDictionary<long, List<Grant>> awards,
-        string kind, string sourceKey)
+    internal static EventEconomyMutation? PendingSource(GameData data, long nowMs,
+        IReadOnlyDictionary<long, List<Grant>> awards, string kind, string sourceKey)
     {
-        var catalog = EventEconomy.Catalog(_data);
+        var catalog = EventEconomy.Catalog(data);
         var grants = awards.SelectMany(pair => pair.Value.Where(g => g.Count > 0 && g.Entry is not (100 or 101))
             .Select(grant => (Role: pair.Key, Grant: grant,
                 Asset: catalog.TryAsset(grant.Entry, out var asset) ? asset
@@ -22,17 +25,18 @@ public sealed partial class TerritoryWarsService
             new(EconomyOwnerKind.Role, g.Key.Role.ToString(CultureInfo.InvariantCulture)), g.Key.Asset,
             g.Aggregate(0L, (n, x) => checked(n + x.Grant.Count)))).ToArray();
         return new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"), "realm", 0,
-            "event/territory-" + kind, sourceKey, _loop.NowMs,
+            "event/territory-" + kind, sourceKey, nowMs,
             [], goods, deltas, JsonSerializer.SerializeToUtf8Bytes(new
             {
                 Kind = kind, Source = sourceKey,
                 Grants = grants.Select(x => new { x.Role, x.Grant.Entry, x.Grant.Count, x.Grant.Bind })
             }));
     }
-    internal EventEconomyMutation? SiegeMailSource(IReadOnlyDictionary<long, List<MailService.Attachment>> awards,
-        string sourceKey)
+
+    internal static EventEconomyMutation? SiegeMailSource(GameData data, long nowMs,
+        IReadOnlyDictionary<long, List<MailService.Attachment>> awards, string sourceKey)
     {
-        var catalog = EventEconomy.Catalog(_data);
+        var catalog = EventEconomy.Catalog(data);
         var grants = awards.SelectMany(pair => pair.Value.Where(g => g.Count > 0)
             .Select(grant => (Role: pair.Key, Grant: grant,
                 Asset: catalog.TryAsset(grant.Entry, out var asset) ? asset
@@ -44,13 +48,14 @@ public sealed partial class TerritoryWarsService
             new(EconomyOwnerKind.Role, g.Key.Role.ToString(CultureInfo.InvariantCulture)), g.Key.Asset,
             g.Aggregate(0L, (n, x) => checked(n + x.Grant.Count)))).ToArray();
         return new EventEconomyMutation(catalog, Guid.NewGuid().ToString("N"), "realm", 0,
-            "event/territory-siege-settle", sourceKey, _loop.NowMs,
+            "event/territory-siege-settle", sourceKey, nowMs,
             [], goods, deltas, JsonSerializer.SerializeToUtf8Bytes(new
             {
                 Source = sourceKey,
                 Awards = grants.Select(x => new { x.Role, x.Grant.Entry, x.Grant.Count, x.Grant.Bind })
             }));
     }
+
     private static Dictionary<(EconomyOwner Owner, EconomyAsset Asset, string Location), long> WarsHoldings(
         WorldState source, string prefix = "active/")
     {
@@ -95,20 +100,27 @@ public sealed partial class TerritoryWarsService
         return result;
     }
 
-    private EventEconomyMutation? WarsEconomy(WorldState before, WorldState after,
-        IReadOnlyList<GuildStore.State> oldGuilds, IReadOnlyList<GuildStore.State> newGuilds,
-        string kind, string sourceKey, GameSession? actor = null,
-        IReadOnlyList<(WorldState State, string Prefix)>? beforeArchives = null,
-        IReadOnlyList<(WorldState State, string Prefix)>? afterArchives = null)
+    internal readonly record struct WarsEconomyChange(
+        WorldState Before,
+        WorldState After,
+        IReadOnlyList<GuildStore.State> OldGuilds,
+        IReadOnlyList<GuildStore.State> NewGuilds,
+        string Kind,
+        string SourceKey,
+        GameSession? Actor = null,
+        IReadOnlyList<(WorldState State, string Prefix)>? BeforeArchives = null,
+        IReadOnlyList<(WorldState State, string Prefix)>? AfterArchives = null);
+
+    internal static EventEconomyMutation? WarsEconomy(GameData data, long nowMs, WarsEconomyChange change)
     {
-        var old = WarsHoldings(before);
-        var next = WarsHoldings(after);
-        foreach (var (archive, prefix) in beforeArchives ?? [])
+        var old = WarsHoldings(change.Before);
+        var next = WarsHoldings(change.After);
+        foreach (var (archive, prefix) in change.BeforeArchives ?? [])
             foreach (var pair in WarsHoldings(archive, prefix)) old.Add(pair.Key, pair.Value);
-        foreach (var (archive, prefix) in afterArchives ?? [])
+        foreach (var (archive, prefix) in change.AfterArchives ?? [])
             foreach (var pair in WarsHoldings(archive, prefix)) next.Add(pair.Key, pair.Value);
-        foreach (var pair in GuildHoldings(oldGuilds)) old.Add(pair.Key, pair.Value);
-        foreach (var pair in GuildHoldings(newGuilds)) next.Add(pair.Key, pair.Value);
+        foreach (var pair in GuildHoldings(change.OldGuilds)) old.Add(pair.Key, pair.Value);
+        foreach (var pair in GuildHoldings(change.NewGuilds)) next.Add(pair.Key, pair.Value);
         var changes = old.Keys.Concat(next.Keys).Distinct()
             .Select(key => (key, Delta: checked(next.GetValueOrDefault(key) - old.GetValueOrDefault(key))))
             .Where(x => x.Delta != 0).ToArray();
@@ -119,16 +131,15 @@ public sealed partial class TerritoryWarsService
             .Where(x => x.Delta != 0).ToArray();
         var totals = changes.GroupBy(x => x.key.Asset).Select(g => (Asset: g.Key,
             Delta: g.Aggregate(0L, (n, x) => checked(n + x.Delta)))).ToArray();
-        return new EventEconomyMutation(EventEconomy.Catalog(_data), Guid.NewGuid().ToString("N"),
-            actor?.Account ?? "realm", actor?.Role?.Id ?? 0, "event/territory-" + kind, sourceKey,
-            _loop.NowMs,
+        return new EventEconomyMutation(EventEconomy.Catalog(data), Guid.NewGuid().ToString("N"),
+            change.Actor?.Account ?? "realm", change.Actor?.Role?.Id ?? 0, "event/territory-" + change.Kind, change.SourceKey,
+            nowMs,
             [.. totals.Where(x => x.Delta < 0).Select(x => new EconomyQuantity(x.Asset, -x.Delta))],
             [.. totals.Where(x => x.Delta > 0).Select(x => new EconomyQuantity(x.Asset, x.Delta))],
             ownerDeltas, JsonSerializer.SerializeToUtf8Bytes(new
             {
-                Kind = kind, Source = sourceKey,
+                change.Kind, Source = change.SourceKey,
                 Changes = changes.Select(x => new { x.key.Owner, x.key.Asset, x.key.Location, x.Delta })
             }));
     }
-
 }

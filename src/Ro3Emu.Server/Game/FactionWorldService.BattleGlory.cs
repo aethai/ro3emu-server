@@ -3,6 +3,8 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
+using static Ro3Emu.Server.Game.TerritoryWarsService;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -30,34 +32,12 @@ namespace Ro3Emu.Server.Game;
 /// game day (05:00). The rank follows the season's earned points and never drops. The state is the role's territory
 /// RoleState: Glory for this season, GlorySeasons for the past ones (as its honor's Seasons).
 /// </summary>
-public sealed partial class TerritoryWarsService
+public sealed partial class FactionWorldService
 {
-    public const uint GlorySync = 5001, GloryRankReward = 83400;
-    public const int GloryFunction = 7205, GloryCurrency = 15;
-    private const long GloryAssistWindowMs = 10_000;
-
-    /// <summary>One season's Battle Merit of a role.</summary>
-    public sealed class GloryState
-    {
-        public string Epoch { get; set; } = "";
-        public long Points { get; set; }
-        public long Rank { get; set; } = 1;
-        public HashSet<long> Claimed { get; set; } = [];
-        public int Day { get; set; }
-        public long DayGain { get; set; }
-        /// <summary>Today's meetings per "kind:other role" (the KillDif / DeathDif count).</summary>
-        public Dictionary<string, int> Counts { get; set; } = [];
-    }
-
-    internal enum GloryKind { Kill = 1, Assist = 2, Death = 3 }
-
     /// <summary>Who hit whom last in the public PvP maps (victim, attacker) -> ms, for assists; entries older than the
     /// assist window are dropped as hits come, and a role's are dropped when it leaves the scene.</summary>
     private readonly Dictionary<long, Dictionary<long, long>> _gloryHits = [];
     private BattleGloryRules? _gloryRules;
-
-    /// <summary>The role's place on leaderboard 2102 (RankService.RankOfAsync), 0 unlisted; set by the host.</summary>
-    public Func<long, Task<int>>? GloryBoardRank { get; set; }
     private BattleGloryRules GloryRules => _gloryRules ??= new BattleGloryRules(_data);
 
     private int GloryDay => DateOnly.FromDateTime(DailyActivityService.GameDay(_clock.LocalNow.DateTime)).DayNumber;
@@ -77,7 +57,7 @@ public sealed partial class TerritoryWarsService
     }
 
     /// <summary>5001 for a loaded role: read without copying (StateChanged calls it on every bag or EXP change).</summary>
-    private async Task SyncGloryAsync(GameSession s)
+    internal async Task SyncGloryAsync(GameSession s)
     {
         if (s.Role is not { } owner || s.Progress == null || s.TerritoryWars is not { } role || !_functions.IsOpen(s, GloryFunction))
             return;
@@ -201,7 +181,7 @@ public sealed partial class TerritoryWarsService
     private static partial void LogGloryRewardUnresolved(ILogger logger, int rank, long role, string reason);
 
     /// <summary>83400: reached ranks' rewards, once each; no more keys than there are ranks.</summary>
-    private async Task GloryRewardAsync(GameSession s, BattleGloryRankRewardReq req)
+    internal async Task GloryRewardAsync(GameSession s, BattleGloryRankRewardReq req)
     {
         var response = new BattleGloryRankRewardResp();
         if (req.RankReward.Count == 0 || req.RankReward.Count > GloryRules.Ranks.Count) response.Result = ErrorCodes.Parameter;
