@@ -20,7 +20,7 @@ namespace Ro3Emu.Server.Game;
 /// Not done: the GuildBossRace AI and the boss's own skills are left to the ordinary monster AI; the personal joystick
 /// skills (SkillConfig 16320801-16321301, GveHunting_PersonalSkill1) have no server side here.
 /// </summary>
-public sealed class GuildHuntingService : IGameTicker
+public sealed class GuildHuntingService : IGameTicker, IStartupInitializer
 {
     public const uint Matched = 43510, LiveRank = 43511, SkillUsed = 43512, MatchResult = 43513,
         UseSkill = 43514, Skills = 43515, History = 43516;
@@ -133,6 +133,11 @@ public sealed class GuildHuntingService : IGameTicker
 
     private long Now => _time.GetUtcNow().ToUnixTimeSeconds();
     private long NowMs => _time.GetUtcNow().ToUnixTimeMilliseconds();
+
+    public void Initialize()
+    {
+        if (!_loaded) Load();
+    }
 
     private void Load()
     {

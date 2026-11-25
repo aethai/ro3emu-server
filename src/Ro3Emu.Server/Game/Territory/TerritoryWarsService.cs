@@ -14,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// client Logic/TerritoryWars, LC_ActivityParser_TerritoryWar and the auction DAL.
 /// Reconstructed server choices are marked (inferred) and collected in docs/systems/territory-wars.md.
 /// </summary>
-public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
+public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule, IStartupInitializer
 {
     bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) =>
         Hostile(attacker, defender) || WorldHostile(attacker, defender);
@@ -178,6 +178,18 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
     private readonly ILogger<TerritoryWarsService> _log;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private WorldState _committedState = new();
+    private bool _loaded;
+
+    public void Initialize() => EnsureLoaded();
+
+    private void EnsureLoaded()
+    {
+        if (_loaded) return;
+        _loaded = true;
+        _committedState = _accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryWars)) is { } saved
+            ? JsonSerializer.Deserialize<WorldState>(saved)! : new();
+    }
+
     private sealed class StateStage(WorldState value, GameLoop.WorkPermit? permit)
     {
         public WorldState Value = value;
@@ -189,9 +201,13 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         _loop.Owners?.Cached(roleId)?.State == Ownership.RoleOwnerState.RecoveryRequired;
     private WorldState state
     {
-        get => _stagedState.Value is { Active: true } stage
-            ? ReferenceEquals(stage.Permit, _loop.CurrentWork) ? stage.Value : Copy(_committedState)
-            : _committedState;
+        get
+        {
+            EnsureLoaded();
+            return _stagedState.Value is { Active: true } stage
+                ? ReferenceEquals(stage.Permit, _loop.CurrentWork) ? stage.Value : Copy(_committedState)
+                : _committedState;
+        }
         set
         {
             if (_stagedState.Value is { Active: true } stage)
@@ -200,7 +216,11 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
                     throw new InvalidOperationException("Territory stage escaped its game-loop work permit.");
                 stage.Value = value;
             }
-            else _committedState = value;
+            else
+            {
+                _loaded = true;
+                _committedState = value;
+            }
         }
     }
     internal IDisposable StageState()
@@ -307,8 +327,6 @@ public sealed partial class TerritoryWarsService : IGameTicker, ICombatRule
         this._activities = activities;
         activities.TerritoryWarState = BuildActivityState;
         this._loop = loop; this._log = log;
-        state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryWars)) is { } saved
-            ? JsonSerializer.Deserialize<WorldState>(saved)! : new();
         scene.Loaded.Subscribe(LoadedAsync);
         scene.LoadedKeys.Subscribe(SceneKeys);
         scene.Leaving.Subscribe(LeavingAsync);

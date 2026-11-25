@@ -14,7 +14,7 @@ namespace Ro3Emu.Server.Game;
 /// clientB LC_TerritoryWarsTradeServer and LC_TerritoryWarsServer senders and the msgtable. Server policy
 /// that cannot be recovered from those senders is identified as inferred beside the transition.
 /// </summary>
-public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
+public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule, IStartupInitializer
 {
     bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) => Hostile(attacker, defender);
     bool ICombatRule.CanHitMonster(GameSession attacker, MonsterUnit target) => CanHitCart(attacker, target);
@@ -159,6 +159,26 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
     private readonly WorldData _maps;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private Ledger _committedLedger = new();
+    private bool _loaded;
+
+    public void Initialize() => EnsureLoaded();
+
+    private void EnsureLoaded()
+    {
+        if (_loaded) return;
+        _loaded = true;
+        var loaded = _accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryEscort)) is { } bytes
+            ? JsonSerializer.Deserialize<Ledger>(bytes) ?? new Ledger() : new Ledger();
+        foreach (var (guild, play) in loaded.Play)
+            if (!loaded.ScoresByRound.TryGetValue(guild, out var rounds) || !rounds.ContainsKey(play.Round))
+            {
+                if (rounds == null) loaded.ScoresByRound[guild] = rounds = [];
+                rounds[play.Round] = play.Score;
+            }
+        _committedLedger = loaded;
+        PublishSnapshots();
+    }
+
     private sealed class LedgerStage(Ledger value, GameLoop.WorkPermit? permit)
     {
         public Ledger Value = value;
@@ -168,9 +188,13 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
     private readonly AsyncLocal<LedgerStage?> _stagedLedger = new();
     private Ledger ledger
     {
-        get => _stagedLedger.Value is { Active: true } stage
-            ? ReferenceEquals(stage.Permit, _loop.CurrentWork) ? stage.Value : CopyLedger(_committedLedger)
-            : _committedLedger;
+        get
+        {
+            EnsureLoaded();
+            return _stagedLedger.Value is { Active: true } stage
+                ? ReferenceEquals(stage.Permit, _loop.CurrentWork) ? stage.Value : CopyLedger(_committedLedger)
+                : _committedLedger;
+        }
         set
         {
             if (_stagedLedger.Value is { Active: true } stage)
@@ -179,7 +203,11 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
                     throw new InvalidOperationException("Escort stage escaped its game-loop work permit.");
                 stage.Value = value;
             }
-            else _committedLedger = value;
+            else
+            {
+                _loaded = true;
+                _committedLedger = value;
+            }
         }
     }
     private static Ledger CopyLedger(Ledger value) => JsonSerializer.Deserialize<Ledger>(JsonSerializer.SerializeToUtf8Bytes(value))!;
@@ -268,15 +296,6 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
         this._loop = loop;
         this._world = world;
         this._maps = maps;
-        ledger = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.TerritoryEscort)) is { } bytes
-            ? JsonSerializer.Deserialize<Ledger>(bytes) ?? new Ledger() : new Ledger();
-        foreach (var (guild, play) in ledger.Play)
-            if (!ledger.ScoresByRound.TryGetValue(guild, out var rounds) || !rounds.ContainsKey(play.Round))
-            {
-                if (rounds == null) ledger.ScoresByRound[guild] = rounds = [];
-                rounds[play.Round] = play.Score;
-            }
-        PublishSnapshots();
         scene.Loaded.Subscribe(SceneLoadedAsync);
         scene.LoadedKeys.Subscribe(SceneKeys);
         scene.Leaving.Subscribe(SceneLeavingAsync);
@@ -433,10 +452,16 @@ public sealed partial class TerritoryEscortService : IGameTicker, ICombatRule
     }
 
     public long GetGuildEscortScore(long guildId, int round)
-        => Volatile.Read(ref _committedEpoch) == Epoch ? Volatile.Read(ref _scoreSnapshot).GetValueOrDefault((guildId, round)) : 0;
+    {
+        EnsureLoaded();
+        return Volatile.Read(ref _committedEpoch) == Epoch ? Volatile.Read(ref _scoreSnapshot).GetValueOrDefault((guildId, round)) : 0;
+    }
 
     public long GetGuildGoods(long guildId)
-        => Volatile.Read(ref _committedEpoch) == Epoch ? Volatile.Read(ref _goodsSnapshot).GetValueOrDefault(guildId) : 0;
+    {
+        EnsureLoaded();
+        return Volatile.Read(ref _committedEpoch) == Epoch ? Volatile.Read(ref _goodsSnapshot).GetValueOrDefault(guildId) : 0;
+    }
 
     /// <summary>Item 1258000 is a guild item, not a character bag item; the UI reads this map's stack.</summary>
     public GuildItemData GuildItems(long guildId)

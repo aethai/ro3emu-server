@@ -27,7 +27,9 @@ internal static class ActivitiesComposition
         services.AddSingleton<RiftBattleService>();
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TimedBattleService>());
         services.AddSingleton<FestivalService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<FestivalService>());
         services.AddSingleton<RankRewardService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<RankRewardService>());
         services.AddSingleton<TrainingService>();
         services.AddSingleton<LotteryService>();
         services.AddSingleton<MvpService>();
