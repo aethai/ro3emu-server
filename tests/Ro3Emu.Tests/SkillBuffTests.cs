@@ -22,7 +22,7 @@ public sealed class SkillBuffTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -35,7 +35,6 @@ public sealed class SkillBuffTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -263,12 +262,5 @@ public sealed class SkillBuffTests : IAsyncLifetime
         var report = System.Text.Json.JsonSerializer.SerializeToNode(
             await loop.InvokeAsync(() => Task.FromResult(loop.Owners!.Snapshot())))!;
         Assert.False(report["realmByOrigin"]!.AsObject().ContainsKey("timer/buff expiration"), report.ToJsonString());
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("Repository data/config");
     }
 }

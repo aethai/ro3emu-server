@@ -101,7 +101,6 @@ public sealed class AuctionLotReadTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 }

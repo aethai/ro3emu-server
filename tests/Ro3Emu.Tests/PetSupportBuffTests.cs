@@ -22,7 +22,7 @@ public sealed class PetSupportBuffTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -35,7 +35,6 @@ public sealed class PetSupportBuffTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -212,12 +211,5 @@ public sealed class PetSupportBuffTests : IAsyncLifetime
         Assert.Equal(0, await Run(() => Buffs.AbsorbAsync(player, 100, magic: true)));
         await Run(() => combat.ApplySkillBuffAsync(caster, player, 1160701, 5000, 7));
         Assert.Equal(800, Shield(player, 1160701));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("Repository data/config");
     }
 }

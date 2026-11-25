@@ -39,7 +39,7 @@ public sealed partial class LotteryActivityTests
             _app.Services.GetRequiredService<RoleStore>().SavePets(session.Role!.Id, state.ToByteArray());
             return Task.CompletedTask;
         });
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var opening = S3EconomyReader.Read(_dataDir, catalog);
         int initialTickets = session.Items.Where(i => i.Entry == 1250709).Sum(i => i.Stack);
         var results = new List<LotteryResp>();

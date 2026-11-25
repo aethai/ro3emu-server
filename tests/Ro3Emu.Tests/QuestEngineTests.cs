@@ -26,7 +26,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         var (http, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -37,7 +37,6 @@ public sealed class QuestEngineTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -607,13 +606,6 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await bot.SendGameAsync(SceneService.ClientNpcInteract, new ClientNpcInteractReq { DialogID = 1010125001, Areapointid = 1010121001 });
         await Barrier(bot);
         Assert.Equal(1, await Read(s => Service<CharacterService>().CountOf(s, 1501014)));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

@@ -18,14 +18,13 @@ public sealed class ReturningLoginWriteTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
     private async Task<(BotClient Bot, long Role)> InWorld(bool create)
@@ -63,12 +62,5 @@ public sealed class ReturningLoginWriteTests : IAsyncLifetime
                 .Select(kv => kv.Key).Where(part => part is not ("public_position" or "identity")).Order().ToArray();
             Assert.True(changed.Length == 0, "parts written by a returning login: " + string.Join(", ", changed));
         }
-    }
-
-    private static string RepoRoot()
-    {
-        var d = new DirectoryInfo(AppContext.BaseDirectory);
-        while (d != null && !File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx")) && !File.Exists(Path.Combine(d.FullName, "Ro3Emu.sln"))) d = d.Parent;
-        return d!.FullName;
     }
 }

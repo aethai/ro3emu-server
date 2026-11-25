@@ -26,7 +26,7 @@ public sealed partial class TradeTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
         }, _clock);
         await _app.StartAsync();
@@ -36,7 +36,6 @@ public sealed partial class TradeTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -356,13 +355,6 @@ public sealed partial class TradeTests : IAsyncLifetime
             + (await Mail(second, (long)second.Self!.Uuid)).Count(m => m.Template == 1064));
         await seller.SendGameAsync(TradeService.OwnBooth, new QueryPlayerBoothInfoRequest());
         Assert.Equal(0, (await Next(seller, TradeService.OwnBooth, CQueryPlayerBoothInfoResp.Parser)).Data.TotalCount);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 

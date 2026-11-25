@@ -161,7 +161,7 @@ public sealed class TravelCheckTests
     [ClientDataFact]
     public async Task EverySenderOnTheClientsTablesIsAllowedAndARawJumpIsNot()
     {
-        await using var host = await StartAsync(gameData: Path.Combine(RepoRoot(), "data"));
+        await using var host = await StartAsync(gameData: Path.Combine(ClientData.RepoRoot, "data"));
         await using var bot = await host.InWorldAsync("Table");
         var data = host.Service<GameData>();
         var parameters = data.Table("PublicParamConfig");
@@ -187,7 +187,7 @@ public sealed class TravelCheckTests
     [ClientDataFact]
     public async Task EveryAuthoredJumpIsAllowedAndAnotherPointIsNot()
     {
-        await using var host = await StartAsync(gameData: Path.Combine(RepoRoot(), "data"));
+        await using var host = await StartAsync(gameData: Path.Combine(ClientData.RepoRoot, "data"));
         await using var bot = await host.InWorldAsync("Jumps");
         var world = host.Service<WorldData>();
         var jumps = await OnLoop(host, () => host.Service<SceneService>().AuthoredJumps());
@@ -211,7 +211,7 @@ public sealed class TravelCheckTests
     [ClientDataFact]
     public async Task ADeadRoleCannotUseAPortal()
     {
-        await using var host = await StartAsync(gameData: Path.Combine(RepoRoot(), "data"));
+        await using var host = await StartAsync(gameData: Path.Combine(ClientData.RepoRoot, "data"));
         await using var bot = await host.InWorldAsync("Ghost");
         var s = Session(host, bot);
         var portal = host.Service<WorldData>().Map(10111)!.Npcs.First(n => n.Kind == WorldNpcKind.Portal);
@@ -222,6 +222,4 @@ public sealed class TravelCheckTests
         Assert.Equal(ErrorCodes.TeleportDead, (await Next(bot, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
         Assert.Equal(10111, await OnLoop(host, () => s.SceneEntry));
     }
-
-    private static string RepoRoot() => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 }

@@ -30,7 +30,7 @@ public sealed class TimedEventTests : IAsyncLifetime
         var (port, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = port; o.MicroGatePort = micro; o.GameGatePort = game;
             o.SeasonStart = "2026-10-05";
         }, _clock);
@@ -48,7 +48,6 @@ public sealed class TimedEventTests : IAsyncLifetime
         Service<TimedBattleService>().SettlementCompletedForTest = null;
         Service<AccountStore>().BeforeOwnedCommitForTest = null;
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -1255,12 +1254,5 @@ public sealed class TimedEventTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeSeconds(Interlocked.Read(ref _seconds));
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
         public void Set(long value) => Interlocked.Exchange(ref _seconds, value);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("data/config");
     }
 }

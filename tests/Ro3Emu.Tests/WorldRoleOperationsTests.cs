@@ -24,7 +24,7 @@ public sealed class WorldRoleOperationsTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -37,7 +37,6 @@ public sealed class WorldRoleOperationsTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -428,13 +427,5 @@ public sealed class WorldRoleOperationsTests : IAsyncLifetime
         await using var again = await InWorld("Alice", create: false);
         var saved = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice");
         Assert.DoesNotContain(saved.Items, i => i.Grid == 0 && i.Entry == Gem);
-    }
-
-    private static string RepoRoot()
-    {
-        string dir = AppContext.BaseDirectory;
-        while (!Directory.Exists(Path.Combine(dir, "data", "config")))
-            dir = Directory.GetParent(dir)?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
-        return dir;
     }
 }

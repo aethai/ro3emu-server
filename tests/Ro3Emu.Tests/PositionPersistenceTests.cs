@@ -26,7 +26,7 @@ public sealed class PositionPersistenceTests(ITestOutputHelper output) : IAsyncL
         var (hp, mp, gp) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp;
         });
         await _app.StartAsync();
@@ -37,15 +37,7 @@ public sealed class PositionPersistenceTests(ITestOutputHelper output) : IAsyncL
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new InvalidOperationException("repo root not found");
     }
 
     private async Task<(BotClient Bot, GameSession Session)> InWorld(string name)

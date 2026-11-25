@@ -74,7 +74,7 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         var (hp, mp, gp) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.SeasonStart = "2026-08-01";
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.SeasonStart = "2026-08-01";
             o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp;
         }, _clock);
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -85,7 +85,6 @@ public sealed class GuildChallengeTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -618,12 +617,6 @@ public sealed class GuildChallengeTests : IAsyncLifetime
         public DateTimeOffset Now { get; set; } = now;
         public override DateTimeOffset GetUtcNow() => Now.ToUniversalTime();
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
-    }
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException();
     }
 
     /// <summary>103014 CheckGVEJoinCnt counts a settled Ilmata stage attempt for each member present: growth title 6's

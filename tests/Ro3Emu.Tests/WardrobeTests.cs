@@ -25,7 +25,7 @@ public sealed class WardrobeTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -38,7 +38,6 @@ public sealed class WardrobeTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -284,13 +283,6 @@ public sealed class WardrobeTests : IAsyncLifetime
         Assert.Equal(session.Wardrobe.ToByteArray(), saved);
         await loop.InvokeAsync(() => wardrobe.ReconcileAsync(session));
         Assert.Equal(saved, roles.LoadWardrobe(session.Role.Id));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     private sealed class ManualClock(DateTimeOffset initial) : TimeProvider

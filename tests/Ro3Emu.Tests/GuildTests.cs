@@ -27,7 +27,7 @@ public sealed partial class GuildTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web;
             o.MicroGatePort = micro;
             o.GameGatePort = gate;
@@ -41,7 +41,6 @@ public sealed partial class GuildTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -456,7 +455,7 @@ public sealed partial class GuildTests : IAsyncLifetime
         foreach (var stall in market.Stalls) stall.AvailableMs = 0;
         Assert.True(store.SaveMarket(market, []));
         store.Delete(orphanId); // guild dissolution can delete the seller while its market escrow remains
-        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, RepoRoot());
+        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot);
         await buyer.SendGameAsync(GuildService.MarketItems, new GetBlackMarketItemsReq());
         var visible = await Next(buyer, GuildService.MarketItems, GetBlackMarketItemsRsp.Parser);
         Assert.Equal(10, Assert.Single(visible.Items).TotalRemainCount);
@@ -464,8 +463,8 @@ public sealed partial class GuildTests : IAsyncLifetime
         var recovered = Assert.Single(store.LoadMarket().RecoveryStalls);
         Assert.Equal(orphanId, recovered.GuildId);
         Assert.Equal(10, recovered.RemainCount);
-        var recoveryLedger = MarketEconomyEvidence.Exact(_dataDir, RepoRoot(), openingEconomy,
-            MarketEconomyEvidence.Cut(_dataDir, RepoRoot()), recovery: true);
+        var recoveryLedger = MarketEconomyEvidence.Exact(_dataDir, ClientData.RepoRoot, openingEconomy,
+            MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot), recovery: true);
         Assert.DoesNotContain(recoveryLedger.Legs, x => x.Kind is Ro3Emu.Server.Economy.EconomyLegKind.Source
             or Ro3Emu.Server.Economy.EconomyLegKind.Sink);
         Assert.Contains(recoveryLedger.Legs, x => x.Location.Compartment == Ro3Emu.Server.Economy.EconomyCompartment.Recovery && x.Delta == 10);
@@ -584,13 +583,6 @@ public sealed partial class GuildTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, GuildService.Edit, GuildEditResp.Parser, x => x.Name == "Third" || x.Result != 0)).Result);
         Assert.Null(_app.Services.GetRequiredService<GuildStore>().Get(id));
         Assert.Equal(10, session.Progress.Currency.GetValueOrDefault(3));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     /// <summary>104007 CheckJoinGuild reads the membership: "Join a guild" (10200080, automatic) and 100026 complete

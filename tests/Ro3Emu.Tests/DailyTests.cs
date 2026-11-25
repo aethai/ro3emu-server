@@ -30,7 +30,7 @@ public sealed class DailyTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -43,7 +43,6 @@ public sealed class DailyTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -573,7 +572,7 @@ public sealed class DailyTests : IAsyncLifetime
         Assert.False(await loop.InvokeAsync(() => Task.FromResult(
             _app.Services.GetRequiredService<SessionRegistry>().All().Single(x => x.Role?.Id == bobRole)
                 .Dungeons!.FirstSetted)));
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         accounts.BeforeOwnedCommitForTest = label =>
@@ -644,7 +643,7 @@ public sealed class DailyTests : IAsyncLifetime
         var before = JsonSerializer.Deserialize<DailyActivityService.DailyState>(roles.LoadDaily(role)!)!;
         long oldWeek = before.WeeklyEpoch;
         before.WeeklyEpoch -= 7 * 86400;
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var opening = S3EconomyReader.Read(_dataDir, catalog);
         await OwnedFixtureAsync(role, "weekly reset fixture", async session =>
         {
@@ -927,13 +926,6 @@ public sealed class DailyTests : IAsyncLifetime
         });
         Assert.Equal(1, await State(s => s.Tasks!.CompleteTaskNum.GetValueOrDefault(root + 1)));
         Assert.Equal(0, await State(s => s.DailyRows!.ActivityData[3302].TaskCompleteTimes));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

@@ -197,7 +197,7 @@ public sealed partial class GenreTests
         var donorSession = Session(donor); var target = Session(seeker);
         long donorGuid = donorSession.Items.Single(i => i.Entry == 2010121).Guid;
         long ownGuid = target.Items.Single(i => i.Entry == 2010121).Guid;
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var database = Service<AccountStore>().DatabasePath;
         var opening = EconomySnapshotReader.Read(database, catalog, "auto");
         var reached = Signal(); var release = Signal(); var deferred = Signal();

@@ -39,7 +39,6 @@ public sealed class GmPresetOpTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
     }
 
     public async Task DisposeAsync()

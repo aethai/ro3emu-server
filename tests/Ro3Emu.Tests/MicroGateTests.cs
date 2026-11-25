@@ -24,7 +24,6 @@ public sealed class MicroGateTests : IDisposable
     public void Dispose()
     {
         foreach (var store in _stores) store.Dispose();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 

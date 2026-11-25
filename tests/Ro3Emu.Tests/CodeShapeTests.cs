@@ -28,6 +28,9 @@ public sealed class CodeShapeTests
     private const int NumericSendGameCalls = 48;
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
+    private const int PrivateRepoRootHelpersInTests = 0;
+    private const int ServerHostCreateOutsideTestServer = 197;
+    private const int ClearAllPoolsInTests = 63;
 
     private static readonly string ObjDir = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
     private static readonly string BinDir = Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar;
@@ -35,6 +38,7 @@ public sealed class CodeShapeTests
         Path.Combine("Data", "Config", "Tables") + Path.DirectorySeparatorChar;
 
     private static readonly Lazy<ShapeSnapshot> ServerSnapshot = new(ScanServer);
+    private static readonly Lazy<TestShapeSnapshot> TestsSnapshot = new(ScanTests);
 
     [Fact]
     public void MethodsOver80LinesOnlyGoDown() =>
@@ -85,6 +89,18 @@ public sealed class CodeShapeTests
     [Fact]
     public void AdHocResetOffsetsInGameOnlyGoDown() =>
         AssertRatchet(nameof(AdHocResetOffsetsInGame), AdHocResetOffsetsInGame, ServerSnapshot.Value.AdHocResetOffsets);
+
+    [Fact]
+    public void PrivateRepoRootHelpersInTestsOnlyGoDown() =>
+        AssertRatchet(nameof(PrivateRepoRootHelpersInTests), PrivateRepoRootHelpersInTests, TestsSnapshot.Value.PrivateRepoRoots);
+
+    [Fact]
+    public void ServerHostCreateOutsideTestServerOnlyGoesDown() =>
+        AssertRatchet(nameof(ServerHostCreateOutsideTestServer), ServerHostCreateOutsideTestServer, TestsSnapshot.Value.ServerHostCreates);
+
+    [Fact]
+    public void ClearAllPoolsInTestsOnlyGoDown() =>
+        AssertRatchet(nameof(ClearAllPoolsInTests), ClearAllPoolsInTests, TestsSnapshot.Value.ClearAllPools);
 
     [Fact]
     public void ScannerDetectsEveryTrackedShapeViolation()
@@ -483,6 +499,56 @@ public sealed class CodeShapeTests
         }
         return string.Join('.', parts);
     }
+
+    private static TestShapeSnapshot ScanTests()
+    {
+        string testsRoot = Path.Combine(ClientData.RepoRoot, "tests", "Ro3Emu.Tests");
+        List<string> privateRepoRoots = [];
+        List<string> serverHostCreates = [];
+        List<string> clearAllPools = [];
+
+        foreach (string path in Directory.EnumerateFiles(testsRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(p => !p.Contains(ObjDir, StringComparison.Ordinal) && !p.Contains(BinDir, StringComparison.Ordinal))
+            .OrderBy(p => p, StringComparer.Ordinal))
+        {
+            string relPath = Path.GetRelativePath(testsRoot, path).Replace('\\', '/');
+            if (relPath is "ClientData.cs" or "CodeShapeTests.cs" or "TestServer.cs") continue;
+            var root = CSharpSyntaxTree.ParseText(File.ReadAllText(path), path: relPath).GetRoot();
+
+            foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            {
+                if (method.Identifier.ValueText == "RepoRoot" && method.ParameterList.Parameters.Count == 0
+                    && method.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
+                {
+                    int line = method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                    privateRepoRoots.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+                }
+            }
+
+            foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (call.Expression is not MemberAccessExpressionSyntax ma) continue;
+                if (ma.Name.Identifier.ValueText == "Create"
+                    && ma.Expression is IdentifierNameSyntax id && id.Identifier.ValueText == "ServerHost")
+                {
+                    int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                    serverHostCreates.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+                }
+                else if (ma.Name.Identifier.ValueText == "ClearAllPools")
+                {
+                    int line = call.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
+                    clearAllPools.Add(string.Format(CultureInfo.InvariantCulture, "{0}:{1}", relPath, line));
+                }
+            }
+        }
+
+        return new(privateRepoRoots, serverHostCreates, clearAllPools);
+    }
+
+    private sealed record TestShapeSnapshot(
+        IReadOnlyList<string> PrivateRepoRoots,
+        IReadOnlyList<string> ServerHostCreates,
+        IReadOnlyList<string> ClearAllPools);
 
     private sealed record ShapeSnapshot(
         IReadOnlyList<string> LongMethods,

@@ -23,7 +23,7 @@ public sealed class CharacterTests : IAsyncLifetime
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         // Game tables come from the repository's data/config export (tools/ConfigExport).
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -40,7 +40,6 @@ public sealed class CharacterTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -726,13 +725,6 @@ public sealed class CharacterTests : IAsyncLifetime
             preview[root] = b[1] * (1 + b[2] + b[6]) * (1 + b[4]) + b[3];
         }
         return preview;
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

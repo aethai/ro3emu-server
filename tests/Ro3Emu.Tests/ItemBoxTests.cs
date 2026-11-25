@@ -38,7 +38,7 @@ public sealed class ItemBoxTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         }, _clock);
         await _app.StartAsync();
@@ -48,7 +48,6 @@ public sealed class ItemBoxTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -269,11 +268,4 @@ public sealed class ItemBoxTests : IAsyncLifetime
 
     private Task<long> SceneOf(BotClient bot) => Service<GameLoop>().InvokeAsync(() => Task.FromResult(
         Service<SessionRegistry>().All().Single(s => s.Account == bot.Account && s.Role != null).SceneEntry));
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 }

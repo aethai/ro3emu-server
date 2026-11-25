@@ -28,7 +28,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{web}";
@@ -37,7 +37,6 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -66,9 +65,9 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
     private static async Task<T> Next<T>(BotClient bot, uint id, MessageParser<T> parser) where T : IMessage<T> =>
         parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(id), TimeSpan.FromSeconds(10))).Body);
     private const string QuestAward = "cd13e/quest-award";
-    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomyLedgerWindow Window(EconomySnapshot a, EconomySnapshot b) =>
-        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")), a, b)!;
+        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")), a, b)!;
 
     [ClientDataFact]
     public async Task SetupAndDownCommitMarkersAndBlobWithVerifiableMetadataReceipts()
@@ -143,12 +142,5 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var detail = EconomyReceiptReader.Read(Database, receipt.OperationId)!;
         Assert.Equal("cd13b/totem-combine", detail.CommandKind);
         Assert.Equal(detail.RequestFingerprint, Convert.ToHexString(SHA256.HashData(detail.Outcome)));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

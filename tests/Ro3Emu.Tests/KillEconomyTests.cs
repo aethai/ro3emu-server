@@ -16,11 +16,11 @@ namespace Ro3Emu.Tests;
 /// <summary>E04 fixed rewards, real role ownership/writer and wire presentation. No load runs.</summary>
 public sealed class KillEconomyTests : IAsyncLifetime
 {
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "e04-kill-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "e04-kill-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private GameSession Session => Service<SessionRegistry>().All().Single(s => s.Account == "killtest" && s.Role != null);
     private Task OnLoop(Func<Task> action) => Service<GameLoop>().InvokeAsync(action);
     public async Task InitializeAsync()
@@ -28,7 +28,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         SureHitRolls.Install(_app);
@@ -38,8 +38,7 @@ public sealed class KillEconomyTests : IAsyncLifetime
     {
         Service<AccountStore>().BeforeOwnedCommitForTest = null;
         Service<AccountStore>().BeforeOwnedApplyForTest = null;
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> Enter(bool create = true)
     {
@@ -259,12 +258,5 @@ public sealed class KillEconomyTests : IAsyncLifetime
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER kill_fail");
         monster.RewardCommit = null;
         await OnLoop(() => Reward(player, monster)); Assert.Equal(1, ReceiptCount());
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException();
     }
 }

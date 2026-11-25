@@ -25,7 +25,7 @@ public sealed class SocialD13dTests : IAsyncLifetime
         _app = ServerHost.Create([], options =>
         {
             options.DataDir = _directory;
-            options.GameDataDir = Path.Combine(RepoRoot(), "data");
+            options.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             options.HttpPort = httpPort;
             options.MicroGatePort = microPort;
             options.GameGatePort = gamePort;
@@ -260,12 +260,5 @@ public sealed class SocialD13dTests : IAsyncLifetime
         Assert.Empty(friends.LoadMetadata(b).ReceiveGiftRecords);
         Assert.Equal(0, friends.Intimacy(a, b));
         Assert.Equal(0, Scalar("SELECT COUNT(*) FROM operation_receipt WHERE command_kind='friend-gift'"));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var path = new DirectoryInfo(AppContext.BaseDirectory); path != null; path = path.Parent)
-            if (File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) return path.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

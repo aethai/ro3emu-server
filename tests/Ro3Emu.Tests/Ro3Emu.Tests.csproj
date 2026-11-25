@@ -36,6 +36,7 @@
   <ItemGroup>
     <!-- The synthetic game data (SyntheticData.Dir, docs/guide/testing.md): hand-written, every value invented. -->
     <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

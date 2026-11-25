@@ -20,7 +20,7 @@ public sealed class ReviveRaceTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -33,7 +33,6 @@ public sealed class ReviveRaceTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
@@ -87,12 +86,5 @@ public sealed class ReviveRaceTests : IAsyncLifetime
             && !SyncClientPlayerReviveInfoNtf.Parser.ParseFrom(e.Body).BDead, TimeSpan.FromSeconds(8));
         Assert.False(session.Dead);
         Assert.True(_app.Services.GetRequiredService<CharacterService>().Stats(session)[2000] > 0);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

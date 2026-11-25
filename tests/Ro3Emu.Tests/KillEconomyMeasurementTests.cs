@@ -15,7 +15,7 @@ public sealed class KillEconomyMeasurementTests(ITestOutputHelper output)
     [Fact]
     public void FixedKillBeforeAfterCommitCountLatencyAndQueueAge()
     {
-        string root = RepoRoot();
+        string root = ClientData.RepoRoot;
         string directory = Path.Combine(root, ".loadtest-temp", "e04-measure-" + Guid.NewGuid().ToString("N"));
         using var before = new Fixture(Path.Combine(directory, "before"));
         using var after = new Fixture(Path.Combine(directory, "after"));
@@ -103,11 +103,5 @@ public sealed class KillEconomyMeasurementTests(ITestOutputHelper output)
             return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
         }
         public void Dispose() => _accounts.Dispose();
-    }
-    private static string RepoRoot()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName;
-        throw new DirectoryNotFoundException();
     }
 }

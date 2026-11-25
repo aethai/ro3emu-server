@@ -26,23 +26,16 @@ public sealed class MapLineTests : IAsyncLifetime
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private GameSession Player(string name) => Service<SessionRegistry>().All().Single(s => string.Equals(s.Account, name, StringComparison.OrdinalIgnoreCase));
     private Task OnLoop(Func<Task> action) => Service<GameLoop>().InvokeAsync(action);
-    private static string RepoRoot()
-    {
-        string? p = AppContext.BaseDirectory;
-        while (p != null && !File.Exists(Path.Combine(p, "Ro3Emu.slnx"))) p = Path.GetDirectoryName(p);
-        return p!;
-    }
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
+        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
         SureHitRolls.Install(_app);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {

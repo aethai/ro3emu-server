@@ -110,7 +110,7 @@ public sealed partial class GuildTests
         }
         finally { FixtureSql.Execute(accounts, "DROP TRIGGER fail_market_seller"); }
 
-        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, RepoRoot());
+        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot);
         await buyer.SendGameAsync(GuildService.MarketBuy, request);
         Assert.Equal(0, (await Next(buyer, GuildService.MarketBuy, BuyBlackMarketItemRsp.Parser)).Result);
         Assert.Equal(0, store.Get(buyerId)!.Money);
@@ -121,8 +121,8 @@ public sealed partial class GuildTests
         Assert.Equal(secondId, store.ForRole((long)second.Self!.Uuid)!.Id);
         Assert.Empty(store.LoadMarket().Stalls);
         Assert.Equal(2, store.LoadMarket().Trades.Count);
-        var ledger = MarketEconomyEvidence.Exact(_dataDir, RepoRoot(), openingEconomy,
-            MarketEconomyEvidence.Cut(_dataDir, RepoRoot()));
+        var ledger = MarketEconomyEvidence.Exact(_dataDir, ClientData.RepoRoot, openingEconomy,
+            MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot));
         Assert.Equal(-250, ledger.Legs.Where(x => x.Reason == Ro3Emu.Server.Economy.EconomyReason.GuildMarketFee).Sum(x => x.Delta));
         Assert.DoesNotContain(ledger.Legs, x => x.Kind == Ro3Emu.Server.Economy.EconomyLegKind.Source);
     }

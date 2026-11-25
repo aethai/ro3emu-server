@@ -53,7 +53,6 @@ public abstract class MailTestsHost : IAsyncLifetime
     {
         await app.StopAsync();
         await app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(dir, true); } catch (IOException) { }
     }
 

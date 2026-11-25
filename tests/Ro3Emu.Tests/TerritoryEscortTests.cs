@@ -73,7 +73,7 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101; o.SeasonStart = "2026-05-19";
         }, _clock);
@@ -552,12 +552,5 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         await Service<TerritoryEscortService>().CreditGuildGoodsAsync(ownerGuild, 1, "test:escort:fault:other-credit");
         Assert.Equal(1, DurablePickedCargo());
         Assert.Equal(before + 1, SqlCount("SELECT count(*) FROM operation_source WHERE source_key LIKE $source", "escort-cargo:%:claim"));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

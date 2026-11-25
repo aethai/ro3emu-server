@@ -311,7 +311,7 @@ public sealed partial class NewActivityTests
             await LoadPrivate(bot, FestivalService.Dungeon);
             int answer = (int)GameData.Int(Service<GameData>().Table("RainbowKoiQuestionConfig").Values
                 .OrderBy(r => GameData.Int(r, "_iID")).First(), "_iQuestionAnswer");
-            using var editor = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(RepoRoot(), "data", "sceneeditor", "sc_prontera_001_dg01_sceneeditor.json")));
+            using var editor = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", "sc_prontera_001_dg01_sceneeditor.json")));
             var center = editor.RootElement.GetProperty("m_kRegins").GetProperty(answer == 1 ? "27" : "28").GetProperty("center");
             var answerPosition = new Vec3
             { X = center.GetProperty("x").GetSingle(), Y = center.GetProperty("y").GetSingle(), Z = center.GetProperty("z").GetSingle() };

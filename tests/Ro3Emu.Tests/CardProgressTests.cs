@@ -24,7 +24,7 @@ public sealed class CardProgressTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -37,7 +37,6 @@ public sealed class CardProgressTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -685,13 +684,5 @@ public sealed class CardProgressTests : IAsyncLifetime
         await Settled();
         await alice.SendGameAsync(CardService.LibraryCardUnlock, new LibraryCardUnlockReq { CardId = Lunatic });
         Assert.Equal(ErrorCodes.AlreadyUnlocked, (await Next(alice, CardService.LibraryCardUnlock, LibraryCardUnlockResp.Parser)).Result);
-    }
-
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repo data");
     }
 }

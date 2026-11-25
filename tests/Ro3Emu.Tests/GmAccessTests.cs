@@ -91,7 +91,7 @@ public sealed class GmAccessTests
         var app = ServerHost.Create(["--environment", "Production"], o =>
         {
             o.DataDir = dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -121,7 +121,6 @@ public sealed class GmAccessTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }
@@ -135,7 +134,7 @@ public sealed class GmAccessTests
         var app = ServerHost.Create([], o =>
         {
             o.DataDir = dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -170,7 +169,6 @@ public sealed class GmAccessTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }
@@ -178,11 +176,4 @@ public sealed class GmAccessTests
     private static async Task<string> Marquee(BotClient bot, string? contains = null) =>
         BroadCastNotify.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
             && (contains == null || BroadCastNotify.Parser.ParseFrom(e.Body).Content.Contains(contains)), Wait)).Body).Content;
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
-    }
 }

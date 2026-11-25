@@ -25,7 +25,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var ports = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = ports.Item1; o.MicroGatePort = ports.Item2; o.GameGatePort = ports.Item3;
         });
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -34,7 +34,6 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name)
@@ -54,12 +53,6 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
     {
         using var client = new HttpClient();
         (await client.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line))).EnsureSuccessStatusCode();
-    }
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException();
     }
     /// <summary>
     /// Learns the skill under the character's StateLock. A GM !lvl or !job leaves follow-up work (a quest reward, a

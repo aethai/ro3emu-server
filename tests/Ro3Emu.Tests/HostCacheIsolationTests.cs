@@ -55,7 +55,6 @@ public sealed class HostCacheIsolationTests : IDisposable
     {
         _first.Dispose();
         _second.Dispose();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
     }
 }

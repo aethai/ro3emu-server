@@ -125,7 +125,7 @@ public sealed partial class EmblemTests
         var guids = session.Items.Where(i => i.Entry == 1830101).Select(i => i.Guid).Order().ToArray();
         long target = guids[0], feed = guids[1];
         var accounts = _app.Services.GetRequiredService<AccountStore>();
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var beforeSetup = EconomySnapshotReader.Read(accounts.DatabasePath, catalog, "auto");
         await alice.SendGameAsync(EmblemService.SetUp, new SetUpEmblemReq { EmblemPos = 1, EmblemGuid = target });
         Assert.Equal(0, (await Next(alice, EmblemService.SetUp, SetUpEmblemResp.Parser)).Result);

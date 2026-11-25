@@ -40,7 +40,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.SeasonStart = "2026-10-08";
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
@@ -55,7 +55,6 @@ public sealed partial class DungeonTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -581,7 +580,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         var born = Service<WorldData>().Map(story)!.Born!.Value;
         string original = Service<GameData>().Row("DungeonConfig", story)!.Value
             .GetProperty("_kResSceneEditorName").GetString()!;
-        string source = Path.Combine(RepoRoot(), "data", "sceneeditor", original + ".json");
+        string source = Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", original + ".json");
         string directory = Path.Combine(_dataDir, "sceneeditor");
         Directory.CreateDirectory(directory);
         string stem = Path.Combine(directory, "synthetic_1054001");
@@ -763,13 +762,6 @@ public sealed partial class DungeonTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => Now.ToUniversalTime();
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
         public void Advance(TimeSpan by) => Now = Now.Add(by);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

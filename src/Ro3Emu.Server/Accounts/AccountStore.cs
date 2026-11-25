@@ -69,7 +69,7 @@ public sealed partial class AccountStore : IDisposable
             return EconomyCatalog.Load(options.Value.DataDir);
         });
         _economyCatalog = new(() => EconomyCatalog.Load(options.Value.GameDataDir ?? options.Value.DataDir));
-        _connectionString = $"Data Source={_databasePath}";
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _databasePath, Pooling = false }.ToString();
         using var db = OpenBootstrap();
         using (var wal = db.CreateCommand())
         {

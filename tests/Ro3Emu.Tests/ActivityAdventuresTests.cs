@@ -38,7 +38,7 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -53,7 +53,6 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -1336,13 +1335,6 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             .Sum(i => i.Entry == 1111001 ? i.Stack : 0));
         if (delete) Assert.Null(roles.Get(aliceId));
         else await relog!.DisposeAsync();
-    }
-
-    private static string RepoRoot()
-    {
-        var path = new DirectoryInfo(AppContext.BaseDirectory);
-        while (path != null && !Directory.Exists(Path.Combine(path.FullName, "data", "config"))) path = path.Parent;
-        return path?.FullName ?? throw new DirectoryNotFoundException("Repository data/config");
     }
 
     /// <summary>A dig that disturbs the Drake boss (TreasureHuntResultRateConfig 5) announces ChatConfig 401 to everyone

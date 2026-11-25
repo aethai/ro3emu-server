@@ -27,7 +27,7 @@ public sealed class DungeonMatchTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.SeasonStart = "2026-10-08";
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
@@ -41,7 +41,6 @@ public sealed class DungeonMatchTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -317,12 +316,5 @@ public sealed class DungeonMatchTests : IAsyncLifetime
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
         public void Advance(TimeSpan by) => Now = Now.Add(by);
         public void Set(DateTimeOffset value) => Now = value;
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

@@ -24,14 +24,13 @@ public sealed class CareerSpecialTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> InWorld(string name, bool create = true)
@@ -716,7 +715,4 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         var restored = await Next(again, CareerSpecialService.Sync, DBCareerSpecialIncrement.Parser);
         Assert.Equal(0, restored.MountsSlot.All.CartRemouldCfg);
     }
-
-    private static string RepoRoot()
-    { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName; throw new DirectoryNotFoundException(); }
 }

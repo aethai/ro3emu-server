@@ -48,7 +48,6 @@ public sealed class ServerListTimezoneTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }

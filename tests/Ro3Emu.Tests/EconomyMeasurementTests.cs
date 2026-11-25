@@ -17,7 +17,7 @@ public sealed class EconomyMeasurementTests(ITestOutputHelper output)
     [Fact, Trait("Category", "Slow")]
     public void PairedTypedPurchaseMeasuresAddedWriterWorkAndLedgerBytes()
     {
-        string root = RepoRoot();
+        string root = ClientData.RepoRoot;
         string artifact = Path.Combine(root, ".loadtest", "e01", "probe-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(artifact);
         using var plain = new Probe(Path.Combine(artifact, "control"), false);
@@ -146,12 +146,5 @@ public sealed class EconomyMeasurementTests(ITestOutputHelper output)
                 (string)mode.ExecuteScalar()!, Scalar("PRAGMA synchronous"));
         }
         public void Dispose() => _accounts.Dispose();
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

@@ -20,16 +20,6 @@ public sealed partial class NewActivityTests : IAsyncLifetime
     private string _http = "";
     private readonly TestClock _clock = new();
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
-    private static string RepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Ro3Emu.slnx")))
-        {
-            if (Directory.Exists(Path.Combine(directory.FullName, "data", "config"))) return directory.FullName;
-            directory = directory.Parent;
-        }
-        return directory?.FullName ?? throw new DirectoryNotFoundException("RO3 repository root");
-    }
 
     private sealed class TestClock : TimeProvider
     {
@@ -49,7 +39,7 @@ public sealed partial class NewActivityTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.PlayBook = 101; o.SeasonStart = "2026-10-05";
         }, _clock);
@@ -60,7 +50,6 @@ public sealed partial class NewActivityTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
