@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -24,16 +25,18 @@ public sealed partial class EmblemService
     private static MarkStage[] Stages(GameData data) => data.Derived("EmblemMarkStages", () =>
     {
         var stages = new List<MarkStage>();
-        foreach (var row in data.Table("EmblemMarkConfig").Values)
+        foreach (var row in EmblemMarkConfig.All(data))
         {
-            if (GameData.Int(row, "_iMarkStage") <= 0 || GameData.Int(row, "_iEmblemMarkID") is not (> 0 and var mark)) continue;
+            if (row.MarkStage <= 0 || row.EmblemMarkId is not (> 0 and var mark)) continue;
             var ops = new List<long[]>();
-            if (row.TryGetProperty("_kSpecialAttribute", out var ids) && ids.ValueKind == JsonValueKind.Array)
-                foreach (var id in ids.EnumerateArray())
-                    if (data.Row("SpecialEffectConfig", (long)(GameData.Number(id) ?? 0)) is { } effect)
-                        ops.AddRange(EquipmentAffixes.Rows(effect, "_kSpecialEffect"));
-            stages.Add(new MarkStage(mark, GameData.Int(row, "_iMarkNum"), GameData.Int(row, "_iSeasonPower"),
-                [.. GameData.Pairs(row, "_kBasicAttribute")], [.. ops]));
+            foreach (long id in row.SpecialAttribute)
+                if (SpecialEffectConfig.Get(data, id) is { } effect)
+                    ops.AddRange(effect.SpecialEffect);
+            var basic = row.BasicAttribute is { ValueKind: JsonValueKind.Array } list
+                ? list.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.Array && p.GetArrayLength() >= 2)
+                    .Select(p => ((long)(GameData.Number(p[0]) ?? 0), GameData.Number(p[1]) ?? 0)).ToArray()
+                : [];
+            stages.Add(new MarkStage(mark, row.MarkNum, row.SeasonPower, basic, [.. ops]));
         }
         return stages.ToArray();
     });
@@ -75,9 +78,9 @@ public sealed partial class EmblemService
         if (session.Progress == null) yield break;
         var line = new HashSet<long>();
         for (long c = session.Progress.Career; c > 0 && line.Count < 8 && line.Add(c);)
-            c = _data.Row("JobConfig", c) is { } job ? GameData.Int(job, "_iParentId") : 0;
+            c = JobConfig.Get(_data, c)?.ParentId ?? 0;
         foreach (var op in ResonanceOps(session, _data).Where(op => op.Length >= 2 && op[0] == OpSkillInUse).DistinctBy(op => op[1]))
-            if (_data.Row("SkillConfig", op[1]) is { } row && GameData.Int(row, "_iJob") is var job && (job == 0 || line.Contains(job)))
+            if (SkillConfig.Get(_data, op[1]) is { } row && row.Job is var job && (job == 0 || line.Contains(job)))
                 yield return (int)op[1];
     }
 
@@ -89,8 +92,9 @@ public sealed partial class EmblemService
         foreach (var op in ResonanceOps(session, _data))
             if (op.Length == 3 && op[0] == OpAttr) yield return (op[1], op[2]);
         foreach (int skill in ResonanceSkills(session))
-            if (_data.Row("SkillConfig", skill) is { } row && GameData.Int(row, "_iBasicType") == 0)
-                foreach (var attr in GameData.Pairs(row, "_kAttri")) yield return attr;
+            if (SkillConfig.Get(_data, skill) is { BasicType: 0 } row)
+                foreach (var attr in row.Attri)
+                    if (attr.Length >= 2) yield return (attr[0], attr[1]);
     }
 
     /// <summary>

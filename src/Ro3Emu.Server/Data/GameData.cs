@@ -185,9 +185,12 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     public static long Int(JsonElement row, string field) => Config.ConfigValue.Integral(row, field);
 
     /// <summary>A field holding [[id, value, ...], ...] (attribute lists): (id, first value) pairs.</summary>
-    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field)
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var list) ? Pairs(list) : [];
+
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement? element)
     {
-        if (!row.TryGetProperty(field, out var list) || list.ValueKind != JsonValueKind.Array) yield break;
+        if (element is not { ValueKind: JsonValueKind.Array } list) yield break;
         foreach (var pair in list.EnumerateArray())
         {
             if (pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 && Number(pair[0]) is { } id && Number(pair[1]) is { } value)

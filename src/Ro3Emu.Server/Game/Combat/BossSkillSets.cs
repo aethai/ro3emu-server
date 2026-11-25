@@ -203,12 +203,10 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
     internal (string Family, List<long> Rows, string Variant) Candidates(int npcId)
     {
         var rows = new List<long>();
-        if (data.Row("NPCConfig", npcId) is not { } npc) return ("", rows, "");
-        if (npc.TryGetProperty("_kSkills", out var listed) && listed.ValueKind == JsonValueKind.Array)
-            foreach (var s in listed.EnumerateArray())
-                if (GameData.Number(s) is { } id) rows.Add((long)id);
+        if (NPCConfig.Get(data, npcId) is not { } npc) return ("", rows, "");
+        rows.AddRange(npc.Skills);
         string family = rows.Count > 0 ? "listed" : "";
-        string ai = Text(npc, "_iAISpecial");
+        string ai = npc.AISpecial;
         if (ai.Length == 0) return (family, rows, "");
         if (MvpFamilies.TryGetValue(ai, out var mvp)) { rows.AddRange(mvp.Select(i => (long)i)); return ("field MVP " + ai, rows, ""); }
         // Pet Tower bosses run the MVP scripts without "MVP" ("Angeling", "orkhero") or with "PT" ("OrcLordPT").
@@ -252,17 +250,17 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         if (candidates.Count == 0) return null;
         var listed = ListedSkills(npcId);
         var difficulty = AiHard.IsMatch(variant) ? Difficulty.Hard : AiEasy.IsMatch(variant) ? Difficulty.Easy : Difficulty.Normal;
-        var rows = new List<(long Id, JsonElement Row, string Logic, Difficulty Tag)>();
+        var rows = new List<(long Id, SkillConfig Skill, string Logic, Difficulty Tag)>();
         var summonedOwn = SummonedOwnSkills(candidates);
         foreach (long id in candidates.Distinct())
         {
-            if (id == normalSkill || summonedOwn.Contains(id) || data.Row("SkillConfig", id) is not { } row || !Castable(row)) continue;
-            if (listed.Contains(id) && GameData.Int(row, "_iIsNormalAtk") == 1) continue; // a listed swing (Poring's 5003301)
+            if (id == normalSkill || summonedOwn.Contains(id) || SkillConfig.Get(data, id) is not { } skill || !Castable(skill)) continue;
+            if (listed.Contains(id) && skill.IsNormalAtk == 1) continue; // a listed swing (Poring's 5003301)
             if (MvpService.OwnsSkill(npcId, (int)id)) continue; // MvpService casts these for its field MVPs
-            string logic = Logic(row);
+            string logic = skill.ScriptLogic;
             var tag = HardTag.IsMatch(logic) ? Difficulty.Hard : EasyTag.IsMatch(logic) ? Difficulty.Easy : Difficulty.Normal;
             if (tag != Difficulty.Normal && tag != difficulty) continue;
-            rows.Add((id, row, logic, tag));
+            rows.Add((id, skill, logic, tag));
         }
         // An easy/hard boss uses its tagged version of a skill instead of the untagged one.
         if (difficulty != Difficulty.Normal)
@@ -271,8 +269,8 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
             rows.RemoveAll(r => r.Tag == Difficulty.Normal && tagged.Contains(BaseName(r.Logic)));
         }
         // Only placeholder cooldowns (every row under 3 s): the encounter script paced them (inferred).
-        bool placeholder = rows.Count > 0 && rows.All(r => GameData.Int(r.Row, "_iCD") < RealCooldownMs);
-        rows.RemoveAll(r => GameData.Int(r.Row, "_iCD") is var cd && (cd <= 0 || !placeholder && cd < RealCooldownMs));
+        bool placeholder = rows.Count > 0 && rows.All(r => r.Skill.Cd < RealCooldownMs);
+        rows.RemoveAll(r => r.Skill.Cd is var cd && (cd <= 0 || !placeholder && cd < RealCooldownMs));
         if (rows.Count == 0) return null;
 
         // Phase variants: 2-4 rows named base + one digit (the bare base counts as tier 0).
@@ -287,10 +285,10 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
             for (int i = 0; i < members.Length; i++) tiers[members[i].Id] = (i, members.Length);
         }
         int maxPhases = options.PhaseHpPercents.Length + 1;
-        bool once = rows.Any(r => GameData.Int(r.Row, "_iCD") >= OnceCooldownMs);
+        bool once = rows.Any(r => r.Skill.Cd >= OnceCooldownMs);
         int phases = Math.Min(maxPhases, Math.Max(once ? 2 : 1, tiers.Count == 0 ? 1 : tiers.Values.Max(t => t.Count)));
         var skills = new List<BossSkill>();
-        foreach (var (id, row, logic, _) in rows.OrderBy(r => r.Id))
+        foreach (var (id, skill, logic, _) in rows.OrderBy(r => r.Id))
         {
             int from = 0, to = int.MaxValue;
             if (tiers.TryGetValue(id, out var tier) && phases > 1)
@@ -298,23 +296,23 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
                 from = Math.Min(tier.Tier, phases - 1);
                 to = tier.Tier == tier.Count - 1 || tier.Tier >= phases - 1 ? int.MaxValue : tier.Tier;
             }
-            bool isOnce = GameData.Int(row, "_iCD") >= OnceCooldownMs;
+            bool isOnce = skill.Cd >= OnceCooldownMs;
             if (isOnce) from = Math.Min(1, phases - 1);
-            skills.Add(Build((int)id, row, logic, placeholder, from, to, isOnce));
+            skills.Add(Build((int)id, skill, logic, placeholder, from, to, isOnce));
         }
         var thresholds = options.PhaseHpPercents.Select(p => Math.Clamp(p, 1, 99) * 100).OrderDescending().Take(phases - 1).ToArray();
         return new BossSkillBook { Family = family, Skills = [.. skills], Phases = phases, PhaseHpBp = thresholds };
     }
 
     /// <summary>A row the client can play and the generic resolution can carry out.</summary>
-    private bool Castable(JsonElement row)
+    private bool Castable(SkillConfig skill)
     {
-        if (BossNormalAttacks.IsNamedSwing(row) || GameData.Int(row, "_iDmgType") == 3) return false; // swings, heals
-        if (GameData.Int(row, "_iActionTime") + GameData.Int(row, "_iChantFix") + GameData.Int(row, "_iChantVar") <= 0) return false;
-        if (GameData.Int(row, "_iScriptShow") <= 0) return false;
-        bool damage = Numbers(row, "_kDamageParam1").Any(v => v > 0) || Numbers(row, "_kDamageParam2").Any(v => v > 0);
-        bool buff = Tuples(row, "_kBuff1").Any() || Tuples(row, "_kBuff2").Any();
-        return damage || buff || SummonNpc(row) > 0 || GroundNpc(row) > 0;
+        if (BossNormalAttacks.IsNamedSwing(skill.Row) || skill.DmgType == 3) return false; // swings, heals
+        if (skill.ActionTime + skill.ChantFix + skill.ChantVar <= 0) return false;
+        if (skill.ScriptShow <= 0) return false;
+        bool damage = skill.DamageParam1.Any(v => v > 0) || skill.DamageParam2.Any(v => v > 0);
+        bool buff = skill.Buff1.Length > 0 || skill.Buff2.Length > 0;
+        return damage || buff || SummonNpc(skill) > 0 || GroundNpc(skill) > 0;
     }
 
     /// <summary>
@@ -336,36 +334,36 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         [5213701] = 5001040, // Doppelganger's Storm Gust: "Wraith Storm Gust Magic Circle"
     };
 
-    private static int Summoned(JsonElement row) => Numbers(row, "_kLogicData").FirstOrDefault() is var npc and > 0 ? (int)npc
-        : ReconstructedSummons.GetValueOrDefault((int)new SkillConfig(row).Id);
+    private static int Summoned(SkillConfig skill) => skill.LogicData is [> 0 and var npc, ..] ? (int)npc
+        : ReconstructedSummons.GetValueOrDefault((int)skill.Id);
 
-    private int GroundNpc(JsonElement row) => Summoned(row) is var npc and > 0 && NPCConfig.Get(data, npc) is { NPCType: 4 } ? npc : 0;
+    private int GroundNpc(SkillConfig skill) => Summoned(skill) is var npc and > 0 && NPCConfig.Get(data, npc) is { NPCType: 4 } ? npc : 0;
 
-    private int SummonNpc(JsonElement row) => Summoned(row) is var npc and > 0
-        && data.Row("NPCConfig", (long)npc) is { } npcRow && GameData.Int(npcRow, "_iNPCType") == 1 ? (int)npc : 0;
+    private int SummonNpc(SkillConfig skill) => Summoned(skill) is var npc and > 0
+        && NPCConfig.Get(data, npc) is { NPCType: 1 } ? npc : 0;
 
-    private BossSkill Build(int id, JsonElement row, string logic, bool placeholder, int from, int to, bool once)
+    private BossSkill Build(int id, SkillConfig skill, string logic, bool placeholder, int from, int to, bool once)
     {
-        int cd = (int)GameData.Int(row, "_iCD");
+        int cd = (int)skill.Cd;
         if (placeholder) cd = Math.Max(cd, options.PlaceholderCooldownMs);
-        int chant = (int)Math.Max(0, GameData.Int(row, "_iChantFix") + GameData.Int(row, "_iChantVar"));
-        int action = (int)Math.Max(0, GameData.Int(row, "_iActionTime"));
-        var template = data.SkillTemplate(GameData.Int(row, "_iScriptShow"));
-        int release = (int)GameData.Int(row, "_iRelease");
-        bool area = GameData.Int(row, "_iRangeType") == 2;
-        var range = Numbers(row, "_kRange");
+        int chant = (int)Math.Max(0, skill.ChantFix + skill.ChantVar);
+        int action = (int)Math.Max(0, skill.ActionTime);
+        var template = data.SkillTemplate(skill.ScriptShow);
+        int release = (int)skill.Release;
+        bool area = skill.RangeType == 2;
+        var range = skill.Range;
         // _kRange in cm; [5], [0,0,0,0] are placeholders (a 5 cm area), the show's m_fAtkRange (m) is next (inferred).
         float rowRadius = range.Length > 0 && range[0] >= 100 ? (float)range[0] / 100 : 0;
-        float showRadius = template is { } t && t.TryGetProperty("m_fAtkRange", out var atk) && GameData.Number(atk) is double r and > 0.5 ? (float)r : 0;
+        float showRadius = SkillShow.AttackRange(template) is double r and > 0.5 ? (float)r : 0;
         float radius = Math.Min(options.MaxReach * 2, rowRadius > 0 ? rowRadius : showRadius > 0 ? showRadius : options.DefaultRadius);
-        float distance = GameData.Int(row, "_iDistanceMax") / 100f;
+        float distance = skill.DistanceMax / 100f;
         var shape = release switch
         {
             4 => BossSkillArea.Fan,
             3 or 5 or 6 or 7 => BossSkillArea.Rect,
             8 => BossSkillArea.AroundTarget,
             1 => area ? BossSkillArea.AroundTarget : BossSkillArea.Target,
-            _ => area || release is 0 or 2 && GameData.Int(row, "_iTargetMax") > 1 ? BossSkillArea.AroundSelf : BossSkillArea.Target,
+            _ => area || release is 0 or 2 && skill.TargetMax > 1 ? BossSkillArea.AroundSelf : BossSkillArea.Target,
         };
         // Rect: _kRange [length, width] (Stone Glyph Slash [2300,700], Devouring Tongue [1500,600]); a missing width is 3 m.
         float width = shape == BossSkillArea.Rect ? range.Length > 1 && range[1] >= 100 ? (float)range[1] / 100 : 3f : 0;
@@ -378,27 +376,27 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         // A _kBuff2 of BuffConfig _iType 1 (enum_BuffType.Buff) is the boss's own: Frenzy 5202301 / 5002201 "increases its own
         // ... damage" (MvpService treats it alike). A row whose _kBuff2 are all such buffs only buffs the boss, its
         // _kDamageParam1 (Frenzy's 10000) notwithstanding (inferred).
-        var buff2 = Tuples(row, "_kBuff2").Where(b => b.Length >= 3 && b[0] > 0).ToArray();
-        var beneficial = buff2.Where(b => data.Row("BuffConfig", (long)b[0]) is { } buff && GameData.Int(buff, "_iType") == 1).ToArray();
+        var buff2 = skill.Buff2.Where(b => b.Length >= 3 && b[0] > 0).ToArray();
+        var beneficial = buff2.Where(b => BuffConfig.Get(data, b[0]) is { Type: 1 }).ToArray();
         var hostile = buff2.Except(beneficial).ToArray();
         bool damages = (hostile.Length > 0 || beneficial.Length == 0)
-            && (Numbers(row, "_kDamageParam1").Any(v => v > 0) || Numbers(row, "_kDamageParam2").Any(v => v > 0));
+            && (skill.DamageParam1.Any(v => v > 0) || skill.DamageParam2.Any(v => v > 0));
         return new BossSkill
         {
-            Id = id, Row = row, Logic = logic, CdMs = cd, ChantMs = chant, ActionMs = action,
-            PublicCdMs = (int)Numbers(row, "_iPubCD").FirstOrDefault(),
+            Id = id, Row = skill.Row, Logic = logic, CdMs = cd, ChantMs = chant, ActionMs = action,
+            PublicCdMs = (int)skill.PubCD.FirstOrDefault(),
             FromPhase = from, ToPhase = to, Once = once,
             Area = shape, Radius = radius, Width = width, AngleDeg = angle, Reach = reach,
-            MaxTargets = (int)Math.Max(1, GameData.Int(row, "_iTargetMax")),
-            HitMs = HitMoments(template, chant, action), HighLevel = GameData.Int(row, "_iSkillEffectLevel") > 0,
+            MaxTargets = (int)Math.Max(1, skill.TargetMax),
+            HitMs = HitMoments(template, chant, action), HighLevel = skill.SkillEffectLevel > 0,
             Damages = damages, HitsPlayers = damages || hostile.Length > 0,
-            SelfBuffs = [.. Tuples(row, "_kBuff1").Where(b => b.Length >= 3 && b[0] > 0).Concat(beneficial).Select(b => ((int)b[0], (int)b[1], (int)b[2]))],
-            SummonNpc = SummonNpc(row), SummonCount = SummonCountOf(row), SummonLifeMs = SummonLifeOf(row), SummonBlast = SummonBlastOf(row),
-            GroundNpc = GroundNpc(row), GroundLifeMs = GroundLifeOf(row),
-            GroundBlast = GroundNpc(row) is var ground and > 0 && NPCConfig.Get(data, ground) is { RespawnSkill: > 0 and var groundBlast }
-                && data.Row("SkillConfig", groundBlast) != null ? (int)groundBlast : 0,
-            ChargeEffect = Charge(row, out int chargeMs), ChargeMs = chargeMs,
-            PushEffect = Push(row, out int pushMs, out float pushDistance), PushMs = pushMs, PushDistance = pushDistance,
+            SelfBuffs = [.. skill.Buff1.Where(b => b.Length >= 3 && b[0] > 0).Concat(beneficial).Select(b => ((int)b[0], (int)b[1], (int)b[2]))],
+            SummonNpc = SummonNpc(skill), SummonCount = SummonCountOf(skill), SummonLifeMs = SummonLifeOf(skill), SummonBlast = SummonBlastOf(skill),
+            GroundNpc = GroundNpc(skill), GroundLifeMs = GroundLifeOf(skill),
+            GroundBlast = GroundNpc(skill) is var ground and > 0 && NPCConfig.Get(data, ground) is { RespawnSkill: > 0 and var groundBlast }
+                && SkillConfig.Get(data, groundBlast) != null ? (int)groundBlast : 0,
+            ChargeEffect = Charge(skill, out int chargeMs), ChargeMs = chargeMs,
+            PushEffect = Push(skill, out int pushMs, out float pushDistance), PushMs = pushMs, PushDistance = pushDistance,
         };
     }
 
@@ -409,45 +407,37 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
     /// </summary>
     private int[] HitMoments(JsonElement? template, int chant, int action)
     {
-        var points = template is { } t && t.TryGetProperty("m_kAtkPoints", out var list) && list.ValueKind == JsonValueKind.Array
-            ? list.EnumerateArray().Select(v => GameData.Number(v) ?? 0).Where(v => v >= 0).Distinct().Order().ToArray() : [];
+        var points = SkillShow.AttackPoints(template).Where(v => v >= 0).Distinct().Order().ToArray();
         if (points.Length == 0 || points.All(p => p < 0.05) && action >= 1000) return [chant + action * 7 / 10];
         return [.. points.Select(p => CombatService.ImpactOffset(template, p, chant, action)).Distinct().Take(Math.Max(1, options.MaxHitsPerCast))];
     }
 
     /// <summary>"summons three" / "@{1} Thief Bugs": the description's first parameter when it is a small count.</summary>
-    private int SummonCountOf(JsonElement row) => SummonNpc(row) == 0 ? 0
-        : DescParam(row, 1) is double n && n is >= 1 and <= 10 && n == Math.Floor(n) ? (int)n : options.SummonCount;
+    private int SummonCountOf(SkillConfig skill) => SummonNpc(skill) == 0 ? 0
+        : DescParam(skill, 1) is double n && n is >= 1 and <= 10 && n == Math.Floor(n) ? (int)n : options.SummonCount;
 
-    private HashSet<long> ListedSkills(int npcId)
-    {
-        var ids = new HashSet<long>();
-        if (data.Row("NPCConfig", npcId) is { } npc && npc.TryGetProperty("_kSkills", out var list) && list.ValueKind == JsonValueKind.Array)
-            foreach (var s in list.EnumerateArray())
-                if (GameData.Number(s) is { } id) ids.Add((long)id);
-        return ids;
-    }
+    private HashSet<long> ListedSkills(int npcId) =>
+        NPCConfig.Get(data, npcId) is { } npc ? [.. npc.Skills] : [];
 
     /// <summary>The self-destruct born buff's time (Thief Bug 60 s), else the blast's described delay (5201501 "explode
     /// after @{1}=15 sec"), else BossSkillOptions.SummonLifeMs; as MvpService.MinionOf.</summary>
-    private int SummonLifeOf(JsonElement row)
+    private int SummonLifeOf(SkillConfig skill)
     {
-        if (SummonNpc(row) is var npc and > 0 && data.Row("NPCConfig", npc) is { } npcRow
-            && npcRow.TryGetProperty("_kBornEventBuff", out var born) && born.ValueKind == JsonValueKind.Array)
-            foreach (var b in born.EnumerateArray())
-                if (b.ValueKind == JsonValueKind.Array && b.GetArrayLength() >= 2 && GameData.Number(b[0]) == SelfDestructBuff
-                    && GameData.Number(b[1]) is double ms and > 0) return (int)ms;
-        if (SummonBlastOf(row) is var blast and > 0 && DescParam(data.Row("SkillConfig", blast)!.Value, 1) is double seconds and > 0)
+        if (SummonNpc(skill) is var npc and > 0 && NPCConfig.Get(data, npc) is { } npcRow)
+            foreach (var b in npcRow.BornEventBuff)
+                if (b is [SelfDestructBuff, > 0 and var ms, ..]) return (int)ms;
+        if (SummonBlastOf(skill) is var blast and > 0 && SkillConfig.Get(data, blast) is { } blastRow
+            && DescParam(blastRow, 1) is double seconds and > 0)
             return (int)(seconds * 1000);
         // A blast without a described delay goes off when its own show ends (the coffin's Coffin Eruption, inferred).
-        if (SummonBlastOf(row) is var timed and > 0 && SkillConfig.Get(data, timed) is { ActionTime: > 0 } shown)
+        if (SummonBlastOf(skill) is var timed and > 0 && SkillConfig.Get(data, timed) is { ActionTime: > 0 } shown)
             return (int)shown.ActionTime;
         return options.SummonLifeMs;
     }
 
     /// <summary>A ground object stays for its skill's action (it marks where the skill lands) and at least 3 s, then
     /// its _kRespawnSkill, if any, blasts around it (Dracula's tombstone and Gravestone Blast; inferred).</summary>
-    private static int GroundLifeOf(JsonElement row) => Math.Max(3000, (int)new SkillConfig(row).ActionTime);
+    private static int GroundLifeOf(SkillConfig skill) => Math.Max(3000, (int)skill.ActionTime);
 
     /// <summary>The skills a summoned unit or ground object casts itself (its _kRespawnSkill): the coffin's Coffin
     /// Eruption, not Pharaoh's, though the field-MVP family lists it (inferred).</summary>
@@ -455,26 +445,27 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
     {
         var own = new HashSet<long>();
         foreach (long id in rows)
-            if (data.Row("SkillConfig", id) is { } row && Summoned(row) is var npc and > 0 && NPCConfig.Get(data, npc) is { } summoned)
+            if (SkillConfig.Get(data, id) is { } skill && Summoned(skill) is var npc and > 0 && NPCConfig.Get(data, npc) is { } summoned)
             {
                 if (summoned.RespawnSkill > 0) own.Add(summoned.RespawnSkill);
-                foreach (long skill in summoned.Skills) own.Add(skill);
+                foreach (long s in summoned.Skills) own.Add(s);
             }
         return own;
     }
 
-    private int SummonBlastOf(JsonElement row) => SummonNpc(row) is var npc and > 0 && data.Row("NPCConfig", npc) is { } npcRow
-        && GameData.Int(npcRow, "_kRespawnSkill") is var blast and > 0 && data.Row("SkillConfig", blast) != null ? (int)blast : 0;
+    private int SummonBlastOf(SkillConfig skill) => SummonNpc(skill) is var npc and > 0
+        && NPCConfig.Get(data, npc) is { RespawnSkill: > 0 and var blast }
+        && SkillConfig.Get(data, blast) != null ? (int)blast : 0;
 
     /// <summary>
     /// A show with a displacement EffectData (CombatService.FindMovementEffect) moves someone. A knockback or pull is
     /// named in its curve (击退/震退, 勾/吸/拉) or in the skill's name/description ("Pulls enemies"); otherwise the
     /// caster moves: a charge or a leap toward its target (inferred).
     /// </summary>
-    private int Charge(JsonElement row, out int ms)
+    private int Charge(SkillConfig skill, out int ms)
     {
         ms = 0;
-        var (effect, time, curve, text) = Displacement(row);
+        var (effect, time, curve, text) = Displacement(skill);
         if (effect == 0) return 0;
         if (curve.Contains("击退") || curve.Contains("震退") || curve.Contains('勾') || curve.Contains('吸') || curve.Contains('拉')
             || text.Contains("pull") || text.Contains("knock") || text.Contains("repel")) return 0;
@@ -483,11 +474,14 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
     }
 
     /// <summary>The show's displacement EffectData (id, time, curve) and the skill's lower-case name and description.</summary>
-    private (int Effect, int Ms, string Curve, string Text) Displacement(JsonElement row)
+    private (int Effect, int Ms, string Curve, string Text) Displacement(SkillConfig skill)
     {
-        var (effect, time, curve) = CombatService.FindMovementEffect(data, GameData.Int(row, "_iScriptShow"));
-        return (effect, time, curve, effect == 0 ? ""
-            : (data.TextOf(row, "_iName") + " " + data.TextOf(row, "_iDescription")).ToLowerInvariant());
+        var (effect, time, curve) = CombatService.FindMovementEffect(data, skill.ScriptShow);
+        if (effect == 0) return (0, 0, curve, "");
+        string name = skill.Name is [var nameId, ..] ? data.Text(nameId) : "";
+        string desc = skill.Description is { ValueKind: JsonValueKind.Array } d && d.GetArrayLength() > 0
+            && GameData.Number(d[0]) is { } descId ? data.Text((long)descId) : "";
+        return (effect, time, curve, (name + " " + desc).ToLowerInvariant());
     }
 
     // (inferred) How far a boss's knockback moves a player, and where its pull stops: the player skills' Arrow Repel moves
@@ -497,11 +491,11 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
     /// <summary>A show whose displacement EffectData moves the players hit (the cases <see cref="Charge"/> leaves out): a
     /// knockback when its curve is 击退/震退 or the skill says knock/repel, a pull when its curve is 勾/吸/拉 or it says
     /// "pull" (Powerful Drain: "Pulls enemies inward toward yourself") (inferred).</summary>
-    private int Push(JsonElement row, out int ms, out float distance)
+    private int Push(SkillConfig skill, out int ms, out float distance)
     {
         ms = 0;
         distance = 0;
-        var (effect, time, curve, text) = Displacement(row);
+        var (effect, time, curve, text) = Displacement(skill);
         if (effect == 0) return 0;
         bool pull = curve.Contains('勾') || curve.Contains('吸') || curve.Contains('拉') || text.Contains("pull");
         bool knock = curve.Contains("击退") || curve.Contains("震退") || text.Contains("knock") || text.Contains("repel");
@@ -521,7 +515,7 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         if (_byLogicPrefix is { } built) return built;
         var byLogic = new Dictionary<string, List<long>>();
         foreach (var (key, row) in data.Table("SkillConfig"))
-            if (Logic(row) is { Length: > 0 } logic && long.TryParse(key, out long id))
+            if (new SkillConfig(row).ScriptLogic is { Length: > 0 } logic && long.TryParse(key, out long id))
             {
                 if (!byLogic.TryGetValue(logic.ToLowerInvariant(), out var ids)) byLogic[logic.ToLowerInvariant()] = ids = [];
                 ids.Add(id);
@@ -530,21 +524,7 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         return _byLogicPrefix = byLogic;
     }
 
-    private static string Logic(JsonElement row) => Text(row, "_kScriptLogic");
-
-    private static string Text(JsonElement row, string field) =>
-        row.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-
-    private static double[] Numbers(JsonElement row, string field) =>
-        row.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array
-            ? [.. list.EnumerateArray().Select(v => GameData.Number(v) ?? 0)] : [];
-
-    private static IEnumerable<double[]> Tuples(JsonElement row, string field) =>
-        row.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array
-            ? list.EnumerateArray().Where(t => t.ValueKind == JsonValueKind.Array)
-                .Select(t => t.EnumerateArray().Select(v => GameData.Number(v) ?? 0).ToArray()) : [];
-
-    private static double? DescParam(JsonElement row, int n) =>
-        row.TryGetProperty("_iDescription", out var d) && d.ValueKind == JsonValueKind.Array && d.GetArrayLength() > n
+    private static double? DescParam(SkillConfig skill, int n) =>
+        skill.Description is { ValueKind: JsonValueKind.Array } d && d.GetArrayLength() > n
             ? GameData.Number(d[n]) : null;
 }

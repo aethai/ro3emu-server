@@ -27,7 +27,7 @@ public sealed partial class EmblemService
         long totalExp = attrs.GetValueOrDefault(TotalExp);
         for (int next = (int)attrs.GetValueOrDefault(Level) + 1; next <= target; next++)
         {
-            totalExp += LevelRow(quality, next) is { } row ? new EmblemLvConfig(row).Exp : 0;
+            totalExp += LevelRow(quality, next)?.Exp ?? 0;
             AddPrimaryLevel(attrs, entry);
         }
         attrs[Level] = target;

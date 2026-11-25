@@ -10,6 +10,10 @@ internal static class SkillShow
         show is { } row && row.TryGetProperty("m_kAtkPoints", out var points) && points.ValueKind == JsonValueKind.Array
             ? [.. points.EnumerateArray().Select(point => GameData.Number(point) ?? 0)] : [];
 
+    /// <summary>The show's m_fAtkRange in meters, or 0 when absent.</summary>
+    public static double AttackRange(JsonElement? show) =>
+        show is { } row && row.TryGetProperty("m_fAtkRange", out var atk) ? GameData.Number(atk) ?? 0 : 0;
+
     /// <summary>
     /// Milliseconds after a cast's start from which it can be interrupted, or null if never before its end: m_fInterruptTime on
     /// the client's timeline (LC_Skill_RunTimeContext.calcDynamicTimeLine). m_kState.Time holds the chant's end and the show's
