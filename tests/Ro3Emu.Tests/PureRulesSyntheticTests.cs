@@ -25,20 +25,36 @@ public sealed class PureRulesSyntheticTests : IDisposable
         }
     }
 
-    private GameData BuildData(params (string Table, object Payload)[] tables)
+    private GameData BuildData(IReadOnlyList<(string Table, string Json)> tables)
     {
         string configDir = Path.Combine(_dir, Guid.NewGuid().ToString("N"), "config");
         Directory.CreateDirectory(configDir);
-        foreach (var (table, payload) in tables)
-            File.WriteAllText(Path.Combine(configDir, table + ".json"), JsonSerializer.Serialize(payload));
+        foreach (var (table, json) in tables)
+            File.WriteAllText(Path.Combine(configDir, table + ".json"), json);
         string root = Path.GetDirectoryName(configDir)!;
         return new GameData(Options.Create(new ServerOptions { GameDataDir = root }), NullLogger<GameData>.Instance);
     }
 
-    private static RoleProgress Role(int career, params int[] skills)
+    private static RoleProgress Role(int career) => new() { Career = career, Level = 99 };
+
+    private static RoleProgress Role(int career, int s1)
     {
-        var progress = new RoleProgress { Career = career, Level = 99 };
-        foreach (int entry in skills) progress.Skills[entry / 100] = entry % 100;
+        var progress = Role(career);
+        progress.Skills[s1 / 100] = s1 % 100;
+        return progress;
+    }
+
+    private static RoleProgress Role(int career, int s1, int s2)
+    {
+        var progress = Role(career, s1);
+        progress.Skills[s2 / 100] = s2 % 100;
+        return progress;
+    }
+
+    private static RoleProgress Role(int career, int s1, int s2, int s3)
+    {
+        var progress = Role(career, s1, s2);
+        progress.Skills[s3 / 100] = s3 % 100;
         return progress;
     }
 
@@ -47,14 +63,18 @@ public sealed class PureRulesSyntheticTests : IDisposable
     [Fact]
     public void StatCalculatorAppliesFullGroupFormulaAndCeilingRounding()
     {
-        var data = BuildData(("AttributeConfig", new Dictionary<string, object>
-        {
-            ["103"] = new { _iID = 103, _iPreAttri = 103, _iCalculateType = 1, _iDataType = 0 },
-            ["1031"] = new { _iID = 1031, _iPreAttri = 103, _iCalculateType = 2, _iDataType = 1 },
-            ["1032"] = new { _iID = 1032, _iPreAttri = 103, _iCalculateType = 3, _iDataType = 0 },
-            ["1033"] = new { _iID = 1033, _iPreAttri = 103, _iCalculateType = 4, _iDataType = 1 },
-            ["1034"] = new { _iID = 1034, _iPreAttri = 103, _iCalculateType = 6, _iDataType = 1 },
-        }));
+        var data = BuildData(
+        [
+            ("AttributeConfig", """
+            {
+              "103":  { "_iID": 103,  "_iPreAttri": 103, "_iCalculateType": 1, "_iDataType": 0 },
+              "1031": { "_iID": 1031, "_iPreAttri": 103, "_iCalculateType": 2, "_iDataType": 1 },
+              "1032": { "_iID": 1032, "_iPreAttri": 103, "_iCalculateType": 3, "_iDataType": 0 },
+              "1033": { "_iID": 1033, "_iPreAttri": 103, "_iCalculateType": 4, "_iDataType": 1 },
+              "1034": { "_iID": 1034, "_iPreAttri": 103, "_iCalculateType": 6, "_iDataType": 1 }
+            }
+            """),
+        ]);
 
         // B1=100, B2=0.10 (1000/10000), B6=0.05 (500/10000), B4=0.20 (2000/10000), B3=7
         // final = 100 * (1 + 0.15) * (1 + 0.20) + 7 = 138 + 7 = 145
@@ -83,13 +103,17 @@ public sealed class PureRulesSyntheticTests : IDisposable
     [Fact]
     public void StatCalculatorScalesPercentAndAspdDataTypesAndPassesUngroupedValues()
     {
-        var data = BuildData(("AttributeConfig", new Dictionary<string, object>
-        {
-            ["115"] = new { _iID = 115, _iPreAttri = 115, _iCalculateType = 1, _iDataType = 2 },
-            ["114"] = new { _iID = 114, _iPreAttri = 115, _iCalculateType = 2, _iDataType = 2 },
-            ["1142"] = new { _iID = 1142, _iPreAttri = 115, _iCalculateType = 3, _iDataType = 2 },
-            ["117"] = new { _iID = 117, _iPreAttri = 0, _iCalculateType = 1, _iDataType = 0 },
-        }));
+        var data = BuildData(
+        [
+            ("AttributeConfig", """
+            {
+              "115":  { "_iID": 115,  "_iPreAttri": 115, "_iCalculateType": 1, "_iDataType": 2 },
+              "114":  { "_iID": 114,  "_iPreAttri": 115, "_iCalculateType": 2, "_iDataType": 2 },
+              "1142": { "_iID": 1142, "_iPreAttri": 115, "_iCalculateType": 3, "_iDataType": 2 },
+              "117":  { "_iID": 117,  "_iPreAttri": 0,   "_iCalculateType": 1, "_iDataType": 0 }
+            }
+            """),
+        ]);
 
         var sheet = StatCalculator.Compute(new Dictionary<int, double>
         {
@@ -114,25 +138,30 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void JobResonanceSelectsFirstMetRowAndEvaluatesCountersAttributesAndPower()
     {
         var data = BuildData(
-            ("JobResonanceActiveConfig", new Dictionary<string, object>
+        [
+            ("JobResonanceActiveConfig", """
             {
-                ["1"] = new { _iId = 1, _iJob = 1400, _iJobResonanceId = 2, _iJobResonanceSkills = new[] { 10105, 10203 } },
-                ["2"] = new { _iId = 2, _iJob = 1400, _iJobResonanceId = 3, _iJobResonanceSkills = new[] { 10302 } },
-                ["3"] = new { _iId = 3, _iJob = 4400, _iJobResonanceId = 5, _iJobResonanceSkills = new[] { 40101 } },
-            }),
-            ("JobResonanceRestraintConfig", new Dictionary<string, object>
+              "1": { "_iId": 1, "_iJob": 1400, "_iJobResonanceId": 2, "_iJobResonanceSkills": [10105, 10203] },
+              "2": { "_iId": 2, "_iJob": 1400, "_iJobResonanceId": 3, "_iJobResonanceSkills": [10302] },
+              "3": { "_iId": 3, "_iJob": 4400, "_iJobResonanceId": 5, "_iJobResonanceSkills": [40101] }
+            }
+            """),
+            ("JobResonanceRestraintConfig", """
             {
-                ["1"] = new { _iID = 1, _iJobProfess1 = 10000, _iJobProfess2 = 9000, _iJobProfess3 = 9000, _iJobProfess5 = 9000 },
-                ["2"] = new { _iID = 2, _iJobProfess1 = 11000, _iJobProfess2 = 10000, _iJobProfess3 = 11000, _iJobProfess5 = 10000 },
-                ["3"] = new { _iID = 3, _iJobProfess1 = 11000, _iJobProfess2 = 9000, _iJobProfess3 = 10000, _iJobProfess5 = 10000 },
-                ["5"] = new { _iID = 5, _iJobProfess1 = 11000, _iJobProfess2 = 10000, _iJobProfess3 = 10000, _iJobProfess5 = 10000 },
-            }),
-            ("JobResonanceConfig", new Dictionary<string, object>
+              "1": { "_iID": 1, "_iJobProfess1": 10000, "_iJobProfess2": 9000,  "_iJobProfess3": 9000,  "_iJobProfess5": 9000 },
+              "2": { "_iID": 2, "_iJobProfess1": 11000, "_iJobProfess2": 10000, "_iJobProfess3": 11000, "_iJobProfess5": 10000 },
+              "3": { "_iID": 3, "_iJobProfess1": 11000, "_iJobProfess2": 9000,  "_iJobProfess3": 10000, "_iJobProfess5": 10000 },
+              "5": { "_iID": 5, "_iJobProfess1": 11000, "_iJobProfess2": 10000, "_iJobProfess3": 10000, "_iJobProfess5": 10000 }
+            }
+            """),
+            ("JobResonanceConfig", """
             {
-                ["1"] = new { _iID = 1, _iJobResonanceId = 1, _iPower = 0, _kAttribute = Array.Empty<object>() },
-                ["2"] = new { _iID = 2, _iJobResonanceId = 2, _iPower = 500, _kAttribute = Array.Empty<object>() },
-                ["5"] = new { _iID = 5, _iJobResonanceId = 5, _iPower = 500, _kAttribute = new[] { new[] { 207, 500 } } },
-            }));
+              "1": { "_iID": 1, "_iJobResonanceId": 1, "_iPower": 0,   "_kAttribute": [] },
+              "2": { "_iID": 2, "_iJobResonanceId": 2, "_iPower": 500, "_kAttribute": [] },
+              "5": { "_iID": 5, "_iJobResonanceId": 5, "_iPower": 500, "_kAttribute": [[207, 500]] }
+            }
+            """),
+        ]);
 
         var resonance = new JobResonance(data);
         Assert.Equal(2, resonance.ResonanceId(Role(1400, 10105, 10203)));
@@ -146,7 +175,8 @@ public sealed class PureRulesSyntheticTests : IDisposable
         Assert.Equal(9000, resonance.Multiplier(1, 5));
         Assert.Equal(10000, resonance.Multiplier(99, 2)); // unlisted defaults neutral
 
-        Assert.Equal([(207L, 500d)], resonance.Attributes(5));
+        var gospelAttr = Assert.Single(resonance.Attributes(5));
+        Assert.Equal((207L, 500d), gospelAttr);
         Assert.Empty(resonance.Attributes(2));
         Assert.Equal(500, resonance.Power(2));
         Assert.Equal(0, resonance.Power(JobResonance.Inactive));
@@ -156,30 +186,36 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void TotemRestraintAndPlayerRestraintsStackCountersAndPreserveZeroDamage()
     {
         var data = BuildData(
-            ("JobConfig", new Dictionary<string, object>
+        [
+            ("JobConfig", """
             {
-                ["1400"] = new { _iID = 1400, _iTotem = 1 },
-                ["4400"] = new { _iID = 4400, _iTotem = 4 },
-                ["3400"] = new { _iID = 3400, _iTotem = 3 },
-                ["5400"] = new { _iID = 5400, _iTotem = 2 },
-            }),
-            ("TotemRestraintConfig", new Dictionary<string, object>
+              "1400": { "_iID": 1400, "_iTotem": 1 },
+              "4400": { "_iID": 4400, "_iTotem": 4 },
+              "3400": { "_iID": 3400, "_iTotem": 3 },
+              "5400": { "_iID": 5400, "_iTotem": 2 }
+            }
+            """),
+            ("TotemRestraintConfig", """
             {
-                ["1"] = new { _iID = 1, _iTotem0 = 0, _iTotem1 = 0, _iTotem2 = 0, _iTotem3 = 2000 },
-                ["2"] = new { _iID = 2, _iTotem0 = 2000, _iTotem1 = 0, _iTotem2 = 0, _iTotem3 = 0 },
-                ["3"] = new { _iID = 3, _iTotem0 = 0, _iTotem1 = 2000, _iTotem2 = 0, _iTotem3 = 0 },
-                ["4"] = new { _iID = 4, _iTotem0 = 0, _iTotem1 = 0, _iTotem2 = 2000, _iTotem3 = 0 },
-            }),
-            ("JobResonanceActiveConfig", new Dictionary<string, object>
+              "1": { "_iID": 1, "_iTotem0": 0,    "_iTotem1": 0,    "_iTotem2": 0,    "_iTotem3": 2000 },
+              "2": { "_iID": 2, "_iTotem0": 2000, "_iTotem1": 0,    "_iTotem2": 0,    "_iTotem3": 0 },
+              "3": { "_iID": 3, "_iTotem0": 0,    "_iTotem1": 2000, "_iTotem2": 0,    "_iTotem3": 0 },
+              "4": { "_iID": 4, "_iTotem0": 0,    "_iTotem1": 0,    "_iTotem2": 2000, "_iTotem3": 0 }
+            }
+            """),
+            ("JobResonanceActiveConfig", """
             {
-                ["1"] = new { _iId = 1, _iJob = 1400, _iJobResonanceId = 2, _iJobResonanceSkills = new[] { 10101 } },
-                ["2"] = new { _iId = 2, _iJob = 4400, _iJobResonanceId = 3, _iJobResonanceSkills = new[] { 40101 } },
-            }),
-            ("JobResonanceRestraintConfig", new Dictionary<string, object>
+              "1": { "_iId": 1, "_iJob": 1400, "_iJobResonanceId": 2, "_iJobResonanceSkills": [10101] },
+              "2": { "_iId": 2, "_iJob": 4400, "_iJobResonanceId": 3, "_iJobResonanceSkills": [40101] }
+            }
+            """),
+            ("JobResonanceRestraintConfig", """
             {
-                ["2"] = new { _iID = 2, _iJobProfess1 = 11000, _iJobProfess2 = 10000, _iJobProfess3 = 11000 },
-                ["3"] = new { _iID = 3, _iJobProfess1 = 11000, _iJobProfess2 = 9000, _iJobProfess3 = 10000 },
-            }));
+              "2": { "_iID": 2, "_iJobProfess1": 11000, "_iJobProfess2": 10000, "_iJobProfess3": 11000 },
+              "3": { "_iID": 3, "_iJobProfess1": 11000, "_iJobProfess2": 9000,  "_iJobProfess3": 10000 }
+            }
+            """),
+        ]);
 
         var resonance = new JobResonance(data);
         var totems = new TotemRestraint(data);
@@ -203,17 +239,21 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void TitleDamageComputesTierDifferenceAndFloorsPositiveHitsAtOne()
     {
         var data = BuildData(
-            ("TitleConfig", new Dictionary<string, object>
+        [
+            ("TitleConfig", """
             {
-                ["1"] = new { _iID = 1, _kIndex = 1, _kTitleLev = 1, _iPower = 0, _iPowerAdd = 0, _kAttr = Array.Empty<object>() },
-                ["2"] = new { _iID = 2, _kIndex = 2, _kTitleLev = 1, _iPower = 0, _iPowerAdd = 0, _kAttr = Array.Empty<object>() },
-                ["10"] = new { _iID = 10, _kIndex = 10, _kTitleLev = 5, _iPower = 0, _iPowerAdd = 0, _kAttr = Array.Empty<object>() },
-            }),
-            ("TitleBuffConfig", new Dictionary<string, object>
+              "1":  { "_iID": 1,  "_kIndex": 1,  "_kTitleLev": 1, "_iPower": 0, "_iPowerAdd": 0, "_kAttr": [] },
+              "2":  { "_iID": 2,  "_kIndex": 2,  "_kTitleLev": 1, "_iPower": 0, "_iPowerAdd": 0, "_kAttr": [] },
+              "10": { "_iID": 10, "_kIndex": 10, "_kTitleLev": 5, "_iPower": 0, "_iPowerAdd": 0, "_kAttr": [] }
+            }
+            """),
+            ("TitleBuffConfig", """
             {
-                ["1"] = new { _iID = 1, _kIndex = 1, _kTitleName = 400 },
-                ["5"] = new { _iID = 5, _kIndex = 5, _kTitleName = 2000 },
-            }));
+              "1": { "_iID": 1, "_kIndex": 1, "_kTitleName": 400 },
+              "5": { "_iID": 5, "_kIndex": 5, "_kTitleName": 2000 }
+            }
+            """),
+        ]);
 
         var titles = new TitleDamage(data);
         Assert.Equal((0L, 400L, 2000L), (titles.Term(0), titles.Term(1), titles.Term(10)));
@@ -231,31 +271,19 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void PetCombatRulesOverlaysBattleAttributesScalesByQualityAndHonorsUnscaledList()
     {
         var data = BuildData(
-            ("PublicParamConfig", new Dictionary<string, object>
+        [
+            ("PublicParamConfig", """{ "PetNotImproveBaseAttr": [102] }"""),
+            ("PetBaseConfig", """{ "30001": { "_iID": 30001, "_iMonster": 5001, "_iQuality": 5 } }"""),
+            ("NPCConfig", """{ "5001": { "_iID": 5001, "_iAttributeVariated": 10, "_iBattleAttributeVariated": 20, "_iSpeed": 420 } }"""),
+            ("AttriMonsterConfig", """
             {
-                ["PetNotImproveBaseAttr"] = new[] { 102 },
-            }),
-            ("PetBaseConfig", new Dictionary<string, object>
-            {
-                ["30001"] = new { _iID = 30001, _iMonster = 5001, _iQuality = 5 },
-            }),
-            ("NPCConfig", new Dictionary<string, object>
-            {
-                ["5001"] = new { _iID = 5001, _iAttributeVariated = 10, _iBattleAttributeVariated = 20, _iSpeed = 420 },
-            }),
-            ("AttriMonsterConfig", new Dictionary<string, object>
-            {
-                ["10001"] = new { _iID = 10001, _kAttri = new int[][] { [101, 1000], [102, 500], [103, 200], [105, 50] } },
-                ["20001"] = new { _iID = 20001, _kAttri = new int[][] { [101, 2000], [103, 300] } },
-            }),
-            ("PetStarConfig", new Dictionary<string, object>
-            {
-                ["1"] = new { _iID = 1, _iPetID = 30001, _iStar = 1, _iStage = 0, _iBaseAttr = 15000 },
-            }),
-            ("PetAttrChangeConfig", new Dictionary<string, object>
-            {
-                ["1"] = new { _iID = 1, _iQuality = 5, _iStar = 1, _iStage = 0, _kAttrPerc = new int[][] { [101, 22500], [103, 11000] } },
-            }));
+              "10001": { "_iID": 10001, "_kAttri": [[101, 1000], [102, 500], [103, 200], [105, 50]] },
+              "20001": { "_iID": 20001, "_kAttri": [[101, 2000], [103, 300]] }
+            }
+            """),
+            ("PetStarConfig", """{ "1": { "_iID": 1, "_iPetID": 30001, "_iStar": 1, "_iStage": 0, "_iBaseAttr": 15000 } }"""),
+            ("PetAttrChangeConfig", """{ "1": { "_iID": 1, "_iQuality": 5, "_iStar": 1, "_iStage": 0, "_kAttrPerc": [[101, 22500], [103, 11000]] } }"""),
+        ]);
 
         // Level 0 maps to 1; battle attrs override 101 & 103; 102 is unscaled; 105 uses _iBaseAttr (15000/10000).
         var attrs = PetCombatRules.Attributes(data, 30001, new PetData { PetId = 30001, Level = 0, Star = 1, StarProgress = 0 });
@@ -273,7 +301,9 @@ public sealed class PureRulesSyntheticTests : IDisposable
     [Fact]
     public void PetCombatRulesClassifiesSupportScriptsAndComputesAttributeAmounts()
     {
+        static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement.Clone();
         static JsonElement Skill(string script) => JsonSerializer.SerializeToElement(new { _kScriptLogic = script });
+
         Assert.Equal(new PetCombatRules.Support(PetCombatRules.SupportKind.Buff), PetCombatRules.SupportFor(Skill("BoLiPaoPaoTower")));
         Assert.Equal(new PetCombatRules.Support(PetCombatRules.SupportKind.Buff, SelfOnly: true), PetCombatRules.SupportFor(Skill("HarvestSickle")));
         Assert.Equal(new PetCombatRules.Support(PetCombatRules.SupportKind.AttributeHeal), PetCombatRules.SupportFor(Skill("YaoGunPT")));
@@ -285,21 +315,9 @@ public sealed class PureRulesSyntheticTests : IDisposable
         var recipient = new StatSheet();
         recipient[101] = 5000;
 
-        var casterRule = JsonSerializer.SerializeToElement(new
-        {
-            _kDamageFormulaExtra = new[] { "T_AXadd0_etc" },
-            _kDamageParamExtra = new[] { new[] { 1, 650, 101, 3 } },
-        });
-        var recipientRule = JsonSerializer.SerializeToElement(new
-        {
-            _kDamageFormulaExtra = new[] { "T_AXadd0_etc" },
-            _kDamageParamExtra = new[] { new[] { 2, 1000, 101, 3 } },
-        });
-        var invalidRule = JsonSerializer.SerializeToElement(new
-        {
-            _kDamageFormulaExtra = new[] { "Other" },
-            _kDamageParamExtra = new[] { new[] { 1, 650, 101, 3 } },
-        });
+        var casterRule = Parse("""{ "_kDamageFormulaExtra": ["T_AXadd0_etc"], "_kDamageParamExtra": [[1, 650, 101, 3]] }""");
+        var recipientRule = Parse("""{ "_kDamageFormulaExtra": ["T_AXadd0_etc"], "_kDamageParamExtra": [[2, 1000, 101, 3]] }""");
+        var invalidRule = Parse("""{ "_kDamageFormulaExtra": ["Other"], "_kDamageParamExtra": [[1, 650, 101, 3]] }""");
 
         Assert.Equal(218, PetCombatRules.AttributeAmount(casterRule, caster, recipient));
         Assert.Equal(500, PetCombatRules.AttributeAmount(recipientRule, caster, recipient));
@@ -312,18 +330,18 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void TowerSuppressSelectsHighestMetPowerPercentThresholdAndDifficultyRatio()
     {
         var data = BuildData(
-            ("PowerSuppressConfig", new Dictionary<string, object>
+        [
+            ("PowerSuppressConfig", """{ "1": { "_iID": 1, "_kApplicableLevel": [0, 80, 100, 110], "_kApplicableBuff": [9001, 9002, 0, 9003] } }"""),
+            ("BuffConfig", """
             {
-                ["1"] = new { _iID = 1, _kApplicableLevel = new[] { 0, 80, 100, 110 }, _kApplicableBuff = new[] { 9001, 9002, 0, 9003 } },
-            }),
-            ("BuffConfig", new Dictionary<string, object>
-            {
-                ["9001"] = new { _iID = 9001, _kChangeAttri = new int[][] { [215, -1000], [216, -1000] } },
-                ["9002"] = new { _iID = 9002, _kChangeAttri = new int[][] { [215, -500], [216, -500] } },
-                ["9003"] = new { _iID = 9003, _kChangeAttri = new int[][] { [215, 1000], [216, 1000] } },
-            }));
+              "9001": { "_iID": 9001, "_kChangeAttri": [[215, -1000], [216, -1000]] },
+              "9002": { "_iID": 9002, "_kChangeAttri": [[215, -500],  [216, -500]] },
+              "9003": { "_iID": 9003, "_kChangeAttri": [[215, 1000],  [216, 1000]] }
+            }
+            """),
+        ]);
 
-        var floor = JsonSerializer.SerializeToElement(new { _iPowerSuppress = 1, _iPowerRecommend = 6000 });
+        var floor = JsonDocument.Parse("""{ "_iPowerSuppress": 1, "_iPowerRecommend": 6000 }""").RootElement.Clone();
         Assert.Equal(new TowerService.Suppression(9001, -1000, -1000), TowerService.Suppress(data, floor, 4799, 10000));
         Assert.Equal(new TowerService.Suppression(9002, -500, -500), TowerService.Suppress(data, floor, 4800, 10000));
         Assert.Equal(new TowerService.Suppression(0, 0, 0), TowerService.Suppress(data, floor, 6000, 10000));
@@ -337,30 +355,38 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void BuffRuleTablesComputesTagFactorsAndControlDecayImmunity()
     {
         var data = BuildData(
-            ("BuffTagConfig", new Dictionary<string, object>
+        [
+            ("BuffTagConfig", """
             {
-                ["1001"] = new { _iID = 1001, _iFormula = 1, _iAtkAttrID = 701, _iDefAttrID = 702 },
-                ["1002"] = new { _iID = 1002, _iFormula = 2, _iAtkAttrID = 703, _iDefAttrID = 704 },
-                ["1007"] = new { _iID = 1007, _iFormula = 0, _iAtkAttrID = 0, _iDefAttrID = 0 },
-            }),
-            ("SpecialStatusDecay", new Dictionary<string, object>
+              "1001": { "_iID": 1001, "_iFormula": 1, "_iAtkAttrID": 701, "_iDefAttrID": 702 },
+              "1002": { "_iID": 1002, "_iFormula": 2, "_iAtkAttrID": 703, "_iDefAttrID": 704 },
+              "1007": { "_iID": 1007, "_iFormula": 0, "_iAtkAttrID": 0,   "_iDefAttrID": 0 }
+            }
+            """),
+            ("SpecialStatusDecay", """
             {
-                ["1"] = new { _iID = 1, _iDecayType = 10000, _iDecayRatio = 5000, _iImmunityTime = 10000, _iImmunodetection = 3, _iIntervalDetection = 15000, _kBuffCategory = new[] { 1001 } },
-            }),
-            ("StateExclusionConfig", new Dictionary<string, object>
+              "1": { "_iID": 1, "_iDecayType": 10000, "_iDecayRatio": 5000, "_iImmunityTime": 10000, "_iImmunodetection": 3, "_iIntervalDetection": 15000, "_kBuffCategory": [1001] }
+            }
+            """),
+            ("StateExclusionConfig", """
             {
-                ["1"] = new { _iID = 1, _iSpecialStatusID = 13 },
-                ["2"] = new { _iID = 2, _iSpecialStatusID = 14 },
-            }),
-            ("DungeonConfig", new Dictionary<string, object>
+              "1": { "_iID": 1, "_iSpecialStatusID": 13 },
+              "2": { "_iID": 2, "_iSpecialStatusID": 14 }
+            }
+            """),
+            ("DungeonConfig", """
             {
-                ["2001"] = new { _iID = 2001, _iDecayType = 20000 },
-                ["2002"] = new { _iID = 2002, _iDecayType = 0 },
-            }));
+              "2001": { "_iID": 2001, "_iDecayType": 20000 },
+              "2002": { "_iID": 2002, "_iDecayType": 0 }
+            }
+            """),
+        ]);
 
         var rules = BuffRuleTables.For(data);
         Assert.Equal(2, rules.Tags.Count);
-        Assert.Equal([13, 14], rules.ExclusiveStates);
+        Assert.Equal(2, rules.ExclusiveStates.Count);
+        Assert.Equal(13, rules.ExclusiveStates[0]);
+        Assert.Equal(14, rules.ExclusiveStates[1]);
         Assert.Equal(20000, rules.DecayTypeOf(2001));
         Assert.Equal(BuffRuleTables.DefaultDecayType, rules.DecayTypeOf(2002));
         Assert.Equal(BuffRuleTables.DefaultDecayType, rules.DecayTypeOf(9999));
@@ -404,29 +430,34 @@ public sealed class PureRulesSyntheticTests : IDisposable
     public void BuffRuleTablesParsesHalosAndPeriodicDamageAndHealRules()
     {
         var data = BuildData(
-            ("Localization_en", new Dictionary<string, object>
+        [
+            ("Localization_en", """
             {
-                ["90001"] = new { _iID = 90001, _kDes = "Every @{1} sec, loses HP." },
-                ["90002"] = new { _iID = 90002, _kDes = "Takes damage periodically." },
-            }),
-            ("BuffConfig", new Dictionary<string, object>
+              "90001": { "_iID": 90001, "_kDes": "Every @{1} sec, loses HP." },
+              "90002": { "_iID": 90002, "_kDes": "Takes damage periodically." }
+            }
+            """),
+            ("BuffConfig", """
             {
-                ["5001"] = new { _iID = 5001, _iBuffID = 500, _iType = 1, _kLogicData = new[] { 5001, 5002 } },
-                ["5002"] = new { _iID = 5002, _iBuffID = 502, _iType = 1 },
-                ["6001"] = new { _iID = 6001, _iBuffID = 600, _iType = 1, _kDamageFormulaExtra = new[] { "T_AXaddBadd3_etc" }, _kDamageParamExtra = new[] { new[] { 0, 0, 101, 350 } } },
-                ["6002"] = new { _iID = 6002, _iBuffID = 601, _iType = 2, _iDmgType = 2, _iEleType = 3, _kData1 = new[] { 6000 }, _kDamageFormulaExtra = new[] { "T_Xplus1_Xplus2_Xisbuff" }, _kDamageParamExtra = new[] { new[] { 2, 1, 10 } } },
-                ["6003"] = new { _iID = 6003, _iBuffID = 602, _iType = 2, _iDmgType = 1, _iEleType = 1, _kData1 = new[] { 2500 }, _iDescription = new object[] { 90001, 0.5 } },
-                ["6004"] = new { _iID = 6004, _iBuffID = 603, _iType = 2, _iDmgType = 2, _iEleType = 2, _kData1 = new[] { 3000 }, _iDescription = new object[] { 90002 } },
-            }),
-            ("HaloConfig", new Dictionary<string, object>
+              "5001": { "_iID": 5001, "_iBuffID": 500, "_iType": 1, "_kLogicData": [5001, 5002] },
+              "5002": { "_iID": 5002, "_iBuffID": 502, "_iType": 1 },
+              "6001": { "_iID": 6001, "_iBuffID": 600, "_iType": 1, "_kDamageFormulaExtra": ["T_AXaddBadd3_etc"], "_kDamageParamExtra": [[0, 0, 101, 350]] },
+              "6002": { "_iID": 6002, "_iBuffID": 601, "_iType": 2, "_iDmgType": 2, "_iEleType": 3, "_kData1": [6000], "_kDamageFormulaExtra": ["T_Xplus1_Xplus2_Xisbuff"], "_kDamageParamExtra": [[2, 1, 10]] },
+              "6003": { "_iID": 6003, "_iBuffID": 602, "_iType": 2, "_iDmgType": 1, "_iEleType": 1, "_kData1": [2500], "_iDescription": [90001, 0.5] },
+              "6004": { "_iID": 6004, "_iBuffID": 603, "_iType": 2, "_iDmgType": 2, "_iEleType": 2, "_kData1": [3000], "_iDescription": [90002] }
+            }
+            """),
+            ("HaloConfig", """
             {
-                ["5001"] = new { _iID = 5001, _iRadius = 800, _iTickTime = 500, _iTargetMax = 5, _iTargetType = 1, _iExtraTarget = new[] { 1 } },
-            }));
+              "5001": { "_iID": 5001, "_iRadius": 800, "_iTickTime": 500, "_iTargetMax": 5, "_iTargetType": 1, "_iExtraTarget": [1] }
+            }
+            """),
+        ]);
 
         var rules = BuffRuleTables.For(data);
         var halo = Assert.Single(rules.Halos).Value;
         Assert.Equal((5001, 8f, 500, 5, false, true), (halo.Id, halo.Radius, halo.TickMs, halo.TargetMax, halo.Hostile, halo.IncludeSelf));
-        Assert.Equal([5002], halo.Applied); // self id 5001 filtered out
+        Assert.Equal(5002, Assert.Single(halo.Applied)); // self id 5001 filtered out
 
         var heal = rules.Periodic[6001];
         Assert.Equal((BuffRuleTables.PeriodicKind.Heal, 1000, 101, 350L), (heal.Kind, heal.IntervalMs, heal.HealAttr, heal.HealFlat));
