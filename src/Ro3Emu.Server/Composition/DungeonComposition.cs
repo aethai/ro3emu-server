@@ -19,6 +19,8 @@ internal static class DungeonComposition
         services.AddSingleton<DungeonCatalog>();
         services.AddSingleton<DungeonObligationStore>();
         services.AddSingleton<DungeonService>();
+        services.AddSingleton<RaidTrialsService>();
+        services.AddSingleton<ScriptedDungeonService>();
         services.AddSingleton<TowerService>();
         services.AddSingleton<ValhallaService>();
 
@@ -27,6 +29,14 @@ internal static class DungeonComposition
         AddLifecycle<DungeonService>();
         AddLifecycle<DungeonMatchService>();
         AddLifecycle<InstanceService>();
+    }
+
+    public static void WireDungeon(WebApplication app)
+    {
+        var dungeons = app.Services.GetRequiredService<DungeonService>();
+        dungeons.BindSubsystems(
+            app.Services.GetRequiredService<RaidTrialsService>(),
+            app.Services.GetRequiredService<ScriptedDungeonService>());
     }
 
     public static void WireDungeonTaskHooks(WebApplication app)
@@ -59,6 +69,15 @@ internal static class DungeonComposition
         var data = app.Services.GetRequiredService<GameData>();
         var match = app.Services.GetRequiredService<DungeonMatchService>();
         var dungeons = app.Services.GetRequiredService<DungeonService>();
+        var raids = app.Services.GetRequiredService<RaidTrialsService>();
+        var scripted = app.Services.GetRequiredService<ScriptedDungeonService>();
+
+        gm.Register("firstclear", "<bossId> [daysAgo] | <bossId> clear (Realm of the Gods test aid: the server's first clear "
+            + "of a boss, which unlocks its hall of fame entry and Sacred Blessing)", raids.FirstClearGmAsync);
+        gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, "
+            + "arrive at x z as a walk would, or complete the step server-side)", scripted.ActorsGmAsync);
+        gm.Register("raidtrial", "[list | <n> | stop] (raid test aid: the raid boss's scripted trials; start trial n now, or end the "
+            + "running one without a verdict)", raids.RaidTrialGmAsync);
 
         gm.Register("dungeonsolo", "on|off (test aid, this role session only)", async (s, a) =>
         {

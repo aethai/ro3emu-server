@@ -6,6 +6,11 @@ using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Economy;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -25,7 +30,7 @@ namespace Ro3Emu.Server.Game;
 /// LC_SceneCom_CustomInteractBtn) ends the preparation phase.</item>
 /// </list>
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     public const uint HallOfFame = 82583, MarkBlessings = 82588, ClaimHonor = 82589, ModuleButton = 30125;
     internal const string ServerInfoKey = "multi_dungeon_server";
@@ -70,7 +75,7 @@ public sealed partial class DungeonService
     /// participant's card, equipment and properties as they were at the clear (DBMultiDungeonHallOfFame). Later clears
     /// never replace it. Written by its own operation after the settlement.
     /// </summary>
-    private void RecordFirstClear(Attempt a, JsonElement boss, GameSession[] party)
+    internal void RecordFirstClear(Attempt a, JsonElement boss, GameSession[] party)
     {
         int bossId = (int)GameData.Int(boss, "_iBoss");
         if (ServerInfo.HallOfFame.ContainsKey(bossId) || party.Length == 0) return;
@@ -148,7 +153,7 @@ public sealed partial class DungeonService
         && row.TryGetProperty("_kBuffID", out var ids) && ids.ValueKind == JsonValueKind.Array
         ? ids.EnumerateArray().Select(v => (int)(GameData.Number(v) ?? 0)).Where(id => id > 0) : [];
 
-    private static int BlessingRevives(Attempt a) => a.Blessing is { } row ? (int)Math.Max(0, GameData.Int(row, "_iAddReviveNum")) : 0;
+    internal static int BlessingRevives(Attempt a) => a.Blessing is { } row ? (int)Math.Max(0, GameData.Int(row, "_iAddReviveNum")) : 0;
 
     private JsonElement? BossOf(int multiId, int mark) => _catalog.MultiRows
         .Where(r => GameData.Int(r, "_iID") == multiId).Select(r => _catalog.Boss(r, mark)).FirstOrDefault();
@@ -177,7 +182,7 @@ public sealed partial class DungeonService
     private static long[] TrialIds(JsonElement boss) => boss.TryGetProperty("_kFinalTrialID", out var ids)
         && ids.ValueKind == JsonValueKind.Array ? [.. ids.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).Where(id => id > 0)] : [];
 
-    private static DBMultiDungeonHonor? HonorView(State state, string key, JsonElement boss)
+    internal static DBMultiDungeonHonor? HonorView(State state, string key, JsonElement boss)
     {
         var ids = TrialIds(boss);
         if (ids.Length == 0) return null;
@@ -194,7 +199,7 @@ public sealed partial class DungeonService
     /// (ServerOptions.RaidEnrageSeconds after the fight began, inferred), 7006 [id] that goal finished. The trailing 4 of
     /// 7004/7005 is not read (inferred: the Ultimate difficulty the trials belong to).
     /// </summary>
-    private void EarnHonors(State next, Attempt a, JsonElement boss, long durationMs)
+    internal void EarnHonors(State next, Attempt a, JsonElement boss, long durationMs)
     {
         var ids = TrialIds(boss);
         if (ids.Length == 0) return;
@@ -228,7 +233,7 @@ public sealed partial class DungeonService
     }
 
     /// <summary>82584's honor: the goals this run finished (the client lists the Complete ones, LC_DAL_MultiPlayerDungeon:543-564).</summary>
-    private static DBMultiDungeonHonor? EarnedHonors(Accounts.DungeonRewardObligation row)
+    internal static DBMultiDungeonHonor? EarnedHonors(Accounts.DungeonRewardObligation row)
     {
         var before = JsonSerializer.Deserialize<State>(row.BaseState)!;
         var after = JsonSerializer.Deserialize<State>(row.NextState)!;
@@ -287,7 +292,7 @@ public sealed partial class DungeonService
 
     // ---- 30125 Start Battle ----
 
-    private static DungeonVar? FunctionButtons(Attempt a)
+    internal static DungeonVar? FunctionButtons(Attempt a)
     {
         if (!StartBattleScenes.Contains(a.Plan.SceneEntry) || a.Plan.Multi == null || !a.Started) return null;
         var v = new DungeonVar { VarId = FunctionButtonVar };
@@ -295,7 +300,7 @@ public sealed partial class DungeonService
         return v;
     }
 
-    private async Task EndPreparationAsync(Attempt a)
+    internal async Task EndPreparationAsync(Attempt a)
     {
         if (!a.Preparing || a.Settled || a.Room.Closed) return;
         a.Preparing = false;
@@ -317,7 +322,7 @@ public sealed partial class DungeonService
 
     /// <summary>"!firstclear &lt;boss&gt; [daysAgo]": the realm's first clear of a boss by the GM's role, dated back
     /// (test aid, not original behaviour); "clear" removes it.</summary>
-    private async Task FirstClearGmAsync(GameSession s, string[] args)
+    internal async Task FirstClearGmAsync(GameSession s, string[] args)
     {
         if (args.Length < 1 || !int.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int boss)
             || _data.Row("TenGameplayBossConfig", boss) == null) throw new ArgumentException("<TenGameplayBossConfig boss id> [daysAgo] | <boss> clear");

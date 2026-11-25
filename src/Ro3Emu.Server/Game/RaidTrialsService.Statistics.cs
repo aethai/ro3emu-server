@@ -2,9 +2,14 @@ using System.Globalization;
 using Google.Protobuf;
 using Romsg;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     public const uint Statistics = 30110, StatisticsHistory = 30114, StatisticsModule = 30116,
         StatisticsCurrent = 30117, PlayerStatistics = 30123, TaskScore = 30126, QueryResult = 30128, ResultNotify = 30132;
@@ -114,7 +119,7 @@ public sealed partial class DungeonService
 
     private static string ResultId(Attempt a) => a.Room.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    private void StoreHistory(State state, Attempt a)
+    internal void StoreHistory(State state, Attempt a)
     {
         state.Statistics[a.Room.Id] = StatisticsOf(a).ToByteArray();
         var result = new DBDungeonResultData

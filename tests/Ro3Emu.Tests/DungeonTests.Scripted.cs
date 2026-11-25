@@ -56,7 +56,7 @@ public sealed partial class DungeonTests
     }
 
     /// <summary>The stage 2 of the airship with the cannon the player stands by, and its ships.</summary>
-    private async Task<(BotClient Alice, DungeonService.SceneActorUnit Cannon, IReadOnlyList<MonsterUnit> Ships)> AtTheCannons()
+    private async Task<(BotClient Alice, SceneActorUnit Cannon, IReadOnlyList<MonsterUnit> Ships)> AtTheCannons()
     {
         var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99");
@@ -296,7 +296,7 @@ public sealed partial class DungeonTests
         Assert.Equal(0, await Interact(alice, vortex, 5300030));
     }
 
-    private async Task SeatedOnTheDeniroAsync(BotClient alice, DungeonService.SceneActorUnit actor, int interaction, bool exitByButton)
+    private async Task SeatedOnTheDeniroAsync(BotClient alice, SceneActorUnit actor, int interaction, bool exitByButton)
     {
         long me = Session(alice).Role!.Id;
         Assert.Equal(0, await Interact(alice, actor, interaction));
@@ -620,7 +620,7 @@ public sealed partial class DungeonTests
         await Stage(alice, 1, quest: 1);
         var round1 = await ActorsIn(alice, 8);
         Task<SystemBoardCastMsgNtf> Says(int chat) => Next(alice, 1022, SystemBoardCastMsgNtf.Parser, m => m.ChatId == chat);
-        Task<BuffUpdateNotify> Shows(IEnumerable<DungeonService.SceneActorUnit> shown, long point, int buff) =>
+        Task<BuffUpdateNotify> Shows(IEnumerable<SceneActorUnit> shown, long point, int buff) =>
             Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == buff)
                 && n.UnitId == shown.Single(a => a.NpcId == 400138 && a.Point == point).Uid);
 
@@ -804,15 +804,15 @@ public sealed partial class DungeonTests
     }
 
     /// <summary>The scene actors shown, once exactly <paramref name="count"/> of them match.</summary>
-    private Task<IReadOnlyList<DungeonService.SceneActorUnit>> ActorsIn(BotClient bot, int count,
-        Func<DungeonService.SceneActorUnit, bool>? match = null) =>
+    private Task<IReadOnlyList<SceneActorUnit>> ActorsIn(BotClient bot, int count,
+        Func<SceneActorUnit, bool>? match = null) =>
         ActorsWhen(bot, shown => shown.Count(a => match == null || match(a)) == count, match);
 
     /// <summary>The scene actors shown (those matching), once the room's whole set satisfies <paramref name="ready"/>.</summary>
-    private async Task<IReadOnlyList<DungeonService.SceneActorUnit>> ActorsWhen(BotClient bot,
-        Func<IReadOnlyList<DungeonService.SceneActorUnit>, bool> ready, Func<DungeonService.SceneActorUnit, bool>? match = null)
+    private async Task<IReadOnlyList<SceneActorUnit>> ActorsWhen(BotClient bot,
+        Func<IReadOnlyList<SceneActorUnit>, bool> ready, Func<SceneActorUnit, bool>? match = null)
     {
-        DungeonService.SceneActorUnit[] shown = [];
+        SceneActorUnit[] shown = [];
         for (int i = 0; i < 150; i++)
         {
             shown = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
@@ -823,7 +823,7 @@ public sealed partial class DungeonTests
         throw new TimeoutException($"The scene actors did not reach the expected state; shown: {string.Join(", ", shown.Select(a => $"{a.NpcId}@{a.Point}[{string.Join('/', a.Buffs.Select(b => b.ConfigId))}]"))}");
     }
 
-    private static async Task<int> Interact(BotClient bot, DungeonService.SceneActorUnit actor, int interaction)
+    private static async Task<int> Interact(BotClient bot, SceneActorUnit actor, int interaction)
     {
         await bot.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
         {

@@ -50,7 +50,7 @@ internal static class ActivitiesComposition
     public static void WireActivities(WebApplication app)
     {
         app.Services.GetRequiredService<DailyActivityService>(); // quest settlement and online rollover
-        app.Services.GetRequiredService<DungeonService>(); // keep DungeonService hooks ahead of LifeJobService
+        DungeonComposition.WireDungeon(app); // keep DungeonService hooks ahead of LifeJobService
         var activities = app.Services.GetRequiredService<NewActivityService>(); // activity clocks and reward state
         var rewards = app.Services.GetRequiredService<RewardService>();
         var life = app.Services.GetRequiredService<LifeJobService>();

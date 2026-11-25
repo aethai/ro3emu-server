@@ -1,9 +1,14 @@
 using Romsg;
 using Ro3Emu.Server.Data.Config;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>(inferred) Seconds between a cleared scene's 30403 and the entry into the scene that continues it.</summary>
     internal const int ContinueSeconds = 3;
@@ -18,11 +23,11 @@ public sealed partial class DungeonService
     /// (LC_TaskHelper.CheckShowMainTask). The next quest of 1000301, 10104310, tracks action 3000 into 1000401 though DungeonConfig
     /// names no loading link there, so the scripted scene names it (continuesTo, inferred).
     /// </summary>
-    private long ContinuationOf(long scene) => DungeonConfig.All(_data)
+    internal long ContinuationOf(long scene) => DungeonConfig.All(_data)
         .Where(d => d.SameDupLoadingType == 2 && d.SameDupLoadingTypeParam.Contains(scene)).Select(d => d.Id).FirstOrDefault()
         is var next and not 0 ? next : _catalog.ScriptedContinuation(scene);
 
-    private void ScheduleContinuation(GameSession s, Attempt a, long next)
+    internal void ScheduleContinuation(GameSession s, Attempt a, long next)
     {
         long roleId = s.Role?.Id ?? 0;
         // A scripted scene may name its own wait (ScriptedScene.ContinueAfterMs, the Ant Queen's passage: its last jump).

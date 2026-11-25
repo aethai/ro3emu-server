@@ -4,9 +4,14 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>ActionConfig 613 EnterDungeon_Sever, _iEXECHost 1 (data/config/ActionConfig.json).</summary>
     public const int RegionEnterDungeonAction = 613;

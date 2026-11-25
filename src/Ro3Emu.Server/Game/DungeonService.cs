@@ -15,7 +15,12 @@ namespace Ro3Emu.Server.Game;
 /// directly. A reconstructed scripted scene (DungeonService.Scripted) advances only on its configured client events
 /// (an interaction on its own shown actor, a walk into its region, the end of the story it started).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class DungeonService(GameData data, DungeonCatalog catalog, RoleStore roles,
+    DungeonObligationStore obligations, CharacterService character,
+    FunctionService functions, SeasonService seasons, InstanceService instances, TeamService teams,
+    SessionRegistry sessions, RewardService rewards, AuctionService auctions, GuildStore guilds, CombatService combat,
+    GameLoop loop, ILogger<DungeonService> log, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
+    PraiseService praise, TestingSwitches testing)
 {
     public const uint Sync = 5062, Enter = 30400, BaseInfo = 30401, Leave = 30402, Result = 30403, Event = 30404,
         Confirm = 30406, ClientEvent = 30106, CreateResult = 30107, EnterSceneResult = 30108,
@@ -38,83 +43,184 @@ public sealed partial class DungeonService
     /// <summary>Another private-room owner whose 30402 exit revives a dead member on return (the guild home).</summary>
     internal Func<long, bool>? RecoverDeadOnLeave { get; set; }
     /// <summary>A preformed-team ready check is waiting on this member.</summary>
-    internal bool Preparing(GameSession s) => _pending.ContainsKey(s) || _rolling.Contains(s);
+    internal bool Preparing(GameSession s) => _pending.ContainsKey(s) || Scripted._rolling.Contains(s);
 
-    private readonly GameData _data;
-    private readonly DungeonCatalog _catalog;
-    private readonly RoleStore _roles;
-    private readonly Ownership.OwnerRegistry _owners;
-    private readonly DungeonObligationStore _obligations;
-    private readonly CharacterService _character;
-    private readonly FunctionService _functions;
-    private readonly SeasonService _seasons;
-    private readonly InstanceService _instances;
-    private readonly TeamService _teams;
-    private readonly WorldInteractionService _vehicles;
-    private readonly SessionRegistry _sessions;
-    private readonly RewardService _rewards;
-    private readonly AuctionService _auctions;
-    private readonly GuildStore _guilds;
-    private readonly MonsterService _monsters;
-    private readonly CombatService _combat;
-    private readonly BuffService _buffs;
-    private readonly SceneService _scenes;
-    private readonly World _world;
-    private readonly GameLoop _loop;
-    private readonly TimeProvider _clock;
-    private readonly ILogger<DungeonService> _log;
-    private readonly AccountStore _accounts;
-    private readonly AwardService _awards;
-    private readonly ServerOptions _options;
-    private readonly PraiseService _praise;
-    private readonly TestingSwitches _testing;
+    private readonly GameData _data = data;
+    private readonly DungeonCatalog _catalog = catalog;
+    private readonly RoleStore _roles = roles;
+    private readonly DungeonObligationStore _obligations = obligations;
+    private readonly CharacterService _character = character;
+    private readonly FunctionService _functions = functions;
+    private readonly SeasonService _seasons = seasons;
+    private readonly InstanceService _instances = instances;
+    private readonly TeamService _teams = teams;
+    private readonly SessionRegistry _sessions = sessions;
+    private readonly RewardService _rewards = rewards;
+    private readonly AuctionService _auctions = auctions;
+    private readonly GuildStore _guilds = guilds;
+    private readonly CombatService _combat = combat;
+    private readonly GameLoop _loop = loop;
+    private readonly ILogger<DungeonService> _log = log;
+    private readonly ServerOptions _options = options.Value;
+    private readonly PraiseService _praise = praise;
+    private readonly TestingSwitches _testing = testing;
     private readonly Dictionary<GameSession, Preparation> _pending = [];
+    private TimeProvider _clock => _loop.Time;
+    private Ownership.OwnerRegistry _owners => _loop.Owners!;
 
-    public DungeonService(GameData data, DungeonCatalog catalog, RoleStore roles, Ownership.OwnerRegistry owners,
-        DungeonObligationStore obligations, CharacterService character,
-        FunctionService functions, SeasonService seasons, InstanceService instances, TeamService teams,
-        SessionRegistry sessions, RewardService rewards, AuctionService auctions, GuildStore guilds, MonsterService monsters, CombatService combat,
-        SceneService scene, BuffService buffs, GameLoop loop, TimeProvider clock, ILogger<DungeonService> log, World world,
-        GmCommands gm, AccountStore accounts, AwardService awards, Microsoft.Extensions.Options.IOptions<ServerOptions> options,
-        PraiseService praise, WorldInteractionService vehicles, TestingSwitches testing)
+    internal GameData GameData => _data;
+    internal DungeonCatalog Catalog => _catalog;
+    internal Ownership.OwnerRegistry Owners => _owners;
+    internal CharacterService Character => _character;
+    internal FunctionService Functions => _functions;
+    internal SeasonService Seasons => _seasons;
+    internal InstanceService Instances => _instances;
+    internal TeamService Teams => _teams;
+    internal SessionRegistry Sessions => _sessions;
+    internal GuildStore Guilds => _guilds;
+    internal GameLoop Loop => _loop;
+    internal TimeProvider Clock => _clock;
+    internal ILogger<DungeonService> Log => _log;
+    internal ServerOptions Options => _options;
+
+    internal RaidTrialsService Raids { get; private set; } = null!;
+    internal ScriptedDungeonService Scripted { get; private set; } = null!;
+
+    internal void BindSubsystems(RaidTrialsService raids, ScriptedDungeonService scripted)
     {
-        this._accounts = accounts; this._awards = awards; this._options = options.Value; this._praise = praise;
-        this._testing = testing;
-        gm.Register("firstclear", "<bossId> [daysAgo] | <bossId> clear (Realm of the Gods test aid: the server's first clear "
-            + "of a boss, which unlocks its hall of fame entry and Sacred Blessing)", FirstClearGmAsync);
-        this._data = data; this._catalog = catalog; this._roles = roles; this._owners = owners;
-        this._obligations = obligations; this._character = character;
-        this._functions = functions; this._seasons = seasons; this._instances = instances; this._teams = teams;
-        this._sessions = sessions; this._rewards = rewards; this._auctions = auctions; this._guilds = guilds;
-        this._monsters = monsters; this._loop = loop;
-        this._clock = clock; this._log = log;
-        this._combat = combat;
-        this._buffs = buffs;
-        this._scenes = scene;
-        this._world = world;
-        this._vehicles = vehicles;
-        // A rider's client reports the carrier's walk; a sliding client moves faster than it walks (DungeonService.Slide).
-        scene.WalkOnRide = s => vehicles.IsSeatedOnSceneActor(s) || Sliding(s);
-        vehicles.ExitHeld = RideHolds;
-        combat.GrantedSkill.Subscribe(FiresCannon);
-        combat.AimsFromSeat = FiresCannon;
-        gm.Register("actors", "[npcId | walk <x> <z> | use] (scripted scene test aid: the step's scene actors, jump beside one, arrive at x z as a walk would, or complete the step server-side)", ActorsGmAsync);
-        WireRaidTrials(combat, gm);
-        teams.MultiDungeonInfo = TeamDungeonInfo;
-        combat.DamageAdjusters.Subscribe((s, m, _, _, damage) => BondDamage(s, m, damage, incoming: false));
-        combat.IncomingDamageAdjusters.Subscribe((m, s, _, damage) => Task.FromResult(BondDamage(s, m, damage, incoming: true)));
-        scene.Loaded.Subscribe(LoadedAsync);
-        scene.Leaving.Subscribe(AbandonAsync);
-        scene.Leaving.Subscribe(StopSlideAsync);
-        combat.Killed.Subscribe(KilledAsync);
-        combat.BeforeKilled.Subscribe(FreezeTerminalKillAsync, order: CombatService.BeforeKilledOrderDungeon);
-        combat.PlayerDied.Subscribe(PlayerDiedAsync);
-        combat.ReviveInfoOwners.Subscribe(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
-        combat.Dealt.Subscribe((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
-        combat.Taken.Subscribe((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
-        combat.Healed.Subscribe((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
-        character.ProgressHandlers.Subscribe(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
+        Raids = raids;
+        Scripted = scripted;
+        raids.WireCombat();
+        scripted.WireScene();
+        _combat.Killed.Subscribe(KilledAsync);
+        _combat.BeforeKilled.Subscribe(FreezeTerminalKillAsync, order: CombatService.BeforeKilledOrderDungeon);
+        _combat.PlayerDied.Subscribe(PlayerDiedAsync);
+        _combat.ReviveInfoOwners.Subscribe(s => Active(s) != null); // PlayerDiedAsync publishes the run's own 30112
+        _combat.Dealt.Subscribe((s, m, n) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalDamage += n; });
+        _combat.Taken.Subscribe((m, s, n, dead) => { if (Active(s) is { } a && m.InstanceId == a.Room.Id) a.Stats[s.Role!.Id].TotalBeDamage += n; });
+        _combat.Healed.Subscribe((s, n) => { if (Active(s) is { } a) a.Stats[s.Role!.Id].TotalCure += n; });
+        _character.ProgressHandlers.Subscribe(SyncLockedAsync); // CharacterService invokes these while holding StateLock.
     }
+
+    // ---- RaidTrialsService & ScriptedDungeonService facades ----
+
+    public const uint HallOfFame = RaidTrialsService.HallOfFame, MarkBlessings = RaidTrialsService.MarkBlessings,
+        ClaimHonor = RaidTrialsService.ClaimHonor, ModuleButton = RaidTrialsService.ModuleButton;
+    internal const string ServerInfoKey = RaidTrialsService.ServerInfoKey;
+    internal static readonly long[] StartBattleScenes = RaidTrialsService.StartBattleScenes;
+    internal const int FirstAwardNone = RaidTrialsService.FirstAwardNone,
+        FirstAwardComplete = RaidTrialsService.FirstAwardComplete,
+        FirstAwardFinish = RaidTrialsService.FirstAwardFinish;
+    public const uint Statistics = RaidTrialsService.Statistics, StatisticsHistory = RaidTrialsService.StatisticsHistory,
+        StatisticsModule = RaidTrialsService.StatisticsModule, StatisticsCurrent = RaidTrialsService.StatisticsCurrent,
+        PlayerStatistics = RaidTrialsService.PlayerStatistics, TaskScore = RaidTrialsService.TaskScore,
+        QueryResult = RaidTrialsService.QueryResult, ResultNotify = RaidTrialsService.ResultNotify;
+    public const uint RandomDungeon = ScriptedDungeonService.RandomDungeon;
+    public const int RegionEnterDungeonAction = ScriptedDungeonService.RegionEnterDungeonAction;
+    public const int StoryVar = ScriptedDungeonService.StoryVar;
+    internal const int GuideWayVar = ScriptedDungeonService.GuideWayVar;
+    internal const int PlaneExitSeconds = ScriptedDungeonService.PlaneExitSeconds;
+    internal const long SceneActorUidBase = ScriptedDungeonService.SceneActorUidBase;
+    internal const long SlideStateData = ScriptedDungeonService.SlideStateData,
+        SlideSpeedData = ScriptedDungeonService.SlideSpeedData,
+        SlideCameraData = ScriptedDungeonService.SlideCameraData;
+
+    /// <summary>The exact act and activity generation earned by the frozen dungeon source. A later
+    /// activity cycle must never consume this older victory or draw its result again.</summary>
+    public sealed record JourneyVictory(string Source, long SceneEntry, long ActId, long NodeId,
+        long ActivityStart, long ActivityEnd, long PlayBook);
+
+    internal DBMultiDungeonServerInfo ServerInfo => Raids.ServerInfo;
+    internal Func<GameSession, DungeonStatisticsInfoWithDungeon?>? CurrentStatisticsOwner
+    { get => Raids.CurrentStatisticsOwner; set => Raids.CurrentStatisticsOwner = value; }
+    internal Func<GameSession, JourneyVictory, Action<Accounts.Persistence.RoleItemPlanBuilder>, Action, Task<bool>>? JourneyWon
+    { get => Scripted.JourneyWon; set => Scripted.JourneyWon = value; }
+    internal Func<GameSession, bool>? CanStageJourneyVictory
+    { get => Scripted.CanStageJourneyVictory; set => Scripted.CanStageJourneyVictory = value; }
+    internal Func<GameSession, CustomData, Task>? SetCustomData
+    { get => Scripted.SetCustomData; set => Scripted.SetCustomData = value; }
+
+    public static long PositionFor(GameData data, GameSession s) => RaidTrialsService.PositionFor(data, s);
+    internal static long[] PositionsFor(GameData data, long job) => RaidTrialsService.PositionsFor(data, job);
+    internal static GameSession? CompanionCreditAmong(IReadOnlyList<GameSession> loaded) => RaidTrialsService.CompanionCreditAmong(loaded);
+    public Task ClaimFirstPassAsync(GameSession s, ClaimFirstPassAwardReq req) => Raids.ClaimFirstPassAsync(s, req);
+    public Task HallOfFameAsync(GameSession s, QueryHallOfFameInfoReq req) => Raids.HallOfFameAsync(s, req);
+    internal Task StoreFirstClearAsync(DBMultiDungeonHallOfFame record, bool replace = false) => Raids.StoreFirstClearAsync(record, replace);
+    internal (DBMultiDungeonSacredBlessings Info, JsonElement? Row)? Blessing(JsonElement boss) => Raids.Blessing(boss);
+    public Task MarkBlessingsAsync(GameSession s, MultiDungeonMarkSacredBlessingsReq req) => Raids.MarkBlessingsAsync(s, req);
+    public Task ClaimHonorAsync(GameSession s, MultiDungeonClaimHonorAwardReq req) => Raids.ClaimHonorAsync(s, req);
+    public Task ModuleButtonAsync(GameSession s, DungeonModuleButtonReq req) => Raids.ModuleButtonAsync(s, req);
+    public Task StatisticsAsync(GameSession s) => Raids.StatisticsAsync(s);
+    public Task StatisticsCurrentAsync(GameSession s) => Raids.StatisticsCurrentAsync(s);
+    public Task StatisticsHistoryAsync(GameSession s, DungeonStatisticsInfoWithDungeonReq req) => Raids.StatisticsHistoryAsync(s, req);
+    public Task StatisticsModuleAsync(GameSession s) => Raids.StatisticsModuleAsync(s);
+    public Task QueryResultAsync(GameSession s, QueryDungeonResultReq req) => Raids.QueryResultAsync(s, req);
+    public Task StoreExternalResultAsync(GameSession s, DungeonResultNotify notice) => Raids.StoreExternalResultAsync(s, notice);
+    public static DungeonPlayerStatisticsNtf PlayerCounters(long roleId, long kills, long assists) =>
+        RaidTrialsService.PlayerCounters(roleId, kills, assists);
+    internal static bool InTrialArea(TrialUnit o, float radius, float x, float z) => RaidTrialsService.InTrialArea(o, radius, x, z);
+    internal static (List<GameSession> Passed, List<GameSession> Failing, bool PartyFailed) Judge(ReconstructedDungeons.RaidTrial trial,
+        TrialRun run, MonsterUnit boss, IReadOnlyList<GameSession> fighters) => RaidTrialsService.Judge(trial, run, boss, fighters);
+    internal static bool Sheltered(float bossX, float bossZ, float coverX, float coverZ, float x, float z, ReconstructedDungeons.Shelter shelter) =>
+        RaidTrialsService.Sheltered(bossX, bossZ, coverX, coverZ, x, z, shelter);
+    internal static bool Sheltered(float bossX, float bossZ, float coverX, float coverZ, float x, float z, float width, float depth) =>
+        RaidTrialsService.Sheltered(bossX, bossZ, coverX, coverZ, x, z, width, depth);
+
+    internal Task<Attempt?> EnterDraculaAsync(GameSession s, DungeonCatalog.Plan plan, DraculaWeddingService.Run run, Attempt? existing) =>
+        Scripted.EnterDraculaAsync(s, plan, run, existing);
+    internal Task StopDraculaAsync(Attempt a) => Scripted.StopDraculaAsync(a);
+    internal static IReadOnlyList<GameSession> LoadedMembers(Attempt a) => ScriptedDungeonService.LoadedMembers(a);
+    internal Task SendToRoomAsync(Attempt a, uint id, IMessage msg) => Scripted.SendToRoomAsync(a, id, msg);
+    internal Task<Attempt?> EnterGuildChallengeAsync(GameSession s, DungeonCatalog.Plan plan, GuildChallengeService.Run run, Attempt? existing) =>
+        Scripted.EnterGuildChallengeAsync(s, plan, run, existing);
+    internal Task StartGuildChallengeAsync(Attempt a) => Scripted.StartGuildChallengeAsync(a);
+    internal Task StopGuildChallengeAsync(Attempt a) => Scripted.StopGuildChallengeAsync(a);
+    internal List<DungeonCatalog.Plan> RandomPool(DungeonCatalog.Plan origin, IReadOnlyCollection<GameSession> members) =>
+        Scripted.RandomPool(origin, members);
+    public Task DeliverJourneyPendingAsync(GameSession s) => Scripted.DeliverJourneyPendingAsync(s);
+    public Task<int> RestartJourneyAsync(GameSession session) => Scripted.RestartJourneyAsync(session);
+    public Task<bool> EnterFromRegionAsync(GameSession s, MapRegion region) => Scripted.EnterFromRegionAsync(s, region);
+    public Task<bool> TryInteractAsync(GameSession s, NpcInteractionReq req) => Scripted.TryInteractAsync(s, req);
+    public Task PlotEndedAsync(GameSession s, long plotId) => Scripted.PlotEndedAsync(s, plotId);
+    public Task PlayerMovedAsync(GameSession s) => Scripted.PlayerMovedAsync(s);
+    internal static float RideLength(IReadOnlyList<(float X, float Y, float Z)> path) => ScriptedDungeonService.RideLength(path);
+    internal static (float X, float Y, float Z, float Face) RideAt(IReadOnlyList<(float X, float Y, float Z)> path, float metres) =>
+        ScriptedDungeonService.RideAt(path, metres);
+    internal static (int Leg, (float X, float Y, float Z) From, (float X, float Y, float Z) To) RideLeg(
+        IReadOnlyList<(float X, float Y, float Z)> path, float metres) => ScriptedDungeonService.RideLeg(path, metres);
+    internal static IEnumerable<(float X, float Y, float Z, float Face)> RideCorners(IReadOnlyList<(float X, float Y, float Z)> path,
+        float start, float end) => ScriptedDungeonService.RideCorners(path, start, end);
+    internal static bool Sliding(GameSession s) => ScriptedDungeonService.Sliding(s);
+
+    private void StartRaidTrials(Attempt a) => Raids.StartRaidTrials(a);
+    private Task RefreshBondsAsync(Attempt attempt) => Raids.RefreshBondsAsync(attempt);
+    private Task ClearBondsAsync(GameSession s, Attempt attempt) => Raids.ClearBondsAsync(s, attempt);
+    private static int FirstPassAwardState(State state, string key, JsonElement boss, Record? record) =>
+        RaidTrialsService.FirstPassAwardState(state, key, boss, record);
+    private void RecordFirstClear(Attempt a, JsonElement boss, GameSession[] party) => Raids.RecordFirstClear(a, boss, party);
+    private static int BlessingRevives(Attempt a) => RaidTrialsService.BlessingRevives(a);
+    private static DBMultiDungeonHonor? HonorView(State state, string key, JsonElement boss) => RaidTrialsService.HonorView(state, key, boss);
+    private void EarnHonors(State next, Attempt a, JsonElement boss, long durationMs) => Raids.EarnHonors(next, a, boss, durationMs);
+    private static DBMultiDungeonHonor? EarnedHonors(Accounts.DungeonRewardObligation row) => RaidTrialsService.EarnedHonors(row);
+    private static DungeonVar? FunctionButtons(Attempt a) => RaidTrialsService.FunctionButtons(a);
+    private Task EndPreparationAsync(Attempt a) => Raids.EndPreparationAsync(a);
+    private void StoreHistory(State state, Attempt a) => Raids.StoreHistory(state, a);
+    private Task FlyAsync(Attempt a, MonsterUnit unit, IReadOnlyList<(float X, float Y, float Z)> route) => Raids.FlyAsync(a, unit, route);
+    private TimeSpan Paced(int ms) => Raids.Paced(ms);
+    private long ContinuationOf(long scene) => Scripted.ContinuationOf(scene);
+    private void ScheduleContinuation(GameSession s, Attempt a, long next) => Scripted.ScheduleContinuation(s, a, next);
+    private DungeonVar? GuideWays(Attempt a) => Scripted.GuideWays(a);
+    private Task HideGuideWaysAsync(GameSession s, Attempt a) => Scripted.HideGuideWaysAsync(s, a);
+    private static bool IsRandom(DungeonCatalog.Plan plan) => ScriptedDungeonService.IsRandom(plan);
+    private Task RollAsync(DungeonCatalog.Plan origin, GameSession[] members, long leader, long team, bool matched) =>
+        Scripted.RollAsync(origin, members, leader, team, matched);
+    private JourneyVictory? CaptureJourneyVictory(GameSession s, long sceneEntry, string source) =>
+        Scripted.CaptureJourneyVictory(s, sceneEntry, source);
+    private bool JourneyCanEnter(GameSession session, long sceneEntry) => Scripted.JourneyCanEnter(session, sceneEntry);
+    private static bool LeavesAfterClear(Attempt a) => ScriptedDungeonService.LeavesAfterClear(a);
+    private void ScheduleLeaveAfterClear(GameSession s, Attempt a) => Scripted.ScheduleLeaveAfterClear(s, a);
+    private static ReconstructedDungeons.ScriptedStep? Step(Attempt a) => ScriptedDungeonService.Step(a);
+    private Task BeginStepAsync(Attempt a, ReconstructedDungeons.ScriptedStep step) => Scripted.BeginStepAsync(a, step);
 
     public sealed class Attempt
     {
@@ -208,17 +314,17 @@ public sealed partial class DungeonService
         public bool Closed;
     }
 
-    private static Attempt? Active(GameSession s) => s.DungeonAttempt is { Started: true, Settled: false } a
+    internal static Attempt? Active(GameSession s) => s.DungeonAttempt is { Started: true, Settled: false } a
         && !a.Room.Closed && s.InstanceId == a.Room.Id && !s.SceneLoading ? a : null;
-    private static GameSession[] Present(Attempt a) => [.. a.Room.ActiveMembers.Select(m => m.Session).Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null)];
-    private static Dictionary<int, long> Inventory(GameSession s)
+    internal static GameSession[] Present(Attempt a) => [.. a.Room.ActiveMembers.Select(m => m.Session).Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null)];
+    internal static Dictionary<int, long> Inventory(GameSession s)
     {
         var counts = s.Items.GroupBy(i => i.Entry).ToDictionary(g => g.Key, g => g.Sum(i => (long)i.Stack));
         foreach (var (id, n) in s.Progress!.Currency) counts[id] = n;
         return counts;
     }
 
-    private int Admission(GameSession s, DungeonCatalog.Plan plan, bool continuation = false)
+    internal int Admission(GameSession s, DungeonCatalog.Plan plan, bool continuation = false)
     {
         if (s.Role == null || s.Dungeons == null || s.Progress == null) return ErrorCodes.Parameter;
         if (s.SeasonState is not { } state || state.SeasonId != _seasons.SeasonId || state.PlayBookId != _seasons.PlayBook)
@@ -361,7 +467,7 @@ public sealed partial class DungeonService
             new TeamConfirmRemindersNotify { MemberGuid = s.Role!.Id });
     }
 
-    private async Task BeginAsync(DungeonCatalog.Plan plan, GameSession[] members, long leader, long team, bool matched = false)
+    internal async Task BeginAsync(DungeonCatalog.Plan plan, GameSession[] members, long leader, long team, bool matched = false)
     {
         if (IsRandom(plan)) { await RollAsync(plan, members, leader, team, matched); return; } // DungeonService.HiddenRealm
         var room = _instances.Create(plan.SceneEntry, members);
@@ -418,7 +524,7 @@ public sealed partial class DungeonService
         });
     }
 
-    private async Task LoadedAsync(GameSession s)
+    internal async Task LoadedAsync(GameSession s)
     {
         if (s.DungeonAttempt is not { } a || s.InstanceId != a.Room.Id || a.Room.Closed || !a.Loaded.Add(s)) return;
         await s.SendGameAsync(BaseInfo, Snapshot(a));
@@ -448,7 +554,7 @@ public sealed partial class DungeonService
 
     // Lua_GameDefine enum_DungeonMapStage: 0/1/2 initializing/running/settling; LC_DunGeon_Base:1507-1522
     // divides these wire timestamps by 1000. One level and sequential stages remain (inferred).
-    private DungeonBaseInfoNotify Snapshot(Attempt a)
+    internal DungeonBaseInfoNotify Snapshot(Attempt a)
     {
         var init = a.Plan.Init(a.TeamId, a.Room.Id);
         if (a.Matched && init.MultiDungeonInitData != null) init.MultiDungeonInitData.IsMatch = true;
@@ -518,7 +624,7 @@ public sealed partial class DungeonService
     /// "(done/total)" (Lua_CFG_DungeonQuestConfig._getQuestInfoByID). The story goals are [5,0,1]: this wave's kills
     /// and its size (inferred: the original server's counters are not recovered).
     /// </summary>
-    private static DungeonVar? GoalParams(Attempt a)
+    internal static DungeonVar? GoalParams(Attempt a)
     {
         if (a.Wave >= a.Plan.Waves.Count || a.Plan.Waves[a.Wave].Quest <= 0) return null;
         int size = a.Plan.Waves[a.Wave].Spawns.Count;
@@ -535,13 +641,13 @@ public sealed partial class DungeonService
         return v;
     }
 
-    private async Task SendQuietAsync(GameSession s, uint id, IMessage msg)
+    internal async Task SendQuietAsync(GameSession s, uint id, IMessage msg)
     {
         try { await s.SendGameAsync(id, msg); }
         catch (Exception e) { _log.LogWarning(e, "Dungeon notification {Message} failed for {Role}", id, s.Role?.Id); }
     }
 
-    private Task BroadcastAsync(Attempt a, uint id, IMessage msg) =>
+    internal Task BroadcastAsync(Attempt a, uint id, IMessage msg) =>
         Task.WhenAll(Present(a).Where(a.Loaded.Contains).Select(s => SendQuietAsync(s, id, msg)));
 
     /// <summary>
@@ -565,7 +671,7 @@ public sealed partial class DungeonService
     /// A member's 0-based roster slot, kept for the whole run: the party's own slot order when the run started (the
     /// leader's slot in it), else the leader first; later arrivals take the next slot (inferred).
     /// </summary>
-    private int Slot(Attempt a, long role)
+    internal int Slot(Attempt a, long role)
     {
         if (a.Slots.Count == 0)
         {
@@ -578,7 +684,7 @@ public sealed partial class DungeonService
         return a.Slots.Count - 1;
     }
 
-    private async Task StartAsync(Attempt a)
+    internal async Task StartAsync(Attempt a)
     {
         if (a.Started || a.Settled || a.Room.Closed) return;
         a.Started = true; a.StartedAt = _loop.Now; a.StartMs = _loop.NowMs;
@@ -594,7 +700,7 @@ public sealed partial class DungeonService
         await BeginFightAsync(a);
     }
 
-    private async Task BeginFightAsync(Attempt a)
+    internal async Task BeginFightAsync(Attempt a)
     {
         a.StartedAt = _loop.Now; a.StartMs = _loop.NowMs;
         await BroadcastAsync(a, BaseInfo, Snapshot(a));
@@ -603,7 +709,7 @@ public sealed partial class DungeonService
         _loop.ScheduleLegacy(TimeSpan.FromMilliseconds(a.Plan.DurationMs), () => a.Settled || a.Room.Closed ? Task.CompletedTask : SettleAsync(a, false));
     }
 
-    private async Task SpawnWaveAsync(Attempt a)
+    internal async Task SpawnWaveAsync(Attempt a)
     {
         if (a.Settled || a.Room.Closed) return;
         a.Spawning = true;
@@ -656,7 +762,7 @@ public sealed partial class DungeonService
             // No five-player preparation duration/start-button contract was recovered; GVE/Whale's
             // DungeonStart preparation UI belongs to other gameplay types. Story-wave engagement is unchanged.
             if (a.Plan.Multi == null && Present(a).FirstOrDefault(s => !s.Dead && !s.SceneLoading) is { } target)
-                _monsters.Engage(monster, target);
+                Scripted.EngageMonster(monster, target);
         }
         a.Spawning = false;
         await AdvanceAsync(a);
@@ -682,7 +788,7 @@ public sealed partial class DungeonService
         if (a.Precounted.Count == 0) await AdvanceAsync(a);
     }
 
-    private async Task AdvanceAsync(Attempt a)
+    internal async Task AdvanceAsync(Attempt a)
     {
         if (a.Settled || a.Preparing || a.Spawning || a.Precounted.Count != 0 || a.Killed.Count != a.Spawned || a.Advancing) return;
         if (Step(a) != null && !a.StepDone) return;
@@ -940,7 +1046,7 @@ public sealed partial class DungeonService
     /// All configured actors dead before timeout wins (inferred predicate). Reserve once before any await.
     /// Each role's earned personal award and allowance are one SQLite transaction; disconnect is not a clear.
     /// </summary>
-    private async Task SettleAsync(Attempt a, bool won)
+    internal async Task SettleAsync(Attempt a, bool won)
     {
         if (a.Settled || a.Room.Closed) return;
         if (a.GuildChallenge is { } challenge)

@@ -1,8 +1,13 @@
 using Romsg;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class ScriptedDungeonService
 {
     /// <summary>Whale's 30400 enters a guild-owned preparation room, using the ordinary scene/AOI pipeline.</summary>
     internal async Task<Attempt?> EnterGuildChallengeAsync(GameSession s, DungeonCatalog.Plan plan,

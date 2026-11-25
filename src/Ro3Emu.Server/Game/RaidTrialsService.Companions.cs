@@ -1,3 +1,8 @@
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -8,12 +13,12 @@ namespace Ro3Emu.Server.Game;
 /// loaded participant, a living one first (inferred). One that falls stays down for the rest of the run (inferred: NPCConfig
 /// _kRespawnSkill is not used).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     private long _companionSerial;
 
     /// <summary>Shows exactly the step's companions: one already shown at the same point stays, the others leave.</summary>
-    private async Task SyncCompanionsAsync(Attempt a, IReadOnlyList<ReconstructedDungeons.SceneActor> wanted)
+    internal async Task SyncCompanionsAsync(Attempt a, IReadOnlyList<ReconstructedDungeons.SceneActor> wanted)
     {
         foreach (var gone in a.Companions.Where(c => !wanted.Any(w => w.NpcId == c.NpcId && w.Point == c.Point)).ToArray())
         {

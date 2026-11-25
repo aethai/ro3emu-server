@@ -3,9 +3,14 @@ using Romsg;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Maps;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     /// <summary>(verified) LC_JobHelper:11-71 and JobConfig._iDungeonJobPositionID select the class default.</summary>
     public static long PositionFor(GameData data, GameSession s)
@@ -14,7 +19,7 @@ public sealed partial class DungeonService
         return choices.Contains(s.Dungeons?.JobPosition ?? 0) ? s.Dungeons!.JobPosition : choices.FirstOrDefault();
     }
 
-    private static long[] PositionsFor(GameData data, long job) => data.Row("JobConfig", job) is { } row
+    internal static long[] PositionsFor(GameData data, long job) => data.Row("JobConfig", job) is { } row
         && row.TryGetProperty("_iDungeonJobPositionID", out var values) && values.ValueKind == JsonValueKind.Array
         ? [.. values.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).Where(id => data.Row("DungeonJobPositionConfig", id) != null)] : [];
 
@@ -91,7 +96,7 @@ public sealed partial class DungeonService
     /// (inferred) Only loaded, present party members qualify in an instance; refresh when that roster changes.
     /// The configured dungeon duration bounds the buffs, avoiding BuffService's unrelated 60-second fallback.
     /// </summary>
-    private async Task RefreshBondsAsync(Attempt attempt)
+    internal async Task RefreshBondsAsync(Attempt attempt)
     {
         if (attempt.Plan.Boss is not { } boss) return;
         var roster = Present(attempt).Where(attempt.Loaded.Contains).ToArray();
@@ -106,7 +111,7 @@ public sealed partial class DungeonService
         }
     }
 
-    private Task ClearBondsAsync(GameSession s, Attempt attempt) => Task.WhenAll(s.Buffs
+    internal Task ClearBondsAsync(GameSession s, Attempt attempt) => Task.WhenAll(s.Buffs
         .Where(b => b.SourceId == attempt.Room.Id).ToArray().Select(b => _buffs.RemoveAsync(s, b)));
 
     /// <summary>(inferred) Additive basis-point bonus/reduction applied to the owner's dungeon boss damage only.</summary>

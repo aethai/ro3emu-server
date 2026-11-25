@@ -4,6 +4,11 @@ using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -13,13 +18,13 @@ namespace Ro3Emu.Server.Game;
 /// firstPassAward), and offering it to roles cleared before it was paid, are the maintainer's choice (inferred: the
 /// client supports both).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     /// <summary>5062 isFirst (UI_Sys_Dungeon_RightInfoWidgetCtrl iFirstAwardType): not cleared, cleared and unpaid, paid.</summary>
     internal const int FirstAwardNone = 0, FirstAwardComplete = 1, FirstAwardFinish = 2;
 
     /// <summary>A boss without a first-clear reward (the 100103 rows) shows Finish once cleared, never a claimable empty one.</summary>
-    private static int FirstPassAwardState(State state, string key, JsonElement boss, Record? record)
+    internal static int FirstPassAwardState(State state, string key, JsonElement boss, Record? record)
         => state.FirstPassPaid.Contains(key) ? FirstAwardFinish
             : record?.Passed != true ? FirstAwardNone
             : new TenGameplayBossConfig(boss).PartAward != 0 ? FirstAwardComplete : FirstAwardFinish;

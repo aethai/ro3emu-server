@@ -1,5 +1,10 @@
 using Romsg;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -8,9 +13,9 @@ namespace Ro3Emu.Server.Game;
 /// for: "Pharaoh is unleashing Cleansing Light! Quickly, hide behind the Pyramid!". The story Pharaoh's skills have no
 /// names; the hit is its strongest (5340301, 10x ATK).
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
-    private void StartShelter(Attempt a, ReconstructedDungeons.Shelter shelter)
+    internal void StartShelter(Attempt a, ReconstructedDungeons.Shelter shelter)
     {
         int generation = a.StepGeneration;
         StepLater(a, generation, shelter.EveryMs / 2, () => ShelterWarnAsync(a, generation, shelter), whileFighting: true);

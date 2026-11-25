@@ -7,6 +7,11 @@ using Ro3Emu.Server.Maps;
 using Rule = Ro3Emu.Server.Game.ReconstructedDungeons.TrialRule;
 using Who = Ro3Emu.Server.Game.ReconstructedDungeons.TrialWho;
 
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
 namespace Ro3Emu.Server.Game;
 
 /// <summary>
@@ -17,64 +22,18 @@ namespace Ro3Emu.Server.Game;
 /// position punishes at any gear but never wipes by itself; a solved trial can reward and stagger the boss. A boss that
 /// leaves combat ends its trial without a verdict. Generic: nothing here knows a boss.
 /// </summary>
-public sealed partial class DungeonService
+public sealed partial class RaidTrialsService
 {
     /// <summary>The engine's tick: touches, deaths of the boss and the next trial are looked at this often.</summary>
     private const int TrialTickMs = 500;
     /// <summary>No trial starts within this long after another ended (inferred).</summary>
     private const int TrialGapMs = 6000;
 
-    /// <summary>A raid's trial state for one run.</summary>
-    internal sealed class RaidRun(ReconstructedDungeons.RaidScript script)
-    {
-        public ReconstructedDungeons.RaidScript Script { get; } = script;
-        public long EngagedAtMs { get; set; }
-        public long[] NextDueMs { get; } = new long[script.Trials.Count];
-        public HashSet<(int Trial, int Hp)> HpFired { get; } = [];
-        public TrialRun? Active { get; set; }
-        public long QuietUntilMs { get; set; }
-    }
-
-    /// <summary>A trial being played.</summary>
-    internal sealed class TrialRun
-    {
-        public required ReconstructedDungeons.RaidTrial Trial { get; init; }
-        public required int Index { get; init; }
-        public required MonsterUnit Boss { get; init; }
-        public required long EndsAtMs { get; init; }
-        public required int Players { get; init; }
-        public long ShowSession { get; set; }
-        public List<TrialUnit> Objects { get; } = [];
-        public HashSet<long> Marked { get; } = [];
-        public bool Over { get; set; }
-    }
-
-    /// <summary>One object of a trial: a prop or a destructible monster, its colour (-1: none) and whether it is gone.</summary>
-    internal sealed class TrialUnit
-    {
-        public required WorldUnit Unit { get; init; }
-        public required ReconstructedDungeons.TrialObject Spec { get; init; }
-        public int Color { get; init; } = -1;
-        public bool Chosen { get; init; }
-        public bool Gone { get; set; }
-        public bool Pickup => Spec.Use != ReconstructedDungeons.TrialUse.None;
-    }
-
     /// <summary>The trials' destructible monsters, for the damage rules (their colour, their hits).</summary>
     private readonly ConcurrentDictionary<long, (Attempt Attempt, TrialUnit Object)> _trialMonsters = new();
 
-    private void WireRaidTrials(CombatService combat, GmCommands gm)
-    {
-        combat.DamageAdjusters.Subscribe(TrialDamage);
-        combat.Killed.Subscribe(TrialObjectKilledAsync);
-        combat.DealtAsync.Subscribe(TrialBossHitAsync);
-        combat.BossAreaLanded.Subscribe(TrialBreakersAsync);
-        gm.Register("raidtrial", "[list | <n> | stop] (raid test aid: the raid boss's scripted trials; start trial n now, or end the "
-            + "running one without a verdict)", RaidTrialGmAsync);
-    }
-
     /// <summary>Called when a raid's fight begins: a boss with a script gets its trial tick.</summary>
-    private void StartRaidTrials(Attempt a)
+    internal void StartRaidTrials(Attempt a)
     {
         if (a.Plan.Multi == null || a.Plan.Waves.Count == 0 || _catalog.Reconstructed is not { } reconstructed) return;
         var script = a.Plan.Waves[0].Spawns.Select(s => reconstructed.Raid(s.NpcId)).FirstOrDefault(r => r != null);
@@ -297,7 +256,7 @@ public sealed partial class DungeonService
         int type = (int)row.NPCType;
         var unit = new SceneActorUnit
         {
-            Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = a.Plan.SceneEntry,
+            Uid = NextSceneActorUid(), SceneEntry = a.Plan.SceneEntry,
             InstanceId = a.Room.Id, X = at.X, Y = at.Y, Z = at.Z, Face = at.Face, NpcId = npc, Point = 0,
             EntityType = type, Camp = row.Camp, Name = type == 2 && row.Name.Length > 0 ? _data.Text(row.Name[0]) : "",
             Template = type == 1 ? _monsters.Template(npc) : null, BornMs = _loop.NowMs,
@@ -338,7 +297,7 @@ public sealed partial class DungeonService
     // ---- touches, interactions, kills, the boss hit ----
 
     /// <summary>Walking into an object: a Collect trial takes it (a matching colour only), a Carry trial hands its buff.</summary>
-    private async Task TrialTouchesAsync(Attempt a, TrialRun run)
+    internal async Task TrialTouchesAsync(Attempt a, TrialRun run)
     {
         if (run.Over || run.Trial.Rule is not (Rule.Collect or Rule.Carry or Rule.Guard)) return;
         foreach (var p in Fighters(a))
@@ -365,7 +324,7 @@ public sealed partial class DungeonService
     /// <summary>A trial's object with a use (its NPC's own interaction, NPCConfig _iInteractID): 32700 hands the player its
     /// colour (Ilmo's notes) or takes the player to the next object of its kind (the wormholes, inferred: their interaction
     /// skill says "Emerges from the other end of the Wormhole").</summary>
-    private async Task<bool> TryTrialInteractAsync(GameSession s, NpcInteractionReq req)
+    internal async Task<bool> TryTrialInteractAsync(GameSession s, NpcInteractionReq req)
     {
         if (Active(s) is not { Raid.Active: { } run } || run.Objects.FirstOrDefault(o => o.Unit.Uid == req.NpcUid) is not { } o) return false;
         int code = !o.Pickup || o.Gone || o.Unit is not SceneActorUnit actor || !_catalog.Interactions(actor.NpcId).Contains(req.InteractionId)
@@ -572,7 +531,7 @@ public sealed partial class DungeonService
 
     /// <summary>"!raidtrial [list | n | stop]": the raid boss's trials; start one now (engaging the GM if the boss is idle),
     /// or end the running one without a verdict (test aid, not original behaviour).</summary>
-    private async Task RaidTrialGmAsync(GameSession s, string[] args)
+    internal async Task RaidTrialGmAsync(GameSession s, string[] args)
     {
         if (Active(s) is not { Raid: { } raid } a || TrialBoss(a) is not { } boss)
         {
