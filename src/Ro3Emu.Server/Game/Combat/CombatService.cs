@@ -743,6 +743,8 @@ public sealed partial class CombatService : IGameTicker
         public int Race { get; init; }
         public int Size { get; init; }
         public DamageAttributes.Kind Kind { get; init; }
+        /// <summary>A monster's ele_reduce (<see cref="MonsterTemplate.ElementCounterResistance"/>); a player's is on its sheet.</summary>
+        public long ElementCounterResistance { get; init; }
     }
 
     /// <summary>Every JobConfig row has _iRace 2 (Demi-Human) and _iSize 2 (Medium).</summary>
@@ -818,8 +820,10 @@ public sealed partial class CombatService : IGameTicker
             : DamageAttributes.DefenseAfterPenetration(b.Def, Penetration(DamageAttributes.IgnoreDef), Penetration(DamageAttributes.IgnoreDefPercent)));
         if (attack) dmg = Math.Max(0, dmg + DamageAttributes.FlatBonus(a.Attributes, b.Attributes, magic));
         // Element: EleConfig row = defender element, column = attacker element (/10000), clamped [0.1, 10].
+        // The defender's ele_reduce (236) takes off the attacker's advantage: a player's from its sheet, a monster's template.
         int element = (int)GameData.Int(skill, "_iEleType") is var se and > 1 ? se : a.Element;
-        dmg *= Math.Clamp(1 + ElementFactor(element, b.Element) / 10000.0, 0.1, 10);
+        long counterResistance = b.Attributes?.Invoke(AttributeId.EleReduce) ?? b.ElementCounterResistance;
+        dmg *= Math.Clamp(1 + DamageAttributes.CounteredElement(ElementFactor(element, b.Element), counterResistance) / 10000.0, 0.1, 10);
         if (a.Attributes == null && b.Attributes == null) return dmg;
         var row = new Data.Config.SkillConfig(skill);
         // A player's Element here is the hit's, and the element monster attributes (321-340) only name monsters.
@@ -870,7 +874,11 @@ public sealed partial class CombatService : IGameTicker
         var attributes = PlayerAttributes(p, stats);
         var player = new Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], p.Progress!.Level, AttackElement(p, playerSkill))
         { Attributes = attributes, Race = PlayerRace, Size = PlayerSize };
-        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element) { Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size, Kind = KindOf(m) };
+        var asTarget = new Fighter(0, 0, m.Flee, 0, m.Level, m.Element)
+        {
+            Def = m.Def, Mdef = m.Mdef, Flee = m.Flee, Race = m.Race, Size = m.Size, Kind = KindOf(m),
+            ElementCounterResistance = m.ElementCounterResistance,
+        };
         double playerDps = ExpectedDamage(player, asTarget, playerSkill) * 1000.0 / Math.Max(1, SkillMs(p, playerSkill));
         var monster = new Fighter(m.Atk, m.Matk, m.Hit, m.Cri, m.Level, m.Element) { Race = m.Race, Size = m.Size, Kind = KindOf(m) };
         var defender = new Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))

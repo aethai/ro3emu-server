@@ -181,6 +181,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             HatredDeclineTimeMs = aiRow is { } hdt ? (int)new Data.Config.AIConfig(hdt).HatredDeclineTime : 0,
             MinHatredDecline = aiRow is { } mhd ? (int)new Data.Config.AIConfig(mhd).MinHatredDecline : 0,
             TopHatredBuffId = new Data.Config.NPCConfig(npc).TopHatredBuff is { Length: > 0 } thb ? (int)thb[0] : 0,
+            ElementCounterResistance = A(AttributeId.EleReduce),
         };
     }
 

@@ -34,11 +34,18 @@ public sealed partial class CombatService
         var t = unit.Template;
         // The template as it was, without the per-hit attribute pass when nothing overlays it.
         if (!_buffs.HasUnitCombatBuffs(unit))
-            return new(t.Atk, t.Matk, t.Hit, t.Cri, t.Level, t.Element) { Def = t.Def, Mdef = t.Mdef, Flee = t.Flee, Race = t.Race, Size = t.Size, Kind = KindOf(t) };
+            return new(t.Atk, t.Matk, t.Hit, t.Cri, t.Level, t.Element)
+            {
+                Def = t.Def, Mdef = t.Mdef, Flee = t.Flee, Race = t.Race, Size = t.Size, Kind = KindOf(t),
+                ElementCounterResistance = t.ElementCounterResistance,
+            };
         var stats = MonsterStats(unit);
         return new(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], unit.Template.Level,
             unit.Template.Element)
-        { Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri], Race = t.Race, Size = t.Size, Kind = KindOf(t) };
+        {
+            Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri],
+            Race = t.Race, Size = t.Size, Kind = KindOf(t), ElementCounterResistance = t.ElementCounterResistance,
+        };
     }
 
     internal long MonsterBuffDamage(MonsterUnit monster, JsonElement? skill, long amount)

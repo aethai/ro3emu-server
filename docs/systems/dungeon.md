@@ -56,6 +56,12 @@ Realm of the Gods extras (`DungeonService.RealmOfGods`, TenGameplayConfig 100101
   uniform), sends `RandomDungeonNotify` with the countdown `FiveGamePlay_RandomDuration`, then runs that boss with the
   Hidden Realm as `MultiDungeonInitData.origin`. The clear counts as the Hidden Realm's (its awards, allowance and
   record, inferred).
+- Boss stats: the boss is `TenGameplayBossConfig._iBoss` with its NPCConfig `_iLevel`, AttriMonsterConfig row and
+  `_kAttriScale`, as any monster. Every Phantom Realm (211xxx) and Realm of the Gods (212xxx) row carries attribute 236
+  `ele_reduce` 10000, the same as the born buff 910801 "Element Counter Immunity": a counter element deals neutral damage
+  to these bosses (`DamageAttributes.CounteredElement`, the scaling of a smaller share is inferred). The server-side
+  correction tables (`AttriDungeonCorrectionsConfig`, `AttriSeasonalCorrectionsConfig`) reach the client as empty rows
+  and every `_iCorrectionID` is 0, so no further scaling is applied.
 - Test aids: `!dungeonsolo on` also admits a lone 30400 entry to a team boss; `!firstclear <boss> [daysAgo] | clear`
   sets the realm's first clear of a boss.
 

@@ -60,6 +60,17 @@ internal static class DamageAttributes
         return Math.Clamp(factor, MinFactor, MaxFactor);
     }
 
+    /// <summary>
+    /// The element correction (EleConfig, per 10000) after the defender's ele_reduce (AttributeConfig 236, "B Element
+    /// Counter RES%": "Reduces damage taken when your defensive element is at a disadvantage"). DubugDamageFormulaEnum
+    /// (MG_Common.proto) puts Formula_ElementReduce right after Formula_FinalElementCorrection. BuffConfig 910801 "Element
+    /// Counter Immunity" ("Element advantages and disadvantages do not affect you") carries 10000 of it, as every Phantom
+    /// Realm and Realm of the Gods boss row of AttriMonsterConfig does. (inferred) It takes its share off a positive
+    /// correction only, so 10000 leaves the hit as a neutral one and a disadvantaged attacker keeps its penalty.
+    /// </summary>
+    internal static double CounteredElement(double correction, long counterResistance) =>
+        correction > 0 ? correction * Math.Clamp(1 - counterResistance / BasisPoints, 0, 1) : correction;
+
     /// <summary>PublicParamConfig FormulaParamPVE 10000.</summary>
     internal static double PveShare(long value) => value <= 0 ? 0 : value / (value + BasisPoints);
 

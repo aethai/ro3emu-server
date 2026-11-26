@@ -1,0 +1,6 @@
+[
+  { "_iId": 1, "_iPhase": 0, "_iActionType": 7, "_iActionParams": [ [ 2 ], [ 9307 ] ], "_iDelayTime": 10000, "_iInterval": 20000, "_iTriggerTime": 50, "_iTriggerType": 4, "_iParams": [ 10000, 1 ] },
+  { "_iId": 2, "_iPhase": 1, "_iActionType": 0, "_iActionParams": {}, "_iDelayTime": 0 },
+  { "_iId": 3, "_iPhase": 2, "_iActionType": 0, "_iActionParams": {}, "_iDelayTime": 120000 },
+  { "_iId": 4, "_iPhase": 2, "_iActionType": 19, "_iActionParams": {}, "_iDelayTime": 60000 }
+]

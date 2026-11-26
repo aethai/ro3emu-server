@@ -13,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// <summary>
 /// DailyActivity 116 (Bonfire Party) inside the guild home 4000101. GuildHomeService owns entry and the one room per
 /// guild; this service only drives the event content in that room while the event runs. The timeline is
-/// CampFireTimeLine; authored point 413 is the fire, and world spawn group 22 holds seeds. Dynamic NPC
+/// CampFireAffixNewConfig's StageStart rows; authored point 413 is the fire, and world spawn group 22 holds seeds. Dynamic NPC
 /// placement/once-per-seed collection are (inferred) because the scene editor has no static NPCs and
 /// CampFirePosition is an empty export.
 /// </summary>
@@ -26,6 +26,11 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         PlayerInfo = 83244, Fruit = 83245, Hurray = 83246, BossDead = 83247, Finish = 83248;
     public const long Dungeon = 4000101;
     public const int Function = 1321; // FunctionConfig: Bonfire Party
+    public const int Activity = 116; // DailyActivityConfig: Bonfire Party
+    /// <summary>enum_CampFireAffixActionType (Lua_GameDefine): StageStart 0 opens a phase, End 19 closes the event.</summary>
+    private const long StageStartAction = 0, EndAction = 19;
+    /// <summary>The stage after the event (or before it): its Finish is due and no content runs.</summary>
+    private const int Over = int.MaxValue;
     /// <summary>
     /// Guild seed NPC UIDs: [2^48, 2^49), below 2^53 because the client's interaction scan keeps unit ids in a double
     /// array (LC_InteractManager m_kShareMemory; see DungeonService.SceneActorUidBase). The room part is the low 24
@@ -95,6 +100,8 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         public Dictionary<int, int> FruitKills { get; set; } = [];
         /// <summary>The stages whose prize draw ran (GuildCampfireService.Bonus.cs).</summary>
         public HashSet<int> PrizeStages { get; set; } = [];
+        /// <summary>Party Blessing payments per role (GuildCampfireService.Rewards.cs).</summary>
+        public Dictionary<long, int> Blessings { get; set; } = [];
     }
 
     private StateData Read(long guildId)
@@ -181,11 +188,11 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
     private long? GuildId(GameSession session) => _home.GuildId(session);
 
     /// <summary>Event content only: entering the home itself is GuildHomeService's and is always open.</summary>
-    private bool Open(GameSession session) => Eligible(session) && _schedule.IsOpen(116);
+    private bool Open(GameSession session) => Eligible(session) && _schedule.IsOpen(Activity);
 
     /// <summary>A guild member who may take part in DailyActivity 116 (Lv, function 1321), at any hour.</summary>
     private bool Eligible(GameSession session) => session.Activities.ActivitiesReady && GuildId(session) != null && session.Progress != null
-        && _data.Row("DailyActivityConfig", 116) is { } daily
+        && _data.Row("DailyActivityConfig", Activity) is { } daily
         && session.Progress.Level >= GameData.Int(daily, "_iiLv")
         && _functions.IsOpen(session, Function);
 
@@ -231,24 +238,45 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
     private static bool Near(GameSession session, MapPoint point, float distance) =>
         MonsterService.Distance(session.Position.X, session.Position.Z, point.X, point.Z) <= distance;
 
+    /// <summary>The start of the open occurrence of DailyActivity 116 (_kTime 20:00); Testing AlwaysOpen (TEST AID, not
+    /// original) and a GM window run the event from their own occurrence's start.</summary>
     private long StartTime()
     {
-        // Testing AlwaysOpen (TEST AID, not original): the 25 minutes run from the start of the repeating occurrence.
-        if (_schedule.TestingOpens(116) && _schedule.CurrentOrNext(116) is { } test
-            && test.Contains(_time.GetUtcNow().ToUnixTimeSeconds())) return test.Start;
+        if (_schedule.CurrentOrNext(Activity) is { } open && open.Contains(_time.GetUtcNow().ToUnixTimeSeconds()))
+            return open.Start;
         var local = _clock.LocalNow;
         var start = local.Date.AddHours(20);
         return new DateTimeOffset(start, _clock.LocalTimeZone.GetUtcOffset(start)).ToUnixTimeSeconds();
     }
 
+    /// <summary>Milliseconds from the event start to each phase: the _iDelayTime of the phase's StageStart row, as the
+    /// client times its stage panel (Lua_CFG_CampFireAffixNewConfig._buildPhaseDelayCache; CampFireTimeLine has no
+    /// client reader).</summary>
+    private Dictionary<int, long> PhaseStarts()
+    {
+        var starts = new Dictionary<int, long>();
+        foreach (var row in Data.Config.CampFireAffixNewConfig.All(_data).Where(r => r.ActionType == StageStartAction))
+            starts[(int)row.Phase] = row.DelayTime;
+        return starts;
+    }
+
+    private long PhaseStart(int phase) => PhaseStarts().GetValueOrDefault(phase);
+
+    /// <summary>GetTotalDurationTime: the last phase start plus the End row's _iDelayTime.</summary>
+    private long EventLength() => PhaseStarts().Values.DefaultIfEmpty(0).Max()
+        + Data.Config.CampFireAffixNewConfig.All(_data).Where(r => r.ActionType == EndAction).Select(r => r.DelayTime).LastOrDefault();
+
+    /// <summary>The phase the event is in (GetActionTypeByElapsed's latest StageStart), or <see cref="Over"/>.</summary>
     private int CurrentStage()
     {
         long elapsed = (_time.GetUtcNow().ToUnixTimeSeconds() - StartTime()) * 1000;
-        if (elapsed < 0 || elapsed >= 1_500_000) return 5;
-        return _data.Table("CampFireTimeLine").Values
-            .Where(r => GameData.Int(r, "_iTimeLine") <= elapsed)
-            .Select(r => (int)GameData.Int(r, "_iId")).DefaultIfEmpty(0).Max();
+        if (elapsed < 0 || elapsed >= EventLength()) return Over;
+        return PhaseStarts().Where(p => p.Value <= elapsed).OrderBy(p => p.Value).Select(p => p.Key).LastOrDefault();
     }
+
+    /// <summary>A phase of the running event (1 to the Finale), not before it or after it. The fire and entry content
+    /// stay through the Finale, phase 5 "Party's End" (inferred: its rows name no removal before the End).</summary>
+    private static bool Running(int stage) => stage is >= 1 and < Over;
 
     private long MaxExp() => _data.Table("CampFireLevel").Values
         .Select(r => GameData.Int(r, "_iExp")).DefaultIfEmpty(300).Max();
@@ -275,13 +303,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
             result.NowShowInfo = new GuildCampFireShowInfo
             {
                 Type = (GuildCampFireShowType)1, Param = show,
-                StartTimeStamp = StartTime() + (stage switch
-                {
-                    2 => 30,
-                    3 => 300,
-                    4 => 900,
-                    _ => 0,
-                }),
+                StartTimeStamp = StartTime() + PhaseStart(stage) / 1000,
             };
         return result;
     }
@@ -293,7 +315,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
     {
         if (RoomFor(session) is not { } room || !Open(session) || FirePoint() is not { } fire) return;
         int stage = CurrentStage();
-        if (stage is < 1 or > 4) return;
+        if (!Running(stage)) return;
         MarkJoined(session);
         var view = new AoIViewChangeData();
         AddNpc(view, room, 413, 7020004, fire);
@@ -404,7 +426,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         await session.SendGameAsync(PlayerInfo, new CampFirePlayerInfo
         {
             AddSeedCount = state?.Seeds.GetValueOrDefault(session.Role?.Id ?? 0)?.Count ?? 0,
-            BubblesRewardCount = 0, FireBlessingEndTime = 0,
+            BubblesRewardCount = state?.Blessings.GetValueOrDefault(session.Role?.Id ?? 0) ?? 0, FireBlessingEndTime = 0,
         });
     }
 
@@ -467,9 +489,10 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         _lastSecond = second;
         var live = _home.Rooms;
         var liveIds = live.Select(r => r.Room.Id).ToHashSet();
-        foreach (long closed in _sentStage.Keys.Concat(_eventDay.Keys).Where(id => !liveIds.Contains(id)).Distinct().ToArray())
+        foreach (long closed in _sentStage.Keys.Concat(_eventDay.Keys).Concat(_blessed.Keys).Where(id => !liveIds.Contains(id)).Distinct().ToArray())
         {
             _sentStage.Remove(closed);
+            _blessed.Remove(closed);
             Forget(closed);
         }
         FinishPerformances();
@@ -477,19 +500,20 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         if (live.Count == 0) return;
         long day = Today();
         // Pitfall 1: home rooms exist at any hour. Outside the event window nothing is pushed, except the Finish of
-        // an event this room actually saw today (stages 1-4).
-        int stage = _schedule.IsOpen(116) ? CurrentStage() : 5;
-        if (stage is < 1 or > 5) return;
+        // an event this room actually saw today.
+        int stage = _schedule.IsOpen(Activity) ? CurrentStage() : Over;
+        if (stage < 1) return;
         foreach (var (guild, room) in live)
         {
             var (seenDay, seen) = _sentStage.GetValueOrDefault(room.Id);
             if (seenDay != day) seen = 0;
-            if (stage == seen || stage == 5 && seen == 0) continue;
+            if (stage == seen || stage == Over && seen == 0) continue;
             _sentStage[room.Id] = (day, stage);
             bool fresh = seen == 0;
             _loop.TrackLegacyDetached("campfire stage", () => AdvanceAsync(guild, room, stage, day, fresh));
         }
         RunDueDraws(live.Select(r => (r.Guild, r.Room)), stage, day, second);
+        RunBlessings(live.Select(r => (r.Guild, r.Room)), stage, day, second);
     }
 
     /// <summary>Drop a room's transient fruit/boss bookkeeping (its actors are cleared separately).</summary>
@@ -515,17 +539,17 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
     private async Task AdvanceAsync(long guild, InstanceService.Room room, int stage, long day, bool fresh)
     {
         if (room.Closed) return;
-        if (stage == 5) await ResetAsync(room, null);
+        if (stage == Over) await ResetAsync(room, null);
         else if (fresh) await ResetAsync(room, day);
-        var info = StageInfo(guild);
+        var info = stage == Over ? null : StageInfo(guild);
         var seeds = new AoIViewChangeData();
         // Members already inside when the event starts get the fire with its first stage.
-        if (fresh && stage < 5 && FirePoint() is { } fire) AddNpc(seeds, room, 413, 7020004, fire);
+        if (fresh && stage != Over && FirePoint() is { } fire) AddNpc(seeds, room, 413, 7020004, fire);
         if (stage == 1) AddSeeds(seeds, room);
-        else if (stage is 2 or 5)
+        else if (stage is 2 or Over)
             for (int i = 0; i < MaxSeeds(); i++) seeds.LeaveAoi.Add((ulong)Uid(room, 1001 + i));
         // (inferred) The fire belongs to the event: after Finish the home is empty again, as for a later visitor.
-        if (stage == 5) seeds.LeaveAoi.Add((ulong)Uid(room, 413));
+        if (stage == Over) seeds.LeaveAoi.Add((ulong)Uid(room, 413));
         foreach (var member in room.ActiveMembers)
         {
             var session = member.Session;
@@ -533,9 +557,12 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
             if (session.SceneEntry != Dungeon || session.SceneLoading || !Eligible(session)) continue;
             if (seeds.Bases.Count > 0 || seeds.LeaveAoi.Count > 0)
                 await session.SendGameAsync(GameAoiSink.SyncAoiView, seeds);
-            await session.SendGameAsync(Stage, info);
-            if (stage < 5) MarkJoined(session);
-            if (stage == 5) await session.SendGameAsync(Finish, new GuildCampFireFinishNotify());
+            if (info != null)
+            {
+                await session.SendGameAsync(Stage, info);
+                MarkJoined(session);
+            }
+            else await session.SendGameAsync(Finish, new GuildCampFireFinishNotify());
         }
         if (stage is >= 2 and <= 4) await DrawAsync(guild, room, stage);
         if (stage is >= 2 and <= 4) await SpawnFruitCohortAsync(guild, room, stage);
@@ -621,6 +648,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
                 state.FruitKills[fruit.Stage] = state.FruitKills.GetValueOrDefault(fruit.Stage) + 1;
                 await SaveAsync(fruit.Guild, state, killer);
                 _fruitActors.Remove(monster.Uid);
+                if (Open(killer)) await PayKillAwardAsync(killer, fruit.Guild, fruit.Stage, monster);
                 if (Open(killer) && CurrentStage() == fruit.Stage)
                 {
                     var notice = new GuildCampFireCreateMonsterFruitNotify { DeadPosiiton = monster.Pos };
