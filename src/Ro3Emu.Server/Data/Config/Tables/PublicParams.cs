@@ -70,6 +70,7 @@ public readonly partial record struct PublicParams(IReadOnlyDictionary<string, J
     [ConfigConstant("BubbleTime")] public partial long? BubbleTime { get; }
     [ConfigConstant("CampFireHenshinSkill")] public partial long? CampFireHenshinSkill { get; }
     [ConfigConstant("CampFireHenshinTimeout")] public partial long? CampFireHenshinTimeout { get; }
+    [ConfigConstant("CampfireBubbleRewardLimit")] public partial long? CampfireBubbleRewardLimit { get; }
     [ConfigConstant("CampfireMaxSeedNum")] public partial long? CampfireMaxSeedNum { get; }
     [ConfigConstant("CampfireMonsterLimit")] public partial long? CampfireMonsterLimit { get; }
     [ConfigConstant("ChickenBagLimit")] public partial long? ChickenBagLimit { get; }

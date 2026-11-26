@@ -1,5 +1,6 @@
 {
   "AUCTION_CURRENCY": 1,
   "BaseToJobConversionPercent": 2500,
+  "CampfireBubbleRewardLimit": 2,
   "TeamDropBuffWeights": 2000
 }

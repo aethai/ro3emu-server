@@ -168,9 +168,13 @@ public sealed class GuildCampfireTests : IAsyncLifetime
             (await Next(alice, GuildCampfireService.Accelerant, GuildCampFireAddAccelerantRsp.Parser)).Result);
         Assert.Equal((1, -1L, (int)EconomyReason.GuildActivityCost), FuelLedger((long)alice.Self!.Uuid));
 
-        _clock.Advance(30);
+        // 20:05: CampFireAffixNewConfig's StageStart rows put stage 2 five minutes in. The Party Blessing (action 7,
+        // every 30 s from 20:00:30) paid its due tick on the way: Reward Count 1 of CampfireBubbleRewardLimit 20.
+        _clock.Advance(290);
         Assert.Equal(2, (await Next(alice, GuildCampfireService.Stage, GuildCampFireStageInfo.Parser,
             r => r.NowStage == 2)).NowStage);
+        Assert.Equal(1, (await Next(alice, GuildCampfireService.PlayerInfo, CampFirePlayerInfo.Parser,
+            p => p.BubblesRewardCount > 0)).BubblesRewardCount);
 
         MonsterUnit? fruit = null;
         for (int i = 0; i < 100 && fruit == null; i++)
@@ -189,6 +193,8 @@ public sealed class GuildCampfireTests : IAsyncLifetime
             fruit!.Hp = 1;
             return Task.CompletedTask;
         });
+        var character = _app.Services.GetRequiredService<CharacterService>();
+        long contribution = character.CountOf(Session(alice), 102);
         await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = fruit!.Pos, BStop = true, SpeedRate = 1 });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = fruit.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -196,6 +202,8 @@ public sealed class GuildCampfireTests : IAsyncLifetime
             hit => hit.Dsts.Any(d => d.DstID == fruit.Uid && d.IsDead));
         var nextFruit = await Next(alice, GuildCampfireService.Fruit, GuildCampFireCreateMonsterFruitNotify.Parser);
         Assert.All(nextFruit.Infos, i => Assert.True(i.NpcGuid > 0));
+        // The final blow: CampFireAffixNewConfig action 6 [[170006],[-1],[0]], 200 Personal Guild Contribution (102).
+        Assert.True(character.CountOf(Session(alice), 102) >= contribution + 200);
         // The kill drops one or two Transformation Manuals (NPC 7020027) beside the next fruit monster.
         var manuals = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             r => r.Bases.Any(b => b.EntityTemplateID == GuildCampfireService.ManualNpc));
@@ -209,13 +217,13 @@ public sealed class GuildCampfireTests : IAsyncLifetime
         await alice.SendGameAsync(SceneService.NpcInteraction, transform);
         Assert.Equal(ErrorCodes.NpcMissing, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser)).Result);
 
-        // 20:04:30, 240 s into stage 2: the Third Prize draw (action 5). One member is below the 10-player band: no winner.
+        // 20:09, 240 s into stage 2: the Third Prize draw (action 5). One member is below the 10-player band: no winner.
         _clock.Advance(240);
         var lucky = await Next(alice, GuildCampfireService.Lucky, GuildCampFireLuckyPlayerNotify.Parser);
         Assert.Equal(3, lucky.AwardLevel);
         Assert.Empty(lucky.PlayerList);
 
-        _clock.Advance(620); // 20:15, configured client boss stage 4
+        _clock.Advance(360); // 20:15, configured client boss stage 4
         Assert.Equal(4, (await Next(alice, GuildCampfireService.Stage, GuildCampFireStageInfo.Parser,
             r => r.NowStage == 4)).NowStage);
         MonsterUnit? boss = null;

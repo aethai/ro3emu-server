@@ -294,7 +294,7 @@ public static partial class EconomySnapshotReader
             }
             if (!Scoped && Has("guild_caravan_version")) ScanIntegerKeys("guild_caravan_version", "guild_id");
             ScanJsonEvidence("guild_campfire", "guild_id", "state", (key, root) =>
-                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages"), GuildScope);
+                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages Blessings"), GuildScope);
             ScanJsonEvidence("guild_challenge", "guild_id", "state", (key, root) =>
                 Fields(root, "Season Cycle Activated Unlocked LastUnlocked PassedDifficulty Difficulty Stage Selected Complete Progress BestTimeMs AuctionEntries"),
                 GuildScope);
