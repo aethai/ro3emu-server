@@ -300,11 +300,10 @@ LifeJobService.ProjectedRestrictions (2)
   RiftBattleService.RiftRestriction
 MonsterService.Born (1)
   MvpService.ApplyBornBuffsAsync
-MonsterService.TargetChanged (2)
+MonsterService.TargetChanged (3)
+  CombatEffectsService.MoveTopHatredBuffAsync
   WorldEffectsService.TargetChangedAsync
   WorldCoreService.TargetChangedAsync
-MonsterService.TopThreatChanged (1)
-  CombatEffectsService.TopThreatChangedAsync
 MountService.Changed (1)
   BuffService.MountsChangedAsync
 MountService.RideChanged (5)

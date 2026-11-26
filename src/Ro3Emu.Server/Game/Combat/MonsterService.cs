@@ -177,7 +177,6 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             IsBoss = new Data.Config.NPCConfig(npc).NPCSubType is 3 or 4 or 6,
             AnswersBattleCall = aiRow is { } answer && new Data.Config.AIConfig(answer).BattleCallResponse == 1,
             HealsOnReturn = aiRow is not { } heal || new Data.Config.AIConfig(heal).UnFightBUFF.Contains(ResetHealBuff),
-            HatredType = aiRow is { } ht ? (int)new Data.Config.AIConfig(ht).HatredType : 0,
             HatredDeclineSpeed = aiRow is { } hds ? (int)new Data.Config.AIConfig(hds).HatredDeclineSpeed : 0,
             HatredDeclineTimeMs = aiRow is { } hdt ? (int)new Data.Config.AIConfig(hdt).HatredDeclineTime : 0,
             MinHatredDecline = aiRow is { } mhd ? (int)new Data.Config.AIConfig(mhd).MinHatredDecline : 0,
@@ -600,132 +599,25 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         await _world.ToUnitViewersAsync(monster, CombatService.AoiAttrChange, SpeedChange(monster, now));
     }
 
-    /// <summary>
-    /// Updates threat (hatred) on a monster according to AIConfig and handles MMORPG aggro / retargeting (Issue #537).
-    /// </summary>
-    public void AddThreat(MonsterUnit m, GameSession source, long threat, bool isTaunt = false)
-    {
-        if (m.Dead || source.Role == null || source.Dead || source.SceneLoading || m.WorldScene != source.WorldScene) return;
-        if (TargetVisible?.Invoke(m, source) == false || Spares?.Invoke(m, source) == true) return;
-        if (m.StaysOutOfBattle || m.Template.SpeedCm == 0 && m.Template.AttackRange <= 0) return;
-
-        long now = NowMs;
-        if (!m.ThreatTable.TryGetValue(source, out var entry))
-        {
-            m.ThreatTable[source] = entry = new MonsterUnit.ThreatRecord();
-            if (!m.Hated.Contains(source)) m.Hated.Add(source);
-        }
-
-        if (isTaunt)
-        {
-            // Provoke / Taunt sets the caster to top threat + significant cushion, forcing target switch
-            long currentTop = m.TopThreatValue;
-            entry.Value = Math.Max(currentTop + Math.Max(10000L, threat), 50000L);
-            entry.LastHitMs = now;
-            var prevTop = m.TopThreatSession;
-            m.TopThreatSession = source;
-            if (m.Target != source)
-            {
-                SetTarget(m, source);
-                m.Returning = false;
-            }
-            if (!ReferenceEquals(prevTop, source)) NotifyTopThreatChanged(m, prevTop, source);
-            return;
-        }
-
-        entry.Value = checked(entry.Value + Math.Max(1L, threat));
-        entry.LastHitMs = now;
-
-        if (m.Target == null)
-        {
-            var prevTop = m.TopThreatSession;
-            Engage(m, source);
-            m.TopThreatSession = source;
-            if (!ReferenceEquals(prevTop, source)) NotifyTopThreatChanged(m, prevTop, source);
-            return;
-        }
-
-        if (m.Target == source)
-        {
-            if (m.TopThreatSession != source)
-            {
-                var prevTop = m.TopThreatSession;
-                m.TopThreatSession = source;
-                NotifyTopThreatChanged(m, prevTop, source);
-            }
-            return;
-        }
-
-        // Standard MMO threat threshold: non-target must exceed active target by 10% to pull aggro
-        long targetThreat = m.ThreatTable.TryGetValue(m.Target, out var current) ? current.Value : 0;
-        bool targetLost = m.Target.Dead || m.Target.SceneLoading || m.Target.WorldScene != m.WorldScene
-            || OutOfLeash(m, m.Target.Position.X, m.Target.Position.Z);
-
-        if (targetLost || targetThreat == 0 || entry.Value > (long)(targetThreat * 1.10))
-        {
-            var prevTop = m.TopThreatSession;
-            SetTarget(m, source);
-            m.TopThreatSession = source;
-            m.Returning = false;
-            if (!ReferenceEquals(prevTop, source)) NotifyTopThreatChanged(m, prevTop, source);
-        }
-        else if (entry.Value > m.TopThreatValue)
-        {
-            var prevTop = m.TopThreatSession;
-            m.TopThreatSession = source;
-            if (!ReferenceEquals(prevTop, source)) NotifyTopThreatChanged(m, prevTop, source);
-        }
-    }
-
-    /// <summary>Subscribed by CombatEffectsService to apply/clear _kTopHatredBuff (e.g. 14723001) on the top threat player.</summary>
-    public AsyncHook<MonsterUnit, GameSession?, GameSession?> TopThreatChanged { get; } = new("MonsterService.TopThreatChanged");
-
-    private void NotifyTopThreatChanged(MonsterUnit m, GameSession? prev, GameSession? newTop)
-    {
-        foreach (var handler in TopThreatChanged.Handlers)
-            _loop.TrackRuntimeDetached("monster top threat change", () => handler(m, prev, newTop));
-    }
-
-    private void ClearTopThreat(MonsterUnit m)
-    {
-        var prev = m.TopThreatSession;
-        m.TopThreatSession = null;
-        if (prev != null) NotifyTopThreatChanged(m, prev, null);
-    }
-
-    private static void DecayThreat(MonsterUnit m, long now)
-    {
-        if (m.Template.HatredDeclineSpeed <= 0 || m.ThreatTable.Count == 0) return;
-        long declineDelay = m.Template.HatredDeclineTimeMs > 0 ? m.Template.HatredDeclineTimeMs : 3000;
-        int speed = m.Template.HatredDeclineSpeed;
-        int minHatred = m.Template.MinHatredDecline;
-        foreach (var (session, record) in m.ThreatTable)
-        {
-            if (now - record.LastHitMs >= declineDelay)
-            {
-                long decay = Math.Max(1L, (long)speed * 50 / 1000);
-                record.Value = Math.Max(minHatred, record.Value - decay);
-            }
-        }
-    }
-
     /// <summary>A player hit it (or came into view of an aggressive one): chase and attack. A monster that enters the
     /// fight calls its own into it (<see cref="CallIntoBattle"/>).</summary>
     public void Engage(MonsterUnit m, GameSession target) => Engage(m, target, called: false);
 
     private void Engage(MonsterUnit m, GameSession target, bool called)
     {
-        if (m.Dead || m.StaysOutOfBattle || m.WorldScene != target.WorldScene || TargetVisible?.Invoke(m, target) == false
-            || Spares?.Invoke(m, target) == true || m.Template.SpeedCm == 0 && m.Template.AttackRange <= 0) return;
+        if (!MayEngage(m, target)) return;
         bool entering = m.Target == null;
         if (entering) m.NextSwingMs = NowMs + 300;
-        if (!m.Hated.Contains(target)) m.Hated.Add(target);
-        if (!m.ThreatTable.ContainsKey(target))
-            m.ThreatTable[target] = new MonsterUnit.ThreatRecord { Value = 1, LastHitMs = NowMs };
+        Hate(m, target); // MonsterService.Hatred
+        // Engaged already, it keeps its target: only hatred turns it (AddHatred).
         if (entering) SetTarget(m, target);
         m.Returning = false;
         if (entering && !called && m.Template.BattleCallRange > 0) CallIntoBattle(m, target);
     }
+
+    private bool MayEngage(MonsterUnit m, GameSession target) =>
+        !m.Dead && !m.StaysOutOfBattle && m.WorldScene == target.WorldScene && TargetVisible?.Invoke(m, target) != false
+        && Spares?.Invoke(m, target) != true && (m.Template.SpeedCm != 0 || m.Template.AttackRange > 0);
 
     /// <summary>
     /// AIConfig battle call (server-only fields; the client never reads them): a monster whose AI has _iBattleCallType
@@ -820,12 +712,13 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     private void Fight(MonsterUnit m, MapInstance map, long now)
     {
         var target = m.Target!;
-        DecayThreat(m, now);
+        UpdateHatred(m, now); // MonsterService.Hatred: decline, and entries gone stale or far dropped
         bool lost = target.Role == null || target.Dead || target.SceneLoading || TargetVisible?.Invoke(m, target) == false || target.WorldScene != m.WorldScene
-                    || OutOfLeash(m, target.Position.X, target.Position.Z);
+                    || OutOfLeash(m, target.Position.X, target.Position.Z) || !m.ThreatTable.ContainsKey(target);
         if (lost)
         {
-            // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: nearest first).
+            // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: the one with the
+            // most hatred, the nearest among equals).
             if (NextHated(m, target) is { } next) SetTarget(m, next);
             else Disengage(m, map);
             return;
@@ -896,14 +789,15 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     private GameSession? NextHated(MonsterUnit m, GameSession lost)
     {
-        m.Hated.Remove(lost);
         m.ThreatTable.Remove(lost);
-        m.Hated.RemoveAll(p => p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
-            || OutOfLeash(m, p.Position.X, p.Position.Z));
-        if (m.Hated.Count == 0) return null;
-        return m.Hated.OrderByDescending(p => m.ThreatTable.TryGetValue(p, out var t) ? t.Value : 0)
-                      .ThenBy(p => Distance(m.X, m.Z, p.Position.X, p.Position.Z))
-                      .FirstOrDefault();
+        // Dictionary allows Remove while it is enumerated.
+        foreach (var p in m.ThreatTable.Keys)
+            if (p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
+                || OutOfLeash(m, p.Position.X, p.Position.Z))
+                m.ThreatTable.Remove(p);
+        if (m.ThreatTable.Count == 0) return null;
+        return m.ThreatTable.OrderByDescending(e => e.Value.Value)
+            .ThenBy(e => Distance(m.X, m.Z, e.Key.Position.X, e.Key.Position.Z)).First().Key;
     }
 
     /// <summary>A straight walk failed: the first leg of a route around the obstacle, at most once in <see cref="PathBackoffMs"/>, as the search runs inside the monster tick.</summary>
@@ -922,9 +816,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     private void Disengage(MonsterUnit m, MapInstance map)
     {
-        m.Hated.Clear();
         m.ThreatTable.Clear();
-        ClearTopThreat(m);
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;
@@ -1014,9 +906,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         }
         m.Dead = true;
         m.Moving = false;
-        m.Hated.Clear();
         m.ThreatTable.Clear();
-        ClearTopThreat(m);
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;

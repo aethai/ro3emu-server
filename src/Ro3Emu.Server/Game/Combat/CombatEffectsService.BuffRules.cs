@@ -185,7 +185,7 @@ public sealed partial class CombatEffectsService
             await FightingAsync(m);
             if (m.Hp > 0)
             {
-                if (Current()) _monsters.AddThreat(m, s, amount);
+                if (Current()) _monsters.AddHatred(m, s, amount);
                 return;
             }
             if (!lethal) return;
