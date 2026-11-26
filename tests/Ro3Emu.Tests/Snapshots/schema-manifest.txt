@@ -1,0 +1,558 @@
+user_version=5
+table account
+  col created_utc TEXT nn=1 pk=0 def=
+  col name TEXT nn=0 pk=1 def=
+  col password_hash BLOB nn=1 pk=0 def=
+  col salt BLOB nn=1 pk=0 def=
+table account_ban
+  col account TEXT nn=1 pk=1 def=
+  col banned_by TEXT nn=0 pk=0 def=
+  col banned_utc INTEGER nn=1 pk=0 def=
+  col reason TEXT nn=1 pk=0 def=''
+  col until_utc INTEGER nn=0 pk=0 def=
+table account_login
+  col account TEXT nn=1 pk=0 def=
+  col address TEXT nn=0 pk=0 def=
+  col id INTEGER nn=0 pk=1 def=
+  col source TEXT nn=1 pk=0 def=
+  col utc INTEGER nn=1 pk=0 def=
+table account_totp
+  col account TEXT nn=0 pk=1 def=
+  col created_utc INTEGER nn=1 pk=0 def=
+  col enabled INTEGER nn=1 pk=0 def=0
+  col last_step INTEGER nn=1 pk=0 def=0
+  col recovery TEXT nn=1 pk=0 def=''
+  col secret BLOB nn=1 pk=0 def=
+table activity_eve_global
+  col activity_id INTEGER nn=1 pk=1 def=
+  col blob BLOB nn=1 pk=0 def=
+  col cycle_start INTEGER nn=1 pk=2 def=
+table activity_pre_donation_area
+  col activity_id INTEGER nn=1 pk=1 def=
+  col amount INTEGER nn=1 pk=0 def=0
+  col area INTEGER nn=1 pk=3 def=
+  col cycle_start INTEGER nn=1 pk=2 def=
+  col day INTEGER nn=1 pk=4 def=
+  col role_id INTEGER nn=1 pk=5 def=
+table activity_pre_progress
+  col activity_id INTEGER nn=1 pk=1 def=
+  col area INTEGER nn=1 pk=3 def=
+  col cycle_start INTEGER nn=1 pk=2 def=
+  col score INTEGER nn=1 pk=0 def=0
+table admin_audit
+  col action TEXT nn=1 pk=0 def=
+  col admin TEXT nn=1 pk=0 def=
+  col detail TEXT nn=1 pk=0 def=''
+  col id INTEGER nn=0 pk=1 def=
+  col target TEXT nn=1 pk=0 def=''
+  col utc INTEGER nn=1 pk=0 def=
+table adventure_group
+  col id INTEGER nn=0 pk=1 def=
+  col name TEXT nn=1 pk=0 def=
+  col state BLOB nn=1 pk=0 def=
+table adventure_group_member
+  col group_id INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=0 pk=1 def=
+table anticheat_exp
+  col account TEXT nn=1 pk=0 def=
+  col base_exp INTEGER nn=1 pk=0 def=
+  col hour INTEGER nn=1 pk=2 def=
+  col job_exp INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=1 def=
+table anticheat_refusal
+  col account TEXT nn=1 pk=1 def=
+  col count INTEGER nn=1 pk=0 def=
+  col hour INTEGER nn=1 pk=4 def=
+  col kind TEXT nn=1 pk=3 def=
+  col last_detail TEXT nn=1 pk=0 def=''
+  col last_utc INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=2 def=
+table auction_bonus
+  col amount INTEGER nn=1 pk=0 def=
+  col claimed INTEGER nn=1 pk=0 def=0
+  col group_key TEXT nn=1 pk=2 def=
+  col guild_id INTEGER nn=1 pk=0 def=0
+  col role_id INTEGER nn=1 pk=1 def=
+table auction_item
+  col auction_type INTEGER nn=1 pk=0 def=0
+  col end_time INTEGER nn=1 pk=0 def=0
+  col id INTEGER nn=0 pk=1 def=
+  col run_id INTEGER nn=1 pk=0 def=0
+  col settled INTEGER nn=1 pk=0 def=0
+  col source_key TEXT nn=1 pk=0 def=
+  col state BLOB nn=1 pk=0 def=
+table auction_prebuy
+  col auction_type INTEGER nn=1 pk=0 def=
+  col currency INTEGER nn=1 pk=0 def=
+  col id INTEGER nn=0 pk=1 def=
+  col item_id INTEGER nn=1 pk=0 def=
+  col paused INTEGER nn=1 pk=0 def=0
+  col processed INTEGER nn=1 pk=0 def=0
+  col quantity INTEGER nn=1 pk=0 def=
+  col requested_id INTEGER nn=1 pk=0 def=0
+  col revision INTEGER nn=1 pk=0 def=0
+  col role_id INTEGER nn=1 pk=0 def=
+  col src_type INTEGER nn=1 pk=0 def=
+  col unit_price INTEGER nn=1 pk=0 def=
+table auction_run
+  col id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table auction_source
+  col source_key TEXT nn=0 pk=1 def=
+table auth_token
+  col account TEXT nn=1 pk=0 def=
+  col expires_utc INTEGER nn=1 pk=0 def=
+  col kind TEXT nn=1 pk=0 def=
+  col token TEXT nn=0 pk=1 def=
+table blacklist
+  col other INTEGER nn=1 pk=2 def=
+  col owner INTEGER nn=1 pk=1 def=
+table casual_battle_obligation
+  col delivered INTEGER nn=1 pk=0 def=0
+  col match_id INTEGER nn=1 pk=0 def=
+  col payout BLOB nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=0 def=
+  col source_key TEXT nn=0 pk=1 def=
+table dungeon_reward_obligation
+  col activated INTEGER nn=1 pk=0 def=
+  col completed INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=0 def=
+  col room_id INTEGER nn=1 pk=0 def=
+  col source_key TEXT nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table economy_daily_aggregate
+  col abs_delta INTEGER nn=1 pk=0 def=
+  col asset_id INTEGER nn=1 pk=3 def=
+  col asset_kind INTEGER nn=1 pk=2 def=
+  col day_utc TEXT nn=1 pk=1 def=
+  col entry_count INTEGER nn=1 pk=0 def=
+  col leg_kind INTEGER nn=1 pk=5 def=
+  col net_delta INTEGER nn=1 pk=0 def=
+  col reason_code INTEGER nn=1 pk=4 def=
+table economy_entry
+  col after_fingerprint TEXT nn=0 pk=0 def=
+  col asset_epoch TEXT nn=1 pk=0 def=
+  col asset_id INTEGER nn=1 pk=0 def=
+  col asset_kind INTEGER nn=1 pk=0 def=
+  col before_fingerprint TEXT nn=0 pk=0 def=
+  col commit_seq INTEGER nn=1 pk=0 def=
+  col compartment_key TEXT nn=1 pk=0 def=
+  col compartment_kind INTEGER nn=1 pk=0 def=
+  col counterparty_compartment_key TEXT nn=0 pk=0 def=
+  col counterparty_compartment_kind INTEGER nn=0 pk=0 def=
+  col counterparty_instance_key TEXT nn=0 pk=0 def=
+  col counterparty_owner_id TEXT nn=0 pk=0 def=
+  col counterparty_owner_kind INTEGER nn=0 pk=0 def=
+  col delta INTEGER nn=1 pk=0 def=
+  col edge_no INTEGER nn=1 pk=0 def=
+  col effective_utc_ms INTEGER nn=1 pk=0 def=
+  col entry_id INTEGER nn=0 pk=1 def=
+  col instance_key TEXT nn=1 pk=0 def=
+  col leg_kind INTEGER nn=1 pk=0 def=
+  col leg_no INTEGER nn=1 pk=0 def=
+  col operation_id TEXT nn=1 pk=0 def=
+  col owner_id TEXT nn=1 pk=0 def=
+  col owner_kind INTEGER nn=1 pk=0 def=
+  col reason_code INTEGER nn=1 pk=0 def=
+  col recorded_utc_ms INTEGER nn=1 pk=0 def=
+  col source_key TEXT nn=1 pk=0 def=
+table economy_meta
+  col compacted_full_seq INTEGER nn=1 pk=0 def=0
+  col compacted_mail_seq INTEGER nn=1 pk=0 def=0
+  col compacted_seq INTEGER nn=1 pk=0 def=0
+  col next_sequence INTEGER nn=1 pk=0 def=
+  col pruned_entry_seq INTEGER nn=1 pk=0 def=0
+  col realm_id TEXT nn=1 pk=0 def=
+  col retained_floor INTEGER nn=1 pk=0 def=0
+  col singleton INTEGER nn=0 pk=1 def=
+table feedback_note
+  col author TEXT nn=1 pk=0 def=
+  col id INTEGER nn=0 pk=1 def=
+  col report_id INTEGER nn=1 pk=0 def=
+  col text TEXT nn=1 pk=0 def=
+  col utc INTEGER nn=1 pk=0 def=
+table feedback_triage
+  col assignee TEXT nn=0 pk=0 def=
+  col report_id INTEGER nn=0 pk=1 def=
+  col status TEXT nn=1 pk=0 def=
+  col updated_by TEXT nn=1 pk=0 def=
+  col updated_utc INTEGER nn=1 pk=0 def=
+table festival_reward
+  col award INTEGER nn=1 pk=0 def=
+  col claimed INTEGER nn=1 pk=0 def=0
+  col cycle INTEGER nn=1 pk=1 def=
+  col grants BLOB nn=0 pk=0 def=
+  col role_id INTEGER nn=1 pk=2 def=
+  col source INTEGER nn=1 pk=3 def=
+table festival_round
+  col cycle INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table friend
+  col intimacy INTEGER nn=1 pk=0 def=0
+  col other INTEGER nn=1 pk=2 def=
+  col owner INTEGER nn=1 pk=1 def=
+  col since INTEGER nn=1 pk=0 def=
+table friend_apply
+  col applicant INTEGER nn=1 pk=2 def=
+  col target INTEGER nn=1 pk=1 def=
+  col time INTEGER nn=1 pk=0 def=
+table friend_chat_group
+  col created INTEGER nn=1 pk=0 def=
+  col id INTEGER nn=0 pk=1 def=
+  col name TEXT nn=1 pk=0 def=
+  col owner INTEGER nn=1 pk=0 def=
+table friend_chat_member
+  col dnd INTEGER nn=1 pk=0 def=0
+  col group_id INTEGER nn=1 pk=1 def=
+  col role INTEGER nn=1 pk=2 def=
+table friend_metadata
+  col data BLOB nn=1 pk=0 def=
+  col role INTEGER nn=0 pk=1 def=
+table gift_code
+  col code TEXT nn=1 pk=1 def=
+  col created_by TEXT nn=0 pk=0 def=
+  col created_utc INTEGER nn=1 pk=0 def=CAST(strftime('%s','now') AS INTEGER)
+  col disabled INTEGER nn=1 pk=0 def=0
+  col expires_utc INTEGER nn=0 pk=0 def=
+  col items TEXT nn=1 pk=0 def=
+  col max_uses INTEGER nn=1 pk=0 def=0
+  col note TEXT nn=0 pk=0 def=
+  col per_account INTEGER nn=1 pk=0 def=1
+  col starts_utc INTEGER nn=0 pk=0 def=
+table gift_code_redemption
+  col account TEXT nn=1 pk=0 def=
+  col code TEXT nn=1 pk=0 def=
+  col redeemed_utc INTEGER nn=1 pk=0 def=
+  col redemption_key TEXT nn=0 pk=1 def=
+  col role_id INTEGER nn=1 pk=0 def=
+table guild
+  col id INTEGER nn=0 pk=1 def=
+  col name TEXT nn=1 pk=0 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_campfire
+  col guild_id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_caravan_member
+  col revision INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_caravan_version
+  col day INTEGER nn=1 pk=0 def=
+  col guild_id INTEGER nn=0 pk=1 def=
+  col revision INTEGER nn=1 pk=0 def=
+table guild_challenge
+  col guild_id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_challenge_clear
+  col cycle INTEGER nn=1 pk=0 def=
+  col difficulty INTEGER nn=1 pk=0 def=
+  col guild_id INTEGER nn=1 pk=0 def=
+  col id TEXT nn=0 pk=1 def=
+  col pending INTEGER nn=1 pk=0 def=
+  col season INTEGER nn=1 pk=0 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_event
+  col data BLOB nn=1 pk=0 def=
+  col guild_id INTEGER nn=1 pk=1 def=
+  col idx INTEGER nn=1 pk=2 def=
+table guild_hunting
+  col cycle_start INTEGER nn=0 pk=1 def=
+  col data BLOB nn=1 pk=0 def=
+  col runtime BLOB nn=1 pk=0 def=
+table guild_league
+  col id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_market
+  col id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table guild_member
+  col guild_id INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=0 pk=1 def=
+table guild_recovery
+  col created_ms INTEGER nn=1 pk=0 def=
+  col guild_id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table item
+  col attrs TEXT nn=0 pk=0 def=
+  col bind_expire INTEGER nn=1 pk=0 def=0
+  col bind_type INTEGER nn=1 pk=0 def=0
+  col enchantments TEXT nn=0 pk=0 def=
+  col entry INTEGER nn=1 pk=0 def=
+  col grid INTEGER nn=1 pk=0 def=0
+  col guid INTEGER nn=0 pk=1 def=
+  col is_locked INTEGER nn=1 pk=0 def=0
+  col pack INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=0 def=
+  col sort INTEGER nn=1 pk=0 def=
+  col stack INTEGER nn=1 pk=0 def=
+  col str_attrs TEXT nn=0 pk=0 def=
+table mail_delivery_replay
+  col delivery_key TEXT nn=1 pk=0 def=
+  col letter_id TEXT nn=1 pk=0 def=
+  col operation_id TEXT nn=1 pk=0 def=
+  col realm_id TEXT nn=1 pk=1 def=
+  col role_id INTEGER nn=1 pk=0 def=
+  col semantic_hash TEXT nn=1 pk=0 def=
+  col source_key TEXT nn=1 pk=2 def=
+table market_record
+  col data TEXT nn=1 pk=0 def=
+  col id TEXT nn=1 pk=2 def=
+  col kind TEXT nn=1 pk=1 def=
+table mvp_award_obligation
+  col awards BLOB nn=1 pk=0 def=
+  col cfg_id INTEGER nn=1 pk=0 def=
+  col death_ms INTEGER nn=1 pk=0 def=
+  col delivered INTEGER nn=1 pk=0 def=0
+  col player_id INTEGER nn=1 pk=0 def=
+  col result BLOB nn=1 pk=0 def=
+  col source_key TEXT nn=0 pk=1 def=
+table mvp_line_cooldown
+  col cfg_id INTEGER nn=0 pk=1 def=
+  col death_ms INTEGER nn=1 pk=0 def=
+table mvp_player
+  col end_num INTEGER nn=1 pk=0 def=
+  col first_num INTEGER nn=1 pk=0 def=
+  col join_num INTEGER nn=1 pk=0 def=
+  col last_time INTEGER nn=1 pk=0 def=
+  col player_id INTEGER nn=0 pk=1 def=
+  col team_num INTEGER nn=1 pk=0 def=
+table mvp_settlement
+  col cfg_id INTEGER nn=1 pk=0 def=
+  col death_ms INTEGER nn=1 pk=0 def=
+  col source_key TEXT nn=0 pk=1 def=
+table mvp_state
+  col cfg_id INTEGER nn=0 pk=1 def=
+  col dead_ms TEXT nn=1 pk=0 def=''
+  col state INTEGER nn=1 pk=0 def=
+  col state_time INTEGER nn=1 pk=0 def=
+table operation_receipt
+  col actor_account TEXT nn=1 pk=0 def=
+  col actor_role INTEGER nn=1 pk=0 def=
+  col after_revisions TEXT nn=1 pk=0 def=
+  col before_revisions TEXT nn=1 pk=0 def=
+  col child_receipts BLOB nn=1 pk=0 def=
+  col command_kind TEXT nn=1 pk=0 def=
+  col commit_seq INTEGER nn=1 pk=0 def=
+  col effective_utc_ms INTEGER nn=1 pk=0 def=
+  col intent_hash TEXT nn=1 pk=0 def=
+  col intent_payload BLOB nn=1 pk=0 def=
+  col leg_count INTEGER nn=1 pk=0 def=
+  col operation_id TEXT nn=0 pk=1 def=
+  col outcome BLOB nn=1 pk=0 def=
+  col realm_id TEXT nn=1 pk=0 def=
+  col recorded_utc_ms INTEGER nn=1 pk=0 def=
+  col request_fingerprint TEXT nn=1 pk=0 def=
+  col source_key TEXT nn=1 pk=0 def=
+table operation_source
+  col operation_id TEXT nn=1 pk=0 def=
+  col realm_id TEXT nn=1 pk=1 def=
+  col source_key TEXT nn=1 pk=2 def=
+table owner_operation_receipt
+  col family TEXT nn=1 pk=0 def=
+  col operation_id TEXT nn=0 pk=1 def=
+  col result BLOB nn=1 pk=0 def=
+table owner_revision
+  col id TEXT nn=1 pk=2 def=
+  col kind TEXT nn=1 pk=1 def=
+  col part TEXT nn=1 pk=3 def=
+  col revision INTEGER nn=1 pk=0 def=
+table panel_news
+  col author TEXT nn=1 pk=0 def=''
+  col body TEXT nn=1 pk=0 def=''
+  col id INTEGER nn=0 pk=1 def=
+  col pinned INTEGER nn=1 pk=0 def=0
+  col published_utc INTEGER nn=1 pk=0 def=
+  col tag TEXT nn=1 pk=0 def='news'
+  col title TEXT nn=1 pk=0 def=
+table panel_role
+  col account TEXT nn=0 pk=1 def=
+  col granted_by TEXT nn=1 pk=0 def=
+  col granted_utc INTEGER nn=1 pk=0 def=
+  col role TEXT nn=1 pk=0 def=
+table panel_setting
+  col key TEXT nn=0 pk=1 def=
+  col value TEXT nn=1 pk=0 def=
+table prontera_defense_guild_prep
+  col exp INTEGER nn=1 pk=0 def=
+  col guild_id INTEGER nn=1 pk=2 def=
+  col season_open INTEGER nn=1 pk=1 def=
+table prontera_defense_station
+  col guild_id INTEGER nn=1 pk=2 def=
+  col map_id INTEGER nn=1 pk=0 def=
+  col season_open INTEGER nn=1 pk=1 def=
+table prontera_defense_world
+  col defense_point INTEGER nn=1 pk=0 def=
+  col map_id INTEGER nn=1 pk=2 def=
+  col season_open INTEGER nn=1 pk=1 def=
+table recent_team_peer
+  col last_seen INTEGER nn=1 pk=0 def=
+  col other INTEGER nn=1 pk=2 def=
+  col owner INTEGER nn=1 pk=1 def=
+table role
+  col account TEXT nn=1 pk=0 def=
+  col achievement_runtime BLOB nn=0 pk=0 def=
+  col achievements BLOB nn=0 pk=0 def=
+  col activity_runtime BLOB nn=0 pk=0 def=
+  col adventure_group BLOB nn=0 pk=0 def=
+  col area INTEGER nn=1 pk=0 def=
+  col area_concur BLOB nn=0 pk=0 def=
+  col auction BLOB nn=0 pk=0 def=
+  col auto_decompose BLOB nn=0 pk=0 def=
+  col bag_state BLOB nn=0 pk=0 def=
+  col barroom BLOB nn=0 pk=0 def=
+  col bonus_points INTEGER nn=1 pk=0 def=0
+  col card_plans BLOB nn=0 pk=0 def=
+  col career INTEGER nn=1 pk=0 def=
+  col career_special BLOB nn=0 pk=0 def=
+  col create_time INTEGER nn=1 pk=0 def=
+  col currency TEXT nn=1 pk=0 def=''
+  col daily BLOB nn=0 pk=0 def=
+  col deleted_time INTEGER nn=1 pk=0 def=0
+  col dungeons BLOB nn=0 pk=0 def=
+  col emblems BLOB nn=0 pk=0 def=
+  col emoji_info BLOB nn=0 pk=0 def=
+  col emoji_play BLOB nn=0 pk=0 def=
+  col equip_levels BLOB nn=0 pk=0 def=
+  col equip_plans BLOB nn=0 pk=0 def=
+  col exp INTEGER nn=1 pk=0 def=0
+  col face REAL nn=1 pk=0 def=0
+  col first_heart BLOB nn=0 pk=0 def=
+  col genre BLOB nn=0 pk=0 def=
+  col gifts BLOB nn=0 pk=0 def=
+  col gm_state BLOB nn=0 pk=0 def=
+  col growth_class BLOB nn=0 pk=0 def=
+  col guides BLOB nn=0 pk=0 def=
+  col guild_challenge BLOB nn=0 pk=0 def=
+  col guild_info BLOB nn=0 pk=0 def=
+  col hair INTEGER nn=1 pk=0 def=
+  col heroic_spirit BLOB nn=0 pk=0 def=
+  col id INTEGER nn=0 pk=1 def=
+  col job_exp INTEGER nn=1 pk=0 def=0
+  col job_exp_catchup BLOB nn=0 pk=0 def=
+  col job_level INTEGER nn=1 pk=0 def=1
+  col last_login_time INTEGER nn=1 pk=0 def=
+  col level INTEGER nn=1 pk=0 def=
+  col library BLOB nn=0 pk=0 def=
+  col life_restrict BLOB nn=0 pk=0 def=
+  col life_runtime BLOB nn=0 pk=0 def=
+  col lifejob BLOB nn=0 pk=0 def=
+  col lottery BLOB nn=0 pk=0 def=
+  col mailbox BLOB nn=0 pk=0 def=
+  col mounts BLOB nn=0 pk=0 def=
+  col name TEXT nn=1 pk=0 def=
+  col new_activities BLOB nn=0 pk=0 def=
+  col offline_buffs BLOB nn=0 pk=0 def=
+  col paragon BLOB nn=0 pk=0 def=
+  col paragon_exp INTEGER nn=1 pk=0 def=0
+  col paragon_level INTEGER nn=1 pk=0 def=0
+  col personal BLOB nn=0 pk=0 def=
+  col personal_upvote BLOB nn=0 pk=0 def=
+  col pet_books BLOB nn=0 pk=0 def=
+  col pets BLOB nn=0 pk=0 def=
+  col popularity BLOB nn=0 pk=0 def=
+  col pos_x REAL nn=1 pk=0 def=156
+  col pos_y REAL nn=1 pk=0 def=0
+  col pos_z REAL nn=1 pk=0 def=192
+  col scene_entry INTEGER nn=1 pk=0 def=10111
+  col season_page BLOB nn=0 pk=0 def=
+  col season_page_meta BLOB nn=0 pk=0 def=
+  col season_refine BLOB nn=0 pk=0 def=
+  col season_talent BLOB nn=0 pk=0 def=
+  col settings BLOB nn=0 pk=0 def=
+  col sex INTEGER nn=1 pk=0 def=
+  col shop BLOB nn=0 pk=0 def=
+  col skill_bar TEXT nn=1 pk=0 def=''
+  col skill_plans BLOB nn=0 pk=0 def=
+  col skills TEXT nn=1 pk=0 def=''
+  col social_outfit BLOB nn=0 pk=0 def=
+  col stalls_info BLOB nn=0 pk=0 def=
+  col starter_kit INTEGER nn=1 pk=0 def=0
+  col stat_plans BLOB nn=0 pk=0 def=
+  col stats TEXT nn=1 pk=0 def='1,1,1,1,1,1'
+  col task_followup BLOB nn=0 pk=0 def=
+  col task_runtime BLOB nn=0 pk=0 def=
+  col tasks BLOB nn=0 pk=0 def=
+  col territory_escort BLOB nn=0 pk=0 def=
+  col territory_wars BLOB nn=0 pk=0 def=
+  col timed_activity BLOB nn=0 pk=0 def=
+  col timed_battle BLOB nn=0 pk=0 def=
+  col title BLOB nn=0 pk=0 def=
+  col totem_refine_epoch BLOB nn=0 pk=0 def=
+  col totems BLOB nn=0 pk=0 def=
+  col tower BLOB nn=0 pk=0 def=
+  col trade_info BLOB nn=0 pk=0 def=
+  col training BLOB nn=0 pk=0 def=
+  col wardrobe BLOB nn=0 pk=0 def=
+  col wild_afk BLOB nn=0 pk=0 def=
+  col world_state BLOB nn=0 pk=0 def=
+table role_lifecycle
+  col deleted INTEGER nn=1 pk=0 def=
+  col epoch INTEGER nn=1 pk=0 def=
+  col role_id INTEGER nn=0 pk=1 def=
+table server_state
+  col key TEXT nn=0 pk=1 def=
+  col value TEXT nn=1 pk=0 def=
+table territory_escort
+  col id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table territory_wars
+  col id INTEGER nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table territory_wars_seasons
+  col epoch TEXT nn=0 pk=1 def=
+  col state BLOB nn=1 pk=0 def=
+table timed_battle_obligation
+  col costs BLOB nn=1 pk=0 def=
+  col delivered INTEGER nn=1 pk=0 def=0
+  col entry INTEGER nn=1 pk=0 def=
+  col grants BLOB nn=1 pk=0 def=
+  col match_id INTEGER nn=1 pk=0 def=
+  col next_state BLOB nn=1 pk=0 def=
+  col result BLOB nn=1 pk=0 def=
+  col role_id INTEGER nn=1 pk=0 def=
+  col source_key TEXT nn=0 pk=1 def=
+table tower_first_pass
+  col floor INTEGER nn=0 pk=1 def=
+  col record BLOB nn=1 pk=0 def=
+table trade_listing
+  col data TEXT nn=1 pk=0 def=
+  col entry INTEGER nn=1 pk=0 def=
+  col expires_at_ms INTEGER nn=1 pk=0 def=
+  col public_until_ms INTEGER nn=1 pk=0 def=
+  col quantity INTEGER nn=1 pk=0 def=
+  col sale_time_ms INTEGER nn=1 pk=0 def=
+  col seller_id INTEGER nn=1 pk=0 def=
+  col sku TEXT nn=0 pk=1 def=
+  col special_type INTEGER nn=1 pk=0 def=
+  col spu TEXT nn=1 pk=0 def=
+  col unit_price INTEGER nn=1 pk=0 def=
+index account_login_account on account_login: CREATE INDEX account_login_account ON account_login(account, id)
+index account_name_nocase on account: CREATE INDEX account_name_nocase ON account(name COLLATE NOCASE)
+index adventure_group_member_group on adventure_group_member: CREATE INDEX adventure_group_member_group ON adventure_group_member(group_id)
+index anticheat_exp_hour on anticheat_exp: CREATE INDEX anticheat_exp_hour ON anticheat_exp(hour)
+index anticheat_refusal_hour on anticheat_refusal: CREATE INDEX anticheat_refusal_hour ON anticheat_refusal(hour)
+index auction_item_open on auction_item: CREATE INDEX auction_item_open ON auction_item(settled, auction_type)
+index auction_item_run on auction_item: CREATE INDEX auction_item_run ON auction_item(run_id)
+index auction_prebuy_role on auction_prebuy: CREATE INDEX auction_prebuy_role ON auction_prebuy(role_id)
+index casual_battle_pending_role on casual_battle_obligation: CREATE INDEX casual_battle_pending_role ON casual_battle_obligation(role_id,delivered)
+index challenge_clear_occurrence on guild_challenge_clear: CREATE INDEX challenge_clear_occurrence ON guild_challenge_clear(guild_id,season,cycle,difficulty)
+index challenge_clear_pending on guild_challenge_clear: CREATE INDEX challenge_clear_pending ON guild_challenge_clear(pending) WHERE pending=1
+index dungeon_obligation_pending_role on dungeon_reward_obligation: CREATE INDEX dungeon_obligation_pending_role ON dungeon_reward_obligation(role_id) WHERE completed=0 AND activated=1
+index dungeon_obligation_pending_room on dungeon_reward_obligation: CREATE INDEX dungeon_obligation_pending_room ON dungeon_reward_obligation(room_id) WHERE completed=0 AND activated=1
+index economy_entry_cut on economy_entry: CREATE INDEX economy_entry_cut ON economy_entry(commit_seq,entry_id)
+index economy_entry_recorded on economy_entry: CREATE INDEX economy_entry_recorded ON economy_entry(recorded_utc_ms)
+index economy_entry_role_sources on economy_entry: CREATE INDEX economy_entry_role_sources ON economy_entry(recorded_utc_ms, owner_id, asset_kind, asset_id, delta) WHERE owner_kind=1 AND leg_kind=1 AND delta>0
+index feedback_note_report on feedback_note: CREATE INDEX feedback_note_report ON feedback_note(report_id, id)
+index gift_code_redemption_code on gift_code_redemption: CREATE INDEX gift_code_redemption_code ON gift_code_redemption(code,account)
+index guild_member_guild on guild_member: CREATE INDEX guild_member_guild ON guild_member(guild_id)
+index item_role on item: CREATE INDEX item_role ON item(role_id)
+index mvp_award_pending_player on mvp_award_obligation: CREATE INDEX mvp_award_pending_player ON mvp_award_obligation(player_id,delivered)
+index operation_receipt_mail_seq on operation_receipt: CREATE INDEX operation_receipt_mail_seq ON operation_receipt(commit_seq) WHERE command_kind >= 'mail/' AND command_kind < 'mail0'
+index operation_source_key on operation_source: CREATE INDEX operation_source_key ON operation_source(source_key)
+index role_account on role: CREATE INDEX role_account ON role(account)
+index timed_battle_pending_role on timed_battle_obligation: CREATE INDEX timed_battle_pending_role ON timed_battle_obligation(role_id,delivered)
+index trade_listing_entry on trade_listing: CREATE INDEX trade_listing_entry ON trade_listing(entry, unit_price, sale_time_ms, sku)
+index trade_listing_expires on trade_listing: CREATE INDEX trade_listing_expires ON trade_listing(expires_at_ms)
+index trade_listing_public on trade_listing: CREATE INDEX trade_listing_public ON trade_listing(public_until_ms)
+index trade_listing_seller on trade_listing: CREATE INDEX trade_listing_seller ON trade_listing(seller_id, sku)
+index trade_listing_spu on trade_listing: CREATE INDEX trade_listing_spu ON trade_listing(spu, unit_price, sku)

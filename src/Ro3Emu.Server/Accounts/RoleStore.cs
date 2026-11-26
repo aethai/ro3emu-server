@@ -158,6 +158,8 @@ public sealed class RoleStore(AccountStore accounts)
             id: id, now: DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
     }
 
+    internal bool IsWriterFailed => _accounts.IsWriterFailed;
+
     public void SavePosition(long id, long sceneEntry, float x, float y, float z, float face)
     {
         _accounts.WriteLegacySync<int>(new RoleIdentityWritePlan(RoleIdentityWriteKind.Position,

@@ -51,6 +51,12 @@ internal sealed class PanelEconomyRead(PanelEconomyFilter filter, int offset, in
             sumIn = Clamp(row.GetDouble(1));
             sumOut = Clamp(row.GetDouble(2));
         }
+        if (filter.Account.Length == 0 && filter.Character.Length == 0)
+        {
+            var (aggIn, aggOut) = ReadDailyAggregateTotals(db, tx);
+            sumIn = Clamp((double)sumIn + aggIn);
+            sumOut = Clamp((double)sumOut + aggOut);
+        }
         using var select = Bind(DbSql.Command(db, tx, "SELECT e.entry_id,e.recorded_utc_ms,o.actor_account,e.owner_kind,e.owner_id," +
             "COALESCE(r.name,''),o.command_kind,e.reason_code,e.leg_kind,e.asset_kind,e.asset_id,e.delta,e.compartment_kind," +
             "e.counterparty_owner_kind,e.counterparty_owner_id,COALESCE(c.name,''),e.operation_id" + From + where +
@@ -75,6 +81,27 @@ internal sealed class PanelEconomyRead(PanelEconomyFilter filter, int offset, in
         if (filter.FromMs is { } from) command.Parameters.AddWithValue("$from", from);
         if (filter.ToMs is { } to) command.Parameters.AddWithValue("$to", to);
         return command;
+    }
+
+    private (double In, double Out) ReadDailyAggregateTotals(SqliteConnection db, SqliteTransaction tx)
+    {
+        if (filter.ToMs is <= 0) return (0, 0);
+        using (var exists = DbSql.Command(db, tx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='economy_daily_aggregate'"))
+            if ((long)exists.ExecuteScalar()! == 0) return (0, 0);
+        var where = new StringBuilder("WHERE 1=1");
+        if (filter.Assets.Count > 0)
+            where.Append(" AND asset_id IN (").Append(string.Join(',', filter.Assets.Select((_, i) => "$a" + i.ToString(CultureInfo.InvariantCulture)))).Append(')');
+        if (filter.FromMs != null) where.Append(" AND day_utc >= $fromDay");
+        if (filter.ToMs != null) where.Append(" AND day_utc <= $toDay");
+        using var cmd = DbSql.Command(db, tx,
+            "SELECT TOTAL((abs_delta + net_delta) / 2.0), TOTAL((net_delta - abs_delta) / 2.0) FROM economy_daily_aggregate " + where);
+        for (int i = 0; i < filter.Assets.Count; i++) cmd.Parameters.AddWithValue("$a" + i.ToString(CultureInfo.InvariantCulture), filter.Assets[i]);
+        if (filter.FromMs is { } from)
+            cmd.Parameters.AddWithValue("$fromDay", DateTimeOffset.FromUnixTimeMilliseconds(from).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        if (filter.ToMs is { } to)
+            cmd.Parameters.AddWithValue("$toDay", DateTimeOffset.FromUnixTimeMilliseconds(to - 1).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        using var row = cmd.ExecuteReader();
+        return row.Read() ? (row.GetDouble(0), row.GetDouble(1)) : (0, 0);
     }
 
     /// <summary>TOTAL sums in floating point (SUM would fail on an overflow); the page shows whole numbers.</summary>

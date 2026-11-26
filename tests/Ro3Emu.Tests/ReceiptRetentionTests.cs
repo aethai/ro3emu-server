@@ -325,7 +325,83 @@ public sealed class ReceiptRetentionTests : IDisposable
             Assert.Equal(12L, row.GetInt64(2)); // 10 currency + 2 items
         }
         var ledger = EconomyLedgerReader.Read(_accounts.DatabasePath, Catalog, "auto", 0, 1);
-        Assert.Contains(ledger.Issues, i => i.Key == "ledger/pruned");
+        Assert.Contains(ledger.Issues, i => i.Key == "ledger/pruned" && i.Kind == EconomyIssueKind.Coverage);
+        Assert.DoesNotContain(ledger.Issues, i => i.Kind == EconomyIssueKind.Corruption);
+
+        // A second unpruned receipt committed after pruning must verify cleanly with zero issues from pruned_entry_seq.
+        string op2 = Guid.NewGuid().ToString("N");
+        var buy2 = _roles.NewTransaction();
+        buy2.ItemDelta(_role, [], [new InvItem { Entry = 3, Stack = 1, Pack = 1, Sort = 1 }]);
+        progress = _roles.LoadProgress(_role);
+        progress.Currency[1] = 85;
+        buy2.Progress(_role, progress);
+        buy2.RoleBlob(_role, "shop", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Ro3Emu.Server.Game.ShopService.ShopState()));
+        buy2.WithEconomy(new EconomyMutation(op2, "retention-account", _role, "npc-shop-buy", "agg-buy-2",
+            "npc:" + op2, 2_000_000, [new(new(EconomyAssetKind.Currency, 1), 5)],
+            [new(new(EconomyAssetKind.Item, 3), 1)], [1]));
+        _roles.Commit(buy2, "test/retention-ledger-after-prune");
+
+        var fullWindow = EconomyLedgerReader.Read(_accounts.DatabasePath, Catalog, "auto", 0, 2);
+        Assert.DoesNotContain(fullWindow.Issues, i => i.Kind == EconomyIssueKind.Corruption);
+        Assert.Single(fullWindow.Issues, i => i.Key == "ledger/pruned");
+
+        var unprunedWindow = EconomyLedgerReader.Read(_accounts.DatabasePath, Catalog, "auto", 1, 2);
+        Assert.Empty(unprunedWindow.Issues);
+        Assert.True(unprunedWindow.CompleteHistory);
+
+        // Replaying leg validation on a pruned operation succeeds instead of throwing InvalidDataException.
+        using (var db = _accounts.Open())
+        using (var tx = db.BeginTransaction(deferred: true))
+        {
+            FamilyEconomyTransactionPlan.ValidateLegCount(db, tx, op, 2);
+            FamilyEconomyTransactionPlan.ValidateLegCount(db, tx, op2, 2);
+        }
+
+        // Panel economy summary includes economy_daily_aggregate totals for pruned history when unfiltered by role/account.
+        var (liveCount, sumIn, sumOut, _) = await _accounts.ReadPanelAsync<(int, long, long, List<PanelEconomyRow>)>(
+            new PanelEconomyRead(new PanelEconomyFilter("", "", [1], null, null), 0, 10));
+        Assert.Equal(1, liveCount);
+        Assert.Equal(0L, sumIn);
+        Assert.Equal(-15L, sumOut); // -10 pruned (daily aggregate) + -5 live
+
+        var (_, itemIn, itemOut, _) = await _accounts.ReadPanelAsync<(int, long, long, List<PanelEconomyRow>)>(
+            new PanelEconomyRead(new PanelEconomyFilter("", "", [3], null, null), 0, 10));
+        Assert.Equal(3L, itemIn); // +2 pruned (daily aggregate) + +1 live
+        Assert.Equal(0L, itemOut);
+
+        // Date filter covering only the pruned day still reports its aggregated totals.
+        long dayStart = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        long dayEnd = new DateTimeOffset(2025, 1, 16, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var (oldLive, oldIn, oldOut, _) = await _accounts.ReadPanelAsync<(int, long, long, List<PanelEconomyRow>)>(
+            new PanelEconomyRead(new PanelEconomyFilter("", "", [1], dayStart, dayEnd), 0, 10));
+        Assert.Equal(0, oldLive);
+        Assert.Equal(0L, oldIn);
+        Assert.Equal(-10L, oldOut);
+    }
+
+    [Fact]
+    public void RetentionAndBackupDefaultsStaySafeAndMailScanUsesPartialIndex()
+    {
+        var defaults = new ServerOptions();
+        Assert.Equal(0, defaults.ReceiptRetention.LedgerDays);
+        Assert.Equal(0, defaults.ReceiptRetention.MailDays);
+        Assert.Equal(0, defaults.Backup.MaxTotalMegabytes);
+        Assert.True(defaults.StartupIntegrityCheck);
+        Assert.False(defaults.StartupFullIntegrityCheck);
+
+        using var db = _accounts.Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            EXPLAIN QUERY PLAN
+            SELECT operation_id, commit_seq, recorded_utc_ms, source_key, intent_payload
+            FROM operation_receipt
+            WHERE commit_seq > 0 AND command_kind >= 'mail/' AND command_kind < 'mail0'
+            ORDER BY commit_seq LIMIT 100
+            """;
+        var plan = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) plan.Add(reader.GetString(3));
+        Assert.Contains(plan, line => line.Contains("operation_receipt_mail_seq", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
