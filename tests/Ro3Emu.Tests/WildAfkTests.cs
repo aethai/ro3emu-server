@@ -420,6 +420,41 @@ public sealed class WildAfkTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task AFieldKillWritesTheUnsavedClockWithItsRewardWithoutALoopWrite()
+    {
+        await using var bot = await InWorld();
+        await Eligible(bot);
+        await Warp(bot, 10111);
+        await Auto(bot, true);
+        await Kill(bot);
+        await Query(bot);
+        var lazy = Service<Ro3Emu.Server.Game.Persistence.WildAfkPersistence>();
+        lazy.Interval = TimeSpan.FromHours(1);
+        long role = (long)bot.Self!.Uuid;
+        await RunningClock(bot);
+        var until = DateTime.UtcNow + Wait;
+        while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
+        {
+            if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
+            await Task.Delay(50);
+        }
+        long kills = StoredAfk(role).Info.TodayKillCount;
+        var accounts = Service<AccountStore>();
+        int loopWrites = 0;
+        accounts.WriteSyncPlanObserved = (plan, onLoop) =>
+        { if (onLoop && plan is Ro3Emu.Server.Accounts.Persistence.RoleBlobWritePlan { Column: "wild_afk" }) Interlocked.Increment(ref loopWrites); };
+        try { await KillRecorded(bot); }
+        finally { accounts.WriteSyncPlanObserved = null; }
+        await Query(bot);
+
+        // #484: the kill no longer waits on a durable clock write of its own; the reward's transaction carries the clock.
+        Assert.Equal(0, loopWrites);
+        var stored = StoredAfk(role).Info;
+        Assert.Equal(kills + 1, stored.TodayKillCount);
+        Assert.InRange(stored.HighMultiplierTimeSeconds, 1, 3599);
+    }
+
+    [ClientDataFact]
     public async Task MonitorCapsIdleChargeAndAutoOffPauseAndSceneExitStopConsumption()
     {
         await using var bot = await InWorld();

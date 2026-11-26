@@ -53,6 +53,10 @@ public sealed partial class WildAfkService : IGameTicker
         [JsonIgnore] public byte[]? Persisted { get; set; }
         /// <summary>The bytes last handed to the lazy save (WildAfkPersistence), not necessarily on disk yet.</summary>
         [JsonIgnore] public byte[]? LazyMarked { get; set; }
+        /// <summary>Field kill records staged into parent rewards that have neither committed nor been reset, and when the
+        /// last one was staged (loop ms). Lazy clock writes wait for them (WildAfkPersistence).</summary>
+        [JsonIgnore] public int KillsStaged { get; set; }
+        [JsonIgnore] public long KillStagedAtMs { get; set; }
         /// <summary>The 5035 body this session last synced; an identical one is not diffed again.</summary>
         [JsonIgnore] public byte[]? SyncedInfo { get; set; }
         [JsonIgnore] public SemaphoreSlim Gate { get; } = new(1, 1);
@@ -233,7 +237,7 @@ public sealed partial class WildAfkService : IGameTicker
     /// pause/relogin; requests cannot create free time by toggling. A backwards wall-clock correction costs zero.
     /// (inferred) sumHighMultiplierTime is lifetime consumed seconds; daily tracking uses its own reset counter.
     /// </summary>
-    private async Task ReconcileCoreAsync(GameSession s, long now, bool forceSuspended = false, bool publish = true, bool tick = false)
+    private async Task ReconcileCoreAsync(GameSession s, long now, bool forceSuspended = false, bool publish = true)
     {
         var state = s.Activities.WildAfk!;
         var info = state.Info;
@@ -267,8 +271,9 @@ public sealed partial class WildAfkService : IGameTicker
         bool wasSuspended = info.IsSuspended;
         info.IsSuspended = info.IsHighMagnification && reason != "active";
         if (info.IsSuspended && !wasSuspended) info.HighMultiplierPausedAt = now / 1000;
-        // The tick's reconcile of a clock that keeps running is lazy; a reset, a pause or the end of Bonus Time is durable.
-        Save(s, lazy: tick && publish && !reset && running && info.IsHighMagnification && !info.IsSuspended);
+        // A reconcile of a clock that keeps running is lazy, whoever asks for it (the tick, a kill, a query); a reset, a pause
+        // or the end of Bonus Time is durable. The kills' durable writes made every field kill wait on SQLite (#484).
+        Save(s, lazy: publish && !reset && running && info.IsHighMagnification && !info.IsSuspended);
         if (!publish) return; // Disconnected sockets must not interrupt durable accounting or world cleanup.
         if (consumed > 0) await _tasks.OnBonusTimeConsumedAsync(s, consumed); // Connect target 106014
         // (inferred) The [106901] quests (500130 [106901,3600], 386060 [106901,300]) need and show whole minutes. Settling
@@ -364,7 +369,7 @@ public sealed partial class WildAfkService : IGameTicker
             if (Owns(s, state) && ReferenceEquals(s.Role, role) && (currentTick == null || currentTick()))
             {
                 if (s.Owner is { } owner) scope?.Context.Pin(owner);
-                await ReconcileCoreAsync(s, Now, tick: currentTick != null);
+                await ReconcileCoreAsync(s, Now);
             }
         }
         finally { state.Gate.Release(); }
@@ -603,7 +608,11 @@ public sealed partial class WildAfkService : IGameTicker
         var context = s.Owners?.Current ?? throw new InvalidOperationException("AFK kill record requires its role owner.");
         context.AssertRole(s.Role!.Id);
         context.Pin(s.Owner!);
-        if (_lazySave.IsDirty(s)) Save(s); // the parent reward compares the stored state with this one
+        // The parent reward guards the stored bytes it reads below. Only a lazy clock write already submitted could change
+        // them before the reward commits; that one is overtaken by a durable write now. An unsaved clock that is merely
+        // dirty needs no write of its own: it is part of the record written with the reward. (A durable write here on
+        // every field kill while Bonus Time runs made each kill wait on SQLite, #484.)
+        if (_lazySave.InFlight(s)) Save(s);
         long at = Now;
         var next = JsonSerializer.Deserialize<State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
         long day = Math.Min(state.DailyEpoch, Epoch(at));
@@ -626,21 +635,22 @@ public sealed partial class WildAfkService : IGameTicker
             next.TotalDrops[entry] = checked(next.TotalDrops.GetValueOrDefault(entry) + count);
         }
         bool renewMonitor = drops.Length > 0 && s.Combat.AutoBattle && !MvpAggro(s);
-        byte[] before = JsonSerializer.SerializeToUtf8Bytes(state);
         byte[] after = JsonSerializer.SerializeToUtf8Bytes(next);
         var priorEnlist = settlement.Enlist;
         var priorApplied = settlement.Applied;
         settlement.Enlist = builder =>
         {
             priorEnlist?.Invoke(builder);
-            byte[]? stored = _roles.ReadWildAfk(builder, s.Role.Id);
-            if (stored == null || !stored.AsSpan().SequenceEqual(before))
-                throw new InvalidOperationException("AFK kill source changed before parent admission.");
+            // The read guards the stored bytes until the commit. They may be older than the session's state (an unsaved
+            // clock): every write of the part comes from that state, so `after` contains whatever is stored.
+            if (_roles.ReadWildAfk(builder, s.Role.Id) == null)
+                throw new InvalidOperationException("AFK kill record has no stored state.");
             builder.RoleBlob(s.Role.Id, "wild_afk", after);
         };
         settlement.Applied = () =>
         {
             priorApplied?.Invoke();
+            state.KillsStaged = Math.Max(0, state.KillsStaged - 1);
             if (!Owns(s, state)) return;
             state.Info = next.Info;
             state.TotalDrops = next.TotalDrops;
@@ -649,8 +659,11 @@ public sealed partial class WildAfkService : IGameTicker
             if (renewMonitor) state.LastKillAtMs = at;
         };
         settlement.AfkRecordStaged = true;
+        state.KillsStaged++;
+        state.KillStagedAtMs = at;
         settlement.ResetAfkStage = () =>
         {
+            state.KillsStaged = Math.Max(0, state.KillsStaged - 1);
             settlement.Enlist = priorEnlist;
             settlement.Applied = priorApplied;
             settlement.AfkRecordStaged = false;
