@@ -200,6 +200,8 @@ public sealed partial class CombatEffectsService
         public required Func<bool> CurrentCaster;
         public required Func<bool> CanApplyMoreEffects;
         public required Func<bool> CurrentKillRecipient;
+        /// <summary>The damage each monster took from this cast, which it hates the caster for.</summary>
+        public Dictionary<MonsterUnit, long> Dealt { get; } = [];
     }
 
     internal async Task ApplyEffectsAsync(GameSession s, ActiveSkillCast action, Vec3 center, SkillObject? field = null,
@@ -352,7 +354,7 @@ public sealed partial class CombatEffectsService
                 && ctx.Action.StatusLanded?.Contains(target.Uid) == false
                 && RollHostileBuff(guarantee, s, null, null, target, out int sureId, out int sureDuration))
                 await _buffs.AddSupportAsync(target, sureId, sureDuration, ctx.CastingRole.Id);
-            if (ctx.CanApplyMoreEffects() && ctx.Script is ("Provoke" or "Taunt")) _monsters.Engage(target, s);
+            if (ctx.CanApplyMoreEffects() && ctx.Script is ("Provoke" or "Taunt")) _monsters.Provoke(target, s);
             if (ctx.CanApplyMoreEffects() && !target.Dead && target.Hp > 0) await DisplaceTargetAsync(s, ctx.Action, target, ctx.Center);
         }
     }
@@ -369,6 +371,7 @@ public sealed partial class CombatEffectsService
         target.Hp = Math.Max(0, beforeHp - amount);
         long effective = beforeHp - target.Hp;
         PetCombatService.RecordGuardianDamage(ctx.Action, target.Uid, amount);
+        ctx.Dealt[target] = amount;
         if (target.Hp == 0) killed.Add(target); // reserve before awaited damage callbacks
         if (effective > 0 && target.Hp > 0) await _buffs.BreakHitControlsAsync(target);
         await SettleMonsterHitAsync(s, target, beforeHp, amount);
@@ -430,6 +433,7 @@ public sealed partial class CombatEffectsService
                 await _character.SetHpSpAsync(recipient, before[2000] + amount, null);
                 hit.Dsts.Add(new DamageInfo { DstID = recipient.Role!.Id, Damage = actual, DamageType = DamageType.Heal, HitResult = healResult, DstElement = 1 });
                 Healed.Invoke(s, actual);
+                _monsters.AddHealHatred(s, recipient, actual);
                 await HealedAsync.InvokeAsync(s, actual);
             }
             await CleanseByTextAsync(recipient, ctx.Row, ctx.Script);
@@ -478,7 +482,7 @@ public sealed partial class CombatEffectsService
             if (target.Hp == 0 && !target.DeathDurable) continue; // another cast is still committing that death
             await _world.ToUnitViewersAsync(target, AoiAttrChange, MonsterService.Hp(target));
             await FightingAsync(target);
-            if (target.Hp > 0 && ctx.CurrentCaster()) _monsters.Engage(target, s);
+            if (target.Hp > 0 && ctx.CurrentCaster()) _monsters.AddHatred(target, s, ctx.Dealt.GetValueOrDefault(target));
         }
         if (processed.Count > 0 && ctx.CurrentCaster()) await FightingAsync(s);
     }

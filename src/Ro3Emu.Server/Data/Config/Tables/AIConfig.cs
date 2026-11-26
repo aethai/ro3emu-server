@@ -12,6 +12,9 @@ public readonly partial record struct AIConfig(JsonElement Row)
     [ConfigField("_iBattleCallType")] public partial long BattleCallType { get; }
     [ConfigField("_iCanInBattle")] public partial long CanInBattle { get; }
     [ConfigField("_iChaseDistance")] public partial long ChaseDistance { get; }
+    [ConfigField("_iHatredDeclineSpeed")] public partial long HatredDeclineSpeed { get; }
+    [ConfigField("_iHatredDeclineTime")] public partial long HatredDeclineTime { get; }
+    [ConfigField("_iMinHatredDecline")] public partial long MinHatredDecline { get; }
     [ConfigField("_iID")] public partial long Id { get; }
     [ConfigField("_iIsSurround")] public partial long IsSurround { get; }
     [ConfigField("_iRoamDis")] public partial long RoamDis { get; }

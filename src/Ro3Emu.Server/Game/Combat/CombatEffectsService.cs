@@ -62,8 +62,28 @@ public sealed partial class CombatEffectsService
         _loop = loop;
         _log = log;
         CastResolved.Subscribe(SupportSkillOnCastAsync, order: CombatService.GuardianHookOrder);
+        monsters.TargetChanged.Subscribe(MoveTopHatredBuffAsync);
         WireBuffRules();
         WireBossSkills();
+    }
+
+    /// <summary>
+    /// NPCConfig _kTopHatredBuff: the player a boss holds as its hatred target carries its buff. The client's boss HP widget
+    /// knows one hatred target per boss (custom data BossHatredTarget_Long 74, UI_Sys_Dungeon_TopInfo_HPWidgetCtrl); that
+    /// it is the boss's current target is (inferred), so the buff follows the target change, losing the target included.
+    /// It is taken off by its source, the monster, so two bosses with the same buff leave each other's alone.
+    /// </summary>
+    private async Task MoveTopHatredBuffAsync(MonsterUnit monster, GameSession? before, GameSession? after)
+    {
+        int buffId = monster.Template.TopHatredBuffId;
+        if (buffId <= 0) return;
+        // Handlers run detached: act on the target the monster holds now, not on a change another one already replaced.
+        if (before?.Role != null && !ReferenceEquals(monster.Target, before)
+            && before.Buffs.FirstOrDefault(b => b.ConfigId == buffId && b.SourceId == monster.Uid) is { } held)
+            await _buffs.RemoveAsync(before, held);
+        if (after?.Role != null && ReferenceEquals(monster.Target, after) && !monster.Dead && after.WorldScene == monster.WorldScene
+            && !after.Buffs.Any(b => b.ConfigId == buffId && b.SourceId == monster.Uid))
+            await _buffs.AddUntilSpentAsync(after, buffId, monster.Uid);
     }
 
     private long Now => _loop.NowMs;

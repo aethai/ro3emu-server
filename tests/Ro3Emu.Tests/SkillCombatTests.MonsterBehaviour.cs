@@ -38,9 +38,9 @@ public sealed partial class SkillCombatTests
         {
             dummy.X = a.Position.X + 1; dummy.Z = a.Position.Z;
             b.Position = a.Position.Clone();
-            monsters.Engage(dummy, b);
             monsters.Engage(dummy, a);
-            Assert.Equal(2, dummy.Hated.Count);
+            monsters.Engage(dummy, b); // engaged already, it keeps its target
+            Assert.Equal(2, dummy.ThreatTable.Count);
             Assert.Same(a, dummy.Target);
             return Task.CompletedTask;
         });

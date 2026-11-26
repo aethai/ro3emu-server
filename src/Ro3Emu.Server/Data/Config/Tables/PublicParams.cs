@@ -120,6 +120,10 @@ public readonly partial record struct PublicParams(IReadOnlyDictionary<string, J
     [ConfigConstant("GuildAuctionTime")] public partial long? GuildAuctionTime { get; }
     [ConfigConstant("GuildChallengeSet")] public partial long[]? GuildChallengeSet { get; }
     [ConfigConstant("GuildLeagueMaxPlayerNumber")] public partial long[]? GuildLeagueMaxPlayerNumber { get; }
+    [ConfigConstant("HateClearDistance")] public partial long? HateClearDistance { get; }
+    [ConfigConstant("HateClearTime")] public partial long? HateClearTime { get; }
+    [ConfigConstant("HatredExceedValue")] public partial long? HatredExceedValue { get; }
+    [ConfigConstant("HealthHatredScale")] public partial long? HealthHatredScale { get; }
     [ConfigConstant("HeroSpiritItemExp")] public partial long? HeroSpiritItemExp { get; }
     [ConfigConstant("HeroSpiritItemId")] public partial long? HeroSpiritItemId { get; }
     [ConfigConstant("ImmuneDeadConfirmTimeMs")] public partial long? ImmuneDeadConfirmTimeMs { get; }

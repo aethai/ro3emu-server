@@ -177,6 +177,10 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             IsBoss = new Data.Config.NPCConfig(npc).NPCSubType is 3 or 4 or 6,
             AnswersBattleCall = aiRow is { } answer && new Data.Config.AIConfig(answer).BattleCallResponse == 1,
             HealsOnReturn = aiRow is not { } heal || new Data.Config.AIConfig(heal).UnFightBUFF.Contains(ResetHealBuff),
+            HatredDeclineSpeed = aiRow is { } hds ? (int)new Data.Config.AIConfig(hds).HatredDeclineSpeed : 0,
+            HatredDeclineTimeMs = aiRow is { } hdt ? (int)new Data.Config.AIConfig(hdt).HatredDeclineTime : 0,
+            MinHatredDecline = aiRow is { } mhd ? (int)new Data.Config.AIConfig(mhd).MinHatredDecline : 0,
+            TopHatredBuffId = new Data.Config.NPCConfig(npc).TopHatredBuff is { Length: > 0 } thb ? (int)thb[0] : 0,
         };
     }
 
@@ -601,15 +605,19 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     private void Engage(MonsterUnit m, GameSession target, bool called)
     {
-        if (m.Dead || m.StaysOutOfBattle || m.WorldScene != target.WorldScene || TargetVisible?.Invoke(m, target) == false
-            || Spares?.Invoke(m, target) == true || m.Template.SpeedCm == 0 && m.Template.AttackRange <= 0) return;
+        if (!MayEngage(m, target)) return;
         bool entering = m.Target == null;
         if (entering) m.NextSwingMs = NowMs + 300;
-        if (!m.Hated.Contains(target)) m.Hated.Add(target);
-        SetTarget(m, target);
+        Hate(m, target); // MonsterService.Hatred
+        // Engaged already, it keeps its target: only hatred turns it (AddHatred).
+        if (entering) SetTarget(m, target);
         m.Returning = false;
         if (entering && !called && m.Template.BattleCallRange > 0) CallIntoBattle(m, target);
     }
+
+    private bool MayEngage(MonsterUnit m, GameSession target) =>
+        !m.Dead && !m.StaysOutOfBattle && m.WorldScene == target.WorldScene && TargetVisible?.Invoke(m, target) != false
+        && Spares?.Invoke(m, target) != true && (m.Template.SpeedCm != 0 || m.Template.AttackRange > 0);
 
     /// <summary>
     /// AIConfig battle call (server-only fields; the client never reads them): a monster whose AI has _iBattleCallType
@@ -704,11 +712,13 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     private void Fight(MonsterUnit m, MapInstance map, long now)
     {
         var target = m.Target!;
+        UpdateHatred(m, now); // MonsterService.Hatred: decline, and entries gone stale or far dropped
         bool lost = target.Role == null || target.Dead || target.SceneLoading || TargetVisible?.Invoke(m, target) == false || target.WorldScene != m.WorldScene
-                    || OutOfLeash(m, target.Position.X, target.Position.Z);
+                    || OutOfLeash(m, target.Position.X, target.Position.Z) || !m.ThreatTable.ContainsKey(target);
         if (lost)
         {
-            // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: nearest first).
+            // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: the one with the
+            // most hatred, the nearest among equals).
             if (NextHated(m, target) is { } next) SetTarget(m, next);
             else Disengage(m, map);
             return;
@@ -779,10 +789,15 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     private GameSession? NextHated(MonsterUnit m, GameSession lost)
     {
-        m.Hated.Remove(lost);
-        m.Hated.RemoveAll(p => p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
-            || OutOfLeash(m, p.Position.X, p.Position.Z));
-        return m.Hated.Count == 0 ? null : m.Hated.MinBy(p => Distance(m.X, m.Z, p.Position.X, p.Position.Z));
+        m.ThreatTable.Remove(lost);
+        // Dictionary allows Remove while it is enumerated.
+        foreach (var p in m.ThreatTable.Keys)
+            if (p.Role == null || p.Dead || p.SceneLoading || p.WorldScene != m.WorldScene || TargetVisible?.Invoke(m, p) == false
+                || OutOfLeash(m, p.Position.X, p.Position.Z))
+                m.ThreatTable.Remove(p);
+        if (m.ThreatTable.Count == 0) return null;
+        return m.ThreatTable.OrderByDescending(e => e.Value.Value)
+            .ThenBy(e => Distance(m.X, m.Z, e.Key.Position.X, e.Key.Position.Z)).First().Key;
     }
 
     /// <summary>A straight walk failed: the first leg of a route around the obstacle, at most once in <see cref="PathBackoffMs"/>, as the search runs inside the monster tick.</summary>
@@ -801,7 +816,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     private void Disengage(MonsterUnit m, MapInstance map)
     {
-        m.Hated.Clear();
+        m.ThreatTable.Clear();
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;
@@ -891,7 +906,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         }
         m.Dead = true;
         m.Moving = false;
-        m.Hated.Clear();
+        m.ThreatTable.Clear();
         EndBossSkills(m, interrupt: true);
         SetTarget(m, null);
         m.PetTarget = null;

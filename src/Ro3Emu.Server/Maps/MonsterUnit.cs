@@ -31,12 +31,33 @@ public sealed record MonsterTemplate(
     /// <summary>Its HP is restored when it is back from a lost fight: AIConfig _iUnFightBUFF holds the full-heal buff
     /// (MonsterService.ResetHealBuff), or the NPC has no AI row (inferred).</summary>
     public bool HealsOnReturn { get; init; } = true;
+    /// <summary>AIConfig _iHatredDeclineSpeed: the share (per 10000) of a hatred entry it loses at each decline step
+    /// (inferred, see MonsterService.Hatred).</summary>
+    public int HatredDeclineSpeed { get; init; }
+    /// <summary>AIConfig _iHatredDeclineTime: milliseconds between two decline steps; -1 or 0 never declines (inferred).</summary>
+    public int HatredDeclineTimeMs { get; init; }
+    /// <summary>AIConfig _iMinHatredDecline: the least a decline step takes from an entry (inferred).</summary>
+    public int MinHatredDecline { get; init; }
+    /// <summary>NPCConfig _kTopHatredBuff: the buff its current target carries (CombatEffectsService.MoveTopHatredBuffAsync).</summary>
+    public int TopHatredBuffId { get; init; }
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war
 /// machines derive from it (TerritoryWarsService.CannonUnit, VehicleUnit): they take damage and die as monsters do.</summary>
 public class MonsterUnit : WorldUnit
 {
+    /// <summary>One player's hatred on this monster (MonsterService.Hatred).</summary>
+    public sealed class ThreatRecord
+    {
+        public long Value { get; set; }
+        /// <summary>When his damage, heal or Provoke last added to it; HateClearTime counts from here.</summary>
+        public long LastHitMs { get; set; }
+        /// <summary>When its last decline step was due; the next one is AIConfig _iHatredDeclineTime later.</summary>
+        public long DeclinedAtMs { get; set; }
+    }
+    /// <summary>The players who have engaged it since it last left combat, with their hatred: the one source of truth
+    /// for whom it fights next when it loses its target (MonsterService.Hatred).</summary>
+    public Dictionary<Game.GameSession, ThreatRecord> ThreatTable { get; } = [];
     /// <summary>Its kind's stats; GmSetEntityAttr swaps in a changed copy for this one unit.</summary>
     public required MonsterTemplate Template { get; set; }
     /// <summary>Instance-specific final outgoing damage rate; 10000 leaves field and dungeon monsters unchanged.</summary>
@@ -79,8 +100,6 @@ public class MonsterUnit : WorldUnit
     public long NextChaseMs { get; set; }
     /// <summary>When this monster may search a way around an obstacle again: a straight walk failed, and the search is not free.</summary>
     public long NextPathMs { get; set; }
-    /// <summary>The players who have engaged it since it last left combat: losing its target, it turns to the nearest of them.</summary>
-    public List<Game.GameSession> Hated { get; } = [];
     public bool Returning { get; set; }
     /// <summary>Back home it keeps its damage instead of healing to full (the siege castle, TerritoryWarsService.SiegeObjects).</summary>
     public bool KeepsDamage { get; set; }
