@@ -40,6 +40,10 @@ public sealed record MonsterTemplate(
     public int MinHatredDecline { get; init; }
     /// <summary>NPCConfig _kTopHatredBuff: the buff its current target carries (CombatEffectsService.MoveTopHatredBuffAsync).</summary>
     public int TopHatredBuffId { get; init; }
+    /// <summary>AttriMonsterConfig attribute 236 ele_reduce, "Reduces damage taken when your defensive element is at a
+    /// disadvantage" (<see cref="Game.DamageAttributes.CounteredElement"/>): 10000 on every Phantom Realm and Realm of the
+    /// Gods boss row (211xxx, 212xxx), as their born buff 910801 "Element Counter Immunity" says.</summary>
+    public long ElementCounterResistance { get; init; }
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war
