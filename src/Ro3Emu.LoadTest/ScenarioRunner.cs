@@ -51,7 +51,8 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
         try
         {
             if (options.ServerLocal) server = await LocalServer.StartAsync(options.RepositoryRoot,
-                Path.GetDirectoryName(options.OutputPrefix)!, ct);
+                Path.GetDirectoryName(options.OutputPrefix)!, options.DiskDelayMs, ct);
+            report.DiskDelayMs = options.DiskDelayMs;
             var url = server?.Url ?? options.ServerUrl!;
             report.ServerUrl = url;
             report.ServerDataDir = server?.DataDir;
@@ -77,7 +78,8 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             if (options.Scenario == "S5") await PrepareSiegeAsync(report, ct);
             if (options.Scenario == "S8") await PreparePartiesAsync(ct);
             if (options.Scenario == "S9") await PrepareAutoBattleAsync(ct);
-            if (server != null) await ResetLocalMetricsAsync(ct);
+            if (options.Scenario == "S10") await PrepareProductionAsync(ct);
+            if (server != null) { await ResetLocalMetricsAsync(ct); report.MetricsResetBeforeScenario = true; }
             report.ServerBefore = await SnapshotAsync(ct);
             foreach (var actor in _actors) actor.BeginMeasurement();
             _measureOffers = true;
@@ -95,6 +97,7 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
                 case "S7": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
                 case "S8": await Task.WhenAll(RunFighterTrafficAsync([.. _actors], options.DurationSeconds, ct, PartyLeader), RunRealmChatterAsync([.. _actors], options.DurationSeconds, ct)); break;
                 case "S9": await RunAutoBattleAsync([.. _actors], options.DurationSeconds, ct); break;
+                case "S10": await RunProductionAsync(options.DurationSeconds, ct); break;
             }
             if (options.Scenario == "S3") await CloseS3Async(report, ct);
             report.ServerAfter = await SnapshotAsync(ct);
@@ -215,13 +218,13 @@ public sealed partial class ScenarioRunner(RunnerOptions options)
             await File.WriteAllTextAsync(options.OutputPrefix + ".json", report.ToJson(), CancellationToken.None);
             await File.WriteAllTextAsync(options.OutputPrefix + ".md", report.ToMarkdown(), CancellationToken.None);
             // Persistence evidence beside the report: the loop's synchronous DB waits by label (C/D 16 work list),
-            // lazy parts, snapshots and backups. Cumulative since server start (not reset with the epoch).
+            // lazy parts, snapshots and backups. Loop waits start over with the metrics reset before the scenario.
             if (options.ServerLocal)
             {
                 if (_persistenceEvidence != null)
                     await File.WriteAllTextAsync(options.OutputPrefix + ".persistence.json", _persistenceEvidence, CancellationToken.None);
                 // Ownership evidence (C/D 15): Realm admissions by origin with queued and held time - every other
-                // reservation waits while one is held. Cumulative since server start.
+                // reservation waits while one is held. Since the metrics reset before the scenario.
                 if (report.ServerAfter?["ownership"] is { } ownership)
                     await File.WriteAllTextAsync(options.OutputPrefix + ".ownership.json",
                         ownership.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), CancellationToken.None);
@@ -906,6 +909,14 @@ public sealed class BotActor(string account, BotClient bot, WorldReducer reducer
     public long RoleId { get; set; }
     /// <summary>S9: the skill bar of the bot's GM preset, cast in order.</summary>
     public int[] Bar { get; set; } = [];
+    /// <summary>S9/S10: a cast came back SkillBadState, the usual sign of a dead caster; the next turn asks to revive.</summary>
+    public bool MaybeDead { get => Volatile.Read(ref _maybeDead); set => Volatile.Write(ref _maybeDead, value); }
+    private bool _maybeDead;
+    /// <summary>S10: skills the server just refused (cooldown, conditions, reach), each with the time it is tried again,
+    /// as the client's auto battle only presses a skill whose cooldown is over.</summary>
+    public System.Collections.Concurrent.ConcurrentDictionary<int, long>? RestUntil { get; set; }
+    /// <summary>S10: the career's normal attacks (JobAttackConfig), swung whenever no skill of the bar is ready.</summary>
+    public int[] Attacks { get; set; } = [];
     public long Scene { get; set; }
     public SceneLocation Location => Reducer.Location;
     public int LineNumber => Location.LineNumber;

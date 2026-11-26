@@ -31,6 +31,9 @@ public sealed partial class DbWriter : IDisposable
     /// <summary>Bounded backoff for transient lock-contention commit errors where SQLite guarantees rollback (BUSY/LOCKED).</summary>
     internal TimeSpan[] CommitRetryDelays { get; set; } =
         [TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300)];
+    /// <summary>Load tests only (Ro3Emu:Testing:WriterCommitDelayMs): this thread sleeps before every group commit, so
+    /// a fast local disk behaves like a slow VPS disk and every loop wait on the writer shows up.</summary>
+    internal int CommitDelayMs { get; init; }
 
     private sealed record Job(DbPlan Plan, bool Lazy, TaskCompletionSource<object?> Done, long EnqueuedAt);
 
@@ -110,7 +113,7 @@ public sealed partial class DbWriter : IDisposable
         long started = Stopwatch.GetTimestamp();
         // The blocked caller observes worker completion directly; async continuations stay asynchronous.
         try { return (T)Enqueue(plan, lazy: false).GetAwaiter().GetResult()!; }
-        finally { _metrics.LegacyWait(started, onLoop, writer: true, label: plan.Label); }
+        finally { _metrics.LegacyWait(started, onLoop, writer: true, label: plan.WaitLabel); }
     }
 
     private void Run()
@@ -237,7 +240,12 @@ public sealed partial class DbWriter : IDisposable
                 }
             }
             if (groupError == null)
-                (groupError, commitFailed) = CommitOrRollback(tx, group.Count(p => p.Executed));
+            {
+                int executed = group.Count(p => p.Executed);
+                // Ro3Emu:Testing:WriterCommitDelayMs: a slow disk, paid by a commit that writes (a rollback is free).
+                if (CommitDelayMs > 0 && executed > 0) Thread.Sleep(CommitDelayMs);
+                (groupError, commitFailed) = CommitOrRollback(tx, executed);
+            }
         }
         catch (Exception e)
         {

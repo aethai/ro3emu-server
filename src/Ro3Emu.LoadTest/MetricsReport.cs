@@ -203,6 +203,10 @@ public sealed partial class RunReport
     public string? ServerUrl { get; set; }
     public string? ServerVersion { get; set; }
     public string? ServerDataDir { get; set; }
+    /// <summary>--disk-delay-ms the local server ran with (every commit waits this long, a slow disk).</summary>
+    public int DiskDelayMs { get; set; }
+    /// <summary>The server's metrics, loop-wait and Realm tables were reset after setup, so they cover the scenario only.</summary>
+    public bool MetricsResetBeforeScenario { get; set; }
     public string MeasurementPhase { get; set; } = "setup";
     public JsonNode? ServerBefore { get; set; }
     public JsonNode? ServerAfter { get; set; }
@@ -236,6 +240,7 @@ public sealed partial class RunReport
         if (AbortReason != null) lines.Add($"Abort: {AbortReason}");
         foreach (var failure in BotFailures.OrderBy(x => x.Key)) lines.Add($"Bot {failure.Key}: {failure.Value}");
         lines.Add($"Build: {ServerVersion ?? "UNKNOWN"}; data: {ServerDataDir ?? "UNKNOWN"}.");
+        if (DiskDelayMs > 0) lines.Add($"Slow disk: every database commit waited {DiskDelayMs} ms.");
         if (ServerDataDir != null) lines.Add($"Server log: [{Path.GetFileName(ServerDataDir)}.stdout.log]({Path.GetFileName(ServerDataDir)}.stdout.log).");
         if (UnsupportedBehaviours.Length > 0) lines.Add($"NOT RUN: {string.Join(", ", UnsupportedBehaviours)}");
         lines.AddRange(LineMarkdownLines());
@@ -280,7 +285,9 @@ public static class TargetEvaluation
         ("Durability", "crash loss and economy ack", "≤1 s non-economy; economy committed"),
         ("Correctness", "exceptions / disconnects / desync", "0 / 0 / 0"),
         ("Correctness", "S3 ledger exactness", "exact"),
-        ("Visibility", "players per public line", "≤configured cap")
+        ("Visibility", "players per public line", "≤configured cap"),
+        ("Database", "loop waits on the writer and readers", "zero"),
+        ("Ownership", "longest Realm hold", "≤5 ms")
     ];
 
     public static List<TargetRow> Evaluate(RunReport report)
@@ -289,8 +296,10 @@ public static class TargetEvaluation
         if (report.ServerBefore == null || report.ServerAfter == null) return [.. rows];
         var m = new MetricsPair(report.ServerBefore, report.ServerAfter);
         if (!m.SameEpoch || m.Seconds <= 0) return [.. rows];
-        int minimumSeconds = report.Scenario switch { "S1" or "S4" => 60, "S2" => 600, "S3" => 1800, _ => int.MaxValue };
-        bool full = report.MeasurementPhase == "scenario" && report.RequestedBots == report.TargetBots && report.RequestedSeconds >= minimumSeconds && m.Seconds >= minimumSeconds * .98 &&
+        int minimumSeconds = report.Scenario switch { "S1" or "S4" => 60, "S2" => 600, "S3" => 1800, "S10" => 1200, _ => int.MaxValue };
+        // S10 scales by groups of 11 (the capture's realm), so any multiple at or above it qualifies.
+        bool enoughBots = report.Scenario == "S10" ? report.RequestedBots >= report.TargetBots : report.RequestedBots == report.TargetBots;
+        bool full = report.MeasurementPhase == "scenario" && enoughBots && report.RequestedSeconds >= minimumSeconds && m.Seconds >= minimumSeconds * .98 &&
             report.AbortReason == null && report.SchedulingLagP99Ms <= 100 && report.UnsupportedBehaviours.Length == 0 &&
             report.Actions.Values.All(x => x.Planned <= x.Offered && x.Refused == 0 && x.TimedOut == 0 && x.Failed == 0) &&
             report.Messages.Values.All(x => x.Admitted >= x.Offered && x.Completed >= x.Offered);
@@ -339,7 +348,7 @@ public static class TargetEvaluation
         if (report.Scenario == "S4" && report.Actions.TryGetValue("map-hop", out var hop) && hop.Latency.Count > 0)
             Set(7, hop.Completed == Math.Min(100, report.RequestedBots / 2) && hop.Latency.P99 <= 2000,
                 $"{hop.Completed}/{Math.Min(100, report.RequestedBots / 2)}; p99≤{hop.Latency.P99:F1} ms");
-        bool visibilityCoverage = report.MeasurementPhase == "scenario" && report.RequestedBots == report.TargetBots &&
+        bool visibilityCoverage = report.MeasurementPhase == "scenario" && enoughBots &&
             report.Inbound.Count == report.RequestedBots && report.Inbound.Values.All(x => x.Location.Ready);
         if (report.Inbound.Count > 0)
         {
@@ -379,6 +388,7 @@ public static class TargetEvaluation
             $"gen2/min={m.Delta("runtime.gen2") / m.Seconds * 60:F2}; pause p99≤{pause.P99:F1} ms");
         if (m.Delta("database.profileErrors") == 0) Set(13, m.Delta("database.loopStatements") == 0 && m.Delta("database.loopOpens") == 0,
             $"{m.Delta("database.loopStatements")} loop statements; {m.Delta("database.loopOpens")} loop opens");
+        LoopWaitRows(report, m, Set);
         // The ledger can be evaluated independently of 30-minute performance qualification.
         if (report.Scenario == "S3") rows[17] = report.EvaluateLedgerRow();
         var faults = report.Inbound.Values.Sum(x => x.Faults.Length);
@@ -387,6 +397,27 @@ public static class TargetEvaluation
         // Claims requiring unavailable proof cannot pass even if the observable subset is green.
         if (rows[16].Status == "PASS") rows[16] = rows[16] with { Status = "NOT MEASURED" };
         return [.. rows];
+    }
+    // A loop that waits on the database writer or a reader runs no statement itself, so loopStatements stays 0 while
+    // the tick is blocked: these rows count the waits (database.routedAccess) and the longest Realm hold.
+    private static void LoopWaitRows(RunReport report, MetricsPair m, Action<int, bool, string> set)
+    {
+        if (MetricsPair.At(report.ServerAfter, "database.routedAccess.legacyLoopSync") != null)
+        {
+            double waits = m.Delta("database.routedAccess.legacyLoopSync");
+            double blocked = m.Delta("database.routedAccess.legacyLoopBlockedMs");
+            var top = (MetricsPair.At(report.ServerAfter, "database.routedAccess.loopWaits") as JsonArray)?.Take(3)
+                .Select(x => $"{x?["label"]} {x?["count"]}x max {x?["maxMs"]?.GetValue<double>():F0} ms") ?? [];
+            set(19, waits == 0, $"{waits} waits, {blocked:F0} ms blocked" +
+                (report.MetricsResetBeforeScenario && waits > 0 ? "; top: " + string.Join("; ", top) : ""));
+        }
+        if (report.MetricsResetBeforeScenario && MetricsPair.At(report.ServerAfter, "ownership.realmByOrigin") is JsonObject realm)
+        {
+            var worst = realm.Select(x => (Origin: x.Key, Max: x.Value?["maxHeldMs"]?.GetValue<double>() ?? 0))
+                .OrderByDescending(x => x.Max).Take(3).ToArray();
+            double max = worst.Length == 0 ? 0 : worst[0].Max;
+            set(20, max <= 5, worst.Length == 0 ? "no Realm admission" : string.Join("; ", worst.Select(x => $"{x.Origin} {x.Max:F1} ms")));
+        }
     }
     public static double Percentile(double[] values, double p)
     {

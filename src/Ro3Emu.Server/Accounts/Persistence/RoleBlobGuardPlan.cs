@@ -8,6 +8,7 @@ internal sealed class RoleBlobSnapshotRead(long role, string column) : DbReadPla
 {
     internal override int Bytes => 128;
     internal override string Label => "role/capture-blob";
+    internal override string WaitLabel => Label + ":" + column;
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
         var source = Read(db, tx, role, column);

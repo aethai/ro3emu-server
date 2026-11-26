@@ -171,5 +171,6 @@ public sealed class DbAccessMetrics
         .Select(p => (Label: p.Key, Count: Interlocked.Read(ref p.Value.Count), Ticks: Interlocked.Read(ref p.Value.Ticks), Max: Interlocked.Read(ref p.Value.MaxTicks)))
         .OrderByDescending(w => w.Ticks).Take(top)
         .Select(w => (object)new { label = w.Label, count = w.Count, ms = w.Ticks * 1000d / Stopwatch.Frequency, maxMs = w.Max * 1000d / Stopwatch.Frequency })];
+    internal void ResetLoopWaits() => _loopWaits.Clear();
     internal IReadOnlyDictionary<string, long> LoopWaitCounts() => _loopWaits.ToDictionary(p => p.Key, p => Interlocked.Read(ref p.Value.Count), StringComparer.Ordinal);
 }

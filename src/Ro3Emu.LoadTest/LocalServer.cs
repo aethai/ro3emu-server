@@ -21,7 +21,7 @@ public sealed class LocalServer : IAsyncDisposable
     private LocalServer(Process process, Task stdout, Task stderr, string url, string dataDir, string operatorToken)
     { _process = process; _stdout = stdout; _stderr = stderr; Url = url; DataDir = dataDir; OperatorToken = operatorToken; }
 
-    public static async Task<LocalServer> StartAsync(string repo, string outputDir, CancellationToken ct)
+    public static async Task<LocalServer> StartAsync(string repo, string outputDir, int diskDelayMs, CancellationToken ct)
     {
         var dll = Path.Combine(repo, "src", "Ro3Emu.Server", "bin", "Release", "net10.0", "Ro3Emu.Server.dll");
         if (!File.Exists(dll)) throw new FileNotFoundException("Build the Release server first: dotnet build src/Ro3Emu.Server -c Release", dll);
@@ -61,6 +61,8 @@ public sealed class LocalServer : IAsyncDisposable
         start.Environment["Logging__LogLevel__Default"] = "Warning";
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
         start.Environment["Ro3Emu__GmOpenWhenEmpty"] = "true"; // S9 dresses its bots with the client's GM presets
+        // Always set, so a value left in the operator's shell cannot slow a run whose report says 0.
+        start.Environment["Ro3Emu__Testing__WriterCommitDelayMs"] = diskDelayMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Directory.CreateDirectory(outputDir);
         Process? process = null;
         LocalServer? result = null;

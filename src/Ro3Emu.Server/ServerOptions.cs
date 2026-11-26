@@ -358,6 +358,10 @@ public sealed class TestingOptions
     /// <summary>Reward allowances and attempt counters never run out: dungeon reward counts (Realm of the Gods, Phantom
     /// Realm), MVP daily reward counts, the Commendation Vault extra awards and Dodo's Request.</summary>
     public bool UnlimitedRewards { get; set; }
+
+    /// <summary>Load tests only: the database writer sleeps this long (0-1000 ms) before every commit, emulating a slow
+    /// disk such as a VPS one, so loop waits on the writer reproduce on a fast local disk. 0 is off.</summary>
+    public int WriterCommitDelayMs { get; set; }
 }
 
 /// <summary>
