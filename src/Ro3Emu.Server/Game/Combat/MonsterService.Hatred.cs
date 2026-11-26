@@ -67,15 +67,11 @@ public sealed partial class MonsterService
     /// hates the healed player (inferred: the monsters already fighting him, never an idle one).</summary>
     public void AddHealHatred(GameSession healer, GameSession healed, long healedAmount)
     {
-        var rules = HatredParams;
-        long share = (long)((Int128)Math.Max(0, healedAmount) * rules.HealBp / BasisPoints);
+        long share = (long)((Int128)Math.Max(0, healedAmount) * HatredParams.HealBp / BasisPoints);
         if (share <= 0 || healed.Role == null || healed.SceneLoading) return;
-        // An entry is dropped beyond HateClearDistance, so only the monsters that near the healed player can hold one.
-        var near = rules.ClearDistance > 0
-            ? _world.Map(healed.WorldScene).Near(healed.Position.X, healed.Position.Z, rules.ClearDistance)
-            : _world.UnitsIn(healed.WorldScene);
-        foreach (var unit in near.ToArray())
-            if (unit is MonsterUnit m && m.ThreatTable.ContainsKey(healed)) AddHatred(m, healer, share);
+        // The whole map: a monster's target may stand beyond HateClearDistance while it is within its leash.
+        foreach (var unit in _world.UnitsIn(healed.WorldScene).ToArray())
+            if (unit is MonsterUnit { ThreatTable.Count: > 0 } m && m.ThreatTable.ContainsKey(healed)) AddHatred(m, healer, share);
     }
 
     /// <summary>The player's entry, created at 0 when he first engages it, refreshed for HateClearTime.</summary>
@@ -107,7 +103,8 @@ public sealed partial class MonsterService
     private static long Sum(long a, long b) => a > long.MaxValue - b ? long.MaxValue : a + b;
 
     /// <summary>On the fight tick: every entry declines, and one is dropped when its player is beyond HateClearDistance or
-    /// it has not grown for HateClearTime, but for the target's, whom the fight's own rules let go (inferred).</summary>
+    /// it has not grown for HateClearTime (inferred). The target's is kept: the fight's own rules (its leash, a player gone)
+    /// let the target go, as a boss whose leash reaches beyond 30 m keeps chasing a player out there.</summary>
     private void UpdateHatred(MonsterUnit m, long now)
     {
         var rules = HatredParams;
@@ -115,8 +112,9 @@ public sealed partial class MonsterService
         foreach (var (player, entry) in m.ThreatTable)
         {
             Decline(m.Template, entry, now);
+            if (ReferenceEquals(player, m.Target)) continue;
             bool far = rules.ClearDistance > 0 && Distance(m.X, m.Z, player.Position.X, player.Position.Z) > rules.ClearDistance;
-            bool stale = rules.ClearTimeMs > 0 && now - entry.LastHitMs >= rules.ClearTimeMs && !ReferenceEquals(player, m.Target);
+            bool stale = rules.ClearTimeMs > 0 && now - entry.LastHitMs >= rules.ClearTimeMs;
             if (far || stale) m.ThreatTable.Remove(player);
         }
     }

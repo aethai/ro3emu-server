@@ -10,7 +10,8 @@ namespace Ro3Emu.Tests;
 /// <summary>
 /// Monster hatred (MonsterService.Hatred) on the synthetic data set: damage engages an idle monster, another player takes
 /// the target only past HatredExceedValue, Provoke engages and holds, a heal earns its share, entries decline over the
-/// time that passed and are dropped when stale, and the top hatred buff follows the target. Every value is invented.
+/// time that passed and are dropped when stale or far (the target's never), and the top hatred buff follows the target.
+/// Every value is invented.
 /// </summary>
 public sealed class MonsterThreatTests
 {
@@ -20,6 +21,7 @@ public sealed class MonsterThreatTests
     private const int ExceedBp = 2000;
     private const int HealBp = 4000;
     private const int ClearTimeMs = 8000;
+    private const int ClearDistanceM = 25;
     private const int DeclineBp = 2500;
     private const int DeclineMs = 2000;
     private const int MinDecline = 300;
@@ -154,6 +156,27 @@ public sealed class MonsterThreatTests
     }
 
     [Fact]
+    public async Task AFarEntryIsDroppedButTheTargetWithinItsLeashIsNot()
+    {
+        await using var f = await ThreatFixture.StartAsync();
+        var monster = await f.SpawnAsync();
+
+        await f.OnLoopAsync(() =>
+        {
+            f.Monsters.AddHatred(monster, f.Tank, 1000);
+            f.Monsters.AddHatred(monster, f.Healer, 500);
+            // Both beyond HateClearDistance (25 m) from the monster, within its leash (30 m around its home).
+            f.Tank.Position.X = monster.X + ClearDistanceM + 2;
+            f.Healer.Position.X = monster.X - ClearDistanceM - 2;
+            f.Monsters.Tick(monster, f.Server.Service<World>().Map(monster.WorldScene));
+        });
+
+        Assert.Same(f.Tank, monster.Target);
+        Assert.True(monster.ThreatTable.ContainsKey(f.Tank));
+        Assert.False(monster.ThreatTable.ContainsKey(f.Healer));
+    }
+
+    [Fact]
     public async Task LosingItsTargetItTurnsToTheMostHated()
     {
         await using var f = await ThreatFixture.StartAsync();
@@ -256,7 +279,7 @@ public sealed class MonsterThreatTests
             var publicParams = JsonNode.Parse(File.ReadAllText(Path.Combine(_root, "config", "PublicParamConfig.json")))!.AsObject();
             publicParams["HatredExceedValue"] = ExceedBp;
             publicParams["HealthHatredScale"] = HealBp;
-            publicParams["HateClearDistance"] = 2500;
+            publicParams["HateClearDistance"] = ClearDistanceM * 100;
             publicParams["HateClearTime"] = ClearTimeMs;
             File.WriteAllText(Path.Combine(_root, "config", "PublicParamConfig.json"), publicParams.ToJsonString());
 
