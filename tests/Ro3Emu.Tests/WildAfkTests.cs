@@ -541,6 +541,10 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.True(await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds) >= written + 5);
         Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
         Assert.Equal(written, Stored());
+        // A kill settles the quests too; the seconds it consumed must not rewrite them before the minute (#484).
+        await KillRecorded(bot);
+        Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
+        Assert.Equal(written, Stored());
 
         await OnOwnedLoop(bot, "AFK next minute fixture", _ => { Running(179, 2000); return Task.CompletedTask; });
         await Query(bot);
