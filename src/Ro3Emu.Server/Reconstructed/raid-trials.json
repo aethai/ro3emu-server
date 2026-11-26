@@ -4,7 +4,7 @@
   "contract": {
     "tips": "1022 SystemBoardCastMsgNtf {chatId}. A CombatCountdownTip (ChatConfig _iType 16) counts its ${1} down from param 1 in seconds (UI_Sys_GVE_MarqueeWidgetCtrl: m_fTargetTimestamp = params[1] + GetSystemTime()).",
     "colours": "A note buff with _kUIParams [1, colour] shows the local player's note on the HUD (UI_Sys_Main_DungeonNoteWidgetBaseCtrl: Red 1, Yellow 2, Green 3, Blue 4).",
-    "objects": "Props are shown as their NPCConfig _iNPCType (1 monster unit, 2 NPC, 4 trigger, 10 bullet), like the scripted scenes' actors and the field MVPs' ground objects; destructible ones are monsters outside the room's counted actors.",
+    "objects": "Props are shown as their NPCConfig _iNPCType (1 monster unit, 2 NPC, 4 trigger, 10 bullet), like the scripted scenes' actors and the field MVPs' ground objects; destructible ones are monsters outside the room's counted actors. A sweeping lane object walks its lane by a 31081 walk (a bullet's MovementBullet component follows the movement sync, LC_UnitManager.CreateMoveData).",
     "hits": "A failed trial's hit is the boss's 31101 of the named skill with a share of each player's maximum HP (inferred)."
   },
   "raids": {
@@ -492,11 +492,12 @@
         "TenChallengeHandbookIDConfig 1050101 Wormhole (two connected burrows, the Interaction skill takes a player out of the other one), 1050102 Sandstorm (sweeps the field, use the Wormholes to evade it), 1050103 Earthquake (two kinds, evaded by repositioning).",
         "NPCConfig 4300002/4300003 Wormhole (unit 33107, interactions 37/38: 4306101/4306201 'Enter Wormhole: Emerges from the other end of the Wormhole'), 4300007/4300008 Wormhole (unit 33113 'Golden wormhole 2'), 4300004/4300006 'Sandstorm@{1}m' (bullet units 33110 'Sandstorm 40M' and 33111 'Sandstorm 80M').",
         "Skills 4301801/4301901 GoldenBug_underground (8.3 s show), 4305901 GoldenBug_underground0 (4 s show), 4305201-4305501 GoldenBug_Storm1-4 (no cast time: the storm's hits).",
+        "UnitConfig 33110/33111 (_fSpeed 0, fx_boss_goldenbug_skill_storm_1/2): the storm has no speed of its own; a bullet unit moves by the server's movement sync (LC_UnitManager.CreateMoveData gives UT_Bullet the MovementBullet component, LC_Movement_BulletPathAgent ticks _tickMovementSync).",
         "Scene editor sc_pm_pve5sewb_001_dg01: group 20 'Sandstorm' (points 21/23/24/25, the middle of each edge facing inward), group 26 'Wormhole' (27-36, the middle rows z 52/68), group 37 'Wormhole 2' (38-45, the rows z 50/70 at x 32/45/55/68)."
       ],
       "guessed": [
-        "Sandstorm 30 s in and every 60 s: Golden Thief Bug burrows (4301801) and storms come in from two random edges, each a 60 x 16 m lane across the field (the two storm lines make a cross or a band); the Wormhole 2 burrows stand at the corner points 41, 38, 42, 45 just outside both lanes and their interaction takes a player to the next one. Still in a lane after 10 s: 40%.",
-        "Burrow 55 s in and every 60 s: two burrows of the Wormhole group stand at random; the boss must be within 4 m of one when the 15 s count ends, else he burrows elsewhere and the storm hits everyone for 40%. Lured in: he burrows and resurfaces (4 s, 4305901).",
+        "Sandstorm 30 s in and every 60 s: Golden Thief Bug burrows (4301801) and storms come in from two random edges, each sweeping a 60 x 16 m lane across the field in the 10 s (the two storm lines make a cross or a band); the Wormhole 2 burrows stand at the corner points 41, 38, 42, 45 just outside both lanes and their interaction takes a player to the next one. A storm's body is a 16 m square; a player it reaches on its way takes 40% at once.",
+        "Burrow 55 s in and every 60 s: two burrows of the Wormhole group stand at random, connected: either one's interaction takes a player out of the other; the boss must be within 4 m of one when the 15 s count ends, else he burrows elsewhere and the storm hits everyone for 40%. Lured in: he burrows and resurfaces (4 s, 4305901).",
         "Earthquake (4305601, 4307001/4307101 easy) stays in the boss's own rotation: the client's show draws it."
       ],
       "trials": [
@@ -508,7 +509,7 @@
           "windowMs": 10000,
           "boss": { "hold": true, "show": 4301801 },
           "objects": [
-            { "npc": 4300004, "lane": [60, 16], "at": { "points": [21, 23, 24, 25], "count": 2 }, "why": "storms from two random edges" },
+            { "npc": 4300004, "lane": [60, 16], "sweep": true, "at": { "points": [21, 23, 24, 25], "count": 2 }, "why": "storms from two random edges, sweeping the field" },
             { "npc": 4300007, "use": "warp", "at": { "points": [41, 38, 42, 45] }, "why": "the Wormhole 2 burrows at the safe corners, in order around them" }
           ],
           "rule": "avoid",
@@ -522,7 +523,7 @@
           "tips": [4803, 4809],
           "tipParam": "countdown",
           "windowMs": 15000,
-          "objects": [ { "npc": 4300002, "at": { "points": [27, 28, 29, 30, 31, 32, 33, 34, 35, 36], "count": 2 }, "why": "two burrows of the Wormhole group" } ],
+          "objects": [ { "npc": 4300002, "linked": true, "at": { "points": [27, 28, 29, 30, 31, 32, 33, 34, 35, 36], "count": 2 }, "why": "two connected burrows of the Wormhole group" } ],
           "rule": "lure",
           "radius": 4,
           "success": { "who": "all", "stagger": 4305901, "staggerMs": 4000, "why": "he burrows into it and resurfaces" },

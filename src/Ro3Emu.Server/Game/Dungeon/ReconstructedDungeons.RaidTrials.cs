@@ -58,6 +58,15 @@ public sealed partial class ReconstructedDungeons
         /// <summary>A destructible monster that stands still and never strikes back even though its NPC has an AI
         /// (Baphomet's illusions).</summary>
         public bool Still { get; init; }
+
+        /// <summary>A lane object that sweeps its lane: it walks the lane's length along its facing over the window, and
+        /// a player its body reaches on the way is caught (Golden Thief Bug's sandstorm, guide 1050102 "a sandstorm that
+        /// sweeps across the entire field, damaging players in its path").</summary>
+        public bool Sweep { get; init; }
+
+        /// <summary>A judged object whose NPC interaction still takes the player to the other object of its kind (Golden
+        /// Thief Bug's two connected burrows, guide 1050101), unlike a <see cref="TrialUse.Warp"/> pickup.</summary>
+        public bool Linked { get; init; }
     }
 
     /// <summary>
@@ -161,12 +170,14 @@ public sealed partial class ReconstructedDungeons
         var place = new TrialPlace(Longs(at, "points"), Longs(at, "regions"), Int(at, "group"), Bool(at, "onMarked"), Bool(at, "onPlayers"),
             Bool(at, "atBoss"), Int(at, "count"), Int(at, "perPlayer"), Int(at, "min"), at.TryGetProperty("max", out var max) ? max.GetInt32() : int.MaxValue,
             Float(at, "inward"));
+        if (Bool(o, "sweep") && !o.TryGetProperty("lane", out _))
+            throw new InvalidOperationException($"Raid trial object {npcs[0]} sweeps without a lane.");
         return new TrialObject(npcs, place, Ints(o, "buffs"), Bool(o, "monster"), Int(o, "hits"), Bool(o, "match"),
             o.TryGetProperty("use", out var use) ? Enum.Parse<TrialUse>(use.GetString()!, ignoreCase: true) : TrialUse.None,
             Bool(o, "chosen"), Int(o, "markBuff"), Int(o, "markMs"),
             o.TryGetProperty("lane", out var lane) ? (lane[0].GetSingle(), lane[1].GetSingle()) : null)
         {
-            Still = Bool(o, "still"),
+            Still = Bool(o, "still"), Sweep = Bool(o, "sweep"), Linked = Bool(o, "linked"),
         };
     }
 
