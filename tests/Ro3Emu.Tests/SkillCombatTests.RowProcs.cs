@@ -147,6 +147,40 @@ public sealed partial class SkillCombatTests
         Assert.True(mob.Hp <= 0);
     }
 
+    [ClientDataFact] // A kept hit that kills a monster another player also hit: its reward reserves both roles, so it lands before
+    // the next cast's own role admission. Landed inside it, widening to the other role threw and dropped the caster.
+    public async Task AHeldTurnUndeadThatKillsAMonsterAnotherPlayerHitKeepsTheCasterConnected()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        var (bot, a, _) = await ReadyAsync(alice, 1400, 14118, 1411801);
+        var b = Session("bob");
+        var mob = await Target("alice", stationary: true);
+        await Loop.InvokeAsync(() =>
+        {
+            mob.Hp = 1000000; mob.X = a.Position.X + 1; mob.Y = a.Position.Y; mob.Z = a.Position.Z;
+            _app.Services.GetRequiredService<CombatService>().Dealt.Invoke(b, mob, 1); // Bob is a contributor too
+            return Task.CompletedTask;
+        });
+        Assert.Equal(a.WorldScene, b.WorldScene);
+        var attachment = a.Attachment;
+        await CastAtAsync(bot, 1411801, mob);
+        var accepted = await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var first = a.SkillCast!;
+        var show = _app.Services.GetRequiredService<GameData>().SkillTemplate(new SkillConfig(first.Row).ScriptShow);
+        int yield = SkillShow.InterruptOffset(show, first.ChantMs, first.ActionMs)!.Value;
+        long pressAt = first.StartMs + yield - CombatService.SwingJitterMs + 10; // in the slack: shown, not landed yet
+        Assert.True(SpinWait.SpinUntil(() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= pressAt, TimeSpan.FromSeconds(10)));
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); mob.Hp = 1; return Task.CompletedTask; });
+        await CastAtAsync(bot, 1411801, mob);
+        await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser, r => r.SessionId != accepted.SessionId).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(mob.Hp <= 0);
+        Assert.Same(attachment, a.Attachment);
+        Assert.False(a.Attachment?.Cancelled);
+        Assert.Contains(a, _app.Services.GetRequiredService<SessionRegistry>().All());
+    }
+
     [ClientDataFact] // Heavy Cannon Shot: "The next time you Deals DMG, removes Charge Up and triggers Charge Up Strike"
     public async Task ChargeUpGoesOffOnTheNextHit()
     {

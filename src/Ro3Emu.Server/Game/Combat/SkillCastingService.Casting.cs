@@ -60,15 +60,16 @@ public sealed partial class SkillCastingService
     {
         LegacyOwnerScope? admission = null;
         OwnerNotices? notices = null;
+        // One instant for both: whether the running cast's shown hit lands and whether it yields. Read apart, a press at
+        // the edge of the slack found the hit still ahead, then the cast yielding a millisecond later, and lost the hit.
+        long arrivedMs = Now;
+        await LandShownHitBeforeAdmissionAsync(s, arrivedMs);
         if (s.Owners is { } owners && s.Role is { } role)
             admission = await owners.EnterWithGateAsync("combat/cast", s.SkillCastGate, [ReservationKey.Role(role.Id)]);
         else await s.SkillCastGate.WaitAsync();
         try
         {
-            // One instant for both: whether the running cast's shown hit lands and whether it yields. Read apart, a press at
-            // the edge of the slack found the hit still ahead, then the cast yielding a millisecond later, and lost the hit.
-            long arrivedMs = Now;
-            await LandShownHitAsync(s, arrivedMs);
+            await LandShownHitAsync(s, arrivedMs); // under a wider admission (GM !skill under Realm) it lands here
             using var state = await CharacterService.Lock(s);
             // Complete the runtime admission before any socket send can suspend. Frozen packets
             // retain the original order; an obsolete attachment cannot start a committed cast.
@@ -389,6 +390,32 @@ public sealed partial class SkillCastingService
     /// first. Called before the character lock is taken: a killing hit's reward takes that lock
     /// (RewardService.CommitKillAsync), and the lock is not reentrant, so landing it under the lock stalled the role (#433).
     /// </summary>
+    /// <summary>
+    /// <see cref="LandShownHitAsync"/> before the request takes its role admission, as a runtime operation like the hit's
+    /// own scheduled landing: a killing hit's reward (RewardService.CommitKillAsync) reserves the killer's role together
+    /// with every contributor's, and an admission already holding the killer's role cannot widen to theirs (it dropped the
+    /// killer's connection). Under a wider durable admission the hit lands inside it instead. Landing outside the cast gate,
+    /// it is the session's one pending landing: every next cast or interrupt of the session waits for it first, so none cancels
+    /// the cast while its hit is being settled.
+    /// </summary>
+    private async Task LandShownHitBeforeAdmissionAsync(GameSession s, long nowMs, bool land = true)
+    {
+        // Inside a durable admission (GM !skill under Realm) nothing waits: the pending landing's reward may need that admission.
+        if (s.Owners is null or { Current: { RuntimeOnly: false } }) return;
+        // A finished landing whose own caller has not removed it yet is not waited for: WhenAny on it would not yield.
+        while (_landingShownHit.TryGetValue(s, out var pending) && !pending.IsCompleted)
+            await Task.WhenAny(pending); // its own caller sees a fault
+        if (!land || s.SkillCast is not { } action || !HitShownBeforeYield(action, nowMs)) return;
+        var landing = s.Owners.Current == null
+            ? s.Owners.RunRuntimeAsync("combat/shown hit", () => LandShownHitAsync(s, nowMs))
+            : LandShownHitAsync(s, nowMs);
+        _landingShownHit[s] = landing;
+        try { await landing; }
+        finally { if (_landingShownHit.TryGetValue(s, out var current) && ReferenceEquals(current, landing)) _landingShownHit.Remove(s); }
+    }
+
+    private readonly Dictionary<GameSession, Task> _landingShownHit = [];
+
     private async Task LandShownHitAsync(GameSession s, long nowMs)
     {
         if (s.SkillCast is not { } action || !HitShownBeforeYield(action, nowMs)) return;
@@ -782,7 +809,8 @@ public sealed partial class SkillCastingService
         int at = IsResurrection(row) ? action.ChantMs : ImpactOffset(template, point, action.ChantMs, action.ActionMs);
         ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(leadMs + at), async () =>
         {
-            if (!Live(s, action)) return;
+            // A shown hit a next press landed early is settled already (LandShownHitAsync), maybe still awaiting its reward.
+            if (action.Resolved || !Live(s, action)) return;
             action.Resolved = true;
             await ResolveCastAsync(s, action);
         });
@@ -822,6 +850,9 @@ public sealed partial class SkillCastingService
         CastSkillReq? nextCast = null;
         LegacyOwnerScope? admission = null;
         OwnerNotices? notices = null;
+        long arrivedMs = Now; // one instant for the landing before the admission and the one inside it
+        await LandShownHitBeforeAdmissionAsync(s, arrivedMs, land: req?.NxtSkill != null
+            && (req.InterruptSkillId == 0 || req.InterruptSkillId == s.SkillCast?.Request.SkillId));
         if (s.Owners is { } owners && s.Role is { } role)
             admission = await owners.EnterWithGateAsync("combat/interrupt", s.SkillCastGate, [ReservationKey.Role(role.Id)]);
         else await s.SkillCastGate.WaitAsync();
@@ -851,7 +882,7 @@ public sealed partial class SkillCastingService
                 {
                     s.Attack = null;
                     EventAttacks.Remove(s);
-                    if (req?.NxtSkill != null) await LandShownHitAsync(s, Now);
+                    if (req?.NxtSkill != null) await LandShownHitAsync(s, arrivedMs);
                     await CancelCastAsync(s, req?.NxtSkill != null ? SkillInterruptedInfo.Types.SkillInterruptType.Skill : SkillInterruptedInfo.Types.SkillInterruptType.Move);
                 }
                 await s.SendGameAsync(SkillInterrupt, new SkillInterruptResp { IsInterruptSucc = interrupted });

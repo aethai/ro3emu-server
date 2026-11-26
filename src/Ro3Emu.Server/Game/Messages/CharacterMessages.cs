@@ -57,13 +57,20 @@ public sealed class CharacterMessages(
         routes.Map<SkillResetReq>(SkillService.SkillReset, "skills", RouteAdmission.Role, skills.ResetAsync);
         routes.Map<SkillQueueUpdateReq>(SkillService.QueueUpdate, "skills", RouteAdmission.Role, skills.QueueUpdateAsync);
         routes.Map<SkillSwitchGenreReq>(SkillService.SwitchGenre, "skills", RouteAdmission.Role, skills.SwitchGenreAsync);
-        routes.Map<CastSkillReq>(CombatService.UseSkill, "gathering", RouteAdmission.Role, async (session, cast) =>
+        // The cast takes its own role admission (SkillCastingService.CastAsync) after landing the running cast's shown hit
+        // outside it: a killing hit's reward reserves every contributor's role, which this request's role could not widen.
+        routes.Map<CastSkillReq>(CombatService.UseSkill, "gathering", RouteAdmission.Economic, async (session, cast) =>
         {
-            // Starting another action cancels collection even if it never lands a combat hit (inferred).
-            await activities.InterruptConchAsync(session);
-            await gathering.InterruptAsync(session);
-            // Dragon Coffin Island's crystals and soul are taken by their interaction skills (TimedBattleService.DragonIsland).
-            if (!await timedBattles.TryDragonPickupAsync(session, cast)) await combat.CastAsync(session, cast);
+            bool pickedUp = false;
+            await AsRoleAsync(session, "dispatcher/31102", async () =>
+            {
+                // Starting another action cancels collection even if it never lands a combat hit (inferred).
+                await activities.InterruptConchAsync(session);
+                await gathering.InterruptAsync(session);
+                // Dragon Coffin Island's crystals and soul are taken by their interaction skills (TimedBattleService.DragonIsland).
+                pickedUp = await timedBattles.TryDragonPickupAsync(session, cast);
+            });
+            if (!pickedUp) await combat.CastAsync(session, cast);
         });
         routes.Map<NpcInteractionReq>(SceneService.NpcInteraction, "gathering", RouteAdmission.Role, async (session, npcInteraction) =>
         {
@@ -102,4 +109,10 @@ public sealed class CharacterMessages(
             await tasks.OnGuideCompleteAsync(session, guideReq.GuildId);
         });
     }
+
+    /// <summary>Part of a request that keeps the role admission the route used to hold for all of it.</summary>
+    private static Task AsRoleAsync(GameSession session, string origin, Func<Task> work) =>
+        session.Owners is { } owners && session.Role is { } role
+            ? owners.RunSessionAsync(origin, [Ownership.ReservationKey.Role(role.Id)], session, work)
+            : work();
 }
