@@ -283,13 +283,17 @@ public static class Publisher
         string temp = path + ".tmp";
         await File.WriteAllBytesAsync(temp, jsonBytes, ct);
         File.Move(temp, path, overwrite: true);
+        string sigPath = path + ".sig";
         if (!string.IsNullOrWhiteSpace(signingKeyPem))
         {
             byte[] sig = ChannelSignature.Sign(jsonBytes, signingKeyPem);
-            string sigPath = path + ".sig";
             string sigTemp = sigPath + ".tmp";
             await File.WriteAllBytesAsync(sigTemp, sig, ct);
             File.Move(sigTemp, sigPath, overwrite: true);
+        }
+        else if (File.Exists(sigPath))
+        {
+            File.Delete(sigPath);
         }
     }
 }

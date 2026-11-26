@@ -50,6 +50,9 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
   dark layer over towns and fields by the player's own PC clock (dusk 17-19, night 19-05, dawn 05-06), never in
   dungeons, raids or story scenes. GMs can try it with `!day`, `!dusk`, `!night`, `!dawn` and `!time`
   ([night look](../systems/night-cycle.md)).
+- **Overhead guild names and emblems on all maps** (off by default, as in the client): `Ro3Emu__GuildOverheadAllMaps=true`
+  lifts the client's 3-map limit so overhead guild names and emblems appear on every map instead of only the three
+  configured maps.
 - **Backups:** the database is backed up to `data/backups/` at start and every 6 hours (newest 20 kept). All but the
   newest two are gzip-compressed (`.db.gz`, about a quarter of the size); `Ro3Emu.Server --restore-backup` takes either
   kind. `Ro3Emu__Backup__Keep`, `Ro3Emu__Backup__IntervalHours` and `Ro3Emu__Backup__Uncompressed` (or `Backup` under

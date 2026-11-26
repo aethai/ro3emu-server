@@ -16,7 +16,7 @@ public static class ReleaseBuilder
     private const string BaselineHeader = "RO3RECOVERYVERIFIEDBASELINE1";
     private const string ManagedPrefix = "ro3_Data/Managed/";
 
-    public static async Task<int> PublishAsync(string clientDir, string serverUrl, string pem, string repoDir, string version, string channel, int compression)
+    public static async Task<int> PublishAsync(string clientDir, string serverUrl, string pem, string repoDir, string version, string channel, int compression, string? signingKeyPem = null)
     {
         clientDir = Path.GetFullPath(clientDir);
         var baseline = ReadBaseline(clientDir);
@@ -72,6 +72,7 @@ public static class ReleaseBuilder
             Channel = channel,
             LaunchExe = "ro3.exe",
             CompressionLevel = compression,
+            SigningKeyPem = signingKeyPem,
         }, progress);
         Console.WriteLine($"done: {result.NewChunks} new chunks ({result.NewStoredBytes / 1048576} MiB stored), {result.ReusedChunks} reused");
         Directory.Delete(staging, recursive: true);

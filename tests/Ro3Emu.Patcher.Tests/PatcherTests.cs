@@ -563,6 +563,46 @@ public sealed class PatcherTests : IDisposable
         var error = await Assert.ThrowsAsync<PatcherException>(() => client.GetChannelAsync("stable", CancellationToken.None));
         Assert.Contains("beta", error.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task UnsignedPublishDeletesStaleChannelSignature()
+    {
+        var (privatePem, _) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 206));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+        string sigPath = Path.Combine(Repo, "channels", "stable.json.sig");
+        Assert.True(File.Exists(sigPath));
+
+        // Publishing an unsigned release on the same channel must remove the stale .sig file.
+        WriteBuild("Game.exe", Random(2048, 207));
+        await Publish("1.0.1");
+        Assert.False(File.Exists(sigPath));
+
+        // Re-sign via SetChannelAsync, then publish an unsigned launcher update: stale .sig must be deleted again.
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.1", null, privatePem);
+        Assert.True(File.Exists(sigPath));
+        string launcherExe = Path.Combine(_root, "Ro3EmuLauncher.exe");
+        File.WriteAllBytes(launcherExe, Random(2048, 208));
+        await Publisher.PublishLauncherAsync(Repo, "stable", launcherExe, "1.0.1");
+        Assert.False(File.Exists(sigPath));
+
+        // Re-sign again, then call unsigned SetChannelAsync: stale .sig must be deleted.
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.0", null, privatePem);
+        Assert.True(File.Exists(sigPath));
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.1", null);
+        Assert.False(File.Exists(sigPath));
+    }
 }
 
 /// <summary>Needs Windows file locking (an open FileShare.None handle blocks replacing the file).</summary>

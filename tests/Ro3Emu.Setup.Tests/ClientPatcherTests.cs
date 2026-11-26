@@ -186,4 +186,29 @@ public sealed class ClientPatcherTests : IDisposable
         Assert.All(rules.Where(r => r.Description.Contains("URL", StringComparison.Ordinal)), r => Assert.True(r.Hits > 0, r.Description));
         Assert.DoesNotContain(changed, w => w.Contains("RO3.SealedLoginFallback", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void EmbeddedExtractsResourceFromHostAssemblyWhenNotInClientPatching()
+    {
+        byte[] payload = [0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00];
+        string resourceName = "test-embedded-" + Guid.NewGuid().ToString("N") + ".dll";
+        var host = new StubResourceAssembly(resourceName, payload);
+
+        string extracted = ClientPatcher.Embedded(resourceName, "NoSuchProject", host);
+        try
+        {
+            Assert.True(File.Exists(extracted));
+            Assert.Equal(payload, File.ReadAllBytes(extracted));
+        }
+        finally
+        {
+            if (File.Exists(extracted)) File.Delete(extracted);
+        }
+    }
+
+    private sealed class StubResourceAssembly(string resourceName, byte[] payload) : System.Reflection.Assembly
+    {
+        public override Stream? GetManifestResourceStream(string name) =>
+            string.Equals(name, resourceName, StringComparison.Ordinal) ? new MemoryStream(payload, writable: false) : null;
+    }
 }

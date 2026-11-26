@@ -33,10 +33,9 @@ namespace Ro3Emu.ClientHooks
     /// <item>Profile cards without stickers parse (LC_DAL_Personal.ParsePersonalInfo walks a nil list; PersonalCards).</item>
     /// <item>A 5006 while the emote widget is closed no longer raises a Lua error (EmoteWidget).</item>
     /// <item>The Lua info logs that cost frames in Auto-Battle are off (LuaLogs).</item>
-    /// <item>Refine Ascension rows 2 ("Basic Defense") and 12 ("Advanced Attack") swap their misconfigured PATK/MATK and PDEF/MDEF ids (SeasonRefineAttrs).</item>
     /// <item>Skill displacements keep m_kMovement's position in sync with LC_PerformEffect_Agent so the next skill does not snap back (SkillMoveSync).</item>
     /// <item>LC_TriggerAreaManager_AreaData compares areaId, reason and callback object in addition to mapId so multi-area maps do not drop cutscene triggers (TriggerAreaFix).</item>
-    /// <item>Overhead guild names and emblems show on all maps using SpriteRegion for packed atlas cells (GuildOverhead).</item>
+    /// <item>Overhead guild names and emblems follow the original map limits by default and expand to all maps when enabled by the server (GuildOverhead).</item>
     /// </list>
     /// </summary>
     public static class LuaPatches
@@ -113,7 +112,6 @@ namespace Ro3Emu.ClientHooks
                 LuaLogs.Install(global);
                 EmoteWidget.Install(Module(manager, global, "ui_sys_main_actionwidgetbasectrl"));
                 PayManager.Install(Module(manager, global, "lua_sdk_paymgr"));
-                SeasonRefineAttrs.Install(Module(manager, global, "refiningseasonattrconfig"));
                 SkillMoveSync.Install(global.Obf_RuA<Obf_R.Obf_ff>("LC_PerformEffect_Agent")
                     ?? Module(manager, global, "lc_performeffect_agent"));
                 TriggerAreaFix.Install(global, global.Obf_RuA<Obf_R.Obf_ff>("LC_TriggerAreaManager")

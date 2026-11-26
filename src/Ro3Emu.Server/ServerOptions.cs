@@ -78,6 +78,12 @@ public sealed class ServerOptions
     /// time-of-day module), so this is the emulator's own addition for an operator who wants it.</summary>
     public bool NightCycle { get; set; }
 
+    /// <summary>Show overhead guild names and emblems on every map (Ro3Emu.ClientHooks.GuildOverhead, issue #506). Off by
+    /// default: the original client shows them only on the three maps whose MapConfig._iShowNamePara enables ShowGuildName
+    /// and ShowGuildIcon (plus escort carts). When on, the server sends "guildoverhead on" (message 77012) on login so the
+    /// client hook lifts the per-map limit everywhere.</summary>
+    public bool GuildOverheadAllMaps { get; set; }
+
     /// <summary>Game-message JSON log (data/logs/traffic-*.jsonl): "off", "on" or a comma-separated account list.
     /// Formatting and writes run off the game loop; keep it off for load tests and production.</summary>
     public string TrafficLog { get; set; } = "off";
