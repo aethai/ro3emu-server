@@ -368,6 +368,16 @@ public sealed class WildAfkTests : IAsyncLifetime
         finally { accounts.WriteSyncPlanObserved = null; }
     }
 
+    private async Task LazilyDirtyClock(BotClient bot, Ro3Emu.Server.Game.Persistence.WildAfkPersistence lazy)
+    {
+        var until = DateTime.UtcNow + Wait;
+        while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
+        {
+            if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
+            await Task.Delay(50);
+        }
+    }
+
     [ClientDataFact]
     public async Task AKillAndLeavingWriteAClockTheLazySaveHasNotReached()
     {
@@ -380,16 +390,6 @@ public sealed class WildAfkTests : IAsyncLifetime
         var lazy = Service<Ro3Emu.Server.Game.Persistence.WildAfkPersistence>();
         lazy.Interval = TimeSpan.FromHours(1);
         long role = (long)bot.Self!.Uuid;
-        async Task Unsaved()
-        {
-            await RunningClock(bot);
-            var until = DateTime.UtcNow + Wait;
-            while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
-            {
-                if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
-                await Task.Delay(50);
-            }
-        }
 
         // The kill's parent reward compares the stored state with memory, and a tick can leave the clock unsaved after the
         // kill's own reconcile: that must not refuse the reward.
@@ -412,11 +412,42 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.True(unsavedAtStage);
         Assert.Equal(kills + 1, StoredAfk(role).Info.TodayKillCount);
 
-        await Unsaved();
+        await RunningClock(bot);
+        await LazilyDirtyClock(bot, lazy);
         var session = Session(bot);
         await OnLoop(() => Service<WildAfkService>().LeaveAsync(session));
         Assert.InRange(StoredAfk(role).Info.HighMultiplierTimeSeconds, 3500, 3599);
         Assert.False(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(lazy.IsDirty(session))));
+    }
+
+    [ClientDataFact]
+    public async Task AFieldKillWritesTheUnsavedClockWithItsRewardWithoutALoopWrite()
+    {
+        await using var bot = await InWorld();
+        await Eligible(bot);
+        await Warp(bot, 10111);
+        await Auto(bot, true);
+        await Kill(bot);
+        await Query(bot);
+        var lazy = Service<Ro3Emu.Server.Game.Persistence.WildAfkPersistence>();
+        lazy.Interval = TimeSpan.FromHours(1);
+        long role = (long)bot.Self!.Uuid;
+        await RunningClock(bot);
+        await LazilyDirtyClock(bot, lazy);
+        long kills = StoredAfk(role).Info.TodayKillCount;
+        var accounts = Service<AccountStore>();
+        int loopWrites = 0;
+        accounts.WriteSyncPlanObserved = (plan, onLoop) =>
+        { if (onLoop && plan is Ro3Emu.Server.Accounts.Persistence.RoleBlobWritePlan { Column: "wild_afk" }) Interlocked.Increment(ref loopWrites); };
+        try { await KillRecorded(bot); }
+        finally { accounts.WriteSyncPlanObserved = null; }
+        await Query(bot);
+
+        // #484: the kill no longer waits on a durable clock write of its own; the reward's transaction carries the clock.
+        Assert.Equal(0, loopWrites);
+        var stored = StoredAfk(role).Info;
+        Assert.Equal(kills + 1, stored.TodayKillCount);
+        Assert.InRange(stored.HighMultiplierTimeSeconds, 1, 3599);
     }
 
     [ClientDataFact]
