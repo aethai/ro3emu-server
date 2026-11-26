@@ -368,6 +368,16 @@ public sealed class WildAfkTests : IAsyncLifetime
         finally { accounts.WriteSyncPlanObserved = null; }
     }
 
+    private async Task LazilyDirtyClock(BotClient bot, Ro3Emu.Server.Game.Persistence.WildAfkPersistence lazy)
+    {
+        var until = DateTime.UtcNow + Wait;
+        while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
+        {
+            if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
+            await Task.Delay(50);
+        }
+    }
+
     [ClientDataFact]
     public async Task AKillAndLeavingWriteAClockTheLazySaveHasNotReached()
     {
@@ -380,16 +390,6 @@ public sealed class WildAfkTests : IAsyncLifetime
         var lazy = Service<Ro3Emu.Server.Game.Persistence.WildAfkPersistence>();
         lazy.Interval = TimeSpan.FromHours(1);
         long role = (long)bot.Self!.Uuid;
-        async Task Unsaved()
-        {
-            await RunningClock(bot);
-            var until = DateTime.UtcNow + Wait;
-            while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
-            {
-                if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
-                await Task.Delay(50);
-            }
-        }
 
         // The kill's parent reward compares the stored state with memory, and a tick can leave the clock unsaved after the
         // kill's own reconcile: that must not refuse the reward.
@@ -412,7 +412,8 @@ public sealed class WildAfkTests : IAsyncLifetime
         Assert.True(unsavedAtStage);
         Assert.Equal(kills + 1, StoredAfk(role).Info.TodayKillCount);
 
-        await Unsaved();
+        await RunningClock(bot);
+        await LazilyDirtyClock(bot, lazy);
         var session = Session(bot);
         await OnLoop(() => Service<WildAfkService>().LeaveAsync(session));
         Assert.InRange(StoredAfk(role).Info.HighMultiplierTimeSeconds, 3500, 3599);
@@ -432,12 +433,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         lazy.Interval = TimeSpan.FromHours(1);
         long role = (long)bot.Self!.Uuid;
         await RunningClock(bot);
-        var until = DateTime.UtcNow + Wait;
-        while (!await State(bot, s => lazy.IsDirty(s) && s.Activities.WildAfk!.Info.HighMultiplierTimeSeconds < 3600))
-        {
-            if (DateTime.UtcNow > until) throw new TimeoutException("the clock never became lazily dirty");
-            await Task.Delay(50);
-        }
+        await LazilyDirtyClock(bot, lazy);
         long kills = StoredAfk(role).Info.TodayKillCount;
         var accounts = Service<AccountStore>();
         int loopWrites = 0;
