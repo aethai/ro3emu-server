@@ -194,7 +194,8 @@ public class DataExportTests
             map.Write(outFile);
             var lines = File.ReadAllLines(outFile);
             Assert.StartsWith(ClientPatcher.GeneratedLocHeader, lines[0]);
-            Assert.Equal(["确定\t確定", "取消\t取消操作"], lines[1..]);
+            // 无 maps to itself: without the line Ro3Loc would take the English of its embedded map.
+            Assert.Equal(["确定\t確定", "无\t无", "取消\t取消操作"], lines[1..]);
             Assert.Equal(LocMapBuilder.TraditionalChinese, LocMapBuilder.LanguageOf(outFile));
 
             var english = Path.Combine(dir.FullName, "english.tsv");
