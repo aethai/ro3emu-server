@@ -581,4 +581,65 @@ public sealed partial class AuctionTests : AuctionTestsHost
         Assert.Single(Mailbox(alice).Letters, m => m.DeliveryKey.StartsWith("prebuy:", StringComparison.Ordinal)
             && m.DeliveryKey.EndsWith(":unused", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task FailedPrebuyCommitLeavesOpenItemsCacheUntouched()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!zeny 10000");
+        long role = (long)alice.Self!.Uuid;
+        var row = Seed(AuctionType.Dungeon, alice);
+        long now = clock.GetUtcNow().ToUnixTimeSeconds();
+        row.State = AuctionState.Public;
+        row.Start = now + 30;
+        row.End = now + 150;
+        SaveRows(row);
+        Assert.Equal(0, (await Bid(alice, row.Id, 800, BiddingType.Auto)).Result);
+        clock.Advance(TimeSpan.FromSeconds(31));
+
+        // Prime the shared OpenItems cache before triggering a commit failure during prebuy processing.
+        var cachedBefore = Assert.Single(Service<AuctionStore>().OpenItems(), r => r.Id == row.Id);
+        Assert.Equal(0, cachedBefore.Owner);
+        Assert.Equal(500, cachedBefore.Price);
+        Assert.Equal(0, cachedBefore.Reserve);
+        Assert.Equal(0, cachedBefore.Revision);
+
+        bool sawCleanCacheDuringCommit = false;
+        var accounts = Service<AccountStore>();
+        accounts.BeforeCommitForTest = label =>
+        {
+            if (label != "auction/process-prebuy") return;
+            var during = Assert.Single(Service<AuctionStore>().OpenItems(), r => r.Id == row.Id);
+            sawCleanCacheDuringCommit = ReferenceEquals(during, cachedBefore)
+                && during.Owner == 0 && during.Price == 500 && during.Reserve == 0
+                && during.Revision == 0 && !during.Auto && during.Joined.Count == 0;
+            throw new InvalidOperationException("prebuy commit probe");
+        };
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Service<AuctionService>().ProcessPrebuysAsync());
+            Assert.True(sawCleanCacheDuringCommit);
+            Assert.Equal(0, cachedBefore.Owner);
+            Assert.Equal(500, cachedBefore.Price);
+            Assert.Equal(0, cachedBefore.Reserve);
+            Assert.Equal(0, cachedBefore.Revision);
+            Assert.False(cachedBefore.Auto);
+            Assert.Empty(cachedBefore.Joined);
+            var cachedAfter = Assert.Single(Service<AuctionStore>().OpenItems(), r => r.Id == row.Id);
+            Assert.Equal(0, cachedAfter.Owner);
+            Assert.Equal(500, cachedAfter.Price);
+            Assert.Equal(0, cachedAfter.Reserve);
+            Assert.Equal(0, cachedAfter.Revision);
+            Assert.False(cachedAfter.Auto);
+            Assert.Empty(cachedAfter.Joined);
+            Assert.Equal(0, Service<AuctionStore>().Get(row.Id)!.Owner);
+        }
+        finally { accounts.BeforeCommitForTest = null; }
+
+        await Service<AuctionService>().ProcessPrebuysAsync();
+        var committed = Service<AuctionStore>().Get(row.Id)!;
+        Assert.Equal(role, committed.Owner);
+        Assert.Equal(800, committed.Reserve);
+        Assert.Empty(Mailbox(alice).Letters);
+    }
 }

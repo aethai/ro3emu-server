@@ -175,6 +175,7 @@ public sealed partial class TradeService
             IReadOnlyList<PreorderRow> allOrders = matured.Count > 0 || expired.Count > 0
                 ? tx.All<PreorderRow>(Orders) : [];
             var removedSkus = new HashSet<string>(StringComparer.Ordinal);
+            var updatedBySku = new Dictionary<string, Listing>(StringComparer.Ordinal);
             foreach (var listing in matured)
             {
                 foreach (var order in allOrders.Where(o => o.Sku == listing.Sku && o.Status == 0)
@@ -212,13 +213,14 @@ public sealed partial class TradeService
                 }
                 listing.PublicUntilMs = 0;
                 if (listing.Quantity == 0) { tx.Delete(Listings, listing.Sku); removedSkus.Add(listing.Sku); }
-                else tx.Put(Listings, listing.Sku, listing);
+                else { tx.Put(Listings, listing.Sku, listing); updatedBySku[listing.Sku] = listing; }
             }
             // (inferred) PublicParam listing-display times are hours. Remaining unsold escrow
             // expires into the current exchange return template and can be claimed once.
-            foreach (var listing in expired)
+            foreach (var rawExpired in expired)
             {
-                if (removedSkus.Contains(listing.Sku)) continue;
+                if (removedSkus.Contains(rawExpired.Sku)) continue;
+                var listing = updatedBySku.TryGetValue(rawExpired.Sku, out var updated) ? updated : rawExpired;
                 var back = listing.Item.Clone(); back.Guid = 0; back.Grid = 0; back.Stack = listing.Quantity;
                 tx.DeliverMail(listing.SellerId, 1067, [back], contentParams: [data.ItemName(back.Entry)]);
                 expiredCount[listing.SellerId] = expiredCount.GetValueOrDefault(listing.SellerId) + 1;

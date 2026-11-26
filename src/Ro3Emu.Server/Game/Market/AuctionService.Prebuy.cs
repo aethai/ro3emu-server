@@ -112,7 +112,7 @@ public sealed partial class AuctionService
             return RowKeys(row, order == null ? [] : [order.Role], order == null ? [] : [order]);
         }))
         {
-            var (order, row, wait) = PrebuyStage(id);
+            var (order, candidate, wait) = PrebuyStage(id);
             if (order == null || wait) return;
             role = order.Role;
             var matching = store.OpenItems().Where(r => r.Type == order.Type && r.SrcType == order.SrcType
@@ -128,6 +128,8 @@ public sealed partial class AuctionService
                 return;
             }
             if (matching.Length > 0 && order.Paused) return;
+            // Reload an unshared row from SQLite so a failed commit can never leave mutations in store.OpenItems().
+            var row = candidate == null ? null : store.Get(candidate.Id);
             oldOwner = row?.Owner ?? 0;
             int oldReserve = row?.Reserve ?? 0;
             object? priorLot = row == null ? null : LotEvidence(row);

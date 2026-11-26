@@ -429,4 +429,60 @@ public sealed class GuildHuntingPersistenceTests : GuildHuntingHost
         // The mails left after the result are sent by the restarted server, once.
         Assert.Equal([10200, 10204], (await Letters((long)later.Self!.Uuid, 2)).Select(l => l.TemplateId).Order());
     }
+
+    [Fact]
+    public async Task LateMatchingAndSettlementSerializePerWeekWritesWithoutLosingLatecomer()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        long hunters = await Founder(alice, "Hunters");
+        clock.Set(20, 30, 0);
+        await Next(alice, GuildHuntingService.Matched, GveHuntingMatchedNotify.Parser);
+        await Until(() => Saved(hunters).Data.GroupMap.Values.Any(g => g.GuildIds.Contains(hunters)));
+
+        long latecomers = await Founder(bob, "Raiders");
+        int active = 0, maxActive = 0, blockedOnce = 0;
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var accounts = Service<AccountStore>();
+        accounts.BeforeCommitForTest = label =>
+        {
+            if (label != "guild-hunting/save") return;
+            int current = Interlocked.Increment(ref active);
+            int observed;
+            do { observed = Volatile.Read(ref maxActive); }
+            while (current > observed && Interlocked.CompareExchange(ref maxActive, current, observed) != observed);
+            try
+            {
+                if (Interlocked.Exchange(ref blockedOnce, 1) == 0)
+                {
+                    entered.Set();
+                    if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("guild hunt write barrier");
+                }
+            }
+            finally { Interlocked.Decrement(ref active); }
+        };
+        try
+        {
+            clock.Set(20, 30, 5); // MatchLateAsync starts and pauses inside SQLite write
+            Assert.True(await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(10))));
+            clock.Set(20, 37, 0); // SettleAsync arrives while MatchLateAsync holds week.Saving
+            await OnLoop(() => true); // let the tick enqueue SettleAsync behind week.Saving
+            release.Set();
+            await Until(() => Saved(hunters).Data.IsSettled);
+        }
+        finally
+        {
+            release.Set();
+            accounts.BeforeCommitForTest = null;
+        }
+
+        var committed = Saved(hunters).Data;
+        Assert.Equal(1, Volatile.Read(ref maxActive));
+        Assert.True(committed.IsSettled);
+        var guilds = committed.GroupMap.Values.SelectMany(g => g.GuildIds).ToHashSet();
+        Assert.Contains(hunters, guilds);
+        Assert.Contains(latecomers, guilds);
+        Assert.True(committed.GuildMatchResults.ContainsKey(latecomers));
+    }
 }
