@@ -25,6 +25,7 @@ public sealed class MonsterThreatTests
     private const int DeclineBp = 2500;
     private const int DeclineMs = 2000;
     private const int MinDecline = 300;
+    private static readonly int[] UnFightType = [1], UnFightParam = [3000];
     private const float PlayerX = 150f, PlayerZ = 186f;
 
     [Fact]
@@ -287,7 +288,7 @@ public sealed class MonsterThreatTests
             {
                 [Key(BossAi)] = new
                 {
-                    _iID = BossAi, _iChaseDistance = 3000, _iViewRange = 2000, _iUnFightType = new[] { 1 }, _iUnFightParam = new[] { 3000 },
+                    _iID = BossAi, _iChaseDistance = 3000, _iViewRange = 2000, _iUnFightType = UnFightType, _iUnFightParam = UnFightParam,
                     _iHatredType = 1, _iHatredDeclineSpeed = DeclineBp, _iHatredDeclineTime = DeclineMs, _iMinHatredDecline = MinDecline,
                 },
             });
