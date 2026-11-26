@@ -64,7 +64,7 @@ public sealed partial class TaskService
     public Func<GameSession, GameSession, bool>? FactionRivals { get; set; }
     public Action<GameSession, long>? FactionGuildAward { get; set; }
     public Func<GameSession, int, long>? DungeonRunValue { get; set; }
-    internal TimeSpan PlotRegionFallbackDelay { get; set; } = TimeSpan.FromSeconds(10);
+    internal TimeSpan PlotRegionFallbackDelay { get; set; } = TimeSpan.FromSeconds(60);
     public Func<GameSession, IReadOnlyDictionary<(int Type, int Son), bool>>? OpenActivityTaskGroups { get; set; }
     public Func<GameSession, Task>? SyncGrowthClass { get; set; }
     public SyncHook<GameSession, long, AwardPlan> QuestDelivered { get; } = new("TaskService.QuestDelivered");

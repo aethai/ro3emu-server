@@ -22,6 +22,7 @@ public sealed class PlotRegionObjectiveTests : AuctionTestsHost
         await Gm(bot, "!quest accept 10105050");
         var region = Service<WorldData>().Map(10100)!.Regions[101050501];
         var tasks = Service<TaskService>();
+        Assert.Equal(TimeSpan.FromSeconds(60), tasks.PlotRegionFallbackDelay);
 
         // Entering the region does not immediately cut off a playing cutscene.
         await Service<GameLoop>().InvokeAsync(async () =>

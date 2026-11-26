@@ -83,6 +83,12 @@ public sealed partial class RoleSessionService(
         session.OfflineBuffsLoaded = false;
         await systems.LeaveAsync(session, Step, () =>
         {
+            if (roles.IsWriterFailed)
+            {
+                var p = session.Position;
+                LogShutdownSaveSkipped(log, snapshotRole ?? 0, session.Account ?? "", session.SceneEntry, p.X, p.Y, p.Z, offlineBuffs != null);
+                return;
+            }
             SavePosition(session);
             if (offlineBuffs != null && snapshotRole is { } kept) roles.SaveOfflineBuffs(kept, offlineBuffs);
         });
@@ -390,6 +396,11 @@ public sealed partial class RoleSessionService(
         positions.MarkDirty(session, urgent: walk.BStop); // Written lazily, never on the loop
         await systems.MovedAsync(session, walk);
     }
+
+    [LoggerMessage(Level = LogLevel.Critical,
+        Message = "Skipping shutdown position/buff save for role {Role} (account {Account}, scene {Scene}, "
+            + "pos {X:F1}/{Y:F1}/{Z:F1}, unsavedOfflineBuffs={HasOfflineBuffs}) because the database writer stopped")]
+    private static partial void LogShutdownSaveSkipped(ILogger logger, long role, string account, long scene, float x, float y, float z, bool hasOfflineBuffs);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Role {Role} cleanup step {Step} waits for room in a full database queue")]
     private static partial void LogCleanupWaits(ILogger logger, long? role, string step);

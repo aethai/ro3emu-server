@@ -355,6 +355,33 @@ public sealed partial class CardRulesTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
 
+    // #571: a card skill dropped on the bar or into the Auto-Battle list (31153 SkillLoad) stays there after the sync.
+    [ClientDataFact]
+    public async Task ASocketedCardSkillStaysOnTheBarAndInTheAutoBattleList()
+    {
+        const int card = 1430601, disguise = 20040;
+        await using var alice = await InWorld("Alice");
+        var session = Session("Alice");
+        await Gm("alice", "!lvl 80");
+        await Gm("alice", $"!item {card} 1");
+        await WearRing(alice, session);
+        Assert.Equal(0, await Insert(alice, 6, 1, session.Items.Single(i => i.Entry == card).Guid));
+        await Eventually(() => session.Progress!.GrantedSkills.GetValueOrDefault(disguise) == 1, "granted");
+        foreach (bool manual in new[] { true, false })
+        {
+            await alice.SendGameAsync(SkillService.SkillLoad, new SkillLoadReq
+            {
+                OpType = SkillLoadOperation.SkillLoadOpLoad, IsManual = manual, SocketNum = 4,
+                Info = new SkillData { SkillId = disguise, SkillLevel = 1 },
+            });
+            Assert.Equal(0, (await Next(alice, SkillService.SkillLoad, SkillLoadResp.Parser)).Result);
+        }
+        var plans = await OnLoop(() => _app.Services.GetRequiredService<SkillService>().Build(session));
+        var plan = plans.SkillAssignPlans[plans.CurrentPlanIndex];
+        Assert.Contains(plan.ManualLoadSkill, s => s.SkillId == disguise);
+        Assert.Contains(plan.AutoLoadSkill, s => s.SkillId == disguise);
+    }
+
     [ClientDataFact]
     public async Task CardPassivesFollowTheSocketAndArmTheLethalRevive()
     {

@@ -939,10 +939,22 @@ public sealed partial class CardService
                 next.OverviewTheme = req.ThemeId;
                 var transaction = _roles.NewTransaction();
                 transaction.RoleBlob(session.Role!.Id, "library", next.ToByteArray());
-                await _roles.CommitAsync(transaction, "card/switch-theme", _ => session.Profile.Library = next);
-                await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
+                try
+                {
+                    await _roles.CommitAsync(transaction, "card/switch-theme", _ => session.Profile.Library = next);
+                }
+                catch (Exception e)
+                {
+                    LogThemeSwitchFailed(_log, e, req.ThemeId, session.Role.Id);
+                    code = ErrorCodes.Unknown;
+                }
+                if (code == 0)
+                    await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
             }
         }
         await session.SendGameAsync(LibrarySwitchTheme, new LibrarySwitchThemeResp { Result = code, ThemeId = code == 0 ? req.ThemeId : session.Profile.Library?.OverviewTheme ?? 0 });
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Card theme switch to {ThemeId} failed for role {Role}")]
+    private static partial void LogThemeSwitchFailed(ILogger logger, Exception error, int themeId, long role);
 }

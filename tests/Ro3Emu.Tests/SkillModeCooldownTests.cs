@@ -48,6 +48,67 @@ public sealed class SkillModeCooldownTests
         Assert.DoesNotContain(ended.Infos, i => i.SkillMode == 0);
     });
 
+    [ClientDataFact]
+    public async Task UnlimitedShootingSendsCooldownAndAffectedParamsBeforeSkillWheelSync()
+    {
+        const int focusedArrowGroup = 13305, focusedArrowBaseRow = 1330501, focusedArrowMode1Row = 1330511, unlimitedBuff = 1330201;
+        await using var host = await SyntheticHost.StartAsync(o => o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"));
+        await using var alice = await host.InWorldAsync("Alice");
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)alice.Self!.Uuid);
+        var loop = host.Service<GameLoop>();
+        var skills = host.Service<SkillService>();
+        var buffs = host.Service<BuffService>();
+
+        await loop.InvokeAsync(async () =>
+        {
+            session.Progress!.Skills[focusedArrowGroup] = 1;
+            session.Progress.SkillBar[1] = focusedArrowGroup;
+            session.Combat.SkillCds[focusedArrowGroup] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60_000;
+            await skills.SyncAsync(session);
+        });
+        await alice.Inbox.WaitAsync(e => e.IsGame(SkillService.SkillDataSync), Wait);
+
+        int start = alice.Inbox.Snapshot().Count;
+        using var cdStart = alice.Inbox.Expect(e => e.IsGame(CombatService.SkillCdUpdate)
+            && SkillCdNotify.Parser.ParseFrom(e.Body).Infos.Any(i => i.SkillId == focusedArrowGroup && i.SkillMode == 1));
+        using var exStart = alice.Inbox.Expect(e => e.IsGame(CombatService.SkillAffectedEx));
+        using var wheelStart = alice.Inbox.Expect(e => e.IsGame(SkillService.SkillDataSync));
+
+        await loop.InvokeAsync(() => buffs.AddAsync(session, unlimitedBuff, 10_000, session.Role!.Id));
+        await cdStart.WaitAsync(Wait);
+        await exStart.WaitAsync(Wait);
+        var syncOn = DBSkillDataIncrement.Parser.ParseFrom((await wheelStart.WaitAsync(Wait)).Body);
+
+        var onEvents = alice.Inbox.Snapshot().Skip(start).ToArray();
+        int cdIdx = Array.FindIndex(onEvents, e => e.IsGame(CombatService.SkillCdUpdate)
+            && SkillCdNotify.Parser.ParseFrom(e.Body).Infos.Any(i => i.SkillId == focusedArrowGroup && i.SkillMode == 1));
+        int exIdx = Array.FindIndex(onEvents, e => e.IsGame(CombatService.SkillAffectedEx));
+        int syncIdx = Array.FindIndex(onEvents, e => e.IsGame(SkillService.SkillDataSync));
+        Assert.True(cdIdx >= 0 && exIdx >= 0 && syncIdx >= 0);
+        Assert.True(cdIdx < syncIdx, $"Expected 31113 ({cdIdx}) before 5025 ({syncIdx}) on Unlimited Shooting start.");
+        Assert.True(exIdx < syncIdx, $"Expected 31132 ({exIdx}) before 5025 ({syncIdx}) on Unlimited Shooting start.");
+        Assert.Contains(syncOn.SkillWheel!.Inc.WhellSkills.Values,
+            slot => (slot.Inc?.SkillConfigId ?? slot.All?.SkillConfigId) == focusedArrowMode1Row);
+
+        int offStart = alice.Inbox.Snapshot().Count;
+        using var cdEnd = alice.Inbox.Expect(e => e.IsGame(CombatService.SkillCdUpdate)
+            && SkillCdNotify.Parser.ParseFrom(e.Body).Infos.Any(i => i.SkillId == focusedArrowGroup && i.SkillMode == 0));
+        using var wheelEnd = alice.Inbox.Expect(e => e.IsGame(SkillService.SkillDataSync));
+
+        await loop.InvokeAsync(() => buffs.RemoveAsync(session, session.Buffs.Single(b => b.ConfigId == unlimitedBuff)));
+        await cdEnd.WaitAsync(Wait);
+        var syncOff = DBSkillDataIncrement.Parser.ParseFrom((await wheelEnd.WaitAsync(Wait)).Body);
+
+        var offEvents = alice.Inbox.Snapshot().Skip(offStart).ToArray();
+        int cdOffIdx = Array.FindIndex(offEvents, e => e.IsGame(CombatService.SkillCdUpdate)
+            && SkillCdNotify.Parser.ParseFrom(e.Body).Infos.Any(i => i.SkillId == focusedArrowGroup && i.SkillMode == 0));
+        int syncOffIdx = Array.FindIndex(offEvents, e => e.IsGame(SkillService.SkillDataSync));
+        Assert.True(cdOffIdx >= 0 && syncOffIdx >= 0);
+        Assert.True(cdOffIdx < syncOffIdx, $"Expected 31113 ({cdOffIdx}) before 5025 ({syncOffIdx}) on Unlimited Shooting end.");
+        Assert.Contains(syncOff.SkillWheel!.Inc.WhellSkills.Values,
+            slot => (slot.Inc?.SkillConfigId ?? slot.All?.SkillConfigId) == focusedArrowBaseRow);
+    }
+
     private static async Task<SkillCdNotify> Next(BotClient bot, Func<SkillCdNotify, bool> match) =>
         SkillCdNotify.Parser.ParseFrom((await bot.Inbox.WaitAsync(
             e => e.IsGame(CombatService.SkillCdUpdate) && match(SkillCdNotify.Parser.ParseFrom(e.Body)), Wait)).Body);

@@ -212,7 +212,8 @@ public sealed partial class ChatService
             return $"line of {req.Content.Length} characters (extra {req.ExtraParam.Length}) to {req.ReceiveId}";
         if (_gm.IsCommand(req.Content) && _gm.Allowed(sender)) return null; // a GM's command lines are not chat
         sender.ChatLines ??= RateBucket.Parse(limits.ChatLines) ?? new RateBucket(1, 10);
-        return sender.ChatLines.TryTake(_clock.GetUtcNow().ToUnixTimeMilliseconds()) ? null : $"line to {req.ReceiveId} over the chat rate";
+        long now = (long)(_clock.GetTimestamp() / (_clock.TimestampFrequency / 1000.0));
+        return sender.ChatLines.TryTake(now) ? null : $"line to {req.ReceiveId} over the chat rate";
     }
 
     /// <summary>

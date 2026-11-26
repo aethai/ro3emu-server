@@ -85,7 +85,7 @@ public sealed partial class AccountStore : IDisposable
         }
         // SQLite gives the WAL and shared-memory files the database file's mode, so they follow it.
         PrivateFiles.Files(_databasePath, _databasePath + "-wal", _databasePath + "-shm");
-        if (options.Value.StartupIntegrityCheck) VerifyStartupIntegrity(db);
+        if (options.Value.StartupIntegrityCheck) VerifyStartupIntegrity(db, options.Value.StartupFullIntegrityCheck);
         AppliedMigrations = DatabaseMigrations.Migrate(db, _log);
         _writer = new(() => new DbWriter(_connectionString, AccessMetrics, _metrics, _log)
         {
@@ -96,10 +96,10 @@ public sealed partial class AccountStore : IDisposable
         _panelReaders = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log, workerCount: 2, threadPrefix: "ro3-db-panel"));
     }
 
-    private void VerifyStartupIntegrity(SqliteConnection db)
+    private void VerifyStartupIntegrity(SqliteConnection db, bool full)
     {
         using var check = db.CreateCommand();
-        check.CommandText = "PRAGMA integrity_check(5)";
+        check.CommandText = full ? "PRAGMA integrity_check(5)" : "PRAGMA quick_check(5)";
         using var reader = check.ExecuteReader();
         var rows = new List<string>();
         while (reader.Read()) rows.Add(reader.GetString(0));
@@ -179,6 +179,8 @@ public sealed partial class AccountStore : IDisposable
     private DbWriter Writer { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _writer.Value; } } }
     internal Action<string>? BeforeCommitForTest { get => Writer.BeforeCommitForTest; set => Writer.BeforeCommitForTest = value; }
     internal Action? BeforeGroupCommitForTest { get => Writer.BeforeGroupCommitForTest; set => Writer.BeforeGroupCommitForTest = value; }
+    internal TimeSpan[] WriterCommitRetryDelaysForTest { get => Writer.CommitRetryDelays; set => Writer.CommitRetryDelays = value; }
+    internal bool IsWriterFailed => _writer.IsValueCreated && _writer.Value.IsTerminalFailed;
     private DbReadPool Readers { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _readers.Value; } } }
     private DbReadPool PanelReaders { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _panelReaders.Value; } } }
     internal async Task<T> WriteAsync<T>(DbPlan plan)

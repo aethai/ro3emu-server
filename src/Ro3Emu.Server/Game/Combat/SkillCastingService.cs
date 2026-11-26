@@ -47,8 +47,8 @@ public sealed partial class SkillCastingService
         _data = data;
         _loop = loop;
         _log = log;
-        skills.Learned.Subscribe(RefreshSkillParametersAsync);
-        buffs.Changed.Subscribe(RefreshSkillParametersAsync);
+        skills.Learned.Subscribe(RefreshSkillParametersAsync, order: -10);
+        buffs.Changed.Subscribe(RefreshSkillParametersAsync, order: -10);
         talents.EffectsChanged.Subscribe(RefreshSkillParametersAsync);
         scene.Loaded.Subscribe(RefreshSkillParametersAsync);
         scene.Leaving.Subscribe(ClearSceneSkillProtocolAsync, order: SceneService.LeaveOrderCombat);
