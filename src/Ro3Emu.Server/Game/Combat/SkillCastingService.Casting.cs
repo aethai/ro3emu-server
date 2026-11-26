@@ -410,11 +410,17 @@ public sealed partial class SkillCastingService
             ? s.Owners.RunRuntimeAsync("combat/shown hit", () => LandShownHitAsync(s, nowMs))
             : LandShownHitAsync(s, nowMs);
         _landingShownHit[s] = landing;
+        // The landing is the previous cast's work: like its scheduled landing, a failure is logged and this request goes on
+        // (its own admission checks the attachment again) instead of failing the request and dropping the connection.
         try { await landing; }
+        catch (Exception e) { LogShownHitFailed(_log, e, s.Role?.Id ?? 0); }
         finally { if (_landingShownHit.TryGetValue(s, out var current) && ReferenceEquals(current, landing)) _landingShownHit.Remove(s); }
     }
 
     private readonly Dictionary<GameSession, Task> _landingShownHit = [];
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A shown hit landed before role {Role}'s next cast failed")]
+    private static partial void LogShownHitFailed(ILogger logger, Exception exception, long role);
 
     private async Task LandShownHitAsync(GameSession s, long nowMs)
     {
