@@ -65,7 +65,8 @@ public class OrderedHook<TDelegate>(
     string name = "",
     ILogger? logger = null,
     bool isolateErrors = false,
-    ServerMetrics? metrics = null) : IHookOrderSource
+    ServerMetrics? metrics = null,
+    bool isolateCancellation = false) : IHookOrderSource
     where TDelegate : Delegate
 {
     private readonly Lock _gate = new();
@@ -81,6 +82,8 @@ public class OrderedHook<TDelegate>(
 
     protected ImmutableArray<Entry> Entries => _entries;
     protected bool IsolateErrors { get; } = isolateErrors;
+    protected bool IsolateCancellation { get; } = isolateCancellation;
+    protected bool ShouldIsolate(Exception ex) => IsolateErrors && (IsolateCancellation || ex is not OperationCanceledException);
 
     public IDisposable Subscribe(TDelegate handler, int order = 0, string? name = null)
     {
@@ -225,145 +228,156 @@ public class OrderedHook<TDelegate>(
     }
 }
 
-public sealed class AsyncHook(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync()
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class AsyncHook<T1>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<T1, Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook<T1>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<T1, Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync(T1 arg1)
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(arg1); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class AsyncHook<T1, T2>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<T1, T2, Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook<T1, T2>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<T1, T2, Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync(T1 arg1, T2 arg2)
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(arg1, arg2); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class AsyncHook<T1, T2, T3>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<T1, T2, T3, Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook<T1, T2, T3>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<T1, T2, T3, Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync(T1 arg1, T2 arg2, T3 arg3)
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(arg1, arg2, arg3); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class AsyncHook<T1, T2, T3, T4>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<T1, T2, T3, T4, Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook<T1, T2, T3, T4>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<T1, T2, T3, T4, Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4)
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(arg1, arg2, arg3, arg4); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class AsyncHook<T1, T2, T3, T4, T5>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Func<T1, T2, T3, T4, T5, Task>>(name, logger, isolateErrors, metrics)
+public sealed class AsyncHook<T1, T2, T3, T4, T5>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Func<T1, T2, T3, T4, T5, Task>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public async Task InvokeAsync(T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
     {
         foreach (var entry in Entries)
         {
             try { await entry.Handler(arg1, arg2, arg3, arg4, arg5); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class SyncHook(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Action>(name, logger, isolateErrors, metrics)
+public sealed class SyncHook(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Action>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public void Invoke()
     {
         foreach (var entry in Entries)
         {
             try { entry.Handler(); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class SyncHook<T1>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Action<T1>>(name, logger, isolateErrors, metrics)
+public sealed class SyncHook<T1>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Action<T1>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public void Invoke(T1 arg1)
     {
         foreach (var entry in Entries)
         {
             try { entry.Handler(arg1); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class SyncHook<T1, T2>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Action<T1, T2>>(name, logger, isolateErrors, metrics)
+public sealed class SyncHook<T1, T2>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Action<T1, T2>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public void Invoke(T1 arg1, T2 arg2)
     {
         foreach (var entry in Entries)
         {
             try { entry.Handler(arg1, arg2); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class SyncHook<T1, T2, T3>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Action<T1, T2, T3>>(name, logger, isolateErrors, metrics)
+public sealed class SyncHook<T1, T2, T3>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Action<T1, T2, T3>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public void Invoke(T1 arg1, T2 arg2, T3 arg3)
     {
         foreach (var entry in Entries)
         {
             try { entry.Handler(arg1, arg2, arg3); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }
 
-public sealed class SyncHook<T1, T2, T3, T4>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null)
-    : OrderedHook<Action<T1, T2, T3, T4>>(name, logger, isolateErrors, metrics)
+public sealed class SyncHook<T1, T2, T3, T4>(string name = "", ILogger? logger = null, bool isolateErrors = false, ServerMetrics? metrics = null,
+    bool isolateCancellation = false)
+    : OrderedHook<Action<T1, T2, T3, T4>>(name, logger, isolateErrors, metrics, isolateCancellation)
 {
     public void Invoke(T1 arg1, T2 arg2, T3 arg3, T4 arg4)
     {
         foreach (var entry in Entries)
         {
             try { entry.Handler(arg1, arg2, arg3, arg4); }
-            catch (Exception ex) when (IsolateErrors && ex is not OperationCanceledException) { RecordFailure(ex, entry.Name); }
+            catch (Exception ex) when (ShouldIsolate(ex)) { RecordFailure(ex, entry.Name); }
         }
     }
 }

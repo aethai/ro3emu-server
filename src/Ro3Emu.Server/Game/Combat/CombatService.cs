@@ -512,7 +512,7 @@ public sealed partial class CombatService : IGameTicker
         this._data = data;
         this._loop = loop;
         this._log = log;
-        AfterLethalPublication = new("Combat.AfterLethalPublication", log, isolateErrors: true);
+        AfterLethalPublication = new("Combat.AfterLethalPublication", log, isolateErrors: true, isolateCancellation: true);
         _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;
         _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
