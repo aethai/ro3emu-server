@@ -25,6 +25,7 @@ internal static class AttributeId
     internal const int PerTreat = 207; // per_treat
     internal const int PerCure = 208; // per_cure
     internal const int PerResDmg = 216; // per_res_dmg
+    internal const int EleReduce = 236; // ele_reduce
     internal const int NoneEle = 301; // none_ele, the first of the ten element bonuses
     internal const int BeNoneEle = 311; // be_none_ele, the first of the ten element resistances
     internal const int BeWaterEle = 315; // be_water_ele
