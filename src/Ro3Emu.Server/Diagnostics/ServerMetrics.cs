@@ -34,6 +34,9 @@ public sealed class ServerMetrics : IDisposable
     {
         var next = new Epoch();
         Interlocked.Exchange(ref _epoch, next);
+        // The by-label tables start over with the epoch too, so a load test's setup does not count in its scenario.
+        DbAccess?.ResetLoopWaits();
+        Owners?.ResetOriginStats();
         return next.Id;
     }
 

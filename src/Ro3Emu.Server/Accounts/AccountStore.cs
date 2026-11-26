@@ -91,6 +91,7 @@ public sealed partial class AccountStore : IDisposable
         {
             RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue,
             TerminalFault = HandleWriterTerminalFault,
+            CommitDelayMs = Math.Clamp(options.Value.Testing.WriterCommitDelayMs, 0, 1000),
         });
         _readers = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log));
         _panelReaders = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log, workerCount: 2, threadPrefix: "ro3-db-panel"));
@@ -498,7 +499,7 @@ public sealed partial class AccountStore : IDisposable
         ReadSyncObserved?.Invoke(plan.Label, OnLoop);
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         try { return Readers.ExecuteLegacySync<T>(plan); }
-        finally { AccessMetrics.LegacyWait(started, OnLoop, label: plan.Label); }
+        finally { AccessMetrics.LegacyWait(started, OnLoop, label: plan.WaitLabel); }
     }
 
     /// <summary>True when the account exists and the password matches (no registration, unlike Login).</summary>

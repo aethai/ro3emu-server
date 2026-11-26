@@ -86,6 +86,8 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
   on|off`, `!testing reset`, `!testing` to show them; that change lasts until the next start. The Guild League and the
   Territory Wars keep their calendars (`!league`, `!siege open`, `!twpoint`). Details:
   [activities](../systems/activities.md#test-realm-switches-ro3emutesting).
+  `Ro3Emu__Testing__WriterCommitDelayMs=<ms>` is for load tests only: every database commit waits that long, as on a
+  slow disk. Leave it at 0 on a realm people play on.
 - **One session per account:** a second login takes over from the first. The client runs one instance per PC;
   `Ro3Emu.BotCli` can stand in for extra players when you test alone.
 

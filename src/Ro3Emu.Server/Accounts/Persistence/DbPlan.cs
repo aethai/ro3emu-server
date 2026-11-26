@@ -12,6 +12,9 @@ public abstract class DbPlan
     internal abstract object? Execute(SqliteConnection connection, SqliteTransaction transaction);
     internal abstract int Bytes { get; }
     internal abstract string Label { get; }
+    /// <summary>Names a synchronous loop wait on this plan in the metrics (loopWaits); a plan writing one of several
+    /// parts adds which one.</summary>
+    internal virtual string WaitLabel => Label;
     // A role-writing plan must declare every storage part it changes. The writer checks
     // the captured vector and advances each distinct part in its business transaction.
     internal virtual IReadOnlyList<RoleRevisionKey> RoleWrites => [];
@@ -57,6 +60,9 @@ public abstract class DbReadPlan
     internal abstract object? Execute(SqliteConnection connection, SqliteTransaction transaction);
     internal abstract int Bytes { get; }
     internal abstract string Label { get; }
+    /// <summary>Names a synchronous loop wait on this read in the metrics (loopWaits); a read of one of several parts
+    /// adds which one.</summary>
+    internal virtual string WaitLabel => Label;
 }
 
 internal static class DbSql

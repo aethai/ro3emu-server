@@ -633,6 +633,7 @@ internal sealed class RoleBlobReadPlan(long role, string column) : DbReadPlan
 {
     internal override int Bytes => 128;
     internal override string Label => "role/read-blob";
+    internal override string WaitLabel => Label + ":" + column;
     internal override object? Execute(SqliteConnection db, SqliteTransaction tx)
     {
         RoleColumns.Validate(column);
@@ -658,6 +659,7 @@ internal sealed class RoleBlobWritePlan : DbPlan
     }
     internal override int Bytes => 128 + _value.Length;
     internal override string Label => "role/write-blob";
+    internal override string WaitLabel => Label + ":" + _column;
     internal override IReadOnlyList<RoleRevisionKey> RoleWrites => [RevisionStore.Role(_role, _column)];
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {

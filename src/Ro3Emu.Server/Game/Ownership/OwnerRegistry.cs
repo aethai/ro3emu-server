@@ -205,6 +205,12 @@ public sealed partial class OwnerRegistry
                 use.BlockedBy[blockedBy] = use.BlockedBy.GetValueOrDefault(blockedBy) + 1;
         }
     }
+    /// <summary>Starts the by-origin wait and Realm tables over (metrics reset); live reservations are untouched.</summary>
+    internal void ResetOriginStats()
+    {
+        lock (_waitByOrigin) _waitByOrigin.Clear();
+        lock (_realmByOrigin) _realmByOrigin.Clear();
+    }
     private object WaitByOrigin()
     {
         lock (_waitByOrigin)

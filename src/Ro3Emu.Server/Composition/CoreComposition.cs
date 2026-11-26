@@ -315,6 +315,7 @@ internal static partial class CoreComposition
     {
         if (testing.AlwaysOpen) LogAlwaysOpen(logger);
         if (testing.UnlimitedRewards) LogUnlimitedRewards(logger);
+        if (testing.WriterCommitDelayMs > 0) LogWriterCommitDelay(logger, testing.WriterCommitDelayMs);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:Testing:AlwaysOpen is ON: every To-Do activity is open at " +
@@ -326,6 +327,10 @@ internal static partial class CoreComposition
         "Vault and Dodo's Request reward counts never run out. TEST AID, not original behaviour; turn it off for a real realm " +
         "(docs/guide/hosting.md).")]
     private static partial void LogUnlimitedRewards(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:Testing:WriterCommitDelayMs is {DelayMs}: every database " +
+        "commit waits that long to emulate a slow disk. LOAD TESTS ONLY; set it to 0 for a real realm (docs/guide/hosting.md).")]
+    private static partial void LogWriterCommitDelay(ILogger logger, int delayMs);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:RefuseUnknownAccounts is on but the web panel's sign-up is " +
         "off: no new account can be created. Turn on Ro3Emu:Panel:Enabled and Ro3Emu:Panel:Registration (docs/guide/hosting.md).")]

@@ -33,7 +33,7 @@ chunks into standard Lua 5.4 bytecode for any decompiler.
 | `src/Ro3Emu.ClientTools` | client patcher (patch, restore, play; the chat and voice redirects) and patch-repository releases |
 | `src/Ro3Emu.ClientHooks` · `src/Ro3Emu.Loc` | code injected into the client: Lua patches, party voice and the English text layer |
 | `src/Ro3Emu.Bot` · `src/Ro3Emu.BotCli` | a scripted client speaking the real protocol (tests, load, extra players) |
-| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S9 with protocol bots |
+| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S10 with protocol bots |
 | `src/Ro3Emu.Launcher` · `src/Ro3Emu.Patcher` | a player launcher and its content-addressed update engine |
 | `tests/` | end-to-end tests: the server in-process, bots over real sockets |
 | `tools/` | Lua, config, nav and message-table export, release scripts |
@@ -65,7 +65,13 @@ S8 S7 in parties of four that fight together, so kills have several contributors
 battle: each bot takes one of the client's level 99 GM presets (job, skill build and bar, gear, mount, talents), farms on
 an open field map with a few others and sends what a live server's farming players send (a cast from its bar every
 205 ms, its own auction list every 525 ms, a walk when the target is out of reach, a ping). S3's bots cast about once
-every 7 s, S9's about five times a second, so S9 is the one to size a server for players on auto battle.
+every 7 s, S9's about five times a second, so S9 is the one to size a server for players on auto battle. S10 replays
+a live realm's capture: farmers on auto battle spread over field maps, who revive when they die and swing their job's
+normal attacks while the skill bar rests, beside a few players idling in town; `--cast-interval-ms 250` with
+`--bots 132` gives about 30 hits a second. `--disk-delay-ms 15` makes every database commit of the local server wait
+15 ms (`Ro3Emu:Testing:WriterCommitDelayMs`), so a fast local disk behaves like a VPS disk and every loop wait on the
+database writer shows up; `--snapshot-minutes N` saves the server's metrics every N minutes beside the report. The
+metrics, loop waits and Realm tables are reset after setup, so the report covers the scenario only.
 Each report marks every target (tick p99,
 reply latency, login time, players per view, database work on the loop, GC, CPU, memory) as PASS, FAIL or NOT MEASURED
 with the evidence. Against a server started elsewhere (`--server URL`), pass a copy of its `data/operator.token` with

@@ -27,6 +27,19 @@ public sealed class ServerMetricsTests
     private static JsonElement Snapshot(ServerMetrics metrics) => JsonSerializer.SerializeToElement(metrics.Snapshot(), WebJson);
 
     [Fact]
+    public void ResetStartsTheLoopWaitTableOverAndNamesTheBlobColumn()
+    {
+        using var metrics = new ServerMetrics(observeRuntime: false);
+        var access = new Ro3Emu.Server.Accounts.Persistence.DbAccessMetrics();
+        metrics.DbAccess = access;
+        var plan = new Ro3Emu.Server.Accounts.Persistence.RoleBlobWritePlan(1, "tasks", [1]);
+        access.LegacyWait(Stopwatch.GetTimestamp(), onLoop: true, writer: true, label: plan.WaitLabel);
+        Assert.Equal(1, access.LoopWaitCounts()["W role/write-blob:tasks"]);
+        metrics.Reset();
+        Assert.Empty(access.LoopWaitCounts());
+    }
+
+    [Fact]
     public void HistogramKeepsExactCountsAndConservativeQuantilesUnderContention()
     {
         var histogram = new FixedHistogram([1, 5, 10, 100]);
