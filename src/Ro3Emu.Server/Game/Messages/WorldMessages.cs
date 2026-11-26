@@ -136,7 +136,8 @@ public sealed class WorldMessages(
             }
         });
         routes.Map<LockEnemyReq>(CombatService.LockEnemy, "combat", RouteAdmission.Role, combat.Lock);
-        routes.Map<SkillInterruptReq>(CombatService.SkillInterrupt, "combat", RouteAdmission.Role, combat.InterruptAsync);
+        // Like 31102: InterruptAsync takes its own role admission after landing a shown hit outside it.
+        routes.Map<SkillInterruptReq>(CombatService.SkillInterrupt, "combat", RouteAdmission.Economic, combat.InterruptAsync);
         routes.Map<BossAllSkillShowCdReq>(CombatService.BossAllSkillCds, "combat", RouteAdmission.Default, combat.BossCooldownSnapshotAsync);
         routes.Map<BattleTrainingGroundOpReq>(CombatService.TrainingOperation, "combat", RouteAdmission.Default, combat.TrainingOperationAsync);
         routes.Map<EntityReliveReq>(CombatService.Relive, "territory", RouteAdmission.Default, async (session, req) =>
