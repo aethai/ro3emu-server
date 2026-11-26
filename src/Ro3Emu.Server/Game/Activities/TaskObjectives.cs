@@ -291,7 +291,11 @@ public sealed partial class TaskService
             TBaseLevel => p.Level,
             // 500130 [106901,3600] displays whole consumed minutes. Reading the committed
             // daily counter also repairs a disconnect between 5035 persistence and the quest sync (inferred).
-            TAfkSeconds => s.Activities.WildAfk is { } afk && s.Activities.Daily?.DailyEpoch == afk.DailyEpoch ? afk.ConsumedTodaySeconds : 0,
+            // Whole minutes only (inferred): every [106901] threshold in TaskConfig is one (300, 3600), so completion and the
+            // shown minutes are the same, while the seconds changed the quest blob at every kill's settlement and wrote it on
+            // the loop (#484).
+            TAfkSeconds => s.Activities.WildAfk is { } afk && s.Activities.Daily?.DailyEpoch == afk.DailyEpoch
+                ? afk.ConsumedTodaySeconds / 60 * 60 : 0,
             TJobRank => _data.Row("JobConfig", p.Career) is { } job && GameData.Int(job, "_iJobRank") >= t[1] ? 1 : 0,
             TSkillPoints => _skills.SpentPoints(p),
             TSkillRank => _skills.SpentPoints(p, (int)t[1]),
