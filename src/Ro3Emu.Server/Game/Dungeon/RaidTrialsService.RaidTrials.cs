@@ -73,6 +73,7 @@ public sealed partial class RaidTrialsService
             }
             if (raid.Active is { } run)
             {
+                await TrialSweepsAsync(a, run);
                 await TrialTouchesAsync(a, run);
                 return;
             }
@@ -103,7 +104,7 @@ public sealed partial class RaidTrialsService
         var fighters = Fighters(a);
         if (fighters.Length == 0) return;
         long now = _loop.NowMs, window = PacedMs(trial.WindowMs);
-        var run = new TrialRun { Trial = trial, Index = index, Boss = boss, EndsAtMs = now + window, Players = fighters.Length };
+        var run = new TrialRun { Trial = trial, Index = index, Boss = boss, StartedAtMs = now, EndsAtMs = now + window, Players = fighters.Length };
         raid.Active = run;
         raid.NextDueMs[index] = trial.EveryMs > 0 ? now + window + PacedMs(trial.EveryMs) : long.MaxValue;
         LogTrialStart(_log, raid.Script.Key, trial.Name, fighters.Length, boss.Hp, boss.Template.MaxHp);
@@ -223,6 +224,7 @@ public sealed partial class RaidTrialsService
                 var obj = new TrialUnit { Unit = unit, Spec = spec, Color = color, Chosen = i == chosen };
                 run.Objects.Add(obj);
                 if (unit is MonsterUnit m) _trialMonsters[m.Uid] = (a, obj);
+                if (spec.Sweep && spec.Lane is { } lane) await StartSweepAsync(run, unit, lane.Length);
                 if (obj.Chosen && spec.MarkBuff > 0)
                 {
                     int markMs = spec.MarkMs > 0 ? (int)PacedMs(spec.MarkMs) : (int)PacedMs(run.Trial.WindowMs);
@@ -285,13 +287,15 @@ public sealed partial class RaidTrialsService
         return monster;
     }
 
-    /// <summary>Whether (x, z) lies in an object's area: its lane, else the trial's radius around it.</summary>
+    /// <summary>Whether (x, z) lies in an object's area: its lane (for a sweeping object, the square of the lane's width
+    /// where it has got to, inferred), else the trial's radius around it.</summary>
     internal static bool InTrialArea(TrialUnit o, float radius, float x, float z)
     {
         float dx = x - o.Unit.X, dz = z - o.Unit.Z;
         if (o.Spec.Lane is not { } lane) return dx * dx + dz * dz <= radius * radius;
         var (forward, side) = CombatService.FacingOffset(dx, dz, o.Unit.Face);
-        return forward >= -lane.Width / 2 && forward <= lane.Length && Math.Abs(side) <= lane.Width / 2;
+        if (Math.Abs(side) > lane.Width / 2) return false;
+        return o.Spec.Sweep ? Math.Abs(forward - o.Travelled) <= lane.Width / 2 : forward >= -lane.Width / 2 && forward <= lane.Length;
     }
 
     // ---- touches, interactions, kills, the boss hit ----
@@ -321,20 +325,22 @@ public sealed partial class RaidTrialsService
             }
     }
 
-    /// <summary>A trial's object with a use (its NPC's own interaction, NPCConfig _iInteractID): 32700 hands the player its
-    /// colour (Ilmo's notes) or takes the player to the next object of its kind (the wormholes, inferred: their interaction
-    /// skill says "Emerges from the other end of the Wormhole").</summary>
+    /// <summary>A trial's object with a use or a link (its NPC's own interaction, NPCConfig _iInteractID): 32700 hands the
+    /// player its colour (Ilmo's notes) or takes the player to the next object of its kind (the wormholes: NPCInteractConfig
+    /// 37/38 show skill 4306101/4306201 "Enter Wormhole", "Emerges from the other end of the Wormhole"; guide 1050101 "tap
+    /// the Interaction skill to emerge from the corresponding burrow"; the next one is inferred).</summary>
     internal async Task<bool> TryTrialInteractAsync(GameSession s, NpcInteractionReq req)
     {
         if (Active(s) is not { Raid.Active: { } run } || run.Objects.FirstOrDefault(o => o.Unit.Uid == req.NpcUid) is not { } o) return false;
-        int code = !o.Pickup || o.Gone || o.Unit is not SceneActorUnit actor || !_catalog.Interactions(actor.NpcId).Contains(req.InteractionId)
+        bool usable = o.Pickup || o.Spec.Linked;
+        int code = !usable || o.Gone || o.Unit is not SceneActorUnit actor || !_catalog.Interactions(actor.NpcId).Contains(req.InteractionId)
             ? ErrorCodes.NpcParameter
             : MonsterService.Distance(s.Position.X, s.Position.Z, o.Unit.X, o.Unit.Z) > SceneActorReach ? ErrorCodes.NpcTooFar : 0;
         await s.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionRsp { Result = code, Req = req });
         if (code != 0) return true;
         if (o.Spec.Use == ReconstructedDungeons.TrialUse.Color && o.Color >= 0)
             await SetColorAsync(s, run.Trial, o.Color, (int)Math.Max(1000, run.EndsAtMs - _loop.NowMs + 2000), run.Boss.Uid);
-        else if (o.Spec.Use == ReconstructedDungeons.TrialUse.Warp)
+        else if (o.Spec.Use == ReconstructedDungeons.TrialUse.Warp || o.Spec.Linked)
         {
             var kind = run.Objects.Where(x => ReferenceEquals(x.Spec, o.Spec) && !x.Gone).ToList();
             var to = kind[(kind.IndexOf(o) + 1) % kind.Count].Unit;
@@ -413,7 +419,7 @@ public sealed partial class RaidTrialsService
             LogTrialVerdict(_log, raid.Script.Key, trial.Name, partyFailed || failing.Count > 0 ? "failed" : "solved", failing.Count);
             int left = run.Objects.Count(o => !o.Gone && !o.Pickup);
             if (partyFailed) await TrialOutcomeAsync(a, run, trial.Fail, fighters, fighters, left);
-            else if (failing.Count > 0) await TrialOutcomeAsync(a, run, trial.Fail, failing, fighters, left);
+            else if (failing.Count > 0) await TrialOutcomeAsync(a, run, trial.Fail, [.. failing.Where(p => !run.Swept.Contains(p))], fighters, left);
             if (!partyFailed && trial.Success is { } success && (failing.Count == 0 || IsPerPlayer(trial.Rule)))
                 await TrialOutcomeAsync(a, run, success, passed, fighters, left);
         }
@@ -456,7 +462,8 @@ public sealed partial class RaidTrialsService
                 failing.AddRange(fighters.Where(p => !objects.Any(o => Inside(p, o) && Matches(p, o))));
                 break;
             case Rule.Avoid:
-                failing.AddRange(fighters.Where(p => objects.Any(o => Inside(p, o))));
+                // A sweeping object has judged as it went (TrialSweepsAsync): those it caught fail, wherever they stand now.
+                failing.AddRange(fighters.Where(p => run.Swept.Contains(p) || objects.Any(o => !o.Spec.Sweep && Inside(p, o))));
                 break;
             case Rule.Shelter:
                 failing.AddRange(fighters.Where(p => !objects.Any(o => Sheltered(boss.X, boss.Z, o.Unit.X, o.Unit.Z, p.Position.X, p.Position.Z,

@@ -143,7 +143,7 @@ public sealed class RaidTrialTests : IAsyncLifetime
                             {
                                 Assert.True(data.Row("NPCConfig", npc) != null, $"{where}: NPC {npc}");
                                 if (o.Monster) Assert.True(Service<MonsterService>().Template(npc) != null, $"{where}: {npc} cannot be a monster");
-                                if (o.Use != ReconstructedDungeons.TrialUse.None)
+                                if (o.Use != ReconstructedDungeons.TrialUse.None || o.Linked)
                                     Assert.NotEmpty(Service<DungeonCatalog>().Interactions(npc));
                             }
                             Assert.All(o.Buffs.Append(o.MarkBuff).Where(b => b != 0), b => Assert.True(data.Row("BuffConfig", b) != null, $"{where}: buff {b}"));
@@ -170,6 +170,13 @@ public sealed class RaidTrialTests : IAsyncLifetime
         Assert.True(DungeonService.InTrialArea(lane, 3, 2.9f, 39));
         Assert.False(DungeonService.InTrialArea(lane, 3, 3.5f, 20)); // beside the lane
         Assert.False(DungeonService.InTrialArea(lane, 3, 0, -10)); // behind it
+        // A sweeping lane covers only the square of its width where it has got to.
+        var storm = new TrialUnit { Unit = unit, Spec = spec with { Sweep = true }, Travelled = 20 };
+        Assert.True(DungeonService.InTrialArea(storm, 3, 0, 20));
+        Assert.True(DungeonService.InTrialArea(storm, 3, 2.9f, 17.1f));
+        Assert.False(DungeonService.InTrialArea(storm, 3, 0, 10)); // already swept past
+        Assert.False(DungeonService.InTrialArea(storm, 3, 0, 30)); // not reached yet
+        Assert.False(DungeonService.InTrialArea(storm, 3, 3.5f, 20));
         var circle = new TrialUnit { Unit = unit, Spec = spec with { Lane = null } };
         Assert.True(DungeonService.InTrialArea(circle, 3, 2, 2));
         Assert.False(DungeonService.InTrialArea(circle, 3, 3, 3));
@@ -462,8 +469,9 @@ public sealed class RaidTrialTests : IAsyncLifetime
         NoHitOf(alice, 4380501, 4380601);
     }
 
-    // Golden Thief Bug: a wormhole takes the player to the next one; a storm lane left too late costs HP. Lured onto a
-    // burrow when the count ends, he burrows there instead of sweeping the field.
+    // Golden Thief Bug: a wormhole takes the player to the next one; a storm sweeps its lane and hits whom it reaches on the
+    // way. A burrow takes the player out of the other one; lured onto a burrow when the count ends, he burrows there
+    // instead of sweeping the field.
     [ClientDataFact]
     public async Task GoldenThiefBugsWormholesCarryAndHisBurrowIsLured()
     {
@@ -474,6 +482,11 @@ public sealed class RaidTrialTests : IAsyncLifetime
         await Gm(alice, "!raidtrial 1");
         await Tip(alice, 4802);
         var storms = await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300004, 2);
+        var walk = await Next(alice, GameAoiSink.MovementChange, MovementChangeNtf.Parser, m => m.Uid == storms[0].Uid);
+        Assert.Equal(MovementType.MoveTypeWalk, walk.MovementInfo.MoveType); // it sweeps its 60 m lane in the window
+        Assert.True(walk.MovementInfo.MovementWalk.Speed > 0);
+        Assert.Equal(storms[0].Face, walk.MovementInfo.MovementWalk.Dir);
+        Assert.Equal(60, walk.MovementInfo.MovementWalk.Speed * walk.MovementInfo.MoveDuration / 1000, 1);
         var holes = await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300007, 4);
         Assert.Equal(4, holes.Length);
         await WalkTo(alice, holes[0]);
@@ -484,17 +497,38 @@ public sealed class RaidTrialTests : IAsyncLifetime
         for (int i = 0; i < 100 && MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, holes[0].X, holes[0].Z) < 10; i++)
             await Task.Delay(20);
         Assert.True(MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, holes[0].X, holes[0].Z) >= 10); // came out of another
-        // 10 m into the first storm's lane.
-        double turn = storms[0].Face * Math.PI / 180;
-        await Gm(alice, FormattableString.Invariant($"!actors walk {storms[0].X + 10 * (float)Math.Sin(turn)} {storms[0].Z + 10 * (float)Math.Cos(turn)}"));
-        Assert.Equal(max * 40 / 100, (await MechanicHit(alice, 4305201)).Dsts.Single().Damage);
+
+        // 20 m into a fresh storm's lane, ahead of its body: it reaches her while the window is still open.
+        var earlier = alice.Inbox.Snapshot().ToHashSet(ReferenceEqualityComparer.Instance);
+        await Gm(alice, "!raidtrial 1");
+        var fresh = await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300004 && !storms.Contains(u), 2);
+        double turn = fresh[0].Face * Math.PI / 180;
+        await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(
+            fresh[0].X + 20 * (float)Math.Sin(turn), fresh[0].Y, fresh[0].Z + 20 * (float)Math.Cos(turn), 0)));
+        var swept = SkillHitInfo.Parser.ParseFrom((await alice.Inbox.WaitAsync(e => !earlier.Contains(e) && e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == 4305201, Wait)).Body);
+        Assert.Equal(max * 40 / 100, swept.Dsts.Single(d => d.DstID == (long)alice.Self!.Uuid).Damage);
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Session(alice).DungeonAttempt!.Raid!.Active is { } run
+            && run.Swept.Contains(Session(alice)))));
 
         await Gm(alice, "!hp 999999999");
+        await Gm(alice, "!raidtrial 2");
+        await Tip(alice, 4803);
+        Assert.Equal("8", (await Tip(alice, 4809)).ParamList[1].Params[0]); // 15 s at half pace
+        var burrows = await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300002, 2);
+        await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(burrows[0].X, burrows[0].Y, burrows[0].Z, 0)));
+        long enter = Service<DungeonCatalog>().Interactions(4300002)[0];
+        await alice.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
+        { NpcUid = burrows[0].Uid, InteractionId = (int)enter, SceneConfigId = 3120401 });
+        Assert.Equal(0, (await Next(alice, SceneService.NpcInteraction, NpcInteractionRsp.Parser, r => r.Req.NpcUid == burrows[0].Uid)).Result);
+        await Next(alice, GameAoiSink.MovementChange, MovementChangeNtf.Parser, m => m.Uid == (long)alice.Self!.Uuid
+            && MonsterService.Distance(m.MovementInfo.Pos.X, m.MovementInfo.Pos.Z, burrows[1].X, burrows[1].Z) < 2); // out of the other
+
         Pace(10);
         await Gm(alice, "!raidtrial 2");
         await Tip(alice, 4803);
         Assert.Equal("2", (await Tip(alice, 4809)).ParamList[1].Params[0]);
-        var burrow = (await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300002, 2))[0];
+        var burrow = (await UntilInRoom<SceneActorUnit>(instance, u => u.NpcId == 4300002 && !burrows.Contains(u), 2))[0];
         await OnLoop(async () =>
         {
             await Service<SceneService>().TeleportInMapAsync(Session(alice), new MapPoint(burrow.X, burrow.Y, burrow.Z, 0));

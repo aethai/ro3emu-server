@@ -75,7 +75,10 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
   puts out its objects: scene props shown as their NPCConfig `_iNPCType`, or destructible monsters outside the room's
   counted actors (an object without its own AI, or marked `still`, stands still and never strikes back; `hits` per
   player destroy it at any gear; `match` lets only a player of its colour damage it). Pickups hand out a colour through
-  their 32700 interaction.
+  their 32700 interaction or take the player to the next object of their kind; a `linked` object is judged and its
+  interaction still takes the player to the other one. A `sweep` lane object walks its lane's length over the window
+  (a 31081 walk; a bullet unit follows the movement sync, `LC_Movement_BulletPathAgent`), and a player its body (a
+  square of the lane's width, inferred) reaches on the way takes the failure hit at once, once a trial.
 - Rules judged when the window closes: per player `stand` (inside an object, of your colour), `avoid` (outside every
   object's circle or lane), `shelter` (behind an object as seen from the boss), `guard` (a marked player with a carrier
   beside), `spread` (a marked player with nobody beside); for the party `occupy` (every object at once), `collect`
@@ -166,13 +169,14 @@ placement has its reason in the json (`why`, `evidence`, `guessed`).
 - Golden Thief Bug (five-player raid, sewers 3120401; easy 4300001, normal 4300000): **Sandstorm** (tips 4802 'A
   sandstorm is coming! Use the wormholes to avoid it!' and 4801; guide 1050101 Wormhole, 1050102 Sandstorm): 30 s in and
   every 60 s he burrows (4301801) for 10 s while two storms 4300004 come in from random edge points of the editor's
-  'Sandstorm' group (21/23/24/25), each a 60 x 16 m lane across the field. The 'Wormhole 2' burrows 4300007 stand at the
-  corner points 41, 38, 42, 45 just outside both lanes; their interaction takes a player to the next one. Still in a lane
-  at the end: 40% as 4305201. **Burrow** (tips 4803 'Guide Golden Thief Bug toward a wormhole!' and 4809 'Golden Thief Bug
-  will burrow again in ${1} seconds!', 15 s): 55 s in and every 60 s two burrows 4300002 stand at random points of the
-  'Wormhole' group (27-36); the boss must be within 4 m of one when the count ends (he burrows there and resurfaces,
-  4305901, 4 s), else everyone takes 40% as 4305301. Inferred: lanes and their width, timing, damage, the lure rule
-  itself. Earthquake (guide 1050103; 4305601, easy 4307001/4307101) stays in his own rotation.
+  'Sandstorm' group (21/23/24/25), each sweeping a 60 x 16 m lane across the field in the 10 s. The 'Wormhole 2' burrows
+  4300007 stand at the corner points 41, 38, 42, 45 just outside both lanes; their interaction takes a player to the
+  next one. Reached by a storm: 40% as 4305201. **Burrow** (tips 4803 'Guide Golden Thief Bug toward a wormhole!' and
+  4809 'Golden Thief Bug will burrow again in ${1} seconds!', 15 s): 55 s in and every 60 s two connected burrows
+  4300002 stand at random points of the 'Wormhole' group (27-36), either one's interaction taking a player out of the
+  other; the boss must be within 4 m of one when the count ends (he burrows there and resurfaces, 4305901, 4 s), else
+  everyone takes 40% as 4305301. Inferred: lanes and their width, the storms' even speed and body, timing, damage,
+  the lure rule itself. Earthquake (guide 1050103; 4305601, easy 4307001/4307101) stays in his own rotation.
 - Mistress (five-player raid, Mjolnir 3120301; easy 4330001, normal 4330000): **Hornet Formation** (tip 4314409 'A swarm
   of Bee Infantry is approaching'; guide 1050401): 25 s in and every 75 s four Marching Hornets 4330006 from the north
   edge points 22-27 and four from the west edge points 48-53, each a 60 x 5 m lane; in a lane after 8 s: 40% as Swarming

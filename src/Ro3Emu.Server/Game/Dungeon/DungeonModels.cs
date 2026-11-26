@@ -18,11 +18,14 @@ internal sealed class TrialRun
     public required ReconstructedDungeons.RaidTrial Trial { get; init; }
     public required int Index { get; init; }
     public required MonsterUnit Boss { get; init; }
+    public required long StartedAtMs { get; init; }
     public required long EndsAtMs { get; init; }
     public required int Players { get; init; }
     public long ShowSession { get; set; }
     public List<TrialUnit> Objects { get; } = [];
     public HashSet<long> Marked { get; } = [];
+    /// <summary>The players a sweeping object has caught (and hit) in this trial.</summary>
+    public HashSet<GameSession> Swept { get; } = [];
     public bool Over { get; set; }
 }
 
@@ -34,6 +37,8 @@ internal sealed class TrialUnit
     public bool Chosen { get; init; }
     public bool Gone { get; set; }
     public bool Pickup => Spec.Use != ReconstructedDungeons.TrialUse.None;
+    /// <summary>How far along its lane a sweeping object has got (metres); its unit stays at the lane's start.</summary>
+    public float Travelled { get; set; }
 }
 
 /// <summary>
