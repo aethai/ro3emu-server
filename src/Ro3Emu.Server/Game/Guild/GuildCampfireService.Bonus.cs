@@ -162,9 +162,9 @@ public sealed partial class GuildCampfireService
         CampFireAffixNewConfig.All(_data).FirstOrDefault(r => r.Phase == stage && r.ActionType == PrizeDrawAction) is { Row.ValueKind: System.Text.Json.JsonValueKind.Object } row
             ? row : null;
 
-    /// <summary>The stage's draw is due: _iDelayTime after the stage's CampFireTimeLine start (stage 2: 20:04:30).</summary>
+    /// <summary>The stage's draw is due: _iDelayTime after the stage starts (GetSweepstakesDelayMs; stage 2: 20:09:00).</summary>
     private bool PrizeDue(int stage, long second) => PrizeDraw(stage) is { } draw
-        && CampFireTimeLine.Get(_data, stage) is { } line && second >= StartTime() + (line.TimeLine + draw.DelayTime) / 1000;
+        && second >= StartTime() + (PhaseStart(stage) + draw.DelayTime) / 1000;
 
     /// <summary>Tick: each live room's due draw, posted once per room, day and stage.</summary>
     private void RunDueDraws(IEnumerable<(long Guild, InstanceService.Room Room)> live, int stage, long day, long second)
@@ -207,15 +207,8 @@ public sealed partial class GuildCampfireService
         if (TransformOf(s) is not { } bonus || s.Role is not { } role) return null;
         var (own, show) = bonus.Prize(level);
         long[] groups = [.. new[] { group, own }.Where(g => g > 0)];
-        var grants = groups.SelectMany(g => _awards.Resolve(s, g).Grants).ToArray();
-        bool paid = await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, grants), persist: tx =>
-        {
-            if (grants.Any(g => g.Entry is not (100 or 101)))
-                tx.WithEventEconomy(EventEconomy.ForRole(_data, s, "guild-campfire-prize",
-                    $"guild-campfire/prize/{guild}/{Today()}/{stage}/{role.Id}", [], grants,
-                    new { Guild = guild, Stage = stage, Level = level, Groups = groups }));
-        });
-        if (!paid) return null;
+        if (!await PayAsync(s, guild, "guild-campfire-prize", $"guild-campfire/prize/{guild}/{Today()}/{stage}/{role.Id}",
+                groups, new { Guild = guild, Stage = stage, Level = level, Groups = groups })) return null;
         return new GuildCampFireLuckyPlayerInfo { PlayerId = role.Id, BuffId = bonus.BuffId, BonusShow = show, AwardList = { groups } };
     }
 }
