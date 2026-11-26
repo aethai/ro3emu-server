@@ -127,25 +127,20 @@ public sealed partial class DatabaseMigrationsTests : IDisposable
         Directory.CreateDirectory(v1Dir);
 
         using (new AccountStore(Options.Create(new ServerOptions { DataDir = freshDir, GameDataDir = SyntheticData.Dir }))) { }
-        using (new AccountStore(Options.Create(new ServerOptions { DataDir = v1Dir, GameDataDir = SyntheticData.Dir }))) { }
 
-        // Strip v2..v5 objects and stamp user_version=1 so only incremental migrations 2..CurrentVersion execute.
+        // Seed v1 from a frozen v1 SQL fixture (never from today's baseline) so a schema change added without a
+        // matching migration in DatabaseMigrations fails parity immediately.
+        string frozenV1Sql = Path.Combine(ClientData.RepoRoot, "tests", "Ro3Emu.Tests", "Snapshots", "schema-v1.sql");
+        Assert.True(File.Exists(frozenV1Sql), "Missing frozen v1 schema fixture: " + frozenV1Sql);
+
         string v1Path = Path.Combine(v1Dir, "ro3emu.db");
         using (var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = v1Path, Pooling = false }.ToString()))
         {
             db.Open();
             using var cmd = db.CreateCommand();
-            cmd.CommandText = """
-                DROP INDEX IF EXISTS operation_receipt_mail_seq;
-                DROP TABLE IF EXISTS trade_listing;
-                DROP TABLE IF EXISTS economy_daily_aggregate;
-                DROP TABLE IF EXISTS mail_delivery_replay;
-                ALTER TABLE economy_meta DROP COLUMN pruned_entry_seq;
-                ALTER TABLE economy_meta DROP COLUMN compacted_mail_seq;
-                DROP INDEX IF EXISTS economy_entry_role_sources;
-                PRAGMA user_version = 1;
-                """;
+            cmd.CommandText = File.ReadAllText(frozenV1Sql);
             cmd.ExecuteNonQuery();
+            Assert.Equal(1, DatabaseMigrations.ReadVersion(db));
         }
 
         using (var upgraded = new AccountStore(Options.Create(new ServerOptions { DataDir = v1Dir, GameDataDir = SyntheticData.Dir })))

@@ -328,6 +328,13 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.Contains(ledger.Issues, i => i.Key == "ledger/pruned" && i.Kind == EconomyIssueKind.Coverage);
         Assert.DoesNotContain(ledger.Issues, i => i.Kind == EconomyIssueKind.Corruption);
 
+        // PanelLedgerTotalsRead (used by TraceItemAsync and DupeCheckAsync) still reports pruned totals from economy_daily_aggregate.
+        var prunedOnlyTotals = await _accounts.ReadPanelAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(3));
+        var prunedItemSource = Assert.Single(prunedOnlyTotals);
+        Assert.Equal((3L, (int)EconomyLegKind.Source, 2L, 1), (prunedItemSource.Asset, prunedItemSource.LegKind, prunedItemSource.Sum, prunedItemSource.Count));
+        Assert.True(prunedItemSource.FirstMs > 0);
+        Assert.True(prunedItemSource.LastMs >= prunedItemSource.FirstMs);
+
         // A second unpruned receipt committed after pruning must verify cleanly with zero issues from pruned_entry_seq.
         string op2 = Guid.NewGuid().ToString("N");
         var buy2 = _roles.NewTransaction();
@@ -377,6 +384,74 @@ public sealed class ReceiptRetentionTests : IDisposable
         Assert.Equal(0, oldLive);
         Assert.Equal(0L, oldIn);
         Assert.Equal(-10L, oldOut);
+
+        // Combined pruned + live totals in PanelLedgerTotalsRead match all 3 items and -15 currency across both single-asset and full scans.
+        var combinedItem = Assert.Single(await _accounts.ReadPanelAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(3)));
+        Assert.Equal((3L, (int)EconomyLegKind.Source, 3L, 2), (combinedItem.Asset, combinedItem.LegKind, combinedItem.Sum, combinedItem.Count));
+        Assert.Equal(dayStart, combinedItem.FirstMs);
+
+        var combinedAll = await _accounts.ReadPanelAsync<List<PanelLedgerRow>>(new PanelLedgerTotalsRead(null));
+        Assert.Equal(3L, combinedAll.Single(r => r.Asset == 3 && r.LegKind == (int)EconomyLegKind.Source).Sum);
+        Assert.Equal(-15L, combinedAll.Single(r => r.Asset == 1 && r.LegKind == (int)EconomyLegKind.Sink).Sum);
+    }
+
+    [Fact]
+    public async Task TraceItemAndDupeCheckDoNotFlagLegitimateHoldersAfterLedgerPruning()
+    {
+        await using var host = await SyntheticHost.StartAsync(o =>
+        {
+            o.ReceiptRetention.Days = 1;
+            o.ReceiptRetention.LedgerDays = 30;
+            o.ReceiptRetention.MailDays = 0;
+        });
+        long roleId;
+        await using (var alice = await host.InWorldAsync("Holder"))
+            roleId = (long)alice.Self!.Uuid;
+        const int trackedItem = 3990001;
+
+        var accounts = host.Service<AccountStore>();
+        var roles = host.Service<RoleStore>();
+        var progress = roles.LoadProgress(roleId);
+        progress.Currency[1] = 100;
+        roles.SaveProgress(roleId, progress);
+
+        string op = Guid.NewGuid().ToString("N");
+        var tx = roles.NewTransaction();
+        tx.ItemDelta(roleId, [], [new InvItem { Entry = trackedItem, Stack = 2, Pack = 1, Sort = 1 }]);
+        progress = roles.LoadProgress(roleId);
+        progress.Currency[1] = 90;
+        tx.Progress(roleId, progress);
+        tx.RoleBlob(roleId, "shop", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Ro3Emu.Server.Game.ShopService.ShopState()));
+        tx.WithEconomy(new EconomyMutation(op, "holder", roleId, "npc-shop-buy", "trace-prune",
+            "npc:" + op, 1_000_000, [new(new(EconomyAssetKind.Currency, 1), 10)],
+            [new(new(EconomyAssetKind.Item, trackedItem), 2)], [1]));
+        roles.Commit(tx, "test/trace-prune-grant");
+
+        // Age every receipt and ledger entry so retention prunes all live economy_entry rows into economy_daily_aggregate.
+        long oldTs = new DateTimeOffset(2025, 1, 15, 12, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        FixtureSql.Execute(accounts, "UPDATE operation_receipt SET recorded_utc_ms=$ts", ("$ts", oldTs));
+        FixtureSql.Execute(accounts, "UPDATE economy_entry SET recorded_utc_ms=$ts", ("$ts", oldTs));
+
+        var retention = new ReceiptRetention(host.Service<IOptions<ServerOptions>>(), accounts, TimeProvider.System, NullLogger<ReceiptRetention>.Instance);
+        await retention.CompactAsync();
+        Assert.True(retention.LastLedgerEntriesPruned >= 1);
+        using (var db = accounts.Open())
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM economy_entry";
+            Assert.Equal(0L, (long)cmd.ExecuteScalar()!);
+        }
+
+        var backend = host.Service<Ro3Emu.Server.Http.PanelBackend>();
+        var trace = await backend.TraceItemAsync(trackedItem);
+        Assert.NotNull(trace);
+        Assert.Equal(2L, trace.Held);
+        Assert.Equal(2L, trace.Ledger.Entered);
+        Assert.Equal(1, trace.Ledger.Entries);
+        Assert.Empty(trace.Flags);
+
+        var dupes = await backend.DupeCheckAsync();
+        Assert.Empty(dupes.Items);
     }
 
     [Fact]
