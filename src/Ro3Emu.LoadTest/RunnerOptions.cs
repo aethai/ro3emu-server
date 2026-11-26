@@ -45,9 +45,9 @@ public sealed record RunnerOptions(string Scenario, int Bots, int TargetBots, in
             values.GetValueOrDefault("--pem"), Path.GetFullPath(prefix), repo)
         {
             WalkPhase = phase, OperatorTokenPath = values.GetValueOrDefault("--operator-token-file"),
-            SnapshotMinutes = values.TryGetValue("--snapshot-minutes", out var m) ? int.Parse(m) : scenario == "S10" ? 10 : 0,
-            CastIntervalMs = values.TryGetValue("--cast-interval-ms", out var c) ? int.Parse(c) : 0,
-            DiskDelayMs = values.TryGetValue("--disk-delay-ms", out var disk) ? int.Parse(disk) : 0,
+            SnapshotMinutes = values.TryGetValue("--snapshot-minutes", out var m) ? int.Parse(m, System.Globalization.CultureInfo.InvariantCulture) : scenario == "S10" ? 10 : 0,
+            CastIntervalMs = values.TryGetValue("--cast-interval-ms", out var c) ? int.Parse(c, System.Globalization.CultureInfo.InvariantCulture) : 0,
+            DiskDelayMs = values.TryGetValue("--disk-delay-ms", out var disk) ? int.Parse(disk, System.Globalization.CultureInfo.InvariantCulture) : 0,
         };
     }
 

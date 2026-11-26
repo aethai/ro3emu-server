@@ -175,7 +175,7 @@ public sealed class LoadTestRunnerTests
         report.ServerBefore = JsonNode.Parse("""{"epoch":"one","elapsedSeconds":1,"loop":{"ticks":0,"overruns":0,"busyMs":0},"database":{"loopStatements":0},"errors":{"exceptions":0},"wire":{"bytesOut":0}}""");
         report.ServerAfter = JsonNode.Parse("""{"epoch":"one","elapsedSeconds":31,"loop":{"ticks":600,"overruns":0,"busyMs":0},"database":{"loopStatements":0},"errors":{"exceptions":0},"wire":{"bytesOut":0}}""");
         var rows = TargetEvaluation.Evaluate(report);
-        Assert.Equal(19, rows.Count);
+        Assert.Equal(21, rows.Count);
         Assert.DoesNotContain(rows, x => x.Status == "PASS");
     }
 }

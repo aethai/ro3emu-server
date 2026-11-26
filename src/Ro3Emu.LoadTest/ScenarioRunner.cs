@@ -910,7 +910,8 @@ public sealed class BotActor(string account, BotClient bot, WorldReducer reducer
     /// <summary>S9: the skill bar of the bot's GM preset, cast in order.</summary>
     public int[] Bar { get; set; } = [];
     /// <summary>S9/S10: a cast came back SkillBadState, the usual sign of a dead caster; the next turn asks to revive.</summary>
-    public volatile bool MaybeDead;
+    public bool MaybeDead { get => Volatile.Read(ref _maybeDead); set => Volatile.Write(ref _maybeDead, value); }
+    private bool _maybeDead;
     /// <summary>S10: skills the server just refused (cooldown, conditions, reach), each with the time it is tried again,
     /// as the client's auto battle only presses a skill whose cooldown is over.</summary>
     public System.Collections.Concurrent.ConcurrentDictionary<int, long>? RestUntil { get; set; }
