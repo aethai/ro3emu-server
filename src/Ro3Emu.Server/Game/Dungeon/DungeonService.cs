@@ -32,6 +32,22 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     public const uint ReviveInfo = 30112;
     /// <summary>84012 PlotActingTriggerReq: a story's end action 150 PlotActingTrigger, sent beside 84011.</summary>
     public const uint PlotSceneEvent = 84012;
+    /// <summary>DungeonVariableConfig 301 CCountdownEffectTimestamp (Unix ms the count reaches zero) and 302
+    /// CCountdownEffectParamList {duration ms, UIWords id}: LC_DunGeon_GVE_FuncMappingClientBase maps both to
+    /// LC_DunGeon_Actions.UpdateCountdownEffectParam, which opens UI_Sys_GVE_BattleBeginsPanel.</summary>
+    internal const int CountdownEffectTimestampVar = 301, CountdownEffectParamsVar = 302;
+
+    /// <summary>
+    /// 30404 DungeonEventInvokeClientFunc: LC_DunGeon_Base.CELL_DUNGEON_EVENT_NOTIFY (LC_DunGeon_Base.lua:1265-1290)
+    /// calls the named function through LC_Dungeon_ScriptCaller.CallClientFuncWithSelf (the level, its client logic
+    /// script, then LC_DunGeon_Actions) with one argument per EventParams, the first value of each
+    /// (LC_DunGeon_Base.lua:342-430). The client does not read stage and level for this event; 1/1 is (inferred).
+    /// </summary>
+    internal static DungeonEventNotify InvokeClientFunc(long scene, string function, params EventParams[] args) => new()
+    {
+        DungeonEntry = scene, EventType = DungeonEventType.DungeonEventInvokeClientFunc, StageNum = 1, LevelNum = 1,
+        CliFuncname = function, Params = { args },
+    };
 
     /// <summary>Committed clears only; consumers receive the scene entry and whether an actual personal award was paid.</summary>
     public AsyncHook<GameSession, int, bool> Completed { get; } = new("DungeonService.Completed");

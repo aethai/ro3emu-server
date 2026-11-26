@@ -22,6 +22,8 @@ public sealed partial class TowerService
     public const uint PetDeadState = 32809;
     public const uint FirstPassRange = 32807, ClaimFirstPass = 32808, DungeonInfo = 30401, LeaveDungeon = 30402;
     public const int Function = 89, HallFunction = 5001; // FunctionConfig: Spirit Tower
+    /// <summary>LC_DunGeon_Actions.SetCountDown, the floor timer's only writer (<see cref="CountDownAsync"/>).</summary>
+    public const string SetCountDown = "SetCountDown";
 
     private readonly GameData _data;
     private long _nextPetUid = TowerPetUnit.UidBase;
@@ -416,6 +418,7 @@ public sealed partial class TowerService
         a.StartTimeMs = _clock.GetUtcNow().ToUnixTimeMilliseconds();
         var floorCfg = new PetFloorConfig(a.Floor);
         int seconds = (int)floorCfg.TimeLimit;
+        long endMs = a.StartTimeMs + seconds * 1000L;
         // Start stage 1 / Running at the accepted 30005 (inferred: region22 has no recovered server start action).
         await s.SendGameAsync(DungeonInfo, new DungeonBaseInfoNotify
         {
@@ -427,11 +430,12 @@ public sealed partial class TowerService
             Vars = { new DungeonVar { VarId = 145, Vi64 = { s.Role!.Id } } },
             StageModuleData = new DungeonStageModuleData
             {
-                MapState = 1, Stage = 1, MapStateStartTime = a.StartTimeMs, MapStateEndTime = a.StartTimeMs + seconds * 1000L,
-                StageStartTime = a.StartTimeMs, StageEndTime = a.StartTimeMs + seconds * 1000L,
+                MapState = 1, Stage = 1, MapStateStartTime = a.StartTimeMs, MapStateEndTime = endMs,
+                StageStartTime = a.StartTimeMs, StageEndTime = endMs,
                 NextStageStartTime = 0, NextStageEndTime = 0,
             },
         });
+        await CountDownAsync(s, endMs / 1000); // the stage's end, PetFloorConfig._iTimeLimit after the start
         // 32809 empty map clears the previous floor's client death flags; this does not revive an actor.
         await s.SendGameAsync(PetDeadState, new ClimbTowerSyncPetDeadStateRes());
         await ReconcilePetsAsync(s, a);
@@ -442,6 +446,15 @@ public sealed partial class TowerService
         }
         _loop.ScheduleLegacy(TimeSpan.FromSeconds(seconds), () => Active(s, a) ? SettleAsync(s, a, false) : Task.CompletedTask);
     }
+
+    /// <summary>
+    /// The floor timer: UI_Sys_Dungeon_TopInfo_TimeWidget (created by UI_Sys_ClimbTower_HpWidget) counts down the
+    /// asset DungeonCountDownTimeStamp, which only LC_DunGeon_Actions.SetCountDown(seconds) writes (seconds * 1000,
+    /// LC_DunGeon_Actions.lua:2060-2072); nothing in the tower's 30401 handling sets it. 0 hides the widget
+    /// (_updateCountdown). Sent through 30404 <see cref="DungeonService.InvokeClientFunc"/>.
+    /// </summary>
+    private Task CountDownAsync(GameSession s, long endSeconds) => s.SendGameAsync(DungeonService.Event,
+        DungeonService.InvokeClientFunc(s.SceneEntry, SetCountDown, new EventParams { IntParams = { endSeconds } }));
 
     private async Task SpawnAsync(GameSession s, Attempt a, Spawn spawn)
     {
@@ -614,6 +627,11 @@ public sealed partial class TowerService
         }
         await _instances.ClearMonstersAsync(a.Room);
         await RemovePetsAsync(a);
+        // The floor's timer stops at its result (inferred). It must not outlive the floor: at the next floor's 30124,
+        // LC_Actor_AutoAttack._refreshAutoPathCache (LC_Actor_AutoAttack.lua:1584-1648) drops the walk back to the
+        // start point, and auto battle stays paused, while a ClimbTower DungeonCountDownTimeStamp lies in the future;
+        // nothing in the client clears it.
+        await CountDownAsync(s, 0);
         // Result before 5065 preserves the DAL comparison with the previous floor (inferred order).
         await s.SendGameAsync(End, new ClimTowerEndNotify
         {

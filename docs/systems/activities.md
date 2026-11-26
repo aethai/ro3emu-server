@@ -50,7 +50,11 @@ Candidate selection from eligible connected roles in stable role-ID order, up to
 
 ## Training
 
-Activity 119 admits maps 2100009/2100010 (practice) and 2100011 (challenge). The actual NPC templates are 3500000/3500001 at the authored editor points. `LC_DAL_Piling.StartChallenge` sends 30106 `OnPileChallengeStart`; the challenge starts on this event, not on a client damage total. The timer is `PublicParamConfig.TrainingChallengeTimeLimit` and dungeon variable `CTrainFinishTime` (3500000) is milliseconds. `OnPileChallengeEnterOrExit` is idempotently acknowledged: the client sends it in response to timer/result changes, so it cannot toggle maps or restart the timer.
+Activity 119 admits maps 2100009/2100010 (practice) and 2100011 (challenge). The actual NPC templates are 3500000/3500001 at the authored editor points. `LC_DAL_Piling.StartChallenge` sends 30106 `OnPileChallengeStart`; the challenge starts on this event, not on a client damage total. The timer is `PublicParamConfig.TrainingChallengeTimeLimit` and dungeon variable `CTrainFinishTime` (3500000) is milliseconds. `OnPileChallengeEnterOrExit` is idempotently acknowledged: the client sends it in response to timer/result changes, so it cannot toggle maps or restart the timer. The count opens 3 s after the start **(inferred length)**: the start
+snapshot carries dungeon vars 302 `CCountdownEffectParamList` {3000, 50074 "Battle Begins" (`UIWordsDefine.StartWarStr`)}
+and 301 `CCountdownEffectTimestamp` (the count's start), which `LC_DunGeon_Actions.UpdateCountdownEffectParam` turns
+into `UI_Sys_GVE_BattleBeginsPanel`'s "3, 2, 1". `CTrainFinishTime` is that start plus the time limit, and only hits
+between the two count, as the client's own DPS count (`LC_System_Piling`, finish time - 60 s) does.
 
 Keeping the configured recovery-buff dummy alive, preventing retaliation, and computing DPS as authoritative total damage divided by the full configured duration are **(inferred)**. Practice attributes cannot modify the challenge template. Reset cancels an attempt without qualifying it. The best score and `TrainingAimAwardConfig` claims persist; class eligibility follows the client `Lua_CFG_JobConfig.GetRootJob` parent walk to the child of novice1000. Duplicate claims and insufficient DPS are refused. Reconnect follows the existing private-room return policy and retains best score/claimed awards.
 
