@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -79,8 +80,8 @@ public sealed partial class PowerService : IGameTicker
     private TimeSpan _lastProbe;
     private int _sweepIndex;
     private Dictionary<long, double>? _weights;
-    private Dictionary<(long Card, long Star), JsonElement>? _cardRows;
-    private Dictionary<(long Level, long Part, long Quality), JsonElement>? _cardUpgrades;
+    private Dictionary<(long Card, long Star), CardConfig>? _cardRows;
+    private Dictionary<(long Level, long Part, long Quality), CardUpgradeConfig>? _cardUpgrades;
 
     /// <summary>The role's current TitleConfig id (TitleService).</summary>
     public Func<GameSession, long>? TitleId { get; set; }
@@ -167,22 +168,20 @@ public sealed partial class PowerService : IGameTicker
 
     private double Weight(long attr)
     {
-        _weights ??= _data.Table("AttributeConfig").Values.Where(r => r.TryGetProperty("_iPower", out _))
-            .ToDictionary(r => GameData.Int(r, "_iID"), r => GameData.Number(r.GetProperty("_iPower")) ?? 0);
+        _weights ??= AttributeConfig.All(_data).ToDictionary(r => r.Id, r => r.Power);
         return _weights.GetValueOrDefault(attr);
     }
 
     /// <summary>LC_ScoreHelper.CalcAttrScore: value x AttributeConfig._iPower.</summary>
     private double AttrScore(IEnumerable<(long Id, double Value)> attrs) => attrs.Sum(a => a.Value * Weight(a.Id));
 
-    /// <summary>LC_ScoreHelper.CalcSpecialScore: SpecialEffectConfig._iPower.</summary>
-    private long SpecialScore(long id) => _data.Row("SpecialEffectConfig", id) is { } row ? GameData.Int(row, "_iPower") : 0;
+    private double AttrScore(long[][] attrs) => attrs.Where(p => p.Length >= 2).Sum(p => p[1] * Weight(p[0]));
 
-    private static IEnumerable<long> Ids(JsonElement row, string field) => row.TryGetProperty(field, out var list)
-        && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(e => (long)(GameData.Number(e) ?? 0)).Where(id => id > 0) : [];
+    /// <summary>LC_ScoreHelper.CalcSpecialScore: SpecialEffectConfig._iPower.</summary>
+    private long SpecialScore(long id) => SpecialEffectConfig.Get(_data, id)?.Power ?? 0;
 
     /// <summary>BaseLvConfig[level]._iPower (Lua_CFG_BaseLvConfig.GetPower; 120 x level in this export).</summary>
-    internal long BasePower(int level) => _data.Row("BaseLvConfig", level) is { } row ? GameData.Int(row, "_iPower") : 0;
+    internal long BasePower(int level) => BaseLvConfig.Get(_data, level)?.Power ?? 0;
 
     /// <summary>Allocated points (value - 1) of STR..LUK, weighted, rounded up like GetTotemScore (inferred rounding).</summary>
     internal long StatPoints(IReadOnlyList<int> stats) =>
@@ -202,13 +201,13 @@ public sealed partial class PowerService : IGameTicker
     {
         double score = 0;
         foreach (var (group, level) in learned)
-            if (_skills.RealId(group, level) is var id and > 0 && _data.Row("SkillConfig", id) is { } row)
-                score += AttrScore(GameData.Pairs(row, "_kAttri")) + Ids(row, "_iSpecialEffect").Sum(SpecialScore);
+            if (_skills.RealId(group, level) is var id and > 0 && SkillConfig.Get(_data, id) is { } skill)
+                score += AttrScore(skill.Attri) + skill.SpecialEffect.Where(e => e > 0).Sum(SpecialScore);
         return (long)Math.Ceiling(score - 1e-9);
     }
 
-    private long TitleScore(long title) => title > 0 && _data.Row("TitleConfig", title) is { } row
-        ? GameData.Int(row, "_iPowerAdd") + (long)Math.Ceiling(AttrScore(GameData.Pairs(row, "_kAttr")) - 1e-9) : 0;
+    private long TitleScore(long title) => title > 0 && TitleConfig.Get(_data, title) is { } row
+        ? row.PowerAdd + (long)Math.Ceiling(AttrScore(row.Attr) - 1e-9) : 0;
 
     private static List<InvItem> Worn(GameSession s) => [.. s.Items.Where(i => i.Grid is >= 1 and <= EquipGrids)];
 
@@ -218,13 +217,13 @@ public sealed partial class PowerService : IGameTicker
         foreach (var item in worn)
         {
             unit.NormalPower += EquipmentRating.Calculate(item, _data);
-            if (_data.Row("ItemConfig", item.Entry) is { } config && GameData.Int(config, "_iEquipId") is var equip and > 0
-                && _data.Row("EquipConfig", equip) is { } equipRow) unit.NormalPower += GameData.Int(equipRow, "_iPower");
+            if (ItemConfig.Get(_data, item.Entry) is { EquipId: > 0 and var equip }
+                && EquipConfig.Get(_data, equip) is { } equipRow) unit.NormalPower += equipRow.Power;
             foreach (int enchant in item.Enchantments.Keys)
-                if (_data.Row("Enchantment", enchant) is { } row)
+                if (Enchantment.Get(_data, enchant) is { } row)
                 {
-                    unit.NormalPower += GameData.Int(row, "_iPower");
-                    unit.SeasonPower += GameData.Int(row, "_iSeasonPower");
+                    unit.NormalPower += row.Power;
+                    unit.SeasonPower += row.SeasonPower;
                 }
         }
         return unit;
@@ -233,42 +232,48 @@ public sealed partial class PowerService : IGameTicker
     private PowerUnit EquipRefine(GameSession s, IEnumerable<InvItem> worn) => new()
     {
         NormalPower = worn.Select(i => i.Grid).Distinct()
-            .Sum(g => _character.RefineRow(g, s.Profile.EquipLevels.Refine.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
-            + Resonance(s, "RefiningEffectTable"),
-        SeasonPower = _seasonRefine.ActiveGroups(s).Sum(group => GameData.Int(group, "_iSeasonPower")),
+            .Sum(g => _character.RefineRow(g, s.Profile.EquipLevels.Refine.GetValueOrDefault(g)) is { } row ? new RefiningTable(row).Power : 0)
+            + RefineResonance(s),
+        SeasonPower = _seasonRefine.ActiveGroups(s).Sum(group => new RefiningSeasonAttrConfig(group).SeasonPower),
     };
 
     private long EquipStrengthen(GameSession s, IEnumerable<InvItem> worn) => worn.Select(i => i.Grid).Distinct()
-        .Sum(g => _character.StrengthenRow(g, s.Profile.EquipLevels.Strength.GetValueOrDefault(g)) is { } row ? GameData.Int(row, "_iPower") : 0)
-        + Resonance(s, "StrengthenEffectTable");
+        .Sum(g => _character.StrengthenRow(g, s.Profile.EquipLevels.Strength.GetValueOrDefault(g)) is { } row ? new StrengthenTable(row).Power : 0)
+        + StrengthenResonance(s);
 
-    /// <summary>The reached Strengthen/RefiningEffectTable row's _iPower (CharacterService.Resonance picks the row).</summary>
-    private long Resonance(GameSession s, string table)
+    /// <summary>The reached RefiningEffectTable row's _iPower (CharacterService.Resonance picks the row).</summary>
+    private long RefineResonance(GameSession s)
     {
-        int level = _character.Resonance(s, table);
-        return level <= 0 ? 0 : _data.Table(table).Values.Where(r => GameData.Int(r, "_iEffectLev") == level)
-            .Select(r => GameData.Int(r, "_iPower")).FirstOrDefault();
+        int level = _character.Resonance(s, "RefiningEffectTable");
+        return level <= 0 ? 0 : RefiningEffectTable.All(_data).Where(r => r.EffectLev == level)
+            .Select(r => r.Power).FirstOrDefault();
+    }
+
+    /// <summary>The reached StrengthenEffectTable row's _iPower (CharacterService.Resonance picks the row).</summary>
+    private long StrengthenResonance(GameSession s)
+    {
+        int level = _character.Resonance(s, "StrengthenEffectTable");
+        return level <= 0 ? 0 : StrengthenEffectTable.All(_data).Where(r => r.EffectLev == level)
+            .Select(r => r.Power).FirstOrDefault();
     }
 
     /// <summary>LC_CardHelper.GetPower: CardConfig by (card, star), _iFlashPower for a treasured (Flash) card.</summary>
     private long CardRowPower(long card, long star, bool flash)
     {
-        _cardRows ??= _data.Table("CardConfig").Values.GroupBy(r => (GameData.Int(r, "_iCardID"), GameData.Int(r, "_iTier")))
-            .ToDictionary(g => g.Key, g => g.First());
-        return _cardRows.TryGetValue((card, star), out var row) ? GameData.Int(row, flash ? "_iFlashPower" : "_iPower") : 0;
+        _cardRows ??= CardConfig.All(_data).GroupBy(r => (r.CardId, r.Tier)).ToDictionary(g => g.Key, g => g.First());
+        return _cardRows.TryGetValue((card, star), out var row) ? (flash ? row.FlashPower : row.Power) : 0;
     }
 
     private long CardScore(InvItem card)
     {
         long score = CardRowPower(card.Entry, card.Attrs?.GetValueOrDefault(AttrCardStar) ?? 0,
             card.Attrs?.GetValueOrDefault(AttrCardTreasured) == 1);
-        if (_data.Row("ItemConfig", card.Entry) is { } item)
+        if (ItemConfig.Get(_data, card.Entry) is { } item)
         {
-            _cardUpgrades ??= _data.Table("CardUpgradeConfig").Values
-                .GroupBy(r => (GameData.Int(r, "_iLevel"), GameData.Int(r, "_iParts"), GameData.Int(r, "_iQuality")))
-                .ToDictionary(g => g.Key, g => g.First());
-            if (_cardUpgrades.TryGetValue((card.Attrs?.GetValueOrDefault(AttrCardLevel) ?? 0, GameData.Int(item, "_iCardPart"),
-                GameData.Int(item, "_iQuality")), out var upgrade)) score += GameData.Int(upgrade, "_iPower");
+            _cardUpgrades ??= CardUpgradeConfig.All(_data)
+                .GroupBy(r => (r.Level, r.Parts, r.Quality)).ToDictionary(g => g.Key, g => g.First());
+            if (_cardUpgrades.TryGetValue((card.Attrs?.GetValueOrDefault(AttrCardLevel) ?? 0, item.CardPart,
+                item.Quality), out var upgrade)) score += upgrade.Power;
         }
         return score;
     }
@@ -278,8 +283,8 @@ public sealed partial class PowerService : IGameTicker
         if (s.Profile.Totems == null) return 0;
         long score = _totems.CurrentPlanPower(s, s.Profile.Totems).NormalPower;
         int level = _totems.Level(s.Profile.Totems.TotemTotalExp);
-        if (level > 0) score += _data.Table("TotemLvConfig").Values.Where(r => GameData.Int(r, "_iLv") == level)
-            .Select(r => GameData.Int(r, "_iPower")).FirstOrDefault();
+        if (level > 0) score += TotemLvConfig.All(_data).Where(r => r.Lv == level)
+            .Select(r => r.Power).FirstOrDefault();
         return score;
     }
 

@@ -283,21 +283,117 @@ public sealed class DbWriterFaultTests : IDisposable
     public async Task TerminalDiskFullAtCommitStopsApplicationAndRejectsSubsequentWrites()
     {
         using var lifetime = new FakeApplicationLifetime();
+        var logger = new CaptureLogger();
         using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
             Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
+            log: logger,
             lifetime: lifetime);
-        accounts.BeforeGroupCommitForTest = () => throw new SqliteException("database or disk is full", 13);
+        accounts.WriterCommitRetryDelaysForTest = [TimeSpan.Zero, TimeSpan.Zero];
+        int attempts = 0;
+        accounts.BeforeGroupCommitForTest = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new SqliteException("database or disk is full", 13);
+        };
 
         var error = await Assert.ThrowsAsync<SqliteException>(() => accounts.WriteAsync<int>(new Plan("full-disk", _executed)));
         Assert.Equal(13, error.SqliteErrorCode);
+        Assert.Equal(1, Volatile.Read(ref attempts)); // SQLITE_FULL is terminal and must not retry
         Assert.True(lifetime.Stopped.Wait(TimeSpan.FromSeconds(5)));
 
         var snapshot = JsonSerializer.SerializeToElement(accounts.AccessMetrics.Snapshot());
         Assert.True(snapshot.GetProperty("writerTerminal").GetBoolean());
+        Assert.True(accounts.IsWriterFailed);
 
         var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => accounts.WriteAsync<int>(new Plan("after-full", _executed)));
         Assert.IsType<SqliteException>(refused.InnerException);
         await accounts.PersistenceWorkersExited.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(logger.Messages, m => m.Level == Microsoft.Extensions.Logging.LogLevel.Critical
+            && m.Text.Contains("test/full-disk", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(5)] // SQLITE_BUSY
+    [InlineData(6)] // SQLITE_LOCKED
+    public async Task TransientRollbackErrorAtCommitRetriesAndCommitsOnceWithoutStopping(int sqliteErrorCode)
+    {
+        using var lifetime = new FakeApplicationLifetime();
+        using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
+            Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
+            lifetime: lifetime);
+        accounts.WriterCommitRetryDelaysForTest = [TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero];
+        int attempts = 0;
+        accounts.BeforeGroupCommitForTest = () =>
+        {
+            if (Interlocked.Increment(ref attempts) <= 2)
+                throw new SqliteException("database is locked", sqliteErrorCode);
+        };
+
+        Assert.Equal(1, await accounts.WriteAsync<int>(new Plan("transient-busy", _executed)));
+        Assert.Equal(3, Volatile.Read(ref attempts));
+        Assert.False(lifetime.Stopped.IsSet);
+        Assert.False(accounts.IsWriterFailed);
+        Assert.Equal(1, await accounts.WriteAsync<int>(new Plan("after-busy", _executed)));
+
+        using var db = accounts.Open();
+        using var count = db.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM done WHERE name='transient-busy'";
+        Assert.Equal(1L, (long)count.ExecuteScalar()!);
+    }
+
+    [Fact]
+    public async Task ExhaustedBusyRetriesAtCommitEntersTerminalFailure()
+    {
+        using var lifetime = new FakeApplicationLifetime();
+        using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
+            Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
+            lifetime: lifetime);
+        accounts.WriterCommitRetryDelaysForTest = [TimeSpan.Zero, TimeSpan.Zero];
+        int attempts = 0;
+        accounts.BeforeGroupCommitForTest = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new SqliteException("database is busy", 5);
+        };
+
+        var error = await Assert.ThrowsAsync<SqliteException>(() => accounts.WriteAsync<int>(new Plan("busy-forever", _executed)));
+        Assert.Equal(5, error.SqliteErrorCode);
+        Assert.Equal(3, Volatile.Read(ref attempts)); // 1 initial attempt + 2 retries
+        Assert.True(lifetime.Stopped.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(accounts.IsWriterFailed);
+        await accounts.PersistenceWorkersExited.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task AmbiguousIoErrorAtCommitDoesNotRetryAndEntersTerminalFailure()
+    {
+        using var lifetime = new FakeApplicationLifetime();
+        using var accounts = new Ro3Emu.Server.Accounts.AccountStore(
+            Microsoft.Extensions.Options.Options.Create(new Ro3Emu.Server.ServerOptions { DataDir = _dir }),
+            lifetime: lifetime);
+        accounts.WriterCommitRetryDelaysForTest = [TimeSpan.Zero, TimeSpan.Zero];
+        int attempts = 0;
+        accounts.BeforeGroupCommitForTest = () =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new IOException("ambiguous I/O failure at commit");
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => accounts.WriteAsync<int>(new Plan("io-err", _executed)));
+        Assert.Equal(1, Volatile.Read(ref attempts)); // must not retry ambiguous I/O
+        Assert.True(lifetime.Stopped.Wait(TimeSpan.FromSeconds(5)));
+        Assert.True(accounts.IsWriterFailed);
+        await accounts.PersistenceWorkersExited.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private sealed class CaptureLogger : Microsoft.Extensions.Logging.ILogger<Ro3Emu.Server.Accounts.AccountStore>
+    {
+        public ConcurrentQueue<(Microsoft.Extensions.Logging.LogLevel Level, string Text)> Messages { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Messages.Enqueue((logLevel, formatter(state, exception)));
     }
 
     private sealed class FakeApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime, IDisposable

@@ -1,6 +1,6 @@
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>Versioned E00 denomination namespace; values are never reused.</summary>
+/// <summary>Versioned economy denomination namespace; values are never reused.</summary>
 public enum EconomyAssetKind { Item = 1, Currency = 2, GuildResource = 3, EventResource = 4 }
 /// <summary>
 /// Epoch separates intrinsically seasonal denominations (current escort goods). An ordinary item, personal
@@ -34,7 +34,7 @@ public sealed record EconomyDecodeMetric(string Repository, long Rows, long Blob
 public sealed record EconomyCut(string RealmId, string SchemaVersion, string CatalogVersion,
     string CoverageVersion, long? CommitSequence, DateTimeOffset CapturedUtc);
 
-/// <summary>Read-only evidence. E00 opens legacy holdings as a baseline and never invents source legs.</summary>
+/// <summary>Read-only evidence. The ledger opens legacy holdings as a baseline and never invents source legs.</summary>
 public sealed record EconomySnapshot(EconomyCut Cut, IReadOnlyList<EconomyHolding> Holdings,
     IReadOnlyList<EconomyIssue> Issues, IReadOnlyList<string> UncoveredMutationFamilies,
     IReadOnlyList<EconomyDecodeMetric> Metrics, double DecodeMilliseconds)

@@ -115,7 +115,7 @@ public sealed partial class SeasonTalentService
         var buffs = new List<(long, string[])>();
         var attributes = new List<BuffAttribute>();
         foreach (var effect in ActiveEffects(s))
-            foreach (long id in new SeasonTalentEffectConfig(effect).SpecialEffectList)
+            foreach (long id in effect.SpecialEffectList)
             {
                 if (SpecialEffectConfig.Get(_data, id) is not { } special) continue;
                 foreach (var op in special.SpecialEffect)

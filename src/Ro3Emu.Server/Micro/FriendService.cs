@@ -272,7 +272,8 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
 
     /// <summary>A uid argument: the client sends tostring(uid); numbers are accepted too.</summary>
     internal static long Uid(object? args, string key) =>
-        args is IDictionary<object, object?> map && map.TryGetValue(key, out var v) && v != null && long.TryParse(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture), out long id) ? id : 0;
+        args is IDictionary<object, object?> map && map.TryGetValue(key, out var v) && v != null
+            && long.TryParse(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture), out long id) ? id : 0;
 }
 
 /// <summary>NameService.getUidByName {Type:"Area0", Name} -> {Uid}; a numeric name is taken as a uid (role ids are 6 digits, the search box sends ≤ 7 characters here).</summary>

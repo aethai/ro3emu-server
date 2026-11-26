@@ -18,20 +18,20 @@ public sealed class CodeShapeTests
     private const int MaxGameClassLines = 2500;
     private const int MaxLineLength = 200;
 
-    private const int MethodsOver80Lines = 83;
+    private const int MethodsOver80Lines = 66;
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 25;
     private const int ClassesOver20Dependencies = 0;
     private const int ClassesOver2500LinesInGame = 0;
-    private const int RoleNullForgiving = 961;
-    private const int LinesOver200Chars = 85;
+    private const int RoleNullForgiving = 958;
+    private const int LinesOver200Chars = 0;
     private const int ExposedHookLists = 0;
     private const int NumericIsOpenCalls = 0;
     private const int NumericStatIndexers = 0;
     private const int NumericRouteMaps = 0;
     private const int PragmaCs1998InServer = 0;
     private const int LinearRoleScansInServer = 0;
-    private const int NumericSendGameCalls = 48;
+    private const int NumericSendGameCalls = 0;
     private const int SystemClockCallsInGame = 0;
     private const int AdHocResetOffsetsInGame = 0;
     private const int PrivateRepoRootHelpersInTests = 0;

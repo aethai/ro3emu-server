@@ -23,7 +23,7 @@ public sealed partial class TradeService(
         BuyTop = 32612, PutOn = 32613, UnlockSlot = 32614, PutOff = 32615, Follow = 32616,
         Refresh = 32617, QuerySkus = 32618, BuyNormal = 32619, Reprice = 32620, QueryAllInventory = 32621,
         Penalties = 32623, MultiQuery = 32625, Preorder = 32626, QueryPreorders = 32628, RefundPreorder = 32629,
-        InQueue = 32622;
+        PreorderNotify = 32630, InQueue = 32622;
 
     internal const string Listings = "trade_listing", History = "trade_history", Orders = "trade_preorder";
     private const int TaxBasisPoints = 900; // TradeConfigTax._kTaxZeny/_kTaxMiao; currency 1 rule is inferred.
@@ -94,7 +94,7 @@ public sealed partial class TradeService(
     /// <summary>5033 full trade preferences, sent after role/base/item state.</summary>
     public async Task LoginAsync(GameSession s)
     {
-        // C/D 15: no market maintenance inside the login (it reserved the market collections and every participant).
+        // No market maintenance inside the login (it reserved the market collections and every participant).
         // The realm's own maintenance runs every second from startup (StallsService.MaintainAsync), so escrow that
         // matured during downtime settles independently of who logs in.
         var saved = roles.LoadTrade(s.Role!.Id);

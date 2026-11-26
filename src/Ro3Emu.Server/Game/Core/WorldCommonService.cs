@@ -64,8 +64,9 @@ public sealed class WorldCommonService(GmCommands gm, World world, SessionRegist
         }
         else if (req.ServerEntityType == 1 && s.VisibleUnits.FirstOrDefault(u => u.Uid == req.ServerEntityId) is MonsterUnit monster)
         {
+            var pos = string.Create(CultureInfo.InvariantCulture, $"{monster.X:F2},{monster.Y:F2},{monster.Z:F2}");
             response.Res = string.Create(CultureInfo.InvariantCulture,
-                $"monster uid={monster.Uid} npc={monster.Template.NpcId} hp={monster.Hp}/{monster.Template.MaxHp} dead={monster.Dead} scene={monster.SceneEntry} pos={monster.X:F2},{monster.Y:F2},{monster.Z:F2}");
+                $"monster uid={monster.Uid} npc={monster.Template.NpcId} hp={monster.Hp}/{monster.Template.MaxHp} dead={monster.Dead} scene={monster.SceneEntry} pos={pos}");
             if (req.Cmd == "height") await HeightAsync(s, monster.X, monster.Y, monster.Z);
         }
         else response.Res = "Entity is not visible or its type is unsupported.";
@@ -76,8 +77,12 @@ public sealed class WorldCommonService(GmCommands gm, World world, SessionRegist
     public Task LegacyProcAsync(GameSession s, GMProcReq req) =>
         s.SendGameAsync(LegacyGmProc, new GMProcRes { Result = gm.Allowed(s) ? ErrorCodes.FeatureUnavailable : ErrorCodes.NoPermission });
 
-    private static string PlayerSummary(GameSession p) => string.Create(CultureInfo.InvariantCulture,
-        $"player uid={p.Role!.Id} name={p.Role.Name} level={p.Progress?.Level ?? p.Role.Level} job={p.Progress?.Career ?? p.Role.Career} scene={p.SceneEntry} pos={p.Position.X:F2},{p.Position.Y:F2},{p.Position.Z:F2} dead={p.Dead}");
+    private static string PlayerSummary(GameSession p)
+    {
+        var pos = string.Create(CultureInfo.InvariantCulture, $"{p.Position.X:F2},{p.Position.Y:F2},{p.Position.Z:F2}");
+        return string.Create(CultureInfo.InvariantCulture,
+            $"player uid={p.Role!.Id} name={p.Role.Name} level={p.Progress?.Level ?? p.Role.Level} job={p.Progress?.Career ?? p.Role.Career} scene={p.SceneEntry} pos={pos} dead={p.Dead}");
+    }
 
     /// <summary>30302 displays the authoritative current altitude at one actual entity position.</summary>
     private static Task HeightAsync(GameSession recipient, float x, float height, float z) =>

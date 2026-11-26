@@ -84,7 +84,7 @@ public sealed partial class AdventureActivityService
             {
                 tx.RoleBlob(session.Role!.Id, "activity_runtime", System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(runtime));
                 persistCooldown(tx);
-                // E05a owns map consumption and the resolved hunt source; later hunt rewards stay in the activity family.
+                // The family economy envelope owns map consumption and the resolved hunt source; later hunt rewards stay in the activity family.
                 tx.WithEconomy(_character.FamilyEconomy(session, "cd13a/character-treasure-use",
                     [(item.Entry, 1L)], [], new { ItemGuid = item.Guid, Hunt = runtime.AdventureTreasure }));
             },
@@ -207,7 +207,7 @@ public sealed partial class AdventureActivityService
                     ItemInfos = { [10001] = new ItemAttrValue { LongVal = 0 } }
                 };
             if (monsterId != 0) notice.Param.Add(monsterId);
-            await session.SendGameAsync(83251, notice);
+            await session.SendGameAsync(NewActivityService.TreasureNotice, notice);
             _tasks.OnTreasureDug(session); // quest target 106802, after the dig's commit
             if (announce) await AnnounceTreasureBossAsync(session);
             return 0;

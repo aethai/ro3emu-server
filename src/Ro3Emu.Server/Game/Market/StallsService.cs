@@ -39,7 +39,7 @@ public sealed partial class StallsService
     private readonly Dictionary<RuntimeMapKey, int> _openingClaims = [];
     private readonly Dictionary<RuntimeMapKey, HashSet<string>> _pinnedPlayerStalls = [];
     private readonly Dictionary<long, long> _lastShare = [];
-    // Visited public scenes whose system stalls the one-second maintenance populates, replaces and restocks (C/D 15:
+    // Visited public scenes whose system stalls the one-second maintenance populates, replaces and restocks (
     // logins and scene loads add their scene). Before, one scene (the last loaded) was kept.
     private readonly HashSet<long> _maintenanceScenes = [];
     internal Func<Task>? OpeningCommittedForTests { get; set; }
@@ -52,7 +52,7 @@ public sealed partial class StallsService
         this._market = market; this._data = data; this._character = character; this._trade = trade; this._roles = roles;
         this._sessions = sessions; this._functions = functions; this._seasons = seasons; this._world = world;
         this._lines = lines; this._clock = clock; this._loop = loop; _nameMaxLength = options.Value.StallNameMaxLength;
-        // C/D 15: the realm-wide stall maintenance (stall collection, owner roles, AOI actors) no longer runs inside the
+        // The realm-wide stall maintenance (stall collection, owner roles, AOI actors) no longer runs inside the
         // scene's hook scope, nor delays the scene handoff. A scene's first visit starts its system stall population
         // as its own operation; later loads of a visited scene leave it to the one-second maintenance.
         scenes.Loaded.Subscribe(s => { PopulateFirstVisit(s); return Task.CompletedTask; });
@@ -109,7 +109,7 @@ public sealed partial class StallsService
         s.Social.ViewedStall = s.Social.ViewedSystemStall = 0;
         s.Social.Stalls = _roles.LoadStalls(s.Role!.Id) is { } saved ? DBStallsInfo.Parser.ParseFrom(saved) : NewMetadata();
         await CharacterService.SyncAsync(s, Sync, s.Social.Stalls.Clone());
-        // C/D 15: the login no longer runs the realm stall maintenance (it reserved the stall collection and its
+        // The login no longer runs the realm stall maintenance (it reserved the stall collection and its
         // participants, and published AOI actors under Realm). The one-second maintenance restores and settles the
         // stalls; the login's scene load populates a first-visited scene's system stalls.
     }

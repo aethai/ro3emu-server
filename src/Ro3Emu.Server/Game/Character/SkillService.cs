@@ -351,7 +351,7 @@ public sealed partial class SkillService
             ImportLegacyLoads(source, "Auto", "AutoLevels", plan.AutoLoadSkill, plan, session.Progress!);
             var queueLevels = JsonMap(source, "QueueLevels");
             foreach (var (slot, group) in JsonMap(source, "Queue"))
-                if (slot >= 0 && slot < (int)(Data.Config.PublicParams.Of(_data).QueueNum ?? 12))
+                if (slot >= 0 && slot < PositiveParam(Data.Config.PublicParams.Of(_data).QueueNum, 12))
                     plan.SkillQueue[slot] = new SkillData
                     {
                         SkillId = group,
@@ -386,7 +386,7 @@ public sealed partial class SkillService
         }
     }
 
-    /// <summary>C/D 13c: frozen plan and its active progress publish together after the owned receipt.</summary>
+    /// <summary>Frozen plan and its active progress publish together after the owned receipt.</summary>
     private async Task CommitAsync(GameSession session, DBSkillData next, RoleProgress? progress = null,
         string kind = "cd13c/skill-plan", Action? applied = null)
     {
@@ -751,7 +751,7 @@ public sealed partial class SkillService
         using var held = await CharacterService.Lock(session);
         int result = req.Plan is < 0 or >= PlanCount || !session.Combat.SkillPlans!.SkillAssignPlans[req.Plan].IsUnlock
             || string.IsNullOrWhiteSpace(req.Name) || req.Name.Any(char.IsControl)
-            || req.Name.EnumerateRunes().Count() > (int)(Data.Config.PublicParams.Of(_data).SchemeNameNumMax ?? 8) ? ErrorCodes.Parameter : 0;
+            || req.Name.EnumerateRunes().Count() > PositiveParam(Data.Config.PublicParams.Of(_data).SchemeNameNumMax, 8) ? ErrorCodes.Parameter : 0;
         if (result == 0)
         {
             var next = session.Combat.SkillPlans!.Clone();
@@ -766,9 +766,11 @@ public sealed partial class SkillService
 
     private static bool InCombat(GameSession session) => (session.StatusBits & FightBit) != 0;
 
+    private static int PositiveParam(long? value, int fallback) => value is > 0 ? (int)value.Value : fallback;
+
     /// <summary>Shared gate for direct skill switches and Build-window child switches.</summary>
     internal int PlanSwitchCooldownError(GameSession session) => InCombat(session) ? ErrorCodes.Parameter
-        : _clock.GetUtcNow().UtcDateTime - session.Combat.SkillPlanSwitchUtc < TimeSpan.FromSeconds((int)(Data.Config.PublicParams.Of(_data).SchemeCD ?? 3))
+        : _clock.GetUtcNow().UtcDateTime - session.Combat.SkillPlanSwitchUtc < TimeSpan.FromSeconds(PositiveParam(Data.Config.PublicParams.Of(_data).SchemeCD, 3))
             ? ErrorCodes.Cooldown : 0;
 
     /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>
@@ -1096,7 +1098,7 @@ public sealed partial class SkillService
         int group = req.Info?.SkillId ?? 0;
         int code = req.Plan is < 0 or >= PlanCount || !plans.SkillAssignPlans[req.Plan].IsUnlock
             || req.Plan != plans.CurrentPlanIndex || InCombat(session)
-            || req.QueueIndex < 0 || req.QueueIndex >= (int)(Data.Config.PublicParams.Of(_data).QueueNum ?? 12) || op is < 1 or > 3
+            || req.QueueIndex < 0 || req.QueueIndex >= PositiveParam(Data.Config.PublicParams.Of(_data).QueueNum, 12) || op is < 1 or > 3
                 ? ErrorCodes.Parameter : 0;
         if (code == 0)
         {

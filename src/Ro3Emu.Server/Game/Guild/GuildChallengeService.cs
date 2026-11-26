@@ -50,7 +50,7 @@ public sealed partial class GuildChallengeService : IGameTicker
                 .Where(value => value > 0).Distinct().Select(value => ReservationKey.Role(value))];
     }
 
-    /// <summary>C/D 15: the login's cycle rollover writes its guild's challenge state; the role select reserves the
+    /// <summary>The login's cycle rollover writes its guild's challenge state; the role select reserves the
     /// same keys as the challenge gate up front.</summary>
     internal ReservationKey[] LoginKeys(long roleId) => _guilds.ForRole(roleId) is { } g ? Keys(g.Id, roleId) : [];
 
@@ -342,7 +342,7 @@ public sealed partial class GuildChallengeService : IGameTicker
     {
         s.Instances.GuildChallenge = null;
         Personal(s);
-        // C/D 15: recovery of committed-but-undelivered clears (Realm, other members' bags) is realm maintenance.
+        // Recovery of committed-but-undelivered clears (Realm, other members' bags) is realm maintenance.
         // The login requests it as its own operation, which runs right after the login releases its scope.
         RequestRecovery();
         if (Guild(s) is { } guild) await EnsureStateAsync(guild.Id, s.Role!.Id);
@@ -704,7 +704,7 @@ public sealed partial class GuildChallengeService : IGameTicker
 
     internal async Task RecoverAsync()
     {
-        // C/D 16: Realm only while a committed clear is still undelivered (rare); the check reads off the loop. Every
+        // Realm only while a committed clear is still undelivered (rare); the check reads off the loop. Every
         // login requested this recovery, and as Realm it waited behind owned work for up to 16 s (S3).
         if ((await _store.PendingAsync()).Count == 0) return;
         // Realm covers the clear journal, offline recipients and the still-shared auction publisher.
@@ -752,11 +752,11 @@ public sealed partial class GuildChallengeService : IGameTicker
         && (Now >= RunOf(a)!.End || !_schedule.IsOpen(Activity)
             || a.SeasonId != _seasons.SeasonId || a.PlayBook != _seasons.PlayBook))];
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         if (_sweeping || Now == _lastSweep) return;
         _lastSweep = Now;
-        // C/D 16: a Realm operation only when a run must stop or the test window closed; the five-second recovery
+        // A Realm operation only when a run must stop or the test window closed; the five-second recovery
         // takes Realm only with a pending clear. As one Realm operation every second it waited up to 16 s (S3).
         bool stop = TestWindowExpired || RunsToStop().Length != 0, recover = Now % 5 == 0;
         if (!stop && !recover) return;

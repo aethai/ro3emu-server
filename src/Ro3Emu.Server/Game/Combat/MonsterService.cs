@@ -328,7 +328,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         if (ready != null) foreach (var state in ready) RunDue(state, time.Now);
     }
 
-    // Stage G: monster timers (deadlines, swings, target changes, speed and health broadcasts) run in runtime scopes.
+    // Monster timers (deadlines, swings, target changes, speed and health broadcasts) run in runtime scopes.
     // As Realm (1484 target changes, 2009 swings in 5 min of S3 at 500 players) each waited for every reservation to
     // drain and then stopped all owned work, players' walks included. Durable consequences admit their own keys.
     private void RunDue(SpawnState state, TimeSpan now)
@@ -457,81 +457,81 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         SendStop(m, now);
     }
 
-    public void Tick(MonsterUnit m, MapInstance map)
+    public void Tick(MonsterUnit monster, MapInstance map)
     {
-        if (m.Viewers.Count == 0 && Dormant(m))
+        if (monster.Viewers.Count == 0 && Dormant(monster))
         {
             // Nothing below acts for it: only the roam clock runs, as it would (see the end of this method). It reads
             // the loop tick's time: a clock read per monster was half the cost of a map nobody is on.
-            if (_tickNowMs >= m.NextRoamMs && !m.Dead && m.Hp > 0 && m.Template.RoamDistance > 0) ScheduleRoam(m, _tickNowMs);
+            if (_tickNowMs >= monster.NextRoamMs && !monster.Dead && monster.Hp > 0 && monster.Template.RoamDistance > 0) ScheduleRoam(monster, _tickNowMs);
             return;
         }
-        if (m.RuntimeMap.Kind == RuntimeMapKind.PublicLine
-            && (!_spawns.TryGetValue(m.RuntimeMap, out var state) || state.Retired)) return;
-        if (m.Dead || m.Hp <= 0) return; // lethal HP is authoritative before the awaited death broadcast finishes
+        if (monster.RuntimeMap.Kind == RuntimeMapKind.PublicLine
+            && (!_spawns.TryGetValue(monster.RuntimeMap, out var state) || state.Retired)) return;
+        if (monster.Dead || monster.Hp <= 0) return; // lethal HP is authoritative before the awaited death broadcast finishes
         long now = NowMs;
-        StopWhenRooted(m, now);
-        if (m.SlowMovementExpireMs > 0 && now >= m.SlowMovementExpireMs)
+        StopWhenRooted(monster, now);
+        if (monster.SlowMovementExpireMs > 0 && now >= monster.SlowMovementExpireMs)
         {
-            m.SlowMovementBp = 0;
-            m.SlowMovementExpireMs = 0;
-            if (m.Moving)
+            monster.SlowMovementBp = 0;
+            monster.SlowMovementExpireMs = 0;
+            if (monster.Moving)
             {
-                m.Advance(now);
-                m.Moving = false;
-                SendStop(m, now);
+                monster.Advance(now);
+                monster.Moving = false;
+                SendStop(monster, now);
             }
-            m.NextChaseMs = 0;
-            SendSpeed(m, now);
-            if (m.Returning && m.Target == null) WalkTo(m, map, m.Home.X, m.Home.Z, 2f);
+            monster.NextChaseMs = 0;
+            SendSpeed(monster, now);
+            if (monster.Returning && monster.Target == null) WalkTo(monster, map, monster.Home.X, monster.Home.Z, 2f);
         }
-        if (m.Moving)
+        if (monster.Moving)
         {
-            m.Advance(now);
-            map.Moved(m);
-            if (now >= m.EndMs)
+            monster.Advance(now);
+            map.Moved(monster);
+            if (now >= monster.EndMs)
             {
-                m.Moving = false;
+                monster.Moving = false;
                 // A marching monster's next leg starts below in this tick: no stop in between.
-                if (m.Target == null && m.March is not { Arrived: false }) SendStop(m, now);
+                if (monster.Target == null && monster.March is not { Arrived: false }) SendStop(monster, now);
             }
         }
-        if (m.PetTarget != null)
+        if (monster.PetTarget != null)
         {
-            FightPet(m, map, now);
+            FightPet(monster, map, now);
             return;
         }
-        if (m.Target != null)
+        if (monster.Target != null)
         {
-            Fight(m, map, now);
+            Fight(monster, map, now);
             return;
         }
-        if (_companionTargets.Count > 0 && FightsCompanion(m, map, now)) return; // MonsterService.Companions
-        if (m.Viewers.Count > 0 && !m.Returning && LooksAround(m) && AttacksOnSight(m))
+        if (_companionTargets.Count > 0 && FightsCompanion(monster, map, now)) return; // MonsterService.Companions
+        if (monster.Viewers.Count > 0 && !monster.Returning && LooksAround(monster) && AttacksOnSight(monster))
         {
-            var near = NearestTarget(m);
+            var near = NearestTarget(monster);
             if (near != null)
             {
-                Engage(m, near);
+                Engage(monster, near);
                 return;
             }
         }
-        if (m.March is { } march)
+        if (monster.March is { } march)
         {
-            March(m, map, march, now); // MonsterService.March
+            March(monster, map, march, now); // MonsterService.March
             return;
         }
-        if (m.Returning && !m.Moving)
+        if (monster.Returning && !monster.Moving)
         {
-            m.Returning = false;
-            if (m.Hp < m.Template.MaxHp && !m.KeepsDamage && m.Template.HealsOnReturn)
+            monster.Returning = false;
+            if (monster.Hp < monster.Template.MaxHp && !monster.KeepsDamage && monster.Template.HealsOnReturn)
             {
-                m.Hp = m.Template.MaxHp;
-                SendHealth(m);
+                monster.Hp = monster.Template.MaxHp;
+                SendHealth(monster);
             }
         }
         // Roam only where somebody can see it.
-        if (!m.Moving && m.Template.RoamDistance > 0 && ScheduleRoam(m, now) && m.Viewers.Count > 0) Roam(m, map);
+        if (!monster.Moving && monster.Template.RoamDistance > 0 && ScheduleRoam(monster, now) && monster.Viewers.Count > 0) Roam(monster, map);
     }
 
     /// <summary>A monster no player shows that has nothing in progress: no walk, fight, march, return, timed slow or

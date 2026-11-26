@@ -1,7 +1,7 @@
 namespace Ro3Emu.Server.Economy;
 
 /// <summary>
-/// E00 catalogue-independent resource IDs. These are separate namespaces from ItemConfig IDs;
+/// Catalogue-independent economy resource IDs. These are separate namespaces from ItemConfig IDs;
 /// values are stable within each EconomyAssetKind.
 /// </summary>
 public static class EconomyDenominations

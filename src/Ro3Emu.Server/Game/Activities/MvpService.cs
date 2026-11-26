@@ -42,7 +42,7 @@ public sealed partial class MvpService : IGameTicker
     private sealed class Stat
     {
         public long Attack, BeAttack, Dead;
-        public long Cure = 0; // No healing event source yet; retained in the existing score formula.
+        public long Cure { get; set; } // No healing event source yet; retained in the existing score formula.
         public long TeamId, Leader;
     }
 
@@ -366,7 +366,7 @@ public sealed partial class MvpService : IGameTicker
                     foreach (var p in _sessions.All().Where(p => p.Role != null && p.WorldScene == st.Runtime.WorldScene))
                         _loop.PostOwned(p, () => p.SendGameAsync(PreNotice, new MVPP2SNotice { CfgId = st.Def.CfgId, SceneId = st.Def.MapId }), "MVP notice");
                 }
-                // The event source may be durable while E04 has restored an unpublished
+                // The event source may be durable while reward settlement has restored an unpublished
                 // boss to 1 HP. Do not replace that actor until both barriers publish it.
                 if (now >= respawn && !st.Transitioning && st.Unit is not { Dead: false })
                 {
@@ -645,7 +645,29 @@ public sealed partial class MvpService : IGameTicker
         bool unlimited = _testing.UnlimitedRewards;
         var teamsRanked = RankTeams(st.Stats.Select(kv => (kv.Key, kv.Value.TeamId, kv.Value.Leader, scores.GetValueOrDefault(kv.Key))),
             id => !unlimited && counters.TryGetValue(id, out var c) && (c.TeamNum >= TeamCap || c.JoinNum >= JoinCap), capped => DecayPercent(_data, capped));
+        var (rarePlayer, rareTeam) = RollMvpAwards(st, killer, online, counters, teamsRanked, awards, unlimited);
+        var nextDeaths = st.DeadMs.Append(deadMs).TakeLast(20).ToArray();
+        var (builder, obligations) = BuildMvpSettlementPlan(st, deadMs, parentSource, nextDeaths, online, counters, taskPlans, awards);
+        await builder.CommitAsync(_accounts, "mvp/kill-settlement", _ =>
+        {
+            foreach (var plan in taskPlans.Values) plan?.Apply();
+            st.Phase = MVP_STATE.Reborn;
+            st.StateTimeMs = deadMs;
+            st.DeadMs.Clear(); st.DeadMs.AddRange(nextDeaths);
+            _lastDeath[st.Def.CfgId] = Math.Max(_lastDeath.GetValueOrDefault(st.Def.CfgId), deadMs);
+        });
+        StoreReports(st, killer, deadMs, rarePlayer, rareTeam, scores, teamsRanked, awards);
+        foreach (var participant in online.Values)
+            foreach (var handler in ParticipantSettled.Handlers)
+                try { handler(participant); }
+                catch (Exception e) { _log.LogError(e, "MVP participant hook failed for {Role}", participant.Role?.Id); }
+        return [.. obligations];
+    }
 
+    private (long RarePlayer, long RareTeam) RollMvpAwards(State st, long killer, Dictionary<long, GameSession> online,
+        Dictionary<long, MVPPlayerInfo> counters, List<RankedTeam> teamsRanked,
+        Dictionary<long, List<MVPPlayerAwardItem>> awards, bool unlimited)
+    {
         void Give(long player, MVP_AWARD_TYPE tp, long awardId)
         {
             if (!online.TryGetValue(player, out var s)) return;
@@ -709,7 +731,13 @@ public sealed partial class MvpService : IGameTicker
                 break;
             }
         }
-        var nextDeaths = st.DeadMs.Append(deadMs).TakeLast(20).ToArray();
+        return (rarePlayer, rareTeam);
+    }
+
+    private (RoleItemPlanBuilder Builder, List<MvpObligationRow> Obligations) BuildMvpSettlementPlan(State st, long deadMs,
+        string parentSource, long[] nextDeaths, Dictionary<long, GameSession> online, Dictionary<long, MVPPlayerInfo> counters,
+        Dictionary<long, CharacterService.FirstCardSightPlan?> taskPlans, Dictionary<long, List<MVPPlayerAwardItem>> awards)
+    {
         var builder = new RoleItemPlanBuilder(_accounts);
         builder.Add(new MvpSettlementPlan(parentSource, st.Def.CfgId, deadMs));
         if (st.Runtime.LineNumber == 1)
@@ -752,20 +780,7 @@ public sealed partial class MvpService : IGameTicker
                     }).ToArray()
                 })));
         }
-        await builder.CommitAsync(_accounts, "mvp/kill-settlement", _ =>
-        {
-            foreach (var plan in taskPlans.Values) plan?.Apply();
-            st.Phase = MVP_STATE.Reborn;
-            st.StateTimeMs = deadMs;
-            st.DeadMs.Clear(); st.DeadMs.AddRange(nextDeaths);
-            _lastDeath[st.Def.CfgId] = Math.Max(_lastDeath.GetValueOrDefault(st.Def.CfgId), deadMs);
-        });
-        StoreReports(st, killer, deadMs, rarePlayer, rareTeam, scores, teamsRanked, awards);
-        foreach (var participant in online.Values)
-            foreach (var handler in ParticipantSettled.Handlers)
-                try { handler(participant); }
-                catch (Exception e) { _log.LogError(e, "MVP participant hook failed for {Role}", participant.Role?.Id); }
-        return [.. obligations];
+        return (builder, obligations);
     }
 
     internal sealed record RankedTeam(long Key, long Leader, List<long> Members, long Score, bool Decayed);
@@ -958,7 +973,7 @@ public sealed partial class MvpService : IGameTicker
     private static MvpCounterRow CounterRow(MVPPlayerInfo info) =>
         new(info.FirstNum, info.EndNum, info.JoinNum, info.TeamNum, info.LastTime);
 
-    /// <summary>C/D 15: the role's pending obligations, read before the role select admits so it can reserve them.</summary>
+    /// <summary>The role's pending obligations, read before the role select admits so it can reserve them.</summary>
     internal Task<ReservationKey[]> LoginKeysAsync(long roleId) => _awardObligations.LoginKeysAsync(roleId);
 
     /// <summary>On login and after a kill, complete frozen rewards without rolling again.</summary>

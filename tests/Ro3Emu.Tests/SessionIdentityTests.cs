@@ -94,6 +94,42 @@ public sealed class SessionIdentityTests
     }
 
     [Fact]
+    public async Task DisplacedSessionClearsByRoleAndLateUnregisterNeverDropsNewerSession()
+    {
+        var registry = Registry();
+        var older = Game();
+        var newer = Game();
+        var roleA = RoleOf("alice");
+        var roleB = new Role(100002, "alice", 1, "Alt", 1, 1000, 1, 0, 0, 0, 10111, 0, 0, 0, 0);
+
+        await registry.SignInAsync(older, "alice", register: true);
+        older.Role = roleA;
+        Assert.Same(older, registry.ByRole(roleA.Id));
+
+        // Relogin displaces the older session: its stale role must vanish from ByRole immediately even if older.Role stays set.
+        await registry.SignInAsync(newer, "alice", register: true);
+        Assert.Same(newer, registry.ByAccount("alice"));
+        Assert.Null(registry.ByRole(roleA.Id));
+        Assert.Null(older.Registry);
+
+        // Selecting a different role on the newer session must not resurrect roleA; older's late Unregister must not drop newer.
+        newer.Role = roleB;
+        Assert.Same(newer, registry.ByRole(roleB.Id));
+        Assert.Null(registry.ByRole(roleA.Id));
+
+        registry.Unregister(older);
+        Assert.Same(newer, registry.ByAccount("alice"));
+        Assert.Same(newer, registry.ByRole(roleB.Id));
+        Assert.Null(registry.ByRole(roleA.Id));
+
+        // If the newer session takes over the same role, older's late Unregister still keeps newer bound.
+        newer.Role = roleA;
+        Assert.Same(newer, registry.ByRole(roleA.Id));
+        registry.Unregister(older);
+        Assert.Same(newer, registry.ByRole(roleA.Id));
+    }
+
+    [Fact]
     public async Task BroadcastSkipsNonMatchingSessions()
     {
         var registry = Registry();

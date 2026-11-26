@@ -24,7 +24,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
     Task ICombatRule.OnEventPlayerKilledAsync(GameSession killer, GameSession victim) => PlayerKilledAsync(killer, victim);
     bool? ICombatRule.AllowMatchSkill(GameSession session, int skillId) => MatchSkillRule(session, skillId);
     public const uint StartMatch = 82681, CancelMatch = 82682, Ready = 82637, ReadyNotify = 82636,
-        MatchStartNotify = 82638, ChickenResult = 82633, DragonClaim = 84071, DragonSettle = 84074,
+        MatchStartNotify = 82638, CancelMatchNotify = 82639, ChickenResult = 82633, DragonClaim = 84071, DragonSettle = 84074,
         OnePieceInfo = 83351, OnePieceMap = 83350;
     internal const int ChickenEntry = 2;
     private const int DragonEntry = 6;
@@ -582,7 +582,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         foreach (var player in dropped.Concat(partners)) { waiting.Remove(player); _queueGroup.Remove(player); }
         if (waiting.Count == 0) _queue.Remove(entry);
         await RoleFanout.EachAsync(partners.Where(player => player != departed), player =>
-            player.SendGameAsync(82639, new CancelMatchNotify { MatchEntryId = entry, ManualCancel = manual }));
+            player.SendGameAsync(CancelMatchNotify, new CancelMatchNotify { MatchEntryId = entry, ManualCancel = manual }));
         return true;
     }
 
@@ -619,7 +619,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         if (!match.Players.Any(_preparing.ContainsKey)) return;
         foreach (var player in match.Players) _preparing.Remove(player);
         await RoleFanout.EachAsync(match.Players.Where(player => player != disconnected), player =>
-            player.SendGameAsync(82639,
+            player.SendGameAsync(CancelMatchNotify,
                 new CancelMatchNotify { MatchEntryId = match.Entry, ManualCancel = manual }));
     }
 
@@ -928,7 +928,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         else await OnePieceLeavingAsync(session);
     }
 
-    /// <summary>C/D 15: what the handover cleanup's leave writes - the leave keys and, when the leaver can end its
+    /// <summary>What the handover cleanup's leave writes - the leave keys and, when the leaver can end its
     /// match, the match settlement keys.</summary>
     internal ReservationKey[] CleanupKeys(GameSession session) =>
         [.. LeaveKeys(session), .. _active.TryGetValue(session, out var match) && match is { Settled: false, Room: { } room }
@@ -1058,7 +1058,7 @@ public sealed partial class TimedBattleService : IGameTicker, ICombatRule, Messa
         await work();
     }
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = _time.GetUtcNow().ToUnixTimeSeconds();
         if (now == _lastSecond) return;

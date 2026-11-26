@@ -59,6 +59,23 @@ public sealed class TestServer : IAsyncDisposable
         string? dataDir = null, string[]? args = null) =>
         StartAsync(SyntheticData.Dir, configure, clock, dataDir, args, "synthetic");
 
+    /// <summary>Builds a synthetic server without starting hosted services yet; call <see cref="StartAsync()"/> to start it.</summary>
+    public static TestServer CreateSyntheticUnstarted(Action<ServerOptions>? configure = null, TimeProvider? clock = null,
+        string? dataDir = null, string[]? args = null)
+    {
+        bool owns = dataDir == null;
+        string dir = dataDir ?? Path.Combine(Path.GetTempPath(), $"ro3emu-synthetic-{Guid.NewGuid():N}");
+        var server = new TestServer(dir, SyntheticData.Dir, args ?? [], configure, clock, owns);
+        server.BuildHost();
+        return server;
+    }
+
+    public async Task StartAsync()
+    {
+        await App.StartAsync();
+        Http = $"http://127.0.0.1:{HttpPort}";
+    }
+
     /// <summary>Starts a server on the exported client game data (<see cref="ClientData.RepoRoot"/>/data).</summary>
     public static Task<TestServer> StartClientAsync(Action<ServerOptions>? configure = null, TimeProvider? clock = null,
         string? dataDir = null, string[]? args = null) =>
@@ -74,7 +91,7 @@ public sealed class TestServer : IAsyncDisposable
         return server;
     }
 
-    private async Task StartCoreAsync()
+    private void BuildHost()
     {
         (HttpPort, MicroGatePort, GameGatePort) = TestPorts.FreePorts();
         App = ServerHost.Create(_args, o =>
@@ -86,8 +103,12 @@ public sealed class TestServer : IAsyncDisposable
             o.GameGatePort = GameGatePort;
             _configure?.Invoke(o);
         }, _clock);
-        await App.StartAsync();
-        Http = $"http://127.0.0.1:{HttpPort}";
+    }
+
+    private async Task StartCoreAsync()
+    {
+        BuildHost();
+        await StartAsync();
     }
 
     public T Service<T>() where T : notnull => App.Services.GetRequiredService<T>();

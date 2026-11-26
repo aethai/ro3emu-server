@@ -111,7 +111,8 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
     [LoggerMessage(Level = LogLevel.Information, Message = "Compacted {Count} economic receipts older than {Days} days")]
     private static partial void LogCompacted(ILogger logger, long count, int days);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} economic receipts are dated more than a day ahead of the clock, so the clock was wrong when they were written or is wrong now; compaction passed them and kept their data")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} economic receipts are dated more than a day ahead of the clock, "
+        + "so the clock was wrong when they were written or is wrong now; compaction passed them and kept their data")]
     private static partial void LogMisdated(ILogger logger, long count);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Dropped the child results and owner acknowledgements of {Count} receipts compacted by an earlier version")]

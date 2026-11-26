@@ -21,7 +21,7 @@ public sealed partial class CharacterService
         if (entry == JobExpItem) return await AddExpAsync(session, 0, count);
         using var _ = await LockAsync(session);
         count = Math.Clamp(count, 1, GameData.Int(row, "_iType") == ItemTypeCurrency ? int.MaxValue : 999);
-        // C/D 13a: an exchange keeps the live InvItem instances (the award path would replace them).
+        // An exchange keeps the live InvItem instances (the award path would replace them).
         await ExchangeLockedAsync(session, new ExchangeRequest
         {
             Goods = [(entry, count)],
@@ -108,6 +108,44 @@ public sealed partial class CharacterService
             familyEconomy, ownedAward, suppressRewardNotice, rewardIndexes);
     }
 
+    private sealed class AwardStaging
+    {
+        public required GameSession Session;
+        public required long RoleId;
+        public required AwardPlan Plan;
+        public required RoleProgress OldProgress;
+        public required RoleProgress StagedProgress;
+        public required HashSet<long> OldItemGuids;
+        public required List<InvItem> Items;
+        public required List<(int Entry, long Count)> Expense;
+        public required Romsg.GetRewardNotify Notification;
+        public readonly List<(int Entry, int Count)> Gained = [];
+        public readonly List<(int Row, InvItem Item)> GearRows = [];
+        public readonly HashSet<InvItem> Received = [];
+        public long BaseExp;
+        public long JobExp;
+        public int OldLevel;
+        public int OldJob;
+        public ItemAutoDecomposeTipsNtf Decomposed = new();
+        public FirstCardSightPlan? CardSight;
+        public DBTaskInfo? NextTasks;
+        public TaskRuntimeState? NextRuntime;
+        public DailyActivityService.DailyState? NextDailyState;
+        public byte[]? DeliveredTaskState;
+        public byte[]? TaskRuntimeState;
+        public byte[]? ExpectedDaily;
+        public byte[]? NextDaily;
+        public byte[]? ExpectedTasks;
+        public byte[]? PersistedTasks;
+        public int ManifestType;
+        public bool SuppressRewardNotice;
+        public IReadOnlyList<int>? RewardIndexes;
+        public Action<RoleItemPlanBuilder>? Persist;
+        public Action? Committed;
+        public EconomyMutation? FamilyEconomy;
+        public OwnedAwardSource? OwnedAward;
+    }
+
     /// <summary>Checked owned Core: stage copied award values, commit, apply before notices.</summary>
     private async Task<bool> ApplyAwardCoreAsync(GameSession session, Ownership.OwnerContext context, AwardPlan plan,
         long taskBaseExp, IReadOnlyList<(int Entry, int Count)>? costs, byte[]? deliveredTaskState,
@@ -116,7 +154,8 @@ public sealed partial class CharacterService
         EconomyMutation? familyEconomy, OwnedAwardSource? ownedAward, bool suppressRewardNotice,
         IReadOnlyList<int>? rewardIndexes = null)
     {
-        context.AssertRole(session.Role!.Id);
+        long roleId = session.Role!.Id;
+        context.AssertRole(roleId);
         context.BindPresentation(session);
         var attachment = session.Attachment;
         ArgumentOutOfRangeException.ThrowIfNegative(taskBaseExp);
@@ -128,48 +167,65 @@ public sealed partial class CharacterService
         if (expectedDaily != null && (session.Activities.Daily == null
                 || !JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily).AsSpan().SequenceEqual(expectedDaily))) return false;
         if (expectedTasks != null && (session.Tasks == null || !session.Tasks.ToByteArray().AsSpan().SequenceEqual(expectedTasks))) return false;
-        var nextTasks = deliveredTaskState == null ? null : DBTaskInfo.Parser.ParseFrom(deliveredTaskState);
-        var nextRuntime = taskRuntimeState == null ? null : JsonSerializer.Deserialize<TaskRuntimeState>(taskRuntimeState)
-            ?? throw new InvalidOperationException("invalid task runtime award state");
-        var nextDailyState = nextDaily == null ? null : JsonSerializer.Deserialize<DailyActivityService.DailyState>(nextDaily)
-            ?? throw new InvalidOperationException("invalid daily award state");
         var old = session.Progress ?? throw new InvalidOperationException("award requires role progress");
-        var staged = CloneProgress(old);
-        var oldItemGuids = session.Items.Select(i => i.Guid).ToHashSet();
-        var items = session.Items.Select(i => i.Clone()).ToList();
-        var expense = (costs ?? []).GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => (long)c.Count))).ToList();
-        foreach (var (entry, count) in expense)
+        var staging = new AwardStaging
+        {
+            Session = session, RoleId = roleId, Plan = plan, OldProgress = old, StagedProgress = CloneProgress(old),
+            OldItemGuids = [.. session.Items.Select(i => i.Guid)],
+            Items = [.. session.Items.Select(i => i.Clone())],
+            Expense = [.. (costs ?? []).GroupBy(c => c.Entry).Select(g => (Entry: g.Key, Count: g.Sum(c => (long)c.Count)))],
+            Notification = new Romsg.GetRewardNotify { TargetUid = roleId },
+            BaseExp = taskBaseExp,
+            NextTasks = deliveredTaskState == null ? null : DBTaskInfo.Parser.ParseFrom(deliveredTaskState),
+            NextRuntime = taskRuntimeState == null ? null : JsonSerializer.Deserialize<TaskRuntimeState>(taskRuntimeState)
+                ?? throw new InvalidOperationException("invalid task runtime award state"),
+            NextDailyState = nextDaily == null ? null : JsonSerializer.Deserialize<DailyActivityService.DailyState>(nextDaily)
+                ?? throw new InvalidOperationException("invalid daily award state"),
+            DeliveredTaskState = deliveredTaskState, TaskRuntimeState = taskRuntimeState,
+            ExpectedDaily = expectedDaily, NextDaily = nextDaily, ExpectedTasks = expectedTasks,
+            ManifestType = manifestType, SuppressRewardNotice = suppressRewardNotice, RewardIndexes = rewardIndexes,
+            Persist = persist, Committed = committed, FamilyEconomy = familyEconomy, OwnedAward = ownedAward,
+        };
+        if (!DeductAwardCosts(staging)) return false;
+        StageAwardGrants(staging);
+        if (!await CommitAwardAsync(staging)) return false;
+        if (attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)) return true;
+        await PresentAwardAsync(staging);
+        return true;
+    }
+
+    private bool DeductAwardCosts(AwardStaging s)
+    {
+        foreach (var (entry, count) in s.Expense)
         {
             if (count < 0 || data.Row("ItemConfig", entry) == null) throw new InvalidOperationException($"invalid award cost {entry} x{count}");
-            long owned = IsCurrency(entry) ? staged.Currency.GetValueOrDefault(entry)
-                : items.Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i)).Sum(i => (long)i.Stack);
+            long owned = IsCurrency(entry) ? s.StagedProgress.Currency.GetValueOrDefault(entry)
+                : s.Items.Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(s.Session, i)
+                    && !TotemService.IsReserved(s.Session, i)).Sum(i => (long)i.Stack);
             if (owned < count) return false;
         }
-        foreach (var (entry, count) in expense)
+        foreach (var (entry, count) in s.Expense)
         {
-            if (IsCurrency(entry))
-            {
-                staged.Currency[entry] -= count;
-                continue;
-            }
+            if (IsCurrency(entry)) { s.StagedProgress.Currency[entry] -= count; continue; }
             long remaining = count;
-            foreach (var item in items.Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(session, i) && !TotemService.IsReserved(session, i)).OrderBy(i => i.Stack).ToList())
+            var stacks = s.Items.Where(i => i.Grid == 0 && i.Entry == entry && !EmblemService.IsReserved(s.Session, i)
+                && !TotemService.IsReserved(s.Session, i)).OrderBy(i => i.Stack).ToList();
+            foreach (var item in stacks)
             {
                 if (remaining == 0) break;
                 int take = (int)Math.Min(remaining, item.Stack);
                 item.Stack -= take;
                 remaining -= take;
-                if (item.Stack == 0) items.Remove(item);
+                if (item.Stack == 0) s.Items.Remove(item);
             }
         }
-        var beforeGrants = items.Where(i => i.Guid > 0).ToDictionary(i => i.Guid, i => i.Stack);
+        return true;
+    }
 
-        long baseExp = taskBaseExp, jobExp = 0;
-        var notification = new Romsg.GetRewardNotify { TargetUid = session.Role!.Id };
-        var gained = new List<(int Entry, int Count)>();
-        var gearRows = new List<(int Row, InvItem Item)>();
-        var received = new HashSet<InvItem>();
-        foreach (var grant in plan.Grants)
+    private void StageAwardGrants(AwardStaging s)
+    {
+        var beforeGrants = s.Items.Where(i => i.Guid > 0).ToDictionary(i => i.Guid, i => i.Stack);
+        foreach (var grant in s.Plan.Grants)
         {
             if (grant.Entry <= 0 || grant.Count <= 0 || data.Row("ItemConfig", grant.Entry) == null
                 || grant.BindType is < 0 or > 2 || grant.ExpireTimeStamp < 0
@@ -177,178 +233,183 @@ public sealed partial class CharacterService
                 throw new InvalidOperationException($"invalid award grant {grant.Entry}");
             if ((grant.Entry is BaseExpItem or JobExpItem) && (grant.BindType != 0 || grant.ExpireTimeStamp != 0))
                 throw new InvalidOperationException("bound or expiring virtual EXP award");
-            if (grant.Entry == BaseExpItem) { baseExp = checked(baseExp + grant.Count); continue; }
-            if (grant.Entry == JobExpItem) { jobExp = checked(jobExp + grant.Count); continue; }
-            if (IsCurrency(grant.Entry))
-            {
-                var currencyRow = data.Row("ItemConfig", grant.Entry)!.Value;
-                if (grant.ExpireTimeStamp != 0 || grant.BindType == 2
-                    || grant.BindType == 1 && (!currencyRow.TryGetProperty("_iTrade", out var trade) || GameData.Number(trade) != 0))
-                    throw new InvalidOperationException("unsupported bound or expiring currency award");
-                // (inferred) DBItemsInfo.currency has only an aggregate amount, so permanent bind does not partition the balance.
-                staged.Currency[grant.Entry] = checked(staged.Currency.GetValueOrDefault(grant.Entry) + grant.Count);
-            }
-            else
-            {
-                var row = data.Row("ItemConfig", grant.Entry)!.Value;
-                int stackLimit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
-                int pack = TotemService.IsTotem(data, grant.Entry) ? 4 : EmblemService.IsEmblem(data, grant.Entry) ? 5 : ConfigPack(row);
-                int left = grant.Count;
-                var created = new List<InvItem>();
-                foreach (var item in items.Where(i => CanStackGrant(i, grant.Entry, stackLimit, grant.BindType, grant.ExpireTimeStamp)))
-                {
-                    int add = Math.Min(left, stackLimit - item.Stack);
-                    item.Stack += add;
-                    left -= add;
-                    received.Add(item);
-                    if (left == 0) break;
-                }
-                while (left > 0)
-                {
-                    int stack = Math.Min(left, stackLimit);
-                    var item = new InvItem
-                    {
-                        Entry = grant.Entry, Stack = stack, Pack = pack,
-                        Sort = items.Where(i => i.Grid == 0 && i.Pack == pack).Select(i => i.Sort).DefaultIfEmpty(0).Max() + 1,
-                        BindType = grant.BindType, BindExpire = grant.ExpireTimeStamp != 0 ? grant.ExpireTimeStamp : AcquireExpiry(grant.Entry),
-                        Attrs = TotemAttrFactory?.Invoke(grant.Entry) ?? EmblemAttrFactory?.Invoke(grant.Entry) ?? RollAttrs(grant.Entry)
-                    };
-                    items.Add(item);
-                    created.Add(item);
-                    received.Add(item);
-                    left -= stack;
-                }
-                gained.Add((grant.Entry, grant.Count));
-                if (IsEquipment(grant.Entry))
-                {
-                    // Each gear instance may roll distinct attributes; a single aggregate popup would misstate them.
-                    // GUIDs are assigned at commit; the row is rebuilt then (quick-equip prompt needs itemGuid).
-                    foreach (var item in created)
-                    {
-                        gearRows.Add((notification.Rewards.Count, item));
-                        notification.Rewards.Add(ItemInfo(item));
-                    }
-                    continue;
-                }
-            }
-            notification.Rewards.Add(ItemInfo(new InvItem
+            if (grant.Entry == BaseExpItem) { s.BaseExp = checked(s.BaseExp + grant.Count); continue; }
+            if (grant.Entry == JobExpItem) { s.JobExp = checked(s.JobExp + grant.Count); continue; }
+            if (IsCurrency(grant.Entry)) StageAwardCurrencyGrant(s, grant);
+            else if (StageAwardItemGrant(s, grant)) continue;
+            s.Notification.Rewards.Add(ItemInfo(new InvItem
             {
                 Entry = grant.Entry, Stack = grant.Count,
                 BindType = grant.BindType, ExpireTimeStamp = grant.ExpireTimeStamp,
-                Attrs = items.LastOrDefault(i => i.Entry == grant.Entry)?.Attrs
+                Attrs = s.Items.LastOrDefault(i => i.Entry == grant.Entry)?.Attrs
             }));
         }
         // Quest award auto returns are staged alongside the source grant, costs, tasks and daily state.
         // Other ApplyAward callers have no quest delivery boundary and retain their standalone behavior.
-        var decomposed = deliveredTaskState == null && ownedAward?.CommandKind != "cd13e/grant" ? new ItemAutoDecomposeTipsNtf()
-            : StageAutoDecomposeAward(session, items, staged, received, beforeGrants, gained);
-        jobExp = checked(jobExp + JobExpFromBase(baseExp));
-        AddVirtualReward(notification, BaseExpItem, baseExp);
-        AddVirtualReward(notification, JobExpItem, jobExp);
-        int oldLevel = staged.Level, oldJob = staged.JobLevel;
-        if (baseExp > 0 || jobExp > 0) ApplyExp(staged, baseExp, jobExp);
+        s.Decomposed = s.DeliveredTaskState == null && s.OwnedAward?.CommandKind != "cd13e/grant" ? new ItemAutoDecomposeTipsNtf()
+            : StageAutoDecomposeAward(s.Session, s.Items, s.StagedProgress, s.Received, beforeGrants, s.Gained);
+        s.JobExp = checked(s.JobExp + JobExpFromBase(s.BaseExp));
+        AddVirtualReward(s.Notification, BaseExpItem, s.BaseExp);
+        AddVirtualReward(s.Notification, JobExpItem, s.JobExp);
+        s.OldLevel = s.StagedProgress.Level;
+        s.OldJob = s.StagedProgress.JobLevel;
+        if (s.BaseExp > 0 || s.JobExp > 0) ApplyExp(s.StagedProgress, s.BaseExp, s.JobExp);
         // TaskService can hold unsaved in-memory objective progress. Compare that snapshot above, then
         // use the persisted blob as the SQLite CAS baseline for this single award transaction.
-        byte[]? persistedTasks = expectedTasks == null ? null : roles.LoadTasks(session.Role.Id);
-        var cardSight = StageFirstCardSight?.Invoke(session, [.. gained.Select(g => g.Entry)], 0);
-        void PublishAward()
+        s.PersistedTasks = s.ExpectedTasks == null ? null : roles.LoadTasks(s.RoleId);
+        s.CardSight = StageFirstCardSight?.Invoke(s.Session, [.. s.Gained.Select(g => g.Entry)], 0);
+    }
+
+    private void StageAwardCurrencyGrant(AwardStaging s, AwardGrant grant)
+    {
+        var currencyRow = data.Row("ItemConfig", grant.Entry)!.Value;
+        if (grant.ExpireTimeStamp != 0 || grant.BindType == 2
+            || grant.BindType == 1 && (!currencyRow.TryGetProperty("_iTrade", out var trade) || GameData.Number(trade) != 0))
+            throw new InvalidOperationException("unsupported bound or expiring currency award");
+        // (inferred) DBItemsInfo.currency has only an aggregate amount, so permanent bind does not partition the balance.
+        s.StagedProgress.Currency[grant.Entry] = checked(s.StagedProgress.Currency.GetValueOrDefault(grant.Entry) + grant.Count);
+    }
+
+    private bool StageAwardItemGrant(AwardStaging s, AwardGrant grant)
+    {
+        var row = data.Row("ItemConfig", grant.Entry)!.Value;
+        int stackLimit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
+        int pack = TotemService.IsTotem(data, grant.Entry) ? 4 : EmblemService.IsEmblem(data, grant.Entry) ? 5 : ConfigPack(row);
+        int left = grant.Count;
+        var created = new List<InvItem>();
+        foreach (var item in s.Items.Where(i => CanStackGrant(i, grant.Entry, stackLimit, grant.BindType, grant.ExpireTimeStamp)))
         {
-            session.Progress = staged;
-            session.Items = items;
-            if (nextTasks != null) session.Tasks = nextTasks;
-            if (nextRuntime != null) session.Activities.TaskRuntime = nextRuntime;
-            if (nextDailyState != null)
-            {
-                session.Activities.Daily = nextDailyState;
-                session.Activities.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(nextDailyState.Rows);
-            }
-            cardSight?.Apply();
-            committed?.Invoke();
+            int add = Math.Min(left, stackLimit - item.Stack);
+            item.Stack += add;
+            left -= add;
+            s.Received.Add(item);
+            if (left == 0) break;
         }
-        if (ownedAward != null)
+        while (left > 0)
         {
-            if (familyEconomy != null) throw new InvalidOperationException("Award cannot carry two economy envelopes.");
-            var economy = EconomyForOwnedAward(session, ownedAward, plan, old, staged, expense,
-                baseExp, jobExp, decomposed);
+            int stack = Math.Min(left, stackLimit);
+            var item = new InvItem
+            {
+                Entry = grant.Entry, Stack = stack, Pack = pack,
+                Sort = s.Items.Where(i => i.Grid == 0 && i.Pack == pack).Select(i => i.Sort).DefaultIfEmpty(0).Max() + 1,
+                BindType = grant.BindType, BindExpire = grant.ExpireTimeStamp != 0 ? grant.ExpireTimeStamp : AcquireExpiry(grant.Entry),
+                Attrs = TotemAttrFactory?.Invoke(grant.Entry) ?? EmblemAttrFactory?.Invoke(grant.Entry) ?? RollAttrs(grant.Entry)
+            };
+            s.Items.Add(item);
+            created.Add(item);
+            s.Received.Add(item);
+            left -= stack;
+        }
+        s.Gained.Add((grant.Entry, grant.Count));
+        if (!IsEquipment(grant.Entry)) return false;
+        // Each gear instance may roll distinct attributes; a single aggregate popup would misstate them.
+        // GUIDs are assigned at commit; the row is rebuilt then (quick-equip prompt needs itemGuid).
+        foreach (var item in created)
+        {
+            s.GearRows.Add((s.Notification.Rewards.Count, item));
+            s.Notification.Rewards.Add(ItemInfo(item));
+        }
+        return true;
+    }
+
+    private static void PublishAwardState(AwardStaging s)
+    {
+        s.Session.Progress = s.StagedProgress;
+        s.Session.Items = s.Items;
+        if (s.NextTasks != null) s.Session.Tasks = s.NextTasks;
+        if (s.NextRuntime != null) s.Session.Activities.TaskRuntime = s.NextRuntime;
+        if (s.NextDailyState != null)
+        {
+            s.Session.Activities.Daily = s.NextDailyState;
+            s.Session.Activities.DailyRows = DBDailyActivityInfo.Parser.ParseFrom(s.NextDailyState.Rows);
+        }
+        s.CardSight?.Apply();
+        s.Committed?.Invoke();
+    }
+
+    private async Task<bool> CommitAwardAsync(AwardStaging s)
+    {
+        long roleId = s.RoleId;
+        if (s.OwnedAward != null)
+        {
+            if (s.FamilyEconomy != null) throw new InvalidOperationException("Award cannot carry two economy envelopes.");
+            var economy = EconomyForOwnedAward(s.Session, s.OwnedAward, s.Plan, s.OldProgress, s.StagedProgress, s.Expense,
+                s.BaseExp, s.JobExp, s.Decomposed);
             var builder = roles.NewTransaction();
-            int itemReceipt = builder.ItemDelta(session.Role.Id, session.Items, items);
-            builder.Add(new RoleAwardStatePlan(session.Role.Id, staged, deliveredTaskState, taskRuntimeState,
-                expectedDaily, nextDaily, persistedTasks, expectedTasks != null));
-            persist?.Invoke(builder);
-            cardSight?.Persist(builder);
+            int itemReceipt = builder.ItemDelta(roleId, s.Session.Items, s.Items);
+            builder.Add(new RoleAwardStatePlan(roleId, s.StagedProgress, s.DeliveredTaskState, s.TaskRuntimeState,
+                s.ExpectedDaily, s.NextDaily, s.PersistedTasks, s.ExpectedTasks != null));
+            s.Persist?.Invoke(builder);
+            s.CardSight?.Persist(builder);
             builder.WithEconomy(economy);
             try
             {
                 await roles.CommitAsync(builder, "character/owned-award", receipts =>
                 {
-                    ItemSnapshotWritePlan.ApplyGuids(items, (long[])receipts[itemReceipt]!);
-                    staged.SourceRevision = builder.CommittedVector(session.Role.Id, RevisionStore.Progress);
-                    PublishAward();
+                    ItemSnapshotWritePlan.ApplyGuids(s.Items, (long[])receipts[itemReceipt]!);
+                    s.StagedProgress.SourceRevision = builder.CommittedVector(roleId, RevisionStore.Progress);
+                    PublishAwardState(s);
                 });
             }
             catch (RolePlanConflictException) { return false; }
+            return true;
         }
-        else if (familyEconomy != null)
+        if (s.FamilyEconomy != null)
         {
-            // E05b pet-lottery seam. Ordinary award/EXP families retain their own migration boundary.
-            if (familyEconomy.CommandKind != "cd13b/pet-lottery" || deliveredTaskState != null ||
-                taskRuntimeState != null || expectedDaily != null || expectedTasks != null || baseExp != 0 || jobExp != 0)
+            // Pet-lottery economy seam. Ordinary award/EXP families retain their own receipt boundary.
+            if (s.FamilyEconomy.CommandKind != "cd13b/pet-lottery" || s.DeliveredTaskState != null ||
+                s.TaskRuntimeState != null || s.ExpectedDaily != null || s.ExpectedTasks != null || s.BaseExp != 0 || s.JobExp != 0)
                 throw new InvalidOperationException("The pet lottery envelope cannot enlist unrelated award boundaries.");
             var builder = roles.NewTransaction();
-            int itemReceipt = builder.ItemDelta(session.Role.Id, session.Items, items);
-            builder.Progress(session.Role.Id, staged);
-            persist?.Invoke(builder);
-            cardSight?.Persist(builder);
-            builder.WithEconomy(familyEconomy);
+            int itemReceipt = builder.ItemDelta(roleId, s.Session.Items, s.Items);
+            builder.Progress(roleId, s.StagedProgress);
+            s.Persist?.Invoke(builder);
+            s.CardSight?.Persist(builder);
+            builder.WithEconomy(s.FamilyEconomy);
             await roles.CommitAsync(builder, "cd13b/pet-lottery", receipts =>
             {
-                ItemSnapshotWritePlan.ApplyGuids(items, (long[])receipts[itemReceipt]!);
-                PublishAward();
+                ItemSnapshotWritePlan.ApplyGuids(s.Items, (long[])receipts[itemReceipt]!);
+                PublishAwardState(s);
             });
+            return true;
         }
-        else
+        bool escrowAward = false;
+        try
         {
-            bool escrowAward = false;
-            try
-            {
-                if (!await roles.SaveAwardStateAsync(session.Role.Id, staged, deliveredTaskState, taskRuntimeState,
-                    items, builder =>
-                    {
-                        persist?.Invoke(builder);
-                        cardSight?.Persist(builder);
-                        escrowAward = builder.HasEscrowEconomy;
-                    }, expectedDaily, nextDaily, persistedTasks, expectedTasks != null)) return false;
-            }
-            catch (EconomyOutcomeUnknownException error) when (escrowAward)
-            {
-                QuarantineAward(error);
-                throw;
-            }
-            try { PublishAward(); }
-            catch (Exception error) when (escrowAward)
-            {
-                QuarantineAward(error);
-                throw;
-            }
-            void QuarantineAward(Exception error)
-            {
-                if (session.Owner is { } owner) owner.State = Ownership.RoleOwnerState.RecoveryRequired;
-                session.CancelPendingCharacterIntents();
-                session.AbortForRecovery();
-                log.LogError(error, "Committed E03 award publication is unresolved; role {Role} requires recovery",
-                    session.Role!.Id);
-            }
+            if (!await roles.SaveAwardStateAsync(roleId, s.StagedProgress, s.DeliveredTaskState, s.TaskRuntimeState,
+                s.Items, builder =>
+                {
+                    s.Persist?.Invoke(builder);
+                    s.CardSight?.Persist(builder);
+                    escrowAward = builder.HasEscrowEconomy;
+                }, s.ExpectedDaily, s.NextDaily, s.PersistedTasks, s.ExpectedTasks != null)) return false;
         }
-        if (attachment?.Cancelled == true || !ReferenceEquals(session.Attachment, attachment)) return true;
-        if (ownedAward?.CommandKind is "cd13e/grant" or "cd13e/gm-grant")
-            foreach (var item in received.Where(i => i.Guid > 0 && items.Contains(i))) session.Profile.NewItems.Add(item.Guid);
+        catch (EconomyOutcomeUnknownException error) when (escrowAward) { QuarantineAward(s.Session, roleId, error); throw; }
+        try { PublishAwardState(s); }
+        catch (Exception error) when (escrowAward) { QuarantineAward(s.Session, roleId, error); throw; }
+        return true;
+    }
+
+    private void QuarantineAward(GameSession session, long roleId, Exception error)
+    {
+        if (session.Owner is { } owner) owner.State = Ownership.RoleOwnerState.RecoveryRequired;
+        session.CancelPendingCharacterIntents();
+        session.AbortForRecovery();
+        log.LogError(error, "Committed E03 award publication is unresolved; role {Role} requires recovery", roleId);
+    }
+
+    private async Task PresentAwardAsync(AwardStaging s)
+    {
+        var session = s.Session;
+        if (s.OwnedAward?.CommandKind is "cd13e/grant" or "cd13e/gm-grant")
+            foreach (var item in s.Received.Where(i => i.Guid > 0 && s.Items.Contains(i))) session.Profile.NewItems.Add(item.Guid);
         else
-            foreach (var item in items.Where(i => i.Guid > 0 && !oldItemGuids.Contains(i.Guid))) session.Profile.NewItems.Add(item.Guid);
-        if (expense.Count > 0 || plan.Grants.Any(g => g.Entry is not (BaseExpItem or JobExpItem))) await SyncItemsAsync(session);
-        if (baseExp > 0 || jobExp > 0)
+            foreach (var item in s.Items.Where(i => i.Guid > 0 && !s.OldItemGuids.Contains(i.Guid))) session.Profile.NewItems.Add(item.Guid);
+        if (s.Expense.Count > 0 || s.Plan.Grants.Any(g => g.Entry is not (BaseExpItem or JobExpItem))) await SyncItemsAsync(session);
+        if (s.BaseExp > 0 || s.JobExp > 0)
         {
             await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
-            if (staged.Level != oldLevel || staged.JobLevel != oldJob)
+            if (s.StagedProgress.Level != s.OldLevel || s.StagedProgress.JobLevel != s.OldJob)
             {
                 await SendStatPlanAsync(session);
                 await SendStatsAsync(session);
@@ -356,20 +417,19 @@ public sealed partial class CharacterService
             }
         }
         // A wheel (rewardIndexes) waits for its notice to stop and unlock, even when nothing showable was granted.
-        if (!suppressRewardNotice && (notification.Rewards.Count > 0 || rewardIndexes is { Count: > 0 }))
+        if (!s.SuppressRewardNotice && (s.Notification.Rewards.Count > 0 || s.RewardIndexes is { Count: > 0 }))
         {
-            foreach (var (row, item) in gearRows)
-                if (item.Guid > 0 && session.Items.Contains(item)) notification.Rewards[row] = ItemInfo(item);
-            notification.RewardType.Add(manifestType);
-            if (rewardIndexes != null) notification.RewardIndexes.Add(rewardIndexes);
-            await session.SendGameAsync(GetRewardNotify, notification);
+            foreach (var (row, item) in s.GearRows)
+                if (item.Guid > 0 && session.Items.Contains(item)) s.Notification.Rewards[row] = ItemInfo(item);
+            s.Notification.RewardType.Add(s.ManifestType);
+            if (s.RewardIndexes != null) s.Notification.RewardIndexes.Add(s.RewardIndexes);
+            await session.SendGameAsync(GetRewardNotify, s.Notification);
         }
-        if (decomposed.DecomposeItemInfo.Count > 0)
-            await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, decomposed);
-        foreach (var (entry, count) in gained) foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
-        foreach (var handler in ItemsAwarded.Handlers) handler(session, gained);
+        if (s.Decomposed.DecomposeItemInfo.Count > 0)
+            await session.SendGameAsync(EquipmentService.ItemAutoDecomposeNotice, s.Decomposed);
+        foreach (var (entry, count) in s.Gained) foreach (var handler in ItemGained.Handlers) handler(session, entry, count);
+        foreach (var handler in ItemsAwarded.Handlers) handler(session, s.Gained);
         foreach (var handler in StateChanged.Handlers) handler(session);
-        return true;
     }
 
     internal void ApplyExp(RoleProgress p, long baseExp, long jobExp)
@@ -422,6 +482,9 @@ public sealed partial class CharacterService
         foreach (var (key, value) in source.Currency) result.Currency[key] = value;
         foreach (var (key, value) in source.Skills) result.Skills[key] = value;
         foreach (var (key, value) in source.SkillBar) result.SkillBar[key] = value;
+        // Never saved, but a staged or preview copy must still know the skills its equipment grants: SkillService.Build
+        // prunes the bar and the Auto-Battle lists against the copy, and dropped a card skill as unlearned (#571).
+        foreach (var (key, value) in source.GrantedSkills) result.GrantedSkills[key] = value;
         return result;
     }
 

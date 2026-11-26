@@ -10,11 +10,13 @@ internal static class TerritoryComposition
     {
         services.AddSingleton<TerritoryWarsClock>();
         services.AddSingleton<TerritoryWarsService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<TerritoryWarsService>());
         services.AddSingleton<FactionWorldService>();
         services.AddSingleton<WarMachineService>();
         services.AddSingleton<SiegeService>();
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TerritoryWarsService>());
         services.AddSingleton<TerritoryEscortService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<TerritoryEscortService>());
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<TerritoryEscortService>());
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<TerritoryWarsService>());
         services.AddSingleton<IRoleLifecycle>(sp => sp.GetRequiredService<TerritoryEscortService>());

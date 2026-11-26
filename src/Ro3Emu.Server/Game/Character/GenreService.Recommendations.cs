@@ -59,7 +59,7 @@ public sealed partial class GenreService
         if (target != null)
         {
             await SyncAsync(target);
-            await target.SendGameAsync(82822, new GenreUpdateNtf());
+            await target.SendGameAsync(UpdateNtf, new GenreUpdateNtf());
         }
     }
 
@@ -84,7 +84,7 @@ public sealed partial class GenreService
                     or Accounts.Persistence.PersistenceException or InvalidOperationException or OverflowException)
                 { log.LogWarning(e, "Build seek code failed"); code = ErrorCodes.Unknown; share = 0; }
             }
-            await s.SendGameAsync(82800, new GenreSeekerResp
+            await s.SendGameAsync(Seek, new GenreSeekerResp
             {
                 Result = code, Name = code == 0 ? s.Role!.Name : "", ZoneId = s.Role!.Area,
                 SeekerTime = now, SeekerCode = share,
@@ -113,7 +113,7 @@ public sealed partial class GenreService
                     or Accounts.Persistence.PersistenceException or InvalidOperationException or OverflowException)
                 { log.LogWarning(e, "Build sharing code failed"); code = ErrorCodes.Unknown; share = ""; }
             }
-            await s.SendGameAsync(82807, new GenreSeekerCodeResp { Result = code, Code = share });
+            await s.SendGameAsync(Code, new GenreSeekerCodeResp { Result = code, Code = share });
         }
     }
 
@@ -143,7 +143,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.SeekUserId, seeker);
             }
         }
-        await s.SendGameAsync(82801, new GenreResponserResp { Result = result, ResponseId = response, SeekUserId = req.SeekUserId });
+        await s.SendGameAsync(Respond, new GenreResponserResp { Result = result, ResponseId = response, SeekUserId = req.SeekUserId });
     }
 
     private async Task RespondCodeAsync(GameSession s, GenreResponseCodeReq req)
@@ -168,7 +168,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, seekerId, seeker);
             }
         }
-        await s.SendGameAsync(82812, new GenreResponseCodeResp { Result = result, ResponseId = response, SeekUserId = seekerId });
+        await s.SendGameAsync(RespondCode, new GenreResponseCodeResp { Result = result, ResponseId = response, SeekUserId = seekerId });
     }
 
     internal async Task SaveRecommendationAsync(GameSession s, GenreResponserSaveReq req)
@@ -190,7 +190,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.SeekUserId, seeker!);
             }
         }
-        await s.SendGameAsync(82803, new GenreResponserSaveResp { Result = result });
+        await s.SendGameAsync(SaveRec, new GenreResponserSaveResp { Result = result });
     }
 
     /// <summary>Recommendations may describe only the sender's resources; the seeker is revalidated again on apply.</summary>
@@ -319,7 +319,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.SeekUserId, seeker!);
             }
         }
-        await s.SendGameAsync(82824, new GenreResponserNameSaveResp { Result = result });
+        await s.SendGameAsync(RenameRec, new GenreResponserNameSaveResp { Result = result });
     }
 
     internal async Task SendRecommendationAsync(GameSession s, GenreResponserSendPlanReq req)
@@ -338,7 +338,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.SeekUserId, seeker!);
             }
         }
-        await s.SendGameAsync(82802, new GenreResponserSendPlanResp { Result = result });
+        await s.SendGameAsync(SendPlan, new GenreResponserSendPlanResp { Result = result });
     }
 
     internal async Task DeleteRecommendationAsync(GameSession s, GenreResponserDeleteReq req)
@@ -355,7 +355,7 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.SeekerUserId, seeker);
             }
         }
-        await s.SendGameAsync(82804, new GenreResponserDeleteResp { Result = result });
+        await s.SendGameAsync(DeleteRec, new GenreResponserDeleteResp { Result = result });
     }
 
     internal async Task DeleteSeekerAsync(GameSession s, GenreSeekerDeleteReq req)
@@ -372,14 +372,14 @@ public sealed partial class GenreService
                 await PublishPairAsync(s, mine, req.ResponseUserId, responder);
             }
         }
-        await s.SendGameAsync(82805, new GenreSeekerDeleteResp { Result = result });
+        await s.SendGameAsync(DeleteSeeker, new GenreSeekerDeleteResp { Result = result });
     }
 
     internal async Task OthersAsync(GameSession s, GenreGetAllOtherRecommendReq req)
     {
         int result = Gate(s);
         if (result == 0 && FindOther(s.Profile.Genre!, req.ResponseUserID, req.ResponseId) == null) result = ErrorCodes.Parameter;
-        await s.SendGameAsync(82809, new GenreGetAllOtherRecommendResp { Result = result });
+        await s.SendGameAsync(Others, new GenreGetAllOtherRecommendResp { Result = result });
         if (result == 0) await SyncAsync(s);
     }
 
@@ -418,7 +418,7 @@ public sealed partial class GenreService
                 foreach (var (petId, pet) in DBPetInfo.Parser.ParseFrom(petBytes).ListPet)
                     response.SeekerInfo.ListPet[petId] = pet.Clone();
         }
-        await s.SendGameAsync(82810, response);
+        await s.SendGameAsync(Concrete, response);
     }
 
     /// <summary>82813: import only checked child systems, resolving donor instances to owned items before publishing.</summary>
@@ -555,7 +555,7 @@ public sealed partial class GenreService
                 { log.LogWarning(e, "Genre recommendation commit failed"); result = ErrorCodes.Unknown; }
             }
             reply.Result = result;
-            await s.SendGameAsync(82813, reply);
+            await s.SendGameAsync(ApplyRec, reply);
             if (result == 0) { await SyncAsync(s); await PublishSyncAsync(s); }
         }
         if (skillChanged) await skills.OnActivePlanChangedAsync(s);

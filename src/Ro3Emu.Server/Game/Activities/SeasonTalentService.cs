@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -101,10 +102,8 @@ public sealed partial class SeasonTalentService
 
     private bool HasTalentGraph() => Trees().Any(tree => tree.Id > 0) && Nodes().Count > 0;
 
-    private bool Applies(JsonElement row) => row.TryGetProperty("_kMultiverseArray", out var books)
-        && books.ValueKind == JsonValueKind.Array
-        && books.EnumerateArray().Any(v => GameData.Number(v) == _seasons.PlayBook);
-    private bool Applies(TalentTree tree) => tree.Books.Any(book => book == _seasons.PlayBook);
+    private bool Applies(SeasonTalentTreeConfig row) => row.MultiverseArray.Contains(_seasons.PlayBook);
+    private bool Applies(TalentTree tree) => tree.Books.Contains(_seasons.PlayBook);
 
     private void Seed(DBSeasonTalent state)
     {
@@ -170,15 +169,12 @@ public sealed partial class SeasonTalentService
     }
 
     private sealed record TalentNode(long Id, long Tree, long Type, long NeedLevel, bool Start);
-    private sealed record TalentTree(long Id, double?[] Books, long Condition, long NeedLevel, long PvpLimit);
+    private sealed record TalentTree(long Id, long[] Books, long Condition, long NeedLevel, long PvpLimit);
 
     /// <summary>SeasonTalentTreeConfig's rows (table order), read once: a login rebuilt the unlocks several times,
-    /// each time looking every field up in the JSON rows (stage G).</summary>
-    private IReadOnlyList<TalentTree> Trees() => _trees ??= [.. _data.Table("SeasonTalentTreeConfig").Values.Select(row =>
-        new TalentTree(GameData.Int(row, "_iId"),
-            row.TryGetProperty("_kMultiverseArray", out var books) && books.ValueKind == JsonValueKind.Array
-                ? [.. books.EnumerateArray().Select(GameData.Number)] : [],
-            GameData.Int(row, "_iTreeCondition"), GameData.Int(row, "_iNeedLevel"), GameData.Int(row, "_iUpPvPLvLimit")))];
+    /// each time looking every field up in the JSON rows.</summary>
+    private IReadOnlyList<TalentTree> Trees() => _trees ??= [.. SeasonTalentTreeConfig.All(_data).Select(row =>
+        new TalentTree(row.Id, row.MultiverseArray, row.TreeCondition, row.NeedLevel, row.UpPvPLvLimit))];
     private TalentTree[]? _trees;
 
     /// <summary>SeasonTalentConfig's nodes (id &gt; 0, table order) and each node's same-tree parents with their caps,
@@ -186,23 +182,21 @@ public sealed partial class SeasonTalentService
     private IReadOnlyList<TalentNode> Nodes()
     {
         if (_nodes != null) return _nodes;
-        var rows = _data.Table("SeasonTalentConfig").Values.ToArray();
+        var rows = SeasonTalentConfig.All(_data).ToArray();
         var parents = new Dictionary<(long Node, long Tree), List<(long Parent, long Max)>>();
         foreach (var candidate in rows)
         {
-            if (!candidate.TryGetProperty("_kAfterids", out var after) || after.ValueKind != JsonValueKind.Array) continue;
-            long tree = GameData.Int(candidate, "_iTalentTreeID"), parent = GameData.Int(candidate, "_iId"), max = GameData.Int(candidate, "_iMaxLevel");
-            foreach (var v in after.EnumerateArray())
-                if (GameData.Number(v) is { } child)
-                {
-                    var key = ((long)child, tree);
-                    if (!parents.TryGetValue(key, out var list)) parents[key] = list = [];
-                    list.Add((parent, max));
-                }
+            long tree = candidate.TalentTreeId, parent = candidate.Id, max = candidate.MaxLevel;
+            foreach (long child in candidate.Afterids)
+            {
+                var key = (child, tree);
+                if (!parents.TryGetValue(key, out var list)) parents[key] = list = [];
+                list.Add((parent, max));
+            }
         }
         _parents = parents.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray());
-        var nodes = rows.Select(r => new TalentNode(GameData.Int(r, "_iId"), GameData.Int(r, "_iTalentTreeID"), GameData.Int(r, "_iType"),
-            GameData.Int(r, "_iNeedLevel"), GameData.Int(r, "_iIsStartPoint") == 1)).Where(n => n.Id > 0).ToArray();
+        var nodes = rows.Select(r => new TalentNode(r.Id, r.TalentTreeId, r.Type, r.NeedLevel, r.IsStartPoint == 1))
+            .Where(n => n.Id > 0).ToArray();
         _nodeIds = [.. nodes.Select(n => n.Id)];
         return _nodes = nodes;
     }
@@ -226,45 +220,43 @@ public sealed partial class SeasonTalentService
     /// choice zeroes the old path before it sets the new one, so switching never raises the total. (inferred) The server
     /// checks the total the client shows.</summary>
     private long TalentLevel(DBSeasonTalent state, SeasonTalentPlan plan) => plan.TalentNodes.Sum(kv =>
-        _data.Row("SeasonTalentConfig", kv.Key) is not { } row || GameData.Int(row, "_iType") == ChoiceNodeType ? 0
-            : Math.Max(0, GameData.Int(row, "_iType") == PvpNodeType ? state.BattleOathLevel : kv.Value.CurrentLevel));
+        SeasonTalentConfig.Get(_data, kv.Key) is not { } row || row.Type == ChoiceNodeType ? 0
+            : Math.Max(0, row.Type == PvpNodeType ? state.BattleOathLevel : kv.Value.CurrentLevel));
 
     /// <summary>Effect rows by (group, level, career). CharacterService.Stats asks for every bought node, and the table does
     /// not change once loaded, so it is scanned once per key.</summary>
-    private readonly ConcurrentDictionary<(long Group, long Level, int Career), JsonElement?> _effects = new();
+    private readonly ConcurrentDictionary<(long Group, long Level, int Career), SeasonTalentEffectConfig?> _effects = new();
 
-    private JsonElement? Effect(long group, long level, int career) =>
+    private SeasonTalentEffectConfig? Effect(long group, long level, int career) =>
         _effects.GetOrAdd((group, level, career), static (key, self) => self.FindEffect(key.Group, key.Level, key.Career), this);
 
-    private JsonElement? FindEffect(long group, long level, int career)
+    private SeasonTalentEffectConfig? FindEffect(long group, long level, int career)
     {
-        JsonElement? generic = null;
-        foreach (var row in _data.Table("SeasonTalentEffectConfig").Values)
+        SeasonTalentEffectConfig? generic = null;
+        foreach (var row in SeasonTalentEffectConfig.All(_data))
         {
-            if (GameData.Int(row, "_iGroup") != group || GameData.Int(row, "_iLevel") != level) continue;
-            if (!row.TryGetProperty("_iJobId", out var jobs) || jobs.ValueKind != JsonValueKind.Array || jobs.GetArrayLength() == 0)
-                generic = row;
-            else if (jobs.EnumerateArray().Any(j => GameData.Number(j) == career)) return row;
-            else if (jobs.EnumerateArray().Any(j => GameData.Number(j) == 0)) generic = row;
+            if (row.Group != group || row.Level != level) continue;
+            var jobs = row.JobId;
+            if (jobs.Length == 0) generic = row;
+            else if (jobs.Contains(career)) return row;
+            else if (jobs.Contains(0)) generic = row;
         }
         return generic; // Lua CFG GetCfgByJob falls back to job 0.
     }
 
-    private static bool HasEntries(JsonElement row, string key) => row.TryGetProperty(key, out var value)
-        && value.ValueKind == JsonValueKind.Array && value.GetArrayLength() > 0;
+    private static bool Supported(SeasonTalentEffectConfig row) => row.Attrs.Length > 0 && row.Costs.Length > 0
+        && row.SpecialEffectList.Length == 0 && row.ProfessionId.Length == 0
+        && row.SkillPoint == 0 && row.SkillPointCosts == 0;
 
-    private static bool Supported(JsonElement row) => HasEntries(row, "_kAttrs") && HasEntries(row, "_kCosts")
-        && !HasEntries(row, "_kSpecialEffectList") && !HasEntries(row, "_kProfessionID")
-        && GameData.Int(row, "_iSkillPoint") == 0 && GameData.Int(row, "_kSkillPointCosts") == 0;
-
-    private List<(int Entry, long Count)>? Costs(JsonElement effect)
+    private List<(int Entry, long Count)>? Costs(SeasonTalentEffectConfig effect)
     {
         var costs = new List<(int, long)>();
-        foreach (var (id, amount) in GameData.Pairs(effect, "_kCosts"))
+        foreach (var pair in effect.Costs)
         {
-            if (id <= 0 || id > int.MaxValue || amount <= 0 || amount != Math.Truncate(amount)
-                || amount > long.MaxValue || _data.Row("ItemConfig", id) == null) return null;
-            costs.Add(((int)id, (long)amount));
+            if (pair.Length < 2) continue;
+            long id = pair[0], amount = pair[1];
+            if (id <= 0 || id > int.MaxValue || amount <= 0 || ItemConfig.Get(_data, id) == null) return null;
+            costs.Add(((int)id, amount));
         }
         return costs.Count > 0 ? costs : null;
     }
@@ -272,8 +264,7 @@ public sealed partial class SeasonTalentService
     /// <summary>83550: lock validation, payment, plan/oath mutation and durable save as one role operation.</summary>
     public async Task UpgradeAsync(GameSession s, SeasonTalentUpgradeReq req)
     {
-        if (_data.Row("SeasonTalentConfig", req.TalentId) is { } requested
-            && GameData.Int(requested, "_iType") is ProfessionBranchType or ProfessionOptionType)
+        if (SeasonTalentConfig.Get(_data, req.TalentId) is { Type: ProfessionBranchType or ProfessionOptionType })
         {
             await SelectProfessionAsync(s, req);
             return;
@@ -331,15 +322,15 @@ public sealed partial class SeasonTalentService
     {
         cost = null; node = id; oath = false;
         if (s.Season.SeasonTalent == null || s.Progress == null || !Available(s)) return ErrorCodes.FeatureUnavailable;
-        if (_data.Row("SeasonTalentConfig", id) is not { } row) return ErrorCodes.TalentInvalid;
+        if (SeasonTalentConfig.Get(_data, id) is not { } row) return ErrorCodes.TalentInvalid;
         BuildUnlocks(s);
         var state = s.Season.SeasonTalent;
         if (!state.UnlockedNode.GetValueOrDefault(id)) return ErrorCodes.TalentLocked;
-        oath = GameData.Int(row, "_iType") == PvpNodeType;
+        oath = row.Type == PvpNodeType;
         long current = oath ? state.BattleOathLevel : state.Plan[state.CurPlanId].TalentNodes[id].CurrentLevel;
-        long cap = oath ? state.BattleOathMaxLevel : GameData.Int(row, "_iMaxLevel");
+        long cap = oath ? state.BattleOathMaxLevel : row.MaxLevel;
         if (cap <= 0 || current >= cap) return ErrorCodes.SkillMaxLevel;
-        long group = GameData.Int(row, "_iLevelGroupId");
+        long group = row.LevelGroupId;
         if (group <= 0 || Effect(group, current + 1, s.Progress.Career) is not { } effect || !Supported(effect))
             return ErrorCodes.FeatureUnavailable; // no invented connector, missing group or profession/special engine
         cost = Costs(effect);
@@ -424,35 +415,35 @@ public sealed partial class SeasonTalentService
     {
         foreach (var row in ActiveEffects(s))
         {
-            if (Supported(row)) foreach (var pair in GameData.Pairs(row, "_kAttrs")) yield return pair;
-            foreach (var pair in SpecialAttributes(s, row)) yield return pair;
+            if (Supported(row))
+                foreach (var pair in row.Attrs)
+                    if (pair.Length >= 2) yield return (pair[0], pair[1]);
+            foreach (var pair in SpecialAttributes(s, row.Row)) yield return pair;
         }
     }
 
     /// <summary>The active plan's SeasonTalentEffectConfig rows at their bought levels, and the oath's at its level.</summary>
-    private IEnumerable<JsonElement> ActiveEffects(GameSession s)
+    private IEnumerable<SeasonTalentEffectConfig> ActiveEffects(GameSession s)
     {
         if (!Available(s) || s.Season.SeasonTalent is not { } state || s.Progress == null
             || !state.Plan.TryGetValue(state.CurPlanId, out var plan)) yield break;
         long total = TalentLevel(state, plan);
         foreach (var (id, saved) in plan.TalentNodes)
         {
-            if (id == 10100000 || saved.CurrentLevel <= 0 || _data.Row("SeasonTalentConfig", id) is not { } node) continue;
-            if (!TreeEligible(s, GameData.Int(node, "_iTalentTreeID"), total)
-                || total < GameData.Int(node, "_iNeedLevel")
-                || (GameData.Int(node, "_iIsStartPoint") != 1
-                    && !ParentMaxed(plan, id, GameData.Int(node, "_iTalentTreeID")))) continue;
-            if (Effect(GameData.Int(node, "_iLevelGroupId"), saved.CurrentLevel, s.Progress.Career) is { } row) yield return row;
+            if (id == 10100000 || saved.CurrentLevel <= 0 || SeasonTalentConfig.Get(_data, id) is not { } node) continue;
+            if (!TreeEligible(s, node.TalentTreeId, total) || total < node.NeedLevel
+                || (node.IsStartPoint != 1 && !ParentMaxed(plan, id, node.TalentTreeId))) continue;
+            if (Effect(node.LevelGroupId, saved.CurrentLevel, s.Progress.Career) is { } row) yield return row;
         }
-        if (state.BattleOathLevel > 0 && _data.Row("SeasonTalentConfig", 10100000) is { } oath
-            && TreeEligible(s, GameData.Int(oath, "_iTalentTreeID"), total)
-            && Effect(GameData.Int(oath, "_iLevelGroupId"), state.BattleOathLevel, s.Progress.Career) is { } oathRow)
+        if (state.BattleOathLevel > 0 && SeasonTalentConfig.Get(_data, 10100000) is { } oath
+            && TreeEligible(s, oath.TalentTreeId, total)
+            && Effect(oath.LevelGroupId, state.BattleOathLevel, s.Progress.Career) is { } oathRow)
             yield return oathRow;
     }
 
     private bool TreeEligible(GameSession s, long treeId, long total) =>
-        _data.Row("SeasonTalentTreeConfig", treeId) is { } tree && Applies(tree)
-        && _functions.ConditionMet(s, GameData.Int(tree, "_iTreeCondition"))
-        && total >= GameData.Int(tree, "_iNeedLevel");
+        SeasonTalentTreeConfig.Get(_data, treeId) is { } tree && Applies(tree)
+        && _functions.ConditionMet(s, tree.TreeCondition)
+        && total >= tree.NeedLevel;
 
 }

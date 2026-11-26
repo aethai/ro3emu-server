@@ -9,6 +9,7 @@ public readonly partial record struct EquipConfig(JsonElement Row)
     [ConfigField("_iEntries")] public partial long Entries { get; }
     [ConfigField("_iID")] public partial long Id { get; }
     [ConfigField("_iIfAppraise")] public partial long IfAppraise { get; }
+    [ConfigField("_iPower", Optional = true)] public partial long Power { get; }
     [ConfigField("_iRank")] public partial long Rank { get; }
     [ConfigField("_kBasicAttribute")] public partial long[][] BasicAttribute { get; }
     [ConfigField("_kFixedEntries")] public partial long[][] FixedEntries { get; }

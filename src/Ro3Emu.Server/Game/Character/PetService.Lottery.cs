@@ -28,7 +28,7 @@ public sealed partial class PetService
     internal void FinalizeLotteryPets(DBPetInfo next) => UpdatePower(next);
     internal Task SyncLotteryPetsAsync(GameSession session) => SyncAsync(session);
 
-    /// <summary>Bind resolved pet results, ticket debit, duplicate conversion and both blobs to one E05b source.</summary>
+    /// <summary>Bind resolved pet results, ticket debit, duplicate conversion and both blobs to one family economy source.</summary>
     internal EconomyMutation LotteryEconomy(GameSession session, int pool, int ticket, int count,
         DBPetInfo next, byte[] lottery, IReadOnlyList<(int Entry, int Count)> goods,
         IReadOnlyList<LotteryItemData> outcomes) => _character.FamilyEconomy(session, "cd13b/pet-lottery",

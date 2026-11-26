@@ -98,6 +98,22 @@ public sealed class AsyncHookTests
     }
 
     [Fact]
+    public async Task AsyncHookIsolatesOperationCanceledWhenOptedIn()
+    {
+        var logger = new RecordingLogger();
+        var hook = new AsyncHook<int>("Combat.AfterLethalPublication", logger, isolateErrors: true, isolateCancellation: true);
+        bool secondRan = false;
+        hook.Subscribe(_ => throw new OperationCanceledException("cancelled subscriber"), order: -1, name: "CancelledSub");
+        hook.Subscribe(_ => { secondRan = true; return Task.CompletedTask; }, order: 1, name: "HealthySub");
+
+        await hook.InvokeAsync(7);
+
+        Assert.True(secondRan);
+        Assert.Single(logger.Messages);
+        Assert.Contains("CancelledSub", logger.Messages[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SyncHookOrdersIsolatesAndRecordsMetrics()
     {
         var logger = new RecordingLogger();

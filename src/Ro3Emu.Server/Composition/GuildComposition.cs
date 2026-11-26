@@ -19,6 +19,7 @@ internal static class GuildComposition
         services.AddSingleton<GuildCampfireService>();
         services.AddSingleton<Game.Messaging.INpcInteractionHandler>(sp => sp.GetRequiredService<GuildCampfireService>());
         services.AddSingleton<GuildHuntingService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<GuildHuntingService>());
         services.AddSingleton<GuildChallengeStore>();
         services.AddSingleton<GuildChallengeService>();
         services.AddSingleton<DraculaWeddingService>();
@@ -30,6 +31,7 @@ internal static class GuildComposition
         services.AddSingleton<GuildCaravanService>();
         services.AddSingleton<GuildLeagueCalendar>();
         services.AddSingleton<GuildLeagueService>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<GuildLeagueService>());
         services.AddSingleton<ICombatRule>(sp => sp.GetRequiredService<GuildLeagueService>());
 
         AddLifecycle<GuildService>();

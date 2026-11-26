@@ -281,28 +281,11 @@ public sealed partial class SeasonRefineService
 
     /// <summary>Only selected, unlocked groups contribute; pending choices never affect combat stats.</summary>
     public IEnumerable<(long Id, double Value)> ActiveAttributes(GameSession session) =>
-        ActiveEntries(session).SelectMany(e => GroupAttributes(e.GroupId, e.Group));
+        ActiveEntries(session).SelectMany(e => GroupAttributes(e.Group));
 
-    /// <summary>
-    /// Attributes of one RefiningSeasonAttrConfig row. The shipped client table swaps PATK/MATK (103/104) and
-    /// PDEF/MDEF (105/106) on groups 2 ("Basic Defense") and 12 ("Advanced Attack"); both the server and
-    /// Ro3Emu.ClientHooks.SeasonRefineAttrs correct those two rows so UI and stats agree.
-    /// </summary>
-    internal static IEnumerable<(long Id, double Value)> GroupAttributes(long groupId, JsonElement group)
-    {
-        foreach (var (id, value) in GameData.Pairs(group, "_kAttrs"))
-        {
-            long fixedId = (groupId, id) switch
-            {
-                (2, 103) => 105,
-                (2, 104) => 106,
-                (12, 105) => 103,
-                (12, 106) => 104,
-                _ => id,
-            };
-            yield return (fixedId, value);
-        }
-    }
+    /// <summary>Attributes of one RefiningSeasonAttrConfig row, taken verbatim from its _kAttrs data.</summary>
+    internal static IEnumerable<(long Id, double Value)> GroupAttributes(JsonElement group) =>
+        GameData.Pairs(group, "_kAttrs");
 
     /// <summary>The RefiningSeasonAttrConfig rows of the selected, unlocked groups (stats and PowerService).</summary>
     internal IEnumerable<JsonElement> ActiveGroups(GameSession session) =>

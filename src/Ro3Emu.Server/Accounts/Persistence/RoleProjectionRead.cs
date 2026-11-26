@@ -22,7 +22,7 @@ internal sealed class RoleProjectionRead(RoleProjectionKind kind, string? text =
             RoleProjectionKind.ForAccount => "SELECT * FROM role WHERE account=$p AND deleted_time=0 ORDER BY last_login_time DESC",
             RoleProjectionKind.ById => "SELECT * FROM role WHERE id=$p AND deleted_time=0",
             RoleProjectionKind.ByName => "SELECT * FROM role WHERE name=$p COLLATE NOCASE AND deleted_time=0",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            _ => throw new InvalidOperationException("Unsupported role projection kind."),
         };
         using var cmd = DbSql.Command(db, tx, sql);
         cmd.Parameters.AddWithValue("$p", kind == RoleProjectionKind.ById ? id : text!);

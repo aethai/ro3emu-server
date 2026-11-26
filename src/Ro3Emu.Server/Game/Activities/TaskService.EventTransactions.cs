@@ -4,7 +4,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class TaskService
 {
-    /// <summary>E05e: MVP target counters share the settled source; normal task settlement resumes durable debt.</summary>
+    /// <summary>Event economy: MVP target counters share the settled source; normal task settlement resumes durable debt.</summary>
     internal CharacterService.FirstCardSightPlan? StageMvpParticipant(GameSession session, string source, long npc = 0,
         bool withParty = false)
         => StageEventTarget(session, "mvp/" + source, target => target[0] is TMvp or TMvpOnce || ConnectMvp(target, npc, withParty));

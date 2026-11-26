@@ -5,6 +5,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -37,11 +38,11 @@ public sealed partial class TotemService
 
     private string RefineEpoch => $"{_seasons.PlayBook}:{_seasons.Start.Ticks}";
     private long Now => _clock.GetUtcNow().ToUnixTimeMilliseconds();
-    private static long[][] Rows(JsonElement v) => v.ValueKind == JsonValueKind.Array
-        ? [.. v.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Array).Select(x => x.EnumerateArray().Select(y => (long)(GameData.Number(y) ?? 0)).ToArray())] : [];
-    private static long[][] Rows(JsonElement row, string key) => row.TryGetProperty(key, out var v) ? Rows(v) : [];
+    private static long[][] Rows(JsonElement? v) => v is { ValueKind: JsonValueKind.Array } arr
+        ? [.. arr.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Array)
+            .Select(x => x.EnumerateArray().Select(y => (long)(GameData.Number(y) ?? 0)).ToArray())] : [];
     private static long Value(InvItem item, int key) => item.Attrs?.GetValueOrDefault(key) ?? 0;
-    public static bool IsTotem(GameData data, int entry) => data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 7;
+    public static bool IsTotem(GameData data, int entry) => ItemConfig.Get(data, entry) is { Type: 7 };
 
     /// <summary>A committed combine: the session and the made totem's entry (quest target 315004).</summary>
     public SyncHook<GameSession, int> Combined { get; } = new("TotemService.Combined");
@@ -99,7 +100,7 @@ public sealed partial class TotemService
             if (resetRefinements && item.Attrs != null) item.Attrs[270] = 0;
         }
         ApplyMarkers(copies, s.Profile.Totems, Now);
-        // Stage G: only what this normalization changed is written. A transaction at every login (even with nothing
+        // Only what this normalization changed is written. A transaction at every login (even with nothing
         // to change) was a third of a role's initialization in a login storm.
         var changed = copies.Where((item, i) => IsTotem(_data, item.Entry) && !SameTotemState(s.Items[i], item)).ToList();
         var totems = s.Profile.Totems.ToByteArray();
@@ -185,12 +186,12 @@ public sealed partial class TotemService
     private int ItemError(GameSession s, long guid, bool consume = false)
     {
         var item = Find(s, guid);
-        if (item == null || _data.Row("TotemConfig", item.Entry) is not { } row) return ErrorCodes.TotemInvalid;
+        if (item == null || TotemConfig.Get(_data, item.Entry) is not { } row) return ErrorCodes.TotemInvalid;
         if (Value(item, 3) != 1) return ErrorCodes.EquipNotAppraised;
         if (consume && (item.IsLocked || IsReserved(s, item))) return item.IsLocked ? ErrorCodes.ItemLocked : ErrorCodes.CannotDismantleEquipped;
-        long rank = _data.Row("JobConfig", s.Progress!.Career) is { } job ? GameData.Int(job, "_iJobRank") : 1;
+        long rank = JobConfig.Get(_data, s.Progress!.Career)?.JobRank ?? 1;
         // CFG_JobConfig.GetChangeJobRank returns the exported rank directly.
-        if (GameData.Int(row, "_iJobRank") > rank) return ErrorCodes.TotemJob;
+        if (row.JobRank > rank) return ErrorCodes.TotemJob;
         return 0;
     }
 
@@ -266,7 +267,7 @@ public sealed partial class TotemService
             plan.SetUpTotem[req.TotemPos] = req.TotemGuid;
             await CommitAsync(s, next);
         }
-        await s.SendGameAsync(82362, new SetUpTotemResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, OldTotemGuid = old });
+        await s.SendGameAsync(Setup, new SetUpTotemResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, OldTotemGuid = old });
     }
 
     private int TargetError(GameSession s, int pos, long guid)
@@ -296,7 +297,7 @@ public sealed partial class TotemService
         if (error == 0)
         {
             var next = item!.Clone();
-            var effect = _data.Row("ItemConfig", material) is { } mat ? Rows(mat, "_iUseEffect").FirstOrDefault(r => r.Length >= 3 && r[0] == 205) : null;
+            var effect = ItemConfig.Get(_data, material) is { } mat ? Rows(mat.UseEffect).FirstOrDefault(r => r.Length >= 3 && r[0] == 205) : null;
             if (effect == null) error = ErrorCodes.ItemNoConfig;
             else
             {
@@ -310,7 +311,7 @@ public sealed partial class TotemService
                 error = await PayForUpdate(s, next, [(material, (long)count)]);
             }
         }
-        await s.SendGameAsync(82363, new RefineTotemAttrResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, AttrId = req.AttrId });
+        await s.SendGameAsync(Refine, new RefineTotemAttrResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, AttrId = req.AttrId });
     }
 
     private async Task<int> PayForUpdate(GameSession s, InvItem next, IReadOnlyList<(int Entry, long Count)> cost, IReadOnlyDictionary<long, int>? instances = null)
@@ -342,22 +343,22 @@ public sealed partial class TotemService
         int error = TargetError(s, req.TotemPos, req.TotemGuid);
         var item = Find(s, req.TotemGuid);
         var book = s.Items.FirstOrDefault(i => i.Guid == req.SkillBookGuid && i.Grid == 0 && !i.IsLocked);
-        int skill = book != null && _data.Row("ItemConfig", book.Entry) is { } row
-            ? (int)(Rows(row, "_iUseEffect").FirstOrDefault(r => r.Length >= 2 && r[0] == 206)?[1] ?? 0) : 0;
+        int skill = book != null && ItemConfig.Get(_data, book.Entry) is { } row
+            ? (int)(Rows(row.UseEffect).FirstOrDefault(r => r.Length >= 2 && r[0] == 206)?[1] ?? 0) : 0;
         var list = item == null ? [] : Skills(item).ToList();
-        long quality = item != null && _data.Row("ItemConfig", item.Entry) is { } config ? GameData.Int(config, "_iQuality") : 0;
+        long quality = item != null ? ItemConfig.Get(_data, item.Entry)?.Quality ?? 0 : 0;
         int limit = (int)((Data.Config.PublicParams.Of(_data).TotemSkillInitMax ?? []).FirstOrDefault(r => r.Length >= 2 && r[0] == quality)?[1] ?? 0);
         // Localization 10960000087 and StudyWidget's TotemSkillInitMax lookup: blue cannot learn.
         if (error == 0 && limit == 0) error = ErrorCodes.TotemInvalid;
-        if (error == 0 && (skill == 0 || _data.Row("TotemSkillConfig", skill) == null)) error = ErrorCodes.ItemMissing;
+        if (error == 0 && (skill == 0 || TotemSkillConfig.Get(_data, skill) == null)) error = ErrorCodes.ItemMissing;
         if (error == 0 && (list.Contains(skill) || list.Any(id => Superior(skill).Contains(id)))) error = ErrorCodes.TotemSkillExists;
         if (error == 0)
         {
             var next = item!.Clone();
-            var born = Rows(_data.Row("TotemConfig", item.Entry)!.Value, "_kBornSkill").Select(r => (int)r[0]).ToHashSet();
-            var chances = _data.Table("TotemNewGridPerConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iSkillNum") == list.Count);
-            if (chances.ValueKind == JsonValueKind.Object) limit = Math.Min(limit, (int)GameData.Int(chances, "_iSkillMaxNum"));
-            long chance = chances.ValueKind == JsonValueKind.Object ? GameData.Int(chances, "_iNewGridPer") : 0;
+            var born = TotemConfig.Get(_data, item.Entry)!.Value.BornSkill.Select(r => (int)r[0]).ToHashSet();
+            var chances = TotemNewGridPerConfig.All(_data).Where(r => r.SkillNum == list.Count).Cast<TotemNewGridPerConfig?>().FirstOrDefault();
+            if (chances is { } c) limit = Math.Min(limit, (int)c.SkillMaxNum);
+            long chance = chances?.NewGridPer ?? 0;
             int inferior = list.FindIndex(id => Superior(id).Contains(skill));
             if (inferior >= 0 && !born.Contains(list[inferior])) list[inferior] = skill;
             else if (list.Count < limit && Random.Shared.Next(10000) < chance) list.Add(skill);
@@ -373,7 +374,7 @@ public sealed partial class TotemService
                 error = await PayForUpdate(s, next, [], new Dictionary<long, int> { [book!.Guid] = 1 });
             }
         }
-        await s.SendGameAsync(82364, new RefineTotemSkillResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, SkillBookGuid = req.SkillBookGuid });
+        await s.SendGameAsync(Learn, new RefineTotemSkillResp { Result = error, TotemPos = req.TotemPos, TotemGuid = req.TotemGuid, SkillBookGuid = req.SkillBookGuid });
     }
 
     internal async Task UpgradeAsync(GameSession s, UpgradeTotemSystemReq req)
@@ -387,7 +388,7 @@ public sealed partial class TotemService
             error = ItemError(s, guid, consume: true);
             if (error == 0)
             {
-                long quality = GameData.Int(_data.Row("ItemConfig", Find(s, guid)!.Entry)!.Value, "_iQuality");
+                long quality = ItemConfig.Get(_data, Find(s, guid)!.Entry)!.Value.Quality;
                 exp += (Data.Config.PublicParams.Of(_data).TotemQualityExp ?? []).FirstOrDefault(r => r.Length >= 2 && r[0] == quality)?[1] ?? 0;
             }
         }
@@ -397,7 +398,7 @@ public sealed partial class TotemService
             if (count <= 0 || value == null) error = ErrorCodes.Parameter;
             else exp += value[1] * count;
         }
-        long cap = _data.Table("TotemLvConfig").Values.Sum(r => GameData.Int(r, "_iExp"));
+        long cap = TotemLvConfig.All(_data).Sum(r => r.Exp);
         var refund = new List<(int Entry, int Count)>();
         long overflow = Math.Max(0, exp - (cap - s.Profile.Totems!.TotemTotalExp));
         // The upgrade panel consumes gainItems; preserve excess EXP in configured denominations (inferred).
@@ -437,7 +438,7 @@ public sealed partial class TotemService
         }
         var response = new UpgradeTotemSystemResp { Result = error };
         if (error == 0) foreach (var (entry, count) in refund) response.GainItems[entry] = count;
-        await s.SendGameAsync(82365, response);
+        await s.SendGameAsync(Upgrade, response);
     }
 
     internal int PlanSwitchCooldownError(GameSession s) => s.Profile.TotemSwitchUtc != default
@@ -453,7 +454,7 @@ public sealed partial class TotemService
             var next = s.Profile.Totems!.Clone(); next.CurrentPlan = req.TargetIndex;
             await CommitAsync(s, next); s.Profile.TotemSwitchUtc = _clock.GetUtcNow().UtcDateTime;
         }
-        await s.SendGameAsync(82367, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Profile.Totems!.CurrentPlan });
+        await s.SendGameAsync(SwitchPlan, new TotemSwitchPlanResp { Result = error, CurrentPlan = s.Profile.Totems!.CurrentPlan });
     }
 
     internal async Task RenameAsync(GameSession s, TotemChangeTotemNameReq req)
@@ -464,7 +465,7 @@ public sealed partial class TotemService
             || req.Name.EnumerateRunes().Count() > (Data.Config.PublicParams.Of(_data).SchemeNameNumMax ?? 8)
             || req.Name.Any(char.IsControl))) error = ErrorCodes.NameLengthInvalid;
         if (error == 0) { var next = s.Profile.Totems!.Clone(); next.TotemPlans[req.TargetIndex].PlanName = req.Name; await CommitAsync(s, next); }
-        await s.SendGameAsync(82368, new TotemChangeTotemNameResp { Result = error });
+        await s.SendGameAsync(Rename, new TotemChangeTotemNameResp { Result = error });
     }
 
     internal async Task SwapAsync(GameSession s, TotemSwapReq req)
@@ -481,7 +482,7 @@ public sealed partial class TotemService
             if (to != 0) p.SetUpTotem[to] = req.SwapFromGuid;
             await CommitAsync(s, next);
         }
-        await s.SendGameAsync(82369, new TotemSwapResp { Result = error });
+        await s.SendGameAsync(Swap, new TotemSwapResp { Result = error });
     }
 
     internal async Task AppraiseAsync(GameSession s, TotemAppraiseReq req)
@@ -493,8 +494,8 @@ public sealed partial class TotemService
         {
             if (error != 0) break;
             var item = Find(s, guid);
-            if (item == null || _data.Row("TotemConfig", item.Entry) is not { } row) { error = ErrorCodes.TotemInvalid; break; }
-            if (Value(item, 3) == 1 || GameData.Int(row, "_iIfAppraise") != 1) { error = ErrorCodes.AppraiseParameter; break; }
+            if (item == null || TotemConfig.Get(_data, item.Entry) is not { } row) { error = ErrorCodes.TotemInvalid; break; }
+            if (Value(item, 3) == 1 || row.IfAppraise != 1) { error = ErrorCodes.AppraiseParameter; break; }
             var next = item.Clone(); next.Attrs = Roll(row, appraised: true); updates.Add(next);
         }
         var resp = new TotemAppraiseResp { Result = error };
@@ -503,7 +504,7 @@ public sealed partial class TotemService
             await CommitAsync(s, s.Profile.Totems!.Clone(), updates);
             foreach (var item in updates) resp.AppraiseResult.Add(_character.ItemInfoOf(item));
         }
-        await s.SendGameAsync(82370, resp);
+        await s.SendGameAsync(Appraise, resp);
     }
 
     internal async Task CombineAsync(GameSession s, CombineTotemReq req)
@@ -513,11 +514,11 @@ public sealed partial class TotemService
         if (error == 0) error = ItemError(s, req.LeftTotemGuid, true);
         if (error == 0) error = ItemError(s, req.RightTotemGuid, true);
         if (error == 0 && req.LeftTotemGuid == req.RightTotemGuid) error = ErrorCodes.TotemCombine;
-        if (error == 0 && (GameData.Int(_data.Row("TotemConfig", left!.Entry)!.Value, "_iIfCompose") != 0
-            || GameData.Int(_data.Row("TotemConfig", right!.Entry)!.Value, "_iIfCompose") != 0)) error = ErrorCodes.TotemCombine;
-        long quality = left == null ? 0 : GameData.Int(_data.Row("ItemConfig", left.Entry)!.Value, "_iQuality");
-        if (error == 0 && (quality != GameData.Int(_data.Row("ItemConfig", right!.Entry)!.Value, "_iQuality")
-            || GameData.Int(_data.Row("TotemConfig", left!.Entry)!.Value, "_iJobRank") != GameData.Int(_data.Row("TotemConfig", right.Entry)!.Value, "_iJobRank"))) error = ErrorCodes.TotemMismatch;
+        if (error == 0 && (TotemConfig.Get(_data, left!.Entry)!.Value.IfCompose != 0
+            || TotemConfig.Get(_data, right!.Entry)!.Value.IfCompose != 0)) error = ErrorCodes.TotemCombine;
+        long quality = left == null ? 0 : ItemConfig.Get(_data, left.Entry)!.Value.Quality;
+        if (error == 0 && (quality != ItemConfig.Get(_data, right!.Entry)!.Value.Quality
+            || TotemConfig.Get(_data, left!.Entry)!.Value.JobRank != TotemConfig.Get(_data, right.Entry)!.Value.JobRank)) error = ErrorCodes.TotemMismatch;
         long newGuid = 0;
         if (error == 0)
         {
@@ -542,11 +543,11 @@ public sealed partial class TotemService
                 next.Attrs[230 + i] = Random.Shared.NextInt64(low, Math.Max(low, high) + 1);
             }
             var pool = Skills(left).Concat(Skills(right)).Distinct().ToList();
-            var cfg = _data.Row("TotemConfig", left.Entry)!.Value;
-            var countRows = _data.Table("TotemSkillNumRandom").Values.Where(r => GameData.Int(r, "_iJobRank") == GameData.Int(cfg, "_iJobRank")
-                && GameData.Int(r, "_iQuality") == quality && GameData.Int(r, "_iTotalSkills") == pool.Count).ToArray();
-            int count = countRows.Length == 0 ? pool.Count : (int)GameData.Int(Weighted(countRows, "_iWeight"), "_iSkillNum");
-            var born = Rows(cfg, "_kBornSkill").Select(r => (int)r[0]).ToList();
+            var cfg = TotemConfig.Get(_data, left.Entry)!.Value;
+            var countRows = TotemSkillNumRandom.All(_data)
+                .Where(r => r.JobRank == cfg.JobRank && r.Quality == quality && r.TotalSkills == pool.Count).ToArray();
+            int count = countRows.Length == 0 ? pool.Count : (int)Weighted(countRows).SkillNum;
+            var born = cfg.BornSkill.Select(r => (int)r[0]).ToList();
             var chosen = new List<int>(born);
             foreach (int skill in pool.OrderBy(_ => Random.Shared.Next()).Where(x => !chosen.Contains(x))) { if (chosen.Count >= count) break; chosen.Add(skill); }
             WriteSkills(next.Attrs, chosen.Take(10)); next.Attrs[270] = Math.Max(Value(left, 270), Value(right, 270));
@@ -571,26 +572,26 @@ public sealed partial class TotemService
             await _character.ItemsChangedAsync(s, stats: true); await SyncAsync(s);
             foreach (var handler in Combined.Handlers) handler(s, next.Entry);
         }
-        await s.SendGameAsync(82366, new CombineTotemResp { Result = error, NewTotemGuid = newGuid });
+        await s.SendGameAsync(Combine, new CombineTotemResp { Result = error, NewTotemGuid = newGuid });
     }
 
-    public Dictionary<int, long>? CreateAttributes(int entry) => _data.Row("TotemConfig", entry) is { } row ? Roll(row, GameData.Int(row, "_iIfAppraise") == 0) : null;
+    public Dictionary<int, long>? CreateAttributes(int entry) => TotemConfig.Get(_data, entry) is { } row ? Roll(row, row.IfAppraise == 0) : null;
 
-    private Dictionary<int, long> Roll(JsonElement row, bool appraised)
+    private Dictionary<int, long> Roll(TotemConfig row, bool appraised)
     {
         var result = new Dictionary<int, long> { [3] = appraised ? 1 : 0, [270] = 0 };
         int i = 0;
-        foreach (var r in Rows(row, "_kBasicAttribute").Where(r => r.Length >= 3).Take(10))
+        foreach (var r in row.BasicAttribute.Where(r => r.Length >= 3).Take(10))
         {
             var limit = (Data.Config.PublicParams.Of(_data).TotemAttrLimits ?? []).FirstOrDefault(x => x[0] == r[0]);
             result[220 + i] = r[0]; result[230 + i] = Random.Shared.NextInt64(r[1], r[2] + 1);
             result[250 + i] = limit?[1] ?? r[1]; result[260 + i] = limit?[2] ?? r[2]; i++;
         }
         if (!appraised) return result;
-        var skills = Rows(row, "_kBornSkill").Where(r => r.Length >= 2 && Random.Shared.Next(10000) < r[1]).Select(r => (int)r[0]).ToList();
-        var countRows = Rows(row, "_kSkillNumInit");
+        var skills = row.BornSkill.Where(r => r.Length >= 2 && Random.Shared.Next(10000) < r[1]).Select(r => (int)r[0]).ToList();
+        var countRows = row.SkillNumInit;
         int count = (int)WeightedPair(countRows);
-        var pool = Rows(row, "_kSkillGroup").Where(r => r.Length >= 2).ToList();
+        var pool = row.SkillGroup.Where(r => r.Length >= 2).ToList();
         while (count-- > 0 && pool.Count > 0)
         {
             int selected = (int)WeightedPair([.. pool]);
@@ -608,10 +609,10 @@ public sealed partial class TotemService
         foreach (var row in rows) if (row.Length >= 2 && (roll -= Math.Max(0, row[1])) < 0) return row[0];
         return 0;
     }
-    private static JsonElement Weighted(JsonElement[] rows, string field)
+    private static TotemSkillNumRandom Weighted(TotemSkillNumRandom[] rows)
     {
-        long roll = Random.Shared.NextInt64(rows.Sum(r => GameData.Int(r, field)));
-        foreach (var row in rows) if ((roll -= GameData.Int(row, field)) < 0) return row;
+        long roll = Random.Shared.NextInt64(rows.Sum(r => r.Weight));
+        foreach (var row in rows) if ((roll -= row.Weight) < 0) return row;
         return rows[0];
     }
     internal static IEnumerable<int> Skills(InvItem item) => Enumerable.Range(240, 10).Select(k => (int)Value(item, k)).TakeWhile(x => x > 0);
@@ -620,22 +621,22 @@ public sealed partial class TotemService
     private HashSet<int> Superior(int skill)
     {
         var result = new HashSet<int>();
-        while (_data.Row("TotemSkillConfig", skill) is { } row && GameData.Int(row, "_iSuperiorSkillID") is var id and > 0 && result.Add((int)id)) skill = (int)id;
+        while (TotemSkillConfig.Get(_data, skill) is { SuperiorSkillId: > 0 and var id } && result.Add((int)id)) skill = (int)id;
         return result;
     }
     public int Level(long exp)
     {
         int level = 0; long total = 0;
-        foreach (var row in _data.Table("TotemLvConfig").Values.OrderBy(r => GameData.Int(r, "_iLv")))
-        { total += GameData.Int(row, "_iExp"); if (total > exp) break; level = (int)GameData.Int(row, "_iLv"); }
+        foreach (var row in TotemLvConfig.All(_data).OrderBy(r => r.Lv))
+        { total += row.Exp; if (total > exp) break; level = (int)row.Lv; }
         return level;
     }
     public IEnumerable<(long Id, double Value)> Attributes(GameSession s)
     {
         if (s.Profile.Totems?.TotemPlans.TryGetValue(s.Profile.Totems.CurrentPlan, out var plan) != true) yield break;
         int level = Level(s.Profile.Totems.TotemTotalExp);
-        var lv = _data.Table("TotemLvConfig").Values.FirstOrDefault(r => GameData.Int(r, "_iLv") == level);
-        double multiplier = 1 + (lv.ValueKind == JsonValueKind.Object ? GameData.Int(lv, "_iAttributeEnhance") / 10000d : 0);
+        var lv = TotemLvConfig.All(_data).Where(r => r.Lv == level).Cast<TotemLvConfig?>().FirstOrDefault();
+        double multiplier = 1 + (lv is { } l ? l.AttributeEnhance / 10000d : 0);
         var equipped = plan.SetUpTotem.Values.Where(x => x != 0).Select(id => Find(s, id)).OfType<InvItem>().ToArray();
         var allSkills = equipped.SelectMany(Skills).ToHashSet(); var used = new HashSet<int>();
         foreach (var item in equipped)
@@ -643,8 +644,8 @@ public sealed partial class TotemService
             for (int i = 0; i < 10 && Value(item, 220 + i) != 0; i++) yield return (Value(item, 220 + i), Value(item, 230 + i) * multiplier);
             foreach (int skill in Skills(item))
             {
-                if (_data.Row("TotemSkillConfig", skill) is not { } row || Superior(skill).Overlaps(allSkills)) continue;
-                if (GameData.Int(row, "_iIsCoexist") == 0 && !used.Add(skill)) continue;
+                if (TotemSkillConfig.Get(_data, skill) is not { } row || Superior(skill).Overlaps(allSkills)) continue;
+                if (row.IsCoexist == 0 && !used.Add(skill)) continue;
                 foreach (var attr in _effects.Attributes(s, item, skill)) yield return attr;
             }
         }
@@ -659,8 +660,8 @@ public sealed partial class TotemService
             var item = Find(s, id); if (item == null) continue;
             double power = 0;
             for (int n = 0; n < 10 && Value(item, 220 + n) != 0; n++)
-                if (_data.Row("AttributeConfig", Value(item, 220 + n)) is { } attr && attr.TryGetProperty("_iPower", out var weight)) power += Value(item, 230 + n) * (GameData.Number(weight) ?? 0);
-            foreach (var skill in Skills(item)) if (_data.Row("TotemSkillConfig", skill) is { } row) power += GameData.Int(row, "_iPower");
+                if (AttributeConfig.Get(_data, Value(item, 220 + n)) is { } attr) power += Value(item, 230 + n) * attr.Power;
+            foreach (var skill in Skills(item)) if (TotemSkillConfig.Get(_data, skill) is { } row) power += row.Power;
             total += (long)Math.Ceiling(power);
         }
         return total;

@@ -74,7 +74,7 @@ internal sealed class MailDeliveryReceiptReadPlan(string sourceKey, long role, s
             using var detail = JsonDocument.Parse(json);
             if (!detail.RootElement.TryGetProperty("DeliverySemanticHash", out var storedHash)) continue;
             byte[] evidenceBytes = Encoding.UTF8.GetBytes(json);
-            if (evidence.GetProperty("Bytes").GetInt32() != evidenceBytes.Length ||
+            if (evidence.GetProperty(nameof(Bytes)).GetInt32() != evidenceBytes.Length ||
                 evidence.GetProperty("Hash").GetString() != Convert.ToHexString(SHA256.HashData(evidenceBytes)))
                 throw new InvalidDataException("Committed mail delivery evidence hash differs from receipt.");
             var claim = detail.RootElement;

@@ -3,8 +3,8 @@ AppraisalService.Appraised (1)
 AuctionService.GuildBid (1)
   TaskService.OnGuildAuctionBid
 BuffService.Changed (4)
-  SkillService.RefreshFollowUpsAsync
   SkillCastingService.RefreshSkillParametersAsync
+  SkillService.RefreshFollowUpsAsync
   TalentProcs.OnBuffsChangedAsync
   StealthEffects.PublishAsync
 BuffService.ControlResisted (1)
@@ -423,9 +423,9 @@ SeasonService.ScheduleChanged (1)
 SeasonTalentService.EffectsChanged (1)
   SkillCastingService.RefreshSkillParametersAsync
 SkillService.Learned (8)
+  SkillCastingService.RefreshSkillParametersAsync
   CharacterService.RefreshStatsAsync
   TaskService.<.ctor> lambda
-  SkillCastingService.RefreshSkillParametersAsync
   CharacterService.NotifyCareerCapacityAsync
   PassiveSkills.StandingBuffsAsync
   RidingEffects.SyncAsync

@@ -147,7 +147,7 @@ public sealed partial class TradeService
     /// <summary>Advance publicity and timed listings. The host also invokes this once per second.</summary>
     public Task TickAsync(GameSession s) => TickMaintenanceAsync();
 
-    // Stage G: every trade message and the 1 s stall maintenance call this. As a full market transaction each time it
+    // Every trade message and the 1 s stall maintenance call this. As a full market transaction each time it
     // put two transactions on every trade request (p50 0.5-0.9 s at 500 players). It now runs only when a listing can
     // have matured or expired: a market commit since the last pass, or the earliest due time reached.
     private long _maintainedVersion = -1, _nextDueMs;
@@ -175,6 +175,7 @@ public sealed partial class TradeService
             IReadOnlyList<PreorderRow> allOrders = matured.Count > 0 || expired.Count > 0
                 ? tx.All<PreorderRow>(Orders) : [];
             var removedSkus = new HashSet<string>(StringComparer.Ordinal);
+            var updatedBySku = new Dictionary<string, Listing>(StringComparer.Ordinal);
             foreach (var listing in matured)
             {
                 foreach (var order in allOrders.Where(o => o.Sku == listing.Sku && o.Status == 0)
@@ -212,13 +213,14 @@ public sealed partial class TradeService
                 }
                 listing.PublicUntilMs = 0;
                 if (listing.Quantity == 0) { tx.Delete(Listings, listing.Sku); removedSkus.Add(listing.Sku); }
-                else tx.Put(Listings, listing.Sku, listing);
+                else { tx.Put(Listings, listing.Sku, listing); updatedBySku[listing.Sku] = listing; }
             }
             // (inferred) PublicParam listing-display times are hours. Remaining unsold escrow
             // expires into the current exchange return template and can be claimed once.
-            foreach (var listing in expired)
+            foreach (var rawExpired in expired)
             {
-                if (removedSkus.Contains(listing.Sku)) continue;
+                if (removedSkus.Contains(rawExpired.Sku)) continue;
+                var listing = updatedBySku.TryGetValue(rawExpired.Sku, out var updated) ? updated : rawExpired;
                 var back = listing.Item.Clone(); back.Guid = 0; back.Grid = 0; back.Stack = listing.Quantity;
                 tx.DeliverMail(listing.SellerId, 1067, [back], contentParams: [data.ItemName(back.Entry)]);
                 expiredCount[listing.SellerId] = expiredCount.GetValueOrDefault(listing.SellerId) + 1;
@@ -255,7 +257,7 @@ public sealed partial class TradeService
             if (succeeded.Contains(role.Id)) notice.PreTradeSuccessNtf = new PreTradeSuccessNtf();
             if (failed.Contains(role.Id)) notice.PreTradeNtf = new PreTradeFailNtf();
             if (notice.ExpireNtf == null && notice.PreTradeSuccessNtf == null && notice.PreTradeNtf == null) continue;
-            try { await session.SendGameAsync(32630, notice); }
+            try { await session.SendGameAsync(PreorderNotify, notice); }
             catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException or ObjectDisposedException)
             { log.LogDebug(e, "Trade reminder recipient disconnected after commit"); }
         }

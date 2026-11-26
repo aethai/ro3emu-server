@@ -26,6 +26,16 @@ internal sealed class RoleSchemaPlan : DbPlan
             CREATE INDEX IF NOT EXISTS role_account ON role(account);
             CREATE TABLE IF NOT EXISTS server_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             """);
+        AddRoleCoreColumns(db, tx);
+        AddRoleFeatureColumns(db, tx);
+        InitializeRoleRevisions(db, tx);
+        // The economy ledger shares this schema transaction; legacy balances become the opening cut at sequence zero.
+        new EconomySchemaPlan().Execute(db, tx);
+        return 1;
+    }
+
+    private static void AddRoleCoreColumns(SqliteConnection db, SqliteTransaction tx)
+    {
         SchemaSql.AddColumn(db, tx, "role", "scene_entry", $"INTEGER NOT NULL DEFAULT {SpawnSceneEntry}");
         SchemaSql.AddColumn(db, tx, "role", "pos_x", $"REAL NOT NULL DEFAULT {SpawnX}");
         SchemaSql.AddColumn(db, tx, "role", "pos_y", "REAL NOT NULL DEFAULT 0");
@@ -102,6 +112,10 @@ internal sealed class RoleSchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "role", "lifejob", "BLOB");
         SchemaSql.AddColumn(db, tx, "role", "life_restrict", "BLOB");
         SchemaSql.AddColumn(db, tx, "role", "life_runtime", "BLOB");
+    }
+
+    private static void AddRoleFeatureColumns(SqliteConnection db, SqliteTransaction tx)
+    {
         // Server-wide first-pass records survive restarts. No unproven seasonal reset.
         SchemaSql.Execute(db, tx, "CREATE TABLE IF NOT EXISTS tower_first_pass (floor INTEGER PRIMARY KEY, record BLOB NOT NULL)");
         // Serialized romsg.DBSeasonTalent (AUTO_SYNC 5050); plans survive playbook changes.
@@ -163,6 +177,10 @@ internal sealed class RoleSchemaPlan : DbPlan
         SchemaSql.AddColumn(db, tx, "role", "job_exp_catchup", "BLOB");
         // JSON BuffService.OfflineBuffState: the buffs that outlive a logout.
         SchemaSql.AddColumn(db, tx, "role", "offline_buffs", "BLOB");
+    }
+
+    private static void InitializeRoleRevisions(SqliteConnection db, SqliteTransaction tx)
+    {
         SchemaSql.Execute(db, tx, """
             CREATE TABLE IF NOT EXISTS role_lifecycle (
                 role_id INTEGER PRIMARY KEY,
@@ -194,9 +212,6 @@ internal sealed class RoleSchemaPlan : DbPlan
         // older realm's counter keeps its existing roles and only moves where the next id comes from.
         SchemaSql.Execute(db, tx, $"INSERT OR IGNORE INTO sqlite_sequence (name, seq) SELECT 'role', {RoleIdFloor} WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'role')");
         SchemaSql.Execute(db, tx, $"UPDATE sqlite_sequence SET seq = {RoleIdFloor} WHERE name = 'role' AND seq < {RoleIdFloor}");
-        // E01 shares this schema transaction; legacy balances become the opening cut at sequence zero.
-        new EconomySchemaPlan().Execute(db, tx);
-        return 1;
     }
 }
 

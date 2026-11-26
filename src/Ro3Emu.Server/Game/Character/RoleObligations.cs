@@ -79,7 +79,7 @@ internal sealed class RoleObligations<TRow> where TRow : class, IRoleObligationR
     internal static Task<List<TRow>> PendingAsync(AccountStore accounts, long role) =>
         accounts.ReadAsync<List<TRow>>(new RoleObligationPendingReadPlan<TRow>(role));
 
-    /// <summary>C/D 15: the role's pending rows, read before the role select admits so it can reserve them.</summary>
+    /// <summary>The role's pending rows, read before the role select admits so it can reserve them.</summary>
     internal static async Task<ReservationKey[]> LoginKeysAsync(AccountStore accounts, long role) =>
         [.. (await PendingAsync(accounts, role)).Select(row => Key(row.SourceKey)).Distinct()];
 

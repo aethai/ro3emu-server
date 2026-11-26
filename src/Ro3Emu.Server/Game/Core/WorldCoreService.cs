@@ -304,7 +304,8 @@ public sealed partial class WorldCoreService : IGameTicker
         foreach (var p in _world.PlayersIn(s.WorldScene).Where(Ready))
             response.MiniInfo.Add(new MiniMapInfo { Uid = (ulong)p.Role!.Id, Pos = p.Position.Clone(), Camp = 1, Hp = (ulong)Math.Max(0, _character.Stats(p)[2000]) });
         foreach (var m in s.VisibleUnits.OfType<MonsterUnit>().Where(m => !m.Dead))
-            response.MiniInfo.Add(new MiniMapInfo { Uid = (ulong)m.Uid, Pos = m.Pos, Camp = (ulong)(m.CampOverride ?? m.Template.Camp), NpcConfigId = (ulong)m.Template.NpcId, Hp = (ulong)Math.Max(0, m.Hp) });
+            response.MiniInfo.Add(new MiniMapInfo
+            { Uid = (ulong)m.Uid, Pos = m.Pos, Camp = (ulong)(m.CampOverride ?? m.Template.Camp), NpcConfigId = (ulong)m.Template.NpcId, Hp = (ulong)Math.Max(0, m.Hp) });
         await s.SendGameAsync(MiniMap, response);
     }
 
@@ -509,7 +510,7 @@ public sealed partial class WorldCoreService : IGameTicker
     }
 
     /// <summary>Request-without-result errors use APIError, with a nonempty parameter list for the Lua decoder.</summary>
-    public static Task ErrorAsync(GameSession s, uint origin, int code) => s.SendGameAsync(99999, new APIErrorMsg
+    public static Task ErrorAsync(GameSession s, uint origin, int code) => s.SendGameAsync(MsgId.ApiError, new APIErrorMsg
     { ErrorCode = code, OriginMsgId = origin, ErrorParams = { new ErrorParam { ParamType = ErrorParamType.ErrorParamString, ParamValue = { "" } } } });
 
     internal static bool Finite(Vec3? p) => p != null && float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);

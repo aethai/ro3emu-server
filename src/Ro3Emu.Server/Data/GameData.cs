@@ -13,7 +13,7 @@ namespace Ro3Emu.Server.Data;
 /// A missing table is empty, except that a client export must carry every table and field the server declares
 /// (Data/Config, checked by <see cref="Config.ConfigValidator"/> during the preload).
 /// </summary>
-public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> log)
+public sealed partial class GameData(IOptions<ServerOptions> options, ILogger<GameData> log)
 {
     private readonly Dictionary<string, Dictionary<string, JsonElement>> _tables = [];
     private readonly object _sync = new();
@@ -92,14 +92,21 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
         }
         Text(0); // builds the text index
         // A client export (with export.json) must carry every declared table and field; any data set must give each
-        // declared field values of its kind. A mismatch stops the server here, before players are admitted.
+        // declared field values of its kind. Missing keyed constant entries warn and fall back to server defaults so
+        // a newer client export that drops or renames a PublicParam/constant key does not block startup.
         bool export = File.Exists(Path.Combine(Root, ExportManifest));
-        Config.ConfigValidator.Check(this, Config.ConfigTables.All, strict: export);
+        var warnings = Config.ConfigValidator.Check(this, Config.ConfigTables.All, strict: export, failOnMissingConstants: false);
+        if (warnings.Count > 0)
+            LogMissingConfigConstants(log, warnings.Count, string.Join(", ", warnings.Take(20)));
         log.LogInformation(
             "Game data preloaded: {Tables} tables in {Ms} ms, managed heap {Mb} MB, {Views} config views checked{Strict}",
             files.Length, watch.ElapsedMilliseconds, GC.GetTotalMemory(false) >> 20, Config.ConfigTables.All.Count,
             export ? " against the client export" : "");
     }
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Game data export is missing {Count} keyed config constant(s); server fallbacks will be used: {Sample}")]
+    private static partial void LogMissingConfigConstants(ILogger logger, int count, string sample);
 
     /// <summary>tools/ConfigExport writes this next to config/ for a complete client export.</summary>
     public const string ExportManifest = "export.json";
@@ -185,9 +192,12 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     public static long Int(JsonElement row, string field) => Config.ConfigValue.Integral(row, field);
 
     /// <summary>A field holding [[id, value, ...], ...] (attribute lists): (id, first value) pairs.</summary>
-    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field)
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var list) ? Pairs(list) : [];
+
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement? element)
     {
-        if (!row.TryGetProperty(field, out var list) || list.ValueKind != JsonValueKind.Array) yield break;
+        if (element is not { ValueKind: JsonValueKind.Array } list) yield break;
         foreach (var pair in list.EnumerateArray())
         {
             if (pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 && Number(pair[0]) is { } id && Number(pair[1]) is { } value)

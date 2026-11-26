@@ -96,7 +96,7 @@ public sealed class AdventureGroupStore(AccountStore accounts)
         public string Third { get; set; } = "";
     }
 
-    // ---- generation cache (as GuildStore, C/D 16; the generation belongs to this store's database) ----
+    // ---- generation cache (as GuildStore; the generation belongs to this store's database) ----
 
     private readonly object _cacheLock = new();
     private long _cachedGeneration = -1;

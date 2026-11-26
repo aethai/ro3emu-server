@@ -50,7 +50,7 @@ public class SetupTests
     public void TheVoicePortReachesTheServerOnlyWhenSet()
     {
         var off = ServerProcess.ServerArgs("data", new ServerProcess.Ports());
-        Assert.DoesNotContain(off, a => a.StartsWith("--Ro3Emu:Voice:Port"));
+        Assert.DoesNotContain(off, a => a.StartsWith("--Ro3Emu:Voice:Port", StringComparison.Ordinal));
         var on = ServerProcess.ServerArgs("data", new ServerProcess.Ports(Voice: 33101));
         Assert.Contains("--Ro3Emu:Voice:Port=33101", on);
         Assert.Contains("--Ro3Emu:GameGatePort=33100", on);

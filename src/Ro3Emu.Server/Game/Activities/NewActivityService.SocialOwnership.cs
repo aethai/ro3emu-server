@@ -32,7 +32,7 @@ public sealed partial class NewActivityService
             || request.BattlePassBuyLevel != null || request.GainMonthCardDailyAward != null;
     }
 
-    /// <summary>C/D 15: the Eve cycle entity the login's activity admission needs, from the same saved blob the login
+    /// <summary>The Eve cycle entity the login's activity admission needs, from the same saved blob the login
     /// loads, reserved up front by the role select.</summary>
     internal ReservationKey[] LoginKeys(long roleId)
     {
@@ -42,7 +42,7 @@ public sealed partial class NewActivityService
             ? [EveKey(eve.CycleStartTime, EveSettlementNear(eve))] : [];
     }
 
-    // C/D 16 (S4): the Season Eve global row is written only by its settlement (after the role's cycle ended) and by
+    // The Season Eve global row is written only by its settlement (after the role's cycle ended) and by
     // Eve adventure requests. Everything else reads it, so it holds the row shared; as an exclusive key on every
     // activity operation it serialized all logins and activity requests of a cycle (S4: up to 3 s).
     // Every activity path settles an ended cycle before RefreshCalendar replaces its timestamps, and it reads the

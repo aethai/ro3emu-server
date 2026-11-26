@@ -86,7 +86,7 @@ public sealed partial class TimedEventService(GameData data, TimeProvider time, 
         if (result == 0) await NotifyAsync(session, req.ActivityId);
     }
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = _time.GetUtcNow().ToUnixTimeSeconds();
         if (now == _lastSecond) return;

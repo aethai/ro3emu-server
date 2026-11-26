@@ -18,7 +18,8 @@ public sealed partial class GuildWartimeService(GuildService guilds, AwardServic
     private const uint MarketBooth = GuildService.MarketBooth, MarketItems = GuildService.MarketItems,
         MarketList = GuildService.MarketList, MarketUnlist = GuildService.MarketUnlist,
         MarketBuy = GuildService.MarketBuy, MarketSellRecords = GuildService.MarketSellRecords,
-        MarketBuyRecords = GuildService.MarketBuyRecords, MarketUpdate = GuildService.MarketUpdate;
+        MarketBuyRecords = GuildService.MarketBuyRecords, MarketUpdate = GuildService.MarketUpdate,
+        MarketSellRecordNtf = 83907;
 
     private GameData data => guilds.GameData;
     private GuildStore store => guilds.Store;

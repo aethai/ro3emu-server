@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Ro3Emu.Server;
@@ -6,7 +8,7 @@ using Ro3Emu.Server.Accounts.Persistence;
 
 namespace Ro3Emu.Tests;
 
-public sealed class DatabaseMigrationsTests : IDisposable
+public sealed partial class DatabaseMigrationsTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "ro3emu-migrations-" + Guid.NewGuid().ToString("N"));
 
@@ -115,6 +117,131 @@ public sealed class DatabaseMigrationsTests : IDisposable
         var error = Assert.Throws<InvalidOperationException>(() => _ = OpenStore());
         Assert.Contains("999", error.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void IncrementalMigrationsFromV1MatchFreshSchema()
+    {
+        string freshDir = Path.Combine(_dir, "fresh");
+        string v1Dir = Path.Combine(_dir, "from-v1");
+        Directory.CreateDirectory(freshDir);
+        Directory.CreateDirectory(v1Dir);
+
+        using (new AccountStore(Options.Create(new ServerOptions { DataDir = freshDir, GameDataDir = SyntheticData.Dir }))) { }
+
+        // Seed v1 from a frozen v1 SQL fixture (never from today's baseline) so a schema change added without a
+        // matching migration in DatabaseMigrations fails parity immediately.
+        string frozenV1Sql = Path.Combine(ClientData.RepoRoot, "tests", "Ro3Emu.Tests", "Snapshots", "schema-v1.sql");
+        Assert.True(File.Exists(frozenV1Sql), "Missing frozen v1 schema fixture: " + frozenV1Sql);
+
+        string v1Path = Path.Combine(v1Dir, "ro3emu.db");
+        using (var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = v1Path, Pooling = false }.ToString()))
+        {
+            db.Open();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = File.ReadAllText(frozenV1Sql);
+            cmd.ExecuteNonQuery();
+            Assert.Equal(1, DatabaseMigrations.ReadVersion(db));
+        }
+
+        using (var upgraded = new AccountStore(Options.Create(new ServerOptions { DataDir = v1Dir, GameDataDir = SyntheticData.Dir })))
+        {
+            Assert.Equal(DatabaseMigrations.All.Count - 1, upgraded.AppliedMigrations);
+        }
+
+        var freshSchema = DescribeSchema(Path.Combine(freshDir, "ro3emu.db"));
+        var migratedSchema = DescribeSchema(v1Path);
+        Assert.Equal(freshSchema, migratedSchema);
+    }
+
+    [Fact]
+    public void SchemaMatchesVersionedMigrationSnapshot()
+    {
+        // Migration versions must remain strictly consecutive 1..CurrentVersion.
+        for (int i = 0; i < DatabaseMigrations.All.Count; i++)
+            Assert.Equal(i + 1, DatabaseMigrations.All[i].Version);
+
+        using (OpenStore()) { }
+        var actual = DescribeSchema(DbPath);
+
+        string file = Path.Combine(ClientData.RepoRoot, "tests", "Ro3Emu.Tests", "Snapshots", "schema-manifest.txt");
+        if (Environment.GetEnvironmentVariable("RO3EMU_UPDATE_SNAPSHOTS") == "1")
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, string.Join('\n', actual) + "\n");
+        }
+
+        Assert.True(File.Exists(file),
+            "Missing snapshot " + file + ". Run with RO3EMU_UPDATE_SNAPSHOTS=1 after adding a DatabaseMigrations entry.");
+
+        var expected = File.ReadAllText(file).Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        if (!expected.SequenceEqual(actual, StringComparer.Ordinal))
+        {
+            int count = Math.Min(expected.Length, actual.Count);
+            for (int i = 0; i < count; i++)
+            {
+                if (!string.Equals(expected[i], actual[i], StringComparison.Ordinal))
+                {
+                    Assert.Fail(string.Format(CultureInfo.InvariantCulture,
+                        "Database schema changed at line {0} without matching DatabaseMigrations entry/snapshot update:\n  expected: {1}\n  actual:   {2}",
+                        i + 1, expected[i], actual[i]));
+                }
+            }
+            Assert.Fail(string.Format(CultureInfo.InvariantCulture,
+                "Database schema manifest line count changed: expected {0}, actual {1}. Add a migration in DatabaseMigrations and regenerate Snapshots/schema-manifest.txt.",
+                expected.Length, actual.Count));
+        }
+    }
+
+    private static List<string> DescribeSchema(string dbPath)
+    {
+        using var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = dbPath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
+        db.Open();
+        var lines = new List<string> { "user_version=" + DatabaseMigrations.ReadVersion(db).ToString(CultureInfo.InvariantCulture) };
+
+        var tables = new List<string>();
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) tables.Add(reader.GetString(0));
+        }
+        foreach (string table in tables)
+        {
+            lines.Add("table " + table);
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info('{table}')";
+            using var reader = cmd.ExecuteReader();
+            var cols = new List<string>();
+            while (reader.Read())
+            {
+                string colName = reader.GetString(1);
+                string colType = reader.GetString(2);
+                int notNull = reader.GetInt32(3);
+                string dflt = reader.IsDBNull(4) ? "" : reader.GetString(4);
+                int pk = reader.GetInt32(5);
+                cols.Add(string.Format(CultureInfo.InvariantCulture, "  col {0} {1} nn={2} pk={3} def={4}", colName, colType, notNull, pk, dflt));
+            }
+            cols.Sort(StringComparer.Ordinal);
+            lines.AddRange(cols);
+        }
+
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                string normalized = Whitespace().Replace(reader.GetString(2), " ").Trim();
+                lines.Add(string.Format(CultureInfo.InvariantCulture, "index {0} on {1}: {2}", reader.GetString(0), reader.GetString(1), normalized));
+            }
+        }
+        return lines;
+    }
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
 
     private void SeedReleaseFixture(string fixture)
     {

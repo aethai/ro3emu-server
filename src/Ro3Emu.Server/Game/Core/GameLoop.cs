@@ -668,7 +668,7 @@ public sealed partial class GameLoop : IHostedService, IDisposable
         return type.FullName?.Split('.').Last() ?? type.Name;
     }
 
-    private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox");
+    private static bool IsStateMachine(Type? type) => type is { IsGenericType: true } && type.Name.StartsWith("AsyncStateMachineBox", StringComparison.Ordinal);
 
     /// <summary>Counts the work the loop runs: each queued item, timer and ticker gets a new number. A memo keyed by it
     /// (CharacterService.Stats) can never outlive the work it was made in.</summary>
@@ -745,7 +745,8 @@ public sealed partial class GameLoop : IHostedService, IDisposable
             Owners?.LongHeld(StuckWorkAge) ?? "none");
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Game loop work stuck: {Count} item(s) older than {Age:0.#} s, oldest {Id}:{Name}:{Ms:F0}ms under {Scope}; by name {Names}; reservations held as long: {Held}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Game loop work stuck: {Count} item(s) older than {Age:0.#} s, "
+        + "oldest {Id}:{Name}:{Ms:F0}ms under {Scope}; by name {Names}; reservations held as long: {Held}")]
     private static partial void LogStuckWork(ILogger logger, int count, double age, long id, string name, double ms, string scope, string names, string held);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Stuck game loop work report failed")]

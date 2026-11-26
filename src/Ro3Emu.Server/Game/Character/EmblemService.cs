@@ -260,10 +260,10 @@ public sealed partial class EmblemService
     {
         var marks = MarkCounts(worn, data);
         var stages = new Dictionary<long, long>();
-        foreach (var row in data.Table("EmblemMarkConfig").Values)
+        foreach (var row in EmblemMarkConfig.All(data))
         {
-            long mark = GameData.Int(row, "_iEmblemMarkID"), stage = GameData.Int(row, "_iMarkStage");
-            if (stage > 0 && marks.GetValueOrDefault(mark) >= GameData.Int(row, "_iMarkNum") && stage > stages.GetValueOrDefault(mark))
+            long mark = row.EmblemMarkId, stage = row.MarkStage;
+            if (stage > 0 && marks.GetValueOrDefault(mark) >= row.MarkNum && stage > stages.GetValueOrDefault(mark))
                 stages[mark] = stage;
         }
         return stages;
@@ -279,8 +279,7 @@ public sealed partial class EmblemService
         var marks = new Dictionary<long, int>();
         foreach (var item in worn)
         {
-            int lit = data.Row("EmblemConfig", item.Entry) is { } row && row.TryGetProperty("_kInitialMark", out var initial)
-                && initial.ValueKind == JsonValueKind.Array ? initial.GetArrayLength() : 0;
+            int lit = EmblemConfig.Get(data, item.Entry) is { } row ? row.InitialMark.Length : 0;
             for (int i = 0; i < lit && item.Attrs?.TryGetValue(1021 + i, out long mark) == true; i++)
                 marks[mark] = marks.GetValueOrDefault(mark) + 1;
         }
@@ -291,7 +290,7 @@ public sealed partial class EmblemService
         item.Attrs?.GetValueOrDefault(Source) == 2 || session.Profile.Emblems.Plans.Values.Any(p => p.Slots.ContainsValue(item.Guid));
 
     public static bool IsEmblem(GameData data, int entry) =>
-        data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iType") == 8 && GameData.Int(row, "_iSubType") == 800;
+        ItemConfig.Get(data, entry) is { Type: 8, SubType: 800 };
 
     /// <summary>Client item parser's paired contiguous primary/subattribute ranges (LC_ItemProtoParse.lua:957-1054).</summary>
     public static IEnumerable<(int Id, double Value)> Attributes(InvItem item, GameData data)
@@ -302,7 +301,7 @@ public sealed partial class EmblemService
             yield return ((int)id, value);
         // Subattribute keys hold config row IDs, not AttributeConfig IDs.
         for (int i = 0; i < 20 && a.TryGetValue(1051 + i, out long rowId) && a.TryGetValue(1071 + i, out long value); i++)
-            if (data.Row("EmblemSubAttriGroupConfig", rowId) is { } row && GameData.Int(row, "_iSubAttriID") is var id and > 0)
+            if (EmblemSubAttriGroupConfig.Get(data, rowId) is { SubAttriId: > 0 and var id })
                 yield return ((int)id, value);
     }
 
@@ -324,14 +323,14 @@ public sealed partial class EmblemService
 
     private long Score(InvItem item)
     {
-        long score = _data.Row("EmblemConfig", item.Entry) is { } config ? GameData.Int(config, "_iSeasonPower") : 0;
+        long score = EmblemConfig.Get(_data, item.Entry)?.SeasonPower ?? 0;
         int quality = Quality(item.Entry), level = (int)(item.Attrs?.GetValueOrDefault(Level) ?? 0);
-        score += LevelRow(quality, level) is { } row ? GameData.Int(row, "_iSeasonPower") : 0;
+        score += LevelRow(quality, level)?.SeasonPower ?? 0;
         for (int i = 0; i < 20 && item.Attrs?.TryGetValue(1051 + i, out long rowId) == true
             && item.Attrs.TryGetValue(1071 + i, out _); i++)
-            if (_data.Row("EmblemSubAttriGroupConfig", rowId) is { } sub) score += GameData.Int(sub, "_iSeasonPower");
+            if (EmblemSubAttriGroupConfig.Get(_data, rowId) is { } sub) score += sub.SeasonPower;
         for (int i = 0; i < 10 && item.Attrs?.TryGetValue(1091 + i, out long specialId) == true; i++)
-            if (_data.Row("SpecialEffectConfig", specialId) is { } special) score += GameData.Int(special, "_iPower");
+            if (SpecialEffectConfig.Get(_data, specialId) is { } special) score += special.Power;
         // Item score sums the configured base, level, subrow, special power (LC_EmblemHelper.GetEmblemScore).
         // The plan adds its reached mark stages on top (PlanPower, StagePower). No _kSpecialAttribute generation
         // pool exists here; preexisting specials can score but their combat evaluator is outside this slice.
@@ -428,7 +427,7 @@ public sealed partial class EmblemService
             : !SeasonValid(target.Entry) ? ErrorCodes.EmblemOtherSeason : 0;
         int quality = target == null ? 0 : Quality(target.Entry);
         int level = (int)(target?.Attrs?.GetValueOrDefault(Level) ?? 0);
-        int cap = _data.Table("EmblemLvConfig").Values.Where(r => GameData.Int(r, "_iQuality") == quality).Select(r => (int)GameData.Int(r, "_iLv")).DefaultIfEmpty(0).Max();
+        int cap = EmblemLvConfig.All(_data).Where(r => r.Quality == quality).Select(r => (int)r.Lv).DefaultIfEmpty(0).Max();
         if (code == 0 && (cap == 0 || level >= cap)) code = ErrorCodes.EmblemCannotLevel;
         var ids = req.ConsumeEmblemGuids.ToList();
         if (code == 0 && (ids.Count != ids.Distinct().Count() || ids.Contains(req.EmblemGuid))) code = ErrorCodes.EmblemInvalid;
@@ -480,9 +479,9 @@ public sealed partial class EmblemService
                 upgradedAttrs = target!.Attrs == null ? GenerateAttrs(target.Entry) ?? [] : new(target.Attrs);
                 long remaining = checked(upgradedAttrs.GetValueOrDefault(Exp) + xp);
                 int next = level;
-                while (next < cap && LevelRow(quality, next + 1) is { } row && remaining >= GameData.Int(row, "_iExp"))
+                while (next < cap && LevelRow(quality, next + 1) is { } row && remaining >= row.Exp)
                 {
-                    remaining -= GameData.Int(row, "_iExp");
+                    remaining -= row.Exp;
                     next++;
                     AddPrimaryLevel(upgradedAttrs, target.Entry);
                 }
@@ -546,58 +545,46 @@ public sealed partial class EmblemService
         await session.SendGameAsync(Upgrade, new UpgradeEmblemResp { Result = code, EmblemGuid = req.EmblemGuid });
     }
 
-    private int Quality(int entry) => _data.Row("ItemConfig", entry) is { } row ? (int)GameData.Int(row, "_iQuality") : 0;
+    private int Quality(int entry) => (int)(ItemConfig.Get(_data, entry)?.Quality ?? 0);
 
-    private JsonElement? LevelRow(int quality, int level)
-    {
-        var row = _data.Table("EmblemLvConfig").Values
-            .FirstOrDefault(r => GameData.Int(r, "_iQuality") == quality && GameData.Int(r, "_iLv") == level);
-        return row.ValueKind == JsonValueKind.Object ? row : null;
-    }
+    private EmblemLvConfig? LevelRow(int quality, int level) =>
+        EmblemLvConfig.All(_data).Where(r => r.Quality == quality && r.Lv == level).Cast<EmblemLvConfig?>().FirstOrDefault();
 
-    private bool SeasonValid(int entry)
-    {
-        if (_data.Row("ItemConfig", entry) is not { } row || !row.TryGetProperty("_kMultiverseArray", out var list) || list.ValueKind != JsonValueKind.Array) return true;
-        var values = list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray();
-        return values.Length == 0 || values.Contains(0) || values.Length == 2 && values[1] == -1 && _seasons.PlayBook >= values[0] || values.Contains(_seasons.PlayBook);
-    }
+    private bool SeasonValid(int entry) => ItemConfig.Get(_data, entry) is not { } row || SeasonValuesValid(row.MultiverseArray);
 
     /// <summary>Initial rolls use configured inclusive ranges; weighted unique-attribute subrow selection is inferred.</summary>
     private Dictionary<int, long>? GenerateAttrs(int entry)
     {
-        if (!IsEmblem(_data, entry) || _data.Row("EmblemConfig", entry) is not { } row) return null;
+        if (!IsEmblem(_data, entry) || EmblemConfig.Get(_data, entry) is not { } row) return null;
         var attrs = new Dictionary<int, long> { [Level] = 0, [Exp] = 0, [TotalExp] = 0 };
-        if (row.TryGetProperty("_kPrimaryAttribute", out var primary) && primary.ValueKind == JsonValueKind.Array)
+        int slot = 0;
+        foreach (var pair in row.PrimaryAttribute)
         {
-            int slot = 0;
-            foreach (var pair in primary.EnumerateArray())
-            {
-                if (slot >= 10 || pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 3) break;
-                attrs[1031 + slot] = (long)(GameData.Number(pair[0]) ?? 0);
-                attrs[1041 + slot] = Roll(pair);
-                slot++;
-            }
+            if (slot >= 10 || pair.Length < 3) break;
+            attrs[1031 + slot] = pair[0];
+            attrs[1041 + slot] = Roll(pair);
+            slot++;
         }
         AddMarks(attrs, entry, 0);
         AddSubattrs(attrs, entry, 0);
         return attrs;
     }
 
-    private static long Roll(JsonElement pair)
+    private static long Roll(long[] pair)
     {
-        long min = (long)(GameData.Number(pair[1]) ?? 0), max = (long)(GameData.Number(pair[2]) ?? min);
+        long min = pair[1], max = pair[2];
         return max <= min ? min : Random.Shared.NextInt64(min, max + 1);
     }
 
     /// <summary>Roll every _kPrimaryAttributeLvUp range once per reached level (inferred frequency).</summary>
     private void AddPrimaryLevel(Dictionary<int, long> attrs, int entry)
     {
-        if (_data.Row("EmblemConfig", entry) is not { } row || !row.TryGetProperty("_kPrimaryAttributeLvUp", out var list) || list.ValueKind != JsonValueKind.Array) return;
+        if (EmblemConfig.Get(_data, entry) is not { } row) return;
         int slot = 0;
-        foreach (var pair in list.EnumerateArray())
+        foreach (var pair in row.PrimaryAttributeLvUp)
         {
-            if (slot >= 10 || pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 3) break;
-            if (attrs.GetValueOrDefault(1031 + slot) == (long)(GameData.Number(pair[0]) ?? 0)) attrs[1041 + slot] = attrs.GetValueOrDefault(1041 + slot) + Roll(pair);
+            if (slot >= 10 || pair.Length < 3) break;
+            if (attrs.GetValueOrDefault(1031 + slot) == pair[0]) attrs[1041 + slot] = attrs.GetValueOrDefault(1041 + slot) + Roll(pair);
             slot++;
         }
     }
@@ -609,14 +596,14 @@ public sealed partial class EmblemService
     /// </summary>
     private bool AddMarks(Dictionary<int, long> attrs, int entry, int level)
     {
-        if (_data.Row("EmblemConfig", entry) is not { } row || !row.TryGetProperty("_kInitialMark", out var list) || list.ValueKind != JsonValueKind.Array) return false;
+        if (EmblemConfig.Get(_data, entry) is not { } row) return false;
         bool changed = false;
         int slot = 0;
-        foreach (var pair in list.EnumerateArray())
+        foreach (var pair in row.InitialMark)
         {
-            if (slot >= 10 || pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 2) break;
-            if ((long)(GameData.Number(pair[0]) ?? 0) > level) break;
-            long mark = (long)(GameData.Number(pair[1]) ?? 0);
+            if (slot >= 10 || pair.Length < 2) break;
+            if (pair[0] > level) break;
+            long mark = pair[1];
             if (mark == 0) mark = attrs.GetValueOrDefault(1021 + slot) is var kept and > 0 ? kept : RollMark();
             if (!attrs.TryGetValue(1021 + slot, out long held) || held != mark)
             {
@@ -631,7 +618,7 @@ public sealed partial class EmblemService
     /// <summary>Uniform over the elements EmblemMarkConfig has stages for (inferred: the client holds no weights).</summary>
     private long RollMark()
     {
-        var pool = EmblemMarkConfig.All(_data).Where(r => r.MarkStage > 0 && SeasonRowsValid(r.Row))
+        var pool = EmblemMarkConfig.All(_data).Where(r => r.MarkStage > 0 && SeasonRowsValid(r.MultiverseArray))
             .Select(r => r.EmblemMarkId).Distinct().ToArray();
         return pool.Length == 0 ? 0 : pool[Random.Shared.Next(pool.Length)];
     }
@@ -639,44 +626,42 @@ public sealed partial class EmblemService
     /// <summary>Positive-weight rows selected without replacement by actual attribute ID (inferred selection).</summary>
     private void AddSubattrs(Dictionary<int, long> attrs, int entry, int level)
     {
-        if (_data.Row("EmblemConfig", entry) is not { } config || !config.TryGetProperty("_kSubAttributeNum", out var list) || list.ValueKind != JsonValueKind.Array) return;
+        if (EmblemConfig.Get(_data, entry) is not { } config || config.SubAttributeNum.Length == 0) return;
         int wanted = 0;
-        foreach (var pair in list.EnumerateArray())
-            if (pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 && (long)(GameData.Number(pair[0]) ?? 0) <= level)
-                wanted += (int)(GameData.Number(pair[1]) ?? 0);
-        long group = GameData.Int(config, "_iSubAttributeGroup");
+        foreach (var pair in config.SubAttributeNum)
+            if (pair.Length >= 2 && pair[0] <= level) wanted += (int)pair[1];
+        long group = config.SubAttributeGroup;
         if (group == 0) return; // config has no pool/slot directive; do not fill from another group.
         int existing = Enumerable.Range(0, 20).TakeWhile(i => attrs.ContainsKey(1051 + i) && attrs.ContainsKey(1071 + i)).Count();
-        var usedIds = Enumerable.Range(0, existing).Select(i => _data.Row("EmblemSubAttriGroupConfig", attrs[1051 + i]))
-            .Where(r => r != null).Select(r => GameData.Int(r!.Value, "_iSubAttriID")).ToHashSet();
+        var usedIds = Enumerable.Range(0, existing).Select(i => EmblemSubAttriGroupConfig.Get(_data, attrs[1051 + i]))
+            .Where(r => r != null).Select(r => r!.Value.SubAttriId).ToHashSet();
         while (existing < Math.Min(20, wanted))
         {
-            var pool = _data.Table("EmblemSubAttriGroupConfig").Values
-                .Where(r => GameData.Int(r, "_iGroup") == group && GameData.Int(r, "_iWeight") > 0
-                    && !usedIds.Contains(GameData.Int(r, "_iSubAttriID")) && SeasonRowsValid(r))
+            var pool = EmblemSubAttriGroupConfig.All(_data)
+                .Where(r => r.Group == group && r.Weight > 0 && !usedIds.Contains(r.SubAttriId) && SeasonRowsValid(r.MultiverseArray))
                 .ToList();
-            long total = pool.Sum(r => GameData.Int(r, "_iWeight"));
+            long total = pool.Sum(r => r.Weight);
             if (total <= 0) break;
             long roll = Random.Shared.NextInt64(total);
-            JsonElement picked = pool[^1];
+            var picked = pool[^1];
             foreach (var candidate in pool)
             {
-                roll -= GameData.Int(candidate, "_iWeight");
+                roll -= candidate.Weight;
                 if (roll < 0) { picked = candidate; break; }
             }
-            long rowId = GameData.Int(picked, "_iID"), id = GameData.Int(picked, "_iSubAttriID");
+            long rowId = picked.Id, id = picked.SubAttriId;
             attrs[1051 + existing] = rowId;
-            long min = GameData.Int(picked, "_iMin"), max = GameData.Int(picked, "_iMax");
+            long min = picked.Min, max = picked.Max;
             attrs[1071 + existing] = max <= min ? min : Random.Shared.NextInt64(min, max + 1);
             usedIds.Add(id);
             existing++;
         }
     }
 
-    private bool SeasonRowsValid(JsonElement row)
-    {
-        if (!row.TryGetProperty("_kMultiverseArray", out var list) || list.ValueKind != JsonValueKind.Array) return true;
-        var values = list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray();
-        return values.Length == 0 || values.Contains(0) || values.Length == 2 && values[1] == -1 && _seasons.PlayBook >= values[0] || values.Contains(_seasons.PlayBook);
-    }
+    private bool SeasonValuesValid(long[] values) =>
+        values.Length == 0 || values.Contains(0) || values.Length == 2 && values[1] == -1 && _seasons.PlayBook >= values[0] || values.Contains(_seasons.PlayBook);
+
+    private bool SeasonRowsValid(JsonElement? multiverse) =>
+        multiverse is not { ValueKind: JsonValueKind.Array } list
+        || SeasonValuesValid([.. list.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))]);
 }

@@ -7,7 +7,11 @@ namespace Ro3Emu.Server.Diagnostics;
 public sealed class FixedHistogram
 {
     // Milliseconds for time metrics; raw counts for queue lengths. Upper bounds, including an overflow bucket.
-    public static readonly double[] DefaultBounds = [.001, .002, .005, .01, .02, .05, .1, .2, .5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 500, 750, 1000, 2000, 3000, 5000, 10000, 30000, 60000, double.MaxValue];
+    public static readonly double[] DefaultBounds =
+    [
+        .001, .002, .005, .01, .02, .05, .1, .2, .5, 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200,
+        300, 500, 750, 1000, 2000, 3000, 5000, 10000, 30000, 60000, double.MaxValue
+    ];
     private readonly double[] _bounds;
     private readonly long[] _buckets;
     private long _sumMicros, _minMicros = long.MaxValue, _maxMicros;

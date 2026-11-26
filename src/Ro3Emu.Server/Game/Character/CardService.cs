@@ -78,13 +78,14 @@ public sealed partial class CardService
     public async Task LoginAsync(GameSession session)
     {
         var saved = _roles.LoadLibrary(session.Role!.Id);
-        session.Profile.Library = saved != null ? DBLibraryInfo.Parser.ParseFrom(saved) : new DBLibraryInfo();
+        var library = saved != null ? DBLibraryInfo.Parser.ParseFrom(saved) : new DBLibraryInfo();
         // An older/direct item grant may have committed before its legacy ItemGained callback.
         // First sight, the reached star and Flash ownership are derived from the durable bag and sockets on reconnect,
         // before publishing 5057.
         bool repaired = false;
-        foreach (var item in session.Items) repaired |= Observe(session.Profile.Library, item);
-        if (repaired) SaveLibrary(session);
+        foreach (var item in session.Items) repaired |= Observe(library, item);
+        if (repaired) _roles.SaveLibrary(session.Role.Id, library.ToByteArray());
+        session.Profile.Library = library;
         session.CardLibraryReadyAttachment = session.Attachment;
         var plans = _roles.LoadCardPlans(session.Role.Id);
         session.Profile.CardPlans = plans != null ? DBStorageHoleInfo.Parser.ParseFrom(plans) : NewPlans(session);
@@ -573,7 +574,8 @@ public sealed partial class CardService
             level++;
             await _character.ItemsChangedAsync(session, stats: card.Grid < 0);
         }
-        await session.SendGameAsync(LevelUp, new CardLevelUpResp { Result = error, SourceType = req.SourceType, Guid = req.Guid, SlotIndex = req.SlotIndex, GridType = req.GridType, NewLevel = level });
+        await session.SendGameAsync(LevelUp, new CardLevelUpResp
+        { Result = error, SourceType = req.SourceType, Guid = req.Guid, SlotIndex = req.SlotIndex, GridType = req.GridType, NewLevel = level });
     }
 
     private static bool Pristine(InvItem item) => (item.Attrs?.GetValueOrDefault(501) ?? 0) == 0
@@ -762,16 +764,18 @@ public sealed partial class CardService
     private void OnItemGained(GameSession session, int entry, int count)
     {
         if (session.Profile.Library == null || !_character.IsCard(entry)) return;
+        var next = session.Profile.Library.Clone();
         bool changed = false;
-        if (!session.Profile.Library.Cards.ContainsKey(entry))
+        if (!next.Cards.ContainsKey(entry))
         {
-            session.Profile.Library.Cards[entry] = new LibraryCardInfo { CardId = entry };
+            next.Cards[entry] = new LibraryCardInfo { CardId = entry };
             changed = true;
         }
-        foreach (var item in session.Items.Where(i => i.Entry == entry)) changed |= Observe(session.Profile.Library, item);
+        foreach (var item in session.Items.Where(i => i.Entry == entry)) changed |= Observe(next, item);
         if (changed)
         {
-            SaveLibrary(session);
+            _roles.SaveLibrary(session.Role!.Id, next.ToByteArray());
+            session.Profile.Library = next;
             var attachment = session.Attachment;
             // The library is already committed. Publishing its snapshot needs no realm-wide reservation, and every card sight or
             // Codex kill would otherwise queue one realm waiter behind unrelated role work.
@@ -914,8 +918,6 @@ public sealed partial class CardService
     /// </summary>
     private int CardUnlockPoints(int card, int reachedStar) => TierPoints(card, -1, reachedStar);
 
-    private void SaveLibrary(GameSession session) => _roles.SaveLibrary(session.Role!.Id, session.Profile.Library!.ToByteArray());
-
     /// <summary>
     /// 82405: the Codex overview theme. LC_DAL_Library._processLibraryChangeUI (lua:372-402) sets the dataset's
     /// iSelectUI to the reply's themeId, so the reply echoes the theme (the generic empty reply set it to 0, which is
@@ -935,11 +937,24 @@ public sealed partial class CardService
             {
                 var next = session.Profile.Library.Clone();
                 next.OverviewTheme = req.ThemeId;
-                _roles.SaveLibrary(session.Role!.Id, next.ToByteArray());
-                session.Profile.Library = next;
-                await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
+                var transaction = _roles.NewTransaction();
+                transaction.RoleBlob(session.Role!.Id, "library", next.ToByteArray());
+                try
+                {
+                    await _roles.CommitAsync(transaction, "card/switch-theme", _ => session.Profile.Library = next);
+                }
+                catch (Exception e)
+                {
+                    LogThemeSwitchFailed(_log, e, req.ThemeId, session.Role.Id);
+                    code = ErrorCodes.Unknown;
+                }
+                if (code == 0)
+                    await CharacterService.SyncAsync(session, LibrarySync, session.Profile.Library.Clone());
             }
         }
         await session.SendGameAsync(LibrarySwitchTheme, new LibrarySwitchThemeResp { Result = code, ThemeId = code == 0 ? req.ThemeId : session.Profile.Library?.OverviewTheme ?? 0 });
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Card theme switch to {ThemeId} failed for role {Role}")]
+    private static partial void LogThemeSwitchFailed(ILogger logger, Exception error, int themeId, long role);
 }

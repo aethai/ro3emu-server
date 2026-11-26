@@ -78,7 +78,7 @@ public sealed class OwnerEntryTests : IAsyncLifetime
         finally { release.TrySetResult(); }
         await Task.WhenAll(held, contender).WaitAsync(TimeSpan.FromSeconds(5));
         if (origin == "GM") Assert.Equal(startingZeny + 7, Roles.LoadProgress(role).Currency[1]);
-        if (origin.StartsWith("timer")) Assert.Equal(123, Roles.Get(role)!.X);
-        if (origin.StartsWith("micro")) Assert.Contains("\"Read\":true", System.Text.Encoding.UTF8.GetString(Roles.LoadMailbox(role)!));
+        if (origin.StartsWith("timer", StringComparison.Ordinal)) Assert.Equal(123, Roles.Get(role)!.X);
+        if (origin.StartsWith("micro", StringComparison.Ordinal)) Assert.Contains("\"Read\":true", System.Text.Encoding.UTF8.GetString(Roles.LoadMailbox(role)!));
     }
 }

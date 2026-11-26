@@ -225,28 +225,33 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
         await using var bot = await _host.InWorldAsync("Talent");
         var monster = await BlitzBeatHunter();
 
-        async Task<bool> FiresAt(int roll)
+        async Task<bool> FiresAt(int roll, bool expectHit)
         {
             int Hits() => bot.Inbox.Snapshot().Count(e => e.IsGame(CombatService.SkillHit) && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == AutoRow);
             int before = Hits();
             await BasicAttackAt(monster, roll);
-            await Task.Delay(100);
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(expectHit ? 2000 : 150);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (Hits() > before) return true;
+                await Task.Delay(20);
+            }
             return Hits() > before;
         }
 
-        Assert.False(await FiresAt(0)); // no falcon
+        Assert.False(await FiresAt(0, expectHit: false)); // no falcon
         await OnLoop(() => { Session.Profile.CareerPendants = [Falcon]; return Task.FromResult(0); });
-        Assert.True(await FiresAt(2499));
-        Assert.False(await FiresAt(2500));
+        Assert.True(await FiresAt(2499, expectHit: true));
+        Assert.False(await FiresAt(2500, expectHit: false));
 
         await OnLoop(() => { Session.Profile.MountState.QuestMount = Wolf; return Task.FromResult(0); });
-        Assert.False(await FiresAt(0));
+        Assert.False(await FiresAt(0, expectHit: false));
         await OnLoop(() => { Session.Profile.MountState.QuestMount = 0; return Task.FromResult(0); });
 
         Assert.Equal(0, await Request(bot, SeasonTalentService.Upgrade, new SeasonTalentUpgradeReq { TalentId = 4 },
             body => SeasonTalentUpgradeResp.Parser.ParseFrom(body).Result));
-        Assert.True(await FiresAt(3499));
-        Assert.False(await FiresAt(3500));
+        Assert.True(await FiresAt(3499, expectHit: true));
+        Assert.False(await FiresAt(3500, expectHit: false));
     }
 
     // The automatic proc is no cast: it tells its own timeline (31107, no cast action) and the 31101 of its hit belongs to

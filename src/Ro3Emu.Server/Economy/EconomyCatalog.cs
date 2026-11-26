@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>Frozen ItemConfig denomination classification for one E00 read.</summary>
+/// <summary>Frozen ItemConfig denomination classification for one ledger read.</summary>
 public sealed class EconomyCatalog
 {
     private readonly IReadOnlyDictionary<long, EconomyAssetKind> entries;

@@ -118,7 +118,7 @@ public sealed class EconomyRewardTests : IDisposable
             opening.Cut.CommitSequence!.Value, closing.Cut.CommitSequence!.Value);
         var check = EconomyExactnessChecker.Check(opening, closing, ledger);
         Assert.Equal(EconomyVerdict.NotMeasured, check.Verdict);
-        Assert.Contains(check.Issues, x => x.Kind == EconomyIssueKind.Coverage && x.Key.StartsWith("progress/"));
+        Assert.Contains(check.Issues, x => x.Kind == EconomyIssueKind.Coverage && x.Key.StartsWith("progress/", StringComparison.Ordinal));
         Assert.DoesNotContain(check.Issues, x => x.Kind == EconomyIssueKind.Corruption);
     }
 
@@ -132,7 +132,7 @@ public sealed class EconomyRewardTests : IDisposable
             opening.Cut.CommitSequence!.Value, closing.Cut.CommitSequence!.Value);
         var check = EconomyExactnessChecker.Check(opening, closing, ledger);
         Assert.Equal(EconomyVerdict.Fail, check.Verdict);
-        Assert.Contains(check.Issues, x => x.Kind == EconomyIssueKind.Corruption && x.Key.StartsWith("progress/"));
+        Assert.Contains(check.Issues, x => x.Kind == EconomyIssueKind.Corruption && x.Key.StartsWith("progress/", StringComparison.Ordinal));
     }
 
     [Fact]

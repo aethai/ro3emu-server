@@ -22,14 +22,27 @@ public static class EconomyLedgerReader
         var issues = new List<EconomyIssue>();
         using var db = Open(databasePath);
         using var tx = db.BeginTransaction(deferred: true);
-        string storedRealm;
-        long watermark, floor;
         // The first read (this schema check) pins the database view; the watermark below is read from that same view.
         if (!EconomySchema.Has(db, tx, "economy_meta"))
         {
             issues.Add(new(EconomyIssueKind.Coverage, "ledger/schema", "E01 economy tables are absent."));
             return Empty(realmId, catalog, fromExclusive, throughInclusive, issues);
         }
+        var (storedRealm, watermark, prunedSeq) = ReadMetadata(db, tx, realmId, fromExclusive, throughInclusive, issues);
+        var pass = new ReadPass(db, tx, catalog, storedRealm, watermark, prunedSeq, fromExclusive, throughInclusive, issues);
+        pass.Execute();
+        tx.Commit();
+        bool complete = issues.Count == 0;
+        return new(storedRealm, catalog.Version, EconomySnapshotReader.CoverageVersion, fromExclusive, throughInclusive, complete,
+            pass.Legs, pass.Receipts, pass.Prior, issues, EconomySnapshotReader.UncoveredFamilies)
+        { CompactedReceipts = pass.CompactedOps.Count };
+    }
+
+    private static (string StoredRealm, long Watermark, long PrunedSequence) ReadMetadata(SqliteConnection db, SqliteTransaction tx,
+        string realmId, long fromExclusive, long throughInclusive, List<EconomyIssue> issues)
+    {
+        string storedRealm;
+        long watermark, floor, prunedSeq = 0;
         using (var meta = Command(db, tx,
             "SELECT realm_id,next_sequence,retained_floor FROM economy_meta WHERE singleton=1"))
         {
@@ -45,62 +58,89 @@ public static class EconomyLedgerReader
             if ((long)hasPruned.ExecuteScalar()! > 0)
             {
                 using var prunedCmd = Command(db, tx, "SELECT pruned_entry_seq FROM economy_meta WHERE singleton=1");
-                long prunedSeq = prunedCmd.ExecuteScalar() is long p ? p : 0;
+                prunedSeq = prunedCmd.ExecuteScalar() is long p ? p : 0;
                 if (prunedSeq > 0 && fromExclusive < prunedSeq)
                     issues.Add(new(EconomyIssueKind.Coverage, "ledger/pruned",
                         "Requested range includes economy_entry rows already aggregated into economy_daily_aggregate."));
             }
-        var receipts = new List<EconomyReceipt>();
-        var prior = new List<EconomySourceClaim>();
-        var legs = new List<EconomyLeg>();
-        var allTransferLegs = new List<EconomyLeg>();
-        var allReceipts = new Dictionary<long, (string Operation, int Count, string Source, long Actor, string Kind)>();
-        var intentAmounts = new Dictionary<(string Operation, EconomyAsset Asset, bool Cost), BigInteger>();
-        var ledgerAmounts = new Dictionary<(string Operation, EconomyAsset Asset, bool Cost), BigInteger>();
-        var escrowReasons = new Dictionary<(string Operation, EconomyAsset Asset, bool Cost, EconomyReason Reason), BigInteger>();
-        var escrowLedgerReasons = new Dictionary<(string Operation, EconomyAsset Asset, bool Cost, EconomyReason Reason), BigInteger>();
-        var escrowTransfers = new Dictionary<string, EconomyReason>(StringComparer.Ordinal);
-        var escrowAuthorizations = new Dictionary<string, EscrowExternalChange[]>(StringComparer.Ordinal);
-        var escrowRealizations = new Dictionary<string, EscrowMailRealization[]>(StringComparer.Ordinal);
-        var escrowExternalLegs = new Dictionary<string, List<EconomyLeg>>(StringComparer.Ordinal);
-        var escrowAllLegs = new Dictionary<string, List<EconomyLeg>>(StringComparer.Ordinal);
-        var eventIntents = new Dictionary<string, EventEconomyMutation>(StringComparer.Ordinal);
-        var eventOwnerAmounts = new Dictionary<(string Operation, EconomyOwner Owner, EconomyAsset Asset), BigInteger>();
-        var commands = new Dictionary<string, string>(StringComparer.Ordinal);
-        var compactedOps = new HashSet<string>(StringComparer.Ordinal);
-        bool obligationSchemaChecked = false;
-        var e05Intent = new Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner Owner,
-            EconomyCompartment Compartment, EconomyLegKind Kind, EconomyReason Reason), BigInteger>();
-        var e05Ledger = new Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner Owner,
-            EconomyCompartment Compartment, EconomyLegKind Kind, EconomyReason Reason), BigInteger>();
-        var e05IntentEdges = new Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner From,
+        return (storedRealm, watermark, prunedSeq);
+    }
+
+    private sealed class ReadPass(SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog,
+        string storedRealm, long watermark, long prunedSeq, long fromExclusive, long throughInclusive, List<EconomyIssue> issues)
+    {
+        internal List<EconomyReceipt> Receipts { get; } = [];
+        internal List<EconomySourceClaim> Prior { get; } = [];
+        internal List<EconomyLeg> Legs { get; } = [];
+        internal HashSet<string> CompactedOps { get; } = new(StringComparer.Ordinal);
+
+        private readonly List<EconomyLeg> _allTransferLegs = [];
+        private readonly Dictionary<long, (string Operation, int Count, string Source, long Actor, string Kind)> _allReceipts = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, bool Cost), BigInteger> _intentAmounts = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, bool Cost), BigInteger> _ledgerAmounts = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, bool Cost, EconomyReason Reason), BigInteger> _escrowReasons = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, bool Cost, EconomyReason Reason), BigInteger> _escrowLedgerReasons = [];
+        private readonly Dictionary<string, EconomyReason> _escrowTransfers = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, EscrowExternalChange[]> _escrowAuthorizations = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, EscrowMailRealization[]> _escrowRealizations = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<EconomyLeg>> _escrowExternalLegs = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<EconomyLeg>> _escrowAllLegs = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, EventEconomyMutation> _eventIntents = new(StringComparer.Ordinal);
+        private readonly Dictionary<(string Operation, EconomyOwner Owner, EconomyAsset Asset), BigInteger> _eventOwnerAmounts = [];
+        private readonly Dictionary<string, string> _commands = new(StringComparer.Ordinal);
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner Owner,
+            EconomyCompartment Compartment, EconomyLegKind Kind, EconomyReason Reason), BigInteger> _e05Intent = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner Owner,
+            EconomyCompartment Compartment, EconomyLegKind Kind, EconomyReason Reason), BigInteger> _e05Ledger = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner From,
             EconomyCompartment FromPart, EconomyReason FromReason, EconomyOwner To,
-            EconomyCompartment ToPart, EconomyReason ToReason), BigInteger>();
-        var e05LedgerEdges = new Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner From,
+            EconomyCompartment ToPart, EconomyReason ToReason), BigInteger> _e05IntentEdges = [];
+        private readonly Dictionary<(string Operation, EconomyAsset Asset, EconomyOwner From,
             EconomyCompartment FromPart, EconomyReason FromReason, EconomyOwner To,
-            EconomyCompartment ToPart, EconomyReason ToReason), BigInteger>();
-        try
+            EconomyCompartment ToPart, EconomyReason ToReason), BigInteger> _e05LedgerEdges = [];
+        private bool _obligationSchemaChecked;
+
+        internal void Execute()
         {
-            RequireLedgerSchema(db, tx);
-            using (var bounds = Command(db, tx, """
+            try
+            {
+                RequireLedgerSchema(db, tx);
+                CheckWatermarkBounds();
+                ReadReceipts();
+                VerifyCountsAndSources();
+                ReadAndValidateEntries();
+                ValidateEventBeneficiaries();
+                PairTransfers();
+                ReconcileTotals();
+            }
+            catch (EconomySchemaMissingException)
+            {
+                issues.Add(new(EconomyIssueKind.UnknownSchema, "ledger/schema", "Required economy receipt/source/entry or obligation schema is absent."));
+            }
+        }
+
+        private void CheckWatermarkBounds()
+        {
+            using var bounds = Command(db, tx, """
                 SELECT (SELECT COUNT(*) FROM operation_receipt WHERE commit_seq<=0 OR commit_seq>$watermark),
                        (SELECT COUNT(*) FROM economy_entry WHERE commit_seq<=0 OR commit_seq>$watermark)
-                """))
-            {
-                bounds.Parameters.AddWithValue("$watermark", watermark);
-                using var row = bounds.ExecuteReader();
-                if (row.Read() && (row.GetInt64(0) != 0 || row.GetInt64(1) != 0))
-                    issues.Add(new(EconomyIssueKind.Corruption, "ledger/watermark",
-                        "Receipt or leg sequence lies outside the committed metadata watermark."));
-            }
+                """);
+            bounds.Parameters.AddWithValue("$watermark", watermark);
+            using var row = bounds.ExecuteReader();
+            if (row.Read() && (row.GetInt64(0) != 0 || row.GetInt64(1) != 0))
+                issues.Add(new(EconomyIssueKind.Corruption, "ledger/watermark",
+                    "Receipt or leg sequence lies outside the committed metadata watermark."));
+        }
+
+        private void ReadReceipts()
+        {
             long expectedSequence = 1;
-            using (var receipt = Command(db, tx,
-                """
-                    SELECT commit_seq,operation_id,leg_count,source_key,realm_id,actor_account,actor_role,
-                    command_kind,request_fingerprint,intent_hash,outcome,child_receipts,before_revisions,after_revisions,
-                    effective_utc_ms,intent_payload
-                    FROM operation_receipt WHERE commit_seq<=$through ORDER BY commit_seq
-                    """))
+            using (var receipt = Command(db, tx, """
+                SELECT commit_seq,operation_id,leg_count,source_key,realm_id,actor_account,actor_role,
+                command_kind,request_fingerprint,intent_hash,outcome,child_receipts,before_revisions,after_revisions,
+                effective_utc_ms,intent_payload
+                FROM operation_receipt WHERE commit_seq<=$through ORDER BY commit_seq
+                """))
             {
                 receipt.Parameters.AddWithValue("$through", throughInclusive);
                 using var row = receipt.ExecuteReader();
@@ -111,160 +151,192 @@ public static class EconomyLedgerReader
                         issues.Add(new(EconomyIssueKind.Corruption, "ledger/sequence/" + expectedSequence,
                             "Committed receipt history has a gap or nonconsecutive sequence."));
                     expectedSequence = seq == long.MaxValue ? long.MaxValue : seq + 1;
-                    string op = row.GetString(1), source = row.GetString(3);
-                    bool isEvent = row.GetString(7).StartsWith("event/", StringComparison.Ordinal);
-                    int count = row.GetInt32(2);
-                    string commandKind = row.GetString(7);
-                    bool family = EconomyMutation.IsFamilyKind(commandKind) || EconomyMutation.IsProgressionKind(commandKind);
-                    bool economic = Economic(commandKind);
-                    bool escrow = EscrowEconomyIntent.IsKind(commandKind);
-                    // ReceiptRetention dropped this receipt's payload and outcome: its sequence, legs and source claim
-                    // are still certified below; the intent checks that need those bytes are not possible any more.
-                    bool compacted = ReceiptBlobs.IsCompacted((byte[])row.GetValue(15));
-                    if (compacted) compactedOps.Add(op);
-                    if (row.GetString(4) != storedRealm || !allReceipts.TryAdd(seq, (op, count, source, row.GetInt64(6), commandKind)))
-                        issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + seq, "Duplicate or foreign realm receipt."));
-                    if (string.IsNullOrWhiteSpace(op) || string.IsNullOrWhiteSpace(source) ||
-                        (!escrow && string.IsNullOrWhiteSpace(row.GetString(5))) ||
-                        (isEvent || escrow ? row.GetInt64(6) < 0 : row.GetInt64(6) <= 0) ||
-                        string.IsNullOrWhiteSpace(commandKind) || string.IsNullOrWhiteSpace(row.GetString(8)) ||
-                        row.GetString(9).Length != 64 || count < (commandKind == "npc-shop-buy" || isEvent ? 1 : 0) ||
-                        !compacted && (economic || isEvent || escrow) && ((byte[])row.GetValue(10)).Length == 0)
-                        issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + op, "Incomplete committed actor, intent, result or leg count."));
-                    commands[op] = commandKind;
-                    EconomyRewardEvidence? rewardEvidence = null;
-                    long? beforeProgressRevision = null, afterProgressRevision = null;
-                    if (!compacted)
-                    {
-                        try
-                        {
-                            object?[] typedChildren = escrow
-                                ? EscrowEconomyReceiptCodec.Decode((byte[])row.GetValue(11))
-                                : EconomyTransactionPlan.DecodeChildReceipts((byte[])row.GetValue(11));
-                            if (isEvent)
-                            {
-                                if (typedChildren.Length == 0) throw new InvalidDataException("Event has no typed children.");
-                                EventEconomyEvidence.ValidateRevisions(row.GetString(12), row.GetString(13), row.GetInt64(6));
-                                var intent = EventEconomyEvidence.ReadIntent(catalog, (byte[])row.GetValue(15), row.GetString(9),
-                                    op, row.GetString(5), row.GetInt64(6), row.GetString(7), row.GetString(8), source,
-                                    row.GetInt64(14), (byte[])row.GetValue(10));
-                                eventIntents.Add(op, intent);
-                                foreach (var quantity in intent.Costs)
-                                    intentAmounts[(op, quantity.Asset, true)] = intentAmounts.GetValueOrDefault((op, quantity.Asset, true)) + quantity.Quantity;
-                                foreach (var quantity in intent.Goods)
-                                    intentAmounts[(op, quantity.Asset, false)] = intentAmounts.GetValueOrDefault((op, quantity.Asset, false)) + quantity.Quantity;
-                            }
-                            else if (escrow)
-                            {
-                                if (!((byte[])row.GetValue(10)).AsSpan().SequenceEqual((byte[])row.GetValue(11)))
-                                    throw new InvalidDataException("E03 outcome differs from typed children.");
-                                var staged = ValidateEscrowIntentPayload((byte[])row.GetValue(15), row.GetString(9),
-                                    op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source, row.GetInt64(14));
-                                ValidateEscrowRevisions(row.GetString(12), row.GetString(13),
-                                    staged.ChildRoleWrites, typedChildren);
-                                escrowTransfers.Add(op, staged.TransferReason);
-                                escrowAuthorizations.Add(op, staged.Changes);
-                                escrowRealizations.Add(op, staged.Realizations);
-                                foreach (var change in staged.Changes)
-                                {
-                                    var key = (op, change.Asset, change.Kind == EconomyLegKind.Sink, change.Reason);
-                                    escrowReasons[key] = escrowReasons.GetValueOrDefault(key) + change.Quantity;
-                                }
-                            }
-                            else if (!economic)
-                            {
-                                if (typedChildren.Length == 0) throw new InvalidDataException("E05d receipt has no typed children.");
-                                ValidateEnvelopeRevisions(row.GetString(12), row.GetString(13));
-                                var effects = ValidateEnvelopeIntent((byte[])row.GetValue(15), row.GetString(9),
-                                    op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source,
-                                    row.GetInt64(14), (byte[])row.GetValue(10), typedChildren);
-                                foreach (var effect in effects)
-                                {
-                                    var key = (op, effect.Asset, effect.Owner, effect.Compartment, effect.Kind, effect.Reason);
-                                    e05Intent[key] = e05Intent.GetValueOrDefault(key) + effect.Delta;
-                                }
-                                foreach (var edge in effects.Where(x => x.Kind == EconomyLegKind.Transfer).GroupBy(x => x.EdgeNumber))
-                                {
-                                    var pair = edge.ToArray();
-                                    if (edge.Key <= 0 || pair.Length != 2 ||
-                                        pair.Count(x => x.Delta < 0) != 1 || pair.Count(x => x.Delta > 0) != 1)
-                                        throw new InvalidDataException("E05d transfer intent lacks one exact counterparty.");
-                                    var debit = pair.Single(x => x.Delta < 0);
-                                    var credit = pair.Single(x => x.Delta > 0);
-                                    var key = (op, debit.Asset, debit.Owner, debit.Compartment, debit.Reason,
-                                        credit.Owner, credit.Compartment, credit.Reason);
-                                    e05IntentEdges[key] = e05IntentEdges.GetValueOrDefault(key) - debit.Delta;
-                                }
-                            }
-                            else if (commandKind == "dungeon-obligation-earn")
-                            {
-                                if (typedChildren.Length != 0) throw new InvalidDataException("Earned obligation has child results.");
-                            }
-                            else if (family)
-                            {
-                                if (typedChildren.Length is < 1 or > 32 || typedChildren[0] is not long[] familyIds ||
-                                    familyIds.Any(id => id <= 0) || familyIds.Distinct().Count() != familyIds.Length ||
-                                    typedChildren.Skip(1).Any(value => value is not int number || number != 1))
-                                    throw new InvalidDataException("Family typed child result shape is invalid.");
-                            }
-                            else if (commandKind == "cd13e/daily-reset")
-                            {
-                                EconomyTransactionPlan.ValidateChildReceipts(typedChildren, -1, commandKind);
-                            }
-                            else
-                            {
-                                if (typedChildren.Length < 2 || typedChildren[0] is not long[] ids)
-                                    throw new InvalidDataException("Economic typed child result shape is invalid.");
-                                EconomyTransactionPlan.ValidateChildReceipts(typedChildren, ids.Length, commandKind);
-                            }
-                            if (economic)
-                            {
-                                (beforeProgressRevision, afterProgressRevision) = ValidateRevisions(row.GetString(12), row.GetString(13),
-                                    row.GetInt64(6), commandKind, typedChildren);
-                                var parsed = ValidateIntentPayload((byte[])row.GetValue(15), row.GetString(9),
-                                    op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source,
-                                    row.GetInt64(14), (byte[])row.GetValue(10));
-                                bool dungeonReceipt = commandKind is "dungeon-reward" or "dungeon-obligation-earn";
-                                if (dungeonReceipt && !obligationSchemaChecked)
-                                {
-                                    RequireObligationSchema(db, tx);
-                                    obligationSchemaChecked = true;
-                                }
-                                if (commandKind == "dungeon-reward")
-                                    ValidateDungeonObligation(db, tx, source, row.GetInt64(6), parsed);
-                                if (commandKind == "dungeon-obligation-earn")
-                                    ValidateEarnedObligation(db, tx, source, row.GetInt64(6), seq, throughInclusive, parsed,
-                                        (byte[])row.GetValue(15), (byte[])row.GetValue(10));
-                                rewardEvidence = parsed.RewardEvidence;
-                                foreach (var amount in parsed.Amounts)
-                                {
-                                    var amountKey = (op, amount.Asset, amount.Cost);
-                                    intentAmounts[amountKey] = intentAmounts.GetValueOrDefault(amountKey) + amount.Amount;
-                                }
-                            }
-                        }
-                        catch (Exception error) when (error is InvalidDataException or JsonException or EndOfStreamException or KeyNotFoundException or OverflowException or FormatException or ArgumentException or InvalidOperationException)
-                        {
-                            issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + op, "Invalid typed child result or revision evidence: " + error.Message));
-                        }
-                    }
-                    if (seq > fromExclusive) receipts.Add(new EconomyReceipt(seq, op, count, [source])
-                    {
-                        ActorRoleId = row.GetInt64(6), CommandKind = commandKind, RewardEvidence = rewardEvidence,
-                        BeforeProgressRevision = beforeProgressRevision, AfterProgressRevision = afterProgressRevision
-                    });
+                    ProcessReceiptRow(row, seq);
                 }
             }
             if (expectedSequence <= throughInclusive)
                 issues.Add(new(EconomyIssueKind.Corruption, "ledger/sequence/" + expectedSequence,
                     "Committed receipt history ends before the requested cut."));
-            // No-prune E01: certify the entire retained prefix, not just the requested window.
+        }
+
+        private void ProcessReceiptRow(SqliteDataReader row, long seq)
+        {
+            string op = row.GetString(1), source = row.GetString(3), commandKind = row.GetString(7);
+            int count = row.GetInt32(2);
+            bool isEvent = commandKind.StartsWith("event/", StringComparison.Ordinal);
+            bool family = EconomyMutation.IsFamilyKind(commandKind) || EconomyMutation.IsProgressionKind(commandKind);
+            bool economic = Economic(commandKind);
+            bool escrow = EscrowEconomyIntent.IsKind(commandKind);
+            // ReceiptRetention dropped this receipt's payload and outcome: its sequence, legs and source claim
+            // are still certified below; the intent checks that need those bytes are not possible any more.
+            bool compacted = ReceiptBlobs.IsCompacted((byte[])row.GetValue(15));
+            bool pruned = seq <= prunedSeq;
+            if (compacted) CompactedOps.Add(op);
+            if (row.GetString(4) != storedRealm || !_allReceipts.TryAdd(seq, (op, count, source, row.GetInt64(6), commandKind)))
+                issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + seq, "Duplicate or foreign realm receipt."));
+            if (string.IsNullOrWhiteSpace(op) || string.IsNullOrWhiteSpace(source) ||
+                (!escrow && string.IsNullOrWhiteSpace(row.GetString(5))) ||
+                (isEvent || escrow ? row.GetInt64(6) < 0 : row.GetInt64(6) <= 0) ||
+                string.IsNullOrWhiteSpace(commandKind) || string.IsNullOrWhiteSpace(row.GetString(8)) ||
+                row.GetString(9).Length != 64 || count < (commandKind == "npc-shop-buy" || isEvent ? 1 : 0) ||
+                !compacted && (economic || isEvent || escrow) && ((byte[])row.GetValue(10)).Length == 0)
+                issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + op, "Incomplete committed actor, intent, result or leg count."));
+            _commands[op] = commandKind;
+            EconomyRewardEvidence? rewardEvidence = null;
+            long? beforeProgressRevision = null, afterProgressRevision = null;
+            if (!compacted && !pruned)
+                (rewardEvidence, beforeProgressRevision, afterProgressRevision) = ValidateReceiptPayload(
+                    row, seq, op, source, commandKind, isEvent, family, economic, escrow);
+            if (seq > fromExclusive) Receipts.Add(new EconomyReceipt(seq, op, count, [source])
+            {
+                ActorRoleId = row.GetInt64(6), CommandKind = commandKind, RewardEvidence = rewardEvidence,
+                BeforeProgressRevision = beforeProgressRevision, AfterProgressRevision = afterProgressRevision
+            });
+        }
+
+        private (EconomyRewardEvidence? Reward, long? Before, long? After) ValidateReceiptPayload(
+            SqliteDataReader row, long seq, string op, string source, string commandKind,
+            bool isEvent, bool family, bool economic, bool escrow)
+        {
+            try
+            {
+                object?[] typedChildren = escrow
+                    ? EscrowEconomyReceiptCodec.Decode((byte[])row.GetValue(11))
+                    : EconomyTransactionPlan.DecodeChildReceipts((byte[])row.GetValue(11));
+                if (isEvent) { ValidateEventReceipt(row, op, source, typedChildren); return (null, null, null); }
+                if (escrow) { ValidateEscrowReceipt(row, op, source, commandKind, typedChildren); return (null, null, null); }
+                if (!economic) { ValidateEnvelopeReceipt(row, op, source, commandKind, typedChildren); return (null, null, null); }
+                ValidateEconomicChildren(commandKind, family, typedChildren);
+                return ValidateEconomicReceipt(row, seq, op, source, commandKind, typedChildren);
+            }
+            catch (Exception error) when (error is InvalidDataException or JsonException or EndOfStreamException
+                or KeyNotFoundException or OverflowException or FormatException or ArgumentException or InvalidOperationException)
+            {
+                issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + op, "Invalid typed child result or revision evidence: " + error.Message));
+                return (null, null, null);
+            }
+        }
+
+        private void ValidateEventReceipt(SqliteDataReader row, string op, string source, object?[] typedChildren)
+        {
+            if (typedChildren.Length == 0) throw new InvalidDataException("Event has no typed children.");
+            EventEconomyEvidence.ValidateRevisions(row.GetString(12), row.GetString(13), row.GetInt64(6));
+            var intent = EventEconomyEvidence.ReadIntent(catalog, (byte[])row.GetValue(15), row.GetString(9),
+                op, row.GetString(5), row.GetInt64(6), row.GetString(7), row.GetString(8), source,
+                row.GetInt64(14), (byte[])row.GetValue(10));
+            _eventIntents.Add(op, intent);
+            foreach (var quantity in intent.Costs)
+                _intentAmounts[(op, quantity.Asset, true)] = _intentAmounts.GetValueOrDefault((op, quantity.Asset, true)) + quantity.Quantity;
+            foreach (var quantity in intent.Goods)
+                _intentAmounts[(op, quantity.Asset, false)] = _intentAmounts.GetValueOrDefault((op, quantity.Asset, false)) + quantity.Quantity;
+        }
+
+        private void ValidateEscrowReceipt(SqliteDataReader row, string op, string source, string commandKind, object?[] typedChildren)
+        {
+            if (!((byte[])row.GetValue(10)).AsSpan().SequenceEqual((byte[])row.GetValue(11)))
+                throw new InvalidDataException("E03 outcome differs from typed children.");
+            var staged = ValidateEscrowIntentPayload((byte[])row.GetValue(15), row.GetString(9),
+                op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source, row.GetInt64(14));
+            ValidateEscrowRevisions(row.GetString(12), row.GetString(13), staged.ChildRoleWrites, typedChildren);
+            _escrowTransfers.Add(op, staged.TransferReason);
+            _escrowAuthorizations.Add(op, staged.Changes);
+            _escrowRealizations.Add(op, staged.Realizations);
+            foreach (var change in staged.Changes)
+            {
+                var key = (op, change.Asset, change.Kind == EconomyLegKind.Sink, change.Reason);
+                _escrowReasons[key] = _escrowReasons.GetValueOrDefault(key) + change.Quantity;
+            }
+        }
+
+        private void ValidateEnvelopeReceipt(SqliteDataReader row, string op, string source, string commandKind, object?[] typedChildren)
+        {
+            if (typedChildren.Length == 0) throw new InvalidDataException("E05d receipt has no typed children.");
+            ValidateEnvelopeRevisions(row.GetString(12), row.GetString(13));
+            var effects = ValidateEnvelopeIntent((byte[])row.GetValue(15), row.GetString(9),
+                op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source,
+                row.GetInt64(14), (byte[])row.GetValue(10), typedChildren);
+            foreach (var effect in effects)
+            {
+                var key = (op, effect.Asset, effect.Owner, effect.Compartment, effect.Kind, effect.Reason);
+                _e05Intent[key] = _e05Intent.GetValueOrDefault(key) + effect.Delta;
+            }
+            foreach (var edge in effects.Where(x => x.Kind == EconomyLegKind.Transfer).GroupBy(x => x.EdgeNumber))
+            {
+                var pair = edge.ToArray();
+                if (edge.Key <= 0 || pair.Length != 2 ||
+                    pair.Count(x => x.Delta < 0) != 1 || pair.Count(x => x.Delta > 0) != 1)
+                    throw new InvalidDataException("E05d transfer intent lacks one exact counterparty.");
+                var debit = pair.Single(x => x.Delta < 0);
+                var credit = pair.Single(x => x.Delta > 0);
+                var key = (op, debit.Asset, debit.Owner, debit.Compartment, debit.Reason,
+                    credit.Owner, credit.Compartment, credit.Reason);
+                _e05IntentEdges[key] = _e05IntentEdges.GetValueOrDefault(key) - debit.Delta;
+            }
+        }
+
+        private static void ValidateEconomicChildren(string commandKind, bool family, object?[] typedChildren)
+        {
+            if (commandKind == "dungeon-obligation-earn")
+            {
+                if (typedChildren.Length != 0) throw new InvalidDataException("Earned obligation has child results.");
+            }
+            else if (family)
+            {
+                if (typedChildren.Length is < 1 or > 32 || typedChildren[0] is not long[] familyIds ||
+                    familyIds.Any(id => id <= 0) || familyIds.Distinct().Count() != familyIds.Length ||
+                    typedChildren.Skip(1).Any(value => value is not int number || number != 1))
+                    throw new InvalidDataException("Family typed child result shape is invalid.");
+            }
+            else if (commandKind == "cd13e/daily-reset")
+            {
+                EconomyTransactionPlan.ValidateChildReceipts(typedChildren, -1, commandKind);
+            }
+            else
+            {
+                if (typedChildren.Length < 2 || typedChildren[0] is not long[] ids)
+                    throw new InvalidDataException("Economic typed child result shape is invalid.");
+                EconomyTransactionPlan.ValidateChildReceipts(typedChildren, ids.Length, commandKind);
+            }
+        }
+
+        private (EconomyRewardEvidence? Reward, long? Before, long? After) ValidateEconomicReceipt(
+            SqliteDataReader row, long seq, string op, string source, string commandKind, object?[] typedChildren)
+        {
+            var (beforeProgress, afterProgress) = ValidateRevisions(row.GetString(12), row.GetString(13),
+                row.GetInt64(6), commandKind, typedChildren);
+            var parsed = ValidateIntentPayload((byte[])row.GetValue(15), row.GetString(9),
+                op, row.GetString(5), row.GetInt64(6), commandKind, row.GetString(8), source,
+                row.GetInt64(14), (byte[])row.GetValue(10));
+            bool dungeonReceipt = commandKind is "dungeon-reward" or "dungeon-obligation-earn";
+            if (dungeonReceipt && !_obligationSchemaChecked)
+            {
+                RequireObligationSchema(db, tx);
+                _obligationSchemaChecked = true;
+            }
+            if (commandKind == "dungeon-reward")
+                ValidateDungeonObligation(db, tx, source, row.GetInt64(6), parsed);
+            if (commandKind == "dungeon-obligation-earn")
+                ValidateEarnedObligation(db, tx, source, row.GetInt64(6), seq, throughInclusive, parsed,
+                    (byte[])row.GetValue(15), (byte[])row.GetValue(10));
+            foreach (var amount in parsed.Amounts)
+            {
+                var amountKey = (op, amount.Asset, amount.Cost);
+                _intentAmounts[amountKey] = _intentAmounts.GetValueOrDefault(amountKey) + amount.Amount;
+            }
+            return (parsed.RewardEvidence, beforeProgress, afterProgress);
+        }
+
+        private void VerifyCountsAndSources()
+        {
+            // Certify leg counts for every unpruned receipt in the prefix; rows at or below prunedSeq were
+            // rolled into economy_daily_aggregate by EconomyRetentionPlan.
             using (var counts = Command(db, tx, """
                 SELECT r.operation_id,r.leg_count,COUNT(e.entry_id),MIN(e.leg_no),MAX(e.leg_no)
                 FROM operation_receipt r LEFT JOIN economy_entry e ON e.operation_id=r.operation_id
-                WHERE r.commit_seq<=$through GROUP BY r.operation_id,r.leg_count
+                WHERE r.commit_seq>$pruned AND r.commit_seq<=$through GROUP BY r.operation_id,r.leg_count
                 """))
             {
+                counts.Parameters.AddWithValue("$pruned", prunedSeq);
                 counts.Parameters.AddWithValue("$through", throughInclusive);
                 using var row = counts.ExecuteReader();
                 while (row.Read())
@@ -297,12 +369,12 @@ public static class EconomyLedgerReader
                     string key = row.GetString(1), op = row.GetString(2);
                     if (row.GetString(0) != storedRealm || row.IsDBNull(3))
                         issues.Add(new(EconomyIssueKind.Corruption, "source/" + key, "Orphan or foreign realm source claim."));
-                    else if (row.GetInt64(3) <= fromExclusive) prior.Add(new(key, op));
+                    else if (row.GetInt64(3) <= fromExclusive) Prior.Add(new(key, op));
                     if (!row.IsDBNull(3) && row.GetInt64(3) <= throughInclusive &&
-                        (!allReceipts.TryGetValue(row.GetInt64(3), out var claimed) || claimed.Operation != op || claimed.Source != key))
+                        (!_allReceipts.TryGetValue(row.GetInt64(3), out var claimed) || claimed.Operation != op || claimed.Source != key))
                         issues.Add(new(EconomyIssueKind.Corruption, "source/" + key, "Source claim does not match its receipt."));
                 }
-            foreach (var receipt in allReceipts.Values)
+            foreach (var receipt in _allReceipts.Values)
             {
                 using var source = Command(db, tx, "SELECT COUNT(*) FROM operation_source WHERE realm_id=$realm AND operation_id=$op AND source_key=$key");
                 source.Parameters.AddWithValue("$realm", storedRealm);
@@ -311,263 +383,294 @@ public static class EconomyLedgerReader
                 if ((long)source.ExecuteScalar()! != 1)
                     issues.Add(new(EconomyIssueKind.Corruption, "source/" + receipt.Source, "Receipt has no exact natural-source claim."));
             }
-            using (var entry = Command(db, tx, """
+        }
+
+        private void ReadAndValidateEntries()
+        {
+            using var entry = Command(db, tx, """
                 SELECT commit_seq,operation_id,leg_no,owner_kind,owner_id,compartment_kind,compartment_key,instance_key,
                     asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,
                     source_key,counterparty_owner_kind,counterparty_owner_id,counterparty_compartment_kind,
                     counterparty_compartment_key,counterparty_instance_key
-                    FROM economy_entry WHERE commit_seq<=$through ORDER BY commit_seq,leg_no
-                """))
+                    FROM economy_entry WHERE commit_seq>$pruned AND commit_seq<=$through ORDER BY commit_seq,leg_no
+                """);
+            entry.Parameters.AddWithValue("$pruned", prunedSeq);
+            entry.Parameters.AddWithValue("$through", throughInclusive);
+            using var row = entry.ExecuteReader();
+            while (row.Read()) ProcessEntryRow(row);
+        }
+
+        private void ProcessEntryRow(SqliteDataReader row)
+        {
+            long seq = row.GetInt64(0);
+            string op = row.GetString(1), source = row.GetString(17);
+            var asset = new EconomyAsset((EconomyAssetKind)row.GetInt32(8), row.GetInt64(9), row.GetString(10));
+            var location = new EconomyLocation(new((EconomyOwnerKind)row.GetInt32(3), row.GetString(4)),
+                (EconomyCompartment)row.GetInt32(5), row.GetString(6), row.GetString(7));
+            EconomyLocation? counterparty = row.IsDBNull(18) ? null : new EconomyLocation(
+                new((EconomyOwnerKind)row.GetInt32(18), row.GetString(19)),
+                (EconomyCompartment)row.GetInt32(20), row.GetString(21), row.GetString(22));
+            var leg = new EconomyLeg(seq, op, row.GetInt32(2), (EconomyLegKind)row.GetInt32(13),
+                (EconomyReason)row.GetInt32(12), asset, location, row.GetInt64(11), row.GetInt32(14),
+                Counterparty: counterparty,
+                BeforeFingerprint: row.IsDBNull(15) ? null : row.GetString(15),
+                AfterFingerprint: row.IsDBNull(16) ? null : row.GetString(16), SourceKey: source);
+            if (_escrowTransfers.ContainsKey(op))
             {
-                entry.Parameters.AddWithValue("$through", throughInclusive);
-                using var row = entry.ExecuteReader();
-                while (row.Read())
-                {
-                    long seq = row.GetInt64(0);
-                    string op = row.GetString(1), source = row.GetString(17);
-                    var asset = new EconomyAsset((EconomyAssetKind)row.GetInt32(8), row.GetInt64(9), row.GetString(10));
-                    var location = new EconomyLocation(new((EconomyOwnerKind)row.GetInt32(3), row.GetString(4)),
-                        (EconomyCompartment)row.GetInt32(5), row.GetString(6), row.GetString(7));
-                    EconomyLocation? counterparty = row.IsDBNull(18) ? null : new EconomyLocation(
-                        new((EconomyOwnerKind)row.GetInt32(18), row.GetString(19)),
-                        (EconomyCompartment)row.GetInt32(20), row.GetString(21), row.GetString(22));
-                    var leg = new EconomyLeg(seq, op, row.GetInt32(2), (EconomyLegKind)row.GetInt32(13),
-                        (EconomyReason)row.GetInt32(12), asset, location, row.GetInt64(11), row.GetInt32(14),
-                        Counterparty: counterparty,
-                        BeforeFingerprint: row.IsDBNull(15) ? null : row.GetString(15),
-                        AfterFingerprint: row.IsDBNull(16) ? null : row.GetString(16), SourceKey: source);
-                    if (escrowTransfers.ContainsKey(op))
-                    {
-                        if (!escrowAllLegs.TryGetValue(op, out var economicLegs))
-                            escrowAllLegs.Add(op, economicLegs = []);
-                        economicLegs.Add(leg);
-                    }
-                    bool isEvent = eventIntents.TryGetValue(op, out var eventIntent);
-                    if (isEvent)
-                    {
-                        var ownerKey = (op, location.Owner, asset);
-                        eventOwnerAmounts[ownerKey] = eventOwnerAmounts.GetValueOrDefault(ownerKey) + leg.Delta;
-                    }
-                    if (leg.Kind == EconomyLegKind.Transfer) allTransferLegs.Add(leg);
-                    if (seq > fromExclusive) legs.Add(leg);
-                    // A compacted receipt's legs still count, pair and link to their receipt (checked above and below);
-                    // their reasons and amounts were certified against the intent before it was compacted.
-                    if (compactedOps.Contains(op)) continue;
-                    commands.TryGetValue(op, out string? command);
-                    bool economic = Economic(command ?? "");
-                    bool escrow = EscrowEconomyIntent.IsKind(command ?? "");
-                    if (escrow && leg.Kind is EconomyLegKind.Sink or EconomyLegKind.Source)
-                    {
-                        BigInteger amount = leg.Kind == EconomyLegKind.Sink ? -(BigInteger)leg.Delta : leg.Delta;
-                        var reasonKey = (op, asset, leg.Kind == EconomyLegKind.Sink, leg.Reason);
-                        escrowLedgerReasons[reasonKey] = escrowLedgerReasons.GetValueOrDefault(reasonKey) + amount;
-                        if (!escrowExternalLegs.TryGetValue(op, out var posted))
-                            escrowExternalLegs.Add(op, posted = []);
-                        posted.Add(leg);
-                    }
-                    if ((economic || isEvent) && (leg.Kind is EconomyLegKind.Sink or EconomyLegKind.Source ||
-                        command == "dungeon-reward" && leg.Kind == EconomyLegKind.Transfer && leg.Delta > 0))
-                    {
-                        var amountKey = (op, asset, leg.Kind == EconomyLegKind.Sink);
-                        ledgerAmounts[amountKey] = ledgerAmounts.GetValueOrDefault(amountKey) +
-                            (leg.Kind == EconomyLegKind.Sink ? -(BigInteger)leg.Delta : leg.Delta);
-                    }
-                    bool knownAsset = asset.Kind switch
-                    {
-                        EconomyAssetKind.GuildResource => asset.Id is >= 1 and <= 5 && asset.Epoch.Length == 0,
-                        EconomyAssetKind.EventResource => asset.Id == EconomyDenominations.EscortGoods && asset.Epoch.Length != 0,
-                        _ => catalog.TryAsset(asset.Id, out var classified) && classified == asset
-                    };
-                    if (!knownAsset && !(isEvent && EventEconomyMutation.ValidAsset(asset)))
-                        issues.Add(new(EconomyIssueKind.Coverage, "leg/" + op + "/" + leg.LegNumber, "Ledger denomination is not catalogued."));
-                    bool family = allReceipts.TryGetValue(seq, out var receiptOwner) &&
-                        (EconomyMutation.IsFamilyKind(receiptOwner.Kind) || EconomyMutation.IsProgressionKind(receiptOwner.Kind));
-                    if (isEvent)
-                    {
-                        if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
-                            !(leg.Kind switch
-                            {
-                                EconomyLegKind.Source => leg.Delta > 0 && leg.EdgeNumber == 0 && leg.Reason == eventIntent!.SourceReason,
-                                EconomyLegKind.Sink => leg.Delta < 0 && leg.EdgeNumber == 0 && leg.Reason == eventIntent!.SinkReason,
-                                EconomyLegKind.Transfer => leg.Delta != 0 && leg.EdgeNumber > 0 && leg.Reason == eventIntent!.TransferReason,
-                                EconomyLegKind.Metadata => leg.Delta == 0 && leg.EdgeNumber == 0 &&
-                                    leg.Reason == EconomyReason.ItemMetadata && asset.Kind == EconomyAssetKind.Item &&
-                                    leg.BeforeFingerprint != leg.AfterFingerprint,
-                                _ => false
-                            }))
-                            issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                                "Illegal event reason, kind, edge or delta."));
-                    }
-                    else if (escrow)
-                    {
-                        bool legal = escrowTransfers.TryGetValue(op, out var escrowTransfer) &&
-                            EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) &&
-                            (leg.Kind == EconomyLegKind.Source && leg.Delta > 0 ||
-                             leg.Kind == EconomyLegKind.Sink && leg.Delta < 0 ||
-                             leg.Kind == EconomyLegKind.Transfer && leg.Delta != 0 && leg.EdgeNumber > 0 ||
-                             leg.Kind == EconomyLegKind.Metadata && leg.Delta == 0 && leg.EdgeNumber == 0) &&
-                            leg.Kind switch
-                            {
-                                EconomyLegKind.Source or EconomyLegKind.Sink => escrowReasons.ContainsKey(
-                                    (op, asset, leg.Kind == EconomyLegKind.Sink, leg.Reason)),
-                                EconomyLegKind.Transfer => leg.Reason == escrowTransfer,
-                                EconomyLegKind.Metadata => leg.Reason == EconomyReason.ItemMetadata &&
-                                    asset.Kind == EconomyAssetKind.Item && leg.BeforeFingerprint != leg.AfterFingerprint,
-                                _ => false
-                            };
-                        if (!legal)
-                            issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                                "Illegal E03 reason, kind, edge or delta."));
-                    }
-                    else if (family)
-                    {
-                        string familyName = receiptOwner.Kind[6..].Split('-')[0];
-                        var reasons = EconomyMutation.IsProgressionKind(receiptOwner.Kind)
-                            ? ProgressionEconomyTransactionPlan.Reasons(receiptOwner.Kind)
-                            : FamilyReasons(familyName, receiptOwner.Kind);
-                        bool legal = EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) &&
-                            (leg.Kind == EconomyLegKind.Source && leg.Delta > 0 ||
-                             leg.Kind == EconomyLegKind.Sink && leg.Delta < 0 ||
-                             leg.Kind == EconomyLegKind.Transfer && leg.Delta != 0 && leg.EdgeNumber > 0 ||
-                             leg.Kind == EconomyLegKind.Metadata && leg.Delta == 0 && leg.EdgeNumber == 0) &&
-                            leg.Kind switch
-                            {
-                                EconomyLegKind.Source => leg.Reason == reasons.Goods,
-                                EconomyLegKind.Sink => leg.Reason == reasons.Cost,
-                                EconomyLegKind.Transfer => leg.Reason == EconomyReason.InventoryRelocation,
-                                EconomyLegKind.Metadata => leg.Reason == EconomyReason.ItemMetadata &&
-                                    asset.Kind == EconomyAssetKind.Item && leg.BeforeFingerprint != leg.AfterFingerprint,
-                                _ => false
-                            };
-                        if (!legal)
-                            issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                                "Illegal command reason, kind, edge or delta."));
-                    }
-                    else if (economic)
-                    {
-                        var expectedReason = command switch
-                        {
-                            "monster-kill" when leg.Kind == EconomyLegKind.Source => EconomyReason.MonsterDrop,
-                            "gather-yield" when leg.Kind == EconomyLegKind.Source => EconomyReason.GatherYield,
-                            "gather-yield" when leg.Kind == EconomyLegKind.Sink => EconomyReason.LifeCost,
-                            "tower-reward" when leg.Kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
-                            "dungeon-obligation-earn" when leg.Kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
-                            "dungeon-reward" when leg.Kind == EconomyLegKind.Transfer => EconomyReason.DungeonRewardDelivery,
-                            "world-revive" when leg.Kind == EconomyLegKind.Sink => EconomyReason.ItemUse,
-                            "npc-shop-buy" when leg.Kind == EconomyLegKind.Source => EconomyReason.NpcShopGoods,
-                            "npc-shop-buy" when leg.Kind == EconomyLegKind.Sink => EconomyReason.NpcShopPayment,
-                            "cd13e/tower-milestone" when leg.Kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
-                            "cd13e/tower-milestone" when leg.Kind == EconomyLegKind.Sink => EconomyReason.ItemUse,
-                            "cd13e/grant" when leg.Kind == EconomyLegKind.Source => EconomyReason.OwnedGrant,
-                            "cd13e/gm-grant" when leg.Kind == EconomyLegKind.Source => EconomyReason.GmGrant,
-                            "cd13e/quest-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.QuestReward,
-                            "cd13e/quest-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/achievement-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.AchievementReward,
-                            "cd13e/achievement-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/advguild-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.AdventureGroupReward,
-                            "cd13e/advguild-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/monsterhunt-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.MonsterHuntReward,
-                            "cd13e/monsterhunt-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/guild-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.GuildReward,
-                            "cd13e/guild-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/growthclass-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.GrowthClassReward,
-                            "cd13e/growthclass-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/library-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.LibraryReward,
-                            "cd13e/library-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/firstheart-award" when leg.Kind == EconomyLegKind.Source => EconomyReason.FirstHeartReward,
-                            "cd13e/firstheart-award" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/daily-stage" when leg.Kind == EconomyLegKind.Source => EconomyReason.DailyReward,
-                            "cd13e/daily-stage" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/journey-victory" when leg.Kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
-                            "cd13e/journey-victory" when leg.Kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
-                            "cd13e/daily-reset" when leg.Kind == EconomyLegKind.Sink => EconomyReason.DailyReset,
-                            _ => EconomyReason.Unknown
-                        };
-                        if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
-                            leg.Kind == EconomyLegKind.Source && leg.Delta <= 0 ||
-                            leg.Kind == EconomyLegKind.Sink && leg.Delta >= 0 ||
-                            leg.Reason != expectedReason ||
-                            leg.Kind is not (EconomyLegKind.Source or EconomyLegKind.Sink or EconomyLegKind.Transfer))
-                            issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber, "Illegal economic reason, kind or delta."));
-                    }
-                    else if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
-                        leg.Kind == EconomyLegKind.Source && leg.Delta <= 0 ||
-                        leg.Kind == EconomyLegKind.Sink && leg.Delta >= 0 ||
-                        leg.Kind == EconomyLegKind.Transfer && (leg.Delta == 0 || leg.EdgeNumber <= 0) ||
-                        leg.Kind == EconomyLegKind.Metadata && leg.Delta != 0)
-                        issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                            "Illegal semantic reason, kind or delta."));
-                    if (asset.Kind == EconomyAssetKind.Item &&
-                        (leg.Delta < 0 && string.IsNullOrEmpty(leg.BeforeFingerprint) ||
-                         leg.Delta > 0 && string.IsNullOrEmpty(leg.AfterFingerprint) ||
-                         leg.Kind == EconomyLegKind.Metadata &&
-                            (string.IsNullOrEmpty(leg.BeforeFingerprint) || string.IsNullOrEmpty(leg.AfterFingerprint))))
-                        issues.Add(new(EconomyIssueKind.Coverage, "leg/" + op + "/" + leg.LegNumber,
-                            "Item leg lacks before/after fingerprint evidence."));
-                    if (asset.Kind == EconomyAssetKind.Item &&
-                        (!ValidFingerprint(leg.BeforeFingerprint) || !ValidFingerprint(leg.AfterFingerprint)) ||
-                        economic && location.Compartment == EconomyCompartment.Pending &&
-                            (command is not ("dungeon-obligation-earn" or "dungeon-reward") ||
-                             !location.Key.StartsWith("dungeon/", StringComparison.Ordinal) ||
-                             location.Instance.Length != 0) ||
-                        (!economic || location.Compartment != EconomyCompartment.Pending) &&
-                        asset.Kind == EconomyAssetKind.Currency &&
-                        (leg.BeforeFingerprint is not null || leg.AfterFingerprint is not null))
-                        issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                            "Noncanonical item fingerprint or currency fingerprint evidence."));
-                    if (!allReceipts.TryGetValue(seq, out var owner) || owner.Operation != op || owner.Source != source)
-                        issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber, "Leg is not linked to matching receipt/source."));
-                    else if (command == "cd13c/season-reissue" && location.Compartment == EconomyCompartment.Mail)
-                    {
-                        if (location.Owner.Kind != EconomyOwnerKind.Role || location.Owner.Id != owner.Actor.ToString(System.Globalization.CultureInfo.InvariantCulture) ||
-                            !location.Key.StartsWith($"role/{owner.Actor}/mailbox/", StringComparison.Ordinal) ||
-                            leg.Kind != EconomyLegKind.Source || leg.Reason != EconomyReason.SeasonGoods || leg.Delta <= 0)
-                            issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                                "Season reissue leg is not a source to its actor's mailbox."));
-                    }
-                    else if (economic && (location.Owner.Kind != EconomyOwnerKind.Role ||
-                        location.Owner.Id != owner.Actor.ToString(System.Globalization.CultureInfo.InvariantCulture) ||
-                        location.Compartment != EconomyCompartment.Pending && asset.Kind == EconomyAssetKind.Currency &&
-                            (location.Compartment != EconomyCompartment.Currency || location.Instance.Length != 0 ||
-                             location.Key != $"role/{owner.Actor}/currency/{asset.Id}") ||
-                        location.Compartment != EconomyCompartment.Pending && asset.Kind == EconomyAssetKind.Item &&
-                            (location.Compartment != EconomyCompartment.Inventory ||
-                             !long.TryParse(location.Instance, out long instance) || instance <= 0 ||
-                             !location.Key.StartsWith("item/" + location.Instance + "/pack-", StringComparison.Ordinal))))
-                        issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                            "Leg has a foreign actor or noncanonical holding location."));
-                    if (escrow && (location.Owner.Id.Length == 0 || location.Key.Length == 0 ||
-                        location.Compartment is < EconomyCompartment.Inventory or > EconomyCompartment.Recovery))
-                        issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
-                            "E03 leg has a noncanonical holding location."));
-                    if (!economic && !isEvent && !escrow && allReceipts.ContainsKey(seq)) // E05d semantic receipts only
-                    {
-                        var key = (op, asset, location.Owner, location.Compartment, leg.Kind, leg.Reason);
-                        e05Ledger[key] = e05Ledger.GetValueOrDefault(key) + leg.Delta;
-                    }
-                }
+                if (!_escrowAllLegs.TryGetValue(op, out var economicLegs))
+                    _escrowAllLegs.Add(op, economicLegs = []);
+                economicLegs.Add(leg);
             }
-            foreach (var (operation, intent) in eventIntents)
+            bool isEvent = _eventIntents.TryGetValue(op, out var eventIntent);
+            if (isEvent)
+            {
+                var ownerKey = (op, location.Owner, asset);
+                _eventOwnerAmounts[ownerKey] = _eventOwnerAmounts.GetValueOrDefault(ownerKey) + leg.Delta;
+            }
+            if (leg.Kind == EconomyLegKind.Transfer) _allTransferLegs.Add(leg);
+            if (seq > fromExclusive) Legs.Add(leg);
+            // A compacted receipt's legs still count, pair and link to their receipt (checked above and below);
+            // their reasons and amounts were certified against the intent before it was compacted.
+            if (CompactedOps.Contains(op)) return;
+            _commands.TryGetValue(op, out string? command);
+            bool economic = Economic(command ?? "");
+            bool escrow = EscrowEconomyIntent.IsKind(command ?? "");
+            AccumulateEntryTotals(op, asset, leg, command, economic, escrow, isEvent);
+            ValidateEntryReason(seq, op, asset, leg, command, economic, escrow, isEvent, eventIntent);
+            ValidateEntryFingerprintsAndLocation(seq, op, source, asset, location, leg, command, economic, escrow, isEvent);
+        }
+
+        private void AccumulateEntryTotals(string op, EconomyAsset asset, EconomyLeg leg, string? command,
+            bool economic, bool escrow, bool isEvent)
+        {
+            if (escrow && leg.Kind is EconomyLegKind.Sink or EconomyLegKind.Source)
+            {
+                BigInteger amount = leg.Kind == EconomyLegKind.Sink ? -(BigInteger)leg.Delta : leg.Delta;
+                var reasonKey = (op, asset, leg.Kind == EconomyLegKind.Sink, leg.Reason);
+                _escrowLedgerReasons[reasonKey] = _escrowLedgerReasons.GetValueOrDefault(reasonKey) + amount;
+                if (!_escrowExternalLegs.TryGetValue(op, out var posted))
+                    _escrowExternalLegs.Add(op, posted = []);
+                posted.Add(leg);
+            }
+            if ((economic || isEvent) && (leg.Kind is EconomyLegKind.Sink or EconomyLegKind.Source ||
+                command == "dungeon-reward" && leg.Kind == EconomyLegKind.Transfer && leg.Delta > 0))
+            {
+                var amountKey = (op, asset, leg.Kind == EconomyLegKind.Sink);
+                _ledgerAmounts[amountKey] = _ledgerAmounts.GetValueOrDefault(amountKey) +
+                    (leg.Kind == EconomyLegKind.Sink ? -(BigInteger)leg.Delta : leg.Delta);
+            }
+            bool knownAsset = asset.Kind switch
+            {
+                EconomyAssetKind.GuildResource => asset.Id is >= 1 and <= 5 && asset.Epoch.Length == 0,
+                EconomyAssetKind.EventResource => asset.Id == EconomyDenominations.EscortGoods && asset.Epoch.Length != 0,
+                _ => catalog.TryAsset(asset.Id, out var classified) && classified == asset
+            };
+            if (!knownAsset && !(isEvent && EventEconomyMutation.ValidAsset(asset)))
+                issues.Add(new(EconomyIssueKind.Coverage, "leg/" + op + "/" + leg.LegNumber, "Ledger denomination is not catalogued."));
+        }
+
+        private void ValidateEntryReason(long seq, string op, EconomyAsset asset, EconomyLeg leg, string? command,
+            bool economic, bool escrow, bool isEvent, EventEconomyMutation? eventIntent)
+        {
+            bool family = _allReceipts.TryGetValue(seq, out var receiptOwner) &&
+                (EconomyMutation.IsFamilyKind(receiptOwner.Kind) || EconomyMutation.IsProgressionKind(receiptOwner.Kind));
+            if (isEvent)
+            {
+                if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
+                    !(leg.Kind switch
+                    {
+                        EconomyLegKind.Source => leg.Delta > 0 && leg.EdgeNumber == 0 && leg.Reason == eventIntent!.SourceReason,
+                        EconomyLegKind.Sink => leg.Delta < 0 && leg.EdgeNumber == 0 && leg.Reason == eventIntent!.SinkReason,
+                        EconomyLegKind.Transfer => leg.Delta != 0 && leg.EdgeNumber > 0 && leg.Reason == eventIntent!.TransferReason,
+                        EconomyLegKind.Metadata => leg.Delta == 0 && leg.EdgeNumber == 0 &&
+                            leg.Reason == EconomyReason.ItemMetadata && asset.Kind == EconomyAssetKind.Item &&
+                            leg.BeforeFingerprint != leg.AfterFingerprint,
+                        _ => false
+                    }))
+                    issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                        "Illegal event reason, kind, edge or delta."));
+            }
+            else if (escrow)
+            {
+                bool legal = _escrowTransfers.TryGetValue(op, out var escrowTransfer) &&
+                    HasCanonicalLegSign(leg) &&
+                    leg.Kind switch
+                    {
+                        EconomyLegKind.Source or EconomyLegKind.Sink => _escrowReasons.ContainsKey(
+                            (op, asset, leg.Kind == EconomyLegKind.Sink, leg.Reason)),
+                        EconomyLegKind.Transfer => leg.Reason == escrowTransfer,
+                        EconomyLegKind.Metadata => leg.Reason == EconomyReason.ItemMetadata &&
+                            asset.Kind == EconomyAssetKind.Item && leg.BeforeFingerprint != leg.AfterFingerprint,
+                        _ => false
+                    };
+                if (!legal)
+                    issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                        "Illegal E03 reason, kind, edge or delta."));
+            }
+            else if (family)
+            {
+                string familyName = receiptOwner.Kind[6..].Split('-')[0];
+                var reasons = EconomyMutation.IsProgressionKind(receiptOwner.Kind)
+                    ? ProgressionEconomyTransactionPlan.Reasons(receiptOwner.Kind)
+                    : FamilyReasons(familyName, receiptOwner.Kind);
+                bool legal = HasCanonicalLegSign(leg) &&
+                    leg.Kind switch
+                    {
+                        EconomyLegKind.Source => leg.Reason == reasons.Goods,
+                        EconomyLegKind.Sink => leg.Reason == reasons.Cost,
+                        EconomyLegKind.Transfer => leg.Reason == EconomyReason.InventoryRelocation,
+                        EconomyLegKind.Metadata => leg.Reason == EconomyReason.ItemMetadata &&
+                            asset.Kind == EconomyAssetKind.Item && leg.BeforeFingerprint != leg.AfterFingerprint,
+                        _ => false
+                    };
+                if (!legal)
+                    issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                        "Illegal command reason, kind, edge or delta."));
+            }
+            else if (economic)
+            {
+                var expectedReason = ExpectedEconomicReason(command, leg.Kind);
+                if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
+                    leg.Kind == EconomyLegKind.Source && leg.Delta <= 0 ||
+                    leg.Kind == EconomyLegKind.Sink && leg.Delta >= 0 ||
+                    leg.Reason != expectedReason ||
+                    leg.Kind is not (EconomyLegKind.Source or EconomyLegKind.Sink or EconomyLegKind.Transfer))
+                    issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber, "Illegal economic reason, kind or delta."));
+            }
+            else if (!EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) ||
+                leg.Kind == EconomyLegKind.Source && leg.Delta <= 0 ||
+                leg.Kind == EconomyLegKind.Sink && leg.Delta >= 0 ||
+                leg.Kind == EconomyLegKind.Transfer && (leg.Delta == 0 || leg.EdgeNumber <= 0) ||
+                leg.Kind == EconomyLegKind.Metadata && leg.Delta != 0)
+                issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                    "Illegal semantic reason, kind or delta."));
+        }
+
+        private static bool HasCanonicalLegSign(EconomyLeg leg) =>
+            EconomyReasonCatalog.Allows(leg.Reason, leg.Kind) &&
+            (leg.Kind == EconomyLegKind.Source && leg.Delta > 0 ||
+             leg.Kind == EconomyLegKind.Sink && leg.Delta < 0 ||
+             leg.Kind == EconomyLegKind.Transfer && leg.Delta != 0 && leg.EdgeNumber > 0 ||
+             leg.Kind == EconomyLegKind.Metadata && leg.Delta == 0 && leg.EdgeNumber == 0);
+
+        private static EconomyReason ExpectedEconomicReason(string? command, EconomyLegKind kind) => command switch
+        {
+            "monster-kill" when kind == EconomyLegKind.Source => EconomyReason.MonsterDrop,
+            "gather-yield" when kind == EconomyLegKind.Source => EconomyReason.GatherYield,
+            "gather-yield" when kind == EconomyLegKind.Sink => EconomyReason.LifeCost,
+            "tower-reward" when kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
+            "dungeon-obligation-earn" when kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
+            "dungeon-reward" when kind == EconomyLegKind.Transfer => EconomyReason.DungeonRewardDelivery,
+            "world-revive" when kind == EconomyLegKind.Sink => EconomyReason.ItemUse,
+            "npc-shop-buy" when kind == EconomyLegKind.Source => EconomyReason.NpcShopGoods,
+            "npc-shop-buy" when kind == EconomyLegKind.Sink => EconomyReason.NpcShopPayment,
+            "cd13e/tower-milestone" when kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
+            "cd13e/tower-milestone" when kind == EconomyLegKind.Sink => EconomyReason.ItemUse,
+            "cd13e/grant" when kind == EconomyLegKind.Source => EconomyReason.OwnedGrant,
+            "cd13e/gm-grant" when kind == EconomyLegKind.Source => EconomyReason.GmGrant,
+            "cd13e/quest-award" when kind == EconomyLegKind.Source => EconomyReason.QuestReward,
+            "cd13e/quest-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/achievement-award" when kind == EconomyLegKind.Source => EconomyReason.AchievementReward,
+            "cd13e/achievement-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/advguild-award" when kind == EconomyLegKind.Source => EconomyReason.AdventureGroupReward,
+            "cd13e/advguild-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/monsterhunt-award" when kind == EconomyLegKind.Source => EconomyReason.MonsterHuntReward,
+            "cd13e/monsterhunt-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/guild-award" when kind == EconomyLegKind.Source => EconomyReason.GuildReward,
+            "cd13e/guild-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/growthclass-award" when kind == EconomyLegKind.Source => EconomyReason.GrowthClassReward,
+            "cd13e/growthclass-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/library-award" when kind == EconomyLegKind.Source => EconomyReason.LibraryReward,
+            "cd13e/library-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/firstheart-award" when kind == EconomyLegKind.Source => EconomyReason.FirstHeartReward,
+            "cd13e/firstheart-award" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/daily-stage" when kind == EconomyLegKind.Source => EconomyReason.DailyReward,
+            "cd13e/daily-stage" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/journey-victory" when kind == EconomyLegKind.Source => EconomyReason.ActivityReward,
+            "cd13e/journey-victory" when kind == EconomyLegKind.Sink => EconomyReason.OwnedAwardCost,
+            "cd13e/daily-reset" when kind == EconomyLegKind.Sink => EconomyReason.DailyReset,
+            _ => EconomyReason.Unknown
+        };
+
+        private void ValidateEntryFingerprintsAndLocation(long seq, string op, string source, EconomyAsset asset,
+            EconomyLocation location, EconomyLeg leg, string? command, bool economic, bool escrow, bool isEvent)
+        {
+            if (asset.Kind == EconomyAssetKind.Item &&
+                (leg.Delta < 0 && string.IsNullOrEmpty(leg.BeforeFingerprint) ||
+                 leg.Delta > 0 && string.IsNullOrEmpty(leg.AfterFingerprint) ||
+                 leg.Kind == EconomyLegKind.Metadata &&
+                    (string.IsNullOrEmpty(leg.BeforeFingerprint) || string.IsNullOrEmpty(leg.AfterFingerprint))))
+                issues.Add(new(EconomyIssueKind.Coverage, "leg/" + op + "/" + leg.LegNumber,
+                    "Item leg lacks before/after fingerprint evidence."));
+            if (asset.Kind == EconomyAssetKind.Item &&
+                (!ValidFingerprint(leg.BeforeFingerprint) || !ValidFingerprint(leg.AfterFingerprint)) ||
+                economic && location.Compartment == EconomyCompartment.Pending &&
+                    (command is not ("dungeon-obligation-earn" or "dungeon-reward") ||
+                     !location.Key.StartsWith("dungeon/", StringComparison.Ordinal) ||
+                     location.Instance.Length != 0) ||
+                (!economic || location.Compartment != EconomyCompartment.Pending) &&
+                asset.Kind == EconomyAssetKind.Currency &&
+                (leg.BeforeFingerprint is not null || leg.AfterFingerprint is not null))
+                issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                    "Noncanonical item fingerprint or currency fingerprint evidence."));
+            if (!_allReceipts.TryGetValue(seq, out var owner) || owner.Operation != op || owner.Source != source)
+                issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber, "Leg is not linked to matching receipt/source."));
+            else if (command == "cd13c/season-reissue" && location.Compartment == EconomyCompartment.Mail)
+            {
+                if (location.Owner.Kind != EconomyOwnerKind.Role || location.Owner.Id != owner.Actor.ToString(System.Globalization.CultureInfo.InvariantCulture) ||
+                    !location.Key.StartsWith($"role/{owner.Actor}/mailbox/", StringComparison.Ordinal) ||
+                    leg.Kind != EconomyLegKind.Source || leg.Reason != EconomyReason.SeasonGoods || leg.Delta <= 0)
+                    issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                        "Season reissue leg is not a source to its actor's mailbox."));
+            }
+            else if (economic && (location.Owner.Kind != EconomyOwnerKind.Role ||
+                location.Owner.Id != owner.Actor.ToString(System.Globalization.CultureInfo.InvariantCulture) ||
+                location.Compartment != EconomyCompartment.Pending && asset.Kind == EconomyAssetKind.Currency &&
+                    (location.Compartment != EconomyCompartment.Currency || location.Instance.Length != 0 ||
+                     location.Key != $"role/{owner.Actor}/currency/{asset.Id}") ||
+                location.Compartment != EconomyCompartment.Pending && asset.Kind == EconomyAssetKind.Item &&
+                    (location.Compartment != EconomyCompartment.Inventory ||
+                     !long.TryParse(location.Instance, out long instance) || instance <= 0 ||
+                     !location.Key.StartsWith("item/" + location.Instance + "/pack-", StringComparison.Ordinal))))
+                issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                    "Leg has a foreign actor or noncanonical holding location."));
+            if (escrow && (location.Owner.Id.Length == 0 || location.Key.Length == 0 ||
+                location.Compartment is < EconomyCompartment.Inventory or > EconomyCompartment.Recovery))
+                issues.Add(new(EconomyIssueKind.Corruption, "leg/" + op + "/" + leg.LegNumber,
+                    "E03 leg has a noncanonical holding location."));
+            if (!economic && !isEvent && !escrow && _allReceipts.ContainsKey(seq)) // Semantic envelope receipts only
+            {
+                var key = (op, asset, location.Owner, location.Compartment, leg.Kind, leg.Reason);
+                _e05Ledger[key] = _e05Ledger.GetValueOrDefault(key) + leg.Delta;
+            }
+        }
+
+        private void ValidateEventBeneficiaries()
+        {
+            foreach (var (operation, intent) in _eventIntents)
             {
                 var expectedOwners = intent.OwnerDeltas.GroupBy(d => (d.Owner, d.Asset)).ToDictionary(g => g.Key,
                     g => g.Aggregate(BigInteger.Zero, (sum, d) => sum + d.Delta));
-                var actualOwners = eventOwnerAmounts.Where(p => p.Key.Operation == operation)
+                var actualOwners = _eventOwnerAmounts.Where(p => p.Key.Operation == operation)
                     .ToDictionary(p => (p.Key.Owner, p.Key.Asset), p => p.Value);
                 foreach (var key in expectedOwners.Keys.Concat(actualOwners.Keys).Distinct())
                     if (expectedOwners.GetValueOrDefault(key) != actualOwners.GetValueOrDefault(key))
                         issues.Add(new(EconomyIssueKind.Corruption, "event/beneficiary/" + operation, "Event legs changed the frozen recipient or amount."));
             }
+        }
+
+        private void PairTransfers()
+        {
             var transferIndexes = new Dictionary<(string OperationId, int EdgeNumber), List<int>>();
-            for (int i = 0; i < legs.Count; i++)
-                if (legs[i].Kind == EconomyLegKind.Transfer)
+            for (int i = 0; i < Legs.Count; i++)
+                if (Legs[i].Kind == EconomyLegKind.Transfer)
                 {
-                    var key = (legs[i].OperationId, legs[i].EdgeNumber);
+                    var key = (Legs[i].OperationId, Legs[i].EdgeNumber);
                     if (!transferIndexes.TryGetValue(key, out var indexes))
                         transferIndexes.Add(key, indexes = []);
                     indexes.Add(i);
                 }
-            foreach (var edge in allTransferLegs
-                .GroupBy(x => (x.OperationId, x.EdgeNumber)))
+            foreach (var edge in _allTransferLegs.GroupBy(x => (x.OperationId, x.EdgeNumber)))
             {
                 var pair = edge.ToArray();
                 var debits = pair.Where(x => x.Delta < 0).ToArray();
@@ -577,7 +680,7 @@ public static class EconomyLedgerReader
                     debits[0].Delta != -credits[0].Delta || debits[0].Location == credits[0].Location ||
                     debits[0].Counterparty is { } debitCounterparty && debitCounterparty != credits[0].Location ||
                     credits[0].Counterparty is { } creditCounterparty && creditCounterparty != debits[0].Location ||
-                    escrowTransfers.ContainsKey(edge.Key.OperationId) && debits[0].Asset.Kind == EconomyAssetKind.Item &&
+                    _escrowTransfers.ContainsKey(edge.Key.OperationId) && debits[0].Asset.Kind == EconomyAssetKind.Item &&
                         (pair[0].Delta >= 0 || debits[0].BeforeFingerprint != credits[0].AfterFingerprint))
                     issues.Add(new(EconomyIssueKind.Corruption, "edge/" + edge.Key.OperationId + "/" + edge.Key.EdgeNumber,
                         "Relocation edge lacks one exact opposite counterparty."));
@@ -585,39 +688,44 @@ public static class EconomyLedgerReader
                 {
                     var debit = debits[0];
                     var credit = credits[0];
-                    if (commands.TryGetValue(edge.Key.OperationId, out var kind) && !Economic(kind) && !kind.StartsWith("event/", StringComparison.Ordinal) && !EscrowEconomyIntent.IsKind(kind))
+                    if (_commands.TryGetValue(edge.Key.OperationId, out var kind) && !Economic(kind) && !kind.StartsWith("event/", StringComparison.Ordinal) && !EscrowEconomyIntent.IsKind(kind))
                     {
                         var key = (debit.OperationId, debit.Asset, debit.Location.Owner, debit.Location.Compartment,
                             debit.Reason, credit.Location.Owner, credit.Location.Compartment, credit.Reason);
-                        e05LedgerEdges[key] = e05LedgerEdges.GetValueOrDefault(key) - debit.Delta;
+                        _e05LedgerEdges[key] = _e05LedgerEdges.GetValueOrDefault(key) - debit.Delta;
                     }
                     if (transferIndexes.TryGetValue(edge.Key, out var indexes))
                         foreach (int i in indexes)
-                            legs[i] = legs[i] with
+                            Legs[i] = Legs[i] with
                             {
-                                Counterparty = legs[i].LegNumber == debit.LegNumber
-                                ? credit.Location : debit.Location
+                                Counterparty = Legs[i].LegNumber == debit.LegNumber
+                                    ? credit.Location : debit.Location
                             };
                 }
             }
-            foreach (var receipt in receipts)
+        }
+
+        private void ReconcileTotals()
+        {
+            foreach (var receipt in Receipts)
             {
-                int[] numbers = [.. legs.Where(x => x.OperationId == receipt.OperationId).Select(x => x.LegNumber).Order()];
+                if (receipt.CommitSequence <= prunedSeq) continue;
+                int[] numbers = [.. Legs.Where(x => x.OperationId == receipt.OperationId).Select(x => x.LegNumber).Order()];
                 if (numbers.Length != receipt.LegCount || !numbers.SequenceEqual(Enumerable.Range(0, numbers.Length)))
                     issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + receipt.OperationId, "Leg count or numbering is incomplete."));
             }
-            foreach (var key in intentAmounts.Keys.Concat(ledgerAmounts.Keys).Distinct())
-                if (intentAmounts.GetValueOrDefault(key) != ledgerAmounts.GetValueOrDefault(key))
+            foreach (var key in _intentAmounts.Keys.Concat(_ledgerAmounts.Keys).Distinct())
+                if (_intentAmounts.GetValueOrDefault(key) != _ledgerAmounts.GetValueOrDefault(key))
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/" + key.Operation + "/" + key.Asset,
                         "Semantic cost/goods amount differs from retained sink/source legs."));
-            foreach (var key in escrowReasons.Keys.Concat(escrowLedgerReasons.Keys).Distinct())
-                if (escrowReasons.GetValueOrDefault(key) != escrowLedgerReasons.GetValueOrDefault(key))
+            foreach (var key in _escrowReasons.Keys.Concat(_escrowLedgerReasons.Keys).Distinct())
+                if (_escrowReasons.GetValueOrDefault(key) != _escrowLedgerReasons.GetValueOrDefault(key))
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/" + key.Operation + "/" + key.Asset,
                         "E03 reason/denomination amount differs from retained external legs."));
-            foreach (var (operation, authorizations) in escrowAuthorizations)
+            foreach (var (operation, authorizations) in _escrowAuthorizations)
                 try
                 {
-                    if (!MatchEscrowExternal(authorizations, escrowExternalLegs.GetValueOrDefault(operation) ?? []))
+                    if (!MatchEscrowExternal(authorizations, _escrowExternalLegs.GetValueOrDefault(operation) ?? []))
                         issues.Add(new(EconomyIssueKind.Corruption, "intent/" + operation,
                             "E03 external authorization cannot cover the posted owner and compartment locations."));
                 }
@@ -626,28 +734,19 @@ public static class EconomyLedgerReader
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/" + operation,
                         "E03 external authorization quantity overflowed."));
                 }
-            foreach (var (operation, realizations) in escrowRealizations)
-                if (!MatchEscrowRealizations(realizations, escrowAllLegs.GetValueOrDefault(operation) ?? []))
+            foreach (var (operation, realizations) in _escrowRealizations)
+                if (!MatchEscrowRealizations(realizations, _escrowAllLegs.GetValueOrDefault(operation) ?? []))
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/" + operation,
                         "E03 mail attachment realization does not match exact transfer and metadata evidence."));
-            foreach (var key in e05Intent.Keys.Concat(e05Ledger.Keys).Distinct())
-                if (e05Intent.GetValueOrDefault(key) != e05Ledger.GetValueOrDefault(key))
+            foreach (var key in _e05Intent.Keys.Concat(_e05Ledger.Keys).Distinct())
+                if (_e05Intent.GetValueOrDefault(key) != _e05Ledger.GetValueOrDefault(key))
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/" + key.Operation + "/" + key.Asset,
                         "E05d semantic owner/compartment/reason differs from retained ledger legs."));
-            foreach (var key in e05IntentEdges.Keys.Concat(e05LedgerEdges.Keys).Distinct())
-                if (e05IntentEdges.GetValueOrDefault(key) != e05LedgerEdges.GetValueOrDefault(key))
+            foreach (var key in _e05IntentEdges.Keys.Concat(_e05LedgerEdges.Keys).Distinct())
+                if (_e05IntentEdges.GetValueOrDefault(key) != _e05LedgerEdges.GetValueOrDefault(key))
                     issues.Add(new(EconomyIssueKind.Corruption, "intent/transfer/" + key.Operation + "/" + key.Asset,
                         "E05d transfer counterpart differs from semantic authorization."));
         }
-        catch (EconomySchemaMissingException)
-        {
-            issues.Add(new(EconomyIssueKind.UnknownSchema, "ledger/schema", "Required economy receipt/source/entry or obligation schema is absent."));
-        }
-        tx.Commit();
-        bool complete = issues.Count == 0;
-        return new(storedRealm, catalog.Version, EconomySnapshotReader.CoverageVersion, fromExclusive, throughInclusive, complete,
-            legs, receipts, prior, issues, EconomySnapshotReader.UncoveredFamilies)
-        { CompactedReceipts = compactedOps.Count };
     }
 
     private static bool MatchEscrowExternal(IReadOnlyList<EscrowExternalChange> authorizations,
@@ -914,23 +1013,63 @@ public static class EconomyLedgerReader
         var bParts = b.GetProperty("parts").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt64());
         var aParts = a.GetProperty("parts").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetInt64());
         if (EconomyMutation.IsFamilyKind(commandKind) || EconomyMutation.IsProgressionKind(commandKind))
+            return ValidateFamilyRevisions(bParts, aParts, commandKind, childReceipts);
+
+        var (required, allowed) = RequiredAndAllowedRevisionParts(commandKind);
+        bool library = bParts.ContainsKey("library"), followup = bParts.ContainsKey("task_followup");
+        if (commandKind == "cd13e/daily-reset" &&
+            (childReceipts.Length != (bParts.ContainsKey("wild_afk") ? 2 : 1) ||
+             bParts.ContainsKey("wild_afk") != (childReceipts.Length == 2)))
+            throw new InvalidDataException("Daily reset child/revision shape is incomplete.");
+        int expectedChildren = commandKind switch
         {
-            int childCount = childReceipts.Length;
-            var familyParts = (EconomyMutation.IsProgressionKind(commandKind)
-                ? ProgressionEconomyTransactionPlan.AllowedBlobsForKind(commandKind)
-                : FamilyEconomyTransactionPlan.AllowedBlobsForKind(commandKind)).Append("inventory").Append("progress")
-                .ToHashSet(StringComparer.Ordinal);
-            if (bParts.Count != childCount || !bParts.ContainsKey("inventory") || bParts.Keys.Except(familyParts).Any() ||
-                commandKind == "cd13b/genre-apply" &&
-                    (childCount != 11 || bParts.Count != 11 ||
-                     new[] { "inventory", "progress", "genre", "stat_plans", "skill_plans", "equip_plans",
-                         "card_plans", "totems", "emblems", "pets", "season_talent" }
-                        .Any(part => !bParts.ContainsKey(part))) ||
-                aParts.Count != bParts.Count || bParts.Any(x => x.Value < 0 ||
-                    !aParts.TryGetValue(x.Key, out long next) || next != checked(x.Value + 1)))
-                throw new InvalidDataException("Receipt revision vector is incomplete or nonconsecutive.");
-            return bParts.TryGetValue("progress", out long familyBefore) ? (familyBefore, aParts["progress"]) : (null, null);
-        }
+            "gather-yield" => 5 + (library ? 1 : 0) + (followup ? 1 : 0),
+            "dungeon-reward" => 4 + (bParts.ContainsKey("auction_order") ? 1 : 0) +
+                (library ? 1 : 0) + (followup ? 1 : 0),
+            _ => childReceipts.Length
+        };
+        bool creditedKill = commandKind == "monster-kill" && childReceipts.Length > 2 &&
+            childReceipts[^1] is long[];
+        if (required.Except(bParts.Keys).Any() || bParts.Keys.Except(allowed).Any() ||
+            commandKind == "monster-kill" && bParts.ContainsKey("life_restrict") && !bParts.ContainsKey("wild_afk") ||
+            followup && !library && !(creditedKill && bParts.ContainsKey("tasks")) ||
+            (creditedKill && ((long[])childReceipts[^1]!).Contains(actorRole) !=
+                (bParts.ContainsKey("tasks") && followup)) ||
+            commandKind == "monster-kill" &&
+                (!creditedKill || !((long[])childReceipts[^1]!).Contains(actorRole)) && bParts.ContainsKey("tasks") ||
+            childReceipts.Length != expectedChildren ||
+            aParts.Count != bParts.Count || bParts.Any(x => x.Value < 0 ||
+                !aParts.TryGetValue(x.Key, out long next) || next != checked(x.Value +
+                    (x.Key == "auction_order" && childReceipts[3] is 0 ? 0 : 1))))
+            throw new InvalidDataException("Economic revision vector is incomplete or nonconsecutive.");
+        if (commandKind == "monster-kill")
+            ValidateKillParticipants(b, a, actorRole, creditedKill ? (long[])childReceipts[^1]! : []);
+        return bParts.TryGetValue("progress", out long beforeProgress)
+            ? (beforeProgress, aParts["progress"]) : (null, null);
+    }
+
+    private static (long? BeforeProgress, long? AfterProgress) ValidateFamilyRevisions(
+        Dictionary<string, long> bParts, Dictionary<string, long> aParts, string commandKind, object?[] childReceipts)
+    {
+        int childCount = childReceipts.Length;
+        var familyParts = (EconomyMutation.IsProgressionKind(commandKind)
+            ? ProgressionEconomyTransactionPlan.AllowedBlobsForKind(commandKind)
+            : FamilyEconomyTransactionPlan.AllowedBlobsForKind(commandKind)).Append("inventory").Append("progress")
+            .ToHashSet(StringComparer.Ordinal);
+        if (bParts.Count != childCount || !bParts.ContainsKey("inventory") || bParts.Keys.Except(familyParts).Any() ||
+            commandKind == "cd13b/genre-apply" &&
+                (childCount != 11 || bParts.Count != 11 ||
+                 new[] { "inventory", "progress", "genre", "stat_plans", "skill_plans", "equip_plans",
+                     "card_plans", "totems", "emblems", "pets", "season_talent" }
+                    .Any(part => !bParts.ContainsKey(part))) ||
+            aParts.Count != bParts.Count || bParts.Any(x => x.Value < 0 ||
+                !aParts.TryGetValue(x.Key, out long next) || next != checked(x.Value + 1)))
+            throw new InvalidDataException("Receipt revision vector is incomplete or nonconsecutive.");
+        return bParts.TryGetValue("progress", out long familyBefore) ? (familyBefore, aParts["progress"]) : (null, null);
+    }
+
+    private static (string[] Required, string[] Allowed) RequiredAndAllowedRevisionParts(string commandKind)
+    {
         string[] required = commandKind switch
         {
             "npc-shop-buy" => ["inventory", "progress", "shop"],
@@ -960,68 +1099,43 @@ public static class EconomyLedgerReader
             "dungeon-reward" => [.. required, "auction_order", "library", "task_followup"],
             // The Job EXP catch-up commits its marker with its EXP (CharacterService.JobExpCatchUp).
             "cd13e/grant" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts", "job_exp_catchup"],
-            "cd13e/tower-milestone" or "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+            "cd13e/tower-milestone" or "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+                or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+                or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/gm-grant" or "cd13e/character-exp" or
                 "cd13e/journey-victory" => [.. required, "daily", "library", "task_followup", "activity_runtime", "mounts"],
             _ => required
         };
-        bool library = bParts.ContainsKey("library"), followup = bParts.ContainsKey("task_followup");
-        if (commandKind == "cd13e/daily-reset" &&
-            (childReceipts.Length != (bParts.ContainsKey("wild_afk") ? 2 : 1) ||
-             bParts.ContainsKey("wild_afk") != (childReceipts.Length == 2)))
-            throw new InvalidDataException("Daily reset child/revision shape is incomplete.");
-        int expectedChildren = commandKind switch
+        return (required, allowed);
+    }
+
+    private static void ValidateKillParticipants(JsonElement b, JsonElement a, long actorRole, long[] credited)
+    {
+        long[] others = [.. credited.Where(role => role != actorRole)];
+        var beforeParticipants = b.TryGetProperty("participants", out var bp)
+            ? bp.EnumerateArray().ToArray() : [];
+        var afterParticipants = a.TryGetProperty("participants", out var ap)
+            ? ap.EnumerateArray().ToArray() : [];
+        if (beforeParticipants.Length != others.Length || afterParticipants.Length != others.Length)
+            throw new InvalidDataException("Kill task participant revision list is incomplete.");
+        for (int i = 0; i < others.Length; i++)
         {
-            "gather-yield" => 5 + (library ? 1 : 0) + (followup ? 1 : 0),
-            "dungeon-reward" => 4 + (bParts.ContainsKey("auction_order") ? 1 : 0) +
-                (library ? 1 : 0) + (followup ? 1 : 0),
-            _ => childReceipts.Length
-        };
-        bool creditedKill = commandKind == "monster-kill" && childReceipts.Length > 2 &&
-            childReceipts[^1] is long[];
-        if (required.Except(bParts.Keys).Any() || bParts.Keys.Except(allowed).Any() ||
-            commandKind == "monster-kill" && bParts.ContainsKey("life_restrict") && !bParts.ContainsKey("wild_afk") ||
-            followup && !library && !(creditedKill && bParts.ContainsKey("tasks")) ||
-            (creditedKill && ((long[])childReceipts[^1]!).Contains(actorRole) !=
-                (bParts.ContainsKey("tasks") && followup)) ||
-            commandKind == "monster-kill" &&
-                (!creditedKill || !((long[])childReceipts[^1]!).Contains(actorRole)) && bParts.ContainsKey("tasks") ||
-            childReceipts.Length != expectedChildren ||
-            aParts.Count != bParts.Count || bParts.Any(x => x.Value < 0 ||
-                !aParts.TryGetValue(x.Key, out long next) || next != checked(x.Value +
-                    (x.Key == "auction_order" && childReceipts[3] is 0 ? 0 : 1))))
-            throw new InvalidDataException("Economic revision vector is incomplete or nonconsecutive.");
-        if (commandKind == "monster-kill")
-        {
-            long[] credited = creditedKill ? (long[])childReceipts[^1]! : [];
-            long[] others = [.. credited.Where(role => role != actorRole)];
-            var beforeParticipants = b.TryGetProperty("participants", out var bp)
-                ? bp.EnumerateArray().ToArray() : [];
-            var afterParticipants = a.TryGetProperty("participants", out var ap)
-                ? ap.EnumerateArray().ToArray() : [];
-            if (beforeParticipants.Length != others.Length || afterParticipants.Length != others.Length)
-                throw new InvalidDataException("Kill task participant revision list is incomplete.");
-            for (int i = 0; i < others.Length; i++)
-            {
-                var pb = beforeParticipants[i]; var pa = afterParticipants[i];
-                if (pb.GetProperty("roleId").GetInt64() != others[i] ||
-                    pa.GetProperty("roleId").GetInt64() != others[i] ||
-                    pb.GetProperty("epoch").GetInt64() <= 0 ||
-                    pb.GetProperty("epoch").GetInt64() != pa.GetProperty("epoch").GetInt64() ||
-                    pb.GetProperty("deleted").GetBoolean() || pa.GetProperty("deleted").GetBoolean())
-                    throw new InvalidDataException("Kill task participant lifecycle is invalid.");
-                var ppb = pb.GetProperty("parts").EnumerateObject()
-                    .ToDictionary(x => x.Name, x => x.Value.GetInt64());
-                var ppa = pa.GetProperty("parts").EnumerateObject()
-                    .ToDictionary(x => x.Name, x => x.Value.GetInt64());
-                if (ppb.Count != 2 || !ppb.ContainsKey("tasks") || !ppb.ContainsKey("task_followup") ||
-                    ppa.Count != 2 || ppb.Any(x => x.Value < 0 ||
-                        !ppa.TryGetValue(x.Key, out long next) || next != checked(x.Value + 1)))
-                    throw new InvalidDataException("Kill task participant revisions are invalid.");
-            }
+            var pb = beforeParticipants[i]; var pa = afterParticipants[i];
+            if (pb.GetProperty("roleId").GetInt64() != others[i] ||
+                pa.GetProperty("roleId").GetInt64() != others[i] ||
+                pb.GetProperty("epoch").GetInt64() <= 0 ||
+                pb.GetProperty("epoch").GetInt64() != pa.GetProperty("epoch").GetInt64() ||
+                pb.GetProperty("deleted").GetBoolean() || pa.GetProperty("deleted").GetBoolean())
+                throw new InvalidDataException("Kill task participant lifecycle is invalid.");
+            var ppb = pb.GetProperty("parts").EnumerateObject()
+                .ToDictionary(x => x.Name, x => x.Value.GetInt64());
+            var ppa = pa.GetProperty("parts").EnumerateObject()
+                .ToDictionary(x => x.Name, x => x.Value.GetInt64());
+            if (ppb.Count != 2 || !ppb.ContainsKey("tasks") || !ppb.ContainsKey("task_followup") ||
+                ppa.Count != 2 || ppb.Any(x => x.Value < 0 ||
+                    !ppa.TryGetValue(x.Key, out long next) || next != checked(x.Value + 1)))
+                throw new InvalidDataException("Kill task participant revisions are invalid.");
         }
-        return bParts.TryGetValue("progress", out long beforeProgress)
-            ? (beforeProgress, aParts["progress"]) : (null, null);
     }
 
     private static void ValidateEnvelopeRevisions(string beforeJson, string afterJson)
@@ -1234,9 +1348,9 @@ public static class EconomyLedgerReader
         ], evidence);
     }
 
-    /// <summary>Receipts of an EconomyMutation (E01 NPC, cd13a/cd13b families, E04 rewards and obligations, 13e
+    /// <summary>Receipts of an EconomyMutation (NPC purchases, family commands, rewards and obligations, owned exchanges,
     /// owned exchanges) keep their command rules. Event and escrow envelopes are separate families;
-    /// remaining commands use E05d semantic validation.</summary>
+    /// remaining commands use semantic-envelope validation.</summary>
     private static bool Economic(string kind) => kind == "npc-shop-buy" || EconomyMutation.IsFamilyKind(kind) ||
         EconomyMutation.IsProgressionKind(kind) ||
         EconomyMutation.IsRewardCommand(kind) || kind == "dungeon-obligation-earn" || EconomyMutation.IsOwnedExchangeCommand(kind);

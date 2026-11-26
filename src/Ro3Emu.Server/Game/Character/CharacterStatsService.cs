@@ -246,7 +246,12 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         // worn grid (inferred); resonance (§5) adds the reached Strengthen/RefiningEffectTable row's _kEffect.
         foreach (var item in CharacterInventoryService.Equipped(session).Where(i => i.Grid <= EquipInfoSlots))
         {
-            foreach (var row in new[] { inv.StrengthenRow(item.Grid, session.Profile.EquipLevels.Strength.GetValueOrDefault(item.Grid)), inv.RefineRow(item.Grid, session.Profile.EquipLevels.Refine.GetValueOrDefault(item.Grid)) })
+            var equipRows = new[]
+            {
+                inv.StrengthenRow(item.Grid, session.Profile.EquipLevels.Strength.GetValueOrDefault(item.Grid)),
+                inv.RefineRow(item.Grid, session.Profile.EquipLevels.Refine.GetValueOrDefault(item.Grid))
+            };
+            foreach (var row in equipRows)
                 if (row is { } r)
                     foreach (var (id, v) in GameData.Pairs(r, "_kAttr")) Add(id, v);
         }

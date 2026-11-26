@@ -1,4 +1,7 @@
+using System.Text;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Bot;
 using Ro3Emu.Server;
@@ -119,5 +122,37 @@ public sealed class GuildOverheadTests : IAsyncLifetime
         var afterLeave = await Next(viewer, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             m => m.Bases.Any(b => b.Uuid == (ulong)actorRoleId && b.GuildId == 0));
         Assert.Equal(0, afterLeave.Bases.Single(b => b.Uuid == (ulong)actorRoleId).GuildId);
+    }
+
+    [Fact]
+    public void GuildOverheadAllMapsIsOffByDefault() => Assert.False(new ServerOptions().GuildOverheadAllMaps);
+
+    [ClientDataFact]
+    public async Task LoginSendsGuildOverheadCommandOnlyWhenOptionIsEnabled()
+    {
+        var opts = _app.Services.GetRequiredService<IOptions<ServerOptions>>().Value;
+        Assert.False(opts.GuildOverheadAllMaps);
+
+        await using (var defaultBot = await InWorld("OverheadDefault"))
+        {
+            Assert.DoesNotContain(defaultBot.Inbox.Snapshot(),
+                p => p.IsGame(GmCommands.ClientDiagnosticsMsg)
+                    && Encoding.UTF8.GetString(p.Body) == GuildService.GuildOverheadEnableCommand);
+        }
+
+        opts.GuildOverheadAllMaps = true;
+        try
+        {
+            await using var enabledBot = await InWorld("OverheadAllMaps");
+            var cmd = await enabledBot.Inbox.WaitAsync(
+                p => p.IsGame(GmCommands.ClientDiagnosticsMsg)
+                    && Encoding.UTF8.GetString(p.Body) == GuildService.GuildOverheadEnableCommand,
+                Wait);
+            Assert.Equal(GuildService.GuildOverheadEnableCommand, Encoding.UTF8.GetString(cmd.Body));
+        }
+        finally
+        {
+            opts.GuildOverheadAllMaps = false;
+        }
     }
 }

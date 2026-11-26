@@ -1,7 +1,7 @@
 namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
-/// Exclusive ownership of a data dir's realm database for a process lifetime (C/D 19): a running server holds
+/// Exclusive ownership of a data dir's realm database for a process lifetime: a running server holds
 /// <c>ro3emu.db.lock</c> open with no sharing, so a second server or an offline restore on the same data dir is
 /// refused. SQLite's own locks cannot prove this: an idle WAL connection holds none. On Linux .NET maps
 /// <see cref="FileShare.None"/> to an advisory flock, which every .NET opener of the file observes.

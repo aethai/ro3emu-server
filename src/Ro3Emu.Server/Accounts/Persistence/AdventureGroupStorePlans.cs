@@ -68,7 +68,7 @@ internal sealed class AdventureGroupReadPlan(AdventureGroupReadKind kind, long i
                     cmd.Parameters.AddWithValue("$id", id);
                     return cmd.ExecuteScalar() != null;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported adventure group read kind.");
         }
     }
 

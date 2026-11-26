@@ -68,6 +68,8 @@ internal static class SetupHome
 /// <summary>What RO3Emu remembers between runs.</summary>
 internal sealed class Settings
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     public string? ClientDir { get; set; }
 
     /// <summary>The highest publisher release installed into each folder: an older signed manifest is refused (no downgrade).</summary>
@@ -87,7 +89,7 @@ internal sealed class Settings
     public void Save()
     {
         Directory.CreateDirectory(SetupHome.Root);
-        File.WriteAllText(SetupHome.SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+        File.WriteAllText(SetupHome.SettingsPath, JsonSerializer.Serialize(this, IndentedJson), new UTF8Encoding(false));
     }
 }
 

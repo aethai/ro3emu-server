@@ -8,7 +8,7 @@ public sealed partial class MailService
 {
     /// <summary>
     /// Prepare a gift under the complete sender/recipient owner reservation. Persist enlists the
-    /// recipient's versioned mailbox snapshot in the sender's bag transaction (C/D 11, L2/D6).
+    /// recipient's versioned mailbox snapshot in the sender's bag transaction.
     /// </summary>
     public async Task<ActivityDeliveryLease> PrepareActivityDeliveryAsync(long recipient, long sender, string senderName,
         long activityId, string message, int entitlementEntry)

@@ -7,14 +7,14 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>One E01 NPC purchase: existing typed children plus semantic receipt and exact role asset legs.</summary>
+/// <summary>One NPC economy transaction: existing typed children plus semantic receipt and exact role asset legs.</summary>
 internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation mutation,
     bool failAcknowledgementForTest = false, bool owned = false) : DbPlan
 {
     private int pendingAcknowledgementFault = failAcknowledgementForTest ? 1 : 0;
     private bool isReplay;
-    // E04 owned rewards retain their generic writer acknowledgement after economic replay validation.
-    // E01 resolves through EconomyReceiptResolveReadPlan; semantic E05d has its own envelope plan.
+    // Owned reward envelopes retain their generic writer acknowledgement after economic replay validation.
+    // NPC economy plans resolve through EconomyReceiptResolveReadPlan; semantic envelopes have their own plan.
     internal override bool OwnsOperationReceipt => !owned;
     internal override bool IsReplay => isReplay;
     internal override string? OperationId => owned ? mutation.OperationId : null;
@@ -219,7 +219,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
         };
         string[] columns = [.. sourceColumns, "daily", "library", "task_followup", "mounts", "activity_runtime",
             .. mutation.CommandKind == "cd13e/grant" ? new[] { "job_exp_catchup" } : []];
-        bool award = mutation.CommandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+        bool award = mutation.CommandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+            or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+            or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/journey-victory" or "cd13e/grant" or "cd13e/gm-grant";
         if (child.Parts.Count < 2 || child.Parts[0] is not ItemDeltaWritePlan ||
             (award ? child.Parts[1] is not RoleAwardStatePlan : child.Parts[1] is not RoleProgressWritePlan) ||
@@ -388,7 +390,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
                     {
                         "gather-yield" => EconomyReason.LifeCost,
                         "world-revive" or "cd13e/tower-milestone" => EconomyReason.ItemUse,
-                        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+                        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award"
+                            or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award"
+                            or "cd13e/daily-stage" or
                             "cd13e/journey-victory" => EconomyReason.OwnedAwardCost,
                         "cd13e/daily-reset" => EconomyReason.DailyReset,
                         _ => EconomyReason.NpcShopPayment
@@ -587,7 +591,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
                 throw new InvalidDataException("Daily reset typed child result is invalid.");
             return;
         }
-        bool ownedAward = commandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+        bool ownedAward = commandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+            or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+            or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/journey-victory" or "cd13e/grant" or "cd13e/gm-grant";
         bool hasTaskProgress = commandKind == "monster-kill" && values.Length > 2 && values[^1] is long[];
         if (hasTaskProgress && values[^1] is long[] credited &&

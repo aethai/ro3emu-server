@@ -78,8 +78,9 @@ internal sealed class PanelHoldingsRead(long? entry, IReadOnlyList<string> marke
 internal sealed record PanelLedgerRow(long Asset, int LegKind, long Sum, int Count, long FirstMs, long LastMs);
 
 /// <summary>
-/// The economy ledger summed by asset and leg kind, for items and currencies, of one asset or of all. A database
-/// without the ledger reads as empty.
+/// The economy ledger summed by asset and leg kind, for items and currencies, of one asset or of all. Includes both
+/// live <c>economy_entry</c> legs and pruned history rolled into <c>economy_daily_aggregate</c>. A database without the
+/// ledger reads as empty.
 /// </summary>
 internal sealed class PanelLedgerTotalsRead(long? asset) : DbReadPlan
 {
@@ -88,17 +89,71 @@ internal sealed class PanelLedgerTotalsRead(long? asset) : DbReadPlan
 
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
-        var rows = new List<PanelLedgerRow>();
+        var totals = new Dictionary<(long Asset, int LegKind), (long Sum, int Count, long FirstMs, long LastMs)>();
         using (var exists = DbSql.Command(db, tx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='economy_entry'"))
-            if ((long)exists.ExecuteScalar()! == 0) return rows;
-        using var cmd = DbSql.Command(db, tx, "SELECT asset_id,leg_kind,TOTAL(delta),COUNT(*),MIN(recorded_utc_ms),MAX(recorded_utc_ms) " +
-            "FROM economy_entry WHERE asset_kind IN (1,2)" + (asset != null ? " AND asset_id=$a" : "") + " GROUP BY asset_id,leg_kind");
+            if ((long)exists.ExecuteScalar()! == 0) return new List<PanelLedgerRow>();
+
+        using (var cmd = DbSql.Command(db, tx, "SELECT asset_id,leg_kind,TOTAL(delta),COUNT(*),MIN(recorded_utc_ms),MAX(recorded_utc_ms) " +
+            "FROM economy_entry WHERE asset_kind IN (1,2)" + (asset != null ? " AND asset_id=$a" : "") + " GROUP BY asset_id,leg_kind"))
+        {
+            if (asset != null) cmd.Parameters.AddWithValue("$a", asset.Value);
+            using var row = cmd.ExecuteReader();
+            while (row.Read())
+            {
+                var key = (row.GetInt64(0), row.GetInt32(1));
+                totals[key] = (ClampLong(row.GetDouble(2)), row.GetInt32(3), row.GetInt64(4), row.GetInt64(5));
+            }
+        }
+
+        MergeDailyAggregates(db, tx, totals);
+
+        var rows = new List<PanelLedgerRow>(totals.Count);
+        foreach (var ((assetId, legKind), value) in totals)
+            rows.Add(new PanelLedgerRow(assetId, legKind, value.Sum, value.Count, value.FirstMs, value.LastMs));
+        return rows;
+    }
+
+    private void MergeDailyAggregates(SqliteConnection db, SqliteTransaction tx,
+        Dictionary<(long Asset, int LegKind), (long Sum, int Count, long FirstMs, long LastMs)> totals)
+    {
+        using (var exists = DbSql.Command(db, tx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='economy_daily_aggregate'"))
+            if ((long)exists.ExecuteScalar()! == 0) return;
+
+        using var cmd = DbSql.Command(db, tx, "SELECT asset_id,leg_kind,TOTAL(net_delta),TOTAL(entry_count),MIN(day_utc),MAX(day_utc) " +
+            "FROM economy_daily_aggregate WHERE asset_kind IN (1,2)" + (asset != null ? " AND asset_id=$a" : "") + " GROUP BY asset_id,leg_kind");
         if (asset != null) cmd.Parameters.AddWithValue("$a", asset.Value);
         using var row = cmd.ExecuteReader();
         while (row.Read())
-            rows.Add(new PanelLedgerRow(row.GetInt64(0), row.GetInt32(1), (long)Math.Clamp(row.GetDouble(2), long.MinValue, long.MaxValue),
-                row.GetInt32(3), row.GetInt64(4), row.GetInt64(5)));
-        return rows;
+        {
+            var key = (row.GetInt64(0), row.GetInt32(1));
+            double aggSum = row.GetDouble(2);
+            long aggCount = (long)Math.Clamp(Math.Round(row.GetDouble(3)), 0, int.MaxValue);
+            long aggFirst = ParseDayUtcMs(row.IsDBNull(4) ? null : row.GetString(4), endOfDay: false);
+            long aggLast = ParseDayUtcMs(row.IsDBNull(5) ? null : row.GetString(5), endOfDay: true);
+            if (totals.TryGetValue(key, out var existing))
+            {
+                long first = existing.FirstMs > 0 && aggFirst > 0 ? Math.Min(existing.FirstMs, aggFirst) : Math.Max(existing.FirstMs, aggFirst);
+                long last = Math.Max(existing.LastMs, aggLast);
+                int count = (int)Math.Min((long)existing.Count + aggCount, int.MaxValue);
+                totals[key] = (ClampLong((double)existing.Sum + aggSum), count, first, last);
+            }
+            else
+            {
+                totals[key] = (ClampLong(aggSum), (int)aggCount, aggFirst, aggLast);
+            }
+        }
+    }
+
+    private static long ClampLong(double sum) =>
+        sum >= long.MaxValue ? long.MaxValue : sum <= long.MinValue ? long.MinValue : (long)Math.Round(sum);
+
+    private static long ParseDayUtcMs(string? dayUtc, bool endOfDay)
+    {
+        if (string.IsNullOrWhiteSpace(dayUtc)
+            || !DateTimeOffset.TryParseExact(dayUtc, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt))
+            return 0;
+        return endOfDay ? dt.AddDays(1).AddMilliseconds(-1).ToUnixTimeMilliseconds() : dt.ToUnixTimeMilliseconds();
     }
 }
 

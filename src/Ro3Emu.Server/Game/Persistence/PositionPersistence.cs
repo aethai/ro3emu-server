@@ -3,7 +3,7 @@ using Ro3Emu.Server.Accounts;
 namespace Ro3Emu.Server.Game.Persistence;
 
 /// <summary>
-/// C/D 18: the public world position is a lazy part (see <see cref="LazyRolePart"/>). A walk only marks it dirty; a
+/// The public world position is a lazy part (see <see cref="LazyRolePart"/>). A walk only marks it dirty; a
 /// stop is written on the next tick, continuous walking at most every 5 s from the first unpersisted change - the
 /// durability window of the synchronous code this replaced. Private-floor positions are never written here (entry
 /// saves the outside return point); barrier saves (leave world, switch) stay synchronous.

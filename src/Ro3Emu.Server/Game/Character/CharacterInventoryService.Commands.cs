@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Game;
 
 public sealed partial class CharacterInventoryService
 {
-    /// <summary>C/D 13a: keep surviving instance identities while publishing one committed inventory revision.</summary>
+    /// <summary>Keep surviving instance identities while publishing one committed inventory revision.</summary>
     internal static void ApplyStagedItems(GameSession session, List<InvItem> staged, long[] ids)
     {
         ItemSnapshotWritePlan.ApplyGuids(staged, ids);

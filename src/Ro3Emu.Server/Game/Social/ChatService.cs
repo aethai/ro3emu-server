@@ -212,7 +212,8 @@ public sealed partial class ChatService
             return $"line of {req.Content.Length} characters (extra {req.ExtraParam.Length}) to {req.ReceiveId}";
         if (_gm.IsCommand(req.Content) && _gm.Allowed(sender)) return null; // a GM's command lines are not chat
         sender.ChatLines ??= RateBucket.Parse(limits.ChatLines) ?? new RateBucket(1, 10);
-        return sender.ChatLines.TryTake(_clock.GetUtcNow().ToUnixTimeMilliseconds()) ? null : $"line to {req.ReceiveId} over the chat rate";
+        long now = (long)(_clock.GetTimestamp() / (_clock.TimestampFrequency / 1000.0));
+        return sender.ChatLines.TryTake(now) ? null : $"line to {req.ReceiveId} over the chat rate";
     }
 
     /// <summary>
@@ -469,7 +470,10 @@ public sealed partial class ChatService
             }),
         });
         List<(string Id, GameSession[] Members)> channels;
-        lock (_sync) channels = [.. _groups.Where(p => p.Key.StartsWith("@TGS#_8_", StringComparison.Ordinal) || p.Key.StartsWith("8_", StringComparison.Ordinal)).Select(p => (p.Key, p.Value.ToArray()))];
+        lock (_sync)
+            channels = [.. _groups
+                .Where(p => p.Key.StartsWith("@TGS#_8_", StringComparison.Ordinal) || p.Key.StartsWith("8_", StringComparison.Ordinal))
+                .Select(p => (p.Key, p.Value.ToArray()))];
         foreach (var (id, recipients) in channels)
         {
             var message = new TextChatMessage

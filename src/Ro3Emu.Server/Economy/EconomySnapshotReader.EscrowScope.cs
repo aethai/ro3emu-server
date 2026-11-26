@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>E03 writer observation uses the independent persisted-format decoder on typed touched keys only.</summary>
+/// <summary>Escrow writer observation uses the independent persisted-format decoder on typed touched keys only.</summary>
 public static partial class EconomySnapshotReader
 {
     internal sealed record EscrowScope(IReadOnlySet<long> Roles, IReadOnlySet<(string Kind, string Id)> Markets,
@@ -75,7 +75,8 @@ public static partial class EconomySnapshotReader
                                 int letterIndex = 0;
                                 foreach (var letter in Elements(letters))
                                 {
-                                    Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
+                                    Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId "
+                                        + "ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
                                     string path = key + "/mailbox/" + String(letter, "Id", "index-" + letterIndex++);
                                     if (Bool(letter, "Claimed")) continue;
                                     if (Try(letter, "Attachments", out var attachments))

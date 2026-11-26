@@ -47,7 +47,8 @@ public sealed partial class ReconstructedDungeons
     /// a single id has no colour. A <paramref name="Monster"/> is a destructible unit: <paramref name="Hits"/> damaging hits
     /// per present player destroy it whatever their damage (0: its own HP), and with <paramref name="Match"/> only a player
     /// of its colour damages it. An object with a <paramref name="Use"/> is not judged: its NPC's own 32700 interaction
-    /// hands the player the object's colour (Ilmo's notes) or takes the player to the next object of its kind (a wormhole). <paramref name="Chosen"/>: one object of them is the one that counts, shown by
+    /// hands the player the object's colour (Ilmo's notes) or takes the player to the next object of its kind (a
+    /// wormhole). <paramref name="Chosen"/>: one object of them is the one that counts, shown by
     /// <paramref name="MarkBuff"/> for <paramref name="MarkMs"/> (0: the whole window). <paramref name="Lane"/>: the object's
     /// area is a rectangle (length, width) ahead of it along its facing instead of a circle.
     /// </summary>

@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
 /// Copies ro3emu.db to &lt;data&gt;/backups at startup and every <c>Backup:IntervalHours</c> (6), keeping the newest
-/// <c>Backup:Keep</c> (20) (C/D 19).
+/// <c>Backup:Keep</c> (20).
 /// - **Cut:** one SQLite online backup step reads a single WAL snapshot, so a copy holds exactly the transactions
 ///   committed before it started, however fast the writer advances meanwhile.
 /// - **Atomic:** the copy is written as <c>.partial</c>, checked with <c>PRAGMA quick_check</c> and only then renamed
@@ -85,21 +85,21 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
 
     /// <summary>Unfinished copies of a crashed run are gone before the host reports itself started, under the same
     /// gate as a backup, so neither the startup backup nor a manual one can meet a half-written file.</summary>
-    public override Task StartAsync(CancellationToken ct)
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
         lock (_backupGate) RemoveStalePartials();
-        return base.StartAsync(ct);
+        return base.StartAsync(cancellationToken);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var wait = UntilNextBackup(DateTime.UtcNow);
         if (wait > TimeSpan.Zero)
         {
             LogFirstBackupWaits(log, wait.TotalMinutes);
-            try { await Task.Delay(wait, ct); } catch (OperationCanceledException) { return; }
+            try { await Task.Delay(wait, stoppingToken); } catch (OperationCanceledException) { return; }
         }
-        while (!ct.IsCancellationRequested)
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
@@ -109,7 +109,7 @@ public sealed partial class DatabaseBackup(IOptions<ServerOptions> options, Acco
             {
                 log.LogError(e, "Database backup failed");
             }
-            try { await Task.Delay(Interval, ct); } catch (OperationCanceledException) { return; }
+            try { await Task.Delay(Interval, stoppingToken); } catch (OperationCanceledException) { return; }
         }
     }
 

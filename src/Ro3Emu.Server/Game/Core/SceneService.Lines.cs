@@ -17,7 +17,7 @@ public sealed partial class SceneService
         if (valid)
             foreach (var line in lines.Snapshot(map)) response.LineInfo.Add(new SceneLineInfo
             { SceneID = line.Map.WorldScene, SceneEntry = map, Linenum = line.Map.LineNumber, Currolenum = line.Load });
-        return s.SendGameAsync(70009, response);
+        return s.SendGameAsync(MsgId.SceneLineInfo, response);
     }
 
     /// <summary>70010 has an explicit owner. A source enum is presentation metadata, never authority to bypass capacity.</summary>
@@ -69,7 +69,7 @@ public sealed partial class SceneService
     public void ExpireLineLoad(GameSession s)
     {
         // A completing handoff (the client acknowledged the load; its hooks are still running) does not expire: forcing a
-        // reconnect then would drop a player who did load, whenever the hooks outlast the deadline (C/D 16).
+        // reconnect then would drop a player who did load, whenever the hooks outlast the deadline.
         if (s.Handoff is { Completing: false } pending && clock.GetUtcNow() >= pending.Deadline)
         {
             LogLoadTimedOut(log, s.Role?.Id ?? 0, pending.Destination.SceneEntry, LoadTimeoutSeconds);

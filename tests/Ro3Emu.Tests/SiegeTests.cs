@@ -411,18 +411,18 @@ public sealed partial class SiegeTests : IAsyncLifetime
                 .RoleStatistics[Session(attack).Role!.Id];
             Assert.Equal(notifiedStats.ExtraData[1021007].LongValue, storedStats.ExtraData[1021007].LongValue);
             var box = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-            var loserMail = Assert.Single(box.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            var loserMail = Assert.Single(box.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
             Assert.Equal(10501, loserMail.TemplateId);
             Assert.Equal(new[] { new MailService.Attachment(1250709, 10), new MailService.Attachment(1, 5000) }, loserMail.Attachments);
             var winnerBox = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(Session(attack).Role!.Id)!)!;
-            var winnerMail = Assert.Single(winnerBox.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            var winnerMail = Assert.Single(winnerBox.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
             Assert.Equal(10500, winnerMail.TemplateId);
             Assert.Equal(new[] { new MailService.Attachment(1250709, 20), new MailService.Attachment(1, 10000) }, winnerMail.Attachments);
             await OnLoop(() => Task.CompletedTask); // settlement fanout has finished before inspecting the departed client.
             Assert.DoesNotContain(defense.Inbox.Snapshot(), e => e.IsGame(TerritoryWarsService.SiegeResultNotify));
             await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
             var after = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-            Assert.Single(after.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            Assert.Single(after.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
         }
         await _app.StopAsync(); await _app.DisposeAsync(); await StartAsync();
         await using var returning = await Bot("SiegeDefender", create: false);
@@ -434,7 +434,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
         Assert.Equal(winningGuild, Assert.Single(persisted.Infos).GuildInfo.Guid);
         await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
         var mailbox = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-        Assert.Single(mailbox.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+        Assert.Single(mailbox.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
     }
 
     private async Task Enter(BotClient bot, int expectedCamp)

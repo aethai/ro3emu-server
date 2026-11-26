@@ -10,7 +10,10 @@ namespace Ro3Emu.Server.Game;
 /// destroys all units on a map change). Also NPC interaction (32700: portals, Kafras, dialogs), 30012 / 30131 jumps and
 /// the walk check against the client's nav grid.
 /// </summary>
-public sealed partial class SceneService(IOptions<ServerOptions> options, World world, WorldData worldData, MonsterService monsters, BuffService buffs, Data.GameData data, ILogger<SceneService> log, PublicLineManager lines, TimeProvider clock, CheatMonitor cheats) : Messaging.INpcInteractionHandler
+public sealed partial class SceneService(
+    IOptions<ServerOptions> options, World world, WorldData worldData, MonsterService monsters, BuffService buffs,
+    Data.GameData data, ILogger<SceneService> log, PublicLineManager lines, TimeProvider clock, CheatMonitor cheats)
+    : Messaging.INpcInteractionHandler
 {
     int Messaging.INpcInteractionHandler.Order => 1000;
     async Task<bool> Messaging.INpcInteractionHandler.TryInteractAsync(GameSession session, NpcInteractionReq request)
@@ -48,7 +51,7 @@ public sealed partial class SceneService(IOptions<ServerOptions> options, World 
     /// here when it registers).</summary>
     public OrderedHook<Func<GameSession, Ownership.ReservationKey[]>> LoadedKeys { get; } = new("Scene.LoadedKeys");
 
-    /// <summary>C/D 15: the loaded hooks and unowned after-loaded hooks reserve the role's own keys plus what the hooks
+    /// <summary>The loaded hooks and unowned after-loaded hooks reserve the role's own keys plus what the hooks
     /// declare, not Realm. SceneHookScopeAuditTests guards that nothing else is needed.</summary>
     private Ownership.ReservationKey[] HookKeys(GameSession s) =>
         [.. s.Role is { } role ? new[] { Ownership.ReservationKey.Role(role.Id), Ownership.ReservationKey.Lifecycle(role.Id) } : [],

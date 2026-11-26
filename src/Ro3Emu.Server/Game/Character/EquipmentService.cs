@@ -112,7 +112,8 @@ public sealed partial class EquipmentService
             var levels = session.Profile.EquipLevels;
             int level = levels.Refine.GetValueOrDefault(grid), luck = levels.Luck.GetValueOrDefault(grid);
             var row = _character.RefineRow(grid, level + 1);
-            Fail? error = row == null ? new(ErrorCodes.RefineParameter, "max level") : GameData.Int(row.Value, "_iLev") > session.Progress!.Level ? new(ErrorCodes.RefineParameter, "base level") : null;
+            Fail? error = row == null ? new(ErrorCodes.RefineParameter, "max level")
+                : GameData.Int(row.Value, "_iLev") > session.Progress!.Level ? new(ErrorCodes.RefineParameter, "base level") : null;
             bool protect = false;
             long bonus = 0;
             var cost = new List<(int, long)>();
@@ -175,7 +176,8 @@ public sealed partial class EquipmentService
                     error = new(ErrorCodes.RefineMaterials, "payment short");
             }
             levels = session.Profile.EquipLevels;
-            _log.LogInformation("{Name} refines grid {Grid} +{Level}: {Result}", session.Role!.Name, grid, level, error?.Why ?? (success ? "success" : $"failed, now +{levels.Refine.GetValueOrDefault(grid)}"));
+            _log.LogInformation("{Name} refines grid {Grid} +{Level}: {Result}", session.Role!.Name, grid, level,
+                error?.Why ?? (success ? "success" : $"failed, now +{levels.Refine.GetValueOrDefault(grid)}"));
             // LC_DAL_Equipment._processRefineEquipments plays the success settlement (its animation and sound) for a
             // refineLv above the stored level and the failure one only when refineLv is absent; a failed roll therefore
             // leaves refineLv unset, which the client stores as +0 (issue #362), so SendFullLevelsAsync sends the real level.

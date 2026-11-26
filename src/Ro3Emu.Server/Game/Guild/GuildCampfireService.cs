@@ -347,7 +347,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
                 error = ErrorCodes.NpcTooFar;
             else if (_loop.Owners?.Current is { RuntimeOnly: false })
             {
-                // C/D 16: NPC talk reserves only its sender; the seed admits its guild gate as its own operation right
+                // NPC talk reserves only its sender; the seed admits its guild gate as its own operation right
                 // after, and answers the interaction then.
                 int seedKind = 1 + (pointId - 1001) % 3;
                 _loop.TrackRuntimeDetached("campfire seed", async () => await session.SendGameAsync(SceneService.NpcInteraction,
@@ -367,7 +367,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         try
         {
             if (session.Role?.Id != role || GuildId(session) != guild) return ErrorCodes.NotInGuild;
-            // A detached seed (C/D 16) is admitted later than its NPC talk: the seed stage may have ended meanwhile.
+            // A detached seed is admitted later than its NPC talk: the seed stage may have ended meanwhile.
             if (!Open(session) || CurrentStage() != 1) return ErrorCodes.FeatureUnavailable;
             var next = Read(guild);
             if (next.Seeds.GetValueOrDefault(role)?.Contains(pointId) == true) return ErrorCodes.RewardClaimed;
@@ -460,7 +460,7 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         return 0;
     }
 
-    public void Tick(GameTime gameTime)
+    public void Tick(GameTime time)
     {
         long second = _time.GetUtcNow().ToUnixTimeSeconds();
         if (_lastSecond == second) return;

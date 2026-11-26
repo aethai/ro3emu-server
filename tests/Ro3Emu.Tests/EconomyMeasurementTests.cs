@@ -14,6 +14,8 @@ namespace Ro3Emu.Tests;
 /// <summary>Explicit E01 paired microprobe, excluded from fast gates. No latency assertion or load server.</summary>
 public sealed class EconomyMeasurementTests(ITestOutputHelper output)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     [Fact, Trait("Category", "Slow")]
     public void PairedTypedPurchaseMeasuresAddedWriterWorkAndLedgerBytes()
     {
@@ -53,7 +55,7 @@ public sealed class EconomyMeasurementTests(ITestOutputHelper output)
                 (plainAfter.AllocatedBytes - plainBefore.AllocatedBytes)) / (double)operations,
             Notes = "Writer duration is dequeue-to-commit, excluding queue and staging. Payload counts UTF-8 TEXT/BLOB and 8 bytes per INTEGER, not SQLite physical encodings. Allocated bytes are page_count*page_size; WAL bytes are separate. Shared-host observation, not S3/load qualification."
         };
-        string json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        string json = JsonSerializer.Serialize(report, IndentedJson);
         File.WriteAllText(Path.Combine(artifact, "measurement.json"), json);
         output.WriteLine(artifact); output.WriteLine(json);
     }

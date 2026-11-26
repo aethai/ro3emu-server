@@ -13,7 +13,7 @@ internal sealed class EventSettlementOutcomeUnknownException(string message, Exc
 
 public sealed partial class CombatService
 {
-    /// <summary>E05e: frozen event entitlement precedes lethal wire publication; ordinary kill callbacks retain their order.</summary>
+    /// <summary>Event economy: frozen event entitlement precedes lethal wire publication; ordinary kill callbacks retain their order.</summary>
     public AsyncHook<GameSession, MonsterUnit, long> BeforeLethalPublication { get; } = new("Combat.BeforeLethalPublication");
     /// <summary>Finalize a committed event death even when the initiating attachment stopped during commit.</summary>
     public AsyncHook<MonsterUnit> AfterLethalPublication { get; }

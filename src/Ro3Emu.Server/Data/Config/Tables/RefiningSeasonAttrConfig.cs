@@ -7,5 +7,6 @@ namespace Ro3Emu.Server.Data.Config;
 public readonly partial record struct RefiningSeasonAttrConfig(JsonElement Row)
 {
     [ConfigField("_iID")] public partial long Id { get; }
+    [ConfigField("_iSeasonPower", Optional = true)] public partial long SeasonPower { get; }
     [ConfigField("_kAttrs")] public partial long[][] Attrs { get; }
 }

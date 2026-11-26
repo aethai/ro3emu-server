@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace Ro3Emu.Server.Game.Persistence;
 
 /// <summary>
-/// A lazily persisted role part (C/D 17/18). A change only marks the part dirty; this ticker captures the latest
+/// A lazily persisted role part. A change only marks the part dirty; this ticker captures the latest
 /// value and writes it on the writer's lazy lane, so the loop never waits on SQLite for it.
 /// - **When:** an urgent change is written on the next tick; otherwise at most one <see cref="Interval"/> after the
 ///   first unpersisted change. Sustained changes never postpone it.
@@ -38,6 +38,8 @@ public abstract class LazyRolePart(GameLoop loop, Accounts.RoleStore roles, ILog
     protected abstract void Set(GameSession s, State state);
     /// <summary>Whether this session's current value may be written lazily (e.g. not on a private floor).</summary>
     protected virtual bool Eligible(GameSession s) => s.Role != null;
+    /// <summary>Whether the session's dirty value must wait before it is submitted (it stays dirty meanwhile).</summary>
+    protected virtual bool Held(GameSession s) => false;
     /// <summary>Captures the current value now and returns its lazy write (role, epoch, expected revision).</summary>
     protected abstract Func<long, long, long, Task<bool>> Capture(GameSession s);
 
@@ -69,6 +71,9 @@ public abstract class LazyRolePart(GameLoop loop, Accounts.RoleStore roles, ILog
     /// <summary>Whether a change has not been persisted yet (a barrier then has something to save).</summary>
     public bool IsDirty(GameSession s) => Get(s) is { } part && part.Applied > part.Persisted;
 
+    /// <summary>Whether a lazy write of the part has been submitted and not completed yet.</summary>
+    public bool InFlight(GameSession s) => Get(s)?.InFlight == true;
+
     public void Tick(GameTime time)
     {
         if (_dirty.Count == 0) return;
@@ -77,7 +82,7 @@ public abstract class LazyRolePart(GameLoop loop, Accounts.RoleStore roles, ILog
         {
             var part = Get(s);
             if (part == null || s.Role == null) { _dirty.Remove(s); continue; }
-            if (part.InFlight) continue;
+            if (part.InFlight || Held(s)) continue;
             if (part.Applied <= part.Persisted) { _dirty.Remove(s); part.DirtySince = 0; continue; }
             if (!part.Urgent && Stopwatch.GetElapsedTime(part.DirtySince, now) < Interval) continue;
             Submit(s, part);

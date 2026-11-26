@@ -369,8 +369,8 @@ public sealed partial class MapTests : IAsyncLifetime
         for (int i = 0; i < 20; i++)
         {
             await Gm("alice", "!mvp where 1");
-            var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify) && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1") || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ")), Wait);
-            if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ")) break;
+            var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify) && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1") || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
+            if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
             await Task.Delay(300);
         }
         await Gm("alice", "!mvp goto 1"); // Poring Island 10214
@@ -715,8 +715,8 @@ public sealed partial class MapTests : IAsyncLifetime
                 await Gm("alice", "!mvp where 1");
                 var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
                     && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1")
-                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ")), Wait);
-                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ")) break;
+                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
+                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
                 await Task.Delay(200);
             }
             await Gm("alice", "!mvp goto 1");

@@ -13,6 +13,7 @@ public static class MessageCoverage
     private static readonly string? Path = Environment.GetEnvironmentVariable("RO3EMU_MSG_COVERAGE");
     private static readonly ConcurrentDictionary<string, string> Routes = new();
     private static readonly ConcurrentDictionary<uint, long> Handled = new(), Unrouted = new(), Sent = new();
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
 
     static MessageCoverage()
     {
@@ -66,7 +67,7 @@ public static class MessageCoverage
                 Add(evidence.Handled, Handled);
                 Add(evidence.Unrouted, Unrouted);
                 Add(evidence.Sent, Sent);
-                File.WriteAllText(Path, JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));
+                File.WriteAllText(Path, JsonSerializer.Serialize(evidence, IndentedJson));
             }
             finally { gate.ReleaseMutex(); }
         }

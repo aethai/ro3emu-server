@@ -154,7 +154,12 @@ public sealed class ServerMetrics : IDisposable
         return new
         {
             schemaVersion = 1, epoch = e.Id, capturedUtc = DateTimeOffset.UtcNow, elapsedSeconds = elapsed,
-            semantics = "Cumulative epoch counters; database.routedAccess is cumulative for the AccountStore lifetime and requires start/end subtraction. Histogram buckets are disjoint upper bounds; snapshots are weakly consistent. Wire replies cover the first same-id response on the originating connection, after a full socket send. Egress gauges include the frame currently being sent and are lifetime gauges. DB commitStatementMs includes the statement causing an implicit commit, not only fsync. Sessions are the game loop's census, taken once a second (sessions.capturedUtc).",
+            semantics = "Cumulative epoch counters; database.routedAccess is cumulative for the AccountStore lifetime and requires start/end subtraction. "
+                + "Histogram buckets are disjoint upper bounds; snapshots are weakly consistent. "
+                + "Wire replies cover the first same-id response on the originating connection, after a full socket send. "
+                + "Egress gauges include the frame currently being sent and are lifetime gauges. "
+                + "DB commitStatementMs includes the statement causing an implicit commit, not only fsync. "
+                + "Sessions are the game loop's census, taken once a second (sessions.capturedUtc).",
             loop = new
             {
                 lifecycle = new
@@ -224,7 +229,8 @@ public sealed class ServerMetrics : IDisposable
                         line = l.Map.LineNumber, sceneId = l.Map.WorldScene, players = l.Players,
                         reservations = l.Reservations, softLimit = l.SoftLimit, hardLimit = l.HardLimit
                     }).ToArray(),
-                lineSemantics = "byMap is approximate registered-session locality, including provisional/loading roles; line is public line number (private/event line is 1), kind + runtimeId distinguish rooms; sceneId is RuntimeMap.WorldScene. publicLines is the admission manager's occupied players + reservations, used for capacity checks",
+                lineSemantics = "byMap is approximate registered-session locality, including provisional/loading roles; line is public line number (private/event line is 1), "
+                    + "kind + runtimeId distinguish rooms; sceneId is RuntimeMap.WorldScene. publicLines is the admission manager's occupied players + reservations, used for capacity checks",
             },
             runtime = new
             {

@@ -318,7 +318,8 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
 
     internal static Attempt? Active(GameSession s) => s.DungeonAttempt is { Started: true, Settled: false } a
         && !a.Room.Closed && s.InstanceId == a.Room.Id && !s.SceneLoading ? a : null;
-    internal static GameSession[] Present(Attempt a) => [.. a.Room.ActiveMembers.Select(m => m.Session).Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null)];
+    internal static GameSession[] Present(Attempt a) =>
+        [.. a.Room.ActiveMembers.Select(m => m.Session).Where(s => ReferenceEquals(s.DungeonAttempt, a) && s.InstanceId == a.Room.Id && s.Role != null)];
     internal static Dictionary<int, long> Inventory(GameSession s)
     {
         var counts = s.Items.GroupBy(i => i.Entry).ToDictionary(g => g.Key, g => g.Sum(i => (long)i.Stack));

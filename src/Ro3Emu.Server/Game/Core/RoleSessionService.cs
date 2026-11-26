@@ -8,8 +8,12 @@ namespace Ro3Emu.Server.Game;
 /// A role's session: create and select, the login -> world sequence, position and
 /// settings persistence, the handover cleanup and role switching. Its messages are mapped by CoreMessages.
 /// </summary>
-public sealed partial class RoleSessionService(RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends, SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines, Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions, Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems, ILogger<RoleSessionService> log,
-    Microsoft.Extensions.Options.IOptions<ServerOptions> options)
+public sealed partial class RoleSessionService(
+    RoleStore roles, Data.GameData data, BuffService buffs, SceneService scene, Micro.FriendService friends,
+    SeasonService seasons, GuildService guilds, WildAfkService afk, TimeProvider clock, Deadlines deadlines,
+    Ownership.RoleHandover handover, SessionRegistry sessions, Persistence.PositionPersistence positions,
+    Persistence.SettingsPersistence settings, ReconnectService reconnects, RoleSystems systems,
+    ILogger<RoleSessionService> log, Microsoft.Extensions.Options.IOptions<ServerOptions> options)
 {
     /// <summary>Novice; JobConfig[1000] picks the male/female unit.</summary>
     private const int NoviceCareer = 1000;
@@ -40,7 +44,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
 
     public Task OnDisconnectedAsync(GameSession session) => handover.Begin(session);
 
-    /// <summary>C/D 15: the handover cleanup reserves the role, its lifecycle and account plus the shared keys its
+    /// <summary>The handover cleanup reserves the role, its lifecycle and account plus the shared keys its
     /// steps write - its own guild's keys (offline publication) and its timed battle's leave and settlement - not
     /// Realm. LogoutScopeAuditTests and the owner audit inventory guard that nothing else is needed.</summary>
     internal Ownership.ReservationKey[] CleanupReservation(GameSession session) =>
@@ -79,6 +83,12 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.OfflineBuffsLoaded = false;
         await systems.LeaveAsync(session, Step, () =>
         {
+            if (roles.IsWriterFailed)
+            {
+                var p = session.Position;
+                LogShutdownSaveSkipped(log, snapshotRole ?? 0, session.Account ?? "", session.SceneEntry, p.X, p.Y, p.Z, offlineBuffs != null);
+                return;
+            }
             SavePosition(session);
             if (offlineBuffs != null && snapshotRole is { } kept) roles.SaveOfflineBuffs(kept, offlineBuffs);
         });
@@ -108,7 +118,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
             req.Appearances.TryGetValue(RoleProto.HairSlot, out int hair);
             int sex = req.Sex is 1 or 2 ? req.Sex : 1;
             // The first quest (10101010) waits next to South Gate's born point, ~200 m from SpawnScenePos.
-            // C/D 15: one insert with that position on the writer thread, under the account's reservation; the
+            // One insert with that position on the writer thread, under the account's reservation; the
             // unique name index decides a race between accounts.
             var born = scene.BornPoint(RoleStore.SpawnSceneEntry);
             role = await roles.CreateAsync(session.Account!, req.AreaId, name, sex, NoviceCareer, hair,
@@ -153,7 +163,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         await session.PredecessorFence;
         if (session.Role != null) await handover.Begin(session);
         if (!SelectionAvailable(session)) return;
-        // C/D 14: read the whole role at one SQLite snapshot on a reader worker, after the old role's handover and
+        // Read the whole role at one SQLite snapshot on a reader worker, after the old role's handover and
         // before the Realm scope. The loads below are served from it instead of synchronous SQL on the loop; every
         // write committed after the read began invalidates its part, so nothing older than a commit is served.
         bool prepared = await roles.PrepareLoginSnapshotAsync(req.Id, session.Account!);
@@ -164,7 +174,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         }
         finally
         {
-            // C/D 16 part 4: an attached role keeps its snapshot for the session (blob reads after login and
+            // An attached role keeps its snapshot for the session (blob reads after login and
             // write-through of its own saves); role cleanup releases it. A failed or abandoned select releases now.
             if (prepared && !(session.Role?.Id == req.Id && session.Owner?.State == Ownership.RoleOwnerState.Attached))
                 roles.ReleaseLoginSnapshot(req.Id);
@@ -211,7 +221,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         Ownership.AttachmentLease? lease = null;
         try
         {
-            // C/D 15: the select reserves its role, account and lifecycle plus the keys its login callees write (own
+            // The select reserves its role, account and lifecycle plus the keys its login callees write (own
             // Prontera settlements, own Eve cycle, current territory season, its guild's caravan and challenge gates,
             // its pending MVP, dungeon, Mock Battle and timed-battle obligations) - not Realm. Realm-shared maintenance
             // runs on the services' own tickers; LoginScopeAuditTests guards that nothing else is needed.
@@ -237,7 +247,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
                 if (SelectionPhaseForTest is { } afterBind)
                     await afterBind("AfterBindBeforeLoad", session);
                 EnsureSelection(session, lease);
-                // Stage G: the services' login blob writes go out as one asynchronous commit, still under this scope.
+                // The services' login blob writes go out as one asynchronous commit, still under this scope.
                 roles.BeginLoginStaging(role.Id);
                 try
                 {
@@ -336,7 +346,7 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         EnsureSelection(session, lease);
 
         // Saved client settings (intro skipped, control mode, key bindings...) via the generic DB increment sync.
-        session.Settings = LoadSettings(role.Id); // C/D 17: kept on the session, merged and written lazily from now on
+        session.Settings = LoadSettings(role.Id); // Kept on the session, merged and written lazily from now on
         session.SettingsPart = null;
         if (RepairClassicMovement(session.Settings)) settings.MarkDirty(session, urgent: false);
         await session.SendGameAsync(MsgId.AutoSyncSettings, SettingsSync(session.Settings));
@@ -383,9 +393,14 @@ public sealed partial class RoleSessionService(RoleStore roles, Data.GameData da
         session.WorldState.WalkDir = float.IsFinite(walk.Dir) ? walk.Dir : walk.Face;
         session.WorldState.LastWalkUtc = clock.GetUtcNow().UtcDateTime; // also when the walk check is off
         session.WorldState.Walking = !walk.BStop && walk.SpeedRate > 0;
-        positions.MarkDirty(session, urgent: walk.BStop); // C/D 18: written lazily, never on the loop
+        positions.MarkDirty(session, urgent: walk.BStop); // Written lazily, never on the loop
         await systems.MovedAsync(session, walk);
     }
+
+    [LoggerMessage(Level = LogLevel.Critical,
+        Message = "Skipping shutdown position/buff save for role {Role} (account {Account}, scene {Scene}, "
+            + "pos {X:F1}/{Y:F1}/{Z:F1}, unsavedOfflineBuffs={HasOfflineBuffs}) because the database writer stopped")]
+    private static partial void LogShutdownSaveSkipped(ILogger logger, long role, string account, long scene, float x, float y, float z, bool hasOfflineBuffs);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Role {Role} cleanup step {Step} waits for room in a full database queue")]
     private static partial void LogCleanupWaits(ILogger logger, long? role, string step);

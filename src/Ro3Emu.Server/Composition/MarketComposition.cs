@@ -15,6 +15,7 @@ internal static class MarketComposition
         services.AddSingleton<AuctionService>();
         services.AddHostedService(sp => sp.GetRequiredService<AuctionService>());
         services.AddSingleton<MarketStore>();
+        services.AddSingleton<IStartupInitializer>(sp => sp.GetRequiredService<MarketStore>());
         services.AddSingleton<ShopService>();
         services.AddSingleton<ItemBoxService>();
         services.AddSingleton<TradeService>();

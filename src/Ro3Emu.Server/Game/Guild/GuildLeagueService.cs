@@ -18,7 +18,7 @@ namespace Ro3Emu.Server.Game;
 /// registered tournament are one realm blob (guild_league); a running match lives in memory and is committed with its
 /// outcome. Reconstructed server choices are marked (inferred) with the reason.
 /// </summary>
-public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
+public sealed partial class GuildLeagueService : IGameTicker, ICombatRule, IStartupInitializer
 {
     bool ICombatRule.IsPlayerHostile(GameSession attacker, GameSession defender) => Hostile(attacker, defender);
     bool ICombatRule.CanHitMonster(GameSession attacker, MonsterUnit target) => CanHit(attacker, target);
@@ -51,7 +51,18 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
     /// 106603 and 106019). Runs inside the Realm settlement; listeners post their work.</summary>
     public SyncHook<int, IReadOnlyDictionary<long, long>> MatchCommitted { get; } = new("GuildLeagueService.MatchCommitted");
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private LeagueState _state;
+    private LeagueState? _stateData;
+    private LeagueState _state
+    {
+        get => _stateData ??= LoadState();
+        set => _stateData = value;
+    }
+
+    private LeagueState LoadState() =>
+        _accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.GuildLeague)) is { } saved
+            ? JsonSerializer.Deserialize<LeagueState>(saved)! : new();
+
+    public void Initialize() => _ = _state;
 
     public sealed class LeagueState
     {
@@ -143,8 +154,6 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
         this._functions = functions; this._seasons = seasons; this._calendar = calendar;
         this._instances = instances; this._scene = scene; this._maps = maps; this._combat = combat; this._buffs = buffs;
         this._mail = mail; this._auctions = auctions; this._world = world; this._options = options; this._clock = clock; this._loop = loop; this._log = log;
-        _state = accounts.ReadSync<byte[]?>(new TerritoryRealmReadPlan(RealmStateKind.GuildLeague)) is { } saved
-            ? JsonSerializer.Deserialize<LeagueState>(saved)! : new();
         guildService.League = new GuildService.LeagueHooks(MgrDataCoreAsync, InfoCoreAsync, GroupInfoCoreAsync);
         HookBattle();
     }
@@ -411,7 +420,7 @@ public sealed partial class GuildLeagueService : IGameTicker, ICombatRule
     /// <summary>Tests: the per-second work of <paramref name="at"/> and any reconcile it started are done.</summary>
     internal bool Idle(long at) => _lastSweep == at && !_sweeping && !_settling;
 
-    public void Tick(GameTime _)
+    public void Tick(GameTime time)
     {
         long now = Now;
         if (_sweeping || now == _lastSweep) return;

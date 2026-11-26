@@ -4,7 +4,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E05e value-only event command. Assets, source, result, revisions and accounting share BEGIN/COMMIT.</summary>
+/// <summary>Value-only event economy command. Assets, source, result, revisions and accounting share BEGIN/COMMIT.</summary>
 internal sealed class EventEconomyTransactionPlan(RoleItemPlan child, EventEconomyMutation semanticMutation,
     bool failAcknowledgementForTest = false) : DbPlan
 {
@@ -56,10 +56,15 @@ internal sealed class EventEconomyTransactionPlan(RoleItemPlan child, EventEcono
             using var meta = DbSql.Command(db, tx, "SELECT realm_id FROM economy_meta WHERE singleton=1");
             if (meta.ExecuteScalar() is not string currentRealm || currentRealm != realm)
                 throw new InvalidDataException("Event receipt has a foreign realm identity.");
-            using var legs = DbSql.Command(db, tx, "SELECT COUNT(*) FROM economy_entry WHERE operation_id=$op");
-            legs.Parameters.AddWithValue("$op", mutation.OperationId);
-            if (legCount <= 0 || (long)legs.ExecuteScalar()! != legCount)
+            if (legCount <= 0)
                 throw new InvalidDataException("Event receipt has an invalid ledger leg count.");
+            if (!FamilyEconomyTransactionPlan.IsOperationPruned(db, tx, mutation.OperationId))
+            {
+                using var legs = DbSql.Command(db, tx, "SELECT COUNT(*) FROM economy_entry WHERE operation_id=$op");
+                legs.Parameters.AddWithValue("$op", mutation.OperationId);
+                if ((long)legs.ExecuteScalar()! != legCount)
+                    throw new InvalidDataException("Event receipt has an invalid ledger leg count.");
+            }
             using var source = DbSql.Command(db, tx,
                 "SELECT 1 FROM operation_source WHERE realm_id=$realm AND source_key=$source AND operation_id=$op");
             source.Parameters.AddWithValue("$realm", realm);

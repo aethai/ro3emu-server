@@ -52,7 +52,7 @@ internal sealed class EconomyRetentionPlan(long ledgerCutoffUtcMs, long mailCuto
         using (var scan = DbSql.Command(db, tx, """
             SELECT operation_id, commit_seq, recorded_utc_ms, source_key, intent_payload
             FROM operation_receipt
-            WHERE commit_seq > $after AND command_kind LIKE 'mail/%'
+            WHERE commit_seq > $after AND command_kind >= 'mail/' AND command_kind < 'mail0'
             ORDER BY commit_seq LIMIT $batch
             """))
         {

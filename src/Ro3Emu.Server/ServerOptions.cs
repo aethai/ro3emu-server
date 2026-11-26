@@ -78,6 +78,12 @@ public sealed class ServerOptions
     /// time-of-day module), so this is the emulator's own addition for an operator who wants it.</summary>
     public bool NightCycle { get; set; }
 
+    /// <summary>Show overhead guild names and emblems on every map (Ro3Emu.ClientHooks.GuildOverhead, #517). Off by
+    /// default: the original client shows them only on the three maps whose MapConfig._iShowNamePara enables ShowGuildName
+    /// and ShowGuildIcon (plus escort carts). When on, the server sends "guildoverhead on" (message 77012) on login so the
+    /// client hook lifts the per-map limit everywhere.</summary>
+    public bool GuildOverheadAllMaps { get; set; }
+
     /// <summary>Game-message JSON log (data/logs/traffic-*.jsonl): "off", "on" or a comma-separated account list.
     /// Formatting and writes run off the game loop; keep it off for load tests and production.</summary>
     public string TrafficLog { get; set; } = "off";
@@ -172,8 +178,11 @@ public sealed class ServerOptions
     /// <summary>Database copies in DataDir/backups (DatabaseBackup).</summary>
     public BackupOptions Backup { get; set; } = new();
 
-    /// <summary>Run SQLite PRAGMA integrity_check on startup before opening the writer. Fails fast on a corrupt file.</summary>
+    /// <summary>Run SQLite PRAGMA quick_check(5) on startup before opening the writer. Fails fast on a corrupt file.</summary>
     public bool StartupIntegrityCheck { get; set; } = true;
+
+    /// <summary>When true (with StartupIntegrityCheck), run full PRAGMA integrity_check(5) instead of quick_check(5) at startup.</summary>
+    public bool StartupFullIntegrityCheck { get; set; }
 
     /// <summary>The web panel's update manager (Updates.UpdateManager, docs/guide/panel.md).</summary>
     public UpdateOptions Updates { get; set; } = new();
@@ -412,11 +421,11 @@ public sealed class ReceiptRetentionOptions
     /// <summary>Minutes between compaction runs (the first runs a few minutes after startup).</summary>
     public int IntervalMinutes { get; set; } = 60;
 
-    /// <summary>Age in days after which economy_entry rows are rolled into economy_daily_aggregate and pruned; 0 keeps raw legs forever.</summary>
-    public int LedgerDays { get; set; } = 30;
+    /// <summary>Age in days after which economy_entry rows are rolled into economy_daily_aggregate and pruned; 0 (default) keeps raw legs forever.</summary>
+    public int LedgerDays { get; set; }
 
-    /// <summary>Age in days after which mail/* receipt payloads are compacted once their replay keys are stored in mail_delivery_replay; 0 keeps mail receipts whole.</summary>
-    public int MailDays { get; set; } = 30;
+    /// <summary>Age in days after which mail/* receipt payloads are compacted once their replay keys are stored in mail_delivery_replay; 0 (default) keeps mail receipts whole.</summary>
+    public int MailDays { get; set; }
 }
 
 /// <summary>In-game bug reports: the menu's Feedback button and "/bug" in chat (FeedbackService).</summary>
@@ -527,8 +536,8 @@ public sealed class BackupOptions
     /// <summary>Hours between integrity checks of scheduled copies on a big database.</summary>
     public int BigDatabaseCheckHours { get; set; } = 24;
 
-    /// <summary>Maximum total size in megabytes of completed backups in DataDir/backups (0 = unlimited). Oldest copies past the newest two are pruned to stay within this cap.</summary>
-    public int MaxTotalMegabytes { get; set; } = 10240;
+    /// <summary>Maximum total size in megabytes of completed backups in DataDir/backups (0 = unlimited, default). Oldest copies past the newest two are pruned to stay within this cap.</summary>
+    public int MaxTotalMegabytes { get; set; }
 }
 
 /// <summary>
