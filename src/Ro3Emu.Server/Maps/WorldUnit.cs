@@ -28,6 +28,10 @@ public abstract class WorldUnit
     public float Z { get; set; }
     public float Face { get; set; }
 
+    /// <summary>The realm's clock, assigned when the unit is added to a map.</summary>
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
+    protected long NowMs => Clock.GetUtcNow().ToUnixTimeMilliseconds();
+
     /// <summary>The grid cell the unit is filed under (MapInstance).</summary>
     internal (int X, int Z) Cell { get; set; }
 
@@ -36,12 +40,17 @@ public abstract class WorldUnit
     // An in-flight AOI enter must finish before removal publishes its leave.
     internal SemaphoreSlim PresentationGate { get; } = new(1, 1);
     internal bool Removed { get; set; }
+    /// <summary>Every player of its map shows it, however far (<see cref="World.ShowFromAfarAsync"/>).</summary>
+    internal bool SeenFromAfar { get; set; }
 
     /// <summary>The entity a client creates for it (31037 base).</summary>
     public abstract EntityBase Entity();
 
     /// <summary>Called by the map's tick (AI, regeneration...).</summary>
     public virtual void Tick(MapInstance map, GameTime time) { }
+
+    /// <summary>Its tick has nothing to do while no player is on its map (<see cref="MapInstance.Tick"/>).</summary>
+    internal virtual bool Resting => false;
 
     public Vec3 Pos => new() { X = X, Y = Y, Z = Z };
 }
@@ -57,9 +66,14 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
 
     private readonly List<WorldUnit> _units = [];
     // Membership for Contains: every walk's unit refresh asks it per candidate, and a field map holds ~1500 units
-    // (as a list scan it was 13% of the loop's work at 500 players, stage G).
+    // (as a list scan it was 13% of the loop's work at 500 players).
     private readonly HashSet<WorldUnit> _members = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(int, int), List<WorldUnit>> _cells = [];
+    private readonly List<WorldUnit> _far = [];
+
+    /// <summary>The units every player of this map shows, however far (<see cref="WorldUnit.SeenFromAfar"/>).</summary>
+    internal IReadOnlyList<WorldUnit> Far => _far;
+    internal void AddFar(WorldUnit unit) => _far.Add(unit);
 
     public long SceneEntry => sceneEntry;
     public World World => world;
@@ -70,6 +84,8 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
 
     internal void Add(WorldUnit unit)
     {
+        unit.Clock = world.Clock;
+        _resting = false;
         _units.Add(unit);
         _members.Add(unit);
         unit.Cell = CellOf(unit.X, unit.Z);
@@ -81,6 +97,7 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
     {
         _units.Remove(unit);
         _members.Remove(unit);
+        if (unit.SeenFromAfar) _far.Remove(unit);
         if (_cells.TryGetValue(unit.Cell, out var list)) list.Remove(unit);
     }
 
@@ -122,8 +139,41 @@ public sealed class MapInstance(long sceneEntry, World world) : IGameTicker
                     }
     }
 
+    // The tick's snapshot (a unit's tick may spawn or remove units), reused so a tick allocates nothing.
+    private readonly List<WorldUnit> _ticking = [];
+
+    /// <summary>Ticks of a map nobody is on between two passes over its resting units: once a second at 20 Hz.</summary>
+    internal const int RestingTickEvery = 20;
+    private bool _resting;
+    private int _skipped;
+    private int _dormantPhase;
+
+    /// <summary>
+    /// A field map keeps its monsters after its players leave, so a server ends up ticking every map anyone visited.
+    /// While no player is on the map and every unit rested after the last pass, the map wakes once a second; that
+    /// pass only moves the monsters' roam clocks (MonsterService.Dormant). Even when players are on the map, unseen
+    /// resting monsters (no viewers, not walking/fighting/returning/marching) only advance their roam clock once a
+    /// second instead of 20 times a second. A unit added or a player arriving wakes it straight away.
+    /// </summary>
     public void Tick(GameTime time)
     {
-        foreach (var unit in _units.ToArray()) unit.Tick(this, time);
+        bool unseen = !world.HasPlayers(sceneEntry);
+        if (unseen && _resting && ++_skipped < RestingTickEvery) return;
+        _skipped = 0;
+        bool tickDormant = unseen || _dormantPhase == 0;
+        _dormantPhase = (_dormantPhase + 1) % RestingTickEvery;
+        bool resting = unseen;
+        _ticking.AddRange(_units);
+        try
+        {
+            foreach (var unit in _ticking)
+            {
+                if (!tickDormant && unit.Resting) continue;
+                unit.Tick(this, time);
+                if (resting) resting = unit.Resting;
+            }
+        }
+        finally { _ticking.Clear(); }
+        _resting = resting;
     }
 }

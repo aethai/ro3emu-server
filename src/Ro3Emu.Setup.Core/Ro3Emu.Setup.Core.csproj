@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Core setup flows (find/install client, export game data, run server, patch/launch) shared by RO3Emu.exe,
+       Ro3EmuLauncher.exe and Ro3Emu.Setup.Tests. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Ro3Emu.Setup</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>RO3Emu</Product>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ro3Emu.ClientPatching\Ro3Emu.ClientPatching.csproj" />
+    <ProjectReference Include="..\Ro3Emu.DataExport\Ro3Emu.DataExport.csproj" />
+  </ItemGroup>
+
+  <!-- Our English translations (public sources, no client text beyond the strings they translate); merged on the
+       player's machine with the client's own English tables into <client>\ro3emu\loc_en.tsv. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Ro3Emu.Loc\translations\*.tsv" LogicalName="translations/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Our Traditional Chinese translations (the zh-TW language): kept here and not in src/Ro3Emu.Loc because that folder
+       is part of the stamp of the prebuilt client DLLs (tools/release/client-stamp.ps1), which these texts are not in. -->
+  <ItemGroup>
+    <EmbeddedResource Include="translations-zhtw\*.tsv" LogicalName="translations-zhtw/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="RO3Emu" />
+    <InternalsVisibleTo Include="Ro3Emu.Setup.Tests" />
+    <!-- The launcher (Ro3EmuLauncher.exe) drives the same flows from its window. -->
+    <InternalsVisibleTo Include="Ro3EmuLauncher" />
+  </ItemGroup>
+
+</Project>

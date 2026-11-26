@@ -28,7 +28,7 @@ public sealed class QuestWalkTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -47,7 +47,6 @@ public sealed class QuestWalkTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -201,7 +200,7 @@ public sealed class QuestWalkTests : IAsyncLifetime
             var me = sessions.All().Single(x => x.Role != null);
             var m = world.AllUnits().OfType<MonsterUnit>().Where(u => u.SceneEntry == scene && !u.Dead && npc(u.Template.NpcId))
                 .OrderBy(u => (u.X - me.Position.X) * (u.X - me.Position.X) + (u.Z - me.Position.Z) * (u.Z - me.Position.Z)).First();
-            return Task.FromResult((m, skills.NormalAttack(me.Progress!.Career)));
+            return Task.FromResult((m, skills.CurrentAttack(me))); // the row the held weapon gives, as the client sends
         });
         // Like the client: attack again only when the auto-attack stopped (a potion, a jump) and chase a target that
         // roamed out of reach. A new cast cancels the swing in progress, so attacking blindly on a timer starved the
@@ -248,12 +247,5 @@ public sealed class QuestWalkTests : IAsyncLifetime
 
     private long GameData(long task, string field) =>
         _tasks.TryGetValue(task, out var row) && row.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 
 }

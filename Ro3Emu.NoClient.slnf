@@ -1,0 +1,21 @@
+{
+  "solution": {
+    "path": "Ro3Emu.slnx",
+    "projects": [
+      "src/Ro3Emu.Bot/Ro3Emu.Bot.csproj",
+      "src/Ro3Emu.BotCli/Ro3Emu.BotCli.csproj",
+      "src/Ro3Emu.ClientPatching/Ro3Emu.ClientPatching.csproj",
+      "src/Ro3Emu.DataExport/Ro3Emu.DataExport.csproj",
+      "src/Ro3Emu.LoadTest/Ro3Emu.LoadTest.csproj",
+      "src/Ro3Emu.Panel/Ro3Emu.Panel.csproj",
+      "src/Ro3Emu.Patcher/Ro3Emu.Patcher.csproj",
+      "src/Ro3Emu.Server.Generators/Ro3Emu.Server.Generators.csproj",
+      "src/Ro3Emu.Server/Ro3Emu.Server.csproj",
+      "src/Ro3Emu.Setup.Core/Ro3Emu.Setup.Core.csproj",
+      "src/Ro3Emu.Setup/Ro3Emu.Setup.csproj",
+      "tests/Ro3Emu.Patcher.Tests/Ro3Emu.Patcher.Tests.csproj",
+      "tests/Ro3Emu.Setup.Tests/Ro3Emu.Setup.Tests.csproj",
+      "tests/Ro3Emu.Tests/Ro3Emu.Tests.csproj"
+    ]
+  }
+}

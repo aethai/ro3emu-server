@@ -6,8 +6,10 @@ namespace Ro3Emu.Server.Data.Config;
 [ConfigTable("HeroicSpiritLayerConfig")]
 public readonly partial record struct HeroicSpiritLayerConfig(JsonElement Row)
 {
+    [ConfigField("_iDungeonId")] public partial long DungeonId { get; }
     [ConfigField("_iFloor")] public partial long Floor { get; }
     [ConfigField("_iID")] public partial long Id { get; }
     [ConfigField("_iLevelLimit")] public partial long LevelLimit { get; }
     [ConfigField("_iPreLayer")] public partial long PreLayer { get; }
+    [ConfigField("_kMonsterPreview")] public partial long[] MonsterPreview { get; }
 }

@@ -1,0 +1,191 @@
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using Romsg;
+using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>
+/// Ordinary equipment attribute enchant: 31415 identifies owned gear and a particular scroll stack.
+/// Enchantment._iItem maps the scroll to the installed outer-map id; EnchantIDConfig supplies [stat, min, max].
+/// Bag gear uses 5009, worn gear 5007; only worn enchantments contribute to 31008/31048 character properties.
+/// </summary>
+public sealed class EnchantService(GameData data, CharacterService character, FunctionService functions, ItemStore items, ILogger<EnchantService> log)
+{
+    private const string SkillsField = "_iSkills";
+
+    private readonly ItemStore _items = items;
+    public const uint Enchant = 31415;
+    public const int Function = 83; // FunctionConfig: equipment enchant
+
+    /// <summary>
+    /// function 7/83, appraisal, slots, scroll type, equipment position and star/level checks.
+    /// (inferred) All validation, payment and the mutation share StateLock, including GUID-specific consumption.
+    /// Refusal-code selection follows ErrorCodeConfig's meanings; the original server mapping is unverified.
+    /// </summary>
+    public async Task EnchantAsync(GameSession session, EnchantReq req)
+    {
+        using var _ = await CharacterService.Lock(session);
+        var equip = session.Items.FirstOrDefault(i => i.Guid == req.EquipGuid);
+        var scroll = session.Items.FirstOrDefault(i => i.Guid == req.ItemGuid && i.Grid == 0);
+        var gearRow = equip == null ? null : data.Row("ItemConfig", equip.Entry);
+        var scrollRow = scroll == null ? null : data.Row("ItemConfig", scroll.Entry);
+        var enchantRow = scroll == null ? default : data.Table("Enchantment").Values.FirstOrDefault(r => Flat(r, "_iItem").Contains(scroll.Entry));
+        int slots = gearRow is { } gear ? (int)GameData.Int(gear, "_iEnchantSlot") : 0;
+        int result = !functions.IsOpen(session, AppraisalService.EquipFunction) || !functions.IsOpen(session, Function) ? ErrorCodes.FeatureUnavailable
+            : equip == null || scroll == null ? ErrorCodes.ItemMissing
+            : gearRow is not { } g || GameData.Int(g, "_iType") != 5 ? ErrorCodes.NotEquipment
+            : equip.Grid < 0 || equip.Stack != 1 ? ErrorCodes.EnchantParameter
+            : !CharacterService.IsAppraised(equip) ? ErrorCodes.EquipNotAppraised
+            : slots <= 0 || equip.Enchantments.Count > slots ? ErrorCodes.EnchantParameter
+            : scroll.Stack < 1 ? ErrorCodes.EnchantMaterials
+            : scrollRow is not { } s || GameData.Int(s, "_iType") != 9 || GameData.Int(s, "_iSubType") != 931 ? ErrorCodes.EnchantParameter
+            : enchantRow.ValueKind != JsonValueKind.Object ? ErrorCodes.EnchantParameter
+            : !Flat(enchantRow, "_kEquipType").Contains(GameData.Int(g, "_iEquipPart")) ? ErrorCodes.EnchantParameter
+            : StarLevel(GameData.Int(enchantRow, "_iStars")) is not > 0 || GameData.Int(g, "_iLevelNeed") > StarLevel(GameData.Int(enchantRow, "_iStars")) ? ErrorCodes.EnchantParameter
+            : 0;
+
+        int enchantId = 0;
+        if (result == 0)
+        {
+            var price = Flat(enchantRow, "_kEnchanCost");
+            var rolled = Roll(enchantRow);
+            var replacement = Replacement(equip!, enchantRow, slots);
+            if (price.Length != 2 || price[0] <= 0 || price[0] > int.MaxValue || price[1] < 0
+                || data.Row("ItemConfig", price[0]) == null || rolled == null || replacement == null)
+                result = ErrorCodes.EnchantParameter;
+            else
+            {
+                var cost = new[] { ((int)price[0], price[1]) };
+                var candidate = equip!.Clone();
+                int installed = (int)GameData.Int(enchantRow, "_iID");
+                // (inferred) Monotonic Unix seconds preserve a definite display order even for rapid rerolls.
+                rolled.GetTime = Math.Max(session.NowSec, candidate.Enchantments.Values.Select(e => e.GetTime).DefaultIfEmpty(0).Max() + 1);
+                if (replacement.Value != 0) candidate.Enchantments.Remove(replacement.Value);
+                candidate.Enchantments[installed] = rolled;
+                // No sync inside the exchange: the paid bag and updated item are published together below.
+                try
+                {
+                    if (await character.ExchangeLockedAsync(session, new ExchangeRequest
+                    {
+                        Cost = cost, Instances = new Dictionary<long, int> { [scroll!.Guid] = 1 }, Popup = false, Sync = false,
+                        Persist = transaction =>
+                        {
+                            transaction.WithEconomy(character.FamilyEconomy(session, "cd13a/enchant-apply",
+                                [.. cost, (scroll.Entry, 1L)], [],
+                                new
+                                {
+                                    Equip = equip.Guid, Scroll = scroll.Guid, Installed = installed,
+                                    Replaced = replacement.Value, Attr = rolled.Attr, Time = rolled.GetTime
+                                }));
+                        },
+                        StageItems = staged => staged.Single(i => i.Guid == equip.Guid).Enchantments = candidate.Enchantments,
+                    }) == null)
+                        result = ErrorCodes.EnchantMaterials;
+                }
+                catch (SqliteException e)
+                {
+                    log.LogError(e, "Enchant persistence failed for {Name}", session.Role!.Name);
+                    result = ErrorCodes.Unknown;
+                }
+                if (result == 0)
+                {
+                    enchantId = installed;
+                    await character.ItemsChangedAsync(session, stats: false);
+                    if (equip.Grid > 0) await character.EquipmentChangedAsync(session);
+                }
+            }
+        }
+
+        log.LogInformation("{Name} enchants {Equip} with {Scroll}: {Result}", session.Role!.Name, req.EquipGuid, req.ItemGuid, result);
+        // (inferred) enchantId names the installed Enchantment row; type = 1 on success has no proven client meaning.
+        await session.SendGameAsync(Enchant, new EnchantResp { Result = result, EnchantId = enchantId, Type = result == 0 ? 1 : 0 });
+        if (result == 0 && equip!.Grid > 0) await character.RefreshStatsAsync(session);
+    }
+
+    /// <summary>
+    /// (inferred) Replace the same group (or an existing unique for a unique scroll); otherwise append, or uniformly
+    /// evict one entry if full. UI intent: UI_Sys_Strengthen_EnchantmentsWidgetCtrl.lua:1113-1174,1281-1348,1454-1558.
+    /// A contradictory saved map or unknown row is refused; 0 means a free slot, null an invalid map.
+    /// </summary>
+    private int? Replacement(InvItem item, JsonElement row, int slots)
+    {
+        long group = GameData.Int(row, "_iEquipGroup");
+        bool unique = GameData.Int(row, "_iIfUnique") == 1;
+        var conflicts = new List<int>();
+        foreach (int id in item.Enchantments.Keys)
+        {
+            if (data.Row("Enchantment", id) is not { } old) return null;
+            if (GameData.Int(old, "_iEquipGroup") == group || unique && GameData.Int(old, "_iIfUnique") == 1) conflicts.Add(id);
+        }
+        if (conflicts.Count > 1) return null;
+        if (conflicts.Count == 1) return conflicts[0];
+        return item.Enchantments.Count < slots ? 0 : item.Enchantments.Keys.Order().ElementAt(Random.Shared.Next(item.Enchantments.Count));
+    }
+
+    /// <summary>
+    /// EnchantIDConfig._kAttrs is one [attribute, min, max] triple (Lua_CFG_EnchantIDConfig.lua:9-41).
+    /// (inferred) Choose a template uniformly (current rows have exactly one), then an inclusive uniform integer.
+    /// Reject malformed templates before payment. The 28 skill-only rows (no _iEnchantIDs, _iSkills naming
+    /// SpecialEffectConfig rows) install with an empty attr map: LC_EquipmentHelper.GetEnchantFullDesc lists the
+    /// skill descriptions from config and the server attrs after them, and every enchant screen iterates the map with
+    /// pairs. Their effect is <see cref="SkillAttributes"/>.
+    /// </summary>
+    private ItemEnchantment? Roll(JsonElement row)
+    {
+        var templates = Flat(row, "_iEnchantIDs");
+        if (templates.Length == 0)
+        {
+            var skills = Flat(row, SkillsField);
+            return skills.Length > 0 && skills.All(id => data.Row("SpecialEffectConfig", id) != null) ? new ItemEnchantment() : null;
+        }
+        var ranges = new List<long[]>();
+        foreach (long id in templates)
+        {
+            if (data.Row("EnchantIDConfig", id) is not { } template) return null;
+            var values = Flat(template, "_kAttrs");
+            if (values.Length != 3 || values[0] <= 0 || values[0] > int.MaxValue
+                || values[1] < int.MinValue || values[2] > int.MaxValue || values[1] > values[2]) return null;
+            ranges.Add(values);
+        }
+        var range = ranges[Random.Shared.Next(ranges.Count)];
+        return new ItemEnchantment { Attr = { [(int)range[0]] = (int)Random.Shared.NextInt64(range[1], range[2] + 1) } };
+    }
+
+    private const int OpEmblemMarkCountAddAttr = 11;
+
+    /// <summary>
+    /// Stats of an installed enchant's _iSkills rows. Every current row is EmblemMarkCountAddAttr (11)
+    /// [11, mark, cap, attr, perMark] "Each Soul Echo element grants ${1} Extra ATK (up to ${2} elements)":
+    /// min(lit marks of that id on the worn Soul Echoes, cap) * perMark of attr, as
+    /// LC_SpecialEffectHelper._generateEmblemMarkCountAddAttrDesc computes it (cap -1 = no cap).
+    /// </summary>
+    internal static IEnumerable<(int Id, double Value)> SkillAttributes(GameSession session, int enchantId, GameData data)
+    {
+        if (data.Row("Enchantment", enchantId) is not { } row) yield break;
+        foreach (long id in Flat(row, SkillsField))
+        {
+            if (data.Row("SpecialEffectConfig", id) is not { } effect) continue;
+            foreach (var op in EquipmentAffixes.Rows(effect, "_kSpecialEffect"))
+            {
+                if (op.Length < 5 || op[0] != OpEmblemMarkCountAddAttr || op[1] == 0 || op[3] <= 0 || op[3] > int.MaxValue) continue;
+                long count = EmblemService.MarkCount(session, op[1], data);
+                if (op[2] >= 0) count = Math.Min(count, op[2]);
+                if (count * op[4] != 0) yield return ((int)op[3], count * op[4]);
+            }
+        }
+    }
+
+    /// <summary>PublicParamConfig.EnchantStarsLevel (Config/ComplexConfig/PublicParamConfig.lua:5951-5995).</summary>
+    private long StarLevel(long stars)
+    {
+        foreach (var pair in Data.Config.PublicParams.Of(data).EnchantStarsLevel ?? [])
+            if (pair.Length == 2 && pair[0] == stars) return pair[1];
+        return 0;
+    }
+
+    private static long[] Flat(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array
+            ? [.. value.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0))] : [];
+}

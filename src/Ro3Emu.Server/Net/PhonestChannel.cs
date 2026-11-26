@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -17,8 +18,8 @@ public sealed class PhonestChannel : IAsyncDisposable
     /// <summary>Largest accepted client frame. The client's biggest requests (settings blobs, chat) are a few KB.</summary>
     private const int MaxFrame = 1024 * 1024;
     /// <summary>Plain bytes one socket read may inflate to (a decompression bomb of many small valid frames): zlib can reach
-    /// about 1000:1, so a full read could reach 64 MiB. Ordinary coalesced frames are far below this (inferred).</summary>
-    private const int MaxInflatedPerRead = 16 * 1024 * 1024;
+    /// about 1000:1, so a full 16 KB read could reach 16 MiB. Ordinary coalesced frames are far below this (inferred).</summary>
+    private const int MaxInflatedPerRead = 4 * 1024 * 1024;
     /// <summary>
     /// Bytes queued for one connection's writer before it counts as a stalled reader. Past it the connection is closed
     /// (reconnect = full resync) rather than letting the queue grow without bound or dropping reliable messages.
@@ -30,8 +31,8 @@ public sealed class PhonestChannel : IAsyncDisposable
     private readonly Socket _socket;
     private readonly ILogger _log;
     /// <summary>Frames waiting for the writer; sends never block the caller (the game loop).</summary>
-    private readonly Channel<(byte[] Frame, StreamConvertor? Convertor)> _outbound =
-        Channel.CreateUnbounded<(byte[], StreamConvertor?)>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<(byte[] Frame, StreamConvertor? Convertor, long DueTimestamp)> _outbound =
+        Channel.CreateUnbounded<(byte[], StreamConvertor?, long)>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Task _writer;
     private readonly MemoryStream _pending = new();
     private long _queuedBytes;
@@ -59,6 +60,9 @@ public sealed class PhonestChannel : IAsyncDisposable
     /// that is not connected. IPv4-mapped addresses of a dual-mode socket are unwrapped to plain IPv4.</summary>
     public System.Net.IPAddress? LocalAddress { get; }
     public Diagnostics.ConnectionMetrics? Metrics { get; init; }
+
+    /// <summary>Debugging only (ServerOptions.DebugSendDelayMs): how long each frame waits before it is sent, in order. Zero sends at once.</summary>
+    public TimeSpan SendDelay { get; set; }
 
     /// <summary>Nonblocking close observation while frame dispatch is awaiting game-loop selection.
     /// It never reads from the socket or changes frame order.</summary>
@@ -96,17 +100,22 @@ public sealed class PhonestChannel : IAsyncDisposable
 
     public async Task RunAsync(FrameHandler handler, CancellationToken ct)
     {
-        var buf = new byte[64 * 1024];
+        // Zero-byte receive pins 0 bytes while the socket is idle; a 16 KB buffer is rented from ArrayPool
+        // only when bytes are ready to read, eliminating 32-64 KB pinned heap per idle player at 2000+ CCU.
         while (!ct.IsCancellationRequested)
         {
-            int n = await _socket.ReceiveAsync(buf, SocketFlags.None, ct);
-            Metrics?.ReceivedBytes(n);
-            if (n == 0) { Volatile.Write(ref _closing, 1); return; }
-            if (_inboundConverted) BeginConverted(buf.AsSpan(0, n));
-            else
+            await _socket.ReceiveAsync(Memory<byte>.Empty, SocketFlags.None, ct);
+            var buf = ArrayPool<byte>.Shared.Rent(16 * 1024);
+            int n;
+            try
             {
-                _pending.Write(buf, 0, n);
+                n = await _socket.ReceiveAsync(buf.AsMemory(0, 16 * 1024), SocketFlags.None, ct);
+                Metrics?.ReceivedBytes(n);
+                if (n == 0) { Volatile.Write(ref _closing, 1); return; }
+                if (_inboundConverted) BeginConverted(buf.AsSpan(0, n));
+                else _pending.Write(buf, 0, n);
             }
+            finally { ArrayPool<byte>.Shared.Return(buf); }
             await DrainFramesAsync(handler);
         }
     }
@@ -234,7 +243,8 @@ public sealed class PhonestChannel : IAsyncDisposable
             // The stamp goes in before the frame: the writer may send the frame as soon as it is queued, and its
             // completion must find the stamp (a late stamp made drain waits stall a frame behind until timeout).
             Metrics?.Enqueued(frame.Length);
-            if (!_outbound.Writer.TryWrite((frame, convertor))) Interlocked.Add(ref _queuedBytes, -frame.Length);
+            long due = SendDelay > TimeSpan.Zero ? System.Diagnostics.Stopwatch.GetTimestamp() + (long)(SendDelay.TotalSeconds * System.Diagnostics.Stopwatch.Frequency) : 0;
+            if (!_outbound.Writer.TryWrite((frame, convertor, due))) Interlocked.Add(ref _queuedBytes, -frame.Length);
         }
         return Task.CompletedTask;
     }
@@ -289,12 +299,14 @@ public sealed class PhonestChannel : IAsyncDisposable
             var reader = _outbound.Reader;
             while (await reader.WaitToReadAsync())
             {
+                bool delayed = SendDelay > TimeSpan.Zero;
+                if (delayed && reader.TryPeek(out var head)) await WaitUntilAsync(head.DueTimestamp);
                 // Everything already queued goes out in one socket send. Each frame is still converted on its own
                 // (its own deflate sync flush and RC4 advance, in queue order), so the byte stream is exactly the
                 // one per-frame sends produced; only the number of send calls drops.
                 batch.SetLength(0);
                 int frames = 0;
-                while (batch.Length < MaxSendBatch && reader.TryRead(out var item))
+                while (batch.Length < MaxSendBatch && (!delayed || IsDue(reader)) && reader.TryRead(out var item))
                 {
                     Interlocked.Add(ref _queuedBytes, -item.Frame.Length);
                     if (item.Convertor != null) item.Convertor.ConvertOutput(item.Frame, batch);
@@ -312,6 +324,8 @@ public sealed class PhonestChannel : IAsyncDisposable
                     sent += n; // partial sends continue with the converted bytes, never converting again
                 }
                 Metrics?.SentBatch(frames, bytes.Length, calls, partial);
+                // Reclaim oversized high-water buffers after a large burst (e.g. login sync) so idle connections stay small.
+                if (batch.Capacity > 32 * 1024) batch = new MemoryStream();
             }
         }
         catch (Exception e) when (e is SocketException or ObjectDisposedException)
@@ -330,6 +344,15 @@ public sealed class PhonestChannel : IAsyncDisposable
             Abort();
         }
     }
+
+    private static async Task WaitUntilAsync(long dueTimestamp)
+    {
+        var wait = System.Diagnostics.Stopwatch.GetElapsedTime(System.Diagnostics.Stopwatch.GetTimestamp(), dueTimestamp);
+        if (wait > TimeSpan.Zero) await Task.Delay(wait);
+    }
+
+    private static bool IsDue(ChannelReader<(byte[] Frame, StreamConvertor? Convertor, long DueTimestamp)> reader) =>
+        reader.TryPeek(out var next) && next.DueTimestamp <= System.Diagnostics.Stopwatch.GetTimestamp();
 
     /// <summary>Flushes what is queued (a kick message, say), then closes the socket.</summary>
     public async ValueTask DisposeAsync()

@@ -21,7 +21,7 @@ public sealed class TotemEffectsTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
         });
         await _app.StartAsync();
@@ -32,7 +32,6 @@ public sealed class TotemEffectsTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -64,7 +63,7 @@ public sealed class TotemEffectsTests : IAsyncLifetime
             },
         };
         session.Items.Add(item);
-        session.Totems!.TotemPlans[0].SetUpTotem[1] = item.Guid;
+        session.Profile.Totems!.TotemPlans[0].SetUpTotem[1] = item.Guid;
         await effects.RefreshAsync(session);
         Assert.Contains(session.Buffs, b => b.IsPassive && b.SourceId == item.Guid && b.ConfigId == 2500201 && b.ExpireMs == long.MaxValue);
         Assert.Equal(1.01, effects.OutgoingMultiplier(session, magic, DamageHitResult.Normal), 3);
@@ -80,11 +79,11 @@ public sealed class TotemEffectsTests : IAsyncLifetime
 
         // The registered op-2 passive grants a timed active floor when a normal attack or skill lands.
         var normal = data.Row("SkillConfig", 1000001)!.Value;
-        foreach (var handler in combat.CastLanded) await handler(session, normal);
+        await combat.CastLanded.InvokeAsync(session, normal);
         var stack = Assert.Single(session.Buffs, b => b.ConfigId == 2500401 && b.SourceId == item.Guid);
         Assert.Equal(1, stack.PileCount);
         Assert.Equal(1, session.Buffs.Count(b => b.ConfigId == 2500401));
-        for (int n = 0; n < 3; n++) foreach (var handler in combat.CastLanded) await handler(session, normal);
+        for (int n = 0; n < 3; n++) await combat.CastLanded.InvokeAsync(session, normal);
         stack = Assert.Single(session.Buffs, b => b.ConfigId == 2500401 && b.SourceId == item.Guid);
         Assert.Equal(3, stack.PileCount); // op18 raises this instance's category cap 2 -> 3.
         Assert.Equal(250, effects.Attributes(session, item, 10053005).Where(a => a.Id == 213).Sum(a => a.Value));
@@ -98,7 +97,7 @@ public sealed class TotemEffectsTests : IAsyncLifetime
         Assert.Contains(session.Buffs, b => b.ConfigId == 2500401 && b.IsTotemOwned && b.SourceId == item.Guid && b.PileCount == 3);
 
         // Switching away removes the exact source's passive registration and floor, leaving the ordinary buff.
-        session.Totems.CurrentPlan = 1;
+        session.Profile.Totems.CurrentPlan = 1;
         await effects.RefreshAsync(session);
         Assert.DoesNotContain(session.Buffs, b => b.SourceId == item.Guid);
         Assert.Contains(session.Buffs, b => b.ConfigId == 2500401 && !b.IsTotemOwned && b.SourceId == role);
@@ -142,12 +141,5 @@ public sealed class TotemEffectsTests : IAsyncLifetime
             e => e.IsGame(CharacterService.OnePropertyChange) || e.IsGame(BuffService.BuffRemove));
         Assert.DoesNotContain(session.Buffs, b => b.IsTotemOwned);
         Assert.Equal(attack, nextSelf.Property.Single(p => p.Idx == 103).Data);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

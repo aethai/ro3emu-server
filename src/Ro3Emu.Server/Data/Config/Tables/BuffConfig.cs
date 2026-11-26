@@ -18,6 +18,7 @@ public readonly partial record struct BuffConfig(JsonElement Row)
     [ConfigField("_iMaxStack")] public partial long MaxStack { get; }
     [ConfigField("_iMultiSource")] public partial long MultiSource { get; }
     [ConfigField("_iName")] public partial double[] Name { get; }
+    [ConfigField("_iOffline")] public partial long Offline { get; }
     [ConfigField("_iSceneClear")] public partial long SceneClear { get; }
     [ConfigField("_iShowIcon")] public partial long ShowIcon { get; }
     [ConfigField("_iStackType")] public partial long StackType { get; }

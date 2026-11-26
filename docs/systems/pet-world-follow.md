@@ -72,7 +72,11 @@ AOI follow trajectory or 31081 cadence. Sending both would risk duplicates; send
 with these tables is invalid. A 6-star UI label does not establish that the existing deployed AOI actor
 should disappear below 6 stars.
 
-The correction therefore retains the emulator's deployed AOI actor **(inferred projection policy)**:
+Players of the original game report the pet hidden in the field and shown only when its guardian skill is used
+(#bug-reports "Show pet always", 4 Nov 2026), which is what the client draws: the guardian cast's `petConfigId`
+creates the pet's local model effect, and nothing else in this build shows a deployed pet. The AOI actor is therefore
+off by default and `Ro3Emu:PetWorldFollower` turns it on. With the switch on, the emulator keeps its deployed AOI
+actor **(inferred projection policy)**:
 an owned pet selected in the active setup plan appears; an owned-only/support-only pet does not;
 undeploying or selecting an empty plan removes it; replacing the selected pet removes the old UUID
 before creating the new one. Function 33 remains required. This does not implement guardian-skill

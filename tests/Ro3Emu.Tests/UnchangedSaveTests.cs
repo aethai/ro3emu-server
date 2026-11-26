@@ -87,7 +87,6 @@ public sealed class UnchangedSaveTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 }

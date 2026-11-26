@@ -48,17 +48,19 @@ if [ "$(id -u)" = 0 ] && [ "$allow_root" != 1 ]; then
   fail "Do not run the server as root: a hole in it would then own the whole machine. Run scripts/server.sh as an ordinary user (with --service it asks sudo only to install the unit), or pass --allow-root."
 fi
 
-# 1. Tools: the .NET 10 SDK, into ~/.dotnet with Microsoft's install script. The data export is C# too.
+# 1. Tools: the .NET SDK that global.json pins (11.0.1xx) to build, and the ASP.NET Core 10 runtime the server targets
+#    to run it, both into ~/.dotnet with Microsoft's install script. The data export is C# too.
 step 'Checking the tools'
 export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
 export PATH="$PATH:$DOTNET_ROOT"
-if ! dotnet --list-sdks 2>/dev/null | grep -q '^10\.'; then
-  echo '  .NET 10 SDK: missing'
-  ask '  Install the .NET 10 SDK into ~/.dotnet now?' || fail 'Install the .NET 10 SDK (https://dotnet.microsoft.com/download/dotnet/10.0), then run this again.'
+if ! dotnet --version >/dev/null 2>&1 || ! dotnet --list-runtimes 2>/dev/null | grep -q '^Microsoft\.AspNetCore\.App 10\.'; then
+  echo '  .NET 11 SDK and .NET 10 runtime: missing'
+  ask '  Install the .NET 11 SDK and the ASP.NET Core 10 runtime into ~/.dotnet now?' || fail 'Install the .NET 11 SDK (https://dotnet.microsoft.com/download/dotnet/11.0) and the ASP.NET Core 10 runtime (https://dotnet.microsoft.com/download/dotnet/10.0), then run this again.'
   curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-  bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$DOTNET_ROOT"
+  bash /tmp/dotnet-install.sh --jsonfile global.json --install-dir "$DOTNET_ROOT"
+  bash /tmp/dotnet-install.sh --runtime aspnetcore --channel 10.0 --install-dir "$DOTNET_ROOT"
 fi
-echo '  .NET 10 SDK: ok'
+echo '  .NET 11 SDK and .NET 10 runtime: ok'
 
 # 2. Game data, exported once from the client.
 if [ "$reexport" = 1 ] || [ ! -f data/config/MapResource.json ] || [ ! -f data/msgtable.tsv ]; then

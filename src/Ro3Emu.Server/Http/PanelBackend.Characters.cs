@@ -48,10 +48,10 @@ public sealed partial class PanelBackend
             if (live != null) return live;
         }
         catch (OperationCanceledException) { } // the loop no longer admits work: the server is stopping
-        if ((await accounts.ReadAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ById, id: id))).FirstOrDefault() is not { } stored) return null;
-        var saved = await accounts.ReadAsync<RoleProgress>(new RoleProgressReadPlan(id));
-        var items = await accounts.ReadAsync<List<InvItem>>(new ItemReadPlan(id));
-        var levels = await accounts.ReadAsync<byte[]?>(new RoleBlobReadPlan(id, "equip_levels")) is { Length: > 0 } blob
+        if ((await accounts.ReadPanelAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ById, id: id))).FirstOrDefault() is not { } stored) return null;
+        var saved = await accounts.ReadPanelAsync<RoleProgress>(new RoleProgressReadPlan(id));
+        var items = await accounts.ReadPanelAsync<List<InvItem>>(new ItemReadPlan(id));
+        var levels = await accounts.ReadPanelAsync<byte[]?>(new RoleBlobReadPlan(id, "equip_levels")) is { Length: > 0 } blob
             ? JsonSerializer.Deserialize<EquipLevels>(blob) ?? new() : new();
         return new CharacterState(stored, saved, items, levels, stored.SceneEntry, stored.X, stored.Y, stored.Z, Live: false);
     }
@@ -60,7 +60,7 @@ public sealed partial class PanelBackend
     /// not in the game.</summary>
     private CharacterState? LiveState(long id)
     {
-        if (sessions.All().FirstOrDefault(s => s.Role?.Id == id) is not { Role: { } role, Progress: { } progress } session) return null;
+        if (sessions.ByRole(id) is not { Role: { } role, Progress: { } progress } session) return null;
         var copy = new RoleProgress
         {
             Career = progress.Career, Level = progress.Level, JobLevel = progress.JobLevel, Exp = progress.Exp, JobExp = progress.JobExp,
@@ -69,7 +69,7 @@ public sealed partial class PanelBackend
         progress.Stats.CopyTo(copy.Stats, 0);
         foreach (var (key, value) in progress.Currency) copy.Currency[key] = value;
         foreach (var (key, value) in progress.Skills) copy.Skills[key] = value;
-        var levels = new EquipLevels { Strength = new(session.EquipLevels.Strength), Refine = new(session.EquipLevels.Refine), Luck = new(session.EquipLevels.Luck) };
+        var levels = new EquipLevels { Strength = new(session.Profile.EquipLevels.Strength), Refine = new(session.Profile.EquipLevels.Refine), Luck = new(session.Profile.EquipLevels.Luck) };
         var at = session.Position;
         return new CharacterState(role, copy, [.. session.Items.Select(i => i.Clone())], levels, session.SceneEntry, at.X, at.Y, at.Z, Live: true);
     }
@@ -129,8 +129,8 @@ public sealed partial class PanelBackend
 
     public async Task<PanelMailPage?> MailAsync(long id, int page, int pageSize)
     {
-        if ((await accounts.ReadAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ById, id: id))).FirstOrDefault() is not { } role) return null;
-        var blob = await accounts.ReadAsync<byte[]?>(new RoleBlobReadPlan(id, "mailbox"));
+        if ((await accounts.ReadPanelAsync<List<Role>>(new RoleProjectionRead(RoleProjectionKind.ById, id: id))).FirstOrDefault() is not { } role) return null;
+        var blob = await accounts.ReadPanelAsync<byte[]?>(new RoleBlobReadPlan(id, "mailbox"));
         MailService.Mailbox box;
         bool readable = true;
         try { box = blob is { Length: > 0 } ? JsonSerializer.Deserialize<MailService.Mailbox>(blob) ?? new() : new(); }

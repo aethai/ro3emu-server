@@ -24,8 +24,10 @@ public sealed partial class AccountStore : IDisposable
     /// <summary>Generations of the stores' caches over this database, bumped by its writer.</summary>
     internal CacheGenerations Caches { get; } = new();
     private readonly Lazy<DbReadPool> _readers;
+    private readonly Lazy<DbReadPool> _panelReaders;
     private readonly Game.GameLoop? _loop;
     private readonly ILogger<AccountStore>? _log;
+    private readonly IHostApplicationLifetime? _lifetime;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _standingEconomyIssues = new();
 
     /// <summary>Stored rows the economy decoder could not read, each logged once: operations go on without them, so this is
@@ -44,19 +46,20 @@ public sealed partial class AccountStore : IDisposable
     private int _failNextEconomyAcknowledgementForTest;
     private int _failNextEconomyResolutionForTest;
     public DbAccessMetrics AccessMetrics { get; } = new();
-    /// <summary>Role snapshots installed for logins (C/D 14); every committed role write invalidates its parts.</summary>
+    /// <summary>Role snapshots installed for logins; every committed role write invalidates its parts.</summary>
     public RoleSnapshots Snapshots { get; } = new();
 
     private readonly Diagnostics.ServerMetrics? _metrics;
 
     public AccountStore(IOptions<ServerOptions> options, Diagnostics.ServerMetrics? metrics = null, Game.GameLoop? loop = null,
-        ILogger<AccountStore>? log = null)
+        ILogger<AccountStore>? log = null, IHostApplicationLifetime? lifetime = null)
     {
         _metrics = metrics;
         if (metrics != null) metrics.DbAccess = AccessMetrics;
         _loop = loop;
         _log = log;
-        // A half-done restore may have moved the live file away; opening now would create an empty realm (C/D 19).
+        _lifetime = lifetime;
+        // A half-done restore may have moved the live file away; opening now would create an empty realm.
         DatabaseRestore.ThrowIfUnfinished(options.Value.DataDir);
         PrivateFiles.Directory(options.Value.DataDir);
         _databasePath = Path.Combine(options.Value.DataDir, "ro3emu.db");
@@ -69,7 +72,7 @@ public sealed partial class AccountStore : IDisposable
             return EconomyCatalog.Load(options.Value.DataDir);
         });
         _economyCatalog = new(() => EconomyCatalog.Load(options.Value.GameDataDir ?? options.Value.DataDir));
-        _connectionString = $"Data Source={_databasePath}";
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _databasePath, Pooling = false }.ToString();
         using var db = OpenBootstrap();
         using (var wal = db.CreateCommand())
         {
@@ -82,41 +85,44 @@ public sealed partial class AccountStore : IDisposable
         }
         // SQLite gives the WAL and shared-memory files the database file's mode, so they follow it.
         PrivateFiles.Files(_databasePath, _databasePath + "-wal", _databasePath + "-shm");
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS account (
-                name          TEXT PRIMARY KEY,
-                password_hash BLOB NOT NULL,
-                salt          BLOB NOT NULL,
-                created_utc   TEXT NOT NULL
-            );
-            -- Login finds an account in any letter case (AccountCredentialsRead); not unique, legacy spellings may coexist.
-            CREATE INDEX IF NOT EXISTS account_name_nocase ON account(name COLLATE NOCASE);
-            CREATE TABLE IF NOT EXISTS auth_token (
-                token       TEXT PRIMARY KEY,
-                kind        TEXT NOT NULL,
-                account     TEXT NOT NULL,
-                expires_utc INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS owner_revision (
-                kind TEXT NOT NULL,
-                id TEXT NOT NULL,
-                part TEXT NOT NULL,
-                revision INTEGER NOT NULL CHECK(revision >= 0),
-                PRIMARY KEY(kind,id,part)
-            );
-            CREATE TABLE IF NOT EXISTS owner_operation_receipt (
-                operation_id TEXT PRIMARY KEY,
-                family TEXT NOT NULL,
-                result BLOB NOT NULL
-            );
-            """;
-        cmd.ExecuteNonQuery();
+        if (options.Value.StartupIntegrityCheck) VerifyStartupIntegrity(db, options.Value.StartupFullIntegrityCheck);
+        AppliedMigrations = DatabaseMigrations.Migrate(db, _log);
         _writer = new(() => new DbWriter(_connectionString, AccessMetrics, _metrics, _log)
-        { RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue });
+        {
+            RoleWritesCommitted = Snapshots.Committed, Caches = Caches, StandingIssue = ReportStandingEconomyIssue,
+            TerminalFault = HandleWriterTerminalFault,
+        });
         _readers = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log));
-        foreach (var plan in DatabaseSchema.Plans()) WriteSync<int>(plan);
+        _panelReaders = new(() => new DbReadPool(_databasePath, AccessMetrics, _metrics, _log, workerCount: 2, threadPrefix: "ro3-db-panel"));
     }
+
+    private void VerifyStartupIntegrity(SqliteConnection db, bool full)
+    {
+        using var check = db.CreateCommand();
+        check.CommandText = full ? "PRAGMA integrity_check(5)" : "PRAGMA quick_check(5)";
+        using var reader = check.ExecuteReader();
+        var rows = new List<string>();
+        while (reader.Read()) rows.Add(reader.GetString(0));
+        if (rows is ["ok"]) return;
+        string problem = string.Join("; ", rows);
+        if (_log != null) LogStartupIntegrityFailed(_log, _databasePath, problem);
+        throw new InvalidDataException($"Database startup integrity check failed: {problem}");
+    }
+
+    private void HandleWriterTerminalFault(Exception error)
+    {
+        if (_lifetime == null) return;
+        if (_log != null) LogStoppingOnWriterFault(_log, error);
+        _lifetime.StopApplication();
+    }
+
+    [LoggerMessage(Level = LogLevel.Critical, Message = "SQLite startup integrity check failed for {DatabasePath}: {Problem}")]
+    private static partial void LogStartupIntegrityFailed(ILogger logger, string databasePath, string problem);
+
+    [LoggerMessage(Level = LogLevel.Critical, Message = "Stopping host after terminal database writer failure")]
+    private static partial void LogStoppingOnWriterFault(ILogger logger, Exception exception);
+
+    internal int AppliedMigrations { get; }
 
     internal string DatabasePath => _databasePath;
     internal EconomyCatalog EconomyCatalog => _economyCatalog.Value;
@@ -172,7 +178,11 @@ public sealed partial class AccountStore : IDisposable
     private bool OnLoop => _loop?.IsOnLoop == true || _metrics != null && ReferenceEquals(ServerMetrics.LoopOwner, _metrics);
     private DbWriter Writer { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _writer.Value; } } }
     internal Action<string>? BeforeCommitForTest { get => Writer.BeforeCommitForTest; set => Writer.BeforeCommitForTest = value; }
+    internal Action? BeforeGroupCommitForTest { get => Writer.BeforeGroupCommitForTest; set => Writer.BeforeGroupCommitForTest = value; }
+    internal TimeSpan[] WriterCommitRetryDelaysForTest { get => Writer.CommitRetryDelays; set => Writer.CommitRetryDelays = value; }
+    internal bool IsWriterFailed => _writer.IsValueCreated && _writer.Value.IsTerminalFailed;
     private DbReadPool Readers { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _readers.Value; } } }
+    private DbReadPool PanelReaders { get { lock (_runtimeGate) { ObjectDisposedException.ThrowIf(_disposed, this); return _panelReaders.Value; } } }
     internal async Task<T> WriteAsync<T>(DbPlan plan)
     {
         plan = Prepare(plan);
@@ -182,7 +192,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Test barrier: a lazy write's capture is taken, its submission to the writer has not happened yet.</summary>
     internal Func<string, Task>? BeforeLazyWriteForTest { get; set; }
-    /// <summary>The writer's lazy lane for a plan whose expectations the caller captured (C/D 18 position).</summary>
+    /// <summary>The writer's lazy lane for a plan whose expectations the caller captured (for example, lazy position writes).</summary>
     internal async Task<T> WriteLazyAsync<T>(DbPlan plan)
     {
         if (BeforeLazyWriteForTest is { } beforeLazy) await beforeLazy(plan.Label);
@@ -222,7 +232,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Family envelopes resolve their own retained receipt after an ambiguous writer ACK.</summary>
     internal Func<string, Task>? BeforeEconomyResolveForTest { get; set; }
-    /// <summary>Resolve E03's retained typed result before owner Apply when the writer ACK is lost.</summary>
+    /// <summary>Resolve an escrow plan's retained typed result before owner Apply when the writer ACK is lost.</summary>
     internal async Task<object?[]> WriteEscrowEconomyAsync(DbPlan plan, EscrowEconomyIntent intent, RoleItemPlan child)
     {
         plan = Prepare(plan);
@@ -326,6 +336,8 @@ public sealed partial class AccountStore : IDisposable
         _log?.LogError("Owner operation {Operation} quarantined its participants for recovery", operationId ?? plan.OperationId);
     }
     internal Task<T> ReadAsync<T>(DbReadPlan plan) => Readers.ExecuteAsync<T>(plan);
+    /// <summary>Dedicated read pool for web panel queries so admin/analytics reads cannot starve gameplay reads.</summary>
+    internal Task<T> ReadPanelAsync<T>(DbReadPlan plan) => PanelReaders.ExecuteAsync<T>(plan);
     /// <summary>Test/diagnostic observer of synchronous writes (plan label, on loop).</summary>
     internal Action<string, bool>? WriteSyncObserved { get; set; }
     internal Action<DbPlan, bool>? WriteSyncPlanObserved { get; set; }
@@ -340,7 +352,7 @@ public sealed partial class AccountStore : IDisposable
     }
     /// <summary>Keep the owners' committed vectors exact: a commit resolved on the loop is recorded; one resolved
     /// elsewhere (a test, an HTTP endpoint, a micro service thread) marks its roles, whose owner vectors are then not
-    /// served until a SQL read resynchronizes them (C/D 16).</summary>
+    /// served until a SQL read resynchronizes them.</summary>
     internal void RecordResolvedCommit(DbPlan plan, object? result)
     {
         if (plan.IsReplay) return;
@@ -353,7 +365,7 @@ public sealed partial class AccountStore : IDisposable
     }
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, long> _unrecordedCommits = new();
 
-    /// <summary>C/D 16: a role's expected vector for a plan - the owner's when it is exact, else SQL (which also
+    /// <summary>A role's expected vector for a plan - the owner's when it is exact, else SQL (which also
     /// resynchronizes an attached owner whose commits were made off the loop).</summary>
     internal RoleRevisionVector RoleVector(long role, bool sqlOnly = false)
     {
@@ -414,7 +426,7 @@ public sealed partial class AccountStore : IDisposable
     internal long VectorCacheHits, VectorCacheRetries;
 
     /// <summary>
-    /// C/D 16: an attached role's committed vector from its owner, or null (then read it from SQL). A legacy write of
+    /// An attached role's committed vector from its owner, or null (then read it from SQL). A legacy write of
     /// an attached role captures its expected vector here instead of a synchronous SQL read on the loop. The owner
     /// records every commit made on the loop; should the cache ever be behind, the writer refuses the capture and
     /// the legacy write recaptures from SQL and retries once, which is exactly the old read-then-write behaviour
@@ -585,6 +597,19 @@ public sealed partial class AccountStore : IDisposable
     private static Task<bool> MatchesAsync(string password, AccountCredentials existing)
         => Task.Run(() => CryptographicOperations.FixedTimeEquals(existing.Hash, AccountHash.Hash(password, existing.Salt)));
 
+    /// <summary>
+    /// The spelling each account last typed at /sdk/login. The client keeps that spelling and only asks for its GM button
+    /// when the role's account equals it, case-sensitively (Lua LC_DAL_GM [GMPanelCapability] identity check); everything
+    /// server-side keeps the stored name. In memory: after a restart the stored name is sent until the next login.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _typedNames = new(StringComparer.OrdinalIgnoreCase);
+
+    public void RecordTypedName(string account, string typed) => _typedNames[account] = typed;
+
+    /// <summary>The account name to show the client: its typed spelling when it is the same name, else the stored one.</summary>
+    public string ClientAccount(string account) =>
+        _typedNames.TryGetValue(account, out var typed) && string.Equals(typed, account, StringComparison.OrdinalIgnoreCase) ? typed : account;
+
     /// <summary>Token returned by /sdk/login, presented as the verifySdk ticket.</summary>
     public string IssueSdkToken(string account) => IssueToken("sdk", account, 24);
     public Task<string> IssueSdkTokenAsync(string account) => IssueTokenAsync("sdk", account, 24);
@@ -634,7 +659,11 @@ public sealed partial class AccountStore : IDisposable
                 if (_disposed) return;
                 _disposed = true;
                 try { if (_writer.IsValueCreated) _writer.Value.Dispose(); }
-                finally { if (_readers.IsValueCreated) _readers.Value.Dispose(); }
+                finally
+                {
+                    try { if (_readers.IsValueCreated) _readers.Value.Dispose(); }
+                    finally { if (_panelReaders.IsValueCreated) _panelReaders.Value.Dispose(); }
+                }
             }
         }
         if (_loop?.IsWorkerActive == true)
@@ -653,7 +682,8 @@ public sealed partial class AccountStore : IDisposable
         {
             lock (_runtimeGate)
                 return Task.WhenAll(_writer.IsValueCreated ? _writer.Value.WorkerExited : Task.CompletedTask,
-                    _readers.IsValueCreated ? _readers.Value.WorkersExited : Task.CompletedTask);
+                    _readers.IsValueCreated ? _readers.Value.WorkersExited : Task.CompletedTask,
+                    _panelReaders.IsValueCreated ? _panelReaders.Value.WorkersExited : Task.CompletedTask);
         }
     }
 }

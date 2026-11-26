@@ -5,13 +5,14 @@ using Ro3Emu.Server.Accounts.Persistence;
 namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
-/// Keeps <c>operation_receipt</c> from growing with every kill and activity. A receipt's payload and outcome bytes are
-/// needed while its operation can still be replayed after a lost acknowledgement or resolved after a crash, which
-/// happens within seconds of the commit; after <c>ReceiptRetention:Days</c> (2) they are dropped by
-/// <see cref="ReceiptCompactionPlan"/>, in small writer transactions off the game loop. Hashes, child receipts, legs
-/// and source claims stay, so replay and idempotency keep working (<see cref="ReceiptBlobs"/>) and the offline ledger
-/// audit still checks the sequence, legs and claims; it skips the intent checks of a compacted receipt.
-/// SQLite reuses the freed pages for new rows, so the file stops growing; it shrinks only with an offline VACUUM.
+/// Keeps <c>operation_receipt</c> and <c>owner_operation_receipt</c> from growing with every kill and activity. A
+/// receipt's payload, outcome, child results and owner acknowledgement are needed while its operation can still be
+/// replayed after a lost acknowledgement or resolved after a crash, which happens within seconds of the commit; after
+/// <c>ReceiptRetention:Days</c> (2) they are dropped by <see cref="ReceiptCompactionPlan"/>, in small writer transactions
+/// off the game loop. Hashes, legs and source claims stay, so idempotency holds (a late replay is refused, never granted
+/// twice) and the offline ledger audit still checks the sequence, legs and claims; it skips the intent checks of a
+/// compacted receipt. SQLite reuses the freed pages for new rows, so the file stops growing; it shrinks only with an
+/// offline VACUUM.
 /// </summary>
 public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, AccountStore accounts, TimeProvider clock,
     ILogger<ReceiptRetention> log) : BackgroundService
@@ -41,6 +42,10 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
 
     /// <summary>Receipts the last run walked past (compacted or not due for compaction); 0 when it found nothing new.</summary>
     internal long LastPassed { get; private set; }
+    /// <summary>Mail receipts compacted in the last run.</summary>
+    internal long LastMailCompacted { get; private set; }
+    /// <summary>Raw economy_entry rows rolled into economy_daily_aggregate and pruned in the last run.</summary>
+    internal long LastLedgerEntriesPruned { get; private set; }
 
     /// <summary>
     /// One run: batches from the stored watermark until the first receipt that is not due yet. Returns how many receipts
@@ -49,35 +54,69 @@ public sealed partial class ReceiptRetention(IOptions<ServerOptions> options, Ac
     internal async Task<long> CompactAsync(CancellationToken ct = default)
     {
         LastPassed = 0;
+        LastMailCompacted = 0;
+        LastLedgerEntriesPruned = 0;
         var settings = options.Value.ReceiptRetention;
-        if (settings.Days <= 0) return 0;
+        if (settings.Days <= 0 && settings.LedgerDays <= 0 && settings.MailDays <= 0) return 0;
         var now = clock.GetUtcNow();
-        long cutoff = now.AddDays(-settings.Days).ToUnixTimeMilliseconds();
         long future = now.Add(FutureMargin).ToUnixTimeMilliseconds();
         int batch = Math.Clamp(settings.BatchSize, 1, MaxBatch);
-        long total = 0, passed = 0, misdated = 0;
-        while (true)
+        long total = 0, passed = 0, misdated = 0, backfilled = 0;
+        if (settings.Days > 0)
         {
-            ct.ThrowIfCancellationRequested();
-            var result = await accounts.WriteAsync<ReceiptCompactionPlan.Batch>(new ReceiptCompactionPlan(cutoff, future, batch));
-            total += result.Compacted;
-            passed += result.Passed;
-            misdated += result.Future;
-            LastPassed = passed;
-            if (!result.More) break;
-            // Game writes share the single writer: leave it room between batches.
-            await Task.Delay(BatchPause, clock, ct);
+            long cutoff = now.AddDays(-settings.Days).ToUnixTimeMilliseconds();
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var result = await accounts.WriteAsync<ReceiptCompactionPlan.Batch>(new ReceiptCompactionPlan(cutoff, future, batch));
+                total += result.Compacted;
+                passed += result.Passed;
+                misdated += result.Future;
+                backfilled += result.Backfilled;
+                LastPassed = passed;
+                if (!result.More) break;
+                // Game writes share the single writer: leave it room between batches.
+                await Task.Delay(BatchPause, clock, ct);
+            }
+        }
+        if (settings.LedgerDays > 0 || settings.MailDays > 0)
+        {
+            long ledgerCutoff = settings.LedgerDays > 0 ? now.AddDays(-settings.LedgerDays).ToUnixTimeMilliseconds() : 0;
+            long mailCutoff = settings.MailDays > 0 ? now.AddDays(-settings.MailDays).ToUnixTimeMilliseconds() : 0;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var retained = await accounts.WriteAsync<EconomyRetentionPlan.Batch>(
+                    new EconomyRetentionPlan(ledgerCutoff, mailCutoff, future, batch));
+                LastMailCompacted += retained.MailCompacted;
+                LastLedgerEntriesPruned += retained.LedgerEntriesPruned;
+                if (!retained.More) break;
+                await Task.Delay(BatchPause, clock, ct);
+            }
         }
         if (total > 0) LogCompacted(log, total, settings.Days);
         if (misdated > 0) LogMisdated(log, misdated);
+        if (backfilled > 0) LogBackfilled(log, backfilled);
+        if (LastMailCompacted > 0) LogMailCompacted(log, LastMailCompacted, settings.MailDays);
+        if (LastLedgerEntriesPruned > 0) LogLedgerPruned(log, LastLedgerEntriesPruned, settings.LedgerDays);
         return total;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Compacted {Count} mail delivery receipts older than {Days} days")]
+    private static partial void LogMailCompacted(ILogger logger, long count, int days);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Aggregated and pruned {Count} economy_entry rows older than {Days} days")]
+    private static partial void LogLedgerPruned(ILogger logger, long count, int days);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Compacted {Count} economic receipts older than {Days} days")]
     private static partial void LogCompacted(ILogger logger, long count, int days);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} economic receipts are dated more than a day ahead of the clock, so the clock was wrong when they were written or is wrong now; compaction passed them and kept their data")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} economic receipts are dated more than a day ahead of the clock, "
+        + "so the clock was wrong when they were written or is wrong now; compaction passed them and kept their data")]
     private static partial void LogMisdated(ILogger logger, long count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Dropped the child results and owner acknowledgements of {Count} receipts compacted by an earlier version")]
+    private static partial void LogBackfilled(ILogger logger, long count);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Receipt compaction failed; it runs again at the next interval")]
     private static partial void LogFailed(ILogger logger, Exception exception);

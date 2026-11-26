@@ -13,7 +13,7 @@ internal static class SwingWait
     {
         long end = await loop.InvokeAsync(() => Task.FromResult(session.SkillCast is { Cancelled: false } swing && swing.Request.TargetId == targetId
             ? swing.StartMs + swing.ChantMs + swing.ActionMs : 0));
-        long wait = end - CombatService.SwingJitterMs + 10 - MonsterService.NowMs;
+        long wait = end - CombatService.SwingJitterMs + 10 - loop.NowMs;
         if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait));
     }
 }

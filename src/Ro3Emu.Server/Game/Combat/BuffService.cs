@@ -1,0 +1,644 @@
+using System.Text.Json;
+using Romsg;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
+using Ro3Emu.Server.Maps;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>A buff on a player: BuffConfig id, its attribute changes, when it ends (absolute server ms).
+/// <paramref name="UntilSpent"/>: a buff with no time of its own that ends when it is spent (<see cref="BuffService.AddUntilSpentAsync"/>);
+/// its <paramref name="ExpireMs"/> is only the server's bound.</summary>
+public sealed record ActiveBuff(long Guid, int ConfigId, long ExpireMs, int DurationMs, IReadOnlyList<(long Attr, double Value)> Changes, long SourceId,
+    int PileCount = 1, bool IsPassive = false, bool IsTotemOwned = false, int StateOrdinal = 0, bool ShowIcon = true,
+    long ShieldRemaining = 0, bool IsGuardianOwned = false, bool ShieldDebuffImmunity = false, int HpFloorBasisPoints = 0,
+    bool UntilSpent = false);
+
+/// <summary>
+/// Buff lifetime and control state. The explicit state map below is inferred from
+/// BuffConfig names, VFX/category and SpecialStatusConfig. 31115-31117 are empty legacy carriers; the client
+/// consumes 2701/2702/2711 through 31048 instead.
+/// </summary>
+public sealed partial class BuffService : IGameTicker
+{
+    public const uint BuffUpdate = 31104, BuffRemove = 31105, WidgetUpdate = 31130, WidgetRemove = 31131;
+    public const uint WorldTreeRevive = 31331, ClientRemoveBuff = 31332, BuffEffectCd = 31333, EnergyNotify = 31334;
+    private const uint AoiAttrChange = 31048;
+
+    private readonly GameData _data;
+    private readonly World _world;
+    private readonly SessionRegistry _sessions;
+    private readonly CharacterService _character;
+    private readonly GameLoop _loop;
+    private readonly ILogger<BuffService> _log;
+    private long _guids = 900000;
+    private readonly Dictionary<long, List<ActiveBuff>> _unitBuffs = [];
+    // The unit of each _unitBuffs entry (kept with it: added together, removed together), so an expiry finds it
+    // without walking the world; Tick built a map of every unit of every map on each due tick.
+    private readonly Dictionary<long, WorldUnit> _unitOwners = [];
+    private const long ExpiryRetryMs = 10_000;
+    private readonly Dictionary<long, long> _expiring = [];
+
+    /// <summary>Subscribers recompute effective skill parameters/slots after a buff changes.</summary>
+    public AsyncHook<GameSession> Changed { get; } = new("BuffService.Changed");
+
+    /// <summary>A player's control state or forbidden actions changed (CombatService ends a cast they forbid).</summary>
+    internal Func<GameSession, Task>? ControlChanged { get; set; }
+
+    /// <summary>The applier's changes to a buff's _kChangeAttri pairs before piles (TalentProcs: talent buff attributes).</summary>
+    internal Func<long, JsonElement, IReadOnlyList<(long Id, double Value)>, IReadOnlyList<(long Id, double Value)>>? SourceAttributes { get; set; }
+
+    /// <summary>Subscribers publish effective unit stats after a timed attribute buff changes.</summary>
+    public AsyncHook<WorldUnit> UnitChanged { get; } = new("BuffService.UnitChanged");
+
+    public BuffService(GameData data, World world, SessionRegistry sessions, CharacterService character, GameLoop loop, ILogger<BuffService> log)
+    {
+        this._data = data;
+        this._world = world;
+        this._sessions = sessions;
+        this._character = character;
+        this._loop = loop;
+        this._log = log;
+        character.GiveBuff = (p, buff, ms) => AddAsync(p, buff, ms, p.Role!.Id);
+        character.IsItemUseForbidden = p => HasForbidden(p, ForbiddenState.UseItem);
+        character.DynamicProperties.Subscribe(SupportShieldProperties);
+        character.DynamicProperties.Subscribe(BlindProperties);
+        world.UnitRemoved.Add(unit => { ForgetUnit(unit.Uid); return Task.CompletedTask; });
+    }
+
+    // BuffConfig._iBuffID of the control groups; StateFor names the SpecialStatusConfig row each one shows.
+    internal const int StunGroup = 9016, KnockBackGroup = 9017, KnockUpGroup = 9018, FreezeGroup = 9020, PetrifyGroup = 9021,
+        SleepGroup = 9022, SilenceGroup = 9023, RootGroup = 9024, BlindGroup = 9025, SuperArmorGroup = 9031,
+        ControlImmunityGroup = 9032, DebuffImmunityGroup = 9033;
+
+    // Inferred: these exact buff groups are named Stun/Sleep/Silence/Frozen/Petrify/Root/Knock-Up/Invincible; matching
+    // SpecialStatusConfig rows (_kName 眩晕/睡眠/沉默/冰冻/石化/定身/击飞/无敌) specify forbidden actions, applied as the
+    // data gives them. No general category interpreter was recovered. Group 12003 (category 24, applied by no skill)
+    // carries no state: skills freeze through Frozen 9020.
+    private static int StateFor(int buffGroup, bool guardianOwned) => buffGroup switch
+    {
+        StunGroup => 18, // Stun
+        SleepGroup => 19, // Sleep
+        SilenceGroup => 20, // Silence
+        FreezeGroup => 11, // Frozen
+        PetrifyGroup => 12, // Petrify
+        RootGroup => 21, // Root (Immobilize)
+        KnockUpGroup => 3, // Knock-Up -> FlyHit
+        9034 => 25,
+        49090 => 66, // Blessing of Light (4909001): SpecialStatusConfig 66 光明庇护, _kForbidden [10] (inferred pairing)
+        _ => guardianOwned ? GuardianStateFor(buffGroup) : 0,
+    };
+
+    /// <summary>Further named groups and their SpecialStatusConfig rows. (inferred scope) Only guardian-applied buffs
+    /// carry these states so far: the same groups from ordinary skills keep their previous, display-only behaviour
+    /// until each state is established and tested for every source.</summary>
+    /// <summary>
+    /// The state of a buff outside those groups, from _kBuffCategory, which names the kind of control whatever the row
+    /// (BuffTagConfig: Generic Stun 1200401 and Meteor Storm's 1210701 are 13 like Stun 901601). So every skill's stun stuns.
+    /// (inferred) A beneficial row (_iType 1) carrying one of these tags is not itself that control.
+    /// </summary>
+    private int StateFor(int configId, int buffGroup, bool guardianOwned)
+    {
+        int known = StateFor(buffGroup, guardianOwned);
+        if (known != 0 || BuffConfig.Get(_data, configId) is not { } row || row.Type == 1) return known;
+        foreach (long category in row.BuffCategory)
+            if (ControlCategoryState(category) is var state and not 0) return state;
+        return 0;
+    }
+
+    private static int ControlCategoryState(long category) => category switch
+    {
+        13 => 18, // Stun
+        12 => 19, // Sleep
+        6 => 20, // Silence
+        9 => 11, // Frozen
+        10 => 12, // Petrify
+        8 => 21, // Immobilize
+        16 => 3, // Knock-Up
+        _ => 0,
+    };
+
+    private static int GuardianStateFor(int buffGroup) => buffGroup switch
+    {
+        SuperArmorGroup => 22, // Super Armor
+        ControlImmunityGroup => 23, // Control immunity
+        DebuffImmunityGroup => 24, // Debuff immunity
+        GuardianGroup.ShinobiStealth => 2, // Stealth
+        _ => 0,
+    };
+
+    private sealed record BuffAddOptions
+    {
+        public static readonly BuffAddOptions Default = new();
+        public long ShieldAmount { get; init; }
+        public bool GuardianOwned { get; init; }
+        public bool ShieldDebuffImmunity { get; init; }
+        public int HpFloorBasisPoints { get; init; }
+        public double AttributeMultiplier { get; init; } = 1;
+        public bool StackShield { get; init; }
+        public bool UntilSpent { get; init; }
+    }
+
+    /// <summary>Place or refresh a validated buff. Zero-time source rows retain the previous 60s fallback (inferred).</summary>
+    public Task AddAsync(GameSession p, int configId, int durationMs, long sourceId) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, null);
+
+    /// <summary>Set a territory-owned pile count from the authoritative occupation/fatigue state (inferred).
+    /// Ordinary AddAsync still follows BuffConfig stack and multi-source rules.</summary>
+    public Task SetPileCountAsync(GameSession p, int configId, int durationMs, long sourceId, int pileCount) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, Math.Max(1, pileCount));
+
+    /// <summary>Apply a timed buff with an optional finite shield. The caller evaluates any shield formula;
+    /// BuffConfig._kChangeAttri is a verified data source, while shield stacking and rounding are inferred.</summary>
+    public Task AddSupportAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, null, new BuffAddOptions { ShieldAmount = shieldAmount });
+
+    /// <summary>Apply a player skill's shield buff (<see cref="SkillShieldRules"/>): each pile adds one
+    /// <paramref name="shieldPerPile"/> to the live shield, up to one per pile (inferred).</summary>
+    internal Task AddSkillShieldAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldPerPile) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, null,
+            new BuffAddOptions { ShieldAmount = shieldPerPile, StackShield = true });
+
+    internal Task AddGuardianAsync(GameSession p, int configId, int durationMs, long sourceId, long shieldAmount = 0,
+        bool shieldDebuffImmunity = false, int hpFloorBasisPoints = 0, double attributeMultiplier = 1) =>
+        AddCoreAsync(p, configId, durationMs, sourceId, null, new BuffAddOptions
+        {
+            ShieldAmount = shieldAmount,
+            GuardianOwned = true,
+            ShieldDebuffImmunity = shieldDebuffImmunity,
+            HpFloorBasisPoints = hpFloorBasisPoints,
+            AttributeMultiplier = attributeMultiplier,
+        });
+
+    private async Task AddCoreAsync(GameSession p, int configId, int durationMs, long sourceId, int? explicitPileCount,
+        BuffAddOptions? options = null)
+    {
+        options ??= BuffAddOptions.Default;
+        if (p.Role == null || _data.Row("BuffConfig", configId) is not { } row || GameData.Int(row, "_iBuffID") <= 0) return;
+        if (await RejectIncomingAsync(p, row, options.GuardianOwned, sourceId)) return;
+        if (durationMs <= 0) durationMs = (int)GameData.Int(row, "_iTime");
+        if (durationMs <= 0) durationMs = 60000;
+        if (sourceId != p.Role.Id && !ApplyDecay(p.Role.Id, p.SceneEntry, configId, ref durationMs)) return;
+        long now = _loop.NowMs;
+        int group = (int)GameData.Int(row, "_iBuffID");
+        bool multiSource = GameData.Int(row, "_iMultiSource") != 0;
+        var existing = p.Buffs.FirstOrDefault(b => !b.IsPassive && !b.IsTotemOwned && _data.Row("BuffConfig", b.ConfigId) is { } old
+            && GameData.Int(old, "_iBuffID") == group && (!multiSource || b.SourceId == sourceId));
+        int stackType = (int)GameData.Int(row, "_iStackType");
+        int maxStack = (int)Math.Max(1, GameData.Int(row, "_iMaxStack"));
+        // Inferred server policy from enum_BuffStackType: named layer types add a pile; others refresh.
+        int pile = explicitPileCount ?? (existing != null && existing.ExpireMs > now && stackType is 1 or 2 or 3 or 7
+            ? Math.Min(maxStack, existing.PileCount + 1) : 1);
+        // LC_Buff_System.UpdateBuffData copies a known GUID's times, stack and source, never its config: a new level under the old GUID would keep the old row on the client.
+        if (existing != null && existing.ConfigId != configId) { await RemoveAsync(p, existing); existing = null; }
+        IEnumerable<(long Id, double Value)> pairs = GameData.Pairs(row, "_kChangeAttri");
+        if (SourceAttributes != null) pairs = SourceAttributes(sourceId, row, [.. pairs]);
+        var changes = pairs.Select(c => (c.Id, c.Value * pile * options.AttributeMultiplier)).ToList();
+        var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
+            now + durationMs, durationMs, changes, sourceId, pile, StateOrdinal: StateFor(configId, group, options.GuardianOwned),
+            ShieldRemaining: options.StackShield ? SkillShieldRules.Stacked(LiveShield(existing), options.ShieldAmount, pile) : Math.Max(0, options.ShieldAmount),
+            IsGuardianOwned: options.GuardianOwned, ShieldDebuffImmunity: options.ShieldDebuffImmunity, HpFloorBasisPoints: options.HpFloorBasisPoints,
+            UntilSpent: options.UntilSpent);
+        if (existing != null) p.Buffs.Remove(existing);
+        p.Buffs.Add(buff);
+        TrackPeriodic(p, null, buff);
+        TrackHalo(p, buff);
+        _log.LogInformation("{Name} gets buff {Buff} x{Pile} for {Ms} ms", p.Role.Name, configId, pile, durationMs);
+        var info = Wire(buff);
+        await ToPlayerAndViewersAsync(p, BuffUpdate, new BuffUpdateNotify { UnitId = p.Role.Id, Buffs = { info } });
+        await ToPlayerAndViewersAsync(p, AoiAttrChange, new AOIAttrChange
+        {
+            EntityUuid = (ulong)p.Role.Id, BuffInfo = new AoIBuffInfo { AddBuffs = { info } },
+        });
+        if (existing?.StateOrdinal != buff.StateOrdinal || buff.StateOrdinal != 0) await RefreshControlAsync(p);
+        if (options.GuardianOwned && group == BlindGroup) await PublishBlindAsync(p);
+        if (buff.Changes.Count > 0 || existing?.Changes.Count > 0 || buff.ShieldRemaining > 0 || existing?.ShieldRemaining > 0)
+            await _character.RefreshStatsAsync(p);
+        foreach (var handler in Changed.Handlers) await handler(p);
+    }
+
+    /// <summary>Source-owned passive configuration. Zero-time totem passives are permanent until that source is removed;
+    /// they are executable server registrations, not a fabricated 60-second icon. Socketed-card passives
+    /// (<paramref name="totemOwned"/> false, CardEffects) share the lifetime rule under their card GUID.</summary>
+    public async Task AddPassiveAsync(GameSession p, int configId, long sourceId, bool totemOwned = true)
+    {
+        if (_data.Row("BuffConfig", configId) is not { } row
+            || p.Buffs.Any(b => b.IsPassive && b.IsTotemOwned == totemOwned && b.ConfigId == configId && b.SourceId == sourceId)) return;
+        var buff = new ActiveBuff(++_guids, configId, long.MaxValue, 0,
+            [.. GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)], sourceId, IsPassive: true, IsTotemOwned: totemOwned,
+            ShowIcon: GameData.Int(row, "_iShowIcon") != 0);
+        p.Buffs.Add(buff);
+        TrackHalo(p, buff);
+        // SceneService resends visible passives after ENTITYSELF when the client has created the unit.
+        if (!p.SceneLoading && GameData.Int(row, "_iShowIcon") != 0)
+            await ToPlayerAndViewersAsync(p, BuffUpdate, new BuffUpdateNotify
+            {
+                UnitId = p.Role!.Id, IsViewSync = false,
+                Buffs = { new BuffInfo { BuffGuid = buff.Guid, ConfigId = configId, ExpireTime = 0,
+                    Duration = 0, PileCount = 1, SourceId = sourceId } },
+            });
+    }
+
+    /// <summary>Apply a timed totem stack by source; refresh one GUID and broadcast the authoritative pile count.</summary>
+    public async Task AddStackAsync(GameSession p, int configId, int durationMs, long sourceId, int maximum)
+    {
+        if (_data.Row("BuffConfig", configId) is not { } row || durationMs <= 0 || maximum <= 0) return;
+        var existing = p.Buffs.FirstOrDefault(b => b.IsTotemOwned && !b.IsPassive && b.ConfigId == configId && b.SourceId == sourceId);
+        int count = Math.Min(maximum, (existing?.PileCount ?? 0) + 1);
+        var changes = GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)
+            .Select(c => (c.Id, c.Value * count)).ToArray();
+        long now = _loop.NowMs;
+        var buff = new ActiveBuff(existing?.Guid ?? ++_guids, configId, now + durationMs, durationMs, changes, sourceId, count,
+            IsTotemOwned: true);
+        if (existing != null) p.Buffs.Remove(existing);
+        p.Buffs.Add(buff);
+        await ToPlayerAndViewersAsync(p, BuffUpdate, new BuffUpdateNotify
+        {
+            UnitId = p.Role!.Id,
+            Buffs = { new BuffInfo { BuffGuid = buff.Guid, ConfigId = configId, ExpireTime = buff.ExpireMs,
+                Duration = durationMs, PileCount = count, SourceId = sourceId } },
+            IsViewSync = false,
+        });
+        if (changes.Length > 0) await _character.RefreshStatsAsync(p);
+    }
+
+    /// <summary>Timed totem proc. Unlike the ordinary single-config buff path, independent item sources retain their own GUID.</summary>
+    public async Task AddSourcedAsync(GameSession p, int configId, int durationMs, long sourceId)
+    {
+        if (_data.Row("BuffConfig", configId) is not { } row || durationMs <= 0) return;
+        var existing = p.Buffs.FirstOrDefault(b => b.IsTotemOwned && !b.IsPassive && b.ConfigId == configId && b.SourceId == sourceId);
+        long now = _loop.NowMs;
+        var buff = new ActiveBuff(existing?.Guid ?? ++_guids, configId, now + durationMs, durationMs,
+            [.. GameData.Pairs(row, "_kChangeAttri").Where(c => c.Value != 0)], sourceId, IsTotemOwned: true);
+        if (existing != null) p.Buffs.Remove(existing);
+        p.Buffs.Add(buff);
+        await ToPlayerAndViewersAsync(p, BuffUpdate, new BuffUpdateNotify
+        {
+            UnitId = p.Role!.Id,
+            Buffs = { new BuffInfo { BuffGuid = buff.Guid, ConfigId = configId, ExpireTime = buff.ExpireMs,
+                Duration = durationMs, PileCount = 1, SourceId = sourceId } },
+            IsViewSync = false,
+        });
+        if (buff.Changes.Count > 0) await _character.RefreshStatsAsync(p);
+    }
+
+    /// <summary>A guardian's buff on a unit: unlike an ordinary unit buff that is no debuff, it counts
+    /// toward the unit's combat attributes (<see cref="UnitCombatAttributes"/>).</summary>
+    internal Task AddGuardianAsync(WorldUnit unit, int configId, int durationMs, long sourceId, double attributeMultiplier = 1) =>
+        AddSupportAsync(unit, configId, durationMs, sourceId, attributeMultiplier: attributeMultiplier, guardianOwned: true);
+
+    /// <summary>Legacy monster buff entry point; unit buffs now share the support lifecycle.</summary>
+    public Task ShowOnUnitAsync(WorldUnit unit, int configId, int durationMs, long sourceId) =>
+        AddSupportAsync(unit, configId, durationMs, sourceId);
+
+    /// <summary>Apply or refresh a timed WorldUnit buff. BuffConfig._iBuffID, _iMultiSource and _kChangeAttri
+    /// are verified data fields; applying player-like stacking and replacing the shield on refresh are inferred. A control
+    /// group carries its state from any source, as on a player (<see cref="StateFor"/>).</summary>
+    public async Task AddSupportAsync(WorldUnit unit, int configId, int durationMs, long sourceId, long shieldAmount = 0,
+        double attributeMultiplier = 1, bool guardianOwned = false)
+    {
+        if (_data.Row("BuffConfig", configId) is not { } row || GameData.Int(row, "_iBuffID") <= 0) return;
+        _unitBuffs.TryGetValue(unit.Uid, out var live);
+        // The resist first: Element Control strikes on it, and an MVP's born buff answers both.
+        if (live != null && sourceId != unit.Uid && UnitResistsControl(live, row))
+        {
+            foreach (var handler in ControlResisted.Handlers) await handler(unit, sourceId, row);
+            return;
+        }
+        if (live != null && ImmuneTo(live, row)) return;
+        if (durationMs <= 0) durationMs = (int)GameData.Int(row, "_iTime");
+        if (durationMs <= 0) durationMs = 60000;
+        if (sourceId != unit.Uid && !ApplyDecay(unit.Uid, unit.SceneEntry, configId, ref durationMs)) return;
+        var list = UnitBuffList(unit);
+        int group = (int)GameData.Int(row, "_iBuffID");
+        bool multiSource = GameData.Int(row, "_iMultiSource") != 0;
+        var existing = list.FirstOrDefault(b => _data.Row("BuffConfig", b.ConfigId) is { } old
+            && GameData.Int(old, "_iBuffID") == group && (!multiSource || b.SourceId == sourceId));
+        int stackType = (int)GameData.Int(row, "_iStackType");
+        int maxStack = (int)Math.Max(1, GameData.Int(row, "_iMaxStack"));
+        // (inferred) Match the player path: named layer types increase piles; other types refresh.
+        int pile = existing != null && existing.ExpireMs > _loop.NowMs && stackType is 1 or 2 or 3 or 7
+            ? Math.Min(maxStack, existing.PileCount + 1) : 1;
+        if (existing != null && existing.ConfigId != configId) { await RemoveUnitBuffAsync(unit, existing); existing = null; }
+        var buff = new ActiveBuff(existing?.Guid ?? Interlocked.Increment(ref _guids), configId,
+            _loop.NowMs + durationMs, durationMs,
+            [.. GameData.Pairs(row, "_kChangeAttri").Select(c => (c.Id, c.Value * pile * attributeMultiplier))], sourceId, pile,
+            ShieldRemaining: Math.Max(0, shieldAmount), IsGuardianOwned: guardianOwned,
+            StateOrdinal: StateFor(configId, group, guardianOwned));
+        if (existing != null) list.Remove(existing);
+        list.Add(buff);
+        TrackPeriodic(null, unit, buff);
+        var info = Wire(buff);
+        await _world.ToUnitViewersAsync(unit, BuffUpdate, new BuffUpdateNotify { UnitId = unit.Uid, Buffs = { info } });
+        var changed = new AOIAttrChange { EntityUuid = (ulong)unit.Uid, BuffInfo = new AoIBuffInfo { AddBuffs = { info } } };
+        if (buff.ShieldRemaining > 0 || existing?.ShieldRemaining > 0)
+            changed.Property.Add(new AoIProperty { Idx = 2003, Data = ShieldAmount(unit) });
+        await _world.ToUnitViewersAsync(unit, AoiAttrChange, changed);
+        if (buff.Changes.Count > 0 || existing?.Changes.Count > 0 || buff.StateOrdinal > 0 || existing?.StateOrdinal > 0)
+            foreach (var handler in UnitChanged.Handlers) await handler(unit);
+    }
+
+    public async Task RemoveAsync(GameSession p, ActiveBuff buff)
+    {
+        if (p.Role == null || !p.Buffs.Remove(buff)) return;
+        // Totem reconciliation during role loading rebuilds the snapshot before the new unit exists.
+        if (buff.IsTotemOwned && p.SceneLoading)
+        {
+            // This also covers expiry during a map load, before TotemEffects is called again.
+            if (buff.Changes.Count > 0) _character.Refresh(p);
+            return;
+        }
+        if (Visible(buff)) await ToPlayerAndViewersAsync(p, BuffRemove, new BuffRemoveNotify { UnitId = p.Role.Id, BuffGuids = { buff.Guid } });
+        if (Visible(buff)) await ToPlayerAndViewersAsync(p, AoiAttrChange, new AOIAttrChange
+        {
+            EntityUuid = (ulong)p.Role.Id, BuffInfo = new AoIBuffInfo { RemoveBuffs = { buff.Guid } },
+        });
+        if (buff.StateOrdinal != 0) await RefreshControlAsync(p);
+        if (buff.IsGuardianOwned && buff.ConfigId / 100 == BlindGroup) await PublishBlindAsync(p);
+        if (buff.Changes.Count > 0 || buff.ShieldRemaining > 0) await _character.RefreshStatsAsync(p);
+        foreach (var handler in Changed.Handlers) await handler(p);
+    }
+
+    /// <summary>31332: only a current own GUID with BuffConfig._iHandRemove may be removed (inferred server rule).</summary>
+    public async Task RemoveByRequestAsync(GameSession p, ClientRemoveBuffReq req)
+    {
+        var buff = p.Buffs.FirstOrDefault(b => b.Guid == req.BuffGuid && b.ExpireMs > _loop.NowMs);
+        int result = buff != null && _data.Row("BuffConfig", buff.ConfigId) is { } row
+            && GameData.Int(row, "_iHandRemove") != 0 ? 0 : ErrorCodes.Parameter;
+        await p.SendGameAsync(ClientRemoveBuff, new ClientRemoveBuffRsp { Result = result, BuffGuid = req.BuffGuid });
+        if (result == 0) await RemoveAsync(p, buff!);
+    }
+
+    /// <summary>31331: successful WorldTreeSkillId 2200101 revive names the actual revived role.</summary>
+    public Task NotifyWorldTreeReviveAsync(GameSession recipient, string revivedPlayerName)
+    {
+        if (recipient.Role == null || string.IsNullOrWhiteSpace(revivedPlayerName))
+            throw new ArgumentException("A successful World Tree revive needs its actual player name", nameof(revivedPlayerName));
+        return recipient.SendGameAsync(WorldTreeRevive, new ItemWorldTreeReviveNtf
+        {
+            WorldTreePlayerName = revivedPlayerName,
+        });
+    }
+
+    /// <summary>SkillConfig._kCost type 3 consumes piles of a BuffConfig group. The tuple's id is a group (inferred).</summary>
+    /// <summary>(inferred) The server's bound on a buff that lasts until it is spent: its row has no time of its own (_iTime 0 or -1).</summary>
+    internal const int UntilSpentBoundMs = 3_600_000;
+
+    /// <summary>
+    /// A buff that ends when it is spent (Firepower Loaded, Cannon Enhance, Empowered Warg Strike, ...), at <paramref name="piles"/> whatever
+    /// its stack type when given (Firepower Loaded's stack type 6 only refreshes, and it starts at its 3 attacks). It reaches the client
+    /// with no time, as a permanent buff does (<see cref="Wire"/>); the server drops it after <see cref="UntilSpentBoundMs"/>.
+    /// </summary>
+    internal Task AddUntilSpentAsync(GameSession p, int configId, long sourceId, int? piles = null) =>
+        AddCoreAsync(p, configId, UntilSpentBoundMs, sourceId, piles, new BuffAddOptions { UntilSpent = true });
+
+    /// <summary>How many piles of a buff group a monster holds.</summary>
+    internal int UnitPiles(WorldUnit unit, int buffGroup) => _unitBuffs.TryGetValue(unit.Uid, out var list)
+        ? list.Where(b => b.ExpireMs > _loop.NowMs && b.ConfigId / 100 == buffGroup).Sum(b => b.PileCount) : 0;
+
+    public bool HasBuffPiles(GameSession p, int buffGroup, int count) => count > 0
+        && p.Buffs.Where(b => b.ExpireMs > _loop.NowMs && _data.Row("BuffConfig", b.ConfigId) is { } row
+            && GameData.Int(row, "_iBuffID") == buffGroup).Sum(b => b.PileCount) >= count;
+
+    /// <summary>Call after the cast succeeds; each partial reduction emits 31104 with its original instance GUID.</summary>
+    public async Task<bool> ConsumeBuffPilesAsync(GameSession p, int buffGroup, int count)
+    {
+        if (!HasBuffPiles(p, buffGroup, count) || p.Role == null) return false;
+        foreach (var buff in p.Buffs.Where(b => _data.Row("BuffConfig", b.ConfigId) is { } row
+            && GameData.Int(row, "_iBuffID") == buffGroup).ToList())
+        {
+            int take = Math.Min(count, buff.PileCount);
+            count -= take;
+            if (take == buff.PileCount) await RemoveAsync(p, buff);
+            else
+            {
+                p.Buffs.Remove(buff);
+                var row = _data.Row("BuffConfig", buff.ConfigId)!.Value;
+                var replacement = buff with
+                {
+                    PileCount = buff.PileCount - take,
+                    Changes = GameData.Pairs(row, "_kChangeAttri")
+                        .Select(c => (c.Id, c.Value * (buff.PileCount - take))).ToList(),
+                };
+                p.Buffs.Add(replacement);
+                var info = Wire(replacement);
+                await p.SendGameAsync(BuffUpdate, new BuffUpdateNotify { UnitId = p.Role.Id, Buffs = { info } });
+                await ToPlayerAndViewersAsync(p, AoiAttrChange, new AOIAttrChange
+                {
+                    EntityUuid = (ulong)p.Role.Id, BuffInfo = new AoIBuffInfo { AddBuffs = { info } },
+                });
+                if (buff.Changes.Count > 0) await _character.RefreshStatsAsync(p);
+                foreach (var handler in Changed.Handlers) await handler(p);
+            }
+            if (count == 0) break;
+        }
+        return true;
+    }
+
+    public Task ClearOnDeathAsync(GameSession p) => ClearWhereAsync(p, "_iDeadClear");
+    public async Task ClearOnSceneAsync(GameSession p)
+    {
+        // A scene change must not turn a pending lethal-hit decision into free survival.
+        // The offer/recovery keep their original deadline; role selection resets them separately.
+        await ClearWhereAsync(p, "_iSceneClear");
+        await RefreshControlAsync(p);
+    }
+
+    private async Task ClearWhereAsync(GameSession p, string field)
+    {
+        foreach (var b in p.Buffs.ToList())
+            if (_data.Row("BuffConfig", b.ConfigId) is not { } row || GameData.Int(row, field) == 1)
+                await RemoveAsync(p, b);
+    }
+
+    /// <summary>Resend only a nonempty list: LC_Buff_Component.lua takes # of the decoded list without a nil guard.</summary>
+    public async Task ResendAsync(GameSession p)
+    {
+        long now = _loop.NowMs;
+        foreach (var buff in p.Buffs.Where(b => b.ExpireMs <= now).ToList()) await RemoveAsync(p, buff);
+        if (p.Role == null || p.Buffs.Count == 0) return;
+        var all = new BuffUpdateNotify { UnitId = p.Role.Id, IsViewSync = true };
+        all.Buffs.Add(p.Buffs.Where(Visible).Select(Wire));
+        if (all.Buffs.Count == 0) return;
+        await p.SendGameAsync(BuffUpdate, all);
+    }
+
+    /// <summary>Called by entity creation for 31037/ENTITYSELF snapshot; buff array only when nonempty.</summary>
+    public static void PopulateEntity(GameSession p, EntityBase entity)
+    {
+        var live = p.Buffs.Where(b => b.ExpireMs > p.NowMs && (!b.IsPassive || b.ShowIcon)).ToList();
+        if (live.Count > 0)
+        {
+            entity.BuffData = new AoIBuffInfo();
+            entity.BuffData.AddBuffs.Add(live.Select(Wire));
+        }
+        entity.ObjState = new AoiObjStateInfo { Data = Mask((ulong)p.StatusBits) };
+        entity.ObjForbid = new AoiObjForbidInfo { Data = Mask(p.Combat.ForbiddenBits) };
+        entity.ObjStagger = new AoiObjStaggerInfo { StaggerMask = p.Combat.StaggerBits };
+    }
+
+    public bool HasForbidden(GameSession p, int ordinal) => p.Combat.ForbiddenOrdinals.Contains(ordinal)
+        || (p.Combat.ImmuneDeathOffer != null && ordinal == ForbiddenState.Damage)
+        || (p.Combat.ImmuneRecoveryUntilMs > _loop.NowMs
+            && ordinal is ForbiddenState.Walk or ForbiddenState.CastSkill or ForbiddenState.NormalAttack or ForbiddenState.Damage);
+
+    private async Task RefreshControlAsync(GameSession p)
+    {
+        if (p.Role == null) return;
+        ulong oldStatus = (ulong)p.StatusBits, oldForbidden = p.Combat.ForbiddenBits, oldStagger = p.Combat.StaggerBits;
+        RecomputeControl(p);
+        if ((ulong)p.StatusBits == oldStatus && p.Combat.ForbiddenBits == oldForbidden && p.Combat.StaggerBits == oldStagger) return;
+        await ToPlayerAndViewersAsync(p, AoiAttrChange, new AOIAttrChange
+        {
+            EntityUuid = (ulong)p.Role.Id,
+            StateInfo = new AoiObjStateInfo { Data = Mask((ulong)p.StatusBits) },
+            ForbidInfo = new AoiObjForbidInfo { Data = Mask(p.Combat.ForbiddenBits) },
+            StaggerInfo = new AoiObjStaggerInfo { StaggerMask = p.Combat.StaggerBits },
+        });
+        if (ControlChanged is { } changed) await changed(p);
+    }
+
+    private void RecomputeControl(GameSession p)
+    {
+        ulong status = 0, forbidden = 0, stagger = 0;
+        p.Combat.ForbiddenOrdinals.Clear();
+        foreach (var buff in p.Buffs.Where(b => b.StateOrdinal is > 0 and < 33 && b.ExpireMs > _loop.NowMs))
+        {
+            status |= 1UL << (buff.StateOrdinal - 1); // inferred beyond the directly observed Battling(16) bit.
+            if (_data.Row("SpecialStatusConfig", buff.StateOrdinal) is not { } row) continue;
+            if (row.TryGetProperty("_kForbidden", out var actions) && actions.ValueKind == JsonValueKind.Array)
+                foreach (var action in actions.EnumerateArray())
+                    if (GameData.Number(action) is { } ordinal)
+                    {
+                        int id = (int)ordinal;
+                        p.Combat.ForbiddenOrdinals.Add(id);
+                        forbidden |= ForbiddenMask(id);
+                    }
+            int staggerType = (int)GameData.Int(row, "_iStaggerType");
+            if (staggerType is > 0 and < 64) stagger |= 1UL << staggerType; // LC_UnitSpecialStatus.lua:90-138.
+        }
+        if (p.Combat.ImmuneDeathOffer != null)
+        {
+            status |= 1UL << 24; // Invincible(25) while the 31134 choice is pending (inferred).
+            forbidden |= ForbiddenMask(9);
+        }
+        if (p.Combat.ImmuneRecoveryUntilMs > _loop.NowMs)
+        {
+            status |= (1UL << 24) | (1UL << 8) | (1UL << 9); // Invincible/CanNotMove/CanNotSkill.
+            forbidden |= ForbiddenMask(3) | ForbiddenMask(4) | ForbiddenMask(5) | ForbiddenMask(9);
+        }
+        p.StatusBits = (long)(((ulong)p.StatusBits & ~p.Combat.BuffStatusBits) | status);
+        p.Combat.BuffStatusBits = status;
+        p.Combat.ForbiddenBits = forbidden;
+        p.Combat.StaggerBits = stagger;
+    }
+
+    // Lua_GameDefine.enum_ForbiddenState: masks are explicit and do not line up with every proto ordinal.
+    private static ulong ForbiddenMask(int ordinal) => ordinal switch
+    {
+        1 => 1,
+        2 => 2,
+        3 => 4,
+        4 => 8,
+        5 => 16,
+        6 => 32,
+        7 => 64,
+        8 => 128,
+        9 => 256,
+        10 => 512,
+        11 => 1024,
+        12 => 2048,
+        13 => 4096,
+        14 => 8192,
+        15 => 16384,
+        16 => 65536,
+        23 => 4194304,
+        24 => 8388608,
+        25 => 16777216,
+        27 => 67108864,
+        _ => 0, // Lua enum has no named mask for the remaining server ordinals.
+    };
+
+    private static CommonBigMask Mask(ulong bits) => new() { Values = { bits } }; // include zero: Lua indexes values[1].
+    private bool Visible(ActiveBuff buff) => !buff.IsPassive
+        || _data.Row("BuffConfig", buff.ConfigId) is { } row && GameData.Int(row, "_iShowIcon") != 0;
+
+    /// <summary>
+    /// A passive or until-spent buff has no time on the wire: with duration 0 the icon draws no progress
+    /// (UI_Sys_BuffIcon_BaseWidgetCtrl.RefreshProgress) and the buff list no time left (UI_Sys_BuffItemWidgetCtrl: iDuration &lt;= 0
+    /// -> _setTime(nil)); the client keeps it until 31105 removes it. A server bound sent as the end showed an hour counting down.
+    /// </summary>
+    private static BuffInfo Wire(ActiveBuff buff) => new()
+    {
+        BuffGuid = buff.Guid, ConfigId = buff.ConfigId, ExpireTime = buff.IsPassive || buff.UntilSpent ? 0 : buff.ExpireMs,
+        Duration = buff.UntilSpent ? 0 : buff.DurationMs, PileCount = buff.PileCount, IsTotalTime = true, SourceId = buff.SourceId,
+    };
+
+    public void Tick(GameTime time)
+    {
+        long now = _loop.NowMs;
+        // Ticks first: a periodic tick due at the expiry moment still lands before the expiry removal below.
+        TickPeriodic(now);
+        TickHalos(now);
+        SweepDecay(now);
+        foreach (var s in _sessions.All())
+        {
+            // Every session, every tick: copy the list only when something in it has expired.
+            if (AnyExpired(s.Buffs, now))
+                foreach (var b in s.Buffs.Where(b => b.ExpireMs <= now).ToList()) ExpireOnce(b, "buff expiration", () => RemoveAsync(s, b), owner: s);
+            TickEnergy(s, now);
+            TickImmuneDeath(s, now);
+        }
+        List<long>? due = null;
+        foreach (var (uid, list) in _unitBuffs) if (list.Count == 0 || AnyExpired(list, now)) (due ??= []).Add(uid);
+        if (due != null) foreach (long uid in due)
+        {
+            var list = _unitBuffs[uid];
+            foreach (var buff in list.Where(b => b.ExpireMs <= now).ToList())
+            {
+                // A unit's buff lives only in memory (RemoveUnitBuffAsync writes nothing): no role or realm reservation.
+                if (_unitOwners.GetValueOrDefault(uid) is { } unit)
+                    ExpireOnce(buff, "unit buff expiration", () => RemoveUnitBuffAsync(unit, buff), runtime: true);
+                else list.Remove(buff);
+            }
+            if (list.Count == 0) ForgetUnit(uid);
+        }
+    }
+
+    private static bool AnyExpired(List<ActiveBuff> buffs, long now)
+    {
+        foreach (var b in buffs) if (b.ExpireMs <= now) return true;
+        return false;
+    }
+
+    /// <summary>One queued removal per expired buff: a removal waits for its reservation, and queuing one every tick
+    /// meanwhile built tens of thousands of waiters on a busy live realm.</summary>
+    /// <param name="runtime">Run without reservation keys (an in-memory unit buff); otherwise realm-wide.</param>
+    /// <param name="owner">A role's own buff: its removal runs as that role's job, as the client's own 31332 removal
+    /// does. As a realm job every expiry stopped the whole loop (#484: 7 334 holds in 2.5 h with six players).</param>
+    private void ExpireOnce(ActiveBuff buff, string name, Func<Task> remove, bool runtime = false, GameSession? owner = null)
+    {
+        long now = _loop.NowMs;
+        // A loop at its work limit drops the job without running it, so one that never finished is queued again.
+        if (_expiring.TryGetValue(buff.Guid, out long queued) && now - queued < ExpiryRetryMs) return;
+        _expiring[buff.Guid] = now;
+        Func<Task> work = async () =>
+        {
+            try { await remove(); }
+            finally { _expiring.Remove(buff.Guid); }
+        };
+        if (owner != null) _loop.PostOwned(owner, work, name, () => _expiring.Remove(buff.Guid));
+        else if (runtime) _loop.TrackRuntimeDetached(name, work);
+        else _loop.TrackLegacyDetached(name, work);
+    }
+
+    private async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, Google.Protobuf.IMessage body)
+    {
+        var viewers = _world.Viewers(p);
+        if (viewers.Count == 0) { await p.SendGameAsync(msgId, body); return; }
+        var prepared = new PreparedMessage(msgId, body);
+        await p.SendPreparedAsync(prepared);
+        foreach (var viewer in viewers)
+            if (viewer != p) await viewer.SendPreparedAsync(prepared);
+    }
+}

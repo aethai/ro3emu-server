@@ -14,10 +14,12 @@ namespace Ro3Emu.Tests;
 /// <summary>Explicit E01 paired microprobe, excluded from fast gates. No latency assertion or load server.</summary>
 public sealed class EconomyMeasurementTests(ITestOutputHelper output)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     [Fact, Trait("Category", "Slow")]
     public void PairedTypedPurchaseMeasuresAddedWriterWorkAndLedgerBytes()
     {
-        string root = RepoRoot();
+        string root = ClientData.RepoRoot;
         string artifact = Path.Combine(root, ".loadtest", "e01", "probe-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(artifact);
         using var plain = new Probe(Path.Combine(artifact, "control"), false);
@@ -53,7 +55,7 @@ public sealed class EconomyMeasurementTests(ITestOutputHelper output)
                 (plainAfter.AllocatedBytes - plainBefore.AllocatedBytes)) / (double)operations,
             Notes = "Writer duration is dequeue-to-commit, excluding queue and staging. Payload counts UTF-8 TEXT/BLOB and 8 bytes per INTEGER, not SQLite physical encodings. Allocated bytes are page_count*page_size; WAL bytes are separate. Shared-host observation, not S3/load qualification."
         };
-        string json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        string json = JsonSerializer.Serialize(report, IndentedJson);
         File.WriteAllText(Path.Combine(artifact, "measurement.json"), json);
         output.WriteLine(artifact); output.WriteLine(json);
     }
@@ -146,12 +148,5 @@ public sealed class EconomyMeasurementTests(ITestOutputHelper output)
                 (string)mode.ExecuteScalar()!, Scalar("PRAGMA synchronous"));
         }
         public void Dispose() => _accounts.Dispose();
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

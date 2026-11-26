@@ -28,7 +28,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{web}";
@@ -37,7 +37,6 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -66,9 +65,9 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
     private static async Task<T> Next<T>(BotClient bot, uint id, MessageParser<T> parser) where T : IMessage<T> =>
         parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(id), TimeSpan.FromSeconds(10))).Body);
     private const string QuestAward = "cd13e/quest-award";
-    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomyLedgerWindow Window(EconomySnapshot a, EconomySnapshot b) =>
-        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")), a, b)!;
+        S3EconomyReader.ReadLedger(_directory, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")), a, b)!;
 
     [ClientDataFact]
     public async Task SetupAndDownCommitMarkersAndBlobWithVerifiableMetadataReceipts()
@@ -78,7 +77,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var opening = Cut();
         await bot.SendGameAsync(82362, new SetUpTotemReq { TotemPos = 1, TotemGuid = guid });
         Assert.Equal(0, (await Next(bot, 82362, SetUpTotemResp.Parser)).Result);
-        Assert.Equal(guid, Session.Totems!.TotemPlans[0].SetUpTotem[1]);
+        Assert.Equal(guid, Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1]);
         Assert.Equal(1, Session.Items.Single(i => i.Guid == guid).Attrs![10001]);
         var up = Cut();
         // Growth Classroom quests (1700500 deploy, 1700518 combine) deliver their zero-leg awards beside these.
@@ -91,7 +90,7 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var receipt = EconomyReceiptReader.Read(Database, first.OperationId)!;
         Assert.Equal("cd13b/totem-state", receipt.CommandKind);
         Assert.Equal(receipt.RequestFingerprint, Convert.ToHexString(SHA256.HashData(receipt.Outcome)));
-        Assert.Equal(Session.Totems.ToByteArray(), Service<RoleStore>().LoadTotems(Session.Role!.Id));
+        Assert.Equal(Session.Profile.Totems.ToByteArray(), Service<RoleStore>().LoadTotems(Session.Role!.Id));
         Assert.Equal(1, Service<ItemStore>().Load(Session.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);
 
         await bot.SendGameAsync(82362, new SetUpTotemReq { TotemPos = 1, TotemGuid = 0 });
@@ -143,12 +142,5 @@ public sealed class TotemFamilyEconomyTests : IAsyncLifetime
         var detail = EconomyReceiptReader.Read(Database, receipt.OperationId)!;
         Assert.Equal("cd13b/totem-combine", detail.CommandKind);
         Assert.Equal(detail.RequestFingerprint, Convert.ToHexString(SHA256.HashData(detail.Outcome)));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

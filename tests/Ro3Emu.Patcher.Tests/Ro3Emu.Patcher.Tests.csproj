@@ -24,6 +24,8 @@
   <ItemGroup>
     <!-- The launcher itself is a WPF exe, which a Linux test run cannot build. -->
     <Compile Include="..\..\src\Ro3Emu.Launcher\GitHubReleases.cs" Link="Launcher\GitHubReleases.cs" />
+    <!-- ClientTools embeds ClientHooks (needs the game client to build), so test its key-loading policy directly. -->
+    <Compile Include="..\..\src\Ro3Emu.ClientTools\SigningKeyLoader.cs" Link="ClientTools\SigningKeyLoader.cs" />
   </ItemGroup>
 
 </Project>

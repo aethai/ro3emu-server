@@ -34,7 +34,6 @@ public sealed class PersistenceRoutingTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
     }
 
@@ -188,11 +187,11 @@ public sealed class PersistenceRoutingTests : IDisposable
         Assert.All(reads, r => { Assert.NotEqual(caller, r.Thread); Assert.Equal(1L, r.QueryOnly); });
         await Assert.ThrowsAsync<SqliteException>(() => readers.ExecuteAsync<bool>(new ForbiddenReadWritePlan()));
 
-        using (var bothEntered = new CountdownEvent(2))
+        using (var bothEntered = new CountdownEvent(DbReadPool.WorkerCount))
         using (var readRelease = new ManualResetEventSlim())
         {
-            var active = new[] { readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)),
-                readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)) };
+            var active = Enumerable.Range(0, DbReadPool.WorkerCount)
+                .Select(_ => readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease))).ToArray();
             Assert.True(bothEntered.Wait(TimeSpan.FromSeconds(5)));
             try
             {
@@ -201,7 +200,7 @@ public sealed class PersistenceRoutingTests : IDisposable
                 await Assert.ThrowsAsync<DbQueueFullException>(() => readers.ExecuteAsync<int>(new HoldReadPlan(bothEntered, readRelease)));
                 readRelease.Set();
                 var actual = await Task.WhenAll(active);
-                Assert.Equal(2, actual.Distinct().Count());
+                Assert.Equal(DbReadPool.WorkerCount, actual.Distinct().Count());
                 await Task.WhenAll(waiting);
             }
             finally { readRelease.Set(); }
@@ -426,6 +425,83 @@ public sealed class PersistenceRoutingTests : IDisposable
                 >= routed.RootElement.GetProperty("legacyWriterLoopBlockedMs").GetDouble());
         }
         finally { await loop.StopAsync(default); loop.Dispose(); }
+    }
+
+    [Fact]
+    public void EconomyLedgerWritesUseSinglePath()
+    {
+        string root = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server");
+        string[] allowed = ["EconomyLedgerWrite.cs", "EconomySchemaPlan.cs"];
+        string[] patterns = ["INSERT INTO economy_entry", "INSERT INTO operation_receipt", "INSERT INTO operation_source"];
+        var violations = new List<string>();
+        foreach (string file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        {
+            if (allowed.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase)) continue;
+            string text = File.ReadAllText(file);
+            foreach (string pattern in patterns)
+                if (text.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    violations.Add($"{Path.GetRelativePath(root, file)}: {pattern}");
+        }
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public async Task PanelReadPoolIsIsolatedFromGameReadPool()
+    {
+        using var entered = new CountdownEvent(2);
+        using var release = new ManualResetEventSlim();
+        var panelHold1 = _accounts.ReadPanelAsync<int>(new HoldReadPlan(entered, release));
+        var panelHold2 = _accounts.ReadPanelAsync<int>(new HoldReadPlan(entered, release));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        try
+        {
+            var gameProbe = await _accounts.ReadAsync<(int Thread, long QueryOnly)>(new ReaderProbePlan())
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1L, gameProbe.QueryOnly);
+        }
+        finally { release.Set(); }
+        int[] panelThreads = await Task.WhenAll(panelHold1, panelHold2);
+        Assert.Equal(2, panelThreads.Distinct().Count());
+    }
+
+    [Fact]
+    public void AntiCheatGainsQueryUsesCoveringIndex()
+    {
+        using var db = _accounts.Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = """
+            EXPLAIN QUERY PLAN
+            SELECT owner_id,
+                TOTAL(CASE WHEN asset_kind=2 AND asset_id=1 THEN delta END),
+                TOTAL(CASE WHEN asset_kind=1 THEN delta END)
+            FROM economy_entry
+            WHERE recorded_utc_ms>=1000 AND owner_kind=1 AND leg_kind=1 AND delta>0
+            GROUP BY owner_id
+            """;
+        var details = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) details.Add(reader.GetString(3));
+        Assert.Contains(details, line => line.Contains("economy_entry_role_sources", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void StartupIntegrityCheckRefusesCorruptDatabase()
+    {
+        string corruptDir = Path.Combine(_dir, "corrupt");
+        Directory.CreateDirectory(corruptDir);
+        string dbFile = Path.Combine(corruptDir, "ro3emu.db");
+        using (var store = new AccountStore(Options.Create(new ServerOptions { DataDir = corruptDir })))
+        {
+            _ = store.Login("alice", "pw");
+        }
+        // Overwrite a page inside the SQLite database file to corrupt B-tree integrity.
+        byte[] bytes = File.ReadAllBytes(dbFile);
+        Assert.True(bytes.Length >= 4096);
+        for (int i = 100; i < 400; i++) bytes[i] ^= 0xFF;
+        File.WriteAllBytes(dbFile, bytes);
+
+        Assert.ThrowsAny<Exception>(() =>
+            new AccountStore(Options.Create(new ServerOptions { DataDir = corruptDir })));
     }
 
     private sealed class HoldWritePlan(ManualResetEventSlim entered, ManualResetEventSlim release) : DbPlan

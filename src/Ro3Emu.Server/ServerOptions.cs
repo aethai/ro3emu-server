@@ -66,6 +66,24 @@ public sealed class ServerOptions
     /// keeps it; an operator who wants the RO1 feel turns it on.</summary>
     public bool Ro1MonsterHp { get; set; }
 
+    /// <summary>A pet in the active setup plan walks beside its owner as a type-7 world unit (PetFollowerService). Off by
+    /// default: the client shows a deployed pet only in its guardian skill (LC_Scene_Sync._useInSkill, petConfigId, a local
+    /// model effect), and its only follower, PendantType.PetFollow, has no PendantConfig row while LC_PetHelper.IsFollowPet
+    /// returns false. The projection is (inferred), kept for an operator who wants the pet visible.</summary>
+    public bool PetWorldFollower { get; set; }
+
+    /// <summary>An optional night look (NightCycleService, docs/systems/night-cycle.md): each player's client draws a dark
+    /// layer over the world by the PC clock (dusk 17-19, night 19-05, dawn 05-06), in towns and fields only. Off by default:
+    /// the original game has no day and night (MapConfig _iWeather is 0 on every map and the client has no weather, sky or
+    /// time-of-day module), so this is the emulator's own addition for an operator who wants it.</summary>
+    public bool NightCycle { get; set; }
+
+    /// <summary>Show overhead guild names and emblems on every map (Ro3Emu.ClientHooks.GuildOverhead, #517). Off by
+    /// default: the original client shows them only on the three maps whose MapConfig._iShowNamePara enables ShowGuildName
+    /// and ShowGuildIcon (plus escort carts). When on, the server sends "guildoverhead on" (message 77012) on login so the
+    /// client hook lifts the per-map limit everywhere.</summary>
+    public bool GuildOverheadAllMaps { get; set; }
+
     /// <summary>Game-message JSON log (data/logs/traffic-*.jsonl): "off", "on" or a comma-separated account list.
     /// Formatting and writes run off the game loop; keep it off for load tests and production.</summary>
     public string TrafficLog { get; set; } = "off";
@@ -92,6 +110,12 @@ public sealed class ServerOptions
     /// the others, "log" counts them and lets them through (CheatMonitor), "off" skips the check.
     /// </summary>
     public string TravelCheck { get; set; } = "enforce";
+
+    /// <summary>
+    /// Debugging only: holds every game gate frame sent to a client this long before it goes out (PhonestChannel.SendDelay),
+    /// in order, so a local client plays as at that ping (a round trip of about this much). 0 (default) sends at once.
+    /// </summary>
+    public int DebugSendDelayMs { get; set; }
 
     /// <summary>Anti-cheat limits and the web panel's suspicious-activity thresholds (CheatMonitor, docs/systems/anticheat.md).</summary>
     public AntiCheatOptions AntiCheat { get; set; } = new();
@@ -154,6 +178,12 @@ public sealed class ServerOptions
     /// <summary>Database copies in DataDir/backups (DatabaseBackup).</summary>
     public BackupOptions Backup { get; set; } = new();
 
+    /// <summary>Run SQLite PRAGMA quick_check(5) on startup before opening the writer. Fails fast on a corrupt file.</summary>
+    public bool StartupIntegrityCheck { get; set; } = true;
+
+    /// <summary>When true (with StartupIntegrityCheck), run full PRAGMA integrity_check(5) instead of quick_check(5) at startup.</summary>
+    public bool StartupFullIntegrityCheck { get; set; }
+
     /// <summary>The web panel's update manager (Updates.UpdateManager, docs/guide/panel.md).</summary>
     public UpdateOptions Updates { get; set; } = new();
 
@@ -203,11 +233,11 @@ public sealed class ServerOptions
     public string[] GuildBlockedWords { get; set; } = [];
 
     /// <summary>
-    /// "instant": a guild is Normal at once unless the founder ticks the create widget's responder toggle (this server's
-    /// shortcut). "responders": every guild is founded through GuildResponsePeopleLimit responders, as the original;
-    /// the toggle then only waives the founder's approval of each response.
+    /// "responders" (as the client says): a guild costs GuildCreateCostShow and is founded through GuildResponsePeopleLimit
+    /// responders within GuildResponseTimeLimit, or the founder gets the cost back by mail; the create widget's toggle only
+    /// waives the founder's approval of each response. "instant": a host's shortcut, a guild is free and Normal at once.
     /// </summary>
-    public string GuildFounding { get; set; } = "instant";
+    public string GuildFounding { get; set; } = "responders";
 
     /// <summary>
     /// Guild League registration's membership threshold. Unset: GuildSettingConfig GuildLeaguePeopleNum (40, read as the
@@ -221,6 +251,14 @@ public sealed class ServerOptions
     /// AVATAR_LOSE_CONNECTION_TIMEOUT_SECONDS; it must exceed the client's 20 s + 10 s budgets. 0 turns grace off.
     /// </summary>
     public int ReconnectGraceSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Seconds a scene load (a map change, a line switch, entering the world) may take before the role must reconnect
+    /// (SceneService.ExpireLineLoad). The client names no deadline, so the value is (inferred). It was 30, which dropped
+    /// slower PCs on a busy realm: a live server running a fork saw 615 such timeouts in a day at 30 s and none in its
+    /// first 112 loads at 90 s. Each timeout is logged with its map and the deadline.
+    /// </summary>
+    public int SceneLoadTimeoutSeconds { get; set; } = 90;
 
     /// <summary>
     /// TEST AID, not original behaviour: Survivor Battle (match entry 2) starts with this many entrants in teams of
@@ -257,6 +295,12 @@ public sealed class ServerOptions
     /// original had no such knob.)
     /// </summary>
     public List<FieldExpRule> FieldExpRates { get; set; } = [];
+
+    /// <summary>
+    /// Kill EXP shared with the killer's party (Ro3Emu:PartyExpShare). Off by default: the killer alone gets a kill's EXP, as
+    /// on the original server. (inferred: the original had no such knob; the client's own party bonus is TeamExpBuffNum.)
+    /// </summary>
+    public PartyExpShareOptions PartyExpShare { get; set; } = new();
 
     /// <summary>
     /// (inferred) Star Cores drop for roles with the Astral Level open (ParagonService.StarCoreDrops). The client data gives
@@ -376,6 +420,12 @@ public sealed class ReceiptRetentionOptions
 
     /// <summary>Minutes between compaction runs (the first runs a few minutes after startup).</summary>
     public int IntervalMinutes { get; set; } = 60;
+
+    /// <summary>Age in days after which economy_entry rows are rolled into economy_daily_aggregate and pruned; 0 (default) keeps raw legs forever.</summary>
+    public int LedgerDays { get; set; }
+
+    /// <summary>Age in days after which mail/* receipt payloads are compacted once their replay keys are stored in mail_delivery_replay; 0 (default) keeps mail receipts whole.</summary>
+    public int MailDays { get; set; }
 }
 
 /// <summary>In-game bug reports: the menu's Feedback button and "/bug" in chat (FeedbackService).</summary>
@@ -485,6 +535,9 @@ public sealed class BackupOptions
 
     /// <summary>Hours between integrity checks of scheduled copies on a big database.</summary>
     public int BigDatabaseCheckHours { get; set; } = 24;
+
+    /// <summary>Maximum total size in megabytes of completed backups in DataDir/backups (0 = unlimited, default). Oldest copies past the newest two are pruned to stay within this cap.</summary>
+    public int MaxTotalMegabytes { get; set; }
 }
 
 /// <summary>
@@ -641,6 +694,19 @@ public sealed class SpawnLimitRule
     public int Npc { get; set; }
     public int Max { get; set; }
 }
+
+/// <summary>
+/// <see cref="ServerOptions.PartyExpShare"/>: with <see cref="Enabled"/>, a kill's Base EXP (after the level gap, the party
+/// bonus and FieldExpRates) is shared with the killer's party members who are alive on the same map line.
+/// </summary>
+public sealed class PartyExpShareOptions
+{
+    public bool Enabled { get; set; }
+    public PartyExpShareMode Mode { get; set; } = PartyExpShareMode.Split;
+}
+
+/// <summary>Split: the EXP is divided evenly between the killer and the members. Full: every member gets the killer's EXP.</summary>
+public enum PartyExpShareMode { Split, Full }
 
 /// <summary>One <see cref="ServerOptions.FieldExpRates"/> rule: killers of base level <see cref="MinLevel"/> to
 /// <see cref="MaxLevel"/> get <see cref="Percent"/> percent of the EXP a field monster pays (100 leaves it as it is).</summary>

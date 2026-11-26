@@ -23,7 +23,7 @@ sealed class FileRepoHandler(string repo) : HttpMessageHandler
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
         byte[] data = File.ReadAllBytes(path);
-        if (relative.StartsWith("chunks/"))
+        if (relative.StartsWith("chunks/", StringComparison.Ordinal))
         {
             Interlocked.Add(ref ChunkBytesServed, data.Length);
             Interlocked.Increment(ref ChunkRequests);
@@ -265,7 +265,7 @@ public sealed class PatcherTests : IDisposable
 
         // The server dies after a few chunks: the update fails, the installed 1.0.0 stays intact.
         int served = 0;
-        handler.FailWhen = relative => relative.StartsWith("chunks/") && Interlocked.Increment(ref served) > 10;
+        handler.FailWhen = relative => relative.StartsWith("chunks/", StringComparison.Ordinal) && Interlocked.Increment(ref served) > 10;
         await Assert.ThrowsAsync<PatcherException>(() => Update(handler));
         Assert.Equal(File.ReadAllBytes(Path.Combine(Repo, "..", "build", "Game.exe")), File.ReadAllBytes(Path.Combine(Game, "Game.exe")));
         using (var client = new RepositoryClient(new Uri("https://repo.test/"), handler))
@@ -443,6 +443,289 @@ public sealed class PatcherTests : IDisposable
     {
         Assert.Throws<ArgumentException>(() => new InstallLayout(Game, Path.Combine(Game, "sub")));
         Assert.Null(new InstallLayout(Game, Path.Combine(Game, "ROData")).DataDirectory);
+    }
+
+    [Fact]
+    public async Task SignedChannelVerifiesAndUpdatesWithPinnedPublicKey()
+    {
+        var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(4096, 201));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+
+        Assert.True(File.Exists(Path.Combine(Repo, "channels", "stable.json.sig")));
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo), publicPem);
+        var updater = new Updater(Layout, client);
+        var check = await updater.CheckAsync("stable", CancellationToken.None);
+        Assert.Equal("1.0.0", check.Channel.Version);
+        await updater.UpdateAsync(check.Channel, false, null, CancellationToken.None);
+        AssertGameMatchesBuild();
+    }
+
+    [Fact]
+    public async Task SignedChannelRejectsTamperedChannelJson()
+    {
+        var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 202));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+
+        string channelFile = Path.Combine(Repo, "channels", "stable.json");
+        File.WriteAllText(channelFile, File.ReadAllText(channelFile).Replace("1.0.0", "1.0.1", StringComparison.Ordinal));
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo), publicPem);
+        var error = await Assert.ThrowsAsync<PatcherException>(() => client.GetChannelAsync("stable", CancellationToken.None));
+        Assert.Contains("signature", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SignedChannelRejectsMissingSignature()
+    {
+        var (_, publicPem) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 203));
+        await Publish("1.0.0");
+
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo), publicPem);
+        var error = await Assert.ThrowsAsync<PatcherException>(() => client.GetChannelAsync("stable", CancellationToken.None));
+        Assert.Contains("missing its signature", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SignedChannelRejectsWrongKeyAndWeakKey()
+    {
+        var (privatePem, _) = ChannelSignature.GenerateKeyPair();
+        var (_, otherPublicPem) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 204));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+
+        using var wrongKeyClient = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo), otherPublicPem);
+        await Assert.ThrowsAsync<PatcherException>(() => wrongKeyClient.GetChannelAsync("stable", CancellationToken.None));
+
+        using var weakRsa = System.Security.Cryptography.RSA.Create(2048);
+        string weakPrivate = weakRsa.ExportPkcs8PrivateKeyPem();
+        string weakPublic = weakRsa.ExportSubjectPublicKeyInfoPem();
+        Assert.Throws<System.Security.Cryptography.CryptographicException>(() => ChannelSignature.Sign("test"u8, weakPrivate));
+        Assert.False(ChannelSignature.Verify("test"u8, [1, 2, 3], weakPublic));
+    }
+
+    [Fact]
+    public async Task SignedChannelRejectsChannelSwapReplay()
+    {
+        var (privatePem, publicPem) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 205));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "beta",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+
+        // Replay valid beta.json + beta.json.sig under the stable channel name.
+        File.Copy(Path.Combine(Repo, "channels", "beta.json"), Path.Combine(Repo, "channels", "stable.json"));
+        File.Copy(Path.Combine(Repo, "channels", "beta.json.sig"), Path.Combine(Repo, "channels", "stable.json.sig"));
+        using var client = new RepositoryClient(new Uri("https://repo.test/"), new FileRepoHandler(Repo), publicPem);
+        var error = await Assert.ThrowsAsync<PatcherException>(() => client.GetChannelAsync("stable", CancellationToken.None));
+        Assert.Contains("beta", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnsignedPublishRequiresExplicitAllowUnsignedToDropExistingSignature()
+    {
+        var (privatePem, _) = ChannelSignature.GenerateKeyPair();
+        WriteBuild("Game.exe", Random(2048, 206));
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.0",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            SigningKeyPem = privatePem,
+        });
+        string channelPath = Path.Combine(Repo, "channels", "stable.json");
+        string sigPath = channelPath + ".sig";
+        byte[] signedChannelBytes = File.ReadAllBytes(channelPath);
+        byte[] originalSig = File.ReadAllBytes(sigPath);
+        Assert.True(File.Exists(sigPath));
+
+        // Without a key and without AllowUnsigned, PublishAsync must refuse before writing a manifest or altering the channel.
+        WriteBuild("Game.exe", Random(2048, 207));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Publish("1.0.1"));
+        Assert.False(File.Exists(Path.Combine(Repo, "manifests", "1.0.1.json.zst")));
+        Assert.Equal(signedChannelBytes, File.ReadAllBytes(channelPath));
+        Assert.Equal(originalSig, File.ReadAllBytes(sigPath));
+
+        // Explicit AllowUnsigned publishes and removes the stale .sig file.
+        await Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.1",
+            Channel = "stable",
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            AllowUnsigned = true,
+        });
+        Assert.False(File.Exists(sigPath));
+
+        // Re-sign via SetChannelAsync; unsigned PublishLauncherAsync refuses unless allowUnsigned is true.
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.1", null, privatePem);
+        Assert.True(File.Exists(sigPath));
+        string launcherExe = Path.Combine(_root, "Ro3EmuLauncher.exe");
+        File.WriteAllBytes(launcherExe, Random(2048, 208));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Publisher.PublishLauncherAsync(Repo, "stable", launcherExe, "1.0.1"));
+        Assert.True(File.Exists(sigPath));
+        await Publisher.PublishLauncherAsync(Repo, "stable", launcherExe, "1.0.1", signingKeyPem: null, allowUnsigned: true);
+        Assert.False(File.Exists(sigPath));
+
+        // Re-sign again; unsigned SetChannelAsync refuses unless allowUnsigned is true.
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.0", null, privatePem);
+        Assert.True(File.Exists(sigPath));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Publisher.SetChannelAsync(Repo, "stable", "1.0.1", null));
+        Assert.True(File.Exists(sigPath));
+        await Publisher.SetChannelAsync(Repo, "stable", "1.0.1", null, signingKeyPem: null, allowUnsigned: true);
+        Assert.False(File.Exists(sigPath));
+    }
+
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("..\\escape")]
+    [InlineData("Stable")]
+    [InlineData("a/b")]
+    [InlineData("")]
+    public async Task InvalidChannelNamesAreRejectedAcrossPublisherEntryPoints(string badChannel)
+    {
+        WriteBuild("Game.exe", Random(2048, 209));
+        await Publish("1.0.0");
+        string outsideSig = Path.Combine(Repo, "escape.json.sig");
+        File.WriteAllBytes(outsideSig, [1, 2, 3]);
+        string launcherExe = Path.Combine(_root, "Ro3EmuLauncher.exe");
+        File.WriteAllBytes(launcherExe, Random(2048, 210));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Publisher.PublishAsync(new PublishOptions
+        {
+            Files = Publisher.CollectDirectory(Build, "", _ => false),
+            RepoDirectory = Repo,
+            Version = "1.0.1",
+            Channel = badChannel,
+            LaunchExe = "Game.exe",
+            Chunking = Small,
+            CompressionLevel = 3,
+            Workers = 2,
+            AllowUnsigned = true,
+        }));
+        await Assert.ThrowsAsync<ArgumentException>(() => Publisher.SetChannelAsync(Repo, badChannel, "1.0.0", null, allowUnsigned: true));
+        await Assert.ThrowsAsync<ArgumentException>(() => Publisher.PublishLauncherAsync(Repo, badChannel, launcherExe, "1.0.1", allowUnsigned: true));
+        Assert.True(File.Exists(outsideSig));
+    }
+
+    [Fact]
+    public void SigningKeyLoaderRejectsEmptyFlagRepoKeysPublishDirKeysAndLinks()
+    {
+        string sandbox = Path.Combine(_root, "keypolicy");
+        string fakeRepo = Path.Combine(sandbox, "src-repo");
+        string publishDir = Path.Combine(sandbox, "http-publish");
+        string externalDir = Path.Combine(sandbox, "external-keys");
+        Directory.CreateDirectory(Path.Combine(fakeRepo, ".git"));
+        Directory.CreateDirectory(publishDir);
+        Directory.CreateDirectory(externalDir);
+
+        string repoKey = Path.Combine(fakeRepo, "channel.pem");
+        string publishKey = Path.Combine(publishDir, "channel.pem");
+        string externalKey = Path.Combine(externalDir, "channel.pem");
+        File.WriteAllText(repoKey, "FAKE-REPO-KEY");
+        File.WriteAllText(publishKey, "FAKE-PUBLISH-KEY");
+        File.WriteAllText(externalKey, "VALID-EXTERNAL-KEY");
+
+        // Empty or whitespace --signing-key is an explicit error.
+        Assert.Throws<ArgumentException>(() => Ro3Emu.ClientTools.SigningKeyLoader.Load("", publishDir, _ => null));
+        Assert.Throws<ArgumentException>(() => Ro3Emu.ClientTools.SigningKeyLoader.Load("   ", publishDir, _ => null));
+
+        // Direct keys inside a source repo or inside the HTTP-served publish dir are refused.
+        Assert.Throws<InvalidOperationException>(() => Ro3Emu.ClientTools.SigningKeyLoader.Load(repoKey, publishDir, _ => null));
+        Assert.Throws<InvalidOperationException>(() => Ro3Emu.ClientTools.SigningKeyLoader.Load(publishKey, publishDir, _ => null));
+
+        // Directory link (NTFS junction on Windows, symlink on Unix) from outside into repo or publish dir is refused.
+        string linkToRepo = Path.Combine(externalDir, "link-to-repo");
+        string linkToPublish = Path.Combine(externalDir, "link-to-publish");
+        CreateDirLink(linkToRepo, fakeRepo);
+        CreateDirLink(linkToPublish, publishDir);
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                Ro3Emu.ClientTools.SigningKeyLoader.Load(Path.Combine(linkToRepo, "channel.pem"), publishDir, _ => null));
+            Assert.Throws<InvalidOperationException>(() =>
+                Ro3Emu.ClientTools.SigningKeyLoader.Load(Path.Combine(linkToPublish, "channel.pem"), publishDir, _ => null));
+        }
+        finally
+        {
+            if (Directory.Exists(linkToRepo)) Directory.Delete(linkToRepo, recursive: false);
+            if (Directory.Exists(linkToPublish)) Directory.Delete(linkToPublish, recursive: false);
+        }
+
+        // External key outside both repo and publish dir loads cleanly.
+        Assert.Equal("VALID-EXTERNAL-KEY", Ro3Emu.ClientTools.SigningKeyLoader.Load(externalKey, publishDir, _ => null));
+    }
+
+    private static void CreateDirLink(string linkPath, string targetPath)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            using var proc = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{linkPath}\" \"{targetPath}\"")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            })!;
+            proc.WaitForExit();
+            Assert.Equal(0, proc.ExitCode);
+        }
+        else
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+        }
     }
 }
 

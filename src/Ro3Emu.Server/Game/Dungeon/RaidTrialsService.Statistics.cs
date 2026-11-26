@@ -1,0 +1,196 @@
+using System.Globalization;
+using Google.Protobuf;
+using Romsg;
+
+using Attempt = Ro3Emu.Server.Game.DungeonService.Attempt;
+using State = Ro3Emu.Server.Game.DungeonService.State;
+using Record = Ro3Emu.Server.Game.DungeonService.Record;
+using JourneyVictory = Ro3Emu.Server.Game.DungeonService.JourneyVictory;
+
+namespace Ro3Emu.Server.Game;
+
+public sealed partial class RaidTrialsService
+{
+    public const uint Statistics = 30110, StatisticsHistory = 30114, StatisticsModule = 30116,
+        StatisticsCurrent = 30117, PlayerStatistics = 30123, TaskScore = 30126, QueryResult = 30128, ResultNotify = 30132;
+
+    /// <summary>Real shared combat counters; zero task score until a recovered task-scoring rule exists.</summary>
+    private DungeonStatisticsInfoWithDungeon StatisticsOf(Attempt a)
+    {
+        var result = new DungeonStatisticsInfoWithDungeon
+        {
+            StatisticsId = a.Room.Id,
+            DungeonId = (int)a.Plan.SceneEntry, StatisticsTime = _loop.NowMs
+        };
+        var scene = new SceneStatisticsInfo { SceneId = a.Room.Id, DungeonId = (int)a.Plan.SceneEntry };
+        foreach (var (id, stats) in a.Stats) scene.RoleStatistics[id] = stats.Clone();
+        result.SceneStatistics[a.Room.Id] = scene;
+        return result;
+    }
+
+    /// <summary>
+    /// The role's newest persisted report (StoreHistory): what 30110/30116/30117 answer once the run's attempt is
+    /// gone. A team boss's result panel asks for the party statistics after the clear - and after the party has moved
+    /// on to the next boss - where the live attempt no longer exists.
+    /// </summary>
+    private static DungeonStatisticsInfoWithDungeon? NewestStored(GameSession s) =>
+        s.Instances.Dungeons is { Statistics.Count: > 0 } state
+            ? DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(state.Statistics.MaxBy(entry => entry.Key).Value) : null;
+
+    /// <summary>30110's per-role rows of one report.</summary>
+    private static DungeonStatisticsInfo MapOf(DungeonStatisticsInfoWithDungeon stats)
+    {
+        var map = new DungeonStatisticsInfo { DungeonMapId = stats.DungeonId };
+        foreach (var scene in stats.SceneStatistics.Values)
+            foreach (var value in scene.RoleStatistics.Values)
+                map.DungeonRolesInfo.Add(new DungeonRoleInfo
+                {
+                    RoleBase = new ObjScoreBaseInfo { Id = value.BaseInfo.Id, Name = value.BaseInfo.Name, Job = value.BaseInfo.Job, Area = 1 },
+                    TotalDamage = value.TotalDamage, TotalBeDamage = value.TotalBeDamage, TotalCure = value.TotalCure, Totalscore = value.Totalscore,
+                });
+        return map;
+    }
+
+    public Task StatisticsAsync(GameSession s)
+    {
+        var stored = s.DungeonAttempt == null ? NewestStored(s) : null;
+        var response = new DungeonStatisticsRes { Result = s.DungeonAttempt == null && stored == null ? ErrorCodes.SceneMissing : 0 };
+        if (s.DungeonAttempt is { } a) response.DungeonRolesInfo[a.Room.Id] = MapOf(StatisticsOf(a));
+        else if (stored != null) response.DungeonRolesInfo[stored.StatisticsId] = MapOf(stored);
+        return s.SendGameAsync(Statistics, response);
+    }
+
+    /// <summary>Another mode's live report for 30117 (CasualBattleService: Mock Battle), or null.</summary>
+    internal Func<GameSession, DungeonStatisticsInfoWithDungeon?>? CurrentStatisticsOwner { get; set; }
+
+    public Task StatisticsCurrentAsync(GameSession s)
+    {
+        var other = s.DungeonAttempt == null ? CurrentStatisticsOwner?.Invoke(s) : null;
+        // A cleared run's own attempt still answers while its members have not left the scene; after that the
+        // persisted report does, so the result panel's statistics survive the next boss.
+        var statistics = s.DungeonAttempt is { } a ? StatisticsOf(a) : other ?? NewestStored(s);
+        return s.SendGameAsync(StatisticsCurrent, new GetDungeonStatisticsInDungeonResp
+        {
+            Result = statistics == null ? ErrorCodes.SceneMissing : 0,
+            DungeonStatistics = statistics
+        });
+    }
+
+    public Task StatisticsModuleAsync(GameSession s)
+    {
+        var stored = s.DungeonAttempt == null ? NewestStored(s) : null;
+        var msg = new DungeonStatisticsModuleRsp { Result = s.DungeonAttempt == null && stored == null ? ErrorCodes.SceneMissing : 0 };
+        var stats = s.DungeonAttempt is { } a ? StatisticsOf(a) : stored;
+        if (stats != null)
+        {
+            msg.StatisticsId = stats.StatisticsId; msg.DungeonId = stats.DungeonId; msg.StatisticsTime = stats.StatisticsTime;
+            msg.SceneStatistics.Add(stats.SceneStatistics);
+        }
+        return s.SendGameAsync(StatisticsModule, msg);
+    }
+
+    /// <summary>30114 answers with the reports the role owns; a request may name several, and ids it does not own
+    /// (another party's run, or one already pruned) are left out instead of discarding the whole answer.</summary>
+    public Task StatisticsHistoryAsync(GameSession s, DungeonStatisticsInfoWithDungeonReq req)
+    {
+        var msg = new DungeonStatisticsInfoWithDungeonResp();
+        if (req.StaisticsIds.Count is 0 or > 20) msg.Result = ErrorCodes.Parameter;
+        else
+        {
+            foreach (long id in req.StaisticsIds.Distinct())
+            {
+                if (s.DungeonAttempt is { } a && a.Room.Id == id) msg.DungeonStatistics.Add(StatisticsOf(a));
+                else if (s.Instances.Dungeons?.Statistics.TryGetValue(id, out var bytes) == true)
+                    msg.DungeonStatistics.Add(DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(bytes));
+            }
+            if (msg.DungeonStatistics.Count == 0) msg.Result = ErrorCodes.NoPermission;
+        }
+        return s.SendGameAsync(StatisticsHistory, msg);
+    }
+
+    public Task QueryResultAsync(GameSession s, QueryDungeonResultReq req)
+    {
+        var response = new QueryDungeonResultResp(); // Schema has no error field. Unknown/foreign result ids stay absent.
+        if (req.ResultIds.Count <= 20 && s.Instances.Dungeons != null)
+            foreach (var id in req.ResultIds.Distinct())
+                if (s.Instances.Dungeons.Results.TryGetValue(id, out var bytes)) response.Results.Add(DBDungeonResultData.Parser.ParseFrom(bytes));
+        return s.SendGameAsync(QueryResult, response);
+    }
+
+    private static string ResultId(Attempt a) => a.Room.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    internal void StoreHistory(State state, Attempt a)
+    {
+        state.Statistics[a.Room.Id] = StatisticsOf(a).ToByteArray();
+        var result = new DBDungeonResultData
+        {
+            ResultId = ResultId(a), ServerId = 1, DungeonId = a.Room.Id,
+            DungeonEntryId = (int)a.Plan.SceneEntry, CreateTime = _loop.NowMs
+        };
+        // Mode-specific SecondResultType/ResultParam have no recovered ordinary-dungeon mapping.
+        state.Results[result.ResultId] = result.ToByteArray();
+        // Twenty owned reports retained across login (inferred retention policy, no globally queryable role data).
+        foreach (long id in state.Statistics.Keys.Order().Take(Math.Max(0, state.Statistics.Count - 20)).ToArray())
+        { state.Statistics.Remove(id); state.Results.Remove(id.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+    }
+
+    /// <summary>
+    /// Another mode's own already-built result (CasualBattleService: Mock Battle) into the same queryable history an
+    /// ordinary dungeon's clear leaves (StoreHistory), so a later 30128 QueryResultAsync finds it too. Mock Battle keeps
+    /// no 30110/30117 Statistics entry here: its own live report already serves 30117 through CurrentStatisticsOwner, so
+    /// only Results gains one, retained at its own newest 20 among Results entries with no matching Statistics entry
+    /// (an ordinary dungeon's own Results entry is pruned only by StoreHistory, alongside its Statistics entry).
+    /// </summary>
+    public async Task StoreExternalResultAsync(GameSession s, DungeonResultNotify notice)
+    {
+        if (s.Role == null || s.Instances.Dungeons == null) return;
+        using var stateLock = await CharacterService.Lock(s);
+        var state = CurrentState(s.Instances.Dungeons);
+        var info = notice.ResultInfo;
+        var result = new DBDungeonResultData
+        {
+            ResultId = notice.ResultId, ServerId = 1, DungeonId = info.StatisticsId, DungeonEntryId = info.DungeonId,
+            CreateTime = _loop.NowMs, WinCamp = info.WinCamp,
+        };
+        result.MetaData.Add(info.MetaData);
+        var snapshot = new DungeonSnapshotData
+        {
+            SnapshotId = notice.ResultId, DungeonId = info.DungeonId, StatisticsId = info.StatisticsId,
+            Timestamp = info.StatisticsTime, DungeonStartTimestamp = info.DungeonStartTimestamp,
+        };
+        snapshot.SceneStatistics.Add(info.SceneStatistics);
+        result.Snapshots.Add(snapshot);
+        state.Results[result.ResultId] = result.ToByteArray();
+        // Only the external keys: an ordinary dungeon's Results entry is pruned alongside its Statistics entry by
+        // StoreHistory, never here (a role with 20 dungeon clears finishing a match must not lose the oldest one's
+        // 30128 entry while 30114 still shows it from Statistics).
+        var external = state.Results.Keys.Where(k => !state.Statistics.ContainsKey(long.Parse(k, CultureInfo.InvariantCulture)))
+            .OrderBy(k => long.Parse(k, CultureInfo.InvariantCulture)).ToArray();
+        foreach (string id in external.Take(Math.Max(0, external.Length - 20)))
+            state.Results.Remove(id);
+        await SaveAsync(s, state);
+    }
+
+    // LC_AssetDatasetDefine routes 30123 to Dragon Island and 30132 to Dragon Island/LeisureForty.
+    // Those modes are not ordinary boss dungeons. Their pushes are intentionally not produced here.
+    // 30126's task-score alias and server scoring formula remain unverified.
+
+    /// <summary>
+    /// 30123 DUNGEON_PLAYER_STATISTICS_NTF with a player's own kill and assist counts: LC_DAL_DragonIsland reads only
+    /// extraData KillPlayer/AssistKill into SelfDungeonStatisticsInfo, the battle report button's counters
+    /// (UI_Sys_Siege_BattleReportBtnWidgetBaseCtrl) in the Survivor, Mock Battle and Dragon Coffin Island HUDs.
+    /// </summary>
+    public static DungeonPlayerStatisticsNtf PlayerCounters(long role, long kills, long assists) => new()
+    {
+        PlayerId = role,
+        StatisticsInfo = new RoleStatisticsInfo
+        {
+            BaseInfo = new StatisticsRoleBaseInfo { Id = role },
+            ExtraData =
+            {
+                [1001004] = new ExtraValueData { LongValue = kills }, // KillPlayer
+                [1001005] = new ExtraValueData { LongValue = assists }, // AssistKill
+            },
+        },
+    };
+}

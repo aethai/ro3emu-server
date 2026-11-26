@@ -46,6 +46,7 @@ public sealed class LocalServer : IAsyncDisposable
         start.ArgumentList.Add(dll);
         start.Environment["Ro3Emu__PublicHost"] = "127.0.0.1";
         start.Environment["Ro3Emu__BindAddress"] = "127.0.0.1";
+        start.Environment["Ro3Emu__GuildFounding"] = "instant"; // S5's guilds have no responders to wait for
         start.Environment["Ro3Emu__HttpPort"] = http.ToString();
         start.Environment["Ro3Emu__MicroGatePort"] = micro.ToString();
         start.Environment["Ro3Emu__GameGatePort"] = game.ToString();
@@ -59,6 +60,7 @@ public sealed class LocalServer : IAsyncDisposable
         start.Environment["Ro3Emu__TravelCheck"] = "log"; // the scenarios place their bots with a raw 30012
         start.Environment["Logging__LogLevel__Default"] = "Warning";
         start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        start.Environment["Ro3Emu__GmOpenWhenEmpty"] = "true"; // S9 dresses its bots with the client's GM presets
         Directory.CreateDirectory(outputDir);
         Process? process = null;
         LocalServer? result = null;

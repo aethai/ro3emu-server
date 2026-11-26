@@ -30,7 +30,7 @@ public sealed class RoleItemCaptureTests : IDisposable
     [Fact]
     public void RoutedBlobWhitelistCoversEveryLiteralRoleStoreAccessor()
     {
-        string root = RepoRoot();
+        string root = ClientData.RepoRoot;
         string source = File.ReadAllText(Path.Combine(root, "src", "Ro3Emu.Server", "Accounts", "RoleStore.cs"));
         var columns = Regex.Matches(source, "(?:LoadBlob|SaveBlob)\\([^;\\r\\n]*?\"(?<column>[a-z_]+)\"")
             .Select(match => match.Groups["column"].Value).Distinct().ToArray();
@@ -161,14 +161,6 @@ public sealed class RoleItemCaptureTests : IDisposable
     public void Dispose()
     {
         _accounts.Dispose();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

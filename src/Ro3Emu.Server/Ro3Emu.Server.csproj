@@ -18,7 +18,6 @@
     </PackageReference>
     <PackageReference Include="MessagePack" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <PackageReference Include="SharpZipLib" />
   </ItemGroup>
 
   <ItemGroup>

@@ -30,7 +30,7 @@ public sealed partial class SiegeTests
         return (attack, defense);
     }
 
-    private TerritoryWarsService.SiegeRun Run(BotClient bot) => Session(bot).SiegeBattle!;
+    private TerritoryWarsService.SiegeRun Run(BotClient bot) => Session(bot).Instances.SiegeBattle!;
 
     [ClientDataFact]
     public async Task TheCastleStandsAtItsPointsAndOnlyTheOtherCampHitsIt()
@@ -222,7 +222,8 @@ public sealed partial class SiegeTests
             await attack.SendGameAsync(CombatService.SkillInterrupt, new SkillInterruptReq());
             await Next(attack, CombatService.SkillInterrupt, SkillInterruptResp.Parser);
             // A swing cancelled by a move holds the next one (CombatService.CancelCastAsync).
-            while (MonsterService.NowMs < a.SwingLockUntilMs) await Task.Delay(20);
+            if (_clock.NowMs < a.SwingLockUntilMs) _clock.AdvanceMs(a.SwingLockUntilMs - _clock.NowMs + 50);
+            while (_clock.NowMs < a.SwingLockUntilMs) { _clock.AdvanceMs(50); await Task.Delay(20); }
             await OnLoop(() => Service<SceneService>().TeleportInMapAsync(a, new MapPoint(m.X + 1.5f, m.Y, m.Z, 270)));
             await attack.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = m.Uid });
             Assert.Equal(0, (await Next(attack, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
@@ -238,11 +239,11 @@ public sealed partial class SiegeTests
         var guardian = run.Objects[38];
         long guardianHp = await HitFromBeside(guardian);
         Assert.True(guardianHp < guardian.Template.MaxHp);
-        for (int i = 0; i < 50 && guardian.Target == null; i++) await Task.Delay(100);
+        for (int i = 0; i < 50 && guardian.Target == null; i++) { _clock.AdvanceMs(100); await Task.Delay(100); }
         Assert.Same(a, guardian.Target); // the hit engages a fighting object by now...
         Assert.Null(gate.Target); // ...but never the gate, which was hit first
         await OnLoop(() => Service<SceneService>().TeleportInMapAsync(a, new MapPoint(guardian.X + 60, guardian.Y, guardian.Z, 0)));
-        await Task.Delay(2500); // monster ticks (real time): the guardian gives up and stands at home again
+        await Until(() => guardian.Target == null && !guardian.Returning);
         Assert.Null(guardian.Target);
         Assert.False(guardian.Returning);
 
@@ -280,7 +281,7 @@ public sealed partial class SiegeTests
         var a = Session(attack);
         float y = run.Objects[GatePoint].Y;
         Vec3 At(float x, float z) => new() { X = x, Y = y, Z = z };
-        bool SkillBlocked(Vec3 from, Vec3 to) => Service<CombatService>().SkillLineBlocked!(a, null, from, to);
+        bool SkillBlocked(Vec3 from, Vec3 to) => Service<CombatService>().IsSkillLineBlocked(a, null, from, to);
         bool WalkBlocked(Vec3 from, Vec3 to) => Service<SceneService>().WalkBlocked!(a, from, to);
 
         // Prepare: the attackers' camp, the gateway's two gate walls, the ladder ends, barricades and fortresses.
@@ -323,7 +324,7 @@ public sealed partial class SiegeTests
         var run = Run(attack);
         var a = Session(attack);
         var data = Service<Ro3Emu.Server.Data.GameData>();
-        long Hit(MonsterUnit m, int skill, long damage) => Service<CombatService>().DamageAdjusters.Aggregate(damage,
+        long Hit(MonsterUnit m, int skill, long damage) => Service<CombatService>().DamageAdjusters.Handlers.Aggregate(damage,
             (d, adjust) => adjust(a, m, Ro3Emu.Server.Data.Config.SkillConfig.Get(data, skill)!.Value.Row,
                 DamageHitResult.Normal, d));
 

@@ -30,7 +30,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
         });
         Service<SeasonService>().SetPlayBook(101);
@@ -41,7 +41,6 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -94,7 +93,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         var entity = Assert.Single(aoi.Bases, e => e.EntityTemplateID == 2300130);
         foreach (var (id, value) in new (long, long)[] { (101, 3363), (103, 218), (104, 218), (105, 240), (106, 240), (2002, 12) })
             Assert.Equal(value, entity.Property.Single(p => p.Idx == id).Data);
-        var pet = Assert.Single(Session.TowerAttempt!.Pets);
+        var pet = Assert.Single(Session.Instances.TowerAttempt!.Pets);
         await Next(bot, CombatService.UseInSkill, UseInSkillInfo.Parser, c => c.SrcID == pet.Uid && c.SkillID == 2354301);
         var shield = await Next(bot, BuffService.BuffUpdate, BuffUpdateNotify.Parser,
             b => b.UnitId == pet.Uid && b.Buffs.Any(x => x.ConfigId == 2354401));
@@ -104,7 +103,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
             x => x.EntityUuid == (ulong)pet.Uid && x.Property.Any(p => p.Idx == 2003 && p.Data == 218));
         var attack = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser,
             h => h.SrcID == pet.Uid && h.SkillId == 2354401 && h.Dsts.Any(d => d.Damage > 0));
-        Assert.All(attack.Dsts, d => Assert.InRange(d.Damage, 100, 300));
+        Assert.All(attack.Dsts, d => Assert.InRange(d.Damage, 40, 300)); // a level 12 pet against the floor's defense (CombatService.DefenseFactor)
         Assert.DoesNotContain(bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit))
             .Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)), h => h.SrcID == pet.Uid && h.SkillId == 2354301);
     }
@@ -113,7 +112,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task ShieldHasFiniteBudgetAllyLimitRangeCooldownAndNoEnemyDamage()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         var added = new List<TowerPetUnit>();
         MonsterUnit attacker = null!;
         await Run(async () =>
@@ -128,7 +127,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
                     s.Position.Y, s.Position.Z)!;
                 added.Add(pet); a.Pets.Add(pet); await Service<World>().AddUnitAsync(pet);
                 // Only the caster may auto-cast; reserve other actors' cooldown before the controlled cast.
-                if (i > 0) Assert.True(pet.TryBeginCast(pet.SupportSkills.Single(), MonsterService.NowMs));
+                if (i > 0) Assert.True(pet.TryBeginCast(pet.SupportSkills.Single(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
             }
             var source = a.Monsters[0];
             attacker = new MonsterUnit
@@ -187,7 +186,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task ChocoSupportChangesAllyAttackOnTheWireAndExpiresWithItsBuff()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         TowerPetUnit choco = null!, bobo = null!;
         await Run(async () =>
         {
@@ -225,7 +224,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
     public async Task HealingUsesRecipientHpAndPendingSupportCannotLandAfterSettlement()
     {
         await using var bot = await InTower();
-        var s = Session; var a = s.TowerAttempt!;
+        var s = Session; var a = s.Instances.TowerAttempt!;
         TowerPetUnit healer = null!;
         await Run(async () =>
         {
@@ -254,12 +253,5 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         Assert.Equal(0, Service<BuffService>().ShieldAmount(cancelled));
         Assert.DoesNotContain(bot.Inbox.Snapshot().Where(e => e.IsGame(BuffService.BuffUpdate))
             .Select(e => BuffUpdateNotify.Parser.ParseFrom(e.Body)), b => b.Buffs.Any(x => x.SourceId == cancelled.Uid));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

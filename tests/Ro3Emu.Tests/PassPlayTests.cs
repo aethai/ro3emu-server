@@ -49,7 +49,6 @@ public sealed class PassPlayTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -73,26 +72,26 @@ public sealed class PassPlayTests : IAsyncLifetime
     private Task<T> OnLoop<T>(Func<T> read) => Service<GameLoop>().InvokeAsync(() => Task.FromResult(read()));
 
     /// <summary>Posts one progress event and waits until its owned work has run.</summary>
-    private async Task Event(BotClient bot, (NewActivityService.PassGoal, long)[] progress, long kills = 0, long dungeons = 0,
+    private async Task Event(BotClient bot, (ActivityPassService.PassGoal, long)[] progress, long kills = 0, long dungeons = 0,
         long mvps = 0, long quest = 0)
     {
-        long before = await OnLoop(() => Session(bot).ActivityRuntime?.PassPlay?.Sequence ?? 0);
-        int unsaved = await OnLoop(() => Session(bot).ActivityRuntime?.PassPlay?.Unsaved ?? 0);
+        long before = await OnLoop(() => Session(bot).Activities.ActivityRuntime?.PassPlay?.Sequence ?? 0);
+        int unsaved = await OnLoop(() => Session(bot).Activities.ActivityRuntime?.PassPlay?.Unsaved ?? 0);
         await OnLoop(() => { Service<NewActivityService>().PassEvent(Session(bot), progress, kills, dungeons, mvps, quest); return 0; });
         // Owned work runs after this barrier; a second barrier lets a nested commit finish.
         for (int i = 0; i < 500; i++) // 10 s under suite load
         {
-            var (sequence, now) = await OnLoop(() => (Session(bot).ActivityRuntime?.PassPlay?.Sequence ?? 0,
-                Session(bot).ActivityRuntime?.PassPlay?.Unsaved ?? 0));
+            var (sequence, now) = await OnLoop(() => (Session(bot).Activities.ActivityRuntime?.PassPlay?.Sequence ?? 0,
+                Session(bot).Activities.ActivityRuntime?.PassPlay?.Unsaved ?? 0));
             if (sequence != before || now != unsaved) return;
             await Task.Delay(20);
         }
     }
 
     private Task<long> Currency(BotClient bot, int entry) => OnLoop(() => Session(bot).Progress!.Currency.GetValueOrDefault(entry));
-    private Task<PassPlayState> Play(BotClient bot) => OnLoop(() => Session(bot).ActivityRuntime!.PassPlay!);
+    private Task<PassPlayState> Play(BotClient bot) => OnLoop(() => Session(bot).Activities.ActivityRuntime!.PassPlay!);
     private Task<PlayerActivityBattlePass> Pass(BotClient bot) =>
-        OnLoop(() => Session(bot).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass);
+        OnLoop(() => Session(bot).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass);
 
     private static async Task<T> Next<T>(BotClient bot, uint id, Google.Protobuf.MessageParser<T> parser)
         where T : Google.Protobuf.IMessage<T> => parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(id), Wait)).Body);
@@ -121,7 +120,7 @@ public sealed class PassPlayTests : IAsyncLifetime
     /// world does not wait for it: under load a test read no pass state yet, or no draw.
     /// </summary>
     private Task Drawn(BotClient bot) =>
-        Until(() => OnLoop(() => (Session(bot).ActivityRuntime?.PassPlay?.Day ?? 0) != 0), "the day's challenges drawn");
+        Until(() => OnLoop(() => (Session(bot).Activities.ActivityRuntime?.PassPlay?.Day ?? 0) != 0), "the day's challenges drawn");
 
     [ClientDataFact]
     public async Task PremiumTrackIsFreeAndDailyActivityPaysPassExpAndProgress()
@@ -161,14 +160,14 @@ public sealed class PassPlayTests : IAsyncLifetime
 
         // Monsters pay 3 each up to 300 a day; 120 kills complete "Defeat 100 monsters" both as the daily (if drawn)
         // and towards the weekly 1000.
-        await Event(alice, [(NewActivityService.PassGoal.Kills, 120)], kills: 120);
+        await Event(alice, [(ActivityPassService.PassGoal.Kills, 120)], kills: 120);
         play = await Play(alice);
         Assert.Equal(300, play.KillExpToday);
         Assert.Equal(120, play.WeeklyProgress["w.kills"]);
         Assert.Equal(play.Daily.Contains("d.kills"), play.DailyDone.Contains("d.kills"));
 
         // Dungeons pay 200 up to five a day.
-        for (int i = 0; i < 6; i++) await Event(alice, [(NewActivityService.PassGoal.Dungeons, 1)], dungeons: 1);
+        for (int i = 0; i < 6; i++) await Event(alice, [(ActivityPassService.PassGoal.Dungeons, 1)], dungeons: 1);
         play = await Play(alice);
         Assert.Equal(5, play.DungeonsToday);
         Assert.Equal(5, play.WeeklyProgress["w.dungeons"]);
@@ -176,8 +175,8 @@ public sealed class PassPlayTests : IAsyncLifetime
 
         // A chapter's last main quest pays 500 once.
         long before = play.Earned;
-        await Event(alice, [(NewActivityService.PassGoal.Quests, 1)], quest: 10101251);
-        await Event(alice, [(NewActivityService.PassGoal.Quests, 1)], quest: 10101251);
+        await Event(alice, [(ActivityPassService.PassGoal.Quests, 1)], quest: 10101251);
+        await Event(alice, [(ActivityPassService.PassGoal.Quests, 1)], quest: 10101251);
         play = await Play(alice);
         Assert.Equal([10101251L], play.ChaptersPaid);
         Assert.Equal(before + 500, play.Earned); // ahead of the first day's pace: no catch-up double
@@ -207,7 +206,7 @@ public sealed class PassPlayTests : IAsyncLifetime
         Assert.Equal(balance, pass.Level * 2000L + pass.Exp);
 
         // Saved with the role.
-        var saved = Session(alice).ActivityRuntime!.PassPlay!;
+        var saved = Session(alice).Activities.ActivityRuntime!.PassPlay!;
         await alice.DisposeAsync();
         await using var again = await InWorld("Alice", create: false);
         var reloaded = await Play(again);
@@ -227,23 +226,23 @@ public sealed class PassPlayTests : IAsyncLifetime
         Assert.Equal(60, (await Pass(alice)).Level);
         await OnLoop(() =>
         {
-            var p = Session(alice).ActivityRuntime!.PassPlay ??= new(); p.Earned = 120000;
-            p.Instance = Session(alice).NewActivities!.ActivityInfo[200].ActivityInstance; return 0;
+            var p = Session(alice).Activities.ActivityRuntime!.PassPlay ??= new(); p.Earned = 120000;
+            p.Instance = Session(alice).Activities.NewActivities!.ActivityInfo[200].ActivityInstance; return 0;
         });
         // Today's draw would add a daily challenge to some steps; this test checks the sources without it.
         await Event(alice, []);
-        await OnLoop(() => { Session(alice).ActivityRuntime!.PassPlay!.Daily.Clear(); return 0; });
+        await OnLoop(() => { Session(alice).Activities.ActivityRuntime!.PassPlay!.Daily.Clear(); return 0; });
 
         await Party(alice, bob);
         Assert.Equal(2, await OnLoop(() => Service<TeamService>().MembersOf(Session(alice).Role!.Id).Count));
 
         long items = await OnLoop(() => Session(alice).Items.Sum(i => (long)i.Stack));
-        await Event(alice, [(NewActivityService.PassGoal.Dungeons, 1)], dungeons: 1);
+        await Event(alice, [(ActivityPassService.PassGoal.Dungeons, 1)], dungeons: 1);
         var play = await Play(alice);
         Assert.Equal(120000 + 240, play.Earned); // 200 x 1.2
         Assert.Equal(240, play.Overflow);
         // MVP fights pay 200 each up to three a day; the third also completes the weekly "Take part in 3 MVP fights" (1000).
-        for (int i = 0; i < 8; i++) await Event(alice, [(NewActivityService.PassGoal.Mvps, 1)], mvps: 1);
+        for (int i = 0; i < 8; i++) await Event(alice, [(ActivityPassService.PassGoal.Mvps, 1)], mvps: 1);
         play = await Play(alice);
         Assert.Equal(3, play.MvpsToday);
         Assert.Contains("w.mvps", play.WeeklyDone);
@@ -251,7 +250,7 @@ public sealed class PassPlayTests : IAsyncLifetime
         // 2160 past the last level: one chest, 160 carried over.
         Assert.Equal(160, play.Overflow);
         Assert.True(await OnLoop(() => Session(alice).Items.Sum(i => (long)i.Stack)) > items, "the chest's reward arrived");
-        await Event(alice, [(NewActivityService.PassGoal.Kills, 100)], kills: 100);
+        await Event(alice, [(ActivityPassService.PassGoal.Kills, 100)], kills: 100);
         play = await Play(alice);
         Assert.Equal(160 + 360, play.Overflow); // 300 x 1.2
     }
@@ -262,8 +261,8 @@ public sealed class PassPlayTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99"); // Pass II's own condition
         await Service<NewActivityService>().ReconcileAsync(Session(alice));
-        Task<string> State(long id) => OnLoop(() => Session(alice).NewActivities!.ActivityInfo[id].State);
-        Task<PlayerActivityBattlePass> Second() => OnLoop(() => Session(alice).NewActivities!.ActivityInfo[201].ActivityParam.BattlePass);
+        Task<string> State(long id) => OnLoop(() => Session(alice).Activities.NewActivities!.ActivityInfo[id].State);
+        Task<PlayerActivityBattlePass> Second() => OnLoop(() => Session(alice).Activities.NewActivities!.ActivityInfo[201].ActivityParam.BattlePass);
         Assert.NotEqual("_close", await State(200));
         Assert.Equal("_close", await State(201)); // Pass I is not done: both would fill from the same currency
 
@@ -290,7 +289,7 @@ public sealed class PassPlayTests : IAsyncLifetime
         await Event(alice, []);
         Task<long[]> Synced() => OnLoop(() => ((DBTaskInfo)Session(alice).Synced[TaskService.TaskInfoSync]).Infos.Keys
             .Where(id => id >= NewActivityService.DailyTaskBase && id < NewActivityService.DailyTaskBase + 1000).Order().ToArray());
-        await Event(alice, [(NewActivityService.PassGoal.Kills, 5)], kills: 5);
+        await Event(alice, [(ActivityPassService.PassGoal.Kills, 5)], kills: 5);
         Assert.Empty(await Synced()); // a client without the rows would throw on these ids
 
         await alice.SendGameBytesAsync(NewActivityService.PassPanelMsg, System.Text.Encoding.UTF8.GetBytes("open"));
@@ -299,7 +298,7 @@ public sealed class PassPlayTests : IAsyncLifetime
         long[] expected = [.. NewActivityService.DailyChallenges.Where(c => play.Daily.Contains(c.Id)).Select(NewActivityService.TaskIdOf),
             .. NewActivityService.WeeklyChallenges.Select(NewActivityService.TaskIdOf)];
         Assert.Equal(expected.Order(), await Synced());
-        await Event(alice, [(NewActivityService.PassGoal.Kills, 100)], kills: 100);
+        await Event(alice, [(ActivityPassService.PassGoal.Kills, 100)], kills: 100);
         // Event returns on the pass commit; the 5027 push (SyncTasksAsync) comes after it in the same detached operation.
         await Until(() => OnLoop(() => ((DBTaskInfo)Session(alice).Synced[TaskService.TaskInfoSync]).Infos
             .TryGetValue(NewActivityService.WeeklyTaskBase, out var weekly) && weekly.CompleteNum.Contains(105L)), "the weekly kills in 5027");
@@ -316,12 +315,12 @@ public sealed class PassPlayTests : IAsyncLifetime
     {
         await using var alice = await InWorld("Alice");
         await Service<NewActivityService>().ReconcileAsync(Session(alice));
-        await Event(alice, [(NewActivityService.PassGoal.Quests, 1)], quest: 10101010); // level 1: 9201 not open yet
+        await Event(alice, [(ActivityPassService.PassGoal.Quests, 1)], quest: 10101010); // level 1: 9201 not open yet
         Assert.Equal(0, await Currency(alice, NewActivityService.NovicePassExpCurrency));
         await Gm(alice, $"!lvl {PassOpenLevel.Novice(Service<GameData>())}");
         await Service<NewActivityService>().ReconcileAsync(Session(alice));
-        await Event(alice, [(NewActivityService.PassGoal.Quests, 1)], quest: 10101020);
-        await Event(alice, [(NewActivityService.PassGoal.Quests, 1)], quest: 9201101); // not a main quest
+        await Event(alice, [(ActivityPassService.PassGoal.Quests, 1)], quest: 10101020);
+        await Event(alice, [(ActivityPassService.PassGoal.Quests, 1)], quest: 9201101); // not a main quest
         Assert.Equal(300, await Currency(alice, NewActivityService.NovicePassExpCurrency));
     }
 

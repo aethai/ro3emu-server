@@ -7,14 +7,14 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>One E01 NPC purchase: existing typed children plus semantic receipt and exact role asset legs.</summary>
+/// <summary>One NPC economy transaction: existing typed children plus semantic receipt and exact role asset legs.</summary>
 internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation mutation,
     bool failAcknowledgementForTest = false, bool owned = false) : DbPlan
 {
     private int pendingAcknowledgementFault = failAcknowledgementForTest ? 1 : 0;
     private bool isReplay;
-    // E04 owned rewards retain their generic writer acknowledgement after economic replay validation.
-    // E01 resolves through EconomyReceiptResolveReadPlan; semantic E05d has its own envelope plan.
+    // Owned reward envelopes retain their generic writer acknowledgement after economic replay validation.
+    // NPC economy plans resolve through EconomyReceiptResolveReadPlan; semantic envelopes have their own plan.
     internal override bool OwnsOperationReceipt => !owned;
     internal override bool IsReplay => isReplay;
     internal override string? OperationId => owned ? mutation.OperationId : null;
@@ -219,7 +219,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
         };
         string[] columns = [.. sourceColumns, "daily", "library", "task_followup", "mounts", "activity_runtime",
             .. mutation.CommandKind == "cd13e/grant" ? new[] { "job_exp_catchup" } : []];
-        bool award = mutation.CommandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+        bool award = mutation.CommandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+            or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+            or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/journey-victory" or "cd13e/grant" or "cd13e/gm-grant";
         if (child.Parts.Count < 2 || child.Parts[0] is not ItemDeltaWritePlan ||
             (award ? child.Parts[1] is not RoleAwardStatePlan : child.Parts[1] is not RoleProgressWritePlan) ||
@@ -280,7 +282,7 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
             ? true // The ordered typed grammar below validates the optional kill/card/AFK children.
             : actualColumns.SequenceEqual(requiredColumns.Concat(cardColumns));
         string[] allowedColumns = mutation.CommandKind == "monster-kill"
-            ? ["library", "task_followup", "tower", "tasks", "wild_afk", "area_concur"]
+            ? ["library", "task_followup", "tower", "tasks", "wild_afk", "area_concur", "life_restrict"]
             : mutation.CommandKind is "gather-yield" or "dungeon-reward"
                 ? [.. requiredColumns, "library", "task_followup"] : requiredColumns;
         var activation = extra.OfType<DungeonObligationActivatePlan>().SingleOrDefault();
@@ -293,9 +295,12 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
                 index++;
                 if (index >= ordinaryExtra.Length || ordinaryExtra[index++] is not TowerFirstPassWritePlan) return false;
             }
-            if (index < ordinaryExtra.Length && ordinaryExtra[index] is RoleBlobWritePlan { Column: "wild_afk" }) index++;
+            bool fieldKill = index < ordinaryExtra.Length && ordinaryExtra[index] is RoleBlobWritePlan { Column: "wild_afk" };
+            if (fieldKill) index++;
             // Monster Hunt kill counters (MonsterHuntService), staged after the AFK child.
             if (index < ordinaryExtra.Length && ordinaryExtra[index] is RoleBlobWritePlan { Column: "area_concur" }) index++;
+            // A Lost Note spends a daily gathering restriction in the same field-kill receipt.
+            if (fieldKill && index < ordinaryExtra.Length && ordinaryExtra[index] is RoleBlobWritePlan { Column: "life_restrict" }) index++;
             if (index < ordinaryExtra.Length && ordinaryExtra[index] is RoleBlobWritePlan { Column: "library" })
             {
                 index++;
@@ -385,7 +390,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
                     {
                         "gather-yield" => EconomyReason.LifeCost,
                         "world-revive" or "cd13e/tower-milestone" => EconomyReason.ItemUse,
-                        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+                        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award"
+                            or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award"
+                            or "cd13e/daily-stage" or
                             "cd13e/journey-victory" => EconomyReason.OwnedAwardCost,
                         "cd13e/daily-reset" => EconomyReason.DailyReset,
                         _ => EconomyReason.NpcShopPayment
@@ -551,6 +558,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
 
     internal static object?[] DecodeChildReceipts(byte[] payload)
     {
+        // ReceiptRetention dropped them: the operation committed before the retention window and is not answered again.
+        if (ReceiptBlobs.IsCompacted(payload))
+            throw new EconomyOperationConflictException("The operation committed before the receipt retention window; its results are no longer kept.");
         using var stream = new MemoryStream(payload, writable: false);
         using var reader = new BinaryReader(stream, Encoding.UTF8);
         int count = reader.ReadInt32();
@@ -581,7 +591,9 @@ internal sealed class EconomyTransactionPlan(RoleItemPlan child, EconomyMutation
                 throw new InvalidDataException("Daily reset typed child result is invalid.");
             return;
         }
-        bool ownedAward = commandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or
+        bool ownedAward = commandKind is "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award"
+            or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award"
+            or "cd13e/firstheart-award" or "cd13e/daily-stage" or
             "cd13e/journey-victory" or "cd13e/grant" or "cd13e/gm-grant";
         bool hasTaskProgress = commandKind == "monster-kill" && values.Length > 2 && values[^1] is long[];
         if (hasTaskProgress && values[^1] is long[] credited &&

@@ -30,7 +30,7 @@ public sealed class CardPackSyncTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -43,7 +43,6 @@ public sealed class CardPackSyncTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -134,12 +133,5 @@ public sealed class CardPackSyncTests : IAsyncLifetime
     {
         using var http = new HttpClient();
         (await http.PostAsync($"{_httpUrl}/ro3emu/gm?account={account}", Operator.Command(command))).EnsureSuccessStatusCode();
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repo data");
     }
 }

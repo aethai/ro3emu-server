@@ -28,7 +28,7 @@ public sealed partial class SkillCombatTests
             {
                 target.Hp = 10000000;
                 target.X = source.Position.X; target.Y = source.Position.Y; target.Z = source.Position.Z;
-                source.SkillCds.Clear(); source.SkillModeCds.Clear();
+                source.Combat.SkillCds.Clear(); source.Combat.SkillModeCds.Clear();
                 await Character.SetHpSpAsync(source, long.MaxValue, null);
             });
             var skill = _app.Services.GetRequiredService<PetService>().Guardians(source).Single(p => p.IsPrimary);

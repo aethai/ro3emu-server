@@ -27,7 +27,7 @@ public sealed partial class GuildTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web;
             o.MicroGatePort = micro;
             o.GameGatePort = gate;
@@ -41,7 +41,6 @@ public sealed partial class GuildTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -234,10 +233,12 @@ public sealed partial class GuildTests : IAsyncLifetime
         Assert.Equal(0, store.Get(id)!.Contribute);
         await alice.SendGameAsync(GuildService.BuildUpgrade, new GuildBuildLevelUpReq { BuildingID = 1 });
         Assert.Equal(ErrorCodes.GuildBuildBusy, (await Next(alice, GuildService.BuildUpgrade, GuildBuildLevelUpResp.Parser, x => x.Result != 0)).Result);
+        _clock.Freeze();
+        _clock.Advance(TimeSpan.FromSeconds(2)); // past the heartbeat throttle's last run
         guild = store.Get(id)!;
-        guild.BuildingEndTimes[1] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1;
+        guild.BuildingEndTimes[1] = _clock.GetUtcNow().ToUnixTimeMilliseconds() - 1;
         Assert.True(store.Save(guild));
-        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => _app.Services.GetRequiredService<GuildService>().ReconcileAsync());
+        await alice.HeartbeatAsync(); // GuildService.ReconcileOnHeartbeatAsync finishes it, no guild operation needed
         guild = store.Get(id)!;
         Assert.Equal(2, guild.Buildings[1]);
         Assert.Equal(2, guild.Level);
@@ -309,6 +310,8 @@ public sealed partial class GuildTests : IAsyncLifetime
         await Level("helperone");
         await Level("helpertwo");
         await Level("helperthree");
+        _app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Ro3Emu.Server.ServerOptions>>().Value.GuildFounding = "responders";
+        await GiveEmperium("founder");
         var create = Create("Helpers", "Join us");
         create.AutoCreateHelper = true;
         await founder.SendGameAsync(GuildService.Create, create);
@@ -452,7 +455,7 @@ public sealed partial class GuildTests : IAsyncLifetime
         foreach (var stall in market.Stalls) stall.AvailableMs = 0;
         Assert.True(store.SaveMarket(market, []));
         store.Delete(orphanId); // guild dissolution can delete the seller while its market escrow remains
-        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, RepoRoot());
+        var openingEconomy = MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot);
         await buyer.SendGameAsync(GuildService.MarketItems, new GetBlackMarketItemsReq());
         var visible = await Next(buyer, GuildService.MarketItems, GetBlackMarketItemsRsp.Parser);
         Assert.Equal(10, Assert.Single(visible.Items).TotalRemainCount);
@@ -460,8 +463,8 @@ public sealed partial class GuildTests : IAsyncLifetime
         var recovered = Assert.Single(store.LoadMarket().RecoveryStalls);
         Assert.Equal(orphanId, recovered.GuildId);
         Assert.Equal(10, recovered.RemainCount);
-        var recoveryLedger = MarketEconomyEvidence.Exact(_dataDir, RepoRoot(), openingEconomy,
-            MarketEconomyEvidence.Cut(_dataDir, RepoRoot()), recovery: true);
+        var recoveryLedger = MarketEconomyEvidence.Exact(_dataDir, ClientData.RepoRoot, openingEconomy,
+            MarketEconomyEvidence.Cut(_dataDir, ClientData.RepoRoot), recovery: true);
         Assert.DoesNotContain(recoveryLedger.Legs, x => x.Kind is Ro3Emu.Server.Economy.EconomyLegKind.Source
             or Ro3Emu.Server.Economy.EconomyLegKind.Sink);
         Assert.Contains(recoveryLedger.Legs, x => x.Location.Compartment == Ro3Emu.Server.Economy.EconomyCompartment.Recovery && x.Delta == 10);
@@ -516,8 +519,8 @@ public sealed partial class GuildTests : IAsyncLifetime
             Assert.Equal(carolBefore, roles.LoadGuildInfo(carolId));
             Assert.Equal(guildId, bobSession.Guild!.GuildId);
             Assert.Equal(guildId, carolSession.Guild!.GuildId);
-            Assert.Contains($"2_{guildId}", bobSession.ChatGroups);
-            Assert.Contains($"2_{guildId}", carolSession.ChatGroups);
+            Assert.Contains($"2_{guildId}", bobSession.Social.ChatGroups);
+            Assert.Contains($"2_{guildId}", carolSession.Social.ChatGroups);
         }
         finally
         {
@@ -533,7 +536,7 @@ public sealed partial class GuildTests : IAsyncLifetime
             Assert.Equal(0, personal.GuildId);
             Assert.Equal(guildId, personal.LastGuildId);
             Assert.Equal(0, session.Guild!.GuildId);
-            Assert.DoesNotContain($"2_{guildId}", session.ChatGroups);
+            Assert.DoesNotContain($"2_{guildId}", session.Social.ChatGroups);
         }
     }
 
@@ -580,13 +583,6 @@ public sealed partial class GuildTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, GuildService.Edit, GuildEditResp.Parser, x => x.Name == "Third" || x.Result != 0)).Result);
         Assert.Null(_app.Services.GetRequiredService<GuildStore>().Get(id));
         Assert.Equal(10, session.Progress.Currency.GetValueOrDefault(3));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     /// <summary>104007 CheckJoinGuild reads the membership: "Join a guild" (10200080, automatic) and 100026 complete

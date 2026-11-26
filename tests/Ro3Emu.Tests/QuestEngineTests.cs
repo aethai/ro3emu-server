@@ -26,7 +26,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         var (http, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -37,7 +37,6 @@ public sealed class QuestEngineTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -107,7 +106,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         // 1601000's _kEXECAction [115,3000]: ActionConfig 115 MarkGuildActivityJoin with DailyActivityConfig 3000 (#166).
         await using var bot = await InWorld();
         var joined = new List<long>();
-        Service<TaskService>().GuildActivityJoined.Add((_, activity) => joined.Add(activity));
+        Service<TaskService>().GuildActivityJoined.Subscribe((_, activity) => joined.Add(activity));
         await Gm("!quest done 1601000");
         Assert.True(await Read(s => TaskService.IsDelivered(s, 1601000)));
         Assert.Equal([3000L], joined);
@@ -225,7 +224,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await Accept(10104080, 301010);
         await Gm("!quest accept 10104080", "questbob");
         var combat = Service<CombatService>();
-        var callback = combat.Killed.Single(h => h.Target is TaskService);
+        var callback = combat.Killed.Handlers.Single(h => h.Target is TaskService);
         for (int i = 0; i < 15; i++)
         {
             int npc = i % 2 == 0 ? 5000055 : 5000056;
@@ -237,7 +236,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
                     Template = Service<MonsterService>().Template(npc)!,
                     Home = new SpawnPoint(0, 0, 0, 0, 0, npc), Group = new SpawnGroup(0, false, 1, 0, [], []),
                 };
-                foreach (var handler in combat.Dealt) handler(s, monster, 1);
+                combat.Dealt.Invoke(s, monster, 1);
                 var killer = Service<SessionRegistry>().All().Single(x => x.Role?.Name == "QuestBob");
                 await callback(killer, monster);
             });
@@ -365,11 +364,11 @@ public sealed class QuestEngineTests : IAsyncLifetime
         long cutsceneTask = GameData.Int(row, "_iTaskID");
         await Accept(cutsceneTask);
         await Gm($"!quest done {cutsceneTask}");
-        Assert.True(await Read(s => s.InCutScene));
+        Assert.True(await Read(s => s.Activities.InCutScene));
         await Accept(10101020);
         await bot.SendGameAsync(TaskService.ExitCutSceneState, new ExitCutSceneStateReq());
         await Barrier(bot);
-        Assert.False(await Read(s => s.InCutScene));
+        Assert.False(await Read(s => s.Activities.InCutScene));
         Assert.Equal(0, (await State(10101020)).CompleteNum[0]);
     }
 
@@ -607,13 +606,6 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await bot.SendGameAsync(SceneService.ClientNpcInteract, new ClientNpcInteractReq { DialogID = 1010125001, Areapointid = 1010121001 });
         await Barrier(bot);
         Assert.Equal(1, await Read(s => Service<CharacterService>().CountOf(s, 1501014)));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

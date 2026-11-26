@@ -22,9 +22,9 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
     private const string CrashDirEnv = "RO3_STEP13A_REFINE_CRASH_DIR", CrashBarrierEnv = "RO3_STEP13A_REFINE_BARRIER";
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     private static readonly Lazy<EconomyCatalog> Catalog = new(() =>
-        EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+        EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private readonly string _directory = Environment.GetEnvironmentVariable(CrashDirEnv)
-        ?? Path.Combine(RepoRoot(), ".loadtest-temp", "ro3-refine-economy-" + Guid.NewGuid().ToString("N"));
+        ?? Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "ro3-refine-economy-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -36,7 +36,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -152,8 +152,8 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             Assert.False(command.IsCompleted);
             await Service<GameLoop>().InvokeAsync(() =>
             {
-                Assert.Equal(5, Session.EquipLevels.Refine[Grid]);
-                Assert.Equal(0, Session.EquipLevels.Luck.GetValueOrDefault(Grid));
+                Assert.Equal(5, Session.Profile.EquipLevels.Refine[Grid]);
+                Assert.Equal(0, Session.Profile.EquipLevels.Luck.GetValueOrDefault(Grid));
                 Assert.Equal(beforeMaterial, MaterialCount());
                 Assert.Equal(beforeCurrency, Currency());
                 return Task.CompletedTask;
@@ -184,7 +184,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
                 Service<OwnerRegistry>().RunSessionAsync("dispatcher", [ReservationKey.Role(session.Role!.Id)], session,
                     () => Service<EquipmentService>().RefineAsync(session,
                         new RefineEquipmentReq { EquipPos = (EquipGridType)Grid }))));
-            Assert.Equal((5, 0), (session.EquipLevels.Refine[Grid], session.EquipLevels.Luck.GetValueOrDefault(Grid)));
+            Assert.Equal((5, 0), (session.Profile.EquipLevels.Refine[Grid], session.Profile.EquipLevels.Luck.GetValueOrDefault(Grid)));
             Assert.Equal((5, 0), (Saved().Refine[Grid], Saved().Luck.GetValueOrDefault(Grid)));
             Assert.Equal(beforeMaterial, MaterialCount());
             Assert.Equal(beforeCurrency, Currency());
@@ -256,12 +256,12 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
     [ClientDataFact]
     public async Task ProcessDeathAfterPaidFailureCommitRestartsWithChargeLevelLuckAndReceipt()
     {
-        string crashDir = Path.Combine(RepoRoot(), ".loadtest-temp", "ro3-refine-crash-" + Guid.NewGuid().ToString("N"));
+        string crashDir = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "ro3-refine-crash-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(crashDir);
         string barrier = Path.Combine(crashDir, "committed.json");
         var start = new ProcessStartInfo("dotnet")
         {
-            WorkingDirectory = RepoRoot(), UseShellExecute = false, CreateNoWindow = true,
+            WorkingDirectory = ClientData.RepoRoot, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
         };
         foreach (string argument in new[] { "vstest", typeof(EquipmentRefineEconomyTests).Assembly.Location,
@@ -296,7 +296,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             var (web, micro, game) = TestPorts.FreePorts();
             restarted = ServerHost.Create([], o =>
             {
-                o.DataDir = crashDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+                o.DataDir = crashDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
                 o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             });
             await restarted.StartAsync();
@@ -329,7 +329,7 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             await bot.LoginAsync("alice", "pw"); await bot.EnterGateAsync();
             await bot.EnterWorldAsync(record.Role);
             var session = restarted.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == record.Role);
-            Assert.Equal((5, 500), (session.EquipLevels.Refine[Grid], session.EquipLevels.Luck[Grid]));
+            Assert.Equal((5, 500), (session.Profile.EquipLevels.Refine[Grid], session.Profile.EquipLevels.Luck[Grid]));
             Assert.Equal(record.MaterialBefore - record.MaterialCost,
                 session.Items.Where(i => i.Entry == Material).Sum(i => (long)i.Stack));
         }
@@ -340,12 +340,5 @@ public sealed class EquipmentRefineEconomyTests : IAsyncLifetime
             SqliteConnection.ClearAllPools();
             try { Directory.Delete(crashDir, true); } catch (IOException) { }
         }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repo root");
     }
 }

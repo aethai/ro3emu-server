@@ -35,7 +35,7 @@ public sealed class GuildHomeTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.SeasonStart = "2026-10-05"; o.PlayBook = 101;
         }, _clock);
@@ -46,15 +46,7 @@ public sealed class GuildHomeTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var current = new DirectoryInfo(AppContext.BaseDirectory); current != null; current = current.Parent)
-            if (File.Exists(Path.Combine(current.FullName, "Ro3Emu.slnx"))) return current.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -265,7 +257,7 @@ public sealed class GuildHomeTests : IAsyncLifetime
         // (OutOfCombatMs), which under a loaded suite could land before the request.
         await OnLoop(() =>
         {
-            session.Dead = false; session.StatusBits |= 1L << 15; session.LastCombatMs = MonsterService.NowMs;
+            session.Dead = false; session.StatusBits |= 1L << 15; session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Task.CompletedTask;
         });

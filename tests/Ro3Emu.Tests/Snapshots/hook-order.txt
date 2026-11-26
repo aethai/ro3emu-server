@@ -1,0 +1,471 @@
+AppraisalService.Appraised (1)
+  AchievementService.<.ctor> lambda
+AuctionService.GuildBid (1)
+  TaskService.OnGuildAuctionBid
+BuffService.Changed (4)
+  SkillCastingService.RefreshSkillParametersAsync
+  SkillService.RefreshFollowUpsAsync
+  TalentProcs.OnBuffsChangedAsync
+  StealthEffects.PublishAsync
+BuffService.ControlResisted (1)
+  PassiveSkills.OnControlResistedAsync
+BuffService.UnitChanged (2)
+  CombatService.PublishMonsterAttributesAsync
+  PetCombatService.PublishTowerPetStatsAsync
+CardService.CollectionChanged (2)
+  AchievementService.<.ctor> lambda
+  FirstHeartService.<.ctor> lambda
+CardService.SocketsChanged (1)
+  CardEffects.RefreshAsync
+CharacterService.DynamicProperties (4)
+  BuffService.SupportShieldProperties
+  BuffService.BlindProperties
+  TotemEffects.ShieldProperties
+  StealthEffects.Properties
+CharacterService.ExpCredited (1)
+  CheatMonitor.ExpGained
+CharacterService.ExtraAttributes (11)
+  CombatService.PassiveAttributes
+  CombatService.ResonanceAttributes
+  MountService.Attributes
+  LifeJobService.FoodAttributes
+  EmblemService.ResonanceAttributes
+  PetService.Attributes
+  SeasonRefineService.ActiveAttributes
+  TotemService.Attributes
+  TalentProcs.SoulReaperAttributes
+  RidingEffects.RideAttributes
+  ParagonService.Attributes
+CharacterService.ItemGained (2)
+  CardService.OnItemGained
+  AchievementService.<.ctor> lambda
+CharacterService.ItemUsed (1)
+  TaskService.<.ctor> lambda
+CharacterService.ItemsAwarded (1)
+  MountService.<.ctor> lambda
+CharacterService.JobChanged (9)
+  MountService.ReconcileAsync
+  TaskService.<.ctor> lambda
+  AchievementService.<.ctor> lambda
+  PassiveSkills.StandingBuffsAsync
+  RidingEffects.SyncAsync
+  StealthEffects.PublishAsync
+  CareerSpecialService.ReconcileAsync
+  PowerService.<.ctor> lambda
+  SocialOutfitService.<.ctor> lambda
+CharacterService.ProgressHandlers (12)
+  SkillService.SyncAsync
+  FunctionService.SyncAsync
+  BuffService.ReconcileEnergyAsync
+  TaskService.<.ctor> lambda
+  DungeonService.SyncLockedAsync
+  LifeJobService.OnLevelChangedAsync
+  NewActivityService.<.ctor> lambda
+  AchievementService.<.ctor> lambda
+  FirstHeartService.<.ctor> lambda
+  PersonalService.RefreshAsync
+  PowerService.<.ctor> lambda
+  EmojiService.RefreshUnlocksAsync
+CharacterService.SpecialItemUse (5)
+  WardrobeService.TryUseAppearanceItemAsync
+  MountService.TryUseItemAsync
+  CharacterInventoryService.UseItemActionAsync
+  PetService.TryUseSelfChooseAsync
+  ItemBoxService.TryOpenAsync
+CharacterService.StateChanged (9)
+  TaskService.QueueRefresh
+  LifeJobService.SyncVigorChange
+  NewActivityService.QueueRefresh
+  FactionWorldService.<.ctor> lambda
+  AchievementService.QueueRecheck
+  FirstHeartService.MarkDirty
+  PowerService.Queue
+  ParagonService.<.ctor> lambda
+  LotteryService.QueueRefresh
+CharacterService.WornGearChanged (2)
+  CardEffects.RefreshAsync
+  SkillService.AttackInputChangedAsync
+ChatService.TextSent (1)
+  TaskService.OnChatSent
+CombatService.AfterLethalPublication (2)
+  MvpService.FinalizePreparedAsync
+  WarMachineService.MachineDestroyedAsync
+CombatService.BeforeCast (1)
+  MountService.DismountForCastAsync
+CombatService.BeforeKilled (3)
+  TowerService.BeforeTerminalKillAsync
+  DungeonService.FreezeTerminalKillAsync
+  RewardService.PrepareKilledAsync
+CombatService.BeforeLethalPublication (1)
+  MvpService.PrepareKilledAsync
+CombatService.BossAreaLanded (1)
+  RaidTrialsService.TrialBreakersAsync
+CombatService.CardHitReactions (1)
+  CardEffects.ReflectAsync
+CombatService.CastLanded (4)
+  ChickenBattleService.ChickenCastAsync
+  CasualBattleService.CastLandedAsync
+  TotemEffects.OnCastAsync
+  StealthEffects.BackSlideCamouflageAsync
+CombatService.CastResolved (7)
+  CombatService.AutoCounterOnCastAsync
+  CombatEffectsService.SupportSkillOnCastAsync
+  SkillCastingService.ReadingExtraCastAsync
+  SkillCastingService.ClassLoopsOnCastAsync
+  CardEffects.OnCastResolvedAsync
+  TalentProcs.OnCastResolvedAsync
+  PassiveSkills.OnCastResolvedAsync
+CombatService.DamageAdjusters (10)
+  PetCombatService.<WireGuardians> lambda
+  PetCombatService.<WireGuardians> lambda
+  RaidTrialsService.TrialDamage
+  RaidTrialsService.<WireCombat> lambda
+  MvpService.<.ctor> lambda
+  SiegeService.<.ctor> lambda
+  TowerService.<RegisterSuppression> lambda
+  TotemEffects.AdjustDamage
+  CardEffects.AdjustDamage
+  PassiveSkills.PreyOnTheWeakDamage
+CombatService.Dealt (5)
+  TaskService.<.ctor> lambda
+  DungeonService.<BindSubsystems> lambda
+  TimedBattleService.DragonDealt
+  CasualBattleService.BossDealt
+  GuildHuntingService.Dealt
+CombatService.DealtAsync (8)
+  PetCombatService.GuardianDamageReactionAsync
+  PetCombatService.GuardianWindowMonsterHitAsync
+  PetCombatService.<WireGuardians> lambda
+  RaidTrialsService.TrialBossHitAsync
+  TotemEffects.OnDealtAsync
+  CardEffects.OnDealtAsync
+  TalentProcs.RowProcsOnDealtAsync
+  StealthEffects.<.ctor> lambda
+CombatService.EventDamageRecorded (7)
+  MvpService.<.ctor> lambda
+  AdventureActivityService.OnTreasureMonsterDamagedAsync
+  TrainingService.<.ctor> lambda
+  TerritoryWarsService.DamageRecordedAsync
+  WarMachineService.MachineDamageRecordedAsync
+  SiegeService.SiegeDamageRecordedAsync
+  GuildLeagueService.MonsterDamagedAsync
+CombatService.ExtraHeal (1)
+  TotemEffects.ExtraHealing
+CombatService.ExtraHitDamage (1)
+  TotemEffects.ExtraDamage
+CombatService.GrantedSkill (6)
+  CombatService.<.ctor> lambda
+  MountService.<.ctor> lambda
+  RaidTrialsService.FiresCannon
+  CasualBattleService.<HookArena> lambda
+  CasualBattleService.<HookArena> lambda
+  WarMachineService.SeatSkill
+CombatService.Healed (3)
+  DungeonService.<BindSubsystems> lambda
+  ChickenBattleService.ChickenHealed
+  CasualBattleService.<WireBattleHooks> lambda
+CombatService.HealedAsync (3)
+  TerritoryWarsService.BattleHealRecordedAsync
+  SiegeService.SiegeHealRecordedAsync
+  GuildLeagueService.HealedAsync
+CombatService.IncomingDamageAdjusters (3)
+  RaidTrialsService.<WireCombat> lambda
+  MvpService.<.ctor> lambda
+  TotemEffects.AdjustIncomingDamageAsync
+CombatService.Killed (21)
+  TaskService.OnKillAsync
+  RewardService.KilledAsync
+  RaidTrialsService.TrialObjectKilledAsync
+  DungeonService.KilledAsync
+  PronteraDefenseService.OnKilledAsync
+  MvpService.OnKilledAsync
+  AdventureActivityService.OnTreasureMonsterKilledAsync
+  RiftBattleService.OnePieceKilledAsync
+  TimedBattleService.DragonBossKilledAsync
+  CasualBattleService.MonsterKilledAsync
+  GuildCampfireService.KilledAsync
+  GuildHuntingService.KilledAsync
+  TerritoryWarsService.KilledAsync
+  FactionWorldService.WorldKilledAsync
+  WarMachineService.MachineKilledAsync
+  SiegeService.SiegeKilledAsync
+  TerritoryEscortService.CartKilledAsync
+  GuildLeagueService.MonsterKilledAsync
+  TowerService.KilledAsync
+  TalentProcs.OnKilledAsync
+  PassiveSkills.OnKilledAsync
+CombatService.LethalHitRolledBack (1)
+  MvpService.RollbackUnpublishedLethal
+CombatService.MonsterDamageAdjusters (1)
+  TowerService.<RegisterSuppression> lambda
+CombatService.MonsterDamageApplied (1)
+  TerritoryEscortService.CartDamagedAsync
+CombatService.PlayerDamageAdjusters (1)
+  CardEffects.AdjustDamageTaken
+CombatService.PlayerDied (15)
+  DungeonService.PlayerDiedAsync
+  AdventureActivityService.InterruptConchAsync
+  ChickenBattleService.ChickenDiedAsync
+  RiftBattleService.OnePieceDiedAsync
+  CasualBattleService.DiedAsync
+  WildAfkService.<.ctor> lambda
+  TerritoryWarsService.DiedAsync
+  FactionWorldService.WorldDiedAsync
+  WarMachineService.CannonDiedAsync
+  WarMachineService.VehicleDiedAsync
+  WarMachineService.PlatformLeavingAsync
+  GuildLeagueService.DiedAsync
+  TowerService.PlayerDiedAsync
+  TalentProcs.OnDiedAsync
+  EmojiService.<.ctor> lambda
+CombatService.PlayerKilled (4)
+  TaskService.OnFactionPlayerKilledAsync
+  FactionWorldService.GloryKilledAsync
+  TerritoryEscortService.PlayerKilledAsync
+  TalentProcs.OnPlayerKilledAsync
+CombatService.PlayerRevived (2)
+  PronteraDefenseService.OnRevivedAsync
+  TotemEffects.RefreshAsync
+CombatService.PvpDamageAdjusters (1)
+  CardEffects.AdjustPvpDamage
+CombatService.PvpDealt (3)
+  ChickenBattleService.ChickenDealt
+  CasualBattleService.Dealt
+  TerritoryEscortService.PvpRecorded
+CombatService.PvpDealtAsync (6)
+  TerritoryWarsService.PvpRecordedAsync
+  FactionWorldService.GloryHitAsync
+  SiegeService.SiegePvpRecordedAsync
+  GuildLeagueService.PvpAsync
+  CardEffects.<.ctor> lambda
+  StealthEffects.<.ctor> lambda
+CombatService.PvpHitLanded (1)
+  CardEffects.OnPvpHitAsync
+CombatService.ReviveInfoOwners (5)
+  DungeonService.<BindSubsystems> lambda
+  ChickenBattleService.OwnsRevive
+  CasualBattleService.<HookArena> lambda
+  TerritoryWarsService.<.ctor> lambda
+  GuildLeagueService.<HookBattle> lambda
+CombatService.Taken (2)
+  DungeonService.<BindSubsystems> lambda
+  MvpService.OnTaken
+CombatService.TakenAsync (6)
+  PetCombatService.<WireGuardians> lambda
+  TotemEffects.OnTakenAsync
+  CardEffects.<.ctor> lambda
+  TalentProcs.OnTakenAsync
+  PassiveSkills.OnTakenAsync
+  StealthEffects.<.ctor> lambda
+CombatService.TowerPetDied (1)
+  TowerService.PetDiedAsync
+DailyActivityService.EventProjections (1)
+  FestivalService.Project
+DungeonService.Completed (3)
+  AchievementService.<.ctor> lambda
+  DungeonComposition.TaskDungeonCleared
+  ValhallaService.ClearedAsync
+DungeonService.MultiBossCleared (2)
+  TaskService.OnTenBossClearedAsync
+  TaskService.OnConnectBossClearedAsync
+DungeonService.RunTracked (1)
+  TaskService.OnDungeonRun
+EmblemService.Upgraded (1)
+  TaskService.OnEchoUpgraded
+EquipmentService.Crafted (2)
+  TaskService.OnCraftedAsync
+  AchievementService.<.ctor> lambda
+EquipmentService.Refined (3)
+  TaskService.<.ctor> lambda
+  SeasonRefineService.OnRefinedAsync
+  AchievementService.<.ctor> lambda
+GuildCampfireService.Joined (2)
+  TaskService.OnCampfireJoined
+  TaskService.OnBonfireJoined
+GuildChallengeService.Participated (1)
+  TaskService.OnGveJoined
+GuildLeagueService.MatchCommitted (2)
+  TaskService.OnGuildLeagueMatch
+  TaskService.OnGuildLeagueFought
+GuildService.GuildIdChanged (1)
+  GuildComposition.ReshowPlayerOnGuildIdChanged
+GuildService.MembershipChanged (3)
+  AchievementService.QueueRecheck
+  TaskService.OnStateChanged
+  GuildVoiceService.OnMembershipChanged
+GuildService.RightsChanged (1)
+  GuildVoiceService.OnRightsChanged
+LifeJobService.ProjectedRestrictions (2)
+  ExplorationNoteDrops.Remaining
+  RiftBattleService.RiftRestriction
+MonsterService.Born (1)
+  MvpService.ApplyBornBuffsAsync
+MonsterService.TargetChanged (2)
+  WorldEffectsService.TargetChangedAsync
+  WorldCoreService.TargetChangedAsync
+MountService.Changed (1)
+  BuffService.MountsChangedAsync
+MountService.RideChanged (5)
+  CharacterComposition.MountRideChanged
+  RidingEffects.SyncAsync
+  SkillService.AttackInputChangedAsync
+  SkillService.SyncAsync
+  CareerSpecialService.RideChangedAsync
+MvpService.ParticipantSettled (1)
+  AchievementService.<.ctor> lambda
+NewActivityService.ProjectionChanged (1)
+  LotteryService.QueueRefresh
+PersonalService.Upvoted (1)
+  TaskService.OnProfileLiked
+PetService.Changed (1)
+  PetCombatService.SyncGuardianWheelAsync
+PublicLineManager.HasPendingWork (5)
+  MvpService.HasPendingWork
+  MonsterService.HasPendingWork
+  CombatService.HasPendingMapWork
+  GatheringService.HasPendingWork
+  StallsService.HasPendingWork
+PublicLineManager.Retiring (6)
+  GatheringService.RetireRuntimeAsync
+  StallsService.RetireLineAsync
+  MvpService.RetireLineAsync
+  MonsterService.RetireRuntimeAsync
+  ChatService.RetireLineAsync
+  WorldCoreService.<WireWorldHooks> lambda
+RewardService.ExtraKillDrops (3)
+  ParagonService.StarCoreDrops
+  TitleService.CrestDrops
+  MonsterHuntService.AreaDrops
+RewardService.KillDropsGranted (2)
+  WildAfkService.DropsGrantedAsync
+  MonsterHuntService.KilledAsync
+SceneService.AfterLoaded (6)
+  InstanceService.NotifyRecoveredAsync
+  WorldEffectsService.ReplayAsync
+  WorldCoreService.LoadedAsync
+  PassiveSkills.StandingBuffsAsync
+  RidingEffects.SyncAsync
+  StealthEffects.PublishAsync
+SceneService.BeforeSelf (3)
+  WardrobeService.ReconcileAsync
+  MountService.ReconcileAsync
+  InstanceService.RecoverOnReturnAsync
+SceneService.Leaving (28)
+  CombatService.ClearSkillsAsync
+  BuffService.ClearOnSceneAsync
+  SkillCastingService.ClearSceneSkillProtocolAsync
+  TowerService.AbandonAsync
+  InstanceService.AbandonAsync
+  WorldInteractionService.LeaveAsync
+  DungeonService.AbandonAsync
+  ScriptedDungeonService.StopSlideAsync
+  LifeJobService.CancelAsync
+  AdventureActivityService.LeaveConchesAsync
+  TimedBattleService.LeavingAsync
+  CasualBattleService.LeavingAsync
+  CasualBattleService.<HookArena> lambda
+  FestivalService.LeavingAsync
+  TrainingService.<.ctor> lambda
+  WildAfkService.<.ctor> lambda
+  TerritoryWarsService.LeavingAsync
+  FactionWorldService.GloryLeavingAsync
+  WarMachineService.CannonLeavingAsync
+  WarMachineService.VehicleLeavingAsync
+  WarMachineService.PlatformLeavingAsync
+  SiegeService.SiegeLeavingAsync
+  TerritoryEscortService.SceneLeavingAsync
+  GuildLeagueService.LeavingAsync
+  WorldCoreService.LeavingAsync
+  GatheringService.<.ctor> lambda
+  StallsService.<.ctor> lambda
+  EmojiService.LeavingAsync
+SceneService.LineSwitchChecks (1)
+  WorldInteractionService.<.ctor> lambda
+SceneService.Loaded (25)
+  DungeonService.LoadedAsync
+  PronteraDefenseService.ApplyPrepBuffAsync
+  AdventureActivityService.OnTreasureSceneLoadedAsync
+  AdventureActivityService.ReloadConchesAsync
+  TimedBattleService.LoadedAsync
+  CasualBattleService.LoadedAsync
+  FestivalService.LoadedAsync
+  TrainingService.LoadedAsync
+  GuildCampfireService.LoadedAsync
+  GuildHuntingService.LoadedAsync
+  DraculaWeddingService.LoadedAsync
+  AdventureGroupService.OnSceneLoadedAsync
+  WildAfkService.<.ctor> lambda
+  TerritoryWarsService.LoadedAsync
+  FactionWorldService.WorldLoadedAsync
+  SiegeService.SiegeLoadedAsync
+  TerritoryEscortService.SceneLoadedAsync
+  GuildLeagueService.LoadedAsync
+  PetCombatService.SyncGuardianWheelAsync
+  SkillCastingService.RefreshSkillParametersAsync
+  PetFollowerService.RefreshAsync
+  TowerService.LoadedAsync
+  CardEffects.RefreshAsync
+  GatheringService.<.ctor> lambda
+  StallsService.<.ctor> lambda
+SceneService.LoadedKeys (2)
+  TerritoryWarsService.SceneKeys
+  TerritoryEscortService.SceneKeys
+SceneService.PublicLineOpened (2)
+  MvpService.ActivateLine
+  StallsService.ActivateLine
+SceneService.Resync (2)
+  AdventureActivityService.ReloadConchesAsync
+  WorldEffectsService.ReplayAsync
+SeasonService.ScheduleChanged (1)
+  NewActivityService.InvalidateAllSchedules
+SeasonTalentService.EffectsChanged (1)
+  SkillCastingService.RefreshSkillParametersAsync
+SkillService.Learned (8)
+  SkillCastingService.RefreshSkillParametersAsync
+  CharacterService.RefreshStatsAsync
+  TaskService.<.ctor> lambda
+  CharacterService.NotifyCareerCapacityAsync
+  PassiveSkills.StandingBuffsAsync
+  RidingEffects.SyncAsync
+  StealthEffects.PublishAsync
+  PowerService.<.ctor> lambda
+TaskService.ExtraTasks (1)
+  TaskService.DungeonRunTasks
+TaskService.GuildActivityJoined (0)
+TaskService.QuestDelivered (5)
+  TaskService.AddFactionPoints
+  AdventureActivityService.OnExplorationQuestDelivered
+  AdventureGroupService.OnTaskDelivered
+  SocialComposition.AchievementTaskDelivered
+  TaskService.OnConnectDelivered
+TavernService.PopularityChanged (1)
+  AchievementService.OnStateChanged
+TavernService.TavernQuestsAdded (1)
+  SocialComposition.AchievementTavernQuests
+TeamService.RosterChanged (1)
+  PassiveSkills.<.ctor> lambda
+TerritoryEscortService.CartStarted (1)
+  TerritoryComposition.EscortJoined
+TerritoryWarsService.BattleSettled (2)
+  TaskService.OnTerritoryBattleSettled
+  TerritoryComposition.GuildWarScored
+TerritoryWarsService.CampChanged (1)
+  TaskService.OnFactionCampChanged
+TerritoryWarsService.CrystalCollected (1)
+  TaskService.OnFactionCrystalCollected
+TerritoryWarsService.SiegeSettled (3)
+  WarMachineService.SiegeMachinesSettled
+  TaskService.OnSiegeSettled
+  TerritoryComposition.RoyalCityJoined
+TerritoryWarsService.SiegeTracked (1)
+  TaskService.OnDungeonRun
+TotemService.Combined (1)
+  TaskService.OnTotemCombined
+TowerService.FloorCleared (1)
+  AchievementService.QueueRecheck
+TowerService.Settled (1)
+  TaskService.OnTowerSettled
+TradeService.Bought (1)
+  TaskService.OnExchangeBought
+TrainingService.ChallengeSettled (1)
+  TaskService.OnDummyChallengeSettled

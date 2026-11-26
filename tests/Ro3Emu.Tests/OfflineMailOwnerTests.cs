@@ -21,7 +21,7 @@ public sealed class OfflineMailOwnerTests : IAsyncLifetime
     }
 
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "step11-mail-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "step11-mail-" + Guid.NewGuid().ToString("N"));
     private readonly Clock _clock = new();
     private WebApplication _app = null!;
     private string _url = "";
@@ -31,13 +31,6 @@ public sealed class OfflineMailOwnerTests : IAsyncLifetime
     private RoleStore Roles => _app.Services.GetRequiredService<RoleStore>();
     private MailService Mail => _app.Services.GetRequiredService<MailService>();
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    private static string RepoRoot()
-    {
-        for (var path = new DirectoryInfo(AppContext.BaseDirectory); path != null; path = path.Parent)
-            if (File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) return path.FullName;
-        throw new InvalidOperationException("repository root");
-    }
 
     public async Task InitializeAsync()
     {

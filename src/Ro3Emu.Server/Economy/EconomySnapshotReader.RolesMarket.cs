@@ -17,7 +17,7 @@ public static partial class EconomySnapshotReader
             if (!columns.ContainsKey("id")) return;
             string select = string.Join(",", new[] { "id", "deleted_time", "currency" }.Concat(RoleBlobs.Keys)
                 .Where(columns.ContainsKey).Select(n => "\"" + n + "\""));
-            using var cmd = Command("SELECT " + select + " FROM role ORDER BY id");
+            using var cmd = ScopeIds(Command("SELECT " + select + " FROM role" + ScopeFilter(RoleScope, "id") + " ORDER BY id"), RoleScope);
             using var r = cmd.ExecuteReader();
             var names = Enumerable.Range(0, r.FieldCount).Select(r.GetName).ToArray();
             long rowIndex = 0;
@@ -152,7 +152,13 @@ public static partial class EconomySnapshotReader
             ["equip_plans"] = DBEquipInfo.Descriptor, ["auto_decompose"] = AutoDecomposeSetting.Descriptor,
             ["bag_state"] = DBItemsInfo.Descriptor, ["stat_plans"] = BaseAttrInfo.Descriptor,
             ["pets"] = DBPetInfo.Descriptor, ["wardrobe"] = DBWardRobeInfo.Descriptor,
-            ["totems"] = DBTotemInfo.Descriptor, ["genre"] = DBGenre.Descriptor, ["career_special"] = DBCareerSpecial.Descriptor, ["paragon"] = DBParagonLevel.Descriptor, ["title"] = DBTitleInfo.Descriptor, ["heroic_spirit"] = DBOdinStatue.Descriptor, ["area_concur"] = DBAreaConcurInfo.Descriptor, ["growth_class"] = DBGrowthClassInfo.Descriptor, ["first_heart"] = DBFirstHeartTaskActivityData.Descriptor, ["personal"] = DBPersonalInfo.Descriptor, ["personal_upvote"] = PersonalUpvoteList.Descriptor, ["popularity"] = DBPopularityStar.Descriptor, ["social_outfit"] = DBSocialOutfit.Descriptor, ["emoji_info"] = DBEmojiInfo.Descriptor,
+            ["totems"] = DBTotemInfo.Descriptor, ["genre"] = DBGenre.Descriptor,
+            ["career_special"] = DBCareerSpecial.Descriptor, ["paragon"] = DBParagonLevel.Descriptor,
+            ["title"] = DBTitleInfo.Descriptor, ["heroic_spirit"] = DBOdinStatue.Descriptor,
+            ["area_concur"] = DBAreaConcurInfo.Descriptor, ["growth_class"] = DBGrowthClassInfo.Descriptor,
+            ["first_heart"] = DBFirstHeartTaskActivityData.Descriptor, ["personal"] = DBPersonalInfo.Descriptor,
+            ["personal_upvote"] = PersonalUpvoteList.Descriptor, ["popularity"] = DBPopularityStar.Descriptor,
+            ["social_outfit"] = DBSocialOutfit.Descriptor, ["emoji_info"] = DBEmojiInfo.Descriptor,
             ["new_activities"] = DBNewActivityInfo.Descriptor, ["training"] = DBTrainingGroundInfo.Descriptor
         };
 
@@ -255,7 +261,8 @@ public static partial class EconomySnapshotReader
             int index = 0;
             foreach (var letter in Elements(letters))
             {
-                Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
+                Fields(letter, "Id Category CreatedTime RemoveTime Title Content Abstract Sender SenderId TemplateId "
+                    + "ImportantType DeliveryKey SourceKey ContentParams Read Claimed Attachments Items Currency");
                 string id = String(letter, "Id", "index-" + index++);
                 string path = key + "/" + id;
                 _mailDeliveryKeys.Add(role + "/" + id); // Legacy migration preserves row id, even after claim.
@@ -289,7 +296,8 @@ public static partial class EconomySnapshotReader
         {
             if (!Has("item") || !new[] { "guid", "role_id", "entry", "stack", "pack", "sort", "grid", "attrs", "enchantments", "str_attrs", "bind_type", "bind_expire", "is_locked" }
                 .All(Columns("item").ContainsKey)) return;
-            using var cmd = Command("SELECT guid,role_id,entry,stack,pack,sort,grid,attrs,enchantments,str_attrs,bind_type,bind_expire,is_locked FROM item ORDER BY guid");
+            using var cmd = ScopeIds(Command("SELECT guid,role_id,entry,stack,pack,sort,grid,attrs,enchantments,str_attrs,bind_type,bind_expire,is_locked FROM item"
+                + ScopeFilter(RoleScope, "role_id") + " ORDER BY guid"), RoleScope);
             using var r = cmd.ExecuteReader();
             long rowIndex = 0;
             while (r.Read())
@@ -355,7 +363,8 @@ public static partial class EconomySnapshotReader
                                 if (status == 0) Currency(Long(row, "Currency"), checked(count * price), Role(Long(row, "BuyerId"), key),
                                     EconomyCompartment.TradePreorder, key); break;
                             case "stall":
-                                Fields(row, "Key Owner SystemId Scene LineNumber Title OwnerName Career Sex Level Area Appearance X Y Z OpenTime Timeout RestockTime MaxGrid NextItemId Ended EndMailId Stock Records Gains TaxRate");
+                                Fields(row, "Key Owner SystemId Scene LineNumber Title OwnerName Career Sex Level Area Appearance "
+                                    + "X Y Z OpenTime Timeout RestockTime MaxGrid NextItemId Ended EndMailId Stock Records Gains TaxRate");
                                 long ownerId = Long(row, "Owner"), system = Long(row, "SystemId");
                                 if (ownerId <= 0 && system <= 0) throw new FormatException("Stall has no owner identity.");
                                 var owner = ownerId > 0 ? Role(ownerId, key) : new EconomyOwner(EconomyOwnerKind.System, Id(system));
@@ -402,6 +411,30 @@ public static partial class EconomySnapshotReader
                         }
                     });
                 });
+            }
+            if (tables.Contains("trade_listing"))
+            {
+                using var listingCmd = Command("SELECT sku,data FROM trade_listing ORDER BY sku");
+                using var lr = listingCmd.ExecuteReader();
+                while (lr.Read())
+                {
+                    Guard("market/trade_listing/row/" + rowIndex++, () =>
+                    {
+                        string id = SqlText(lr, 0), data = SqlText(lr, 1), key = "market/trade_listing/" + id;
+                        Measure("trade_listing", Encoding.UTF8.GetByteCount(data), true);
+                        Guard(key, () =>
+                        {
+                            using var doc = Json(data);
+                            var row = doc.RootElement;
+                            if (row.ValueKind != JsonValueKind.Object) throw new JsonException("Expected trade listing object.");
+                            Fields(row, "Sku Spu SellerId Entry Currency UnitPrice Quantity SaleTimeMs PublicUntilMs ExpiresAtMs SpecialType Item");
+                            long seller = Long(row, "SellerId"), quantity = Long(row, "Quantity");
+                            if (!Try(row, "Item", out var item) || Long(item, "Stack") != quantity || Long(item, "Entry") != Long(row, "Entry"))
+                                throw new FormatException("Trade listing item/quantity mismatch.");
+                            Item(item, Role(seller, key), EconomyCompartment.TradeListing, key);
+                        });
+                    });
+                }
             }
         }
     }

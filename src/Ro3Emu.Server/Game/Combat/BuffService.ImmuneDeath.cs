@@ -1,0 +1,176 @@
+using System.Globalization;
+using Romsg;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>Pending 31134 decision. The server preserves one HP until the player confirms or declines.</summary>
+public sealed record ImmuneDeathOffer(long BuffGuid, int BuffConfigId, long ExpiresMs);
+
+public sealed partial class BuffService
+{
+    public const uint ImmuneDeathNotify = 31134, ImmuneDeathConfirm = 31135;
+
+    /// <summary>CombatService supplies its ordinary death transition for decline/timeout.</summary>
+    public Func<GameSession, Task>? ImmuneDeathDeclined { get; set; }
+
+    /// <summary>A learned passive's lethal-hit survival (PassiveSkills: Wood Spirit's Blessing), after the buffs'.</summary>
+    internal Func<GameSession, Task<bool>>? PassiveLethalSave { get; set; }
+
+    /// <summary>
+    /// Apply an active buff's lethal-hit protection before HP reaches zero. BuffConfig 1430501 and 16340401
+    /// explicitly grant immediate survival; 20520/20521 explicitly offer a revive choice (Localization_en
+    /// 10220300143-145). The identity and exact ordering of hit/life-state packets are inferred.
+    /// </summary>
+    public async Task<bool> TryPreventLethalAsync(GameSession p)
+    {
+        if (p.Role == null || p.Dead) return false;
+        long now = _loop.NowMs;
+        if (p.Combat.ImmuneDeathOffer is { } pending)
+        {
+            if (pending.ExpiresMs > now) return true;
+            p.Combat.ImmuneDeathOffer = null;
+        }
+        if (p.Combat.ImmuneRecoveryUntilMs > now) return true;
+        var live = p.Buffs.Where(b => b.ExpireMs > now).ToList();
+        var automatic = live.FirstOrDefault(b => b.ConfigId is 1430501 or 16340401 or 15400401);
+        if (automatic != null)
+        {
+            int percent = automatic.ConfigId == 16340401 ? 100 : 30;
+            await RemoveAsync(p, automatic); // one fatal hit uses one charge (inferred from descriptions).
+            var stats = _character.Stats(p);
+            await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100), null);
+            return true;
+        }
+
+        var choice = live.FirstOrDefault(b => _data.Row("BuffConfig", b.ConfigId) is { } row
+            && GameData.Int(row, "_iBuffID") is 20520 or 20521
+            && p.Combat.BuffEffectCds.GetValueOrDefault(b.Guid) <= now);
+        if (choice == null) return PassiveLethalSave != null && await PassiveLethalSave(p);
+        long window = Data.Config.PublicParams.Of(_data).ImmuneDeadConfirmTimeMs ?? 5000;
+        window = Math.Clamp(window, 1000, 30000);
+        p.Combat.ImmuneDeathOffer = new ImmuneDeathOffer(choice.Guid, choice.ConfigId, now + window);
+        long cd = InternalCooldownMs(choice.ConfigId);
+        if (cd > 0)
+        {
+            p.Combat.BuffEffectCds[choice.Guid] = now + cd;
+            await p.SendGameAsync(BuffEffectCd, new BuffEffectCdNotify
+            {
+                BuffGuid = choice.Guid, StartTimestampMs = now, EndTimestampMs = now + cd,
+            });
+        }
+        await _character.SetHpSpAsync(p, 1, null);
+        await RefreshControlAsync(p);
+        await p.SendGameAsync(ImmuneDeathNotify, new PlayerOnEnterImmuneDeadNotify
+        {
+            BuffConfigId = choice.ConfigId, ExpireTimestampMs = p.Combat.ImmuneDeathOffer.ExpiresMs,
+        });
+        return true;
+    }
+
+    /// <summary>31135 accepts a live 31134 offer; false or timeout resumes ordinary death.</summary>
+    public async Task ConfirmImmuneDeathAsync(GameSession p, PlayerConfirmImmuneDeadReq req)
+    {
+        var offer = p.Combat.ImmuneDeathOffer;
+        bool valid = offer != null && offer.ExpiresMs >= _loop.NowMs && !p.Dead;
+        await p.SendGameAsync(ImmuneDeathConfirm, new PlayerConfirmImmuneDeadRsp
+        {
+            Result = valid ? 0 : ErrorCodes.Parameter,
+        });
+        if (!valid) return;
+        p.Combat.ImmuneDeathOffer = null;
+        if (!req.IsConfirm)
+        {
+            await DeclineImmuneDeathAsync(p);
+            return;
+        }
+        var stats = _character.Stats(p);
+        if (_data.Row("BuffConfig", offer!.BuffConfigId) is not { } row)
+        {
+            await DeclineImmuneDeathAsync(p);
+            return;
+        }
+        int group = (int)GameData.Int(row, "_iBuffID");
+        var desc = row.GetProperty("_iDescription");
+        int percent = (int)Math.Clamp(DescriptionNumber(desc, 1, 100), 1, 100);
+        if (group == 20520)
+        {
+            p.Combat.ImmuneRecoveryUntilMs = _loop.NowMs + 3000;
+            p.Combat.ImmuneRecoveryPercent = (int)Math.Clamp(DescriptionNumber(desc, 4, 20), 1, 100);
+            await _character.SetHpSpAsync(p, 1, null);
+        }
+        else
+        {
+            await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100),
+                Math.Max(1, stats[AttributeId.MaxSp] * percent / 100));
+            await ReduceDamageAfterReviveAsync(p, new BuffConfig(row));
+        }
+        await RefreshControlAsync(p);
+    }
+
+    private const long ReducesAfterRevive = 5006; // _kBuffCategory, Card: Osiris's T2 and T3 rows only
+    private const int ReviveReduction = 2090401;
+
+    /// <summary>
+    /// Card: Osiris T2 and T3: "After the death-prevention effect triggers, Physical/Magic damage taken is reduced by @{3}% for
+    /// @{4} seconds." Their rows' _kDescData ["100", cooldown, "30", "5"] say it, and only they carry category 5006; the categories
+    /// of 20520/20521 pick the script's branch, as 5001-5003 name the three heal rows of _kLogicData [2090101, 2090201, 2090301].
+    /// (inferred) No data links 5006 to row 2090401 (group 20904, "Osiris", "Damage Reduction +30%", _kChangeAttri [216, 3000]): its
+    /// name and number do, and nothing else names that row. (inferred) It starts when the revive is taken: the offer's own
+    /// window already protects, and a declined revive is a death. It reaches a hit through the sheet like any buff's 216.
+    /// </summary>
+    private async Task ReduceDamageAfterReviveAsync(GameSession p, BuffConfig revive)
+    {
+        if (!revive.BuffCategory.Contains(ReducesAfterRevive) || revive.DescData is not [_, _, _, var seconds, ..]
+            || !double.TryParse(seconds, NumberStyles.Float, CultureInfo.InvariantCulture, out double duration)) return;
+        await AddAsync(p, ReviveReduction, (int)(duration * 1000), p.Role!.Id);
+    }
+
+    private static double DescriptionNumber(System.Text.Json.JsonElement desc, int index, double fallback) =>
+        desc.ValueKind == System.Text.Json.JsonValueKind.Array && desc.GetArrayLength() > index
+        && double.TryParse(desc[index].ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            ? value : fallback;
+
+    private long InternalCooldownMs(int configId)
+    {
+        if (_data.Row("BuffConfig", configId) is not { } row) return 0;
+        var desc = row.GetProperty("_iDescription");
+        int group = (int)GameData.Int(row, "_iBuffID");
+        double minutes = DescriptionNumber(desc, group == 20520 ? 5 : 2, 0);
+        return (long)(minutes * 60000);
+    }
+
+    private async Task DeclineImmuneDeathAsync(GameSession p)
+    {
+        await RefreshControlAsync(p);
+        await _character.SetHpSpAsync(p, 0, null);
+        if (ImmuneDeathDeclined != null) await ImmuneDeathDeclined(p);
+        else _log.LogError("Immune-death decline has no CombatService death callback for {Name}", p.Role?.Name);
+    }
+
+    private void TickImmuneDeath(GameSession p, long now)
+    {
+        if (p.Combat.ImmuneDeathOffer is { } offer && offer.ExpiresMs < now)
+        {
+            p.Combat.ImmuneDeathOffer = null;
+            _loop.TrackLegacyDetached("immune death decline", () => DeclineImmuneDeathAsync(p));
+        }
+        if (p.Combat.ImmuneRecoveryUntilMs > 0 && p.Combat.ImmuneRecoveryUntilMs <= now)
+        {
+            p.Combat.ImmuneRecoveryUntilMs = 0;
+            int percent = p.Combat.ImmuneRecoveryPercent;
+            p.Combat.ImmuneRecoveryPercent = 0;
+            _loop.TrackLegacyDetached("immune recovery end", () => EndImmuneRecoveryAsync(p, percent));
+        }
+    }
+
+    private async Task EndImmuneRecoveryAsync(GameSession p, int percent)
+    {
+        if (p.Role == null || p.Dead) return;
+        var stats = _character.Stats(p);
+        await _character.SetHpSpAsync(p, Math.Max(1, stats[AttributeId.MaxHp] * percent / 100),
+            Math.Max(1, stats[AttributeId.MaxSp] * percent / 100));
+        await RefreshControlAsync(p);
+    }
+}

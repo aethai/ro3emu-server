@@ -10,7 +10,7 @@ public sealed partial class World
 
     internal async Task RefreshVisibilityAsync(GameSession changed)
     {
-        await _aoiDispatch.WaitAsync();
+        var hold = await HoldAsync(changed);
         try
         {
             var leaves = new List<(GameSession Viewer, GameSession Subject)>();
@@ -30,6 +30,28 @@ public sealed partial class World
             foreach (var (viewer, subject) in leaves) await LeavePlayerAsync(viewer, subject);
             foreach (var (viewer, subject) in enters) await EnterPlayerAsync(viewer, subject);
         }
-        finally { _aoiDispatch.Release(); }
+        finally { hold.Release(); }
+    }
+
+    /// <summary>Re-announces <paramref name="subject"/> to its current viewers (leave then enter) so their client
+    /// reloads fields that only travel in <see cref="Romsg.EntityBase"/> (such as <c>guildId</c>).</summary>
+    internal async Task ReshowPlayerAsync(GameSession subject)
+    {
+        var hold = await HoldAsync(subject);
+        try
+        {
+            GameSession[] viewers;
+            lock (_sync)
+            {
+                if (!_cells.ContainsKey(subject) || subject.Observers.Count == 0) return;
+                viewers = [.. subject.Observers];
+            }
+            foreach (var viewer in viewers)
+            {
+                await LeavePlayerAsync(viewer, subject);
+                await EnterPlayerAsync(viewer, subject);
+            }
+        }
+        finally { hold.Release(); }
     }
 }

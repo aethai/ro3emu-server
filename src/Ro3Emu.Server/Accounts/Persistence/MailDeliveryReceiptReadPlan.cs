@@ -36,18 +36,25 @@ internal sealed class MailDeliveryReceiptReadPlan(string sourceKey, long role, s
         int legs = row.GetInt32(12);
         if (payload.Length > 16 * 1024 * 1024 || outcome.Length > 64 * 1024 * 1024 || legs < 0 ||
             row.GetString(2) != realm || row.GetString(3) != "" || row.GetInt64(4) != 0 ||
-            row.GetString(5) != "mail/deliver" || row.GetString(9) != sourceKey ||
-            !outcome.AsSpan().SequenceEqual(children))
+            row.GetString(5) != "mail/deliver" || row.GetString(9) != sourceKey)
             throw new InvalidDataException("Committed mail delivery receipt is invalid.");
-        string hash = Convert.ToHexString(SHA256.HashData(payload));
-        if (row.GetString(6) != hash || row.GetString(7) != hash)
-            throw new InvalidDataException("Committed mail delivery payload hash differs from receipt.");
-        EscrowEconomyReceiptCodec.Decode(children);
+        bool compacted = ReceiptBlobs.IsCompacted(payload);
+        if (!compacted)
+        {
+            if (!outcome.AsSpan().SequenceEqual(children))
+                throw new InvalidDataException("Committed mail delivery receipt is invalid.");
+            string hash = Convert.ToHexString(SHA256.HashData(payload));
+            if (row.GetString(6) != hash || row.GetString(7) != hash)
+                throw new InvalidDataException("Committed mail delivery payload hash differs from receipt.");
+            EscrowEconomyReceiptCodec.Decode(children);
+        }
         row.Close();
 
         using (var meta = DbSql.Command(db, tx, "SELECT realm_id FROM economy_meta WHERE singleton=1"))
             if (meta.ExecuteScalar() is not string actual || actual != realm)
                 throw new InvalidDataException("Committed mail delivery has a foreign realm.");
+        if (compacted)
+            return ReadCompactedReplay(db, tx, realm, operation);
         FamilyEconomyTransactionPlan.ValidateLegCount(db, tx, operation, legs);
 
         using var intent = JsonDocument.Parse(payload);
@@ -67,7 +74,7 @@ internal sealed class MailDeliveryReceiptReadPlan(string sourceKey, long role, s
             using var detail = JsonDocument.Parse(json);
             if (!detail.RootElement.TryGetProperty("DeliverySemanticHash", out var storedHash)) continue;
             byte[] evidenceBytes = Encoding.UTF8.GetBytes(json);
-            if (evidence.GetProperty("Bytes").GetInt32() != evidenceBytes.Length ||
+            if (evidence.GetProperty(nameof(Bytes)).GetInt32() != evidenceBytes.Length ||
                 evidence.GetProperty("Hash").GetString() != Convert.ToHexString(SHA256.HashData(evidenceBytes)))
                 throw new InvalidDataException("Committed mail delivery evidence hash differs from receipt.");
             var claim = detail.RootElement;
@@ -81,5 +88,24 @@ internal sealed class MailDeliveryReceiptReadPlan(string sourceKey, long role, s
             return id;
         }
         throw new InvalidDataException("Committed mail delivery has no replay evidence.");
+    }
+
+    private string ReadCompactedReplay(SqliteConnection db, SqliteTransaction tx, string realm, string operation)
+    {
+        using var replay = DbSql.Command(db, tx, """
+            SELECT operation_id, role_id, delivery_key, semantic_hash, letter_id
+            FROM mail_delivery_replay WHERE realm_id=$realm AND source_key=$source
+            """);
+        replay.Parameters.AddWithValue("$realm", realm);
+        replay.Parameters.AddWithValue("$source", sourceKey);
+        using var row = replay.ExecuteReader();
+        if (!row.Read() || row.GetString(0) != operation)
+            throw new InvalidDataException("Compacted mail delivery lost its replay record.");
+        if (row.GetInt64(1) != role || row.GetString(2) != deliveryKey || row.GetString(3) != semanticHash)
+            throw new EconomyOperationConflictException("Mail delivery source was already committed with another reward.");
+        string id = row.GetString(4);
+        if (id.Length is < 1 or > 32 || !id.All(char.IsAsciiDigit))
+            throw new InvalidDataException("Committed mail delivery ID is invalid.");
+        return id;
     }
 }

@@ -130,7 +130,119 @@ public sealed class ConfigViewTests
         var names = ConfigTables.All.Select(t => t.Name).ToArray();
         Assert.Equal(names.Distinct().Count(), names.Length);
         Assert.Contains(SkillConfig.Info, ConfigTables.All);
+        Assert.Contains(PublicParams.Info, ConfigTables.All);
+        Assert.Contains(GuildSettings.Info, ConfigTables.All);
         Assert.All(ConfigTables.All, t => Assert.NotEmpty(t.Fields));
+    }
+
+    [Fact]
+    public void KeyedConstantsDistinguishAbsentFromZeroAndValidateKind()
+    {
+        var probe = new ConfigTableInfo("KeyedProbe", false, false,
+        [
+            new("Zero", ConfigKind.Integral, false),
+            new("Missing", ConfigKind.Integral, false),
+            new("BadKind", ConfigKind.Integral, false),
+        ], Keyed: true, ValueField: "_kValue");
+
+        using var dir = new DataDir(export: true, ("KeyedProbe", new Dictionary<string, object>
+        {
+            ["Zero"] = new { _kValue = 0 },
+            ["BadKind"] = new { _kValue = "oops" },
+        }));
+
+        var table = dir.Data.Table("KeyedProbe");
+        Assert.Equal(0L, ConfigValue.IntegralConstant(table, "Zero", "_kValue"));
+        Assert.Null(ConfigValue.IntegralConstant(table, "Missing", "_kValue"));
+        Assert.Equal(
+        [
+            "KeyedProbe.Missing._kValue: missing",
+            "KeyedProbe.BadKind._kValue: holds string \"oops\", not an integer",
+        ], ConfigValidator.Validate(dir.Data, [probe], strict: true));
+        Assert.Equal(
+        [
+            "KeyedProbe.BadKind._kValue: holds string \"oops\", not an integer",
+        ], ConfigValidator.Validate(dir.Data, [probe], strict: false));
+    }
+
+    [Fact]
+    public void MissingKeyedConstantWarnsAtStartupWhileWrongKindRemainsFatal()
+    {
+        var probe = new ConfigTableInfo("KeyedProbe", false, false,
+        [
+            new("Present", ConfigKind.Integral, false),
+            new("DroppedInNewClient", ConfigKind.Integral, false),
+        ], Keyed: true, ValueField: "_kValue");
+
+        using var missingOnly = new DataDir(export: true, ("KeyedProbe", new Dictionary<string, object>
+        {
+            ["Present"] = new { _kValue = 42 },
+        }));
+        var warnings = ConfigValidator.Check(missingOnly.Data, [probe], strict: true, failOnMissingConstants: false);
+        Assert.Equal(["KeyedProbe.DroppedInNewClient._kValue: missing"], warnings);
+
+        using var wrongKind = new DataDir(export: true, ("KeyedProbe", new Dictionary<string, object>
+        {
+            ["Present"] = new { _kValue = "not-an-int" },
+        }));
+        var failure = Assert.Throws<ConfigValidationException>(
+            () => ConfigValidator.Check(wrongKind.Data, [probe], strict: true, failOnMissingConstants: false));
+        Assert.Contains("KeyedProbe.Present._kValue", failure.Message);
+    }
+
+    [Fact]
+    public async Task SkillServiceTreatsZeroPublicParamsAsFallbackDefaults()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ro3emu-skill-zero-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (string file in Directory.EnumerateFiles(SyntheticData.Dir, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(root, Path.GetRelativePath(SyntheticData.Dir, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
+            string ppPath = Path.Combine(root, "config", "PublicParamConfig.json");
+            Dictionary<string, JsonElement> pp = File.Exists(ppPath)
+                ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(ppPath))!
+                : [];
+            var zero = JsonSerializer.SerializeToElement(0);
+            pp["QueueNum"] = zero;
+            pp["SchemeNameNumMax"] = zero;
+            pp["SchemeCD"] = zero;
+            File.WriteAllText(ppPath, JsonSerializer.Serialize(pp));
+
+            await using var host = await SyntheticHost.StartAsync(o => o.GameDataDir = root);
+            await using var alice = await host.InWorldAsync("Alice");
+            var session = host.Service<Ro3Emu.Server.Game.SessionRegistry>().All()
+                .Single(s => s.Role?.Id == (long)alice.Self!.Uuid);
+            var skills = host.Service<Ro3Emu.Server.Game.SkillService>();
+            var loop = host.Service<Ro3Emu.Server.Game.GameLoop>();
+
+            // SchemeCD=0 must fall back to 3 s, so switching immediately after a switch returns Cooldown.
+            int cdError = await loop.InvokeAsync(() =>
+            {
+                session.Combat.SkillPlanSwitchUtc = DateTime.UtcNow;
+                return Task.FromResult(skills.PlanSwitchCooldownError(session));
+            });
+            Assert.Equal(Ro3Emu.Server.Game.ErrorCodes.Cooldown, cdError);
+
+            // SchemeNameNumMax=0 must fall back to 8 runes, so a 4-rune name succeeds.
+            await alice.SendGameAsync(Ro3Emu.Server.Game.SkillService.RenamePlan,
+                new Romsg.SkillPlanChangeNameReq { Plan = 0, Name = "Main" });
+            var renamed = Romsg.SkillPlanChangeNameResp.Parser.ParseFrom((await alice.Inbox.WaitAsync(
+                e => e.IsGame(Ro3Emu.Server.Game.SkillService.RenamePlan), TimeSpan.FromSeconds(5))).Body);
+            Assert.Equal(0, renamed.Result);
+            Assert.Equal("Main", renamed.Name);
+
+            // QueueNum=0 must fall back to 12 slots, so index 0 passes the slot-range check (failing on unlearned skill, not Parameter).
+            await alice.SendGameAsync(Ro3Emu.Server.Game.SkillService.QueueUpdate,
+                new Romsg.SkillQueueUpdateReq { Plan = 0, QueueIndex = 0, OpType = (Romsg.SkillLoadOperation)1, Info = new Romsg.SkillData { SkillId = 0, SkillLevel = 1 } });
+            var queued = Romsg.SkillQueueUpdateResp.Parser.ParseFrom((await alice.Inbox.WaitAsync(
+                e => e.IsGame(Ro3Emu.Server.Game.SkillService.QueueUpdate), TimeSpan.FromSeconds(5))).Body);
+            Assert.Equal(Ro3Emu.Server.Game.ErrorCodes.SkillNotLearned, queued.Result);
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
     }
 
     [ClientDataFact]
@@ -142,7 +254,8 @@ public sealed class ConfigViewTests
 
     // Each client field name written as a string outside Data/Config is a read the startup check cannot see. The
     // count only goes down: lower it when a change removes such reads, never raise it.
-    private const int FieldNamesOutsideViews = 2653;
+    private const int FieldNamesOutsideViews = 2227;
+    private const int KeyValueTableReadsOutsideViews = 0;
     private static readonly string Obj = Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar;
 
     [Fact]
@@ -156,5 +269,18 @@ public sealed class ConfigViewTests
                 && !path.Contains(Obj, StringComparison.Ordinal))
             .Sum(path => pattern.Count(File.ReadAllText(path)));
         Assert.Equal(FieldNamesOutsideViews, count);
+    }
+
+    [Fact]
+    public void KeyValueConfigTablesLiveInConstantViews()
+    {
+        var source = Path.Combine(ClientData.RepoRoot, "src", "Ro3Emu.Server");
+        var config = Path.Combine(source, "Data", "Config") + Path.DirectorySeparatorChar;
+        var pattern = new Regex("""\.Table\("(?:PublicParamConfig|GuildSettingConfig|ActivityConstant|MultiverseConstant|GVGConfig)"\)""");
+        int count = Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !path.StartsWith(config, StringComparison.Ordinal)
+                && !path.Contains(Obj, StringComparison.Ordinal))
+            .Sum(path => pattern.Count(File.ReadAllText(path)));
+        Assert.Equal(KeyValueTableReadsOutsideViews, count);
     }
 }

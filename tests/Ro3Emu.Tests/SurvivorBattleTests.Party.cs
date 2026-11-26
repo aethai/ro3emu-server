@@ -50,7 +50,7 @@ public sealed partial class SurvivorBattleTests
         }
         foreach (var player in players)
             await Next(player, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser, s => s.SceneEntry == 2240101);
-        int Faction(BotClient bot) => Session(bot).EventFaction;
+        int Faction(BotClient bot) => Session(bot).Instances.EventFaction;
         Assert.Equal(Faction(alice), Faction(cara));
         Assert.Equal(Faction(bob), Faction(dan));
         Assert.NotEqual(Faction(alice), Faction(bob));

@@ -1,0 +1,896 @@
+using System.Globalization;
+using System.Text.Json;
+using Google.Protobuf;
+using Romsg;
+using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Accounts.Persistence;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Game.Ownership;
+using Ro3Emu.Server.Maps;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>
+/// Mock Battle, the "40v40" Leisure Forty (internally CasualBattle; DailyActivityConfig 3304, function 5903, dungeon
+/// 2220104, gameplay 28 LeisureForty). The client:
+/// <list type="bullet">
+/// <item>signs up with 43504 CommonDailyActivityReq{activityId 3304, casualBattleSignUp} from
+/// UI_Sys_ActivityEveningLeisureFortyPanelCtrl._startMatch (the party leader, every member online, base level 50
+/// (_iiLv), only in TimeLimitConfig 1084's "Matching" state: Sundays 16:00-16:05, 16:20-16:25, 16:40-16:45, each followed
+/// by its 10-minute "Battling");</item>
+/// <item>plays the arena script Config/Dungeon/DungeonLua_2220104.lua (not exported, values here): stages 0 preparation
+/// 60 s, 1 main 540 s, 2 death fight 60 s (BattleMaxTime 660000), AfterResultExitTime 30 s, the HUD score bar's
+/// System_BatteData_LeisureScore_Limit 4500 and DungeonAwardModule 1001-1004;</item>
+/// <item>shows the camps' score from dungeon var 304 CCampScoreList [camp, score, camp, score] and the preparation
+/// countdown from var 921 CLeasureFortyPrepareTimestamp (UI_Sys_Dungeon_TopActivityEveningLeisureFortyWidgetCtrl);</item>
+/// <item>reads 30117 for the live report and 30132 DungeonResultNotify for the result (LC_DAL_LeisureForty: result 1 Win
+/// else Lose, winCamp, sceneStatistics[0] roles with campId and extraData TotalScore 1021005 / KillPlayer 1001004 /
+/// AssistKill 1001005 / Damage 1001001 / TakeDamage 1001002 / heal 1001003, campStatistics CampScore 1041003,
+/// metaData mvpPlayerId);</item>
+/// <item>keeps its profile in 5070 DBCasualBattleInfo (MMR from RelaxGVGStartMMR 1000, +RelaxGVGWinMMR 5 /
+/// RelaxGVGLoseMMR -3, recent records, best and lifetime numbers).</item>
+/// </list>
+/// Scoring: BattleEventPointConfig game type 28, a kill 41006 [4,20] for the camp and 41003 [2,20] for the killer, an
+/// assist 41019 [2,6]. (inferred) The groups that signed up in a Matching window are split at its Battling start into
+/// two camps (whole groups, each to the smaller camp, at most 40 a camp; the others wait for the next window); the
+/// match ends at BattleMaxTime or when a camp reaches the 4500 bar; the higher camp score wins, a tie has no winner; a
+/// personal score of at least 25 (DungeonAwardModule ScoreCondition [2,3,25]) earns DropPool 85201, the winners also
+/// 85202 (the losers' 85203 is not in DropPoolConfig); assists are the hits on the victim in its last 10 s.
+/// The arena's monsters, supplies, objectives, notices and death fight are in CasualBattleService.Arena.cs. Each camp
+/// gets the 40-player Virtual team roster (30441, TeamRoster), its leadership transfer (30451, TransferAsync), a
+/// member's own follow toggle (30448, FollowAsync), a squad's own position swap (30450, SwapPositionAsync), a squad's
+/// own flag (30442/30443, SetFlagAsync) and a squad's own rally (30444-30447, RallyAsync/RallyReplyAsync). A settled
+/// match's result is also kept in the role's ordinary 30128 history (DungeonService.StoreExternalResultAsync), the
+/// same as a boss dungeon's clear, for every player still online at settlement; one offline then is still paid at
+/// login (TryPayAsync's own retry) but gets no history entry, since nothing here revisits a login after the fact to
+/// write one.
+/// </summary>
+public sealed partial class CasualBattleService : IGameTicker, ICombatRule
+{
+    bool ICombatRule.CanEventFight(GameSession attacker, GameSession defender) => CanFight(attacker, defender);
+    Task ICombatRule.OnEventPlayerKilledAsync(GameSession killer, GameSession victim) => PlayerKilledAsync(killer, victim);
+    public const uint Sync = 5070, ResultNotify = 30132, SetFlag = 30442, FlagNotify = 30443, Rally = 30444,
+        RallyNotify = 30445, RallyReply = 30446, RallyReplyNotify = 30447, Follow = 30448, FollowNotify = 30449,
+        SwapPosition = 30450, Transfer = 30451;
+    public const int ActivityId = 3304, Function = 5903, Scene = 2220104, TimeLimit = 1084;
+    private const int SquadSize = 5;
+    private const long PrepareSeconds = 60, MainSeconds = 540, BattleSeconds = 660, ExitSeconds = 30;
+    private const long ScoreBar = 4500;
+    private const int KillCamp = 41006, KillPersonal = 41003, AssistPersonal = 41019;
+    private const int CampScoreVar = 304, PrepareVar = 921;
+    // Scene 2220104's two born points (scene editor m_kAllPoints 23 and 34), one a camp (inferred: camp 1 at 23).
+    private static readonly long[] CampPoints = [23, 34];
+
+    private readonly GameData _data;
+    private readonly ActivityClock _activityClock;
+    private readonly TimeProvider _time;
+    private readonly FunctionService _functions;
+    private readonly TeamService _teams;
+    private readonly SessionRegistry _sessions;
+    private readonly InstanceService _instances;
+    private readonly SceneService _scene;
+    private readonly WorldData _worldData;
+    private readonly CharacterService _character;
+    private readonly RewardService _rewards;
+    private TimedBattleService _timedBattles = null!;
+    private PraiseService _praise = null!;
+    private readonly GameLoop _loop;
+    private readonly RoleStore _roles;
+    private readonly AccountStore _accounts;
+    private readonly DungeonService _dungeons;
+    private readonly BuffService _buffs;
+    private readonly MonsterService _monsters;
+    private readonly World _world;
+    private readonly ILogger<CasualBattleService> _log;
+
+    private sealed record Group(GameSession[] Members, long Window);
+
+    private sealed class Player
+    {
+        public required GameSession Session;
+        public required long Id;
+        public required string Name;
+        public required int Career;
+        public required int Camp;
+        public long Score, Kills, Assists, Damage, Taken, Healing, Deaths;
+        /// <summary>Kills since the last death (the 41007 streak).</summary>
+        public int Streak;
+        /// <summary>The battlefield skill held from a supply box, 0 none.</summary>
+        public int Battlefield;
+        /// <summary>The second the revive countdown ends.</summary>
+        public long DeadUntil;
+        public bool Left;
+        /// <summary>Who hit this player when, for assists.</summary>
+        public readonly Dictionary<GameSession, long> HitBy = [];
+    }
+
+    private sealed class Match
+    {
+        public required InstanceService.Room Room;
+        public required long Open;
+        public readonly Dictionary<GameSession, Player> Players = [];
+        public readonly Dictionary<int, long> CampScore = new() { [1] = 0, [2] = 0 };
+        public readonly HashSet<GameSession> Loaded = [];
+        public int Stage;
+        /// <summary>The battle is over and its result frozen in memory (<see cref="Frozen"/>); no more fighting.</summary>
+        public bool Ending;
+        /// <summary>Every stayed player's obligation is durable; payouts may now run.</summary>
+        public bool Settled;
+        public bool Announced, Persisting;
+        public int Failures;
+        public long RetryAt;
+        public CasualBattleObligationRow[]? Frozen;
+        public readonly Dictionary<long, DungeonResultNotify> Notices = [];
+        /// <summary>A camp's Virtual team leader (30451 DUNGEON_TEAM_TRANSFER), by role id; 0 (the default, unset)
+        /// defers to the lowest-indexed squad's own leader.</summary>
+        public readonly Dictionary<int, long> TeamLeader = [];
+        /// <summary>A camp member's own Virtual team follow state (30448/30449 DUNGEON_TEAM_FOLLOW), by role id;
+        /// absent (the default) is None, mirrored into its own roster entry's DungeonTeamMemberInfo.followType.</summary>
+        public readonly Dictionary<long, DungeonTeamFollowType> Follow = [];
+        /// <summary>A squad member's own position override after a 30450 DUNGEON_TEAM_SWAP_POSITION, by role id;
+        /// absent members keep the roster's own default order (the squad leader first, then ascending role id).</summary>
+        public readonly Dictionary<long, int> PositionOverride = [];
+        /// <summary>A squad's own flag (30442/30443 DUNGEON_TEAM_SET_FLAG), by squad index; absent is no flag.</summary>
+        public readonly Dictionary<int, DungeonTeamFlagInfo> Flags = [];
+        /// <summary>A squad's own most recent Rally caller (30444/30445 DUNGEON_TEAM_RALLY), by squad index; absent
+        /// means that squad has no rally for a 30446/30447 DUNGEON_TEAM_RALLY_REPLY to answer.</summary>
+        public readonly Dictionary<int, long> Rally = [];
+        public readonly Arena Arena = new();
+        public long Deadline => Open + BattleSeconds;
+    }
+
+    private readonly List<Group> _queue = [];
+    private readonly Dictionary<GameSession, Match> _active = [];
+    private readonly List<Match> _matches = [];
+    private long _lastSecond = -1, _formedWindow = -1;
+
+    /// <summary>TEST AID set by GM "!casual open" (not original behaviour): sign-ups outside the Matching window, and
+    /// "!casual start" forms the match at once. In memory only.</summary>
+    internal bool OpenForTest { get; set; }
+
+    public CasualBattleService(GameData data, ActivityClock activityClock, TimeProvider time, FunctionService functions,
+        TeamService teams, SessionRegistry sessions, InstanceService instances, SceneService scene, WorldData worldData,
+        CharacterService character, RewardService rewards, DungeonService dungeons, GameLoop loop, RoleStore roles,
+        AccountStore accounts, BuffService buffs, MonsterService monsters, World world, ILogger<CasualBattleService> log)
+    {
+        this._data = data; this._activityClock = activityClock; this._time = time; this._functions = functions; this._teams = teams;
+        this._sessions = sessions; this._instances = instances; this._scene = scene; this._worldData = worldData;
+        this._character = character; this._rewards = rewards;
+        this._loop = loop; this._roles = roles; this._accounts = accounts; this._dungeons = dungeons; this._log = log;
+        this._buffs = buffs; this._monsters = monsters; this._world = world;
+        _obligations = new RoleObligations<CasualBattleObligationRow>("Mock Battle payout", accounts, loop, time, Online,
+            s => s.Instances.TimedBattle != null && s.Progress != null, PayAsync, ObligationRetry.TickWithBackoff, log);
+        scene.Loaded.Subscribe(LoadedAsync);
+        scene.Leaving.Subscribe(LeavingAsync);
+        dungeons.CurrentStatisticsOwner = s => Live(s) is { } m ? Statistics(m) : null;
+    }
+
+    internal void WireBattleHooks(CombatService combat, PraiseService praise, TimedBattleService timedBattles)
+    {
+        _praise = praise;
+        _timedBattles = timedBattles;
+        combat.PvpDealt.Subscribe(Dealt);
+        combat.Healed.Subscribe((s, n) => { if (Live(s) is { } m) m.Players[s].Healing += n; });
+        HookArena(combat);
+    }
+
+    private long Now => _time.GetUtcNow().ToUnixTimeSeconds();
+
+    private Match? Live(GameSession s) => _active.TryGetValue(s, out var m) && !m.Ending && s.InstanceId == m.Room.Id ? m : null;
+
+    /// <summary>The TimeLimitConfig 1084 window of a state ("Matching" / "Battling") open now, or null.</summary>
+    private ActivityClock.Window? Window(string state) => _activityClock.Segments(TimeLimit, Now)
+        .FirstOrDefault(w => w.State == state && w.Contains(Now));
+
+    private bool Queued(GameSession s) => _queue.Any(g => g.Members.Contains(s));
+
+    private int Admission(GameSession s)
+    {
+        if (s.Role == null || s.Progress == null || s.Instances.TimedBattle == null) return ErrorCodes.Parameter;
+        if (s.Progress.Level < GameData.Int(_data.Row("DailyActivityConfig", ActivityId)!.Value, "_iiLv") || !_functions.IsOpen(s, Function))
+            return ErrorCodes.FeatureUnavailable;
+        if (s.SceneLoading || s.InstanceId != 0 || s.Dead || _active.ContainsKey(s) || Queued(s)) return ErrorCodes.DungeonBusy;
+        return 0;
+    }
+
+    /// <summary>43504 casualBattleSignUp: the leader signs up the whole party (or a role alone) for this window.</summary>
+    public async Task SignUpAsync(GameSession s, CommonDailyActivityReq req)
+    {
+        var window = Window("Matching");
+        int error = req.ActivityId != ActivityId ? ErrorCodes.Parameter
+            : window == null && !OpenForTest ? ErrorCodes.ActivityPeriod : Admission(s);
+        var members = new List<GameSession> { s };
+        if (error == 0 && s.Role != null && _teams.TeamOf(s.Role.Id) is { TeamId: > 0 } team)
+        {
+            if (team.Leader != s.Role.Id) error = ErrorCodes.NoPermission;
+            var online = _sessions.All().Where(p => p.Role != null).ToDictionary(p => p.Role!.Id);
+            foreach (long id in _teams.MembersOf(s.Role.Id).Where(id => id != s.Role.Id))
+            {
+                if (error != 0) break;
+                if (!online.TryGetValue(id, out var member)) error = ErrorCodes.PlayerOffline;
+                else { error = Admission(member); members.Add(member); }
+            }
+        }
+        if (error == 0) _queue.Add(new Group([.. members], window?.Start ?? -1));
+        await s.SendGameAsync(DailyActivityService.RingAccept, new CommonDailyActivityRes
+        { Result = error, ActivityId = req.ActivityId, RequestId = req.RequestId, CasualBattleSignUp = new CasualBattleRes() });
+    }
+
+    public void Tick(GameTime time)
+    {
+        long now = Now;
+        if (now == _lastSecond) return;
+        _lastSecond = now;
+        if (_queue.Count > 0 && Window("Battling") is { } battling && _formedWindow != battling.Start)
+        {
+            _formedWindow = battling.Start;
+            _loop.PostLegacy(FormAsync, "casual battle start");
+        }
+        else if (_queue.Count > 0 && !OpenForTest && Window("Matching") == null && Window("Battling") == null) _queue.Clear();
+        foreach (var match in _matches.ToArray())
+            _loop.PostLegacy(() => AdvanceAsync(match), "casual battle timeline");
+        Announce();
+        _obligations.Tick();
+    }
+
+    /// <summary>The queued groups become two camps (whole groups to the smaller camp, at most 40 each) and enter.</summary>
+    private async Task FormAsync()
+    {
+        _queue.RemoveAll(g => g.Members.Any(m => !_sessions.Contains(m) || m.InstanceId != 0 || m.Dead || m.SceneLoading));
+        var camps = new Dictionary<int, List<GameSession>> { [1] = [], [2] = [] };
+        foreach (var group in _queue.OrderByDescending(g => g.Members.Length).ToArray())
+        {
+            int camp = camps[1].Count <= camps[2].Count ? 1 : 2;
+            if (camps[camp].Count + group.Members.Length > 40) continue;
+            camps[camp].AddRange(group.Members);
+            _queue.Remove(group);
+        }
+        // TEST AID: while "!casual open" is on, one camp alone may start (its arena has the monsters).
+        if (camps[1].Count + camps[2].Count == 0 || !OpenForTest && (camps[1].Count == 0 || camps[2].Count == 0))
+        {
+            // One camp only: nobody to fight; the groups wait for the next window (inferred).
+            foreach (var camp in camps.Values.Where(c => c.Count > 0)) _queue.Add(new Group([.. camp], -1));
+            return;
+        }
+        var everyone = camps[1].Concat(camps[2]).ToArray();
+        var room = _instances.Create(Scene, everyone);
+        var match = new Match { Room = room, Open = Now };
+        foreach (var (camp, members) in camps)
+            foreach (var member in members)
+            {
+                match.Players[member] = new Player
+                {
+                    Session = member, Id = member.Role!.Id, Name = member.Role.Name,
+                    Career = member.Progress!.Career, Camp = camp
+                };
+                _active[member] = match;
+                member.Instances.EventFaction = camp;
+            }
+        _matches.Add(match);
+        _praise.Remember(room.Id, Scene, everyone.Select(m => m.Role!.Id)); // likes on the report
+        foreach (var member in everyone)
+        {
+            bool entered = false;
+            try { entered = await _instances.EnterAsync(room, member, 5); }
+            catch (Exception e) { _log.LogWarning(e, "Mock Battle entry failed for {Role}", member.Role?.Id); }
+            if (!entered) { _active.Remove(member); member.Instances.EventFaction = 0; match.Players[member].Left = true; }
+        }
+    }
+
+    private DungeonBaseInfoNotify Info(Match match)
+    {
+        long prepareEnd = match.Open + PrepareSeconds, mainEnd = prepareEnd + MainSeconds;
+        var (start, end, nextEnd) = match.Stage switch
+        {
+            0 => (match.Open, prepareEnd, mainEnd),
+            1 => (prepareEnd, mainEnd, match.Deadline),
+            _ => (mainEnd, match.Deadline, 0L),
+        };
+        var info = new DungeonBaseInfoNotify
+        {
+            DungeonEntry = Scene, DungeonId = match.Room.Id, Stage = match.Stage, ChangeType = (DungeonBaseInfoNotify.Types.eChangeType)2,
+            StageModuleData = new DungeonStageModuleData
+            {
+                MapState = match.Ending ? 2 : 1, Stage = match.Stage,
+                MapStateStartTime = match.Open * 1000, MapStateEndTime = match.Deadline * 1000,
+                StageStartTime = start * 1000, StageEndTime = end * 1000,
+                NextStageStartTime = nextEnd == 0 ? 0 : end * 1000, NextStageEndTime = nextEnd * 1000
+            },
+        };
+        var camps = new DungeonVar { VarId = CampScoreVar };
+        camps.Vi64.Add([1, match.CampScore[1], 2, match.CampScore[2]]);
+        info.Vars.Add(camps);
+        var prepare = new DungeonVar { VarId = PrepareVar };
+        prepare.Vi64.Add(prepareEnd * 1000); // a countdown timestamp in ms (DungeonCountDownTimeStamp)
+        info.Vars.Add(prepare);
+        info.Vars.Add(ObjectiveVar(match));
+        return info;
+    }
+
+    private Task BroadcastAsync(Match match)
+    {
+        var info = Info(match);
+        return RoleFanout.EachAsync(match.Players.Values.Where(p => !p.Left && match.Loaded.Contains(p.Session)
+            && p.Session.InstanceId == match.Room.Id).Select(p => p.Session), s => s.SendGameAsync(DungeonService.BaseInfo, info));
+    }
+
+    private async Task LoadedAsync(GameSession s)
+    {
+        if (!_active.TryGetValue(s, out var match) || match.Room.Id != s.InstanceId || match.Ending) return;
+        match.Loaded.Add(s);
+        await s.SendGameAsync(DungeonService.BaseInfo, Info(match));
+        if (_worldData.Map(Scene)?.Points.TryGetValue(CampPoints[match.Players[s].Camp - 1], out var start) == true)
+            await _scene.TeleportInMapAsync(s, start);
+        await SendTeamRosterAsync(match, match.Players[s].Camp);
+        await CountersAsync(match, [s]);
+    }
+
+    private Task LeavingAsync(GameSession s)
+    {
+        // Leaving the public map on the way in is not leaving the match.
+        if (!_active.TryGetValue(s, out var match) || match.Ending || s.InstanceId != match.Room.Id) return Task.CompletedTask;
+        _active.Remove(s);
+        int camp = match.Players[s].Camp;
+        match.Players[s].Left = true;
+        if (match.Players[s].Battlefield != 0) _loop.PostLegacy(() => SpendAsync(s, match.Players[s]), "casual battle skill");
+        s.Instances.EventFaction = 0;
+        // A camp with nobody left loses (inferred).
+        if (match.Stage > 0 && match.Players.Values.Where(p => !p.Left).Select(p => p.Camp).Distinct().Count() < 2)
+            RequestSettle(match);
+        else _loop.PostLegacy(() => SendTeamRosterAsync(match, camp), "casual battle team roster");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 30441 DungeonTeamInfoNotify, one camp of a match: the Virtual team UI a group this large needs instead of the
+    /// ordinary 5-person party HUD (LC_DAL_VirtualTeam). TeamId is the match's own room id, stable and nonzero for the
+    /// whole match (inferred: no client-visible value names a Mock Battle camp). A real party (TeamService) stays in one
+    /// squad and lone players fill the free slots, five to a squad (inferred packing). The notify's own leaderGuid is the explicit
+    /// Transfer (30451) target if the camp has one and it is still present, else the lowest-indexed squad's own
+    /// leader (inferred default); a member's own followType mirrors its Follow (30448) state, and each squad's own
+    /// flags entry mirrors its SetFlag (30442) state. A member's position is its slot in
+    /// the whole team (squad n: 5(n-1) .. 5(n-1)+4), ordered leader first unless a swap (30450) moved it.
+    /// </summary>
+    private DungeonTeamInfoNotify TeamRoster(Match match, int camp)
+    {
+        var members = match.Players.Values.Where(p => p.Camp == camp && !p.Left).ToArray();
+        // Each real party stays together; lone players fill the squads' free slots (LC_TeamHelper.GetTeamFiveList
+        // shows a squad as five slots, GetFirstEmptyPos fills up to 40).
+        var units = new List<long[]>();
+        var placed = new HashSet<long>();
+        foreach (var p in members)
+        {
+            if (placed.Contains(p.Id)) continue;
+            long[] mates = _teams.TeamOf(p.Id).TeamId > 0 ? [.. _teams.MembersOf(p.Id).Where(id => members.Any(m => m.Id == id))] : [p.Id];
+            if (mates.Length == 0) mates = [p.Id];
+            foreach (long id in mates) placed.Add(id);
+            units.Add(mates);
+        }
+        var squads = new List<List<long>>();
+        foreach (var unit in units.OrderByDescending(u => u.Length).ThenBy(u => u.Min()))
+        {
+            var fit = squads.FirstOrDefault(sq => sq.Count + unit.Length <= SquadSize);
+            if (fit == null) squads.Add(fit = []);
+            fit.AddRange(unit);
+        }
+        var notify = new DungeonTeamInfoNotify { TeamId = match.Room.Id, TeamType = (DungeonTeamType)2 };
+        for (int index = 0; index < squads.Count; index++)
+        {
+            var group = squads[index];
+            long leader = _teams.TeamOf(group[0]).Leader is var l and > 0 && group.Contains(l) ? l : group[0];
+            var squad = new DungeonTeamSquadInfo { SquadIdx = index + 1, SquadLeaderGuid = leader };
+            // A position is the member's slot in the whole 40-player team: squad n holds 5(n-1) .. 5(n-1)+4
+            // (LC_DAL_VirtualTeam stores position + 1 as m_iIndex and GetTeamFiveList groups by it).
+            int first = index * SquadSize;
+            var defaultOrder = group.OrderBy(id => id == leader ? 0 : 1).ThenBy(id => id).ToList();
+            int position = first;
+            foreach (var id in defaultOrder.OrderBy(id => match.PositionOverride.TryGetValue(id, out int p) && p >= first && p < first + SquadSize
+                ? p : first + defaultOrder.IndexOf(id)))
+                squad.Members[id] = new DungeonTeamMemberInfo
+                { Guid = id, Position = position++, FollowType = match.Follow.GetValueOrDefault(id) };
+            notify.Squads[squad.SquadIdx] = squad;
+            if (match.Flags.TryGetValue(squad.SquadIdx, out var flag)) notify.Flags[squad.SquadIdx] = flag;
+        }
+        notify.LeaderGuid = TeamLeader(match, camp, members, notify);
+        return notify;
+    }
+
+    private static Task BroadcastCampAsync(Match match, int camp, uint id, IMessage msg) =>
+        RoleFanout.EachAsync(match.Players.Values.Where(p => p.Camp == camp && !p.Left && match.Loaded.Contains(p.Session))
+            .Select(p => p.Session), s => s.SendGameAsync(id, msg));
+
+    /// <summary>The camp's current Virtual team leader: its own Transfer (30451) target while still present in the
+    /// camp, else (the default, and after that leader is gone) the lowest-indexed squad's own leader.</summary>
+    private static long TeamLeader(Match match, int camp, Player[] members, DungeonTeamInfoNotify notify)
+    {
+        long explicitLeader = match.TeamLeader.GetValueOrDefault(camp);
+        return explicitLeader != 0 && members.Any(p => p.Id == explicitLeader)
+            ? explicitLeader : notify.Squads.Values.MinBy(s => s.SquadIdx)?.SquadLeaderGuid ?? 0;
+    }
+
+    private Task SendTeamRosterAsync(Match match, int camp)
+    {
+        var notify = TeamRoster(match, camp);
+        return RoleFanout.EachAsync(match.Players.Values.Where(p => p.Camp == camp && !p.Left && match.Loaded.Contains(p.Session))
+            .Select(p => p.Session), s => s.SendGameAsync(DungeonService.TeamInfo, notify));
+    }
+
+    /// <summary>
+    /// 30451 DUNGEON_TEAM_TRANSFER: the Virtual team's current leader (TeamLeader) hands the role off to another
+    /// present member of the same camp. It changes the match, not just the sender's role, so it keeps the default
+    /// realm-wide admission like the match's own timeline work (PostLegacy). No client-visible result mapping is named
+    /// for this response; ErrorCodes.
+    /// NoPermission (not the leader) and ErrorCodes.Parameter (no such present camp member) are (inferred).
+    /// </summary>
+    public async Task TransferAsync(GameSession s, DungeonTeamTransferReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            var members = match.Players.Values.Where(p => p.Camp == camp && !p.Left).ToArray();
+            long leader = TeamLeader(match, camp, members, TeamRoster(match, camp));
+            if (s.Role.Id != leader) code = ErrorCodes.NoPermission;
+            else if (!members.Any(p => p.Id == req.TargetGuid)) code = ErrorCodes.Parameter;
+            else { match.TeamLeader[camp] = req.TargetGuid; code = 0; }
+        }
+        await s.SendGameAsync(Transfer, new DungeonTeamTransferResp { Result = code });
+        if (code == 0 && match != null) await SendTeamRosterAsync(match, camp);
+    }
+
+    /// <summary>
+    /// 30448 DUNGEON_TEAM_FOLLOW: a camp member toggles following its Virtual team's or squad's leader. Its own
+    /// roster entry (DungeonTeamMemberInfo.followType) and every other present camp member's 30449 notice mirror the
+    /// new state; it changes the match, not just the sender's role, so it keeps the default realm-wide admission
+    /// like Transfer (30451). No client-visible result mapping is named for this response; ErrorCodes.Parameter
+    /// (isFollow true with no followType named) is (inferred).
+    /// </summary>
+    public async Task FollowAsync(GameSession s, DungeonTeamFollowReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else if (req.IsFollow && (int)req.FollowType == 0) code = ErrorCodes.Parameter;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            if (req.IsFollow) match.Follow[s.Role.Id] = req.FollowType; else match.Follow.Remove(s.Role.Id);
+            code = 0;
+        }
+        await s.SendGameAsync(Follow, new DungeonTeamFollowResp { Result = code });
+        if (code == 0 && match != null)
+        {
+            var notify = new DungeonTeamFollowNotify { FollowerGuid = s.Role!.Id, FollowType = req.FollowType, IsFollow = req.IsFollow };
+            await RoleFanout.EachAsync(match.Players.Values.Where(p => p.Camp == camp && !p.Left && match.Loaded.Contains(p.Session))
+                .Select(p => p.Session), sess => sess.SendGameAsync(FollowNotify, notify));
+            await SendTeamRosterAsync(match, camp);
+        }
+    }
+
+    /// <summary>
+    /// 30450 DUNGEON_TEAM_SWAP_POSITION: a squad's own leader swaps two of its members' slots in the next 30441
+    /// roster. The request names no squad, so it is read as the sender's own one (inferred: the panel only ever
+    /// shows the viewer reordering its own squad). It changes the match, not just the sender's own role, so it
+    /// keeps the default realm-wide admission like Transfer (30451) and Follow (30448). No client-visible result
+    /// mapping is named; ErrorCodes.NoPermission (not that squad's leader) and ErrorCodes.Parameter (an empty or
+    /// repeated position) are (inferred).
+    /// </summary>
+    public async Task SwapPositionAsync(GameSession s, DungeonTeamSwapPositionReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            var squad = TeamRoster(match, camp).Squads.Values.FirstOrDefault(sq => sq.Members.ContainsKey(s.Role.Id));
+            var first = squad?.Members.Values.FirstOrDefault(mem => mem.Position == req.PositionFirst);
+            var second = squad?.Members.Values.FirstOrDefault(mem => mem.Position == req.PositionSecond);
+            if (squad == null || s.Role.Id != squad.SquadLeaderGuid) code = ErrorCodes.NoPermission;
+            else if (first == null || second == null || first.Guid == second.Guid) code = ErrorCodes.Parameter;
+            else
+            {
+                match.PositionOverride[first.Guid] = req.PositionSecond;
+                match.PositionOverride[second.Guid] = req.PositionFirst;
+                code = 0;
+            }
+        }
+        await s.SendGameAsync(SwapPosition, new DungeonTeamSwapPositionResp { Result = code });
+        if (code == 0 && match != null) await SendTeamRosterAsync(match, camp);
+    }
+
+    /// <summary>
+    /// 30442 DUNGEON_TEAM_SET_FLAG: a squad's own leader marks or clears its own flag. The request's own slot is
+    /// read as the sender's own squadIdx (inferred, like SwapPosition's own-squad reading: the panel only ever
+    /// shows the viewer marking its own squad). FlagType.Player names a present member of that squad (inferred,
+    /// like Transfer's own target); FlagType.None clears the flag. It changes the match, not just the sender's own
+    /// role, so it keeps the default realm-wide admission like Transfer/Follow/SwapPosition. No client-visible
+    /// result mapping is named (LC_DAL_VirtualTeam's own 30443 handler is empty; the client's flag display reads
+    /// the next 30441 roster instead); ErrorCodes.NoPermission (not that squad's leader) and ErrorCodes.Parameter
+    /// (a Player flag naming no present member of that squad) are (inferred).
+    /// </summary>
+    public async Task SetFlagAsync(GameSession s, DungeonTeamSetFlagReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0, squadIdx = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            var squad = TeamRoster(match, camp).Squads.Values.FirstOrDefault(sq => sq.Members.ContainsKey(s.Role.Id));
+            if (squad == null || s.Role.Id != squad.SquadLeaderGuid) code = ErrorCodes.NoPermission;
+            else if (req.FlagInfo is null
+                || req.FlagInfo.Type == DungeonTeamFlagType.Player && !squad.Members.ContainsKey(req.FlagInfo.TargetGuid))
+                code = ErrorCodes.Parameter;
+            else
+            {
+                squadIdx = squad.SquadIdx;
+                if (req.FlagInfo.Type == DungeonTeamFlagType.None) match.Flags.Remove(squadIdx);
+                else match.Flags[squadIdx] = req.FlagInfo;
+                code = 0;
+            }
+        }
+        await s.SendGameAsync(SetFlag, new DungeonTeamSetFlagResp { Result = code, Slot = squadIdx });
+        if (code != 0 || match == null) return;
+        var notify = new DungeonTeamFlagNotify { SquadIdx = squadIdx };
+        if (match.Flags.TryGetValue(squadIdx, out var flag)) notify.Flags[squadIdx] = flag;
+        await BroadcastCampAsync(match, camp, FlagNotify, notify);
+        await SendTeamRosterAsync(match, camp);
+    }
+
+    /// <summary>
+    /// 30444 DUNGEON_TEAM_RALLY: a squad's own leader calls its squad to convene (the request names no squad or
+    /// point, read as the sender's own squad like SwapPosition and SetFlag). LC_DAL_VirtualTeam's own 30445 handler
+    /// opens a countdown invite from PublicParamConfig TeamGatheringTime; it does not itself move anyone. It
+    /// changes the match, not just the sender's own role, so it keeps the default realm-wide admission like
+    /// Transfer/Follow/SwapPosition/SetFlag. No client-visible result mapping is named; ErrorCodes.NoPermission
+    /// (not that squad's leader) is (inferred).
+    /// </summary>
+    public async Task RallyAsync(GameSession s, DungeonTeamRallyReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0, squadIdx = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            var squad = TeamRoster(match, camp).Squads.Values.FirstOrDefault(sq => sq.Members.ContainsKey(s.Role.Id));
+            if (squad == null || s.Role.Id != squad.SquadLeaderGuid) code = ErrorCodes.NoPermission;
+            else { squadIdx = squad.SquadIdx; match.Rally[squadIdx] = s.Role.Id; code = 0; }
+        }
+        await s.SendGameAsync(Rally, new DungeonTeamRallyResp { Result = code, SquadIdx = squadIdx });
+        if (code == 0 && match != null)
+            await BroadcastCampAsync(match, camp, RallyNotify, new DungeonTeamRallyNotify { OperGuid = s.Role!.Id, SquadIdx = squadIdx });
+    }
+
+    /// <summary>
+    /// 30446 DUNGEON_TEAM_RALLY_REPLY: a camp member answers its own squad's most recent Rally (30444); the request
+    /// names no squad, read as the sender's own one like Rally itself. LC_DAL_VirtualTeam's own 30447 handler
+    /// switches an agreeing replier into follow mode by sending its own Follow (30448) on the client's own
+    /// initiative; the server does not mirror that here. It changes the match, not just the sender's own role, so
+    /// it keeps the default realm-wide admission like Rally. ErrorCodes.Parameter (the sender's own squad has no
+    /// pending Rally) is (inferred).
+    /// </summary>
+    public async Task RallyReplyAsync(GameSession s, DungeonTeamRallyReplyReq req)
+    {
+        int code;
+        Match? match = null;
+        int camp = 0, squadIdx = 0;
+        if (s.Role == null || Live(s) is not { } m) code = ErrorCodes.SceneMissing;
+        else
+        {
+            match = m; camp = match.Players[s].Camp;
+            var squad = TeamRoster(match, camp).Squads.Values.FirstOrDefault(sq => sq.Members.ContainsKey(s.Role.Id));
+            if (squad == null || !match.Rally.ContainsKey(squad.SquadIdx)) code = ErrorCodes.Parameter;
+            else { squadIdx = squad.SquadIdx; code = 0; }
+        }
+        await s.SendGameAsync(RallyReply, new DungeonTeamRallyReplyResp { Result = code });
+        if (code == 0 && match != null)
+            await BroadcastCampAsync(match, camp, RallyReplyNotify,
+                new DungeonTeamRallyReplyNotify { ReplyGuid = s.Role!.Id, IsAgree = req.IsAgree, SquadIdx = squadIdx });
+    }
+
+    public bool CanFight(GameSession attacker, GameSession target) => Live(attacker) is { } m && Live(target) == m && m.Stage > 0
+        && m.Loaded.Contains(attacker) && m.Loaded.Contains(target)
+        && m.Players[attacker].Camp != m.Players[target].Camp && !attacker.Dead && Now < m.Deadline;
+
+    private void Dealt(GameSession attacker, GameSession target, long damage, bool lethal)
+    {
+        if (Live(attacker) is not { } m || Live(target) != m || damage <= 0) return;
+        m.Players[attacker].Damage += damage;
+        m.Players[target].Taken += damage;
+        m.Players[target].HitBy[attacker] = Now;
+    }
+
+    /// <summary>CombatService's confirmed kill of one Mock Battle player by another.</summary>
+    public async Task PlayerKilledAsync(GameSession killer, GameSession victim)
+    {
+        if (Live(killer) is not { } m || !m.Players.TryGetValue(victim, out var dead) || m.Players[killer].Camp == dead.Camp) return;
+        var me = m.Players[killer];
+        me.Kills++;
+        dead.Deaths++;
+        Score(m, killer, KillCamp);
+        Score(m, killer, KillPersonal);
+        List<GameSession> credited = [killer];
+        foreach (var (helper, at) in dead.HitBy)
+            if (helper != killer && Now - at <= 10 && m.Players.TryGetValue(helper, out var assist) && assist.Camp == me.Camp)
+            { assist.Assists++; Score(m, helper, AssistPersonal); credited.Add(helper); }
+        dead.HitBy.Clear();
+        await CountersAsync(m, credited);
+        dead.Streak = 0;
+        await StreakAsync(m, killer);
+        await BroadcastAsync(m);
+        if (m.CampScore.Values.Any(score => score >= ScoreBar)) RequestSettle(m);
+    }
+
+    /// <summary>30123: the battle report button's own kill and assist counters (DungeonService.PlayerCounters).</summary>
+    private static Task CountersAsync(Match m, IEnumerable<GameSession> players) =>
+        RoleFanout.EachAsync(players.Where(p => m.Loaded.Contains(p) && !m.Players[p].Left), p =>
+            p.SendGameAsync(DungeonService.PlayerStatistics, DungeonService.PlayerCounters(m.Players[p].Id, m.Players[p].Kills, m.Players[p].Assists)));
+
+    private void Score(Match m, GameSession player, int row)
+    {
+        if (_data.Row("BattleEventPointConfig", row) is not { } config || !config.TryGetProperty("_kScore", out var pairs)
+            || pairs.ValueKind != JsonValueKind.Array) return;
+        var values = pairs.EnumerateArray().Select(v => (long)(GameData.Number(v) ?? 0)).ToArray();
+        long factor = m.Stage == 2 ? 2 : 1; // the death fight's double points (DungeonQuestConfig 16300105)
+        for (int i = 0; i + 1 < values.Length; i += 2)
+            if (values[i] == 4) m.CampScore[m.Players[player].Camp] += values[i + 1] * factor;
+            else if (values[i] == 2) m.Players[player].Score += values[i + 1] * factor;
+    }
+
+    private async Task AdvanceAsync(Match match)
+    {
+        if (match.Settled) return;
+        // Over, but its result is not durable yet: the save is retried with backoff.
+        if (match.Ending) { if (Now >= match.RetryAt) await SettleAsync(match); return; }
+        long elapsed = Now - match.Open;
+        int stage = elapsed < PrepareSeconds ? 0 : elapsed < PrepareSeconds + MainSeconds ? 1 : 2;
+        if (Now >= match.Deadline) { await SettleAsync(match); return; }
+        if (match.Loaded.Count == 0 && elapsed >= 60) { await SettleAsync(match); return; } // nobody arrived
+        if (stage != match.Stage) { match.Stage = stage; await BroadcastAsync(match); }
+        await ArenaTickAsync(match);
+    }
+
+    private DungeonStatisticsInfoWithDungeon Statistics(Match m)
+    {
+        var scene = new SceneStatisticsInfo { SceneId = 0, DungeonId = Scene };
+        foreach (var p in m.Players.Values)
+        {
+            var role = new RoleStatisticsInfo
+            {
+                BaseInfo = new StatisticsRoleBaseInfo
+                {
+                    Id = p.Id, Name = p.Name, Job = p.Career,
+                    CampId = p.Camp, TeamId = p.Camp
+                }, Totalscore = p.Score, TotalDamage = p.Damage, TotalBeDamage = p.Taken, TotalCure = p.Healing
+            };
+            foreach (var (key, value) in new (int, long)[] { (1021005, p.Score), (1001004, p.Kills), (1001005, p.Assists),
+                (1001001, p.Damage), (1001002, p.Taken), (1001003, p.Healing), (1001006, p.Deaths) })
+                role.ExtraData[key] = new ExtraValueData { LongValue = value };
+            scene.RoleStatistics[p.Id] = role;
+        }
+        foreach (var (camp, score) in m.CampScore)
+            scene.CampStatistics[camp] = new CampStatisticsInfo { CampId = camp, ExtraData = { [1041003] = new ExtraValueData { LongValue = score } } };
+        // LC_DAL_LeisureForty reads the personal strip from sceneStatistics[0].
+        var result = new DungeonStatisticsInfoWithDungeon { StatisticsId = m.Room.Id, DungeonId = Scene, StatisticsTime = Now * 1000 };
+        result.SceneStatistics[0] = scene;
+        return result;
+    }
+
+    /// <summary>
+    /// One role's frozen Mock Battle result (a casual_battle_obligation row): what its payment applies to the role's
+    /// timed_battle state and which DropPools it rolls. No goods until the event/casual-battle receipt pays them.
+    /// </summary>
+    public sealed class Payout
+    {
+        public long MatchId { get; set; }
+        public long RoleId { get; set; }
+        public long BattleTime { get; set; }
+        public string ResultId { get; set; } = "";
+        public bool Won { get; set; }
+        public int Outcome { get; set; }
+        public long StartMmr { get; set; }
+        public long MmrDelta { get; set; }
+        public TimedBattleService.CasualStats Stats { get; set; } = new();
+        public List<long> Pools { get; set; } = [];
+    }
+
+    /// <summary>The frozen payouts: saved before the match counts as settled, paid once each, retried by the tick
+    /// while the role is online and paid at login after a disconnect or a restart.</summary>
+    private readonly RoleObligations<CasualBattleObligationRow> _obligations;
+
+    internal static string SourceKey(long match, long role) =>
+        string.Create(CultureInfo.InvariantCulture, $"casual-battle/{match}/{role}");
+    private static long Backoff(int failures) => RoleObligations<CasualBattleObligationRow>.Backoff(failures);
+
+    /// <summary>The battle is over: freeze its result in memory (once) and stop all fighting and scoring.</summary>
+    private void End(Match match)
+    {
+        if (match.Ending) return;
+        match.Ending = true;
+        match.Stage = 2;
+        var stayed = match.Players.Values.Where(p => !p.Left).Select(p => p.Camp).Distinct().ToArray();
+        int winCamp = stayed.Length == 1 ? stayed[0] : match.CampScore[1] == match.CampScore[2] ? 0
+            : match.CampScore[1] > match.CampScore[2] ? 1 : 2;
+        var stats = Statistics(match);
+        var mvp = match.Players.Values.Where(p => p.Camp == winCamp).OrderByDescending(p => p.Score)
+            .ThenByDescending(p => p.Kills).ThenBy(p => p.Id).FirstOrDefault();
+        string resultId = match.Room.Id.ToString(CultureInfo.InvariantCulture);
+        var pp = Data.Config.PublicParams.Of(_data);
+        long start = pp.RelaxGVGStartMMR ?? 1000, win = pp.RelaxGVGWinMMR ?? 5, lose = pp.RelaxGVGLoseMMR ?? -3;
+        var rows = new List<CasualBattleObligationRow>();
+        foreach (var p in match.Players.Values.Where(p => !p.Left).OrderBy(p => p.Id))
+        {
+            _active.Remove(p.Session);
+            p.Session.Instances.EventFaction = 0;
+            if (p.Battlefield != 0) _loop.PostLegacy(() => SpendAsync(p.Session, p), "casual battle skill");
+            bool won = winCamp != 0 && p.Camp == winCamp;
+            var payout = new Payout
+            {
+                MatchId = match.Room.Id, RoleId = p.Id, BattleTime = match.Open, ResultId = resultId, Won = won,
+                Outcome = winCamp == 0 ? 3 : won ? 1 : 2, // 3 draw (inferred: the achievements count win/lose/draw)
+                StartMmr = start, MmrDelta = winCamp == 0 ? 0 : won ? win : lose,
+                Stats = new TimedBattleService.CasualStats
+                {
+                    PersonalScore = p.Score, Damage = p.Damage, Kills = p.Kills,
+                    Assists = p.Assists, DamageTaken = p.Taken, Healing = p.Healing
+                },
+                // DungeonAwardModule ScoreCondition [2,3,25] (inferred: personal score >= 25): 85201, the winners also 85202.
+                Pools = p.Score < 25 ? [] : won ? [85201, 85202] : [85201],
+            };
+            rows.Add(new CasualBattleObligationRow(SourceKey(match.Room.Id, p.Id), match.Room.Id, p.Id,
+                JsonSerializer.SerializeToUtf8Bytes(payout)));
+            var info = new DungeonResultInfo
+            {
+                Result = won ? 1 : 2, WinCamp = winCamp, DungeonId = Scene,
+                StatisticsId = match.Room.Id, StatisticsTime = Now * 1000, DungeonStartTimestamp = match.Open * 1000
+            };
+            info.SceneStatistics.Add(stats.SceneStatistics);
+            if (mvp != null) info.MetaData["mvpPlayerId"] = mvp.Id.ToString(CultureInfo.InvariantCulture);
+            match.Notices[p.Id] = new DungeonResultNotify { ResultInfo = info, ResultId = resultId };
+        }
+        match.Frozen = [.. rows];
+    }
+
+    /// <summary>A kill or a departure ended the battle: stop it now, persist on its own realm-scoped turn.</summary>
+    private void RequestSettle(Match match)
+    {
+        End(match);
+        _loop.PostLegacy(() => SettleAsync(match), "casual battle settlement");
+    }
+
+    /// <summary>
+    /// The end: every stayed player's payout obligation is saved in one transaction before the match counts as
+    /// settled (a refused save is retried by the timeline with backoff), then each is paid on its own, 30132 is sent
+    /// (best-effort) and everyone leaves after 30 s. A payout that fails stays pending: the tick retries it while the
+    /// role is online, and the next login pays it after a disconnect or a restart.
+    /// </summary>
+    private async Task SettleAsync(Match match)
+    {
+        End(match);
+        if (match.Settled || match.Persisting) return;
+        if (!match.Announced)
+        {
+            match.Announced = true;
+            await BroadcastAsync(match);
+            await ClosingAsync(match);
+            _loop.ScheduleLegacy(TimeSpan.FromSeconds(ExitSeconds), async () =>
+            {
+                foreach (var p in match.Players.Values)
+                    if (p.Session.InstanceId == match.Room.Id) await _instances.LeaveAsync(p.Session);
+            });
+        }
+        match.Persisting = true;
+        try
+        {
+            if (!await _obligations.FreezeAsync(match.Frozen!, "casual-battle/freeze", match.Room.Id))
+            {
+                match.Failures++;
+                match.RetryAt = Now + Backoff(match.Failures);
+                return;
+            }
+        }
+        finally { match.Persisting = false; }
+        match.Settled = true;
+        _matches.Remove(match);
+        // Pending (not yet due for the tick) until the first attempt below sets its retry.
+        foreach (var row in match.Frozen!) _obligations.Track(row);
+        foreach (var row in match.Frozen!)
+        {
+            var player = match.Players.Values.First(p => p.Id == row.RoleId);
+            var s = player.Session.Role?.Id == row.RoleId ? player.Session : Online(row.RoleId);
+            if (s?.Instances.TimedBattle == null || s.Progress == null) { _obligations.Forget(row.SourceKey); continue; } // paid at login
+            await _obligations.TryPayAsync(s, row);
+            if (s.Role?.Id == row.RoleId && match.Notices.TryGetValue(row.RoleId, out var notice))
+            {
+                await _dungeons.StoreExternalResultAsync(s, notice);
+                try { await s.SendGameAsync(ResultNotify, notice); }
+                catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+            }
+        }
+    }
+
+    private GameSession? Online(long roleId) => _sessions.ByRole(roleId);
+
+    /// <summary>
+    /// One player's rating, record, best/lifetime numbers and DungeonAwardModule reward in one receipt
+    /// (event/casual-battle, source casual-battle/{match}/{role}), with the role's timed_battle state and the
+    /// obligation's delivered mark; then 5070. CasualSettled makes a second payment of the match a no-op.
+    /// </summary>
+    private async Task<bool> PayAsync(GameSession s, CasualBattleObligationRow row)
+    {
+        var payout = JsonSerializer.Deserialize<Payout>(row.Payout)
+            ?? throw new InvalidDataException("Invalid Mock Battle payout " + row.SourceKey);
+        bool paid = false;
+        using (await CharacterService.Lock(s, [RoleObligations<CasualBattleObligationRow>.Key(row.SourceKey)]))
+        {
+            if (s.Role?.Id != row.RoleId || s.Instances.TimedBattle == null || s.Progress == null)
+                throw new OperationCanceledException("Mock Battle recipient left the game.");
+            var state = s.Instances.TimedBattle;
+            if (!state.CasualSettled.Contains(row.MatchId))
+            {
+                var next = JsonSerializer.Deserialize<TimedBattleService.State>(JsonSerializer.SerializeToUtf8Bytes(state))!;
+                next.CasualSettled.Add(row.MatchId);
+                next.CasualMmr = (int)Math.Max(0, (next.CasualMmr == 0 ? payout.StartMmr : next.CasualMmr) + payout.MmrDelta);
+                next.CasualRecords.Insert(0, new TimedBattleService.CasualRecord
+                { ResultId = payout.ResultId, BattleTime = payout.BattleTime, Outcome = payout.Outcome });
+                if (next.CasualRecords.Count > 20) next.CasualRecords.RemoveRange(20, next.CasualRecords.Count - 20); // (inferred) twenty kept
+                var b = next.CasualBest; var t = next.CasualTotal; var p = payout.Stats;
+                b.PersonalScore = Math.Max(b.PersonalScore, p.PersonalScore); b.Damage = Math.Max(b.Damage, p.Damage);
+                b.Kills = Math.Max(b.Kills, p.Kills); b.Assists = Math.Max(b.Assists, p.Assists);
+                b.DamageTaken = Math.Max(b.DamageTaken, p.DamageTaken); b.Healing = Math.Max(b.Healing, p.Healing);
+                t.PersonalScore += p.PersonalScore; t.Damage += p.Damage; t.Kills += p.Kills; t.Assists += p.Assists;
+                t.DamageTaken += p.DamageTaken; t.Healing += p.Healing;
+                var grants = new List<AwardGrant>();
+                foreach (long pool in payout.Pools)
+                    grants.AddRange(_rewards.RollPoolBound(pool, s.Progress).Select(g => new AwardGrant(g.Entry, g.Count, g.Bind)));
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(next);
+                if (!await _character.ApplyAwardAsync(s, new AwardPlan(0, 0, grants), persist: tx =>
+                    {
+                        tx.RoleBlob(row.RoleId, "timed_battle", bytes);
+                        tx.Add(RoleObligations<CasualBattleObligationRow>.DeliverPlan(row));
+                        if (grants.Any(g => g.Entry is not (100 or 101)))
+                            tx.WithEventEconomy(Economy.EventEconomy.ForRole(_data, s, "casual-battle", row.SourceKey, [], grants,
+                                new { Match = row.MatchId, payout.Won, Score = payout.Stats.PersonalScore }));
+                    }, stateLockHeld: true, committed: () => s.Instances.TimedBattle = next))
+                    throw new InvalidOperationException("Mock Battle settlement refused.");
+                paid = true;
+            }
+        }
+        if (paid) await _timedBattles.CasualSettledAsync(s);
+        return true;
+    }
+
+    /// <summary>The role's pending payouts, read before the role select admits so it can reserve them.</summary>
+    internal Task<ReservationKey[]> LoginKeysAsync(long roleId) => _obligations.LoginKeysAsync(roleId);
+
+    /// <summary>Login pays what a failure, a disconnect or a restart left pending (after the timed-battle state).</summary>
+    public async Task LoginAsync(GameSession s)
+    {
+        if (s.Role == null || s.Instances.TimedBattle == null) return;
+        long roleId = s.Role.Id;
+        await _obligations.DeliverPendingAsync(s, roleId, () => s.Role?.Id == roleId);
+    }
+
+    internal async Task GmAsync(GameSession s, string[] args)
+    {
+        switch (args.FirstOrDefault()?.ToLowerInvariant())
+        {
+            case "open": OpenForTest = true; await GmCommands.ReplyAsync(s, "Mock Battle sign-ups open (test aid)."); break;
+            case "close": OpenForTest = false; await GmCommands.ReplyAsync(s, "Mock Battle back on its schedule."); break;
+            case "start": await FormAsync(); await GmCommands.ReplyAsync(s, $"Mock Battle started, {_matches.Count} match(es) running (test aid)."); break;
+            case "at" when _active.TryGetValue(s, out var mine) && long.TryParse(args.ElementAtOrDefault(1), out long at):
+                mine.Open = Now - Math.Clamp(at, 0, BattleSeconds - 1);
+                await GmCommands.ReplyAsync(s, $"Mock Battle at {at} s (test aid)."); break;
+            default: throw new ArgumentException("open|close|start|at <seconds>");
+        }
+    }
+}

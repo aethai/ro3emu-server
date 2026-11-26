@@ -53,6 +53,26 @@ To read a new field, add a property to the view; don't write the field name in t
 `ConfigViewTests.ClientFieldNamesLiveInTheConfigViews` counts the field names still written outside the views. The
 count only goes down.
 
+## Key/value constant tables
+
+Some client tables map a named parameter directly to a value (`PublicParamConfig`, `ActivityConstant`,
+`MultiverseConstant`, `GVGConfig`) or to a row whose `_kValue` holds the value (`GuildSettingConfig`). Declare a view
+for those with `[ConfigConstants]` and `[ConfigConstant]`:
+
+```csharp
+[ConfigConstants("GuildSettingConfig", ValueField = "_kValue")]
+public readonly partial record struct GuildSettings(IReadOnlyDictionary<string, JsonElement> Values)
+{
+    [ConfigConstant("GuildMap")] public partial long? GuildMap { get; }
+    [ConfigConstant("GuildCreateCost")] public partial long[]? GuildCreateCost { get; }
+}
+```
+
+- Every property is nullable: `null` means the key is absent, while `0` is a real configured value.
+- Callers read through `PublicParams.Of(_data).TrumpetWordLimit ?? 50` (or `GuildSettings.Of(_data)`).
+- `ConfigValidator` checks every declared key's kind at startup, and requires every non-`Optional` key to be present on
+  a client export.
+
 ## The startup check
 
 `GameData.Preload` runs `ConfigValidator` over every view before the gates open:

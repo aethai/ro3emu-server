@@ -28,7 +28,9 @@ public static partial class EconomySnapshotReader
                         {
                             using var doc = Json(bytes);
                             var row = doc.RootElement;
-                            Fields(row, "Id SourceKey Type SrcType GuildId Entry Bind Start End State Owner Price Reserve Currency Raise FixedPrice MaxPrice TypeAttr LastBid Revision Auto AutoPaused RunId Eligible GiveUp Joined Winner RandomAward SettlementRecoveryReason");
+                            Fields(row, "Id SourceKey Type SrcType GuildId Entry Bind Start End State Owner Price Reserve Currency "
+                                + "Raise FixedPrice MaxPrice TypeAttr LastBid Revision Auto AutoPaused RunId Eligible GiveUp Joined Winner "
+                                + "RandomAward SettlementRecoveryReason");
                             if (Long(row, "Id") != id || String(row, "SourceKey") != source || source.Length == 0)
                                 throw new FormatException("Auction lot identity mismatch.");
                             long entry = Long(row, "Entry"), currency = Long(row, "Currency"), owner = Long(row, "Owner"),
@@ -133,7 +135,7 @@ public static partial class EconomySnapshotReader
             // Guild ids are collected before market/caravan ownership is checked.
             if (Has("guild") && new[] { "id", "state" }.All(Columns("guild").ContainsKey))
             {
-                using var cmd = Command("SELECT id,state FROM guild ORDER BY id");
+                using var cmd = ScopeIds(Command("SELECT id,state FROM guild" + ScopeFilter(GuildScope, "id") + " ORDER BY id"), GuildScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -145,7 +147,13 @@ public static partial class EconomySnapshotReader
                         Guard(key, () =>
                         {
                             using var doc = Json(bytes); var state = doc.RootElement;
-                            Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs Level Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");
+                            Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs FoundingItem FoundingCount Level "
+                                + "Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials "
+                                + "LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights "
+                                + "Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
+                                + "ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs "
+                                + "ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec "
+                                + "MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");
                             if (Long(state, "Id") != id) throw new FormatException("Guild identity mismatch.");
                             var owner = new EconomyOwner(EconomyOwnerKind.Guild, Id(id));
                             foreach (var field in new[] { ("Money", 1L), ("Contribute", 2L), ("Materials", 3L),
@@ -164,7 +172,8 @@ public static partial class EconomySnapshotReader
             }
             if (Has("guild_recovery") && new[] { "guild_id", "state", "created_ms" }.All(Columns("guild_recovery").ContainsKey))
             {
-                using var cmd = Command("SELECT guild_id,state,created_ms FROM guild_recovery ORDER BY guild_id");
+                using var cmd = ScopeIds(Command("SELECT guild_id,state,created_ms FROM guild_recovery" + ScopeFilter(GuildScope, "guild_id")
+                    + " ORDER BY guild_id"), GuildScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -179,7 +188,13 @@ public static partial class EconomySnapshotReader
                                 throw new FormatException("Invalid or live guild recovery identity.");
                             using var doc = Json(bytes);
                             var state = doc.RootElement;
-                            Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs Level Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");
+                            Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs FoundingItem FoundingCount Level "
+                                + "Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials "
+                                + "LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights "
+                                + "Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
+                                + "ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs "
+                                + "ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec "
+                                + "MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");
                             if (Long(state, "Id") != id) throw new FormatException("Guild recovery snapshot identity mismatch.");
                             var owner = new EconomyOwner(EconomyOwnerKind.Guild, Id(id));
                             foreach (var field in new[] { ("Money", 1L), ("Contribute", 2L), ("Materials", 3L),
@@ -195,7 +210,8 @@ public static partial class EconomySnapshotReader
                     });
                 }
             }
-            ScanJsonEvidence("guild_market", "id", "state", (key, state) =>
+            // A participant read leaves out the other families an envelope in that mode never writes (EconomyEnvelopePlan).
+            if (!Scoped) ScanJsonEvidence("guild_market", "id", "state", (key, state) =>
             {
                 Fields(state, "NextId RecentAvgPrice RecentPrices PriceHistory Stalls RecoveryStalls Trades LastListedMs");
                 if (!Try(state, "Stalls", out var stalls)) return;
@@ -227,7 +243,8 @@ public static partial class EconomySnapshotReader
             });
             if (Has("guild_caravan_member") && new[] { "role_id", "state" }.All(Columns("guild_caravan_member").ContainsKey))
             {
-                using var cmd = Command("SELECT role_id,state FROM guild_caravan_member ORDER BY role_id");
+                using var cmd = ScopeIds(Command("SELECT role_id,state FROM guild_caravan_member" + ScopeFilter(RoleScope, "role_id")
+                    + " ORDER BY role_id"), RoleScope);
                 using var r = cmd.ExecuteReader();
                 int rowNumber = 0;
                 while (r.Read())
@@ -275,11 +292,12 @@ public static partial class EconomySnapshotReader
                     });
                 }
             }
-            if (Has("guild_caravan_version")) ScanIntegerKeys("guild_caravan_version", "guild_id");
+            if (!Scoped && Has("guild_caravan_version")) ScanIntegerKeys("guild_caravan_version", "guild_id");
             ScanJsonEvidence("guild_campfire", "guild_id", "state", (key, root) =>
-                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages"));
+                Fields(root, "Day Exp Seeds FuelCount DrawnStages BossDead FruitKills PrizeStages"), GuildScope);
             ScanJsonEvidence("guild_challenge", "guild_id", "state", (key, root) =>
-                Fields(root, "Season Cycle Activated Unlocked LastUnlocked PassedDifficulty Difficulty Stage Selected Complete Progress BestTimeMs AuctionEntries"));
+                Fields(root, "Season Cycle Activated Unlocked LastUnlocked PassedDifficulty Difficulty Stage Selected Complete Progress BestTimeMs AuctionEntries"),
+                GuildScope);
         }
 
         private void ScanTextKeys(string table, string column)
@@ -308,10 +326,12 @@ public static partial class EconomySnapshotReader
             });
         }
 
-        private void ScanJsonEvidence(string table, string keyColumn, string blobColumn, Action<string, System.Text.Json.JsonElement> decode)
+        private void ScanJsonEvidence(string table, string keyColumn, string blobColumn, Action<string, System.Text.Json.JsonElement> decode,
+            IReadOnlySet<long>? scope = null)
         {
             if (!Has(table) || !new[] { keyColumn, blobColumn }.All(Columns(table).ContainsKey)) return;
-            using var cmd = Command($"SELECT \"{keyColumn}\",\"{blobColumn}\" FROM \"{table}\" ORDER BY \"{keyColumn}\"");
+            using var cmd = ScopeIds(Command($"SELECT \"{keyColumn}\",\"{blobColumn}\" FROM \"{table}\"" + ScopeFilter(scope, $"\"{keyColumn}\"")
+                + $" ORDER BY \"{keyColumn}\""), scope);
             using var r = cmd.ExecuteReader();
             int rowNumber = 0;
             while (r.Read())

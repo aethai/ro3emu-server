@@ -174,5 +174,6 @@ internal sealed class PanelSettingWritePlan(string key, string value, string adm
 
 internal static class PanelSettingKeys
 {
+    internal const string HideStaffRankings = "hide-staff-rankings";
     internal const string Maintenance = "maintenance";
 }

@@ -4,11 +4,11 @@ using System.Text.Json;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>Semantic authorization for an E05d value movement, before its concrete SQL locations are known.</summary>
+/// <summary>Semantic authorization for a value movement, before its concrete SQL locations are known.</summary>
 public sealed record EconomyEffect(EconomyAsset Asset, EconomyOwner Owner, EconomyCompartment Compartment,
     long Delta, EconomyLegKind Kind, EconomyReason Reason, int EdgeNumber = 0);
 
-/// <summary>Detached E05d receipt intent. An empty effect list explicitly authorizes zero economic movement.</summary>
+/// <summary>Detached semantic receipt intent. An empty effect list explicitly authorizes zero economic movement.</summary>
 public sealed class EconomyEnvelope
 {
     public string OperationId { get; }

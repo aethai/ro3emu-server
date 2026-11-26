@@ -4,7 +4,8 @@
     <Project Path="src/Ro3Emu.BotCli/Ro3Emu.BotCli.csproj" />
     <Project Path="src/Ro3Emu.LoadTest/Ro3Emu.LoadTest.csproj" />
     <Project Path="src/Ro3Emu.ClientHooks/Ro3Emu.ClientHooks.csproj" />
-  <Project Path="src/Ro3Emu.Loc/Ro3Emu.Loc.csproj" />
+    <Project Path="src/Ro3Emu.ClientPatching/Ro3Emu.ClientPatching.csproj" />
+    <Project Path="src/Ro3Emu.Loc/Ro3Emu.Loc.csproj" />
     <Project Path="src/Ro3Emu.ClientTools/Ro3Emu.ClientTools.csproj" />
     <Project Path="src/Ro3Emu.DataExport/Ro3Emu.DataExport.csproj" />
     <Project Path="src/Ro3Emu.Launcher/Ro3Emu.Launcher.csproj" />
@@ -12,6 +13,7 @@
     <Project Path="src/Ro3Emu.Patcher/Ro3Emu.Patcher.csproj" />
     <Project Path="src/Ro3Emu.Server/Ro3Emu.Server.csproj" />
     <Project Path="src/Ro3Emu.Server.Generators/Ro3Emu.Server.Generators.csproj" />
+    <Project Path="src/Ro3Emu.Setup.Core/Ro3Emu.Setup.Core.csproj" />
     <Project Path="src/Ro3Emu.Setup/Ro3Emu.Setup.csproj" />
   </Folder>
   <Folder Name="/tests/">

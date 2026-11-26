@@ -19,6 +19,7 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
     private const int MaxFriends = 500, MaxApplicants = 50;
 
     public string Name => "FriendService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     /// <summary>A role's friend list or a friend's affection changed (accepted friendship, gift intimacy); achievements
     /// 106016/106017 re-read the relation. Called after the owner keys are released; listeners post their work.</summary>
@@ -246,7 +247,7 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
 
     private async Task PushAsync(long role, string method, object? arg)
     {
-        var account = sessions.All().FirstOrDefault(s => s.Role?.Id == role)?.Account;
+        var account = sessions.ByRole(role)?.Account;
         if (account != null) await micro.PushAsync(account, Name, method, arg);
     }
 
@@ -271,13 +272,15 @@ public sealed class FriendService(AccountStore accounts, SocialOwnerCache cache,
 
     /// <summary>A uid argument: the client sends tostring(uid); numbers are accepted too.</summary>
     internal static long Uid(object? args, string key) =>
-        args is IDictionary<object, object?> map && map.TryGetValue(key, out var v) && v != null && long.TryParse(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture), out long id) ? id : 0;
+        args is IDictionary<object, object?> map && map.TryGetValue(key, out var v) && v != null
+            && long.TryParse(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture), out long id) ? id : 0;
 }
 
 /// <summary>NameService.getUidByName {Type:"Area0", Name} -> {Uid}; a numeric name is taken as a uid (role ids are 6 digits, the search box sends ≤ 7 characters here).</summary>
 public sealed class NameService(RoleStore roles) : IMicroService
 {
     public string Name => "NameService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public async ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args)
     {
@@ -298,6 +301,7 @@ public sealed class NameService(RoleStore roles) : IMicroService
 public sealed class PartyService(TeamService teams, TavernService tavern, FriendStore friends, SessionRegistry sessions, RoleStore roles, GameLoop loop) : IMicroService
 {
     public string Name => "PartyService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public async ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args)
     {

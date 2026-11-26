@@ -28,7 +28,8 @@ public sealed class AchievementTests : IAsyncLifetime
         FirstCard = 100100800, CardQuality4 = 100100900, JobRank2 = 104100100, JobRank3 = 104100101,
         LoginDays2 = 104100200, Mvp1 = 101100100, Tower5 = 101100200, Tower20 = 101100201, TeamBoss = 101100300,
         GodBoss = 101100400, Guild = 102100100, GuildPosition = 102100200, Friend1 = 102100300, Affection2 = 102100400,
-        Phoenix = 103100200;
+        Phoenix = 103100200, FashionLv2 = 103100100, FashionLv3 = 103100101, FashionLv4 = 103100102,
+        FashionLv5 = 103100103, DressedToImpress = 103100400;
     private const int ZenyLike = 1; // AwardConfig 1001001 = 5000 x item 1
 
     public async Task InitializeAsync()
@@ -37,7 +38,7 @@ public sealed class AchievementTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -50,15 +51,7 @@ public sealed class AchievementTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -99,8 +92,8 @@ public sealed class AchievementTests : IAsyncLifetime
         Service<GameLoop>().InvokeAsync(() => Task.FromResult(read(Session(name))));
     private Task OnLoop(string name, Action<GameSession> change) =>
         Service<GameLoop>().InvokeAsync(() => { change(Session(name)); return Task.CompletedTask; });
-    private Task<AchievementInfo?> Info(string name, long id) => Read(name, s => s.Achievements!.Infos.GetValueOrDefault(id)?.Clone());
-    private Task<AchievementLevelInfo> LevelInfo(string name, int type) => Read(name, s => s.Achievements!.AchievementLevelInfo[type].Clone());
+    private Task<AchievementInfo?> Info(string name, long id) => Read(name, s => s.Activities.Achievements!.Infos.GetValueOrDefault(id)?.Clone());
+    private Task<AchievementLevelInfo> LevelInfo(string name, int type) => Read(name, s => s.Activities.Achievements!.AchievementLevelInfo[type].Clone());
 
     private static DBRoleAchievementInfoIncrement.Types.infosFieldIncrement? Field(DBRoleAchievementInfoIncrement m, long id) =>
         m.Infos.TryGetValue(id, out var field) ? field : null;
@@ -151,10 +144,10 @@ public sealed class AchievementTests : IAsyncLifetime
     }
 
     private EconomySnapshot Cut() => EconomySnapshotReader.Read(Service<AccountStore>().DatabasePath,
-        EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")), "auto");
+        EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")), "auto");
 
     private EconomyLedgerWindow Ledger(EconomySnapshot opening, EconomySnapshot closing) =>
-        EconomyLedgerReader.Read(Service<AccountStore>().DatabasePath, EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")),
+        EconomyLedgerReader.Read(Service<AccountStore>().DatabasePath, EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")),
             "auto", opening.Cut.CommitSequence!.Value, closing.Cut.CommitSequence!.Value);
 
     private DBRoleAchievementInfo Saved(long role) =>
@@ -170,10 +163,8 @@ public sealed class AchievementTests : IAsyncLifetime
         Assert.Equal(134, rows.Count);
         Assert.All(rows, r => Assert.All(r.Required, required => Assert.True(required > 0, $"{r.Id} has no R")));
         var blocked = rows.Where(r => r.Blocked).ToList();
-        Assert.Equal(9, blocked.Count); // 316002 (Echo Resonance) is read from the worn Soul Echoes, 106007/106008 from the Tavern
-        Assert.All(blocked, r => Assert.Contains(r.Targets[0][0],
-            new long[] { 303001, 302007, 326003, 303004 }));
-        Assert.Single(blocked, r => r.Targets[0][0] == 303004); // the fashion-grid variant only
+        Assert.Equal(2, blocked.Count); // 316002 (Echo Resonance) is read from the worn Soul Echoes, 106007/106008 from the Tavern, 303001 (Fashion Rating) and 303004's appearance grids from the Wardrobe
+        Assert.All(blocked, r => Assert.Contains(r.Targets[0][0], new long[] { 302007, 326003 }));
         Assert.Equal([1L, 1, 1], rows.Single(r => r.Id == TeamBoss).Required); // 210008 x3, R = p1
         Assert.Equal(40060010, rows.Single(r => r.Id == Phoenix).Required[0]); // 303002: R is the appearance id
 
@@ -252,7 +243,7 @@ public sealed class AchievementTests : IAsyncLifetime
             await Full(alice);
             await Gm("alice", "!ach fill 100 20"); // 100 points: category 100 and global level 1
             await alice.SendGameAsync(AchievementService.UpdateHintLevel, new UpdateAchievementHintLevelReq());
-            await Until("Alice", s => s.Achievements!.AchievementLevelInfo[0].CurHintLevel == 1, "hint level");
+            await Until("Alice", s => s.Activities.Achievements!.AchievementLevelInfo[0].CurHintLevel == 1, "hint level");
             Assert.Equal(1, (await LevelInfo("Alice", 100)).CurHintLevel);
             Assert.Equal(0, (await LevelInfo("Alice", 101)).CurHintLevel); // its level is 0
             Assert.Equal(0, (await ClaimLevel(alice, 100, 1)).Result);
@@ -303,7 +294,7 @@ public sealed class AchievementTests : IAsyncLifetime
             await alice.SendGameAsync(EquipmentService.Craft, new EquipCraftReq { Rank = 2, Subtype = 1 });
             Assert.Equal(0, (await Next(alice, EquipmentService.Craft, EquipCraftResp.Parser)).Result);
             int done = i;
-            await Until("Alice", s => s.Achievements!.Infos[Craft50].Scores[0] == done, $"craft {done}");
+            await Until("Alice", s => s.Activities.Achievements!.Infos[Craft50].Scores[0] == done, $"craft {done}");
             if (i < 10) Assert.Equal(AchievementStatusType.None, (await Info("Alice", Craft10))!.Status);
         }
         var ten = await ReachedIncrement(alice, Craft10);
@@ -395,8 +386,8 @@ public sealed class AchievementTests : IAsyncLifetime
         long role = (long)alice.Self!.Uuid;
         await Full(alice);
         await Gm("alice", "!ach fill 100 20"); // ids 100100100.. ; category 100 level 1
-        await Until("Alice", s => s.Achievements!.AchievementLevelInfo[100].Level == 1, "level 1");
-        var reachedIds = await Read("Alice", s => s.Achievements!.Infos.Values
+        await Until("Alice", s => s.Activities.Achievements!.AchievementLevelInfo[100].Level == 1, "level 1");
+        var reachedIds = await Read("Alice", s => s.Activities.Achievements!.Infos.Values
             .Where(i => i.Status == AchievementStatusType.Complete).Select(i => i.AchieveId).Order().ToList());
         Assert.Equal(20, reachedIds.Count);
         long zeny = await Read("Alice", s => s.Progress!.Currency.GetValueOrDefault(ZenyLike));
@@ -419,7 +410,7 @@ public sealed class AchievementTests : IAsyncLifetime
 
         // Award-0 rows only: status 2, no grant, no receipt.
         await Gm("alice", "!ach 104100200 done");
-        await Until("Alice", s => s.Achievements!.Infos[LoginDays2].Status == AchievementStatusType.Complete, "login days");
+        await Until("Alice", s => s.Activities.Achievements!.Infos[LoginDays2].Status == AchievementStatusType.Complete, "login days");
         int notices = alice.Inbox.Snapshot().Count(e => e.IsGame(CharacterService.GetRewardNotify));
         await alice.SendGameAsync(AchievementService.GetAllReward, new GetAchievementAllRewardReq { TaskIds = { LoginDays2 } });
         var plain = await Next(alice, AchievementService.GetAllReward, GetAchievementAllRewardResp.Parser);
@@ -435,7 +426,7 @@ public sealed class AchievementTests : IAsyncLifetime
 
         // Levels only: the client's handler stops at the nil task list, so the 76003 response follows.
         await Gm("alice", "!ach fill 100 10"); // 150 points: level 2
-        await Until("Alice", s => s.Achievements!.AchievementLevelInfo[100].Level == 2, "level 2");
+        await Until("Alice", s => s.Activities.Achievements!.AchievementLevelInfo[100].Level == 2, "level 2");
         await alice.SendGameAsync(AchievementService.GetAllReward, new GetAchievementAllRewardReq
         { LevelRewards = { new LevelRewardInfo { Type = 100, Level = 2 } } });
         var levelsOnly = await Next(alice, AchievementService.GetAllReward, GetAchievementAllRewardResp.Parser);
@@ -454,7 +445,7 @@ public sealed class AchievementTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         await Full(alice);
         await Gm("alice", "!ach fill 100 30"); // 150 points: category 100 level 2, global level 1
-        await Until("Alice", s => s.Achievements!.AchievementLevelInfo[100].Level == 2, "level 2");
+        await Until("Alice", s => s.Activities.Achievements!.AchievementLevelInfo[100].Level == 2, "level 2");
         Assert.Equal(1905, (await ClaimLevel(alice, 99, 1)).Result);
         Assert.Equal(1904, (await ClaimLevel(alice, 100, 0)).Result); // level 0 has no award
         Assert.Equal(1904, (await ClaimLevel(alice, 100, 9)).Result); // no such level row
@@ -486,7 +477,7 @@ public sealed class AchievementTests : IAsyncLifetime
             role = (long)alice.Self!.Uuid;
             await Full(alice);
             await Gm("alice", "!ach fill 103 20");
-            await Until("Alice", s => s.Achievements!.AchievementLevelInfo[103].Level == 1, "level 1");
+            await Until("Alice", s => s.Activities.Achievements!.AchievementLevelInfo[103].Level == 1, "level 1");
             await alice.SendGameAsync(AchievementService.UpdateHintLevel, new UpdateAchievementHintLevelReq());
             Assert.Equal(1901, (await Claim(alice)).Result); // a barrier after 76009
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(AchievementService.UpdateHintLevel));
@@ -532,8 +523,8 @@ public sealed class AchievementTests : IAsyncLifetime
             && GameData.Int(row, "_iSubType") == 400 && GameData.Int(row, "_iQuality") >= 4), "_iID");
         await Gm("alice", $"!item {card} 3");
         await ReachedIncrement(alice, FirstCard);
-        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(100100801)?.Scores[0] == 3, "3 cards counted");
-        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(CardQuality4)?.Status == AchievementStatusType.Complete,
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(100100801)?.Scores[0] == 3, "3 cards counted");
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(CardQuality4)?.Status == AchievementStatusType.Complete,
             "a quality-4 card");
     }
 
@@ -548,7 +539,7 @@ public sealed class AchievementTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, GuildService.Create, GuildCreateResp.Parser)).Result);
         await ReachedIncrement(alice, Guild);
         // 107003 [5, 20]: CheckGuildPosition with operator 5 (<): the leader (1) holds a position below 20.
-        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(GuildPosition)?.Status == AchievementStatusType.Complete,
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(GuildPosition)?.Status == AchievementStatusType.Complete,
             "guild position");
     }
 
@@ -559,7 +550,7 @@ public sealed class AchievementTests : IAsyncLifetime
         await Full(alice);
         var loop = Service<GameLoop>();
         // MVP settlement: once per online participant.
-        await OnLoop("Alice", s => { foreach (var handler in Service<MvpService>().ParticipantSettled) handler(s); });
+        await OnLoop("Alice", s => Service<MvpService>().ParticipantSettled.Invoke(s));
         await ReachedIncrement(alice, Mvp1);
         Assert.Equal([1], (await Info("Alice", 101100101))!.Scores);
 
@@ -568,8 +559,8 @@ public sealed class AchievementTests : IAsyncLifetime
         long floor20 = GameData.Int(data.Table("PetFloorConfig").Values.First(r => GameData.Int(r, "_iFloor") == 20), "_iID");
         await OnLoop("Alice", s =>
         {
-            s.Tower!.LayerConfID = floor20;
-            foreach (var handler in Service<TowerService>().FloorCleared) handler(s);
+            s.Instances.Tower!.LayerConfID = floor20;
+            Service<TowerService>().FloorCleared.Invoke(s);
         });
         await ReachedIncrement(alice, Tower20);
         Assert.Equal(AchievementStatusType.Complete, (await Info("Alice", Tower5))!.Status);
@@ -580,19 +571,68 @@ public sealed class AchievementTests : IAsyncLifetime
         {
             var s = Session("Alice");
             foreach (string key in new[] { "50101:1", "50101:2", "100101:1" })
-                s.Dungeons!.Records[key] = new DungeonService.Record { Passed = true };
-            foreach (var handler in Service<DungeonService>().Completed) await handler(s, 0, false);
+                s.Instances.Dungeons!.Records[key] = new DungeonService.Record { Passed = true };
+            await Service<DungeonService>().Completed.InvokeAsync(s, 0, false);
         });
-        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(TeamBoss)?.Scores.SequenceEqual([1, 1, 0]) == true,
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(TeamBoss)?.Scores.SequenceEqual([1, 1, 0]) == true,
             "two of three bosses");
         Assert.Equal(AchievementStatusType.Complete, (await Info("Alice", GodBoss))!.Status);
-        await OnLoop("Alice", s => s.Dungeons!.Records["50101:3"] = new DungeonService.Record { Passed = true });
+        await OnLoop("Alice", s => s.Instances.Dungeons!.Records["50101:3"] = new DungeonService.Record { Passed = true });
         await ReachedIncrement(alice, TeamBoss, SweepWait); // no hook fired: the 5 s sweep re-reads
 
         // A lit-up costume without any hook: the tick again. R and the score are the appearance id.
-        await OnLoop("Alice", s => s.Wardrobe!.AllLightUpAppearances[40060010] = new DBAppearanceInfo { AppearanceId = 40060010 });
+        await OnLoop("Alice", s => s.Profile.Wardrobe!.AllLightUpAppearances[40060010] = new DBAppearanceInfo { AppearanceId = 40060010 });
         await ReachedIncrement(alice, Phoenix, SweepWait);
         Assert.Equal([40060010], (await Info("Alice", Phoenix))!.Scores);
+    }
+
+    [ClientDataFact]
+    public async Task FashionRatingRowsReadTheWardrobeLevelOfThePermanentLooks()
+    {
+        await using var alice = await InWorld("Alice");
+        await Full(alice);
+        // WardRobeConfig._iFashionScore 2500 + 1000 = 3500, GenericStageRewardsConfig type 3 level 4 (level 5 at 5500).
+        // The timed 15000 look does not count, as on the client's fashion score.
+        long later = DateTimeOffset.UtcNow.AddDays(7).ToUnixTimeMilliseconds();
+        await OnLoop("Alice", s =>
+        {
+            s.Profile.Wardrobe!.AllLightUpAppearances[60050010] = new DBAppearanceInfo { AppearanceId = 60050010 };
+            s.Profile.Wardrobe.AllLightUpAppearances[10060010] = new DBAppearanceInfo { AppearanceId = 10060010 };
+            s.Profile.Wardrobe.AllLightUpAppearances[60060010] = new DBAppearanceInfo { AppearanceId = 60060010, OverdueTimeMs = later };
+        });
+        await ReachedIncrement(alice, FashionLv4, SweepWait); // no hook fired: the 5 s sweep re-reads
+        foreach (long id in new[] { FashionLv2, FashionLv3, FashionLv4 })
+            Assert.Equal(AchievementStatusType.Complete, (await Info("Alice", id))!.Status);
+        Assert.Equal([4], (await Info("Alice", FashionLv5))!.Scores);
+        Assert.Equal(AchievementStatusType.None, (await Info("Alice", FashionLv5))!.Status);
+    }
+
+    /// <summary>
+    /// #bug-reports "Dress to Impress": 303004 [5, 1, 8, 9, 10, 12, 13] lists the appearance grids headwear, facewear,
+    /// mouthwear, costume and backwear (enum_EquipGridType), which LC_FashionHelper.GetFashionTypeBySlot maps to the
+    /// wardrobe slots 1-5 worn by 31183. The row was blocked as an unknown grid and never counted.
+    /// </summary>
+    [ClientDataFact]
+    public async Task DressedToImpressCountsTheFiveWornAppearanceSlots()
+    {
+        await using var alice = await InWorld("Alice");
+        await Full(alice);
+        // One sex-free look per WardRobeConfig._iType 1-5: headwear, facewear, mouthwear, costume, backwear.
+        int[] looks = [10030417, 20030403, 30030403, 40030010, 50040306];
+        await OnLoop("Alice", s =>
+        {
+            foreach (int id in looks) s.Profile.Wardrobe!.AllLightUpAppearances[id] = new DBAppearanceInfo { AppearanceId = id };
+        });
+        await alice.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { looks[..4] } });
+        Assert.Equal(0, (await Next(alice, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(DressedToImpress)?.Scores.SequenceEqual([4]) == true,
+            "four of five slots worn");
+        Assert.Equal(AchievementStatusType.None, (await Info("Alice", DressedToImpress))!.Status);
+
+        await alice.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { looks } });
+        Assert.Equal(0, (await Next(alice, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        await ReachedIncrement(alice, DressedToImpress, SweepWait); // no hook: the 5 s sweep re-reads the wardrobe
+        Assert.Equal([5], (await Info("Alice", DressedToImpress))!.Scores);
     }
 
     [ClientDataFact]
@@ -610,7 +650,7 @@ public sealed class AchievementTests : IAsyncLifetime
         await Gm("alice", "!item 1004000 200");
         await alice.SendGameAsync(FriendExtraService.GiveGift, new GiveFriendGiftReq { RoleId = b, ItemId = 1004000, Count = 200 });
         Assert.Equal(0, (await Next(alice, FriendExtraService.GiveGift, GiveFriendGiftResp.Parser)).Result);
-        await Until("Alice", s => s.Achievements!.Infos.GetValueOrDefault(Affection2)?.Status == AchievementStatusType.Complete,
+        await Until("Alice", s => s.Activities.Achievements!.Infos.GetValueOrDefault(Affection2)?.Status == AchievementStatusType.Complete,
             "affection level 2");
         Assert.Equal([2], (await Info("Alice", 102100401))!.Scores);
     }
@@ -621,10 +661,10 @@ public sealed class AchievementTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         await Full(alice);
         // 303004's fashion variant (grids 8-13) and 326003 stay at status 0 whatever the role owns.
-        await OnLoop("Alice", s => s.Wardrobe!.AllLightUpAppearances[40060010] = new DBAppearanceInfo { AppearanceId = 40060010 });
+        await OnLoop("Alice", s => s.Profile.Wardrobe!.AllLightUpAppearances[40060010] = new DBAppearanceInfo { AppearanceId = 40060010 });
         await ReachedIncrement(alice, Phoenix, SweepWait);
         var blocked = Service<AchievementService>().AllRows.Where(r => r.Blocked).Select(r => r.Id).ToList();
-        var state = await Read("Alice", s => s.Achievements!.Clone());
+        var state = await Read("Alice", s => s.Activities.Achievements!.Clone());
         Assert.All(blocked, id => Assert.False(state.Infos.ContainsKey(id), $"{id} progressed"));
     }
 }

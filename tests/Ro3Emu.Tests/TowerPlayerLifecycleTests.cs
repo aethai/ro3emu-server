@@ -26,7 +26,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -41,7 +41,6 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -132,13 +131,13 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
                 Attrs = new Dictionary<int, long> { [3] = 1, [240] = 10051001, [241] = 10053005 },
             };
             Session.Items.Add(totem);
-            Session.Totems!.TotemPlans[0].SetUpTotem[1] = totem.Guid;
+            Session.Profile.Totems!.TotemPlans[0].SetUpTotem[1] = totem.Guid;
             await Service<TotemEffects>().RefreshAsync(Session);
             Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == totem.Guid && b.ConfigId == 2500201);
             // A recovery tick before the first hit (+1002 per 5 s) outlasts this floor's monsters (180 per second): no death.
             Session.NoRegenUntilMs = long.MaxValue;
             await Service<CharacterService>().SetHpSpAsync(Session, 1, 1);
-            Service<CombatService>().PlayerDied.Add(async player =>
+            Service<CombatService>().PlayerDied.Subscribe(async player =>
             {
                 if (player != Session) return;
                 entered.TrySetResult();
@@ -151,8 +150,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var failed = await Next(bot, TowerService.End, ClimTowerEndNotify.Parser);
         Assert.False(failed.ClimTowerResult);
         await entered.Task.WaitAsync(Wait);
-        Assert.True(Session.Dead);
-        Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+        await OnLoop(() =>
+        {
+            Assert.True(Session.Dead);
+            Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+            return Task.CompletedTask;
+        });
         try
         {
             // A stale attempt with the wrong room identity must not become a free field revive.
@@ -160,9 +163,13 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
             Assert.Equal(ErrorCodes.SceneMissing,
                 (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
-            Assert.True(Session.Dead);
-            Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
-            await OnLoop(() => { Session.InstanceId = floor.Instance; return Task.CompletedTask; });
+            await OnLoop(() =>
+            {
+                Assert.True(Session.Dead);
+                Assert.Equal(0, Service<CharacterService>().Stats(Session)[2000]);
+                Session.InstanceId = floor.Instance;
+                return Task.CompletedTask;
+            });
 
             await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
             Assert.Equal(0, (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
@@ -173,8 +180,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
             Assert.Equal(0, (await Next(bot, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
             await Task.Delay(100);
             Assert.Equal(priorSelf, bot.Inbox.Snapshot().Count(e => e.IsGame(MsgId.EntitySelf)));
-            Assert.True(Session.Dead);
-            Assert.DoesNotContain(Session.Buffs, b => b.IsTotemOwned && b.ConfigId == 2500201);
+            await OnLoop(() =>
+            {
+                Assert.True(Session.Dead);
+                Assert.DoesNotContain(Session.Buffs, b => b.IsTotemOwned && b.ConfigId == 2500201);
+                return Task.CompletedTask;
+            });
         }
         finally { release.TrySetResult(); }
 
@@ -183,18 +194,26 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(EntityState.Alive, self.Base.State);
         Assert.Equal(maxHp, self.Base.Property.Single(p => p.Idx == 2000).Data);
         Assert.Equal(self.Base.Property.Single(p => p.Idx == 102).Data, self.Base.Property.Single(p => p.Idx == 2001).Data);
-        Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
-        Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == 990001 && b.ConfigId == 2500201);
-        Assert.Equal(Service<CharacterService>().Stats(Session)[103], self.Base.Property.Single(p => p.Idx == 103).Data);
-        Assert.False(Session.Dead);
-        Assert.Equal(0, Session.InstanceId);
-        Assert.Null(Session.TowerAttempt);
+        await OnLoop(() =>
+        {
+            Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+            Assert.Contains(Session.Buffs, b => b.IsPassive && b.SourceId == 990001 && b.ConfigId == 2500201);
+            Assert.Equal(Service<CharacterService>().Stats(Session)[103], self.Base.Property.Single(p => p.Idx == 103).Data);
+            Assert.False(Session.Dead);
+            Assert.Equal(0, Session.InstanceId);
+            Assert.Null(Session.Instances.TowerAttempt);
+            return Task.CompletedTask;
+        });
         await Next(bot, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => !info.BDead);
 
         await bot.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
         Assert.Equal(ErrorCodes.SceneMissing,
             (await Next(bot, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
-        Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+        await OnLoop(() =>
+        {
+            Assert.Equal(maxHp, Service<CharacterService>().Stats(Session)[2000]);
+            return Task.CompletedTask;
+        });
     }
 
     [ClientDataFact]
@@ -206,8 +225,8 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long spentSp = Service<CharacterService>().Stats(Session)[102] / 2;
         await OnLoop(async () =>
         {
-            foreach (var monster in Session.TowerAttempt!.Monsters) monster.Dead = true;
-            Session.LastCombatMs = MonsterService.NowMs;
+            foreach (var monster in Session.Instances.TowerAttempt!.Monsters) monster.Dead = true;
+            Session.Combat.LastCombatMs = Service<GameLoop>().NowMs;
             Session.StatusBits |= 1L << 15; // suppress out-of-combat regen during the return assertion
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(Session, wounded, spentSp);
@@ -217,7 +236,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(wounded, self.Base.Property.Single(p => p.Idx == 2000).Data);
         Assert.Equal(spentSp, self.Base.Property.Single(p => p.Idx == 2001).Data);
         Assert.Equal(wounded, Service<CharacterService>().Stats(Session)[2000]);
-        Assert.Null(Session.TowerAttempt);
+        Assert.Null(Session.Instances.TowerAttempt);
     }
 
     [ClientDataFact]
@@ -306,7 +325,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var resumed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<CombatService>().IncomingDamageAdjusters.Add(async (monster, target, _, damage) =>
+            Service<CombatService>().IncomingDamageAdjusters.Subscribe(async (monster, target, _, damage) =>
             {
                 if (monster.InstanceId != floor.Instance || target != Session) return damage;
                 entered.TrySetResult();
@@ -345,7 +364,7 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         long wounded = Service<CharacterService>().Stats(Session)[101] / 2;
         await OnLoop(() =>
         {
-            Session.LastCombatMs = MonsterService.NowMs;
+            Session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Service<CharacterService>().SetHpSpAsync(Session, wounded, null);
@@ -355,12 +374,12 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         Assert.Equal(wounded, successSelf.Base.Property.Single(p => p.Idx == 2000).Data);
 
         var second = await EnterFloor(bot, 2);
-        await OnLoop(() => { Session.TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
+        await OnLoop(() => { Session.Instances.TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
         await Kill(bot, second.Monsters[0].Uuid);
         Assert.False((await Next(bot, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
         await OnLoop(() =>
         {
-            Session.LastCombatMs = MonsterService.NowMs;
+            Session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Session.StatusBits |= 1L << 15;
             Session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             return Task.CompletedTask;
@@ -369,12 +388,5 @@ public sealed class TowerPlayerLifecycleTests : IAsyncLifetime
         var timeoutSelf = await ReturnToWorld(bot);
         Assert.Equal(EntityState.Alive, timeoutSelf.Base.State);
         Assert.Equal(afterTimeout, timeoutSelf.Base.Property.Single(p => p.Idx == 2000).Data);
-    }
-
-    private static string RepoRoot()
-    {
-        var d = new DirectoryInfo(AppContext.BaseDirectory);
-        while (d != null && !Directory.Exists(Path.Combine(d.FullName, "data", "config"))) d = d.Parent;
-        return d?.FullName ?? throw new DirectoryNotFoundException("Repository data/config not found");
     }
 }

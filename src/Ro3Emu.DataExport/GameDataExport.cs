@@ -32,6 +32,7 @@ public static class GameDataExport
     public static readonly IReadOnlySet<string> ExpectedTableFailures = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Lua_DBManager" };
 
     public static readonly string[] Folders = ["config", "sceneeditor", "skills", "nav"];
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
 
     public sealed record Options
     {
@@ -293,7 +294,7 @@ public static class GameDataExport
         var stamp = new Stamp(FormatVersion, fingerprint, Path.GetFullPath(clientDir), DateTime.UtcNow, messages, nav.Extracted, config.Ok,
             QuickFingerprint(clientDir), files, [.. failedTables]);
         var stampPath = Path.Combine(dataDir, "export.json");
-        File.WriteAllText(stampPath + ".tmp", JsonSerializer.Serialize(stamp, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(stampPath + ".tmp", JsonSerializer.Serialize(stamp, IndentedJson));
         File.Move(stampPath + ".tmp", stampPath, overwrite: true);
         var old = Path.Combine(work, "old");
         if (failedTables.Count > 0 && Directory.Exists(old) && Directory.EnumerateFileSystemEntries(old).Any())

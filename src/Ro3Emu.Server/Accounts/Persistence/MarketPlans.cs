@@ -10,13 +10,22 @@ internal sealed class MarketSchemaPlan : DbPlan
     {
         using var cmd = DbSql.Command(db, tx, "CREATE TABLE IF NOT EXISTS market_record (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id))");
         cmd.ExecuteNonQuery();
+        TradeListingSql.CreateSchema(db, tx);
         SchemaSql.Execute(db, tx, """
             INSERT OR IGNORE INTO owner_revision(kind,id,part,revision)
                 SELECT 'market_record:' || kind,id,'state',0 FROM market_record
             """);
         SchemaSql.Execute(db, tx, """
             INSERT OR IGNORE INTO owner_revision(kind,id,part,revision)
+                SELECT 'market_record:trade_listing',sku,'state',0 FROM trade_listing
+            """);
+        SchemaSql.Execute(db, tx, """
+            INSERT OR IGNORE INTO owner_revision(kind,id,part,revision)
                 SELECT 'market_kind',kind,'state',0 FROM market_record GROUP BY kind
+            """);
+        SchemaSql.Execute(db, tx, """
+            INSERT OR IGNORE INTO owner_revision(kind,id,part,revision)
+                SELECT 'market_kind','trade_listing','state',0 WHERE EXISTS(SELECT 1 FROM trade_listing)
             """);
         return 1;
     }
@@ -44,6 +53,17 @@ internal sealed class MarketRecordReadPlan(string kind, string? key = null) : Db
     internal override object Execute(SqliteConnection db, SqliteTransaction tx) => Read(db, tx, kind, key);
     internal static List<(string Id, string Data)> Read(SqliteConnection db, SqliteTransaction tx, string kind, string? key)
     {
+        if (kind == "trade_listing")
+        {
+            using var listingCmd = DbSql.Command(db, tx, key is null
+                ? "SELECT sku,data FROM trade_listing UNION ALL SELECT id,data FROM market_record WHERE kind='trade_listing' ORDER BY 1"
+                : "SELECT sku,data FROM trade_listing WHERE sku=$i UNION ALL SELECT id,data FROM market_record WHERE kind='trade_listing' AND id=$i");
+            if (key is not null) listingCmd.Parameters.AddWithValue("$i", key);
+            using var listingRow = listingCmd.ExecuteReader();
+            var listingResult = new List<(string, string)>();
+            while (listingRow.Read()) listingResult.Add((listingRow.GetString(0), listingRow.GetString(1)));
+            return listingResult;
+        }
         using var cmd = DbSql.Command(db, tx, key is null
             ? "SELECT id,data FROM market_record WHERE kind=$k ORDER BY id"
             : "SELECT id,data FROM market_record WHERE kind=$k AND id=$i");
@@ -87,12 +107,37 @@ internal sealed class MarketRecordWritePlan(string kind, string key, string? dat
         [RevisionStore.Entity("market_record:" + kind, key), RevisionStore.Entity("market_kind", kind)];
     internal override object Execute(SqliteConnection db, SqliteTransaction tx)
     {
+        int changed;
+        if (kind == "trade_listing")
+        {
+            if (data is null)
+            {
+                using var delListing = DbSql.Command(db, tx, "DELETE FROM trade_listing WHERE sku=$i");
+                delListing.Parameters.AddWithValue("$i", key);
+                changed = delListing.ExecuteNonQuery();
+                using var delLegacy = DbSql.Command(db, tx, "DELETE FROM market_record WHERE kind='trade_listing' AND id=$i");
+                delLegacy.Parameters.AddWithValue("$i", key);
+                changed += delLegacy.ExecuteNonQuery();
+            }
+            else
+            {
+                TradeListingSql.Upsert(db, tx, key, data);
+                using var delLegacy = DbSql.Command(db, tx, "DELETE FROM market_record WHERE kind='trade_listing' AND id=$i");
+                delLegacy.Parameters.AddWithValue("$i", key);
+                delLegacy.ExecuteNonQuery();
+                changed = 1;
+            }
+            DbWriter.AfterJob(WrittenCache.Market);
+            return changed;
+        }
         using var cmd = DbSql.Command(db, tx, data is null
             ? "DELETE FROM market_record WHERE kind=$k AND id=$i"
             : "INSERT INTO market_record(kind,id,data) VALUES($k,$i,$d) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data");
         cmd.Parameters.AddWithValue("$k", kind); cmd.Parameters.AddWithValue("$i", key);
         if (data is not null) cmd.Parameters.AddWithValue("$d", data);
-        return cmd.ExecuteNonQuery();
+        changed = cmd.ExecuteNonQuery();
+        DbWriter.AfterJob(WrittenCache.Market);
+        return changed;
     }
 }
 

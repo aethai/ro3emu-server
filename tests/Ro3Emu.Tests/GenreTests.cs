@@ -21,7 +21,7 @@ public sealed partial class GenreTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -33,13 +33,6 @@ public sealed partial class GenreTests : IAsyncLifetime
         await _app.StopAsync(); await _app.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "data", "config"))) directory = directory.Parent;
-        return directory?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 
     private async Task<BotClient> Enter(string name, bool create = true)
@@ -220,7 +213,7 @@ public sealed partial class GenreTests : IAsyncLifetime
             await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
             {
                 _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == roleId)
-                    .SkillPlanSwitchUtc = default;
+                    .Combat.SkillPlanSwitchUtc = default;
                 return Task.CompletedTask;
             });
             await player.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 0 });
@@ -255,7 +248,7 @@ public sealed partial class GenreTests : IAsyncLifetime
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == roleId);
         Assert.Equal(3, session.Progress!.Skills[11001]);
         Assert.DoesNotContain(12100, session.Progress.Skills.Keys);
-        Assert.DoesNotContain(12100, session.SkillPlans!.SkillAssignPlans[0].SkillAssigns.Keys);
+        Assert.DoesNotContain(12100, session.Combat.SkillPlans!.SkillAssignPlans[0].SkillAssigns.Keys);
     }
 
     [ClientDataFact]
@@ -297,9 +290,9 @@ public sealed partial class GenreTests : IAsyncLifetime
             });
             Assert.Equal(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
             var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == (long)player.Self!.Uuid);
-            Assert.Equal(default, session.TotemSwitchUtc);
-            Assert.Equal(default, session.EmblemPlanSwitchUtc);
-            Assert.Equal(default, session.TalentPlanSwitchUtc);
+            Assert.Equal(default, session.Profile.TotemSwitchUtc);
+            Assert.Equal(default, session.Profile.EmblemPlanSwitchUtc);
+            Assert.Equal(default, session.Season.TalentPlanSwitchUtc);
 
             using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={Path.Combine(_dir, "ro3emu.db")}");
             db.Open();
@@ -319,9 +312,9 @@ public sealed partial class GenreTests : IAsyncLifetime
             });
             Assert.NotEqual(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
             Assert.True(before.SequenceEqual(PersistedPlans()));
-            Assert.Equal(default, session.TotemSwitchUtc);
-            Assert.Equal(default, session.EmblemPlanSwitchUtc);
-            Assert.Equal(default, session.TalentPlanSwitchUtc);
+            Assert.Equal(default, session.Profile.TotemSwitchUtc);
+            Assert.Equal(default, session.Profile.EmblemPlanSwitchUtc);
+            Assert.Equal(default, session.Season.TalentPlanSwitchUtc);
             FixtureSql.Execute(_app.Services.GetRequiredService<AccountStore>(), "DROP TRIGGER genre_stat_abort");
         }
 
@@ -352,7 +345,7 @@ public sealed partial class GenreTests : IAsyncLifetime
         });
         Assert.Equal(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == (long)player.Self!.Uuid);
-        Assert.Equal(default, session.TalentPlanSwitchUtc);
+        Assert.Equal(default, session.Season.TalentPlanSwitchUtc);
 
         await player.SendGameAsync(SeasonTalentService.SetPlan, new SeasonTalentSetCurPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(player, SeasonTalentService.SetPlan, SeasonTalentSetCurPlanResp.Parser)).Result);
@@ -380,34 +373,34 @@ public sealed partial class GenreTests : IAsyncLifetime
             Assert.Equal(0, (await Next(player, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
             await player.SendGameAsync(EmblemService.SetUp, new SetUpEmblemReq { EmblemPos = 1, EmblemGuid = second });
             Assert.Equal(0, (await Next(player, EmblemService.SetUp, SetUpEmblemResp.Parser)).Result);
-            session.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
+            session.Profile.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
             await player.SendGameAsync(EmblemService.SwitchPlan, new EmbleSwitchPlanReq { TargetIndex = 0 });
             Assert.Equal(0, (await Next(player, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
-            session.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
-            DateTime before = session.EmblemPlanSwitchUtc;
+            session.Profile.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
+            DateTime before = session.Profile.EmblemPlanSwitchUtc;
 
             FixtureSql.Execute(_app.Services.GetRequiredService<AccountStore>(),
                 "CREATE TRIGGER genre_echo_abort BEFORE UPDATE OF skill_plans ON role BEGIN SELECT RAISE(ABORT, 'genre echo abort'); END");
             await player.SendGameAsync(82806, new SwitchGenrePlanReq { TargetPlan = 1, IsApply = true, ChildSystem = { [6] = 1 } });
             Assert.NotEqual(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
-            Assert.Equal(before, session.EmblemPlanSwitchUtc);
-            Assert.Equal(0, session.Emblems.CurrentPlan);
+            Assert.Equal(before, session.Profile.EmblemPlanSwitchUtc);
+            Assert.Equal(0, session.Profile.Emblems.CurrentPlan);
             Assert.Equal(2, session.Items.Single(i => i.Guid == first).Attrs![10001]);
             Assert.Equal(0, session.Items.Single(i => i.Guid == second).Attrs![10001]);
             FixtureSql.Execute(_app.Services.GetRequiredService<AccountStore>(), "DROP TRIGGER genre_echo_abort");
 
             await player.SendGameAsync(82806, new SwitchGenrePlanReq { TargetPlan = 1, IsApply = true, ChildSystem = { [6] = 1 } });
             Assert.Equal(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
-            Assert.Equal(1, session.Emblems.CurrentPlan);
+            Assert.Equal(1, session.Profile.Emblems.CurrentPlan);
             Assert.Equal(0, session.Items.Single(i => i.Guid == first).Attrs![10001]);
             Assert.Equal(2, session.Items.Single(i => i.Guid == second).Attrs![10001]);
-            DateTime switched = session.EmblemPlanSwitchUtc;
+            DateTime switched = session.Profile.EmblemPlanSwitchUtc;
             Assert.True(switched > before);
             await player.SendGameAsync(82806, new SwitchGenrePlanReq { TargetPlan = 0, IsApply = true, ChildSystem = { [6] = 0 } });
             Assert.Equal(ErrorCodes.Cooldown, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
-            Assert.Equal(switched, session.EmblemPlanSwitchUtc);
+            Assert.Equal(switched, session.Profile.EmblemPlanSwitchUtc);
 
-            session.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
+            session.Profile.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
             await player.SendGameAsync(82806, new SwitchGenrePlanReq { TargetPlan = 0, IsApply = true, ChildSystem = { [6] = 0 } });
             Assert.Equal(0, (await Next(player, 82806, SwitchGenrePlanResp.Parser)).Result);
         }

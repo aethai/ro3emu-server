@@ -3,7 +3,7 @@ using Ro3Emu.Server.Accounts.Persistence;
 namespace Ro3Emu.Server.Accounts;
 
 /// <summary>
-/// Stage G (C/D 15 step 3): a role's selection stages the default blobs its services write at login and commits them
+/// A role's selection stages the default blobs its services write at login and commits them
 /// as one asynchronous transaction at the end of the selection, still under its reservation. A first login made 15
 /// synchronous writes on the game loop (about 15 ms of blocking per new role in a login storm).
 /// <para>Ordering: anything else that writes or reads one of the staged columns of the role first writes the stage

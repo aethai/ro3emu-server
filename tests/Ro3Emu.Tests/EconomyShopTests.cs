@@ -18,10 +18,10 @@ namespace Ro3Emu.Tests;
 /// <summary>E01 production NPC purchase: existing wire, cost/goods/quota, ledger, failures and D1.</summary>
 public sealed class EconomyShopTests : IAsyncLifetime
 {
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "e01-shop-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "e01-shop-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private string Database => Path.Combine(_directory, "ro3emu.db");
 
@@ -30,7 +30,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101;
         });
@@ -41,7 +41,6 @@ public sealed class EconomyShopTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -187,7 +186,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
                     Assert.Equal(revisions.Revision(part), current.Revision(part));
             }));
         Assert.Equal(balance, Service<CharacterService>().CountOf(session, 1));
-        Assert.DoesNotContain(114, session.Shop!.Bought.Keys);
+        Assert.DoesNotContain(114, session.Social.Shop!.Bought.Keys);
         Assert.Equal(opening.Cut.CommitSequence, Cut().Cut.CommitSequence);
         var rolledBack = Cut();
         Assert.Empty(Window(opening, rolledBack).Receipts);
@@ -210,7 +209,7 @@ public sealed class EconomyShopTests : IAsyncLifetime
         Assert.Equal((0, 100, 1), (reply.Result, reply.Price, reply.BuyTimes));
         var closing = Cut();
         Assert.Single(Window(opening, closing).Receipts);
-        Assert.Equal(1, session.Shop!.Bought[114].Count);
+        Assert.Equal(1, session.Social.Shop!.Bought[114].Count);
         Assert.Equal(Service<RoleStore>().LoadProgress(session.Role!.Id).Currency[1], session.Progress!.Currency[1]);
         Assert.Equal(Service<ItemStore>().Load(session.Role.Id).Where(i => i.Entry == 1200201).Select(i => (i.Guid, i.Stack)),
             session.Items.Where(i => i.Entry == 1200201).Select(i => (i.Guid, i.Stack)));
@@ -256,26 +255,17 @@ public sealed class EconomyShopTests : IAsyncLifetime
         var opening = Cut();
         Action<GameSession> fail = _ => throw new IOException("E01 post-commit notification fault");
         var character = Service<CharacterService>();
-        character.StateChanged.Add(fail);
-        try
+        using (character.StateChanged.Subscribe(fail))
         {
             await Assert.ThrowsAsync<IOException>(() => Service<GameLoop>().InvokeAsync(() =>
                 Service<ShopService>().BuyAsync(session, new BuyCommodityReq { CommodityId = 114, Count = 10 })));
         }
-        finally { character.StateChanged.Remove(fail); }
         var closing = Cut();
         Assert.Single(Window(opening, closing).Receipts);
-        Assert.Equal(10, session.Shop!.Bought[114].Count);
+        Assert.Equal(10, session.Social.Shop!.Bought[114].Count);
         Assert.Equal(10, JsonSerializer.Deserialize<ShopService.ShopState>(Service<RoleStore>().LoadShop(session.Role!.Id)!)!.Bought[114].Count);
         Assert.Equal(ErrorCodes.PurchaseLimit, (await Buy(bot, 114)).Result);
         Assert.Equal(closing.Cut.CommitSequence, Cut().Cut.CommitSequence);
         ExactButUncovered(opening, closing, Window(opening, closing));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

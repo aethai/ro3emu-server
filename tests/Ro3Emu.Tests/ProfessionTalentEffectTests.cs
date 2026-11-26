@@ -17,7 +17,8 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
     private const int AutoGuardEnhance = 1153701, Granted = 77002, AutoGuard = 77003, AutoGuardGroup = 11403;
     private static readonly int[] PlayBook = [101], Career = [1000], BranchEffects = [1001], OptionEffects = [1002],
         Ratio = [1000], Flat = [10], GrantedBuff = [Granted];
-    private static readonly int[][] GrantedAttrs = [[103, 9]], GuardAttrs = [[105, 32], [106, 32]], AmplifyAttrs = [[1043, 1]];
+    private static readonly int[][] GrantedAttrs = [[103, 9]], GuardAttrs = [[105, 32], [106, 32]], AmplifyAttrs = [[1043, 1]],
+        SkillBuffs = [[Buff, 10000, 8000]];
     private static readonly string[] OptionValues = ["5"];
     // TalentProcs.BuffBonuses keys Magic Infusion's talent buff to Mystical Amplification's group 12201; values invented.
     private const int MagicInfusion = 1249301, Amplify = 77021, AmplifyGroup = 12201;
@@ -66,6 +67,7 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
                 _iID = 1001, _kSpecialEffect = new[]
                 {
                     new long[] { 21, 0, 0, Skill, 0, 2, 4000 }, [21, 0, 0, Skill, 29, 1, 250], [12, 0, GuardGroup, 2, 1, 50, 1, 1],
+                    [21, 0, 0, Skill, 33, 2, 120000, 0, 2],
                 },
             },
             // The option: flat attr, sword-only attr (two sword kinds, once), skill-level attr, per-level attr, a buff's tuples.
@@ -107,7 +109,7 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
             new
             {
                 _iID = SkillRow, _iSkillID = Skill, _iLevel = 1, _iMode = 0, _iMaxLevel = 1, _iBasicType = 1, _iCD = 10000,
-                _kDamageParam1 = Ratio, _kDamageParam2 = Flat,
+                _kDamageParam1 = Ratio, _kDamageParam2 = Flat, _kBuff1 = SkillBuffs,
             },
         });
         var items = JsonNode.Parse(File.ReadAllText(Path.Combine(_configRoot, "config", "ItemConfig.json")))!.AsObject();
@@ -154,7 +156,7 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
             Session.Tasks ??= new DBTaskInfo();
             Session.Tasks.CompleteTaskNum[10101170] = 1;
             Session.Tasks.CompleteTaskNum[10103160] = 1;
-            Session.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
+            Session.Season.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
             await _host.Service<SeasonTalentService>().SyncAsync(Session);
             return 0;
         });
@@ -167,6 +169,8 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
         Assert.Equal(4000, GameData.Int(row, "_iCD"));
         Assert.Equal(1250, row.GetProperty("_kDamageParam1")[0].GetInt64());
         Assert.Equal(50, row.GetProperty("_kDamageParam2")[0].GetInt64()); // from the option's buff
+        Assert.Equal(Buff, row.GetProperty("_kBuff1")[0][0].GetInt64()); // a tuple's named column: the duration, not the buff
+        Assert.Equal(120000, row.GetProperty("_kBuff1")[0][2].GetInt64());
         // The client's skill panel learns the new cooldown from 31132.
         await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.SkillAffectedEx)
             && SkillBeAffectedParamExNotify.Parser.ParseFrom(e.Body).AffectParamDict.TryGetValue(Skill, out var info)
@@ -219,56 +223,89 @@ public sealed class ProfessionTalentEffectTests : IAsyncDisposable
     {
         await Start();
         await using var bot = await _host.InWorldAsync("Talent");
-        var monster = await OnLoop(async () =>
-        {
-            var s = Session;
-            s.Progress!.Career = 1000;
-            s.Progress.Skills[BlitzBeatGroup] = 1;
-            s.Tasks ??= new DBTaskInfo();
-            s.Tasks.CompleteTaskNum[10101170] = 1;
-            s.Tasks.CompleteTaskNum[10103160] = 1;
-            s.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
-            await _host.Service<SeasonTalentService>().SyncAsync(s);
-            var spawned = await _host.Service<MonsterService>().SpawnSingleAsync(s.SceneEntry, 16320001,
-                new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, 0), s.InstanceId);
-            Assert.NotNull(spawned);
-            spawned.Hp = 1_000_000;
-            return spawned;
-        });
+        var monster = await BlitzBeatHunter();
 
-        async Task<bool> FiresAt(int roll)
+        async Task<bool> FiresAt(int roll, bool expectHit)
         {
             int Hits() => bot.Inbox.Snapshot().Count(e => e.IsGame(CombatService.SkillHit) && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == AutoRow);
             int before = Hits();
-            _host.Service<TalentProcs>().Roll = bound => bound == 10000 ? roll : bound - 1;
-            await OnLoop(async () =>
+            await BasicAttackAt(monster, roll);
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(expectHit ? 2000 : 150);
+            while (DateTime.UtcNow < deadline)
             {
-                var action = new ActiveSkillCast
-                {
-                    Id = 1, OwnerId = Session.Role!.Id, WorldScene = Session.WorldScene, Origin = Session.Position.Clone(),
-                    Request = new CastSkillReq { SkillId = AttackRow, TargetId = monster.Uid },
-                    Row = _host.Service<GameData>().Row("SkillConfig", AttackRow)!.Value, StartMs = 0, ChantMs = 0, ActionMs = 1,
-                };
-                foreach (var resolved in _host.Service<CombatService>().CastResolved)
-                    await resolved(Session, action, [monster], new SkillHitInfo());
-                return 0;
-            });
-            await Task.Delay(100);
+                if (Hits() > before) return true;
+                await Task.Delay(20);
+            }
             return Hits() > before;
         }
 
-        Assert.False(await FiresAt(0)); // no falcon
-        await OnLoop(() => { Session.CareerPendants = [Falcon]; return Task.FromResult(0); });
-        Assert.True(await FiresAt(2499));
-        Assert.False(await FiresAt(2500));
+        Assert.False(await FiresAt(0, expectHit: false)); // no falcon
+        await OnLoop(() => { Session.Profile.CareerPendants = [Falcon]; return Task.FromResult(0); });
+        Assert.True(await FiresAt(2499, expectHit: true));
+        Assert.False(await FiresAt(2500, expectHit: false));
 
-        await OnLoop(() => { Session.MountState.QuestMount = Wolf; return Task.FromResult(0); });
-        Assert.False(await FiresAt(0));
-        await OnLoop(() => { Session.MountState.QuestMount = 0; return Task.FromResult(0); });
+        await OnLoop(() => { Session.Profile.MountState.QuestMount = Wolf; return Task.FromResult(0); });
+        Assert.False(await FiresAt(0, expectHit: false));
+        await OnLoop(() => { Session.Profile.MountState.QuestMount = 0; return Task.FromResult(0); });
 
         Assert.Equal(0, await Request(bot, SeasonTalentService.Upgrade, new SeasonTalentUpgradeReq { TalentId = 4 },
             body => SeasonTalentUpgradeResp.Parser.ParseFrom(body).Result));
-        Assert.True(await FiresAt(3499));
-        Assert.False(await FiresAt(3500));
+        Assert.True(await FiresAt(3499, expectHit: true));
+        Assert.False(await FiresAt(3500, expectHit: false));
+    }
+
+    // The automatic proc is no cast: it tells its own timeline (31107, no cast action) and the 31101 of its hit belongs to
+    // that timeline, one sessionId and rootCtxGuid, as the client ties a hit to its cast by them (LC_DamageHelper).
+    [Fact]
+    public async Task BlitzBeatsProcHitSharesItsTimelinesSession()
+    {
+        await Start();
+        await using var bot = await _host.InWorldAsync("Talent");
+        var monster = await BlitzBeatHunter();
+        await OnLoop(() => { Session.Profile.CareerPendants = [Falcon]; return Task.FromResult(0); });
+
+        await BasicAttackAt(monster, 0);
+        var timeline = UseInSkillInfo.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.ExtraUseInSkillHigh)
+            && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == AutoRow, TimeSpan.FromSeconds(5))).Body);
+        var hit = SkillHitInfo.Parser.ParseFrom((await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SkillId == AutoRow, TimeSpan.FromSeconds(5))).Body);
+        Assert.False(timeline.PlayAct);
+        Assert.Equal(timeline.SessionId, hit.SessionId);
+        Assert.Equal(timeline.SessionId, hit.RootCtxGuid);
+    }
+
+    /// <summary>A Hunter of the talent tree with Blitz Beat learned (no falcon yet) beside a sturdy monster.</summary>
+    private Task<MonsterUnit> BlitzBeatHunter() => OnLoop(async () =>
+    {
+        var s = Session;
+        s.Progress!.Career = 1000;
+        s.Progress.Skills[BlitzBeatGroup] = 1;
+        s.Tasks ??= new DBTaskInfo();
+        s.Tasks.CompleteTaskNum[10101170] = 1;
+        s.Tasks.CompleteTaskNum[10103160] = 1;
+        s.Season.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = 1;
+        await _host.Service<SeasonTalentService>().SyncAsync(s);
+        var spawned = await _host.Service<MonsterService>().SpawnSingleAsync(s.SceneEntry, 16320001,
+            new MapPoint(s.Position.X, s.Position.Y, s.Position.Z, 0), s.InstanceId);
+        Assert.NotNull(spawned);
+        spawned.Hp = 1_000_000;
+        return spawned;
+    });
+
+    /// <summary>A Basic Attack on the monster resolved with this proc roll.</summary>
+    private async Task BasicAttackAt(MonsterUnit monster, int roll)
+    {
+        _host.Service<TalentProcs>().Roll = bound => bound == 10000 ? roll : bound - 1;
+        await OnLoop(async () =>
+        {
+            var action = new ActiveSkillCast
+            {
+                Id = 1, OwnerId = Session.Role!.Id, WorldScene = Session.WorldScene, Origin = Session.Position.Clone(),
+                Request = new CastSkillReq { SkillId = AttackRow, TargetId = monster.Uid },
+                Row = _host.Service<GameData>().Row("SkillConfig", AttackRow)!.Value, StartMs = 0, ChantMs = 0, ActionMs = 1,
+            };
+            await _host.Service<CombatService>().CastResolved.InvokeAsync(Session, action, [monster], new SkillHitInfo());
+            return 0;
+        });
     }
 }

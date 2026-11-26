@@ -80,12 +80,12 @@ public sealed partial class NewActivityTests
         {
             var dummy = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits()
                 .OfType<MonsterUnit>().Single(m => m.InstanceId == instance)));
-            await OnLoop(() => { Session(bot).SkillCds.Clear(); return Task.CompletedTask; });
+            await OnLoop(() => { Session(bot).Combat.SkillCds.Clear(); _clock.AdvanceSeconds(2); return Task.CompletedTask; });
             await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = dummy.Pos, BStop = true, SpeedRate = 1 });
             await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1001001, TargetId = dummy.Uid });
             Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
-            var report = await Next(bot, CombatService.DamageStatistics, DamageStatisticsNotify.Parser, n => n.Damages.Any(d => d.DamageTargetId == dummy.Uid));
+            var report = await Next(bot, CombatService.DamageStatistics, DamageStatisticsNotify.Parser, n => n.Damages.Any(d => d.DamageTargetId == dummy.Uid && d.DamageValue > 0)); // a missed swing reports its 0 first
             var entry = Assert.Single(report.Damages);
             Assert.Equal(role, entry.DamageSourceId);
             Assert.Equal(hit.Dsts.Single(d => d.DstID == dummy.Uid).Damage, entry.DamageValue);
@@ -94,7 +94,6 @@ public sealed partial class NewActivityTests
             for (var until = DateTime.UtcNow.AddSeconds(5); dummy.Hp != dummy.Template.MaxHp && DateTime.UtcNow < until;) await Task.Delay(10);
             Assert.Equal(dummy.Template.MaxHp, dummy.Hp);
             await bot.SendGameAsync(CombatService.SkillInterrupt, new NullArg());
-            await Task.Delay(600); // a swing cancelled by a move holds the next one (CombatService.CancelCastAsync)
         }
         await bot.SendGameAsync(DungeonService.Enter, new EnterDungeonReq { SceneEntry = 2100009 });
         Assert.Equal(0, (await Next(bot, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
@@ -161,7 +160,7 @@ public sealed partial class NewActivityTests
         Assert.False(actor.Dead);
         Assert.Equal(1, (await QuestProbe.DoneAsync(_app, "training", DummyChallengeQuest)).CompleteNum[0]);
         // Seed the qualification threshold independently of hit strength; the RPC still validates and settles the claim.
-        await OnLoop(() => { Session(bot).Training!.MaxDps = Math.Max(100, Session(bot).Training!.MaxDps); return Task.CompletedTask; });
+        await OnLoop(() => { Session(bot).Activities.Training!.MaxDps = Math.Max(100, Session(bot).Activities.Training!.MaxDps); return Task.CompletedTask; });
         long moneyBefore = Session(bot).Progress!.Currency.GetValueOrDefault(1);
         long Receipts()
         {
@@ -184,7 +183,7 @@ public sealed partial class NewActivityTests
         {
             await bot.SendGameAsync(84062, claim);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.DoesNotContain(1L, Session(bot).Training!.ClaimedAwardIds);
+            Assert.DoesNotContain(1L, Session(bot).Activities.Training!.ClaimedAwardIds);
             Assert.Equal(moneyBefore, Session(bot).Progress!.Currency.GetValueOrDefault(1));
             Assert.Equal(receiptsBefore, Receipts());
         }
@@ -208,8 +207,8 @@ public sealed partial class NewActivityTests
         await bot.DisposeAsync();
         await WaitOffline("training");
         await using var again = await InWorld("Training", false);
-        Assert.Contains(1L, Session(again).Training!.ClaimedAwardIds);
-        Assert.True(Session(again).Training!.MaxDps >= 100);
+        Assert.Contains(1L, Session(again).Activities.Training!.ClaimedAwardIds);
+        Assert.True(Session(again).Activities.Training!.MaxDps >= 100);
         Assert.Equal(0, Session(again).InstanceId);
     }
 
@@ -311,7 +310,7 @@ public sealed partial class NewActivityTests
             await LoadPrivate(bot, FestivalService.Dungeon);
             int answer = (int)GameData.Int(Service<GameData>().Table("RainbowKoiQuestionConfig").Values
                 .OrderBy(r => GameData.Int(r, "_iID")).First(), "_iQuestionAnswer");
-            using var editor = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(RepoRoot(), "data", "sceneeditor", "sc_prontera_001_dg01_sceneeditor.json")));
+            using var editor = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", "sc_prontera_001_dg01_sceneeditor.json")));
             var center = editor.RootElement.GetProperty("m_kRegins").GetProperty(answer == 1 ? "27" : "28").GetProperty("center");
             var answerPosition = new Vec3
             { X = center.GetProperty("x").GetSingle(), Y = center.GetProperty("y").GetSingle(), Z = center.GetProperty("z").GetSingle() };

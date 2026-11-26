@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>Independent, read-only baseline decoder for the E00 persisted compartments.</summary>
+/// <summary>Independent, read-only baseline decoder for the persisted economy compartments.</summary>
 public static partial class EconomySnapshotReader
 {
     public const string CoverageVersion = "e03-e05e-reader-1";
@@ -46,18 +46,20 @@ public static partial class EconomySnapshotReader
         ["emblems"] = BlobFormat.Json, ["pets"] = BlobFormat.Protobuf,
         ["mounts"] = BlobFormat.Json, ["wardrobe"] = BlobFormat.Protobuf,
         ["totems"] = BlobFormat.Protobuf, ["totem_refine_epoch"] = BlobFormat.RawEpoch,
-        ["genre"] = BlobFormat.Protobuf, ["career_special"] = BlobFormat.Protobuf, ["heroic_spirit"] = BlobFormat.Protobuf, ["paragon"] = BlobFormat.Protobuf, ["title"] = BlobFormat.Protobuf, ["area_concur"] = BlobFormat.Protobuf,
+        ["genre"] = BlobFormat.Protobuf, ["career_special"] = BlobFormat.Protobuf,
+        ["heroic_spirit"] = BlobFormat.Protobuf, ["paragon"] = BlobFormat.Protobuf,
+        ["title"] = BlobFormat.Protobuf, ["area_concur"] = BlobFormat.Protobuf,
         ["growth_class"] = BlobFormat.Protobuf, ["first_heart"] = BlobFormat.Protobuf,
         ["personal"] = BlobFormat.Protobuf, ["personal_upvote"] = BlobFormat.Protobuf, ["popularity"] = BlobFormat.Protobuf,
         ["social_outfit"] = BlobFormat.Protobuf, ["emoji_info"] = BlobFormat.Protobuf,
         ["gifts"] = BlobFormat.Json, ["barroom"] = BlobFormat.Json, ["gm_state"] = BlobFormat.Json,
-        ["job_exp_catchup"] = BlobFormat.Json
+        ["job_exp_catchup"] = BlobFormat.Json, ["offline_buffs"] = BlobFormat.Json
     };
 
     private enum BlobFormat { Json, Protobuf, Mailbox, TerritoryRole, RawEpoch, StringSet }
     private sealed class UnknownPersistedFieldException(string message) : Exception(message);
 
-    /// <summary>Remaining unqualified families. E05e event envelopes do not imply whole-realm coverage.</summary>
+    /// <summary>Remaining unqualified families. Event economy envelopes do not imply whole-realm coverage.</summary>
     public static IReadOnlyList<string> UncoveredFamilies { get; } = [
         "role/item identity, reset, migration and snapshot replacement", "character exchange, direct grants and GM",
         "monster drops, gathering, static pickup and world interaction", "shop, card, equipment, appraisal and enchant",
@@ -79,7 +81,7 @@ public static partial class EconomySnapshotReader
         using (var only = db.CreateCommand()) { only.CommandText = "PRAGMA query_only=ON"; only.ExecuteNonQuery(); }
         using var tx = db.BeginTransaction(deferred: true);
         // The first read (this schema check) pins the WAL view; the persisted watermark is read from that same view.
-        // A legacy baseline without E01 has no cut, and none is fabricated.
+        // A legacy baseline without an economy ledger has no cut, and none is fabricated.
         string? persistedRealm = null;
         long? commitSequence = null;
         if (EconomySchema.Has(db, tx, "economy_meta"))
@@ -183,7 +185,7 @@ public static partial class EconomySnapshotReader
         return result;
     }
 
-    /// <summary>Read the same persisted compartments inside the writer's transaction for E05d delta verification.</summary>
+    /// <summary>Read the same persisted compartments inside the writer's transaction for semantic delta verification.</summary>
     internal static (IReadOnlyList<EconomyHolding> Holdings, IReadOnlyList<EconomyIssue> Issues) ReadTransaction(
         SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog)
     {
@@ -204,6 +206,31 @@ public static partial class EconomySnapshotReader
         state.ReadGuilds();
         state.ReadTerritory();
         state.ReadObligations();
+        return (state.Holdings, state.Issues);
+    }
+
+    /// <summary>
+    /// <see cref="ReadTransaction"/> limited to the rows of the given roles (the role row, its inventory items and caravan
+    /// member row) and guilds (the guild row, its recovery, campfire and challenge rows), decoded the same way. An envelope
+    /// that touches only these needs no realm-wide read: its before and after cuts differ only in rows it wrote, and a full
+    /// read of a realm with thousands of characters took seconds per envelope on the writer thread, which every other write
+    /// then waited behind.
+    /// </summary>
+    internal static (IReadOnlyList<EconomyHolding> Holdings, IReadOnlyList<EconomyIssue> Issues) ReadParticipants(
+        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, IReadOnlySet<long> roles, IReadOnlySet<long> guilds)
+    {
+        var tables = new HashSet<string>(StringComparer.Ordinal);
+        using (var command = db.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+            using var rows = command.ExecuteReader();
+            while (rows.Read()) tables.Add(rows.GetString(0));
+        }
+        var state = new State(db, tx, catalog, tables) { RoleScope = roles, GuildScope = guilds };
+        state.ReadRoles();
+        state.ReadItems();
+        state.ReadGuilds();
         return (state.Holdings, state.Issues);
     }
 
@@ -255,6 +282,18 @@ public static partial class EconomySnapshotReader
             Metrics[repo] = (m.Rows, m.Blobs, checked(m.Bytes + bytes));
         }
         private SqliteCommand Command(string sql) { var c = db.CreateCommand(); c.Transaction = tx; c.CommandText = sql; return c; }
+        /// <summary>Set by <see cref="ReadParticipants"/>: only these roles and guilds are read; null reads them all.</summary>
+        internal IReadOnlySet<long>? RoleScope { get; init; }
+        internal IReadOnlySet<long>? GuildScope { get; init; }
+        internal bool Scoped => RoleScope != null || GuildScope != null;
+        // " WHERE <column> IN (...)" for a scoped read, bound with ScopeIds; empty for a realm-wide one.
+        private static string ScopeFilter(IReadOnlySet<long>? scope, string column) =>
+            scope == null ? "" : $" WHERE {column} IN (SELECT value FROM json_each($scope))";
+        private static SqliteCommand ScopeIds(SqliteCommand command, IReadOnlySet<long>? scope)
+        {
+            if (scope != null) command.Parameters.AddWithValue("$scope", System.Text.Json.JsonSerializer.Serialize(scope.Order()));
+            return command;
+        }
         private static long SqlLong(SqliteDataReader row, int index)
             => row.GetValue(index) is long value ? value : throw new InvalidCastException("Expected persisted INTEGER column.");
         private static string SqlText(SqliteDataReader row, int index)

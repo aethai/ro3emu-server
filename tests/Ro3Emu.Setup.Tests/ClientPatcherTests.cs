@@ -1,6 +1,6 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Ro3Emu.ClientTools;
+using Ro3Emu.ClientPatching;
 
 namespace Ro3Emu.Setup.Tests;
 
@@ -185,5 +185,55 @@ public sealed class ClientPatcherTests : IDisposable
         Assert.Equal(1, rules.Single(r => r.Description.Contains(GiftCardPath, StringComparison.Ordinal)).Hits);
         Assert.All(rules.Where(r => r.Description.Contains("URL", StringComparison.Ordinal)), r => Assert.True(r.Hits > 0, r.Description));
         Assert.DoesNotContain(changed, w => w.Contains("RO3.SealedLoginFallback", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EmbeddedExtractsResourceFromHostAssemblyWhenNotInClientPatching()
+    {
+        byte[] payload = [0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00];
+        string resourceName = "test-embedded-" + Guid.NewGuid().ToString("N") + ".dll";
+        var host = new StubResourceAssembly(resourceName, payload);
+
+        string extracted = ClientPatcher.Embedded(resourceName, "NoSuchProject", host);
+        try
+        {
+            Assert.True(File.Exists(extracted));
+            Assert.Equal(payload, File.ReadAllBytes(extracted));
+        }
+        finally
+        {
+            if (File.Exists(extracted)) File.Delete(extracted);
+        }
+    }
+
+    [Fact]
+    public void FindDevBuildPicksNewerBetweenReleaseAndDebug()
+    {
+        string fakeRepo = Path.Combine(_client, "fake-repo");
+        string baseDir = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientTools", "bin", "Debug", "net10.0");
+        string releaseDll = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientHooks", "bin", "Release", "netstandard2.1", "Ro3Emu.ClientHooks.dll");
+        string debugDll = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientHooks", "bin", "Debug", "netstandard2.1", "Ro3Emu.ClientHooks.dll");
+        Directory.CreateDirectory(baseDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(releaseDll)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(debugDll)!);
+        File.WriteAllBytes(releaseDll, [1]);
+        File.WriteAllBytes(debugDll, [2]);
+
+        var older = new DateTime(2026, 11, 20, 10, 0, 0, DateTimeKind.Utc);
+        var newer = new DateTime(2026, 11, 25, 10, 0, 0, DateTimeKind.Utc);
+
+        File.SetLastWriteTimeUtc(releaseDll, older);
+        File.SetLastWriteTimeUtc(debugDll, newer);
+        Assert.Equal(debugDll, ClientPatcher.FindDevBuild(baseDir, "Ro3Emu.ClientHooks", "Ro3Emu.ClientHooks.dll"));
+
+        File.SetLastWriteTimeUtc(releaseDll, newer);
+        File.SetLastWriteTimeUtc(debugDll, older);
+        Assert.Equal(releaseDll, ClientPatcher.FindDevBuild(baseDir, "Ro3Emu.ClientHooks", "Ro3Emu.ClientHooks.dll"));
+    }
+
+    private sealed class StubResourceAssembly(string resourceName, byte[] payload) : System.Reflection.Assembly
+    {
+        public override Stream? GetManifestResourceStream(string name) =>
+            string.Equals(name, resourceName, StringComparison.Ordinal) ? new MemoryStream(payload, writable: false) : null;
     }
 }

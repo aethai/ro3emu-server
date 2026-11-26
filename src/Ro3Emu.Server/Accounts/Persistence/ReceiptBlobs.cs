@@ -24,7 +24,7 @@ internal static class ReceiptBlobs
         return storedHash == legacyHash && (compacted || storedPayload.AsSpan().SequenceEqual(legacyPayload));
     }
 
-    /// <summary>A stored payload that never changes format (E03 escrow): equal bytes or compacted.</summary>
+    /// <summary>A stored payload that never changes format (escrow): equal bytes or compacted.</summary>
     internal static bool SamePayload(byte[] storedPayload, byte[] payload) =>
         IsCompacted(storedPayload) || storedPayload.AsSpan().SequenceEqual(payload);
 

@@ -19,7 +19,7 @@ public sealed class DbAccessMetrics
     private int _writerJobs, _writerBytes, _lazyJobs, _lazyBytes, _readerJobs, _writerThreadId;
     private long _maxWriterQueueTicks;
     private long _lazyPromoted, _postCommitFailures, _writerTerminal, _writerCommits, _writerGroupedJobs;
-    // D1 inventory (C/D 16): synchronous DB waits on the loop by plan label, bounded to the labels the code has.
+    // Inventory of synchronous DB waits on the loop by plan label, bounded to the labels the code has.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, LoopWait> _loopWaits = new(StringComparer.Ordinal);
     private sealed class LoopWait { internal long Count, Ticks, MaxTicks; }
     internal void WriterDequeued(long enqueuedAt)
@@ -44,7 +44,7 @@ public sealed class DbAccessMetrics
     }
     internal void WriterRefused() => Interlocked.Increment(ref _writerRefused);
     internal void LazyPromoted() => Interlocked.Increment(ref _lazyPromoted);
-    /// <summary>Stage G group commit: one durable commit of <paramref name="jobs"/> executed jobs.</summary>
+    /// <summary>Group commit: one durable commit of <paramref name="jobs"/> executed jobs.</summary>
     internal void WriterCommitted(int jobs)
     {
         Interlocked.Increment(ref _writerCommits);
@@ -160,12 +160,13 @@ public sealed class DbAccessMetrics
         legacyWriterBlockedMs = Interlocked.Read(ref _legacyWriterBlockedTicks) * 1000d / Stopwatch.Frequency,
         legacyWriterLoopBlockedMs = Interlocked.Read(ref _legacyWriterLoopBlockedTicks) * 1000d / Stopwatch.Frequency,
         loopWaitLabels = _loopWaits.Count,
+        loopWaits = LoopWaits(20),
         lazyPromoted = Interlocked.Read(ref _lazyPromoted), postCommitFailures = Interlocked.Read(ref _postCommitFailures),
         writerCommits = Interlocked.Read(ref _writerCommits), writerCommittedJobs = Interlocked.Read(ref _writerGroupedJobs),
         writerTerminal = Interlocked.Read(ref _writerTerminal) != 0,
     };
 
-    /// <summary>Synchronous DB waits on the loop by "R|W label", heaviest first (the C/D 16 work list).</summary>
+    /// <summary>Synchronous DB waits on the loop by "R|W label", heaviest first.</summary>
     public IReadOnlyList<object> LoopWaits(int top) => [.. _loopWaits
         .Select(p => (Label: p.Key, Count: Interlocked.Read(ref p.Value.Count), Ticks: Interlocked.Read(ref p.Value.Ticks), Max: Interlocked.Read(ref p.Value.MaxTicks)))
         .OrderByDescending(w => w.Ticks).Take(top)

@@ -33,7 +33,7 @@ public sealed class Ro1MonsterHpTests
         var app = ServerHost.Create([], o =>
         {
             o.DataDir = dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
             o.Ro1MonsterHp = ro1Hp;
         });
@@ -47,7 +47,6 @@ public sealed class Ro1MonsterHpTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
     }
@@ -62,11 +61,4 @@ public sealed class Ro1MonsterHpTests
 
     [ClientDataFact]
     public async Task WithTheSwitchOffTheClientsHpStays() => Assert.Equal((4L, 45L, 92L), await HpsAsync(false) is var off ? (off.Pupa, off.PecoPecoEgg, off.AntEgg) : default);
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
-    }
 }

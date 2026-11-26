@@ -19,7 +19,7 @@ public sealed class MapLineSpawnTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -27,7 +27,7 @@ public sealed class MapLineSpawnTests : IAsyncLifetime
         // Seed before the game ticker can load MVP states, so cooldown behavior is deterministic.
         FixtureSql.Execute(_app.Services.GetRequiredService<AccountStore>(),
             "INSERT INTO mvp_line_cooldown(cfg_id, death_ms) VALUES (1, $death)",
-            ("$death", MonsterService.NowMs));
+            ("$death", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         await _app.StartAsync();
     }
 
@@ -35,7 +35,6 @@ public sealed class MapLineSpawnTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -146,11 +145,4 @@ public sealed class MapLineSpawnTests : IAsyncLifetime
     }
 
     private Task OnLoop(Func<Task> work) => _app.Services.GetRequiredService<GameLoop>().InvokeAsync(work);
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("data/config");
-    }
 }

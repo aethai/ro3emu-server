@@ -1,0 +1,409 @@
+using System.Text.Json;
+using Google.Protobuf;
+using Romsg;
+using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Accounts.Persistence;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
+using Ro3Emu.Server.Economy;
+using Ro3Emu.Server.Maps;
+
+namespace Ro3Emu.Server.Game;
+
+public sealed class CharacterStatsService(CharacterService character, GameData data, World world)
+{
+    private const uint OnePropertyChange = CharacterService.OnePropertyChange;
+    private const uint AoiAttrChange = CharacterService.AoiAttrChange;
+    private const int EquipInfoSlots = CharacterService.EquipInfoSlots;
+    private const int MaxHp = CharacterService.MaxHp, MaxSp = CharacterService.MaxSp, Speed = CharacterService.Speed,
+        BaseAspd = CharacterService.BaseAspd, Hp = CharacterService.Hp, Sp = CharacterService.Sp, Lv = CharacterService.Lv;
+
+    /// <summary>Always in the self property list, even when no table contributes to them.</summary>
+    private static readonly int[] SelfProperties = [1, 2, 3, 4, 5, 6, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, Hp, Sp, Lv];
+    private static readonly int[] AoiProperties = [MaxHp, Hp, MaxSp, Sp, Speed, Lv, 2003];
+
+    // ---- entity data ----
+
+    /// <summary>
+    /// Recomputes what ENTITYSELF and AOI bases show of this player (RoleSessionService.PlayerEntity reads it from the
+    /// session): the property list (base stats, derived stats, HP/SP, level) and the equipment look.
+    /// </summary>
+    public void Refresh(GameSession session)
+    {
+        session.StatsMemo = null; // a refresh publishes what changed: always from the inputs
+        var stats = Stats(session);
+        session.EntityProperties = EntityPropertiesOf(stats);
+        session.Profile.EquipLook = EquipInfo(session);
+        session.Speed = stats[Speed];
+    }
+
+    /// <summary>
+    /// romsg.RoleDetailInfo (MG_PublicServer.proto): a role's public card, its worn equipment (5007's shape) and its full
+    /// property list, as LC_DAL_RolePublic.ParseRolePublicBaseInfo / _parseEquipInfo / _parseAllProperty read them. Used for
+    /// snapshots other players see later (the Realm of the Gods hall of fame).
+    /// </summary>
+    internal RoleDetailInfo DetailInfo(GameSession session)
+    {
+        var role = session.Role!;
+        var p = session.Progress!;
+        var stats = Stats(session);
+        var info = new RoleDetailInfo
+        {
+            Rolebase = new RolePublicBaseInfo
+            {
+                Roleid = role.Id, Name = role.Name, Career = p.Career, BaseLevel = p.Level,
+                JobLevel = p.JobLevel, Gender = role.Sex, Title = character.TitleOf?.Invoke(session) ?? 0
+            },
+            EquipInfo = character.BuildEquip(session),
+            Selfproperty = new AllProperty { EntityID = role.Id },
+        };
+        info.Rolebase.Appearances.Add(session.Profile.Wardrobe?.CurUseAppearances.ToDictionary(a => a.Key, a => a.Value) ?? RoleProto.Appearances(role));
+        foreach (var id in PropertyIds(stats))
+            info.Selfproperty.Propertys.Add(new Property { PropertyId = id, Data = stats[id], BaseData = stats.Base.GetValueOrDefault(id, stats[id]), Vd64 = stats[id] });
+        return info;
+    }
+
+    /// <summary>EntityBase.equipInfo: ItemConfig ids of grids 1..7, 0 for empty.</summary>
+    internal static long[] EquipInfo(GameSession session)
+    {
+        var slots = new long[EquipInfoSlots];
+        foreach (var item in CharacterInventoryService.Equipped(session))
+            if (item.Grid is >= 1 and <= EquipInfoSlots) slots[item.Grid - 1] = item.Entry;
+        return slots;
+    }
+
+    /// <summary>Max ticks (4 * 50 ms = 200 ms) a hot-path memoized build sheet may be reused while all tracked inputs match.</summary>
+    private const long StatsMemoMaxTickAge = 4;
+
+    /// <summary>The build part of a sheet (before HP, SP and the dynamic properties) and what it was computed from.</summary>
+    private sealed record StatsMemoEntry(long Tick, RoleProgress Progress, int Career, long Level,
+        int S0, int S1, int S2, int S3, int S4, int S5, int ItemCount,
+        long SpeedBonus, long Mount, long? CurrentHp, long StatusBits, bool Dead, ActiveBuff[] Buffs,
+        StatSheet Sheet);
+
+    /// <summary>A combat/ticker path (cast, hit, swing, guardian pulse, team/power tick) allows <see cref="Stats"/> to reuse
+    /// the build part while tracked inputs are unchanged and no <see cref="Refresh"/> ran. Everywhere else (GM ops, trades,
+    /// equipment) the sheet is fresh.</summary>
+    internal void ReuseStatsInThisWork(GameSession session)
+    {
+        if (character.WorkSerial?.Invoke() is { } serial) session.StatsReuseSerial = serial;
+    }
+
+    /// <summary>
+    /// The character's full stat sheet. A cast, guardian pet pulse, team refresh and power probe read it repeatedly while
+    /// nothing it depends on changes. Within an allowed work item (<see cref="ReuseStatsInThisWork"/>) the build part is
+    /// memoized across up to <see cref="StatsMemoMaxTickAge"/> ticks (200 ms) while progress, career, level, base stats,
+    /// item count, buff list, HP, combat status, dead flag, mount and GM speed are unchanged, and dropped on every
+    /// <see cref="Refresh"/>. HP, SP and the dynamic properties are applied on every call.
+    /// </summary>
+    public StatSheet Stats(GameSession session)
+    {
+        var p = session.Progress!;
+        long serial = character.WorkSerial?.Invoke() ?? -1;
+        if (serial != session.StatsReuseSerial) serial = -1; // not in a hot path's work: always fresh
+        long tick = character.TickSerial?.Invoke() ?? serial;
+        StatSheet sheet;
+        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo
+            && tick >= memo.Tick && tick - memo.Tick <= StatsMemoMaxTickAge
+            && Unchanged(memo, session, p))
+            sheet = memo.Sheet.Clone();
+        else
+        {
+            sheet = BuildStats(session, p);
+            if (serial >= 0)
+                session.StatsMemo = new StatsMemoEntry(tick, p, p.Career, p.Level,
+                    p.Stats[0], p.Stats[1], p.Stats[2], p.Stats[3], p.Stats[4], p.Stats[5],
+                    session.Items.Count, session.Combat.SpeedBonus, MountService.Rider(session),
+                    session.CurrentHp, session.StatusBits, session.Dead, [.. session.Buffs],
+                    sheet.Clone());
+        }
+        long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
+        sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
+        sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
+        foreach (var provider in character.DynamicProperties.Handlers)
+            foreach (var (id, value) in provider(session))
+            {
+                // Independent active shield owners (totems and timed buffs) contribute to property 2003.
+                if (id == 2003) sheet[id] = (long)Math.Clamp((decimal)sheet[id] + value, 0, long.MaxValue);
+                else sheet[id] = value;
+            }
+        sheet[Lv] = p.Level;
+        return sheet;
+    }
+
+    private static bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p)
+    {
+        if (!ReferenceEquals(memo.Progress, p) || memo.Career != p.Career || memo.Level != p.Level
+            || memo.S0 != p.Stats[0] || memo.S1 != p.Stats[1] || memo.S2 != p.Stats[2]
+            || memo.S3 != p.Stats[3] || memo.S4 != p.Stats[4] || memo.S5 != p.Stats[5]
+            || memo.ItemCount != session.Items.Count
+            || memo.SpeedBonus != session.Combat.SpeedBonus || memo.Mount != MountService.Rider(session)
+            || memo.CurrentHp != session.CurrentHp || memo.StatusBits != session.StatusBits
+            || memo.Dead != session.Dead || memo.Buffs.Length != session.Buffs.Count) return false;
+        for (int i = 0; i < memo.Buffs.Length; i++)
+            if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
+        return true;
+    }
+
+    private StatSheet BuildStats(GameSession session, RoleProgress p)
+    {
+        var raw = new Dictionary<int, double>();
+        void Add(long id, double v) => raw[(int)id] = raw.GetValueOrDefault((int)id) + v;
+
+        var matchAttributes = character.MatchAttributes?.Invoke(session);
+        if (matchAttributes != null)
+        {
+            // A Survivor Battle career replaces the character's own build for the match (TimedBattleService.Chicken):
+            // EatChickenGameCareer._iJobAttr and the worn match equipment, plus the buffs of the match.
+            foreach (var (id, value) in matchAttributes) Add(id, value);
+            foreach (var buff in session.Buffs)
+                foreach (var (id, v) in buff.Changes) Add(id, v);
+        }
+        else AddOwnAttributes(session, p, Add);
+        foreach (int grouped in GroupedAttributes)
+            if (AttributeConversionConfig.Get(data, grouped) is { } conversion) AddGroupedConversion(raw, grouped, conversion);
+        if (!raw.ContainsKey(Speed)) raw[Speed] = RoleSessionService.DefaultSpeed;
+        raw[Speed] += session.Combat.SpeedBonus;
+        if (!raw.ContainsKey(BaseAspd)) raw[BaseAspd] = 100;
+
+        var sheet = EquipmentStunts.ApplyConversions(session, raw, data);
+        if (matchAttributes == null) sheet = EmblemService.ApplyResonanceConversions(session, raw, sheet, data);
+        return ApplySpeedOverflow(raw, sheet);
+    }
+
+    /// <summary>AttributeConfig 30 "Other Elemental Damage Reduction%" and 31 "Crowd Control Resistance". Rows 20-24 of the
+    /// conversion table are not here: no data gives those ids.</summary>
+    private static readonly int[] GroupedAttributes = [23, 24, 30, 31]; // 23 "PATK/MATK" and 24 "PDEF/MDEF" the same way
+
+    /// <summary>
+    /// A grouped attribute is read through its members only (_kTips "Converted to other elemental damage", "Converted to
+    /// other crowd-control debuff attributes"): AttributeConversionConfig 30 gives 312-320, 31 gives 702 ... 728, each 1:1 and
+    /// the same in both columns. It counts whatever gave it, including a negative value (Shadow Card: Deviling's 30 is -200;
+    /// LC_TotemHelper multiplies a conversion by the value as it is).
+    /// </summary>
+    internal static void AddGroupedConversion(Dictionary<int, double> raw, int grouped, AttributeConversionConfig conversion)
+    {
+        if (!raw.TryGetValue(grouped, out double value)) return;
+        foreach (var pair in conversion.Attribute1)
+            if (pair is [var id, var perPoint]) raw[(int)id] = raw.GetValueOrDefault((int)id) + perPoint * value;
+    }
+
+    /// <summary>
+    /// Speed past its cap turns into damage: ASPD (115) above FinalAtkSpdThdAndCastSpdThd[0] (500) adds Physical ATK%
+    /// (OverflowAtkSpd2PhysDmgR [115, 1, 1034, 10, 2000]) and cast speed (116) above [1] (400) adds Magic ATK%
+    /// (OverflowCastSpd2MagicDmgR [116, 1, 1044, 10, 2000]): every step of excess gives perStep, up to the cap. The
+    /// client's own tooltips say so (AttributeConfig 115/116 _kTips: "Every 1 excess ASPD is converted to 0.1% Physical
+    /// ATK (Max: 20%)") and its panel shows the excess (LC_PlayerInfoHelper._doFormulaOverThreshold).
+    /// </summary>
+    internal StatSheet ApplySpeedOverflow(Dictionary<int, double> raw, StatSheet sheet)
+    {
+        var p = Data.Config.PublicParams.Of(data);
+        if (p.FinalAtkSpdThdAndCastSpdThd is not { Length: >= 2 } limits) return sheet;
+        bool changed = ApplyRule(p.OverflowAtkSpd2PhysDmgR, limits[0])
+            | ApplyRule(p.OverflowCastSpd2MagicDmgR, limits[1]);
+        return changed ? StatCalculator.Compute(raw, data) : sheet;
+
+        bool ApplyRule(long[]? rule, long threshold)
+        {
+            if (rule is not { Length: >= 5 }) return false;
+            (int source, double step, int target, double perStep, double cap) = ((int)rule[0], rule[1], (int)rule[2], rule[3], rule[4]);
+            double excess = sheet[source] - threshold;
+            if (excess <= 0 || step <= 0) return false;
+            raw[target] = raw.GetValueOrDefault(target) + Math.Min(Math.Floor(excess / step) * perStep, cap);
+            return true;
+        }
+    }
+
+    /// <summary>The character's own raw contributions (gear, cards, talents, buffs, level and job rows, conversions).</summary>
+    private void AddOwnAttributes(GameSession session, RoleProgress p, Action<long, double> Add)
+    {
+        var inv = character.Inventory;
+        var baseStats = new double[6];
+        for (int i = 0; i < 6; i++) baseStats[i] = p.Stats[i];
+        foreach (var item in CharacterInventoryService.Equipped(session))
+        {
+            if (inv.EquipRow(item.Entry) is not { } equip) continue;
+            foreach (var (id, v) in CharacterInventoryService.BaseAttributes(item, equip).Concat(EquipmentAffixes.Entries(item)))
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                else Add(id, v);
+            }
+            // enchant stats are per instance; base stats also feed their derived conversions.
+            foreach (var (enchantId, enchant) in item.Enchantments)
+                foreach (var (id, v) in enchant.Attr.Select(a => (a.Key, (double)a.Value))
+                    .Concat(EnchantService.SkillAttributes(session, enchantId, data).Select(a => (a.Id, a.Value))))
+                {
+                    if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                    else Add(id, v);
+                }
+        }
+        foreach (var (id, value) in EquipmentStunts.FlatAttributes(session, data))
+        {
+            if (id is >= 1 and <= 6) baseStats[id - 1] += value;
+            else Add(id, value);
+        }
+        // Grid levels: StrengthenTable / RefiningTable _kAttr are totals at a level, counted for a
+        // worn grid (inferred); resonance (§5) adds the reached Strengthen/RefiningEffectTable row's _kEffect.
+        foreach (var item in CharacterInventoryService.Equipped(session).Where(i => i.Grid <= EquipInfoSlots))
+        {
+            var equipRows = new[]
+            {
+                inv.StrengthenRow(item.Grid, session.Profile.EquipLevels.Strength.GetValueOrDefault(item.Grid)),
+                inv.RefineRow(item.Grid, session.Profile.EquipLevels.Refine.GetValueOrDefault(item.Grid))
+            };
+            foreach (var row in equipRows)
+                if (row is { } r)
+                    foreach (var (id, v) in GameData.Pairs(r, "_kAttr")) Add(id, v);
+        }
+        foreach (var table in new[] { "StrengthenEffectTable", "RefiningEffectTable" })
+            if (inv.ResonanceRow(session, table) is { } effect)
+                foreach (var (id, v) in GameData.Pairs(effect, "_kEffect")) Add(id, v);
+        foreach (var card in EquipmentStunts.ActiveCards(session, data))
+        {
+            int tier = (int)(card.Attrs?.GetValueOrDefault(CharacterInventoryService.AttrCardStar) ?? 0);
+            int level = (int)(card.Attrs?.GetValueOrDefault(CharacterInventoryService.AttrCardLevel) ?? 0);
+            if (inv.CardRow(card.Entry, tier) is not { } cardRow) continue;
+            foreach (var (id, v) in GameData.Pairs(cardRow, "_kBasicAttribute"))
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                else Add(id, v);
+            }
+            if (data.Row("ItemConfig", card.Entry) is { } itemRow)
+            {
+                long part = GameData.Int(itemRow, "_iCardPart"), quality = GameData.Int(itemRow, "_iQuality");
+                if (inv.CardUpgradeRow(level, part, quality) is { } upgrade)
+                    foreach (var (id, v) in GameData.Pairs(upgrade, "_iAttr"))
+                    {
+                        if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                        else Add(id, v);
+                    }
+            }
+        }
+        // The active Soul Echo plan contributes raw attributes; applying the shared final-stat
+        // pipeline is inferred because the original server aggregation order is not captured.
+        foreach (var emblem in EmblemService.Worn(session))
+            foreach (var (id, value) in EmblemService.Attributes(emblem, data))
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += value;
+                else Add(id, value);
+            }
+        // LC_SeasonTalent's property overview reads the selected plan's target-level effect once.
+        // Base stats 1..6 must feed conversion below; other attrs enter StatCalculator as raw contributions (inferred).
+        foreach (var (id, value) in character.TalentAttributes?.Invoke(session) ?? [])
+        {
+            if (id is >= 1 and <= 6) baseStats[id - 1] += value;
+            else Add(id, value);
+        }
+        foreach (var provider in character.ExtraAttributes.Handlers)
+            foreach (var (id, value) in provider(session))
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += value;
+                else Add(id, value);
+            }
+        // (inferred) STR..LUK from a buff count like gear's toward the conversions below (owner's decision 2.11).
+        foreach (var buff in session.Buffs)
+            foreach (var (id, v) in buff.Changes)
+            {
+                if (id is >= 1 and <= 6) baseStats[id - 1] += v;
+                else Add(id, v);
+            }
+        for (int i = 0; i < 6; i++) Add(i + 1, baseStats[i]);
+        if (BaseRow(p.Career, p.Level) is { } flat)
+            foreach (var (id, v) in GameData.Pairs(flat, "_kAttri")) Add(id, v);
+        foreach (var (id, v) in data.JobAttributes(p.Career)) Add(id, v);
+        bool ranged = data.Row("JobConfig", p.Career) is { } job && GameData.Int(job, "_iDistanceType") == 2;
+        for (int stat = 1; stat <= 6; stat++)
+        {
+            if (data.Row("AttributeConversionConfig", stat) is not { } conversion) continue;
+            foreach (var (id, perPoint) in GameData.Pairs(conversion, ranged ? "_kAttribute2" : "_kAttribute1")) Add(id, perPoint * Math.Max(0, baseStats[stat - 1]));
+        }
+    }
+
+    /// <summary>The self property list: the fixed set plus every member attribute the sheet carries (1031 ...).</summary>
+    private static IEnumerable<int> PropertyIds(StatSheet sheet) => SelfProperties.Union(sheet.Data.Keys).Order();
+
+    /// <summary>
+    /// ENTITYSELF's property list with the same baseData as 31008: the client files both through
+    /// LC_DAL_PlayerInfo._changeProperty into ServerAttrBaseInfo (baseData, or data when baseData is 0), the Base bucket
+    /// its stat point preview (_refreshFinalLocalVal) rebuilds each group from. The final value there made the preview
+    /// apply the percentages twice after every login and map change.
+    /// </summary>
+    private static (long Id, long Value, long Base)[] EntityPropertiesOf(StatSheet stats) =>
+        [.. PropertyIds(stats).Select(id => (Id: (long)id, Value: stats[id], Base: stats.Base.GetValueOrDefault(id, stats[id])))];
+
+    private JsonElement? BaseRow(int career, int level)
+    {
+        // Every job has rows 1..100; fall back to the Novice table for unknown careers.
+        return data.Row("AttriBaseLvConfig", career * 1000L + level) ?? data.Row("AttriBaseLvConfig", 1000L * 1000 + level);
+    }
+
+    /// <summary>After any change of stats: the window (31008, owner) and head-info/HP bars (31048, owner and viewers).</summary>
+    /// <summary>Stats changed outside this service (buffs): the window, HP bars and the AOI.</summary>
+    public Task RefreshStatsAsync(GameSession session) => SendStatsAsync(session);
+
+    /// <summary>
+    /// EAttrModType.EAttrModTypeBase in 31008 attrModTypes: the client (LC_DAL_PlayerInfo._changeProperty) then floats
+    /// each changed attribute ("HP 37" with an up arrow, UI_Sys_Main_PowerChangeWidget). It shows the popups only for
+    /// types listed in PublicParamConfig.AttrChangeCoverdType, which includes 0.
+    /// </summary>
+    private const int AttrModTypeBase = 0;
+
+    /// <param name="showChange">Base level up or committed stat points: the client floats the attribute changes.</param>
+    internal async Task SendStatsAsync(GameSession session, bool showChange = false)
+    {
+        var oldIds = session.EntityProperties.Select(p => (int)p.Id).ToHashSet();
+        Refresh(session);
+        var stats = Stats(session);
+        var all = new AllProperty { EntityID = session.Role!.Id };
+        foreach (var id in PropertyIds(stats).Union(oldIds).Union(session.Profile.SentPropertyIds).Order())
+        {
+            long value = stats[id];
+            all.Propertys.Add(new Property { PropertyId = id, Data = value, BaseData = stats.Base.GetValueOrDefault(id, value), Vd64 = value });
+            session.Profile.SentPropertyIds.Add(id);
+        }
+        var change = new Romsg.OnePropertyChange { Property = all };
+        if (showChange) change.AttrModTypes.Add(AttrModTypeBase);
+        await session.SendGameAsync(OnePropertyChange, change);
+
+        var aoi = new AOIAttrChange { EntityUuid = (ulong)session.Role.Id };
+        foreach (var id in AoiProperties) aoi.Property.Add(new AoIProperty { Idx = id, Data = stats[id], BaseData = stats[id] });
+        await ToSelfAndViewersAsync(session, AoiAttrChange, aoi);
+    }
+
+    /// <summary>
+    /// Sets current HP and/or SP (clamped to the maxima; null = unchanged) and tells the player (31008) and everyone
+    /// around (31048)
+    /// </summary>
+    public async Task SetHpSpAsync(GameSession session, long? hp, long? sp)
+    {
+        var before = Stats(session);
+        if (hp is { } h) session.CurrentHp = Math.Clamp(h, 0, before[MaxHp]);
+        if (sp is { } s) session.CurrentSp = Math.Clamp(s, 0, before[MaxSp]);
+        var stats = Stats(session);
+        session.EntityProperties = EntityPropertiesOf(stats);
+        var all = new AllProperty { EntityID = session.Role!.Id };
+        var aoi = new AOIAttrChange { EntityUuid = (ulong)session.Role.Id };
+        foreach (var id in new[] { Hp, Sp })
+        {
+            all.Propertys.Add(new Property { PropertyId = id, Data = stats[id], BaseData = 0, Vd64 = stats[id] });
+            aoi.Property.Add(new AoIProperty { Idx = id, Data = stats[id] });
+        }
+        await session.SendGameAsync(OnePropertyChange, new Romsg.OnePropertyChange { Property = all });
+        await ToSelfAndViewersAsync(session, AoiAttrChange, aoi);
+    }
+
+    internal async Task ToSelfAndViewersAsync(GameSession session, uint msgId, IMessage body)
+    {
+        await session.SendGameAsync(msgId, body);
+        if (!session.Owners!.AllowsPresentation(session)) return;
+        var viewers = world.Viewers(session);
+        if (viewers.Count == 0) return;
+        var prepared = new PreparedMessage(msgId, body); // serialized once for every observer
+        foreach (var viewer in viewers)
+        {
+            if (!session.Owners!.AllowsPresentation(session)) break;
+            try { await viewer.SendPreparedAsync(prepared); }
+            catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
+        }
+    }
+}

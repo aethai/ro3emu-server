@@ -17,38 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Mono.Cecil" />
-    <ProjectReference Include="..\Ro3Emu.DataExport\Ro3Emu.DataExport.csproj" />
-  </ItemGroup>
-
-  <!-- The client patcher is shared with Ro3Emu.ClientTools (the developers' command line tool). -->
-  <ItemGroup>
-    <Compile Include="..\Ro3Emu.ClientTools\ClientPatcher.cs" Link="Client\ClientPatcher.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\TextSink.cs" Link="Client\TextSink.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\ImageSwapPatch.cs" Link="Client\ImageSwapPatch.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\AccessFixPatch.cs" Link="Client\AccessFixPatch.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\VoiceStubPatch.cs" Link="Client\VoiceStubPatch.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\OpenUrlPatch.cs" Link="Client\OpenUrlPatch.cs" />
-    <Compile Include="..\Ro3Emu.ClientTools\Launcher.cs" Link="Client\Launcher.cs" />
-  </ItemGroup>
-
-  <!-- Our English translations (public sources, no client text beyond the strings they translate); merged on the
-       player's machine with the client's own English tables into <client>\ro3emu\loc_en.tsv. -->
-  <ItemGroup>
-    <EmbeddedResource Include="..\Ro3Emu.Loc\translations\*.tsv" LogicalName="translations/%(Filename)%(Extension)" />
-  </ItemGroup>
-
-  <!-- Our Traditional Chinese translations (the zh-TW language): data of RO3Emu.exe like the English ones, kept here and not
-       in src/Ro3Emu.Loc because that folder is part of the stamp of the prebuilt client DLLs (tools/release/client-stamp.ps1),
-       which these texts are not in. -->
-  <ItemGroup>
-    <EmbeddedResource Include="translations-zhtw\*.tsv" LogicalName="translations-zhtw/%(Filename)%(Extension)" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="Ro3Emu.Setup.Tests" />
-    <!-- The launcher (Ro3EmuLauncher.exe) drives the same flows from its window. -->
-    <InternalsVisibleTo Include="Ro3EmuLauncher" />
+    <ProjectReference Include="..\Ro3Emu.Setup.Core\Ro3Emu.Setup.Core.csproj" />
   </ItemGroup>
 
 </Project>

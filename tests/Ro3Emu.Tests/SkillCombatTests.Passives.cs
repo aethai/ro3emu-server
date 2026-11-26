@@ -93,10 +93,10 @@ public sealed partial class SkillCombatTests
         int coats = await Loop.InvokeAsync(async () =>
         {
             var s = Session("alice");
-            foreach (var handler in combat.TakenAsync) await handler(monster, s, 100);
+            await combat.TakenAsync.InvokeAsync(monster, s, 100);
             int first = s.Buffs.Count(b => b.ConfigId == 1201501);
             foreach (var buff in s.Buffs.Where(b => b.ConfigId == 1201501).ToArray()) s.Buffs.Remove(buff);
-            foreach (var handler in combat.TakenAsync) await handler(monster, s, 100); // within the 10 s cooldown
+            await combat.TakenAsync.InvokeAsync(monster, s, 100); // within the 10 s cooldown
             return first * 10 + s.Buffs.Count(b => b.ConfigId == 1201501);
         });
         Assert.Equal(10, coats);
@@ -116,7 +116,7 @@ public sealed partial class SkillCombatTests
             var s = Session("alice");
             s.Progress!.Skills[15316] = 10;
             var row = SkillConfig.Get(data, 1500001)!.Value.Row;
-            long Hit() => combat.DamageAdjusters.Aggregate(10000L, (damage, adjust) => adjust(s, monster, row, DamageHitResult.Normal, damage));
+            long Hit() => combat.DamageAdjusters.Handlers.Aggregate(10000L, (damage, adjust) => adjust(s, monster, row, DamageHitResult.Normal, damage));
             long before = Hit();
             await _app.Services.GetRequiredService<BuffService>().ShowOnUnitAsync(monster, 901601, 5000, s.Role!.Id);
             return (before, Hit());

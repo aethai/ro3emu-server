@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace Ro3Emu.Server.Accounts.Persistence;
 
 /// <summary>
-/// One role as stored at a single SQLite read snapshot (C/D 14): identity, progress with its revision vector, every
+/// One role as stored at a single SQLite read snapshot: identity, progress with its revision vector, every
 /// role blob column and the item rows, read in one read transaction on a reader worker. Values are detached copies;
 /// the same decoders as the per-store reads are used, so a served value is byte-for-byte what that read returns.
 /// </summary>
@@ -81,7 +81,7 @@ public sealed class RoleSnapshots
     private long _sequence;
     private long _prunedThrough; // _writtenAt no longer knows commits at or before this sequence
     private long _served, _invalidated, _installs, _staleInstalls;
-    // C/D 16 part 3: the last value this process persisted for a role part (its SHA-256), valid until any other
+    // The last value this process persisted for a role part (its SHA-256), valid until any other
     // commit touches the part. A runtime save of identical bytes is then skipped instead of written on the loop.
     private sealed class PendingSave { public int Commits; }
     private readonly Dictionary<(long Role, string Part), byte[]> _persisted = [];
@@ -109,7 +109,7 @@ public sealed class RoleSnapshots
             // Parts committed after the read began may be missing from it: never serve them.
             foreach (var ((role, part), at) in _writtenAt)
                 if (role == snapshot.RoleId && at > readStartedAt) Drop(entry, part);
-            // Entries live for the role's session (C/D 16 part 4); a missed release only costs memory, never
+            // Entries live for the role's session; a missed release only costs memory, never
             // correctness (every commit still invalidates), so a bound simply starts over.
             if (_installed.Count >= MaxInstalled && !_installed.ContainsKey(snapshot.RoleId)) _installed.Clear();
             _installed[snapshot.RoleId] = entry;
@@ -155,7 +155,7 @@ public sealed class RoleSnapshots
             if (hash == null || pending.Commits != 1) return;
             if (_persisted.Count >= MaxPersisted) _persisted.Clear(); // bounded: losing it only costs skips
             _persisted[(role, part)] = hash;
-            // C/D 16 part 4 write-through: the session's snapshot serves the bytes just committed (the only commit of
+            // Write-through cache: the session's snapshot serves the bytes just committed (the only commit of
             // the part since BeginSave, so they are exactly what SQL holds).
             if (_installed.TryGetValue(role, out var entry)) entry.Blobs[part] = (byte[])value.Clone();
         }
@@ -220,6 +220,17 @@ public sealed class RoleSnapshots
         }
         Interlocked.Increment(ref _served);
         return true;
+    }
+
+    internal void CacheBlob(long role, string column, byte[]? value, long readStartedAt)
+    {
+        lock (_gate)
+        {
+            if (readStartedAt < _prunedThrough || !_installed.TryGetValue(role, out var entry)) return;
+            if (_writtenAt.TryGetValue((role, column), out long at) && at > readStartedAt) return;
+            if (_writtenAt.TryGetValue((role, RevisionStore.Identity), out long idAt) && idAt > readStartedAt) return;
+            entry.Blobs[column] = value == null ? null : (byte[])value.Clone();
+        }
     }
 
     /// <summary>

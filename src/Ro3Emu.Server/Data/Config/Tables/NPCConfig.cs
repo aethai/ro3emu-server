@@ -32,6 +32,7 @@ public readonly partial record struct NPCConfig(JsonElement Row)
     [ConfigField("_iNormalDrop")] public partial long[] NormalDrop { get; }
     /// <summary>The model's radius in cm (the City Gate's 1000, the ram's 500).</summary>
     [ConfigField("_iPrefabRadius")] public partial long PrefabRadius { get; }
+    [ConfigField("_iModelRatio")] public partial double ModelRatio { get; }
     [ConfigField("_iRace")] public partial long Race { get; }
     [ConfigField("_iSize")] public partial long Size { get; }
     [ConfigField("_iSpeed")] public partial long Speed { get; }
@@ -42,7 +43,9 @@ public readonly partial record struct NPCConfig(JsonElement Row)
     /// <summary>The portrait the client shows for the NPC or monster (a sprite name, "headicon_monster_poring.png").</summary>
     [ConfigField("_kHeadIcon")] public partial string HeadIcon { get; }
     [ConfigField("_kMultiverseArray")] public partial long[] MultiverseArray { get; }
-    [ConfigField("_kName")] public partial long[] Name { get; }
+    private const string NameField = "_kName";
+    [ConfigField(NameField)] public partial long[] Name { get; }
+    public string DisplayName(GameData data) => data.TextOf(Row, NameField);
     [ConfigField("_kNpcShowCondition")] public partial long NpcShowCondition { get; }
     [ConfigField("_kNpcTag")] public partial long[] NpcTag { get; }
     [ConfigField("_kRespawnSkill")] public partial long RespawnSkill { get; }

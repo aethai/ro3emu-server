@@ -24,7 +24,7 @@ public sealed partial class EmblemTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -37,7 +37,6 @@ public sealed partial class EmblemTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -428,13 +427,6 @@ public sealed partial class EmblemTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.EmblemInvalid, (await Next(alice, EmblemService.Upgrade, UpgradeEmblemResp.Parser)).Result);
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
         Assert.All(session.Items.Where(i => i.Guid == invalid || i.Guid == valid), i => Assert.Equal(0, i.Attrs![1003]));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

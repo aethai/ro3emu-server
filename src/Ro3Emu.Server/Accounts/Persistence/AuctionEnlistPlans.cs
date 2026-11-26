@@ -93,10 +93,10 @@ internal sealed class AuctionReadPlan(AuctionReadKind kind, long id = 0, bool pe
             case AuctionReadKind.SourceExists:
                 using (var cmd = DbSql.Command(db, tx, "SELECT 1 FROM auction_source WHERE source_key=$key"))
                 {
-                    cmd.Parameters.AddWithValue("$key", sourceKey ?? throw new ArgumentNullException(nameof(sourceKey)));
+                    cmd.Parameters.AddWithValue("$key", sourceKey ?? throw new InvalidOperationException("Source key is required."));
                     return cmd.ExecuteScalar() is not null;
                 }
-            default: throw new ArgumentOutOfRangeException(nameof(kind));
+            default: throw new InvalidOperationException("Unsupported auction read kind.");
         }
     }
 
@@ -170,6 +170,7 @@ internal sealed class AuctionRunSavePlan : DbPlan
         cmd.Parameters.AddWithValue("$state", _after);
         if (_before is not null) cmd.Parameters.AddWithValue("$before", _before);
         if (cmd.ExecuteNonQuery() != 1) throw new RolePlanConflictException();
+        DbWriter.AfterJob(WrittenCache.AuctionRun);
         return 1;
     }
 }
@@ -271,7 +272,8 @@ internal sealed class AuctionPrebuyWritePlan : DbPlan
     {
         var order = _order;
         using var cmd = DbSql.Command(db, tx, order.Id == 0
-            ? "INSERT INTO auction_prebuy(role_id,auction_type,src_type,item_id,quantity,unit_price,currency,revision,processed,requested_id,paused) VALUES ($role,$type,$src,$entry,$qty,$price,$cur,$revision,$done,$requested,$paused)"
+            ? "INSERT INTO auction_prebuy(role_id,auction_type,src_type,item_id,quantity,unit_price,currency,revision,processed,requested_id,paused) "
+                + "VALUES ($role,$type,$src,$entry,$qty,$price,$cur,$revision,$done,$requested,$paused)"
             : "UPDATE auction_prebuy SET quantity=$qty,unit_price=$price,revision=$revision,processed=$done,paused=$paused "
                 + "WHERE id=$id AND role_id=$oldRole AND auction_type=$oldType AND src_type=$oldSrc "
                 + "AND item_id=$oldEntry AND quantity=$oldQty AND unit_price=$oldPrice AND currency=$oldCur "
@@ -303,6 +305,7 @@ internal sealed class AuctionPrebuyWritePlan : DbPlan
             cmd.Parameters.AddWithValue("$oldPaused", old.Paused ? 1 : 0);
         }
         if (cmd.ExecuteNonQuery() != 1) throw new RolePlanConflictException();
+        DbWriter.AfterJob(WrittenCache.AuctionPrebuy);
         return 1;
     }
 }
@@ -356,7 +359,9 @@ internal sealed class AuctionRunClearPlan : DbPlan
             "INSERT INTO auction_run(id,state) VALUES ($id,$state) ON CONFLICT(id) DO UPDATE SET state=excluded.state");
         write.Parameters.AddWithValue("$id", run.Id);
         write.Parameters.AddWithValue("$state", JsonSerializer.SerializeToUtf8Bytes(run));
-        return write.ExecuteNonQuery();
+        int changed = write.ExecuteNonQuery();
+        DbWriter.AfterJob(WrittenCache.AuctionRun);
+        return changed;
     }
 }
 

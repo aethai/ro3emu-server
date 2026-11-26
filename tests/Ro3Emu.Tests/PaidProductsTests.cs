@@ -46,7 +46,6 @@ public sealed class PaidProductsTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         if (_app != null) { await _app.StopAsync(); await _app.DisposeAsync(); }
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -128,7 +127,7 @@ public sealed class PaidProductsTests : IAsyncLifetime
         var card = MonthCardConfig.All(Service<GameData>()).First();
         long crystal = Count(bot, 3);
         Assert.Equal(0, (await Buy(bot, 2, card.Product)).Result);
-        var month = Session(bot).NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
+        var month = Session(bot).Activities.NewActivities!.ActivityInfo[199].ActivityParam.MonthCard;
         Assert.Equal(card.Day + 1, month.Infos[card.Id].LastDays);
         Assert.Equal(0, Count(bot, (int)card.Item));
         Assert.True(Count(bot, 3) > crystal); // _iBuyAward
@@ -146,16 +145,16 @@ public sealed class PaidProductsTests : IAsyncLifetime
         await using var bot = await InWorld("Patron");
         await Gm(bot, "!lvl 99");
         await Reconcile(bot);
-        Assert.False(Session(bot).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
+        Assert.False(Session(bot).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
         // enum_ProductId.BattlePass: one premium item per open pass that takes it (Pass I and II share item 703).
         var takers = BattlePassConfig.All(Service<GameData>()).Where(p => p.PremiumItemId == 703
-            && Session(bot).NewActivities!.ActivityInfo.ContainsKey(p.Id)).ToList();
+            && Session(bot).Activities.NewActivities!.ActivityInfo.ContainsKey(p.Id)).ToList();
         long result;
         int bought = 0;
         while ((result = (await Buy(bot, 2, 7)).Result) == 0) bought++;
         Assert.Equal(ErrorCodes.AlreadyPurchased, result);
         Assert.InRange(bought, 1, takers.Count);
-        Assert.True(Session(bot).NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
+        Assert.True(Session(bot).Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
         Assert.Equal(0, Count(bot, 703));
 
         Assert.Equal(0, (await Buy(bot, 2, 8)).Result); // BattlePass_GIFT

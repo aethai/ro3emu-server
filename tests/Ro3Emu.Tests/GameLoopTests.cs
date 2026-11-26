@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Net;
 using System.Net;
@@ -31,6 +32,53 @@ public sealed class GameLoopTests : IAsyncLifetime
         })).ToList();
         await Task.WhenAll(tasks);
         Assert.Equal(Enumerable.Range(0, 100), seen);
+    }
+
+    [Fact]
+    public async Task NowMsAdvancesWithLoopTimeUnderPinnedWallClockAndDoesNotDoubleCountFakeClock()
+    {
+        var pinned = new PinnedWallClock(new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+        using var pinnedLoop = new GameLoop(NullLogger<GameLoop>.Instance, time: pinned);
+        await pinnedLoop.StartAsync(default);
+        try
+        {
+            long start = pinnedLoop.NowMs;
+            Assert.True(SpinWait.SpinUntil(() => pinnedLoop.NowMs - start >= 40, TimeSpan.FromSeconds(2)),
+                $"Expected pinned-wall-clock NowMs to advance, delta was {pinnedLoop.NowMs - start} ms");
+            pinned.Advance(TimeSpan.FromMinutes(10));
+            Assert.Equal(pinned.GetUtcNow().ToUnixTimeMilliseconds(), pinnedLoop.NowMs);
+        }
+        finally { await pinnedLoop.StopAsync(default); }
+
+        var fake = new FakeTimeProvider(new DateTimeOffset(2026, 10, 8, 12, 0, 0, TimeSpan.Zero));
+        using var fakeLoop = new GameLoop(NullLogger<GameLoop>.Instance, time: fake);
+        await fakeLoop.StartAsync(default);
+        try
+        {
+            long t0 = fakeLoop.NowMs;
+            fake.Advance(TimeSpan.FromMilliseconds(350));
+            Assert.Equal(t0 + 350, fakeLoop.NowMs);
+            Assert.Equal(t0 + 350, fakeLoop.NowMs);
+        }
+        finally { await fakeLoop.StopAsync(default); }
+    }
+
+    private sealed class PinnedWallClock(DateTimeOffset now) : TimeProvider
+    {
+        private long _ticks = now.UtcTicks;
+        public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
+        public void Advance(TimeSpan by) => Interlocked.Add(ref _ticks, by.Ticks);
+    }
+
+    [Fact]
+    public async Task AssertOnLoopPassesOnLoopAndThrowsOffLoop()
+    {
+        Assert.Throws<InvalidOperationException>(() => _loop.AssertOnLoop());
+        await _loop.InvokeAsync(() =>
+        {
+            _loop.AssertOnLoop();
+            return Task.CompletedTask;
+        });
     }
 
     [Fact]
@@ -478,6 +526,96 @@ public sealed class GameLoopTests : IAsyncLifetime
         await loop.StopAsync(default);
         Assert.True(loop.InvokeAsync(() => Task.CompletedTask).IsCanceled);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => loop.StartAsync(default));
+    }
+
+    [Fact]
+    public async Task LoopReadsMonotonicAndWallClockFromInjectedTimeProvider()
+    {
+        var start = new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(start);
+        using var loop = new GameLoop(NullLogger<GameLoop>.Instance, time: clock);
+        Assert.Equal(TimeSpan.Zero, loop.Now);
+        Assert.Equal(start.ToUnixTimeMilliseconds(), loop.NowMs);
+        Assert.Equal(start.ToUnixTimeSeconds(), loop.NowSec);
+
+        await loop.StartAsync(default);
+        try
+        {
+            clock.Advance(TimeSpan.FromSeconds(5));
+            Assert.Equal(TimeSpan.FromSeconds(5), loop.Now);
+            Assert.Equal(start.AddSeconds(5).ToUnixTimeMilliseconds(), loop.NowMs);
+            Assert.Equal(start.AddSeconds(5).ToUnixTimeSeconds(), loop.NowSec);
+        }
+        finally
+        {
+            await loop.StopAsync(default);
+        }
+    }
+
+    [Fact]
+    public async Task AdvanceAsyncRunsTimersAndTickersDeterministicallyWithoutRealTimeSleep()
+    {
+        var start = new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(start);
+        using var loop = new GameLoop(NullLogger<GameLoop>.Instance, time: clock);
+        var ticker = new CountingTicker(loop);
+        loop.Add(ticker);
+        await loop.StartAsync(default);
+        try
+        {
+            var fired = new List<(string Name, TimeSpan At)>();
+            await loop.InvokeAsync(() =>
+            {
+                loop.Schedule(TimeSpan.FromMilliseconds(500), () => { fired.Add(("first", loop.Now)); return Task.CompletedTask; });
+                loop.Schedule(TimeSpan.FromSeconds(3), () => { fired.Add(("second", loop.Now)); return Task.CompletedTask; });
+                loop.Schedule(TimeSpan.FromSeconds(10), () => { fired.Add(("third", loop.Now)); return Task.CompletedTask; });
+                return Task.CompletedTask;
+            });
+
+            var wall = System.Diagnostics.Stopwatch.StartNew();
+            await loop.AdvanceAsync(TimeSpan.FromSeconds(10), clock.Advance);
+            wall.Stop();
+
+            Assert.Equal(200, ticker.Ticks);
+            Assert.True(ticker.AllOnLoop);
+            Assert.Equal(
+                [("first", TimeSpan.FromMilliseconds(500)), ("second", TimeSpan.FromSeconds(3)), ("third", TimeSpan.FromSeconds(10))],
+                fired);
+            Assert.True(wall.Elapsed < TimeSpan.FromSeconds(3), $"AdvanceAsync(10s) took {wall.Elapsed.TotalMilliseconds:F0} ms");
+        }
+        finally
+        {
+            await loop.StopAsync(default);
+        }
+    }
+
+    [Fact]
+    public async Task AdvanceAsyncHandlesSubTickRemaindersAndZeroDuration()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 25, 12, 0, 0, TimeSpan.Zero));
+        using var loop = new GameLoop(NullLogger<GameLoop>.Instance, time: clock);
+        var ticker = new CountingTicker(loop);
+        loop.Add(ticker);
+        await loop.StartAsync(default);
+        try
+        {
+            await loop.AdvanceAsync(TimeSpan.Zero, clock.Advance);
+            Assert.Equal(0, ticker.Ticks);
+
+            await loop.AdvanceAsync(TimeSpan.FromMilliseconds(20), clock.Advance);
+            Assert.Equal(0, ticker.Ticks);
+
+            await loop.AdvanceAsync(TimeSpan.FromMilliseconds(30), clock.Advance);
+            Assert.Equal(1, ticker.Ticks);
+
+            await loop.AdvanceAsync(TimeSpan.FromMilliseconds(75), clock.Advance);
+            Assert.Equal(2, ticker.Ticks);
+            Assert.Equal(TimeSpan.FromMilliseconds(125), loop.Now);
+        }
+        finally
+        {
+            await loop.StopAsync(default);
+        }
     }
 
     private sealed class CountingTicker(GameLoop loop) : IGameTicker

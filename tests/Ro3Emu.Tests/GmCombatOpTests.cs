@@ -42,7 +42,6 @@ public sealed class GmCombatOpTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -204,8 +203,8 @@ public sealed class GmCombatOpTests : IAsyncLifetime
         Assert.Equal(0, accepted.Result);
         var s = Session("alice");
         Assert.Equal(0, s.GmCastSkill);
-        Assert.Empty(s.SkillCds);
-        Assert.DoesNotContain(s.SkillModeCds.Values, end => end > MonsterService.NowMs);
+        Assert.Empty(s.Combat.SkillCds);
+        Assert.DoesNotContain(s.Combat.SkillModeCds.Values, end => end > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         // Without the switch the ordinary refusal stands: the skill is not learned.
         await Panel(alice, 52, "0");
         await Task.Delay(1500); // the first cast's action ends

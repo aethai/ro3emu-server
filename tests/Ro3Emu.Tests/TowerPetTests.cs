@@ -26,8 +26,9 @@ public sealed class TowerPetTests : IAsyncLifetime
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
+            o.PetWorldFollower = true; // the field follower the tower lineup replaces (off by default)
         });
         Service<SeasonService>().SetPlayBook(101);
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -39,7 +40,6 @@ public sealed class TowerPetTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -189,7 +189,7 @@ public sealed class TowerPetTests : IAsyncLifetime
         Assert.Equal(0, (await Set(bot, 10001, 11001, 0, 0)).Result);
         var a = await Enter(bot);
         var session = Service<SessionRegistry>().All().Single(s => s.Account == bot.Account && s.Role != null);
-        Assert.Null(session.PetActor);
+        Assert.Null(session.Profile.PetActor);
         Assert.Equal(10001, session.Pets!.SetupPlans[0].SetUpPets[1]);
         Assert.DoesNotContain(a.Pets, p => (ulong)p.Uid == followerUid);
 
@@ -198,7 +198,7 @@ public sealed class TowerPetTests : IAsyncLifetime
         setup.PetId = 13001;
         await bot.SendGameAsync(PetService.StateUpdate, setup);
         Assert.Equal(0, (await Next(bot, PetService.StateUpdate, PetStateUpdateResp.Parser)).Result);
-        Assert.Null(session.PetActor);
+        Assert.Null(session.Profile.PetActor);
         Assert.Equal(2, a.Pets.Count);
 
         var towerPetUids = a.Pets.Select(p => (ulong)p.Uid).ToArray();
@@ -216,9 +216,9 @@ public sealed class TowerPetTests : IAsyncLifetime
         var after = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             v => v.Bases.Any(e => e.EntityType == 7 && e.EntityTemplateID == 2300440));
         Assert.Single(after.Bases, e => e.EntityType == 7);
-        Assert.Null(session.TowerAttempt);
+        Assert.Null(session.Instances.TowerAttempt);
         Assert.Empty(a.Pets);
-        Assert.Equal(10001, session.PetActor!.PetId);
+        Assert.Equal(10001, session.Profile.PetActor!.PetId);
         Assert.Equal(10001, session.Pets.SetupPlans[0].SetUpPets[1]);
     }
 
@@ -343,7 +343,7 @@ public sealed class TowerPetTests : IAsyncLifetime
         var reset = await Next(bot, TowerService.PetDeadState, ClimbTowerSyncPetDeadStateRes.Parser);
         Assert.Empty(reset.PetDeadState);
         var session = Service<SessionRegistry>().All().Single(s => s.Account == bot.Account && s.Role != null);
-        Assert.NotNull(session.TowerAttempt);
+        Assert.NotNull(session.Instances.TowerAttempt);
         // World.Join sends all already spawned units in one AOI batch.
         var pets = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             v => v.Bases.Count(e => e.EntityType == 7) == 2);
@@ -357,7 +357,7 @@ public sealed class TowerPetTests : IAsyncLifetime
             Assert.Equal(e.Uuid, (ulong)(double)e.Uuid); // identity must survive Lua number conversion
         });
         Assert.Contains(pets.Bases, e => e.EntityType == 1 && e.BornTimeMs > 0);
-        return session.TowerAttempt!;
+        return session.Instances.TowerAttempt!;
     }
 
     private static void AssertPetDespawnBeforeSwitch(BotClient bot, int start, IReadOnlyCollection<ulong> petUids)
@@ -370,13 +370,6 @@ public sealed class TowerPetTests : IAsyncLifetime
             .SelectMany(e => AoIViewChangeData.Parser.ParseFrom(e.Body).LeaveAoi)
             .ToHashSet();
         Assert.All(petUids, uid => Assert.Contains(uid, removed));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

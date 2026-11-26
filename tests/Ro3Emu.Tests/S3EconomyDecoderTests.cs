@@ -72,7 +72,7 @@ public sealed class S3EconomyDecoderTests
                 "auction guild_info guild_challenge pet_books daily new_activities activity_runtime timed_activity timed_battle " +
                 "training lottery tower wild_afk dungeons territory_escort lifejob life_restrict life_runtime season_talent " +
                 "season_page season_page_meta season_refine equip_levels equip_plans auto_decompose bag_state stat_plans " +
-                "world_state emblems pets mounts wardrobe totems totem_refine_epoch genre career_special heroic_spirit paragon title area_concur growth_class first_heart personal personal_upvote popularity social_outfit emoji_info gifts barroom gm_state job_exp_catchup").Split(' '))
+                "world_state emblems pets mounts wardrobe totems totem_refine_epoch genre career_special heroic_spirit paragon title area_concur growth_class first_heart personal personal_upvote popularity social_outfit emoji_info gifts barroom gm_state job_exp_catchup offline_buffs").Split(' '))
                 Exec("ALTER TABLE role ADD COLUMN " + column + " BLOB");
         }
         internal void Exec(string sql)
@@ -238,7 +238,7 @@ public sealed class S3EconomyDecoderTests
         Assert.Single(snapshot.Holdings, h => h.Location.Compartment == EconomyCompartment.EscortCargo);
         Assert.Equal(2, snapshot.Holdings.Count(h => h.Location.Compartment == EconomyCompartment.Stall));
         Assert.DoesNotContain(snapshot.Holdings, h => h.Quantity == 999 || h.Quantity == 1000 || h.Quantity == 5000);
-        Assert.Contains(snapshot.Holdings, h => h.Location.Owner.Kind == EconomyOwnerKind.Recovery && h.Location.Key.StartsWith("item/2/"));
+        Assert.Contains(snapshot.Holdings, h => h.Location.Owner.Kind == EconomyOwnerKind.Recovery && h.Location.Key.StartsWith("item/2/", StringComparison.Ordinal));
         Assert.Contains(snapshot.Holdings, h => h.Location.Compartment == EconomyCompartment.Currency
             && h.Location.Owner.Kind == EconomyOwnerKind.Recovery && h.Location.Owner.Id == "role:102" && h.Quantity == 20);
         Assert.Contains(snapshot.Holdings, h => h.Location.Compartment == EconomyCompartment.LegacyMail
@@ -258,7 +258,7 @@ public sealed class S3EconomyDecoderTests
         Assert.Equal(1, Assert.Single(snapshot.Metrics, m => m.Repository == "activity_eve_global").Blobs);
         Assert.Equal(1, Assert.Single(snapshot.Metrics, m => m.Repository == "festival_round").Blobs);
         Assert.Equal(6, Assert.Single(snapshot.Metrics, m => m.Repository == "server_state").Rows);
-        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.RecoveryDebt && i.Key.StartsWith("festival_reward/"));
+        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.RecoveryDebt && i.Key.StartsWith("festival_reward/", StringComparison.Ordinal));
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.RecoveryDebt && i.Detail.Contains("EXP grant"));
         Assert.DoesNotContain(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption);
         Assert.DoesNotContain(snapshot.Issues, i => i.Kind is EconomyIssueKind.Coverage or EconomyIssueKind.UnknownSchema);
@@ -297,7 +297,7 @@ public sealed class S3EconomyDecoderTests
         var snapshot = EconomySnapshotReader.Read(f.PathName, Catalog, "realm-fixture");
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.UnknownSchema && i.Key == "schema/role.future_balance");
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.UnknownSchema && i.Key == "market/new_wallet/n1");
-        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key.StartsWith("item/1"));
+        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key.StartsWith("item/1", StringComparison.Ordinal));
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key == "market/trade_preorder/overflow");
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Coverage && i.Key.Contains("currency/999"));
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.UnknownSchema && i.Key == "activity_eve_global/7/123");
@@ -383,7 +383,7 @@ public sealed class S3EconomyDecoderTests
         var snapshot = EconomySnapshotReader.Read(f.PathName, Catalog, "realm-fixture");
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key == "role/101/guides");
         Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.UnknownSchema && i.Key == "role/101/library");
-        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key.StartsWith("auction_bonus/row/"));
+        Assert.Contains(snapshot.Issues, i => i.Kind == EconomyIssueKind.Corruption && i.Key.StartsWith("auction_bonus/row/", StringComparison.Ordinal));
         Assert.Equal(7, Assert.Single(snapshot.Holdings, h => h.Location.Compartment == EconomyCompartment.AuctionBonus).Quantity);
     }
 

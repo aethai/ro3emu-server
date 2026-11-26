@@ -21,7 +21,11 @@ public static class ConfigValidator
 {
     private const int MaxErrors = 50;
 
-    public static IReadOnlyList<string> Validate(GameData data, IEnumerable<ConfigTableInfo> tables, bool strict)
+    public static IReadOnlyList<string> Validate(GameData data, IEnumerable<ConfigTableInfo> tables, bool strict) =>
+        Validate(data, tables, strict, warnings: null, failOnMissingConstants: true);
+
+    public static IReadOnlyList<string> Validate(GameData data, IEnumerable<ConfigTableInfo> tables, bool strict,
+        List<string>? warnings, bool failOnMissingConstants = true)
     {
         var errors = new List<string>();
         foreach (var table in tables)
@@ -32,6 +36,11 @@ public static class ConfigValidator
                 if (strict && !table.Optional) errors.Add($"{table.Name}: the table is missing or empty");
                 continue;
             }
+            if (table.Keyed)
+            {
+                foreach (var key in table.Fields) CheckConstant(table, rows, key, strict, failOnMissingConstants, errors, warnings);
+                continue;
+            }
             var entries = table.Grouped ? Entries(rows) : rows;
             foreach (var field in table.Fields) CheckField(table.Name, entries, field, strict, errors);
             if (errors.Count >= MaxErrors) break;
@@ -39,11 +48,14 @@ public static class ConfigValidator
         return errors.Count > MaxErrors ? [.. errors.Take(MaxErrors), "..."] : errors;
     }
 
-    /// <summary><see cref="Validate"/>, throwing <see cref="ConfigValidationException"/> on any error.</summary>
-    public static void Check(GameData data, IEnumerable<ConfigTableInfo> tables, bool strict)
+    /// <summary><see cref="Validate"/>, throwing <see cref="ConfigValidationException"/> on any error and returning any non-fatal warnings.</summary>
+    public static IReadOnlyList<string> Check(GameData data, IEnumerable<ConfigTableInfo> tables, bool strict,
+        bool failOnMissingConstants = true)
     {
-        var errors = Validate(data, tables, strict);
+        var warnings = new List<string>();
+        var errors = Validate(data, tables, strict, warnings, failOnMissingConstants);
         if (errors.Count > 0) throw new ConfigValidationException(errors);
+        return warnings;
     }
 
     // A grouped table's rows are the entries of each key's list, named key[index].
@@ -57,6 +69,23 @@ public static class ConfigValidator
             foreach (var entry in group.EnumerateArray()) entries[$"{key}[{index++}]"] = entry;
         }
         return entries;
+    }
+
+    private static void CheckConstant(ConfigTableInfo table, IReadOnlyDictionary<string, JsonElement> values,
+        ConfigFieldInfo key, bool strict, bool failOnMissingConstants, List<string> errors, List<string>? warnings)
+    {
+        string name = table.ValueField == null ? key.Name : key.Name + "." + table.ValueField;
+        if (ConfigValue.Constant(values, key.Name, table.ValueField) is not { } value)
+        {
+            if (strict && !key.Optional)
+            {
+                string message = $"{table.Name}.{name}: missing";
+                if (failOnMissingConstants) errors.Add(message);
+                else warnings?.Add(message);
+            }
+        }
+        else if (!Fits(value, key.Kind))
+            errors.Add($"{table.Name}.{name}: holds {Describe(value)}, not {Expected(key.Kind)}");
     }
 
     private static void CheckField(string table, IReadOnlyDictionary<string, JsonElement> rows, ConfigFieldInfo field,

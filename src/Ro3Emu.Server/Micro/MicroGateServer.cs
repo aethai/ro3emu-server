@@ -9,7 +9,9 @@ namespace Ro3Emu.Server.Micro;
 /// The micro-service gate ("ms gate", server list gate_address). Rpc indexes follow the client's
 /// IClientGateMicroServiceStub / IGateClientMicroService (Phonest.Common.Micro.Internal).
 /// </summary>
-public sealed partial class MicroGateServer(IOptions<ServerOptions> options, GateCrypto crypto, MicroServiceRouter router, MicroSessions sessions, ILogger<MicroGateServer> log, Diagnostics.ServerMetrics? metrics = null, Game.GameLoop? loop = null)
+public sealed partial class MicroGateServer(
+    IOptions<ServerOptions> options, GateCrypto crypto, MicroServiceRouter router, MicroSessions sessions,
+    ILogger<MicroGateServer> log, Diagnostics.ServerMetrics? metrics = null, Game.GameLoop? loop = null)
     : GateListener(options.Value.ListenAddress(), options.Value.MicroGatePort, log, metrics)
 {
     // client -> gate

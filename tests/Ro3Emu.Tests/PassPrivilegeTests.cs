@@ -40,7 +40,6 @@ public sealed class PassPrivilegeTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -80,7 +79,7 @@ public sealed class PassPrivilegeTests : IAsyncLifetime
         await Gm(bot, "!lvl 99");
         await Service<NewActivityService>().ReconcileAsync(Session(bot));
         var session = Session(bot);
-        Assert.True(session.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
+        Assert.True(session.Activities.NewActivities!.ActivityInfo[200].ActivityParam.BattlePass.Premium);
         Assert.Equal(Param(PassPrivileges.StallSlotAdd), PassPrivileges.Added(data, session, PassPrivileges.StallSlotAdd));
         Assert.Equal(Param(PassPrivileges.TradeFavAdd), PassPrivileges.Added(data, session, PassPrivileges.TradeFavAdd));
 

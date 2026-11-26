@@ -31,7 +31,7 @@ public sealed partial class SkillCombatTests
         await Gm("bob", "!lvl 50");
         await Loop.InvokeAsync(async () =>
         {
-            combat.SetEventPvPHandlers((a, b) => a == source && b == target, (_, _) => Task.CompletedTask);
+            combat.AddRuleForTest(new DelegateCombatRule { EventCanFight = (a, b) => a == source && b == target });
             await Character.SetHpSpAsync(target, long.MaxValue, null);
         });
         long speed = Character.Stats(target)[113];

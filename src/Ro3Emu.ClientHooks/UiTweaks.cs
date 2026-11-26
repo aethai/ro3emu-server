@@ -43,10 +43,12 @@ namespace Ro3Emu.ClientHooks
                 if (Done.Count > 64) Done.Clear();
                 QuitButton.Tick();
                 LuaPatches.Tick();
+                GuildOverhead.Tick();
                 PreviewZoom.Tick();
                 PassChallenges.Tick();
                 PassButton.Tick();
                 TitleButton.Tick();
+                NightCycle.Tick();
             }
             catch (Exception e)
             {

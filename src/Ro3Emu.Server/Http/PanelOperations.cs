@@ -37,7 +37,7 @@ public sealed partial class PanelOperations(IOptions<ServerOptions> options, Acc
 
     public async Task<IReadOnlyList<PanelStaff>> StaffAsync()
     {
-        var withTwoFactor = await accounts.ReadAsync<HashSet<string>>(new TotpEnabledRead());
+        var withTwoFactor = await accounts.ReadPanelAsync<HashSet<string>>(new TotpEnabledRead());
         return [.. staff.All().Select(s => new PanelStaff(s.Account, s.Role, s.Source, s.Row?.GrantedBy,
             s.Row is { } row ? DateTimeOffset.FromUnixTimeSeconds(row.GrantedUtc) : null, withTwoFactor.Contains(s.Account)))];
     }
@@ -45,7 +45,7 @@ public sealed partial class PanelOperations(IOptions<ServerOptions> options, Acc
     public async Task<PanelRoleChange> SetRoleAsync(string admin, string account, PanelRole role)
     {
         if (staff.Configured(account) != null) return PanelRoleChange.Configured;
-        var known = await accounts.ReadAsync<PanelAccountRow?>(new PanelAccountRead(account, Now));
+        var known = await accounts.ReadPanelAsync<PanelAccountRow?>(new PanelAccountRead(account, Now));
         if (known == null) return PanelRoleChange.NoSuchAccount;
         if (staff.Configured(known.Name) != null) return PanelRoleChange.Configured;
         if (staff.RoleOf(known.Name) == role) return PanelRoleChange.Unchanged;
@@ -59,12 +59,12 @@ public sealed partial class PanelOperations(IOptions<ServerOptions> options, Acc
             options.Value.Panel.LoginAddresses ? address?.ToString() : null));
 
     public async Task<IReadOnlyList<PanelLogin>> LoginsAsync(string account, int limit) =>
-        [.. (await accounts.ReadAsync<List<AccountLoginRow>>(new AccountLoginsRead(account, limit)))
+        [.. (await accounts.ReadPanelAsync<List<AccountLoginRow>>(new AccountLoginsRead(account, limit)))
             .Select(r => new PanelLogin(DateTimeOffset.FromUnixTimeSeconds(r.Utc), r.Source, options.Value.Panel.LoginAddresses ? r.Address : null))];
 
     // ---------------------------------------------------------------- two-factor authentication
 
-    private Task<TotpRow?> TotpAsync(string account) => accounts.ReadAsync<TotpRow?>(new TotpRead(account));
+    private Task<TotpRow?> TotpAsync(string account) => accounts.ReadPanelAsync<TotpRow?>(new TotpRead(account));
 
     private Task<bool> TotpWriteAsync(TotpWriteKind kind, string account, byte[]? secret = null, long step = 0, string recovery = "",
         string? admin = null) => accounts.WriteAsync<bool>(new TotpWritePlan(kind, account, Now, secret, step, recovery, admin));

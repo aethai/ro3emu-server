@@ -1,6 +1,6 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Ro3Emu.ClientTools;
+using Ro3Emu.ClientPatching;
 
 namespace Ro3Emu.Setup.Tests;
 

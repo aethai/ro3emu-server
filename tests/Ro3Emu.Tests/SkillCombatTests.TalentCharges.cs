@@ -75,8 +75,8 @@ public sealed partial class SkillCombatTests
             await Loop.InvokeAsync(() =>
             {
                 var s = Session("alice");
-                s.SkillCds.Clear();
-                s.SkillModeCds.Clear();
+                s.Combat.SkillCds.Clear();
+                s.Combat.SkillModeCds.Clear();
                 return Task.CompletedTask;
             });
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1140901, TargetId = monster.Uid });
@@ -108,8 +108,8 @@ public sealed partial class SkillCombatTests
             await Loop.InvokeAsync(() =>
             {
                 var s = Session("alice");
-                s.SkillCds.Clear();
-                s.SkillModeCds.Clear();
+                s.Combat.SkillCds.Clear();
+                s.Combat.SkillModeCds.Clear();
                 return Task.CompletedTask;
             });
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1220101, TargetId = monster.Uid });
@@ -239,7 +239,7 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, x => x.SessionId != drive.SessionId)).Result);
         await Task.Delay(1500);
         long zone = await Loop.InvokeAsync(() =>
-            Task.FromResult(Session("alice").SkillObjects.FirstOrDefault(o => o.NpcId == 1200021)?.Uid ?? 0));
+            Task.FromResult(Session("alice").Combat.SkillObjects.FirstOrDefault(o => o.NpcId == 1200021)?.Uid ?? 0));
         Assert.NotEqual(0, zone);
         var tick = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SrcID == zone);
         Assert.Contains(tick.Dsts, d => d.DstID == monster.Uid && d.Damage > 0);

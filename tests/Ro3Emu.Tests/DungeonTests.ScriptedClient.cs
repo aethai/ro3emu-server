@@ -65,9 +65,9 @@ public sealed partial class DungeonTests
                             Assert.Equal((ulong)actor.NpcId, view.Entity.EntityTemplateID);
                             // An NPC is shaped like the world NPCs the live client interacts with (portals, Kafras): no born time.
                             if (view.Entity.EntityType == 2) Assert.Equal(0, view.Entity.BornTimeMs);
-                            var point = map.Points[actor.Point];
-                            Assert.Equal(point.X, view.Entity.MovementInfo.Pos.X, 0.01f);
-                            Assert.Equal(point.Z, view.Entity.MovementInfo.Pos.Z, 0.01f);
+                            // ...where the server has it: its point, or where a carrier that walked off alone parked.
+                            Assert.Equal(actor.X, view.Entity.MovementInfo.Pos.X, 0.01f);
+                            Assert.Equal(actor.Z, view.Entity.MovementInfo.Pos.Z, 0.01f);
                             // It registers for interaction and offers the step's interaction (directly, or from its dialogue).
                             Assert.NotEqual(0, catalog.Interactions(actor.NpcId)[0]);
                             int offered = Reachable(actor.NpcId, interaction);
@@ -103,6 +103,13 @@ public sealed partial class DungeonTests
                         await Gm(alice, FormattableString.Invariant($"!actors walk {p.X} {p.Z}"));
                         break;
                 }
+            // A driven ride (ScriptedStep.DriveAfter) ends when its rider reaches the region; the GM aid's arrival is the walk.
+            if (step.DriveAfter != 0)
+            {
+                await Until(() => Session(alice).DungeonAttempt?.Driving != null, "the drive");
+                var end = Service<WorldData>().Map(scene)!.Regions[step.DriveAfter];
+                await Gm(alice, FormattableString.Invariant($"!actors walk {end.X} {end.Z}"));
+            }
         }
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
     }
@@ -141,6 +148,7 @@ public sealed partial class DungeonTests
             // A step's fight: its monsters, then its event if it has one.
             if (plan.Waves[wave].Spawns.Count > 0)
                 foreach (var monster in await WaveIn(instance, plan.Waves[wave].Spawns.Count)) await Kill(alice, monster);
+            // The aid seats nobody, so a driven ride (ScriptedStep.DriveAfter) ends where its route ends.
             if (step.Complete.Count > 0) await Gm(alice, "!actors use");
         }
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);

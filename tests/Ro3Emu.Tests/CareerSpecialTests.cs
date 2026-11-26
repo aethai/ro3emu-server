@@ -24,14 +24,13 @@ public sealed class CareerSpecialTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> InWorld(string name, bool create = true)
@@ -111,7 +110,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         await Gm("alice", "!job 3200");
         Assert.Equal(CareerSpecialService.ErrLevel, await LeaseAsync(a, Falcon)); // _iUnlockBaseLv 30
         Assert.Equal(CareerSpecialService.ErrNotLeased, await CancelAsync(a, Falcon));
-        Assert.Equal(0, Session("alice").CareerSpecial!.PendantSlot.CartRemouldCfg);
+        Assert.Equal(0, Session("alice").Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
         var stored = _app.Services.GetRequiredService<RoleStore>().LoadCareerSpecial(Session("alice").Role!.Id);
         Assert.True(stored == null || DBCareerSpecial.Parser.ParseFrom(stored).PendantSlot?.CartRemouldCfg is null or 0);
     }
@@ -149,7 +148,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
             await a.SendGameAsync(CharacterService.CareerSpecialTransfer, move);
             Assert.Equal(0, (await Next(a, CharacterService.CareerSpecialTransfer, CareerSpecialTransferItemsRsp.Parser)).Result);
             Assert.Equal(CareerSpecialService.ErrCartNotEmpty, await CancelAsync(a, BirchCart));
-            Assert.Equal(BirchCart, Session("alice").CareerSpecial!.PendantSlot.CartRemouldCfg);
+            Assert.Equal(BirchCart, Session("alice").Profile.CareerSpecial!.PendantSlot.CartRemouldCfg);
             var back = new CareerSpecialTransferItemsReq { TransType = CareerSpecialTransferItemsType.ToNormal };
             back.ItemGuidCountMap[Session("alice").Items.Single(i => i.Pack == 100).Guid] = 2;
             await a.SendGameAsync(CharacterService.CareerSpecialTransfer, back);
@@ -180,7 +179,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Equal(GrandPeco, Session("alice").Mounts!.MountIds[2].MountId);
         Assert.False(Session("alice").Mounts!.MountIds[2].IsRiding);
         Assert.NotNull(slot);
-        Assert.Empty(Session("alice").CareerPendants); // a Peco has no pendant; it shows only when ridden
+        Assert.Empty(Session("alice").Profile.CareerPendants); // a Peco has no pendant; it shows only when ridden
 
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = (eRiderType)3 }); // on-battle
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
@@ -302,7 +301,7 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Null(riding.OriginSkillWheel); // unchanged: the client's base map keeps the career's own attack
 
         // It is sent, not kept in the plans.
-        Assert.NotEqual(WargStrike, Session("alice").SkillPlans!.CurrentAtkSkillId);
+        Assert.NotEqual(WargStrike, Session("alice").Combat.SkillPlans!.CurrentAtkSkillId);
 
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = eRiderType.OffBattle });
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
@@ -396,8 +395,8 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         var start = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
         {
             var alice = Session("alice");
-            alice.SkillCds.Clear();
-            alice.SkillModeCds.Clear();
+            alice.Combat.SkillCds.Clear();
+            alice.Combat.SkillModeCds.Clear();
             alice.SkillCast = null;
             return Task.FromResult(alice.Position.Clone());
         });
@@ -437,6 +436,110 @@ public sealed class CareerSpecialTests : IAsyncLifetime
         Assert.Single(a.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit) && SkillHitInfo.Parser.ParseFrom(e.Body).SessionId == cast.SessionId);
         var cooldown = await Next(a, CombatService.SkillCdUpdate, SkillCdNotify.Parser, m => m.Infos.Any(i => i.SkillId == 13323));
         Assert.Equal(13323, Assert.Single(cooldown.Infos).SkillId);
+    }
+
+    // Swift Warg: "Casting 【Warg Charge】 or 【Warg Hunt】 resets this skill's Cooldown". Warg Hunt resolves as its Melee or
+    // Ranged row (13329, 13330), which the reset has to name.
+    [ClientDataTheory]
+    [InlineData(3f)]
+    [InlineData(10f)]
+    public async Task WargHuntResetsSwiftWargsCooldown(float metres)
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(metres);
+        await SwiftWargOnCooldownAsync(1);
+        await CastOnAsync(a, 1332301, target);
+        await SwiftWargResetAsync();
+    }
+
+    // Swift Warg Lv. 2: "after casting 【Warg Charge】 or 【Warg Hunt】, your next movement instead casts this skill in the movement
+    // direction" (@{1} of its Lv. 1 text is 2). The first walk that sets off casts the learned row once, dashing with 1332606.
+    [ClientDataTheory]
+    [InlineData(2, true)]
+    [InlineData(1, false)]
+    public async Task SwiftWargDashesOnTheWalkAfterWargHunt(int level, bool dashes)
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(3);
+        await SwiftWargOnCooldownAsync(level);
+        await CastOnAsync(a, 1332301, target);
+        await SwiftWargResetAsync();
+        int row = 1332600 + level;
+        await WalkEastAsync(a);
+        if (dashes)
+        {
+            await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.SkillConfigId == row);
+            await Task.Delay(300); // the dash's 160 ms, in which a walk is dropped
+            await WalkEastAsync(a); // a plain walk: the dash comes once
+        }
+        await Task.Delay(1000); // past Warg Hunt's action, which a walk may have to wait for
+        var moves = a.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillMove))
+            .Select(e => SkillStartMoveNotify.Parser.ParseFrom(e.Body)).Where(m => m.SkillConfigId == row).ToList();
+        if (!dashes)
+        {
+            Assert.Empty(moves);
+            return;
+        }
+        var dash = Assert.Single(moves);
+        Assert.Equal(1332606, dash.EffectId);
+        Assert.True(dash.EndPos.X > dash.StartPos.X + 1, "dashes along the walk's direction (90 = +x)");
+        Assert.Contains(a.Inbox.Snapshot(), e => e.IsGame(CombatService.UseInSkill) && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID == row);
+        Assert.DoesNotContain(a.Inbox.Snapshot(), e => e.IsGame(CombatService.UseSkill) && CastSkillRsp.Parser.ParseFrom(e.Body).Result != 0);
+    }
+
+    // Warg Hunt's far row charges in 80 ms. At a round trip above that, a walk the client sent before it had the charge
+    // arrives after it: taken, it set off Swift Warg from where the charge began, in that walk's direction.
+    [ClientDataFact]
+    public async Task AWalkSentBeforeWargHuntsChargeDoesNotSetOffSwiftWarg()
+    {
+        await using var a = await InWorld("Alice");
+        await Become("alice", 3400, 99, 13310, 13311, 13323, 13326);
+        await RideAsync(a, Wolf);
+        var target = await WolfTargetAsync(10);
+        await SwiftWargOnCooldownAsync(2);
+        var before = Session("alice").Position.Clone();
+        await CastOnAsync(a, 1332301, target);
+        var charge = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)Session("alice").Role!.Id);
+        await SwiftWargResetAsync();
+        await Task.Delay(200); // the round trip
+        float back = MonsterService.Angle(charge.EndPos.X, charge.EndPos.Z, charge.StartPos.X, charge.StartPos.Z);
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = before, Dir = back, Face = back, SpeedRate = 1 });
+        await Task.Delay(1300); // past Warg Hunt's 1200 ms action, which a walk would wait for
+        Assert.DoesNotContain(a.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillMove) && SkillStartMoveNotify.Parser.ParseFrom(e.Body).SkillConfigId == 1332602);
+
+        // The first walk from the landing sets it off there, along that walk.
+        float on = MonsterService.Angle(charge.StartPos.X, charge.StartPos.Z, charge.EndPos.X, charge.EndPos.Z);
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = charge.EndPos, Dir = on, Face = on, SpeedRate = 1 });
+        var dash = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.SkillConfigId == 1332602);
+        Assert.InRange(MonsterService.Distance(dash.StartPos.X, dash.StartPos.Z, charge.EndPos.X, charge.EndPos.Z), 0f, 0.01f);
+    }
+
+    private async Task WalkEastAsync(BotClient a)
+    {
+        var at = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(Session("alice").Position.Clone()));
+        await a.SendGameAsync(MsgId.Walk, new WalkReq { Pos = at, Dir = 90, Face = 90, SpeedRate = 1 });
+    }
+
+    private Task SwiftWargOnCooldownAsync(int level) => _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+    {
+        var alice = Session("alice");
+        alice.Progress!.Skills[13326] = level;
+        alice.Combat.SkillCds[13326] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000;
+        return Task.CompletedTask;
+    });
+
+    private async Task SwiftWargResetAsync()
+    {
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        for (var until = DateTime.UtcNow + Wait; ; await Task.Delay(20))
+        {
+            if (!await loop.InvokeAsync(() => Task.FromResult(Session("alice").Combat.SkillCds.ContainsKey(13326)))) return;
+            Assert.True(DateTime.UtcNow < until, "Swift Warg's cooldown was not reset");
+        }
     }
 
     // Warg King's BuffConfig 1332601 selects mode 1 of 13323, 13329 and 13330: the five-wolf rows.
@@ -601,18 +704,15 @@ public sealed class CareerSpecialTests : IAsyncLifetime
             await Become("alice", 1210, 30, 11407);
             Assert.Equal(0, await LeaseAsync(a, GrandPeco));
             await Gm("alice", "!job 1310"); // Paladin: still in _kProfessionID
-            Assert.Equal(GrandPeco, Session("alice").CareerSpecial!.MountsSlot.CartRemouldCfg);
+            Assert.Equal(GrandPeco, Session("alice").Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
             await Gm("alice", "!job 6100"); // Merchant
             await Next(a, CareerSpecialService.Sync, DBCareerSpecialIncrement.Parser,
                 p => p.MountsSlot?.Inc != null && p.MountsSlot.Inc.HasCartRemouldCfg && p.MountsSlot.Inc.CartRemouldCfg == 0);
-            Assert.Equal(0, Session("alice").CareerSpecial!.MountsSlot.CartRemouldCfg);
+            Assert.Equal(0, Session("alice").Profile.CareerSpecial!.MountsSlot.CartRemouldCfg);
             Assert.Equal(0, Session("alice").Mounts!.MountIds[2].MountId);
         }
         await using var again = await InWorld("Alice", create: false);
         var restored = await Next(again, CareerSpecialService.Sync, DBCareerSpecialIncrement.Parser);
         Assert.Equal(0, restored.MountsSlot.All.CartRemouldCfg);
     }
-
-    private static string RepoRoot()
-    { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName; throw new DirectoryNotFoundException(); }
 }

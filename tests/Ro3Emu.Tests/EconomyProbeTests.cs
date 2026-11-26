@@ -9,7 +9,7 @@ namespace Ro3Emu.Tests;
 
 public sealed class EconomyProbeTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "e01-cli-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "e01-cli-" + Guid.NewGuid().ToString("N"));
     private readonly AccountStore _accounts;
     private readonly RoleStore _roles;
     private readonly ItemStore _items;
@@ -91,11 +91,5 @@ public sealed class EconomyProbeTests : IDisposable
     {
         _accounts.Dispose();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
-    }
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

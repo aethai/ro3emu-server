@@ -37,7 +37,7 @@ public sealed partial class DungeonTests
         Assert.Equal(plan.Waves.Select(w => w.Quest).Order(), plan.Waves.Select(w => w.Quest));
     }
 
-    // The chitchat's last bubble is still being read when it completes the step: the crew stays for the step's hold (13 s,
+    // The chitchat's bubble is still being read when it completes the step: the crew stays for the step's hold (13 s,
     // 1.3 s at the tests' pace) instead of leaving with the same tick.
     [ClientDataFact]
     public async Task TheAirshipCrewStaysWhileTheLastChitchatBubbleIsRead()
@@ -49,40 +49,107 @@ public sealed partial class DungeonTests
         await Load(alice, scene);
         await Stage(alice, 1, quest: 1);
         var started = System.Diagnostics.Stopwatch.StartNew();
-        await Gm(alice, "!actors use"); // the four bubbles complete the step
+        await Gm(alice, "!actors use"); // a bubble completes the step
         Assert.Equal(1, Session(alice).DungeonAttempt!.Wave + 1);
         await Stage(alice, 2, quest: 2);
         Assert.True(started.ElapsedMilliseconds >= 1000, $"the next step came after {started.ElapsedMilliseconds} ms");
     }
 
-    // The airship's cannons (inferred): 'Board the Cannon' (5300006) on a Cannon fires 5365001 at the nearest enemy
-    // airship, three boardings a ship; sinking both (5300015 at point 24, 5300053 at 61) ends stage 2 and the boarders come.
-    [ClientDataFact]
-    public async Task TheAirshipCannonsSinkTheEnemyShips()
+    /// <summary>The stage 2 of the airship with the cannon the player stands by, and its ships.</summary>
+    private async Task<(BotClient Alice, SceneActorUnit Cannon, IReadOnlyList<MonsterUnit> Ships)> AtTheCannons()
     {
-        const long scene = 1000501;
-        await using var alice = await InWorld("Alice");
+        var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99");
-        Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
-        long instance = await Load(alice, scene);
+        Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = 1000501 }));
+        long instance = await Load(alice, 1000501);
         await Stage(alice, 1, quest: 1);
-        await Gm(alice, "!actors use"); // the chitchat (all four)
+        await Gm(alice, "!actors use"); // the chitchat
         await Stage(alice, 2, quest: 2);
         var cannons = await ActorsIn(alice, 3, a => a.NpcId == 5300022);
-        var ships = await WaveIn(instance, 2);
-        Assert.Equal([5300015, 5300053], ships.Select(m => m.Template.NpcId).Order());
-        var cannon = cannons[0];
+        var ships = await WaveIn(instance, 3);
         await Gm(alice, "!actors 5300022");
-        int boardings = 0;
-        for (; boardings < 20 && ships.Any(m => !m.Dead); boardings++)
+        return (alice, cannons[0], ships);
+    }
+
+    // The enemy ships fly 70 to 130 m off the deck, past the server's 60 m view radius: the client must be told of them, or
+    // its cannon has nothing to aim at and its player sees an empty sky (two reports on v1.0.28). They start on their
+    // patrols (the first point of 97, 95 and 96) and stay out of the battle, so the player does not pull them to the deck.
+    [ClientDataFact]
+    public async Task TheAirshipsEnemyShipsAreShownFarOffOnTheirPatrols()
+    {
+        var (alice, _, ships) = await AtTheCannons();
+        await using (alice)
+        {
+            Assert.Equal([5300015, 5300053, 5300053], ships.Select(m => m.Template.NpcId).Order());
+            Assert.All(ships, ship =>
+            {
+                Assert.Contains(Session(alice), ship.Viewers);
+                Assert.True(ship.StaysOutOfBattle);
+                Assert.True(ship.Y < 228, $"a ship flies below the deck, this one at {ship.Y}");
+            });
+            var map = Service<WorldData>().Map(1000501)!;
+            long[] patrols = [97, 95, 96];
+            var ends = patrols.Select(p => map.PatrolPaths[p][^1]).ToArray();
+            Assert.All(ships, ship => Assert.Contains(ends, end => MathF.Abs(end.X - ship.X) < 0.01f && MathF.Abs(end.Z - ship.Z) < 0.01f));
+        }
+    }
+
+    // The client's own cannon (GameplayStatusConfig 12, GamePlayStatusExtraConfig[12]): 32702 with the cannon's uid seats the
+    // player, its fire button casts 5353001 at what the crosshair names in targetsId, the ordinary damage sinks the ship, the
+    // tracker counts the ships, the leave button (28) gets off, and the end of the stage puts down whoever still sits there.
+    [ClientDataFact]
+    public async Task TheAirshipCannonIsTheClientsOwnGameplay()
+    {
+        var (alice, cannon, ships) = await AtTheCannons();
+        await using (alice)
         {
             Assert.Equal(0, await Interact(alice, cannon, 5300006));
-            await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 5365001);
-            foreach (var ship in ships.Where(m => !m.Dead)) ship.Hp = ship.Template.MaxHp; // a far ship's leash reset
+            var seated = await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser, n => n.Uid == Session(alice).Role!.Id);
+            Assert.Equal(InteractInfo.Types.EState.UpperCannon, seated.DataInfo.EType);
+            Assert.Equal(12, seated.DataInfo.StateId);
+            Assert.Equal(5300006, seated.DataInfo.InteractConfigId);
+            Assert.Equal(cannon.Uid, seated.DataInfo.UpperCannonInfo.CannonGuId);
+
+            // The leave button, and on again.
+            await alice.SendGameAsync(WorldInteractionService.Action, new UseInteractActionReq { ButtonId = 28 });
+            Assert.Equal(0, (await Next(alice, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
+            Assert.Equal(InteractInfo.Types.EState.Idle,
+                (await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser)).DataInfo.EType);
+            Assert.Equal(0, await Interact(alice, cannon, 5300006));
+            await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser, n => n.DataInfo.EType == InteractInfo.Types.EState.UpperCannon);
+
+            // A shot past everything answers and hits nothing; the skill is the gunner's, not learned.
+            long role = Session(alice).Role!.Id;
+            await OnLoop(() => { Session(alice).Combat.SkillCds.Clear(); Session(alice).Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
+            await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 5353001, OpUnitId = role, TargetPos = new Vec3 { X = 300, Y = 240, Z = 450 } });
+            Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+            Assert.All(ships, ship => Assert.Equal(ship.Template.MaxHp, ship.Hp));
+
+            // Every ship by its own name, as the crosshair sends it: the shot's ordinary damage, then the shot that sinks it (it
+            // takes about a dozen at the row's flat 3000 + 500 a shot and 500 ms, too long to wait for here). The tracker counts the ships.
+            async Task Fire(MonsterUnit ship)
+            {
+                await OnLoop(() => { Session(alice).Combat.SkillCds.Clear(); Session(alice).Combat.SkillModeCds.Clear(); Session(alice).SkillCast = null; return Task.CompletedTask; });
+                await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 5353001, OpUnitId = role, TargetsId = { ship.Uid }, TargetPos = ship.Pos });
+                Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+            }
+            for (int sunk = 0; sunk < ships.Count; sunk++)
+            {
+                var ship = ships[sunk];
+                await Fire(ship);
+                await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 5353001);
+                for (int i = 0; i < 100 && ship.Hp == ship.Template.MaxHp; i++) await Task.Delay(20);
+                Assert.True(ship.Hp < ship.Template.MaxHp && ship.Hp > 0, $"ship {ship.Template.NpcId}: {ship.Hp} of {ship.Template.MaxHp} after a shot");
+                await OnLoop(() => { ship.Hp = 1; return Task.CompletedTask; });
+                await Fire(ship);
+                int done = sunk + 1;
+                var goal = await Next(alice, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
+                    n => n.Stage == 2 && n.Vars.Any(v => v.VarId == 10003 && v.Vi64.Count == 2 && v.Vi64[0] == done));
+                Assert.Equal(ships.Count, goal.Vars.First(v => v.VarId == 10003).Vi64[1]);
+            }
+            await Stage(alice, 3, quest: 3); // the boarding
+            await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser, n => n.DataInfo.EType == InteractInfo.Types.EState.Idle);
         }
-        Assert.All(ships, m => Assert.True(m.Dead));
-        Assert.InRange(boardings, 6, 8); // three a ship (a miss costs one more)
-        await Stage(alice, 3, quest: 3); // the boarding
     }
 
     // Moonlight Flower's hide-and-seek (inferred): standing in the open is found and the game starts over; a darkness
@@ -181,7 +248,18 @@ public sealed partial class DungeonTests
             "the jump lands at point 21, the top of the passage");
         await ActorsIn(alice, 0); // nothing is shown now
 
+        // The passage is the client's own steerable slide (DungeonService.Slide): its speed, camera and state 1 in 31018,
+        // and the step's buff (the speed lines).
+        var slide = Service<ReconstructedDungeons>().Scripted(scene)!.Steps[2].Slide!;
+        var on = await Next(alice, WorldCoreService.CustomChange, CustomDataChange.Parser, m => m.CustomDatas.Any(
+            d => d.Id == DungeonService.SlideStateData && d.CustomParam.LongParam == 1));
+        Assert.Equal(Session(alice).Role!.Id, on.EntityId);
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Task.FromResult(DungeonService.Sliding(Session(alice))
+            && Session(alice).Buffs.Any(b => b.ConfigId == slide.Buff))));
+
         await WalkInto(alice, map.Regions[22]); // the bottom of the passage
+        await Next(alice, WorldCoreService.CustomChange, CustomDataChange.Parser, m => m.CustomDatas.Any(
+            d => d.Id == DungeonService.SlideStateData && d.CustomParam.LongParam == 0)); // the checkpoint ends the slide
         var result = await Next(alice, DungeonService.Result, DungeonResNotify.Parser);
         Assert.Equal((DungeonRes)1, result.Res);
         await StoryMovesOn(alice, 10104290, 10104300);
@@ -218,9 +296,7 @@ public sealed partial class DungeonTests
         Assert.Equal(0, await Interact(alice, vortex, 5300030));
     }
 
-    private static readonly int[] RideWaypoints = [4, 8, 13];
-
-    private async Task SeatedOnTheDeniroAsync(BotClient alice, DungeonService.SceneActorUnit actor, int interaction, bool exitByButton)
+    private async Task SeatedOnTheDeniroAsync(BotClient alice, SceneActorUnit actor, int interaction, bool exitByButton)
     {
         long me = Session(alice).Role!.Id;
         Assert.Equal(0, await Interact(alice, actor, interaction));
@@ -234,16 +310,26 @@ public sealed partial class DungeonTests
             // An old put-down (another ride's token) leaves the seat alone.
             await Service<GameLoop>().InvokeAsync(() => Service<WorldInteractionService>().PutDownFromSceneActorAsync(Session(alice), -1));
             Assert.True(Service<WorldInteractionService>().IsSeatedOnSceneActor(Session(alice)));
+            // The ride holds its rider until the end region: the client's own exit button is refused.
             await alice.SendGameAsync(WorldInteractionService.Action, new UseInteractActionReq { ButtonId = 26 });
-            Assert.Equal(0, (await Next(alice, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
+            Assert.Equal(ErrorCodes.NpcParameter, (await Next(alice, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
+            Assert.True(Service<WorldInteractionService>().IsSeatedOnSceneActor(Session(alice)));
         }
+        // The Deniro stands where it parked, so its rider drives it at once: a walk report into the end region puts them down.
+        await Until(() => Session(alice).DungeonAttempt?.Driving != null, "the drive to the end region");
+        Assert.True(Service<WorldInteractionService>().IsSeatedOnSceneActor(Session(alice)));
+        // One drive ends inside the region, the other crosses it between two reports: the leg is tested for a seated driver too.
+        var end = Service<WorldData>().Map(1000301)!.Regions[31];
+        if (exitByButton) await WalkAcross(alice, end);
+        else await WalkInto(alice, end);
         var down = await Next(alice, WorldInteractionService.Change, InteractChangeNtf.Parser,
             m => m.Uid == me && m.DataInfo.EType == InteractInfo.Types.EState.Idle);
         Assert.False(down.Interrupt); // put down, not interrupted by leaving
     }
 
-    // The ride (5300005, a vehicle gameplay status) seats the player on the Deniro, which puts them down at the end of its
-    // route (inferred) or when the client's own exit button asks (VehicleSeatConfig 5300005 _kGameplayBtnId 26).
+    // After the feeding the Deniro walks guide 35 to Bobo's place by itself and is shown again where it parked. The ride
+    // (5300005, a vehicle gameplay status) then seats the player on it as its driver (inferred, play-tested) and holds them
+    // until the end region, even when the client's own exit button asks (VehicleSeatConfig 5300005 _kGameplayBtnId 26).
     [ClientDataTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -275,35 +361,41 @@ public sealed partial class DungeonTests
         Assert.Equal(1, Session(alice).DungeonAttempt!.Wave + 1);
         Assert.Equal(ErrorCodes.NpcParameter, await Interact(alice, deniro, 5300028)); // not one of the Deniro's
 
-        (int Npc, int Interaction, int Buff)[] chain =
+        (int Npc, int Interaction, int Buff, int Quest)[] chain =
         [
-            (5300041, 5300028, 5301401), // help Bobo up
-            (5300005, 5300008, 5365101), // try to ride the Deniro
-            (5300055, 5300010, 5365201), // collect the fluorescent substance
-            (5300005, 5300009, 5365301), // feed the Deniro
-            (5300005, 5300005, 5365401), // ride to the depths
+            (5300041, 5300028, 5301401, 1), // help Bobo up
+            (5300055, 5300010, 5365201, 3), // collect the fluorescent substance
+            (5300005, 5300009, 5365301, 4), // feed the Deniro: it then walks off by itself and parks
+            (5300005, 5300005, 5365401, 5), // ride to the depths
         ];
+        (float X, float Z)? parked = null; // where the Deniro parked (the unit itself drives off later)
         for (int step = 0; step < chain.Length; step++)
         {
-            if (step > 0) await Stage(alice, step + 1, quest: step + 1); // the first one was awaited above
+            if (step > 0) await Stage(alice, step + 1, quest: chain[step].Quest); // the first one was awaited above
             var (npc, buff) = (chain[step].Npc, chain[step].Buff);
             // exactly one interaction is open: the actor of this step carries its buff, no other actor carries one
-            var shown = await ActorsWhen(alice, all => all.Count == (step == 2 ? 3 : 2) && all.Count(a => a.Buffs.Count > 0) == 1
+            var shown = await ActorsWhen(alice, all => all.Count == (step == 1 ? 3 : 2) && all.Count(a => a.Buffs.Count > 0) == 1
                 && all.Any(a => a.NpcId == npc && a.Buffs.Select(b => b.ConfigId).SequenceEqual([buff])));
             var actor = shown.Single(a => a.NpcId == npc);
             Assert.All(shown.Where(a => a != actor), a => Assert.Empty(a.Buffs));
-            if (step == 1)
+            if (step == 2)
                 // The kept Deniro got its buff in place (31104), without leaving and re-entering the view.
                 await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser,
-                    n => n.UnitId == actor.Uid && n.Buffs.Any(b => b.ConfigId == 5365101));
+                    n => n.UnitId == actor.Uid && n.Buffs.Any(b => b.ConfigId == 5365301));
+            if (step == 3)
+            {
+                // The Deniro walked off alone, offered nothing on its way, and is shown again where it parked (a new uid).
+                Assert.NotEqual(deniro.Uid, actor.Uid);
+                parked = (actor.X, actor.Z);
+            }
             await Beside(alice, actor.X, actor.Y, actor.Z);
             // The reverse dungeon's client reports the NPC's place (31089) before each interaction (LC_DAL_Interact.SyncNpcPos).
             await alice.SendGameAsync(WorldCoreService.TeleportObject, new ClientTeleportObject
             { TargetUid = actor.Uid, TargetPos = new Vec3 { X = actor.X, Y = actor.Y, Z = actor.Z } });
-            if (step != 4)
+            if (step != 3)
             {
                 Assert.Equal(0, await Interact(alice, actor, chain[step].Interaction));
-                // Only the ride has a vehicle status: the first try seats nobody.
+                // Only the ride has a vehicle status: the other interactions seat nobody.
                 Assert.False(Service<WorldInteractionService>().IsSeatedOnSceneActor(Session(alice)));
                 continue;
             }
@@ -314,28 +406,26 @@ public sealed partial class DungeonTests
             && APIErrorMsg.Parser.ParseFrom(e.Body).OriginMsgId == WorldCoreService.TeleportObject);
         var result = await Next(alice, DungeonService.Result, DungeonResNotify.Parser);
         Assert.Equal((DungeonRes)1, result.Res);
-        // The ride (inferred): the server led the Deniro from the start of guide 36 to its end, leg by leg. A seated rider's client
-        // obeys only transType 3 for the vehicle it controls, and a forced position of the rider would shake the seat.
-        var route = Service<WorldData>().Map(scene)!.GuidePaths[36];
+        // Each step shows only its own guide routes (guides.routes), in the 30404 var change as it begins: the Deniro's own
+        // walk (35) is not drawn, and the riding route (36) only from where it parked.
+        long[][] guides = [[26], [34], [], [36]];
+        var shownRoutes = alice.Inbox.Snapshot().Where(e => e.IsGame(DungeonService.Event)).Select(e => DungeonEventNotify.Parser.ParseFrom(e.Body))
+            .Where(n => n.Vars.Any(v => v.VarId == DungeonService.GuideWayVar)).ToList();
+        for (int stage = 2; stage <= guides.Length; stage++)
+            Assert.Contains(shownRoutes, n => n.StageNum == stage
+                && n.Vars.Single(v => v.VarId == DungeonService.GuideWayVar).Vi64.SequenceEqual(guides[stage - 1]));
+        // The walk (inferred): the server led the Deniro along guide 35 at 150% of its speed (attribute 113, which the client
+        // moves it at), alone: nobody sits on it, so it is a normal walk.
+        var route = Service<WorldData>().Map(scene)!.GuidePaths[35];
+        Assert.Contains(alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.AoiAttrChange)).Select(e => AOIAttrChange.Parser.ParseFrom(e.Body)),
+            c => c.EntityUuid == (ulong)deniro.Uid && c.Property.Any(p => p.Idx == 113 && p.Data == 788)); // 525 cm/s * 1.5
         var carrierMoves = alice.Inbox.Snapshot().Where(e => e.IsGame(GameAoiSink.MovementChange))
             .Select(e => MovementChangeNtf.Parser.ParseFrom(e.Body)).Where(m => m.Uid == deniro.Uid && m.MovementInfo?.Pos != null).ToList();
-        if (!exitByButton)
-        {
-            Assert.All(carrierMoves, m => Assert.Equal(MovementTransitionType.MoveTransServerControl, m.TransType));
-            Assert.DoesNotContain(alice.Inbox.Snapshot().Where(e => e.IsGame(GameAoiSink.MovementChange))
-                .Select(e => MovementChangeNtf.Parser.ParseFrom(e.Body)),
-                m => m.Uid == Session(alice).Role!.Id && m.TransType == MovementTransitionType.MoveTransResetPos
-                    && MonsterService.Distance(m.MovementInfo.Pos.X, m.MovementInfo.Pos.Z, route[4].X, route[4].Z) < 1.5f);
-        }
-        var moves = carrierMoves.Select(m => m.MovementInfo.Pos).ToList();
-        int Reached(int waypoint) => moves.FindIndex(m => MonsterService.Distance(m.X, m.Z, route[waypoint].X, route[waypoint].Z) < 1.5f);
-        if (!exitByButton)
-        {
-            int[] passed = [.. RideWaypoints.Select(Reached)];
-            Assert.All(passed, i => Assert.True(i >= 0, "a waypoint was never reached"));
-            Assert.Equal(passed.Order(), passed); // in route order
-        }
-        if (!exitByButton) Assert.Contains(moves, m => MonsterService.Distance(m.X, m.Z, route[^1].X, route[^1].Z) < 1.5f); // to the end
+        Assert.NotEmpty(carrierMoves);
+        Assert.All(carrierMoves, m => Assert.Equal(MovementTransitionType.MoveTransNormal, m.TransType));
+        // It parked at the end of the route (Alice stays at the start, so only the first legs reach her view).
+        Assert.NotNull(parked);
+        Assert.True(MonsterService.Distance(parked.Value.X, parked.Value.Z, route[^1].X, route[^1].Z) < 1.5f);
         var end = Service<WorldData>().Map(scene)!.Points[31]; // the ride ends in the end region
         Assert.True(MonsterService.Distance(Session(alice).Position.X, Session(alice).Position.Z, end.X, end.Z) < 1);
         await StoryMovesOn(alice, 10104300, 10104310);
@@ -359,13 +449,27 @@ public sealed partial class DungeonTests
         for (int wave = 0; wave < plan.Waves.Count; wave++)
         {
             var step = plan.Waves[wave].Step!;
-            await Stage(alice, wave + 1, quest: step.Quest);
+            var begun = await Stage(alice, wave + 1, quest: step.Quest);
+            Assert.Equal([0L, 1L], begun.Vars.Single(v => v.VarId == 10003).Vi64); // a new step starts at (0/1)
             await ActorsIn(alice, step.Actors.Count);
             if (plan.Waves[wave].Spawns.Count > 0)
                 foreach (var monster in await WaveIn(instance, plan.Waves[wave].Spawns.Count)) await Kill(alice, monster);
-            if (step.Complete.Count > 0) await Gm(alice, "!actors use");
+            if (step.Complete.Count > 0)
+            {
+                await Gm(alice, "!actors use");
+                // "Open the treasured chest" reads (1/1) once it is open, and so does each step before it.
+                await Next(alice, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
+                    n => n.Vars.SingleOrDefault(v => v.VarId == 10003)?.Vi64 is [var done, var total] && done == total);
+            }
         }
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
+        // Each step shows only its own guide route (guides.routes): 25 leads to the egg of the Professor, 33 from there to the chest.
+        long[][] guides = [[], [25], [25], [], [33]];
+        var shownRoutes = alice.Inbox.Snapshot().Where(e => e.IsGame(DungeonService.Event)).Select(e => DungeonEventNotify.Parser.ParseFrom(e.Body))
+            .Where(n => n.Vars.Any(v => v.VarId == DungeonService.GuideWayVar)).ToList();
+        for (int stage = 1; stage <= guides.Length; stage++)
+            Assert.Contains(shownRoutes, n => n.StageNum == stage
+                && n.Vars.Single(v => v.VarId == DungeonService.GuideWayVar).Vi64.SequenceEqual(guides[stage - 1]));
         var leave = await left.WaitAsync(TimeSpan.FromSeconds(DungeonService.PlaneExitSeconds + 10));
         Assert.Equal(0, LeaveDungeonRsp.Parser.ParseFrom(leave.Body).Result);
     }
@@ -516,7 +620,7 @@ public sealed partial class DungeonTests
         await Stage(alice, 1, quest: 1);
         var round1 = await ActorsIn(alice, 8);
         Task<SystemBoardCastMsgNtf> Says(int chat) => Next(alice, 1022, SystemBoardCastMsgNtf.Parser, m => m.ChatId == chat);
-        Task<BuffUpdateNotify> Shows(IEnumerable<DungeonService.SceneActorUnit> shown, long point, int buff) =>
+        Task<BuffUpdateNotify> Shows(IEnumerable<SceneActorUnit> shown, long point, int buff) =>
             Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == buff)
                 && n.UnitId == shown.Single(a => a.NpcId == 400138 && a.Point == point).Uid);
 
@@ -700,15 +804,15 @@ public sealed partial class DungeonTests
     }
 
     /// <summary>The scene actors shown, once exactly <paramref name="count"/> of them match.</summary>
-    private Task<IReadOnlyList<DungeonService.SceneActorUnit>> ActorsIn(BotClient bot, int count,
-        Func<DungeonService.SceneActorUnit, bool>? match = null) =>
+    private Task<IReadOnlyList<SceneActorUnit>> ActorsIn(BotClient bot, int count,
+        Func<SceneActorUnit, bool>? match = null) =>
         ActorsWhen(bot, shown => shown.Count(a => match == null || match(a)) == count, match);
 
     /// <summary>The scene actors shown (those matching), once the room's whole set satisfies <paramref name="ready"/>.</summary>
-    private async Task<IReadOnlyList<DungeonService.SceneActorUnit>> ActorsWhen(BotClient bot,
-        Func<IReadOnlyList<DungeonService.SceneActorUnit>, bool> ready, Func<DungeonService.SceneActorUnit, bool>? match = null)
+    private async Task<IReadOnlyList<SceneActorUnit>> ActorsWhen(BotClient bot,
+        Func<IReadOnlyList<SceneActorUnit>, bool> ready, Func<SceneActorUnit, bool>? match = null)
     {
-        DungeonService.SceneActorUnit[] shown = [];
+        SceneActorUnit[] shown = [];
         for (int i = 0; i < 150; i++)
         {
             shown = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(
@@ -719,7 +823,7 @@ public sealed partial class DungeonTests
         throw new TimeoutException($"The scene actors did not reach the expected state; shown: {string.Join(", ", shown.Select(a => $"{a.NpcId}@{a.Point}[{string.Join('/', a.Buffs.Select(b => b.ConfigId))}]"))}");
     }
 
-    private static async Task<int> Interact(BotClient bot, DungeonService.SceneActorUnit actor, int interaction)
+    private static async Task<int> Interact(BotClient bot, SceneActorUnit actor, int interaction)
     {
         await bot.SendGameAsync(SceneService.NpcInteraction, new NpcInteractionReq
         {
@@ -749,6 +853,19 @@ public sealed partial class DungeonTests
     }
 
     private Task WalkInto(BotClient bot, MapRegion region) => WalkTo(bot, region.X, region.Y, region.Z);
+
+    /// <summary>One walk report from outside the region on one side to outside on the other: it never lands inside.</summary>
+    private async Task WalkAcross(BotClient bot, MapRegion region)
+    {
+        double turn = -region.Direction * Math.PI / 180, cos = Math.Cos(turn), sin = Math.Sin(turn);
+        float reach = region.Width / 2 + 8; // the footprint's local z is its width
+        (float X, float Z) Local(float lz) => (region.X - (float)(lz * sin), region.Z + (float)(lz * cos));
+        var (fromX, fromZ) = Local(-reach);
+        var (toX, toZ) = Local(reach);
+        Assert.False(region.Contains(fromX, fromZ) || region.Contains(toX, toZ));
+        await Beside(bot, fromX, region.Y, fromZ);
+        await bot.SendGameAsync(MsgId.Walk, new WalkReq { Pos = new Vec3 { X = toX, Y = region.Y, Z = toZ }, BStop = true, SpeedRate = 1 });
+    }
 
     /// <summary>The clear counts for the story step (101018) and the chain offers the next one.</summary>
     private async Task StoryMovesOn(BotClient bot, long task, long next)

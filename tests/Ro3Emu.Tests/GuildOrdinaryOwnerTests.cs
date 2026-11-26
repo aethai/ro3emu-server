@@ -127,7 +127,7 @@ public sealed partial class GuildTests
             });
             Assert.True(store.SaveMarket(market, []));
         }
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var opening = S3EconomyReader.Read(_dataDir, catalog);
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == (long)founder.Self!.Uuid);
         await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => _app.Services.GetRequiredService<GuildService>().LeaveAsync(session));

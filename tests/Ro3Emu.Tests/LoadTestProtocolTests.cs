@@ -60,12 +60,12 @@ public sealed class LoadTestProtocolTests
     [Fact]
     public async Task Rejected_create_role_keeps_default_response_and_marks_load_stage_refused_over_wire()
     {
-        var dataDir = Path.Combine(RepoRoot(), ".loadtest-temp", "load-refuse-" + Guid.NewGuid().ToString("N"));
+        var dataDir = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "load-refuse-" + Guid.NewGuid().ToString("N"));
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         var app = ServerHost.Create([], o =>
         {
             o.DataDir = dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -102,15 +102,7 @@ public sealed class LoadTestProtocolTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { Directory.Delete(dataDir, true); } catch (IOException) { }
         }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

@@ -43,7 +43,7 @@ public sealed partial class EmblemTests
             Assert.Equal(0, (await Next(bot, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
             await bot.SendGameAsync(EmblemService.SwitchPlan, new EmbleSwitchPlanReq { TargetIndex = 0 });
             Assert.Equal(ErrorCodes.Cooldown, (await Next(bot, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
-            session.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
+            session.Profile.EmblemPlanSwitchUtc = DateTime.UtcNow.AddSeconds(-4);
             await bot.SendGameAsync(EmblemService.SwitchPlan, new EmbleSwitchPlanReq { TargetIndex = 0 });
             Assert.Equal(0, (await Next(bot, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
             Assert.Equal(wornHp, _app.Services.GetRequiredService<CharacterService>().Stats(session)[101]);
@@ -79,7 +79,7 @@ public sealed partial class EmblemTests
             "CREATE TRIGGER fail_emblem_switch BEFORE UPDATE OF emblems ON role BEGIN SELECT RAISE(ABORT, 'claim audit fault'); END");
         await bot.SendGameAsync(EmblemService.SwitchPlan, new EmbleSwitchPlanReq { TargetIndex = 1 });
         Assert.NotEqual(0, (await Next(bot, EmblemService.SwitchPlan, EmbleSwitchPlanResp.Parser)).Result);
-        Assert.Equal(0, session.Emblems.CurrentPlan);
+        Assert.Equal(0, session.Profile.Emblems.CurrentPlan);
         Assert.Equal(2, session.Items.Single(i => i.Guid == guid).Attrs![10001]);
         Assert.Equal(before, roles.LoadEmblems(session.Role.Id));
         Assert.Equal(2, _app.Services.GetRequiredService<ItemStore>().Load(session.Role.Id).Single(i => i.Guid == guid).Attrs![10001]);

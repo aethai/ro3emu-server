@@ -55,7 +55,7 @@ internal sealed class GuildChallengeReadPlan(GuildChallengeReadKind kind, long g
                 ? "WHERE guild_id=$guild AND season=$season AND cycle=$cycle AND difficulty=$difficulty"
                 : "WHERE guild_id=$guild AND season=$season AND cycle=$cycle",
             GuildChallengeReadKind.AllClears => "",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            _ => throw new InvalidOperationException("Unsupported guild challenge read kind."),
         };
         using var cmd = DbSql.Command(db, tx, $"SELECT state FROM guild_challenge_clear {where} ORDER BY rowid");
         if (kind == GuildChallengeReadKind.Clear) cmd.Parameters.AddWithValue("$id", id);

@@ -6,7 +6,7 @@ using Ro3Emu.Server.Economy;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>E05d typed owner plan, semantic value authorization, receipt and exact legs in one transaction.</summary>
+/// <summary>Semantic economy envelope: typed owner plan, value authorization, receipt and exact legs in one transaction.</summary>
 internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope envelope, EconomyCatalog catalog,
     bool failAcknowledgementForTest = false) : DbPlan
 {
@@ -79,13 +79,11 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             if (owner.ExecuteScalar() is not string account || account != envelope.ActorAccount)
                 throw new EconomyOperationConflictException("Authenticated account does not own the E05d actor role.");
         }
-        string realm;
-        using (var meta = DbSql.Command(db, tx, "SELECT realm_id FROM economy_meta WHERE singleton=1"))
-            realm = meta.ExecuteScalar() as string ?? throw new InvalidOperationException("Missing economy realm identity.");
         var beforeEntities = EntityWrites.Concat(EntityDeltaWrites).Distinct()
             .ToDictionary(key => key, key => ReadEntity(db, tx, key));
         var generatedEntities = new HashSet<OwnerRevisionKey>();
-        var (before, standing) = Read(db, tx);
+        var scope = Participants();
+        var (before, standing) = Read(db, tx, catalog, scope);
         foreach (var issue in standing) DbWriter.ReportStandingIssue(issue);
         var children = (object?[])child.Execute(db, tx);
         EconomyTransactionPlan.EncodeChildReceipts(children); // Reject any non-durable child result before receipt work.
@@ -103,14 +101,9 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             if (ReadEntity(db, tx, key) is not { Exists: true, Revision: 1 })
                 throw new InvalidDataException("E05d guild creation did not install initial owner revision.");
         }
-        var (after, issues) = Read(db, tx);
+        var (after, issues) = Read(db, tx, catalog, scope);
         RefuseNewIssues(standing, issues);
         List<EconomyLeg> legs = Match(before, after, ResolveEffects(db, tx, children));
-        long sequence;
-        using (var advance = DbSql.Command(db, tx,
-            "UPDATE economy_meta SET next_sequence=next_sequence+1 WHERE singleton=1 RETURNING next_sequence"))
-            sequence = (long?)advance.ExecuteScalar() ?? throw new InvalidOperationException("Missing economy watermark.");
-        long recorded = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var mutatedEntities = child.MutatedEntityWrites(children)
             .Concat(child.MutatedEntityDeltaWrites(children)).ToHashSet();
         if (mutatedEntities.Except(beforeEntities.Keys).Any())
@@ -133,72 +126,11 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             entities = orderedEntities.Select(x => mutatedEntities.Contains(x.Key) || generatedEntities.Contains(x.Key)
                 ? new OwnerRevisionValue(x.Key, checked(x.Revision + 1), true) : x)
         });
-        using (var receipt = DbSql.Command(db, tx, """
-            INSERT INTO operation_receipt(operation_id,realm_id,commit_seq,actor_account,actor_role,command_kind,
-                request_fingerprint,intent_hash,intent_payload,source_key,recorded_utc_ms,effective_utc_ms,outcome,
-                child_receipts,before_revisions,after_revisions,leg_count)
-            VALUES($op,$realm,$seq,$account,$role,$kind,$fingerprint,$hash,$payload,$source,$recorded,$effective,
-                $outcome,$children,$before,$after,$count)
-            """))
-        {
-            receipt.Parameters.AddWithValue("$op", envelope.OperationId);
-            receipt.Parameters.AddWithValue("$realm", realm);
-            receipt.Parameters.AddWithValue("$seq", sequence);
-            receipt.Parameters.AddWithValue("$account", envelope.ActorAccount);
-            receipt.Parameters.AddWithValue("$role", envelope.ActorRoleId);
-            receipt.Parameters.AddWithValue("$kind", envelope.CommandKind);
-            receipt.Parameters.AddWithValue("$fingerprint", envelope.RequestFingerprint);
-            receipt.Parameters.AddWithValue("$hash", envelope.IntentHash);
-            receipt.Parameters.AddWithValue("$payload", envelope.IntentPayload);
-            receipt.Parameters.AddWithValue("$source", envelope.SourceKey);
-            receipt.Parameters.AddWithValue("$recorded", recorded);
-            receipt.Parameters.AddWithValue("$effective", envelope.EffectiveUtcMs);
-            receipt.Parameters.AddWithValue("$outcome", envelope.Outcome);
-            receipt.Parameters.AddWithValue("$children", EconomyTransactionPlan.EncodeChildReceipts(children));
-            receipt.Parameters.AddWithValue("$before", beforeVector);
-            receipt.Parameters.AddWithValue("$after", afterVector);
-            receipt.Parameters.AddWithValue("$count", legs.Count);
-            receipt.ExecuteNonQuery();
-        }
-        using (var source = DbSql.Command(db, tx,
-            "INSERT INTO operation_source(realm_id,source_key,operation_id) VALUES($realm,$source,$op)"))
-        {
-            source.Parameters.AddWithValue("$realm", realm);
-            source.Parameters.AddWithValue("$source", envelope.SourceKey);
-            source.Parameters.AddWithValue("$op", envelope.OperationId);
-            source.ExecuteNonQuery();
-        }
-        foreach (var leg in legs)
-        {
-            using var entry = DbSql.Command(db, tx, """
-                INSERT INTO economy_entry(commit_seq,operation_id,leg_no,recorded_utc_ms,effective_utc_ms,
-                    owner_kind,owner_id,compartment_kind,compartment_key,instance_key,asset_kind,asset_id,asset_epoch,
-                    delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,source_key)
-                VALUES($seq,$op,$no,$recorded,$effective,$ownerKind,$owner,$compartment,$key,$instance,$assetKind,$asset,
-                    $epoch,$delta,$reason,$legKind,$edge,$before,$after,$source)
-                """);
-            entry.Parameters.AddWithValue("$seq", sequence);
-            entry.Parameters.AddWithValue("$op", envelope.OperationId);
-            entry.Parameters.AddWithValue("$no", leg.LegNumber);
-            entry.Parameters.AddWithValue("$recorded", recorded);
-            entry.Parameters.AddWithValue("$effective", envelope.EffectiveUtcMs);
-            entry.Parameters.AddWithValue("$ownerKind", (int)leg.Location.Owner.Kind);
-            entry.Parameters.AddWithValue("$owner", leg.Location.Owner.Id);
-            entry.Parameters.AddWithValue("$compartment", (int)leg.Location.Compartment);
-            entry.Parameters.AddWithValue("$key", leg.Location.Key);
-            entry.Parameters.AddWithValue("$instance", leg.Location.Instance);
-            entry.Parameters.AddWithValue("$assetKind", (int)leg.Asset.Kind);
-            entry.Parameters.AddWithValue("$asset", leg.Asset.Id);
-            entry.Parameters.AddWithValue("$epoch", leg.Asset.Epoch);
-            entry.Parameters.AddWithValue("$delta", leg.Delta);
-            entry.Parameters.AddWithValue("$reason", (int)leg.Reason);
-            entry.Parameters.AddWithValue("$legKind", (int)leg.Kind);
-            entry.Parameters.AddWithValue("$edge", leg.EdgeNumber);
-            entry.Parameters.AddWithValue("$before", (object?)leg.BeforeFingerprint ?? DBNull.Value);
-            entry.Parameters.AddWithValue("$after", (object?)leg.AfterFingerprint ?? DBNull.Value);
-            entry.Parameters.AddWithValue("$source", envelope.SourceKey);
-            entry.ExecuteNonQuery();
-        }
+        EconomyLedgerWrite.Append(db, tx, new EconomyLedgerCommit(envelope.OperationId, envelope.ActorAccount,
+            envelope.ActorRoleId, envelope.CommandKind, envelope.RequestFingerprint, envelope.IntentHash,
+            envelope.IntentPayload, envelope.SourceKey, envelope.EffectiveUtcMs, envelope.Outcome,
+            EconomyTransactionPlan.EncodeChildReceipts(children), beforeVector, afterVector, legs,
+            UseLegNumber: true));
         return children;
     }
 
@@ -226,12 +158,14 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             ? new OwnerRevisionValue(key, value, true) : new OwnerRevisionValue(key, 0, false);
     }
 
-    /// <summary>The holdings and the row issues of the realm. This snapshot covers every character, so one bad row is reported
-    /// and leaves other players' operations alone (inferred). The row's value is left out of the holdings.</summary>
+    /// <summary>The holdings and the row issues of the realm, or of the envelope's participants only (<see cref="Participants"/>).
+    /// A realm-wide snapshot covers every character, so one bad row is reported and leaves other players' operations alone
+    /// (inferred). The row's value is left out of the holdings.</summary>
     private static (Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> Holdings, HashSet<EconomyIssue> Issues) Read(
-        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog)
+        SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog, (HashSet<long> Roles, HashSet<long> Guilds)? scope)
     {
-        var decoded = EconomySnapshotReader.ReadTransaction(db, tx, catalog);
+        var decoded = scope is { } only ? EconomySnapshotReader.ReadParticipants(db, tx, catalog, only.Roles, only.Guilds)
+            : EconomySnapshotReader.ReadTransaction(db, tx, catalog);
         var result = new Dictionary<(EconomyAsset, EconomyLocation), EconomyHolding>();
         foreach (var holding in decoded.Holdings)
             if (!result.TryAdd((holding.Asset, holding.Location), holding))
@@ -247,8 +181,40 @@ internal sealed class EconomyEnvelopePlan(RoleItemPlan child, EconomyEnvelope en
             throw new InvalidDataException("E05d economic decoder found unclassified/corrupt stored value: " + created.Detail);
     }
 
-    private (Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> Holdings, HashSet<EconomyIssue> Issues) Read(
-        SqliteConnection db, SqliteTransaction tx) => Read(db, tx, catalog);
+    /// <summary>
+    /// The roles and guilds a participant read covers, or null for a realm-wide read. Every family this envelope can change
+    /// must be one EconomySnapshotReader.ReadParticipants decodes: owner writes to guilds and their caravan, campfire and
+    /// challenge rows only, declared
+    /// effects on a role's or guild's currency, inventory, mail, treasury or pending caravan grants, and no guild created
+    /// inside the writer (its id is unknown before). Roles it writes or pins are read with all their rows, so a change it
+    /// made there and did not declare is still refused; anything else (auction, market, territory, obligations) keeps the
+    /// realm-wide read.
+    /// </summary>
+    private (HashSet<long> Roles, HashSet<long> Guilds)? Participants()
+    {
+        if (child.Parts.Any(part => part is GuildSavePlan { EntityWrites.Count: 0 })) return null;
+        var roles = new HashSet<long> { envelope.ActorRoleId };
+        var guilds = new HashSet<long>();
+        foreach (var key in RoleWrites) roles.Add(key.RoleId);
+        foreach (long pin in RolePins) roles.Add(pin);
+        foreach (var key in EntityWrites.Concat(EntityDeltaWrites))
+        {
+            if (!long.TryParse(key.Id, NumberStyles.None, CultureInfo.InvariantCulture, out long id)) return null;
+            if (key.Kind is "guild" or "guild_caravan_version" or "guild_campfire" or "guild_challenge") guilds.Add(id);
+            else if (key.Kind == "guild_caravan_member") roles.Add(id);
+            else return null;
+        }
+        foreach (var effect in envelope.Effects)
+        {
+            if (effect.Compartment is not (EconomyCompartment.Inventory or EconomyCompartment.Currency or EconomyCompartment.Mail
+                or EconomyCompartment.GuildTreasury or EconomyCompartment.CaravanPending)
+                || !long.TryParse(effect.Owner.Id, NumberStyles.None, CultureInfo.InvariantCulture, out long owner)) return null;
+            if (effect.Owner.Kind == EconomyOwnerKind.Role) roles.Add(owner);
+            else if (effect.Owner.Kind == EconomyOwnerKind.Guild) guilds.Add(owner);
+            else return null;
+        }
+        return (roles, guilds);
+    }
 
     private IReadOnlyList<EconomyEffect> ResolveEffects(SqliteConnection db, SqliteTransaction tx, object?[] children)
     {

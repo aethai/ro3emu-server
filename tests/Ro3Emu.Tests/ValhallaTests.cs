@@ -51,7 +51,6 @@ public sealed class ValhallaTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -139,7 +138,7 @@ public sealed class ValhallaTests : IAsyncLifetime
         Assert.Equal((DungeonRes)1, result.Res);
         Assert.Equal(5, result.Rewards[Coin]); // AwardConfig 100201001: 5 Einherjar Coins, 10 Talent Remnants, 15000 Base EXP
 
-        Assert.Contains(FirstLayer, await Read(() => DungeonService.ValhallaCleared(Session(alice).Dungeons).ToArray()));
+        Assert.Contains(FirstLayer, await Read(() => DungeonService.ValhallaCleared(Session(alice).Instances.Dungeons).ToArray()));
         Assert.Equal(5, await Read(() => Service<CharacterService>().CountOf(Session(alice), Coin)));
         await Next(alice, ValhallaService.Sync, DBHeroicSpiritInfoIncrement.Parser, sync => sync.ToString().Contains(FirstLayer.ToString()));
 
@@ -170,11 +169,11 @@ public sealed class ValhallaTests : IAsyncLifetime
         await Gm(alice, $"!item {Coin} 4");
         Assert.Equal(0, await Pray());
         // Level 0 needs 5 EXP: 3 coins at 2 EXP each, level 1 with 1 EXP over; one coin stays.
-        var statue = await Read(() => Session(alice).OdinStatue!.Clone());
+        var statue = await Read(() => Session(alice).Instances.OdinStatue!.Clone());
         Assert.Equal(1, statue.CurLv);
         Assert.Equal(1, statue.CurExp);
         Assert.Equal(1, await Read(() => Service<CharacterService>().CountOf(Session(alice), Coin)));
         Assert.Equal(ValhallaService.ErrCoins, await Pray()); // level 1 needs 9 more EXP: 5 coins
-        Assert.Equal(1, await Read(() => Session(alice).OdinStatue!.CurLv));
+        Assert.Equal(1, await Read(() => Session(alice).Instances.OdinStatue!.CurLv));
     }
 }

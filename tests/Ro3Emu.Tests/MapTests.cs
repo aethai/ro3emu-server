@@ -24,7 +24,7 @@ public sealed partial class MapTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -124,6 +124,17 @@ public sealed partial class MapTests : IAsyncLifetime
         Assert.NotEmpty(kafras);
         Assert.All(kafras, k => Assert.InRange(k.Y - map.Nav!.WalkHeight(k.X, k.Z, k.Y)!.Value, -0.01f, 0.01f));
         Assert.Contains(kafras, k => MathF.Abs(k.X - 205) < 1 && MathF.Abs(k.Z - 331) < 1 && k.Y < -7f);
+    }
+
+    [ClientDataFact]
+    public void ASunkNpcStandsOnTheGround()
+    {
+        // #bug-reports "Payon - NPC in the ground": the Monster Ecology Research Scholar (100181) is at y 14.70 in the editor,
+        // 7 m under Payon's only walkable layer (21.69), so it showed inside the hill and could not be talked to.
+        var map = _app.Services.GetRequiredService<WorldData>().Map(10200)!;
+        var scholar = map.Npcs.Single(n => n.NpcId == 100181);
+        Assert.InRange(scholar.Y - map.Nav!.WalkHeight(scholar.X, scholar.Z, scholar.Y)!.Value, -0.01f, 0.01f);
+        Assert.True(scholar.Y > 21f);
     }
 
     [ClientDataFact]
@@ -358,8 +369,8 @@ public sealed partial class MapTests : IAsyncLifetime
         for (int i = 0; i < 20; i++)
         {
             await Gm("alice", "!mvp where 1");
-            var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify) && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1") || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ")), Wait);
-            if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ")) break;
+            var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify) && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1") || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
+            if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
             await Task.Delay(300);
         }
         await Gm("alice", "!mvp goto 1"); // Poring Island 10214
@@ -377,7 +388,7 @@ public sealed partial class MapTests : IAsyncLifetime
             var player = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
             var boss = _app.Services.GetRequiredService<World>().Map(player.WorldScene).Units.OfType<MonsterUnit>()
                 .Single(m => m.Uid == (long)angeling.Uuid);
-            boss.Advance(MonsterService.NowMs);
+            boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             boss.Moving = false;
             boss.NextRoamMs = long.MaxValue;
             await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,
@@ -434,7 +445,7 @@ public sealed partial class MapTests : IAsyncLifetime
                     .Single(m => m.Uid == (long)angeling.Uuid);
                 Assert.False(player.Dead);
                 Assert.False(boss.Dead);
-                boss.Advance(MonsterService.NowMs);
+                boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 boss.Moving = false;
                 boss.NextRoamMs = long.MaxValue;
                 await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,
@@ -517,7 +528,7 @@ public sealed partial class MapTests : IAsyncLifetime
             RecordRollbackAndStopRepeat(monster, before, after, damageRestored);
         Func<GameSession, MonsterUnit, long, Task> failDamage = (_, monster, _) =>
             monster.Uid == (long)angeling.Uuid ? Task.FromException(new IOException("Injected MVP damage callback refusal.")) : Task.CompletedTask;
-        combat.EventDamageRecorded.Add(failDamage);
+        using var failSub = combat.EventDamageRecorded.Subscribe(failDamage);
         try
         {
             await SwingWait.UntilDoneAsync(_app.Services.GetRequiredService<GameLoop>(), _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null), (long)angeling.Uuid);
@@ -526,7 +537,7 @@ public sealed partial class MapTests : IAsyncLifetime
             Assert.Equal((1L, 1L, false), await damageRestored.Task.WaitAsync(TimeSpan.FromSeconds(10)));
             Assert.Equal(0, ReceiptCount("event/mvp-settlement"));
         }
-        finally { combat.EventDamageRecorded.Remove(failDamage); combat.LethalRollbackObservedForTest = null; }
+        finally { combat.LethalRollbackObservedForTest = null; }
 
         // A failed source probe is an unknown outcome. Retain its original source and resolve it
         // on the next MVP tick; do not roll a second settlement while its result is unknown.
@@ -704,8 +715,8 @@ public sealed partial class MapTests : IAsyncLifetime
                 await Gm("alice", "!mvp where 1");
                 var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
                     && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1")
-                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ")), Wait);
-                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ")) break;
+                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
+                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
                 await Task.Delay(200);
             }
             await Gm("alice", "!mvp goto 1");
@@ -721,7 +732,7 @@ public sealed partial class MapTests : IAsyncLifetime
                 var player = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
                 var boss = _app.Services.GetRequiredService<World>().Map(player.WorldScene).Units.OfType<MonsterUnit>()
                     .Single(m => m.Uid == uid);
-                boss.Advance(MonsterService.NowMs);
+                boss.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 boss.Moving = false;
                 boss.NextRoamMs = long.MaxValue;
                 await _app.Services.GetRequiredService<SceneService>().TeleportInMapAsync(player,
@@ -838,9 +849,9 @@ public sealed partial class MapTests : IAsyncLifetime
                 if (monster.Uid == uid) finalized.TrySetResult();
                 return Task.CompletedTask;
             };
-            combat.Killed.Insert(0, genericObserver); // before loot and quest callbacks
-            rewards.KillDropsGranted.Add(dropObserver);
-            combat.AfterLethalPublication.Add(afterLethal);
+            using var killedSub = combat.Killed.Subscribe(genericObserver, order: -1000); // before loot and quest callbacks
+            using var dropSub = rewards.KillDropsGranted.Subscribe(dropObserver);
+            using var afterSub = combat.AfterLethalPublication.Subscribe(afterLethal);
             mvp.AfterSettlementCommitForTest = _ => Task.FromException(new IOException("Injected committed MVP acknowledgement fault."));
             mvp.BeforeSettlementProbeForTest = _ =>
             {
@@ -909,9 +920,6 @@ public sealed partial class MapTests : IAsyncLifetime
                 mvp.AfterSettlementCommitForTest = null;
                 mvp.BeforeSettlementProbeForTest = null;
                 mvp.BeforeRetainedPublicationForTest = null;
-                combat.Killed.Remove(genericObserver);
-                combat.AfterLethalPublication.Remove(afterLethal);
-                rewards.KillDropsGranted.Remove(dropObserver);
             }
         }
     }
@@ -919,18 +927,11 @@ public sealed partial class MapTests : IAsyncLifetime
     [ClientDataFact]
     public void NavGridMatchesTheClient()
     {
-        var grid = NavGrid.Load(Path.Combine(RepoRoot(), "data", "nav", "sc_prontera_001_dynamicmapdata.bytes"));
+        var grid = NavGrid.Load(Path.Combine(ClientData.RepoRoot, "data", "nav", "sc_prontera_001_dynamicmapdata.bytes"));
         Assert.Equal(300, grid.Width);
         Assert.Equal(395, grid.Height);
         Assert.True(grid.IsWalkable(156.04f, -0.2f, 181.91f));  // born point
         Assert.False(grid.IsWalkable(1f, 0f, 1f));             // map corner, outside the walls
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

@@ -31,9 +31,9 @@ public sealed partial class SkillCombatTests
         Assert.Equal(ErrorCodes.SkillBusy, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
 
         // Just inside the slack before the swing ends, the next one is taken.
-        long wait = end - CombatService.SwingJitterMs + 40 - MonsterService.NowMs;
+        long wait = end - CombatService.SwingJitterMs + 40 - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait));
-        Assert.True(MonsterService.NowMs < end, "the test ran past the swing; nothing left to check");
+        Assert.True(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end, "the test ran past the swing; nothing left to check");
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = NoviceAttack, TargetId = target.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
 
@@ -56,9 +56,9 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         long end = await Loop.InvokeAsync(() => Task.FromResult(
             session.SkillCast!.StartMs + session.SkillCast.ChantMs + session.SkillCast.ActionMs));
-        long wait = end - CombatService.SwingJitterMs + 40 - MonsterService.NowMs;
+        long wait = end - CombatService.SwingJitterMs + 40 - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait));
-        Assert.True(MonsterService.NowMs < end, "the test ran past the swing; nothing left to check");
+        Assert.True(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end, "the test ran past the swing; nothing left to check");
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = NoviceAttack, TargetId = target.Uid });
         Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         long next = await Loop.InvokeAsync(() => Task.FromResult(session.SkillCast!.StartMs));
@@ -110,9 +110,9 @@ public sealed partial class SkillCombatTests
         Assert.Equal(ErrorCodes.SkillBusy, (await Next(archer, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
 
         // Just inside the slack before the swing ends, the next one is taken.
-        long wait = end - CombatService.SwingJitterMs + 40 - MonsterService.NowMs;
+        long wait = end - CombatService.SwingJitterMs + 40 - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (wait > 0) await Task.Delay(TimeSpan.FromMilliseconds(wait));
-        Assert.True(MonsterService.NowMs < end, "the test ran past the swing; nothing left to check");
+        Assert.True(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end, "the test ran past the swing; nothing left to check");
         await archer.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = ArcherAttack, TargetId = target.Uid });
         Assert.Equal(0, (await Next(archer, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
     }
@@ -143,10 +143,10 @@ public sealed partial class SkillCombatTests
         // Before Bash's interrupt time neither it nor a swing gets in.
         Assert.Equal(ErrorCodes.SkillBusy, await Cast(Bash));
         Assert.Equal(ErrorCodes.SkillBusy, await Cast(SwordAttack));
-        Assert.True(MonsterService.NowMs < start + 400 - CombatService.SwingJitterMs, "the test ran past the interrupt time; nothing left to check");
+        Assert.True(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < start + 400 - CombatService.SwingJitterMs, "the test ran past the interrupt time; nothing left to check");
 
         // From there it gives way.
-        await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, start + 420 - MonsterService.NowMs)));
+        await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(0, start + 420 - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));
         Assert.Equal(0, await Cast(SwordAttack));
     }
 }

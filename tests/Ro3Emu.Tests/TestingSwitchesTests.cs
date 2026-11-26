@@ -43,7 +43,6 @@ public sealed class TestingSwitchesTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -118,12 +117,12 @@ public sealed class TestingSwitchesTests : IAsyncLifetime
         await Service<GameLoop>().InvokeAsync(() =>
         {
             // Today's chain is done: the allowance is used up, as after its terminal node was delivered.
-            var row = session.DailyRows!.ActivityData[Dodo];
+            var row = session.Activities.DailyRows!.ActivityData[Dodo];
             row.TaskCompleteTimes = 1;
             row.ActivityInfo.ActivityParam.RunRingTask.RemainRingCount = 0;
-            session.Daily!.Rows = session.DailyRows.ToByteArray();
+            session.Activities.Daily!.Rows = session.Activities.DailyRows.ToByteArray();
             Service<Ro3Emu.Server.Accounts.RoleStore>().SaveDaily(session.Role!.Id,
-                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.Daily)); // the stored state the accept commits over
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily)); // the stored state the accept commits over
             return Task.CompletedTask;
         });
         Assert.Equal(ErrorCodes.AttemptsExhausted, await AcceptRing(alice));

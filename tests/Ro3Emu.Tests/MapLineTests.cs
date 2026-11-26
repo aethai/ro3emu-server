@@ -26,23 +26,16 @@ public sealed class MapLineTests : IAsyncLifetime
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private GameSession Player(string name) => Service<SessionRegistry>().All().Single(s => string.Equals(s.Account, name, StringComparison.OrdinalIgnoreCase));
     private Task OnLoop(Func<Task> action) => Service<GameLoop>().InvokeAsync(action);
-    private static string RepoRoot()
-    {
-        string? p = AppContext.BaseDirectory;
-        while (p != null && !File.Exists(Path.Combine(p, "Ro3Emu.slnx"))) p = Path.GetDirectoryName(p);
-        return p!;
-    }
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
+        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
         SureHitRolls.Install(_app);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {
@@ -141,7 +134,7 @@ public sealed class MapLineTests : IAsyncLifetime
         long generation = a.SceneGeneration;
         // 30012 is also the client's failed-load recovery request. The old config-only acknowledgment is ambiguous.
         await alice.SendGameAsync(SceneService.SceneTeleport, new SceneTeleportReq { TargetMapId = 10100 });
-        await Until(() => a.SceneRecoveryRequired && Service<PublicLineManager>().Reserved(a) == null);
+        await Until(() => a.WorldState.SceneRecoveryRequired && Service<PublicLineManager>().Reserved(a) == null);
         Assert.True(a.SceneGeneration > generation);
         await OnLoop(() => Service<SceneService>().SceneLoadedAsync(a, new SceneLoadedReq { SceneId = 10100 }));
         Assert.DoesNotContain(a, Service<World>().PlayersIn(a.WorldScene));
@@ -150,7 +143,7 @@ public sealed class MapLineTests : IAsyncLifetime
         await using var reconnect = await InWorld("Alice", create: false);
         var current = Player("Alice"); Assert.Equal(0, current.InstanceId);
         Assert.Contains(Service<PublicLineManager>().Snapshot(current.SceneEntry), l => l.Map.LineNumber == current.LineNumber);
-        Assert.Null(current.Handoff); Assert.False(current.SceneRecoveryRequired);
+        Assert.Null(current.Handoff); Assert.False(current.WorldState.SceneRecoveryRequired);
     }
 
     [ClientDataFact]
@@ -161,7 +154,7 @@ public sealed class MapLineTests : IAsyncLifetime
         await Move(alice, a, 10100); await Move(bob, b, 10100, newLine: true);
         await OnLoop(() =>
         {
-            Service<CombatService>().PlayerHostile = (_, _) => true; // force hostility so locality is the deciding gate
+            Service<CombatService>().AddRuleForTest(new DelegateCombatRule { PlayerHostile = (_, _) => true }); // force hostility so locality is the deciding gate
             return Task.CompletedTask;
         });
         long hp = Service<CharacterService>().Stats(b)[2000];
@@ -186,9 +179,13 @@ public sealed class MapLineTests : IAsyncLifetime
         var old = a.Handoff!;
         await OnLoop(() =>
         {
+            // Ro3Emu:SceneLoadTimeoutSeconds, 90 by default: a slow load past 30 s still finishes.
             _clock.Offset = TimeSpan.FromSeconds(31);
             Service<SceneService>().ExpireLineLoad(a);
-            Assert.True(a.SceneRecoveryRequired);
+            Assert.False(a.WorldState.SceneRecoveryRequired);
+            _clock.Offset = TimeSpan.FromSeconds(91);
+            Service<SceneService>().ExpireLineLoad(a);
+            Assert.True(a.WorldState.SceneRecoveryRequired);
             Assert.Null(Service<PublicLineManager>().Reserved(a));
             return Task.CompletedTask;
         });
@@ -208,7 +205,7 @@ public sealed class MapLineTests : IAsyncLifetime
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<SceneService>().BeforeSelf.Add(async s =>
+            Service<SceneService>().BeforeSelf.Subscribe(async s =>
             {
                 if (s == player) { entered.TrySetResult(); await release.Task; }
             });
@@ -251,7 +248,7 @@ public sealed class MapLineTests : IAsyncLifetime
         {
             await Service<GmCommands>().RunAsync(a, "!job 2100");
             a.Progress!.Skills[12010] = 1;
-            Service<CombatService>().CastLanded.Add(async (s, _) => { if (s == a) { entered.TrySetResult(); await release.Task; } });
+            Service<CombatService>().CastLanded.Subscribe(async (s, _) => { if (s == a) { entered.TrySetResult(); await release.Task; } });
         });
         try
         {
@@ -270,7 +267,7 @@ public sealed class MapLineTests : IAsyncLifetime
         finally { release.TrySetResult(); }
         await Until(() => !Service<CombatService>().HasPendingMapWork(old));
         await OnLoop(() => Service<PublicLineManager>().RetireEmptyAsync());
-        Assert.Empty(a.SkillObjects);
+        Assert.Empty(a.Combat.SkillObjects);
         // Unit maps are loop-owned: enumerating them from the test thread raced the loop ("collection was modified").
         var units = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits().ToList()));
         Assert.DoesNotContain(units, u => u.WorldScene == old.WorldScene);
@@ -284,10 +281,10 @@ public sealed class MapLineTests : IAsyncLifetime
         await Move(alice, a, 10100);
         await OnLoop(() =>
         {
-            Service<SceneService>().Leaving.Add(s => s == a ? Task.FromException(new IOException("controlled leave failure")) : Task.CompletedTask);
+            Service<SceneService>().Leaving.Subscribe(s => s == a ? Task.FromException(new IOException("controlled leave failure")) : Task.CompletedTask);
             return Task.CompletedTask;
         });
         await Assert.ThrowsAsync<IOException>(() => OnLoop(() => Service<SceneService>().EnterSceneAsync(a, 10100, createLine: true)));
-        Assert.Null(Service<PublicLineManager>().Reserved(a)); Assert.True(a.SceneRecoveryRequired);
+        Assert.Null(Service<PublicLineManager>().Reserved(a)); Assert.True(a.WorldState.SceneRecoveryRequired);
     }
 }

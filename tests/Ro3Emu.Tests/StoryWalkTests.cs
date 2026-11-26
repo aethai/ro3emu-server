@@ -84,7 +84,7 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        _gameData = Path.Combine(RepoRoot(), "data");
+        _gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -105,7 +105,6 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         if (_bot != null) await _bot.DisposeAsync();
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -866,8 +865,8 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         var refusals = new Dictionary<long, int>();
         for (int round = 0; round < 400 && !TargetDone(task, index); round++)
         {
-            var nodes = await OnLoop(s => s.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
-                .Select(id => (Id: id, Level: s.SeasonTalent.Plan[s.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0))
+            var nodes = await OnLoop(s => s.Season.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
+                .Select(id => (Id: id, Level: s.Season.SeasonTalent.Plan[s.Season.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0))
                 .ToList());
             bool any = false;
             foreach (var (id, level) in nodes)
@@ -942,17 +941,19 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         int cleared = 0;
         for (int attempt = 0; attempt < floor + 3 && !TargetDone(task, index); attempt++)
         {
-            int current = await OnLoop(s => s.Tower is { LayerConfID: > 0 } t
+            int current = await OnLoop(s => s.Instances.Tower is { LayerConfID: > 0 } t
                 ? (int)GameData.Int(floors.First(r => GameData.Int(r, "_iID") == t.LayerConfID), "_iFloor") : 0);
             var next = floors.FirstOrDefault(r => GameData.Int(r, "_iFloor") == current + 1);
             if (next.ValueKind != JsonValueKind.Object) throw new WalkBlocked($"no tower floor after {current}");
             using var end = _bot.Inbox.Expect(e => e.IsGame(TowerService.End));
-            using var sw = _bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine));
+            // The first floor is a 70010 switch; the next ones are reset in place (30124, TowerService.ResetFloorAsync).
+            using var sw = _bot.Inbox.Expect(e => e.IsGame(inside ? DungeonService.Reset : MsgId.SwitchSceneLine));
             var start = await RequestAsync(TowerService.Start, new ClimTowerStartReq { Layer = (int)GameData.Int(next, "_iID"), IsInClimTower = inside },
                 ClimTowerStartRes.Parser);
             if (start.Result != 0) throw new WalkBlocked($"32801 tower floor {current + 1} refused {start.Result}");
-            long scene = SwitchSceneLineResp.Parser.ParseFrom((await sw.WaitAsync(Wait)).Body).SceneEntry;
-            await LoadSceneAsync(scene);
+            var switched = await sw.WaitAsync(Wait);
+            long scene = inside ? await OnLoop(s => s.SceneEntry) : SwitchSceneLineResp.Parser.ParseFrom(switched.Body).SceneEntry;
+            if (!inside) await LoadSceneAsync(scene);
             inside = true;
             long instance = await OnLoop(s => s.InstanceId);
             var until = DateTime.UtcNow + TimeSpan.FromSeconds(60);
@@ -975,8 +976,8 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
         int raised = 0;
         for (int i = 0; i < 400 && !TargetDone(task, index); i++)
         {
-            var (plan, str) = await OnLoop(s => (s.StatPlans.Info.CurPlanIndex,
-                s.StatPlans.Info.AllPlanBaseProperty[s.StatPlans.Info.CurPlanIndex].BaseProperty.GetValueOrDefault(1, 1)));
+            var (plan, str) = await OnLoop(s => (s.Profile.StatPlans.Info.CurPlanIndex,
+                s.Profile.StatPlans.Info.AllPlanBaseProperty[s.Profile.StatPlans.Info.CurPlanIndex].BaseProperty.GetValueOrDefault(1, 1)));
             var reply = await RequestAsync(CharacterService.AllocateAttrPoints,
                 new AllocateAttrPointReq { PlanIndex = plan, Points = { [1] = str + 1 } }, AllocateAttrPointRsp.Parser);
             if (reply.Result == 0) { raised++; continue; }
@@ -1066,12 +1067,5 @@ public sealed class StoryWalkTests(ITestOutputHelper output) : IAsyncLifetime
             }
         }
         return regions;
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

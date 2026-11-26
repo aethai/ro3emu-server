@@ -6,8 +6,9 @@ for behavior that needs discussion, especially when the original server's rule i
 
 ## Set up and check a change
 
-Use the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). From a PowerShell terminal in the repository
-root, these checks work without the game client:
+Use the [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) and the ASP.NET Core
+[.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0): the projects target .NET 10, and their tests and
+tools run on it. From a PowerShell terminal in the repository root, these checks work without the game client:
 
 ```powershell
 dotnet build src/Ro3Emu.Server/Ro3Emu.Server.csproj -c Release
@@ -35,7 +36,7 @@ Before you push, run:
 dotnet format whitespace --folder
 ```
 
-Use the SDK feature band that `global.json` pins (10.0.4xx): other bands lay out some statements differently and
+Use the SDK feature band that `global.json` pins (11.0.1xx): other bands lay out some statements differently and
 would reformat unrelated files, and they count some analyzer rules differently. CI checks the analyzer baseline in
 `.editorconfig` with `dotnet run --project tools/AnalyzerBaseline -c Release`; when an SDK update changes a count, the
 check prints the new numbers to write.

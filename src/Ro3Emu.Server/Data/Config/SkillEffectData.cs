@@ -15,9 +15,45 @@ public readonly record struct SkillEffectData(JsonElement Row)
     public static SkillEffectData? Find(IReadOnlyDictionary<string, JsonElement> effects, long id) =>
         effects.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var row) ? new SkillEffectData(row) : null;
 
+    /// <summary>
+    /// A heal's show point: the heal's own effect without the flinch. LC_DamageHelper.ShowHitDisplay flinches only on
+    /// the point's m_kActionDamge.m_kAni (<see cref="Flinches"/>) and plays m_kGfxList / m_kAudioList whatever the
+    /// damage type, so DamageType.Heal stops no flinch, and a point with no m_kAni keeps the heal's gfx and sound (pet
+    /// heals Alice 2351103, Mavka 2348107, Yaogun 2356304). EffectData show * 1000 + 800 holds a heal's own effect
+    /// (Heal 14007800, Sanctuary 14115800; an inferred family), else <paramref name="hitPoint"/> (the show's hit
+    /// point) stays. A point with m_kAni gives way to the show's first hit reaction without one (Precise Treatment
+    /// 2314108 to 2314110), else none, as the hit fallback 1000002 plays ReceivingDamage.
+    /// </summary>
+    public static long HealPoint(IReadOnlyDictionary<string, JsonElement> effects, long scriptShow, long hitPoint)
+    {
+        long own = scriptShow * 1000 + 800;
+        if (Find(effects, own) is { HasHitReaction: true, Flinches: false }) return own;
+        if (Find(effects, hitPoint) is not { Flinches: true }) return hitPoint;
+        for (long id = scriptShow * 100; id < scriptShow * 100 + 100; id++)
+            if (Find(effects, id) is { HasHitReaction: true, Flinches: false }) return id;
+        return 0;
+    }
+
     /// <summary>Whether a skill template (data/skills/skill_&lt;show&gt;.json) launches its own client effects
     /// (m_kClientPoints, played from the cast's timeline by LC_Skill_RunTimeContext.PlayClientEffect).</summary>
     public static bool HasClientPoints(JsonElement template) => template.TryGetProperty("m_kClientPoints", out _);
+
+    /// <summary>How long a ground warning this effect holds is drawn (m_kPoint.m_kWarningRange.m_fDuration), or null with none.</summary>
+    public static double? WarningSeconds(JsonElement row) => row.TryGetProperty("m_kPoint", out var point) && point.TryGetProperty("m_kWarningRange", out var warning)
+        ? warning.TryGetProperty("m_fDuration", out var seconds) && seconds.TryGetDouble(out double value) ? value : 0 : null;
+
+    private JsonElement? MovementPoint => Row.TryGetProperty("m_kPoint", out var point) && point.ValueKind == JsonValueKind.Object
+        && point.TryGetProperty("m_bMovement", out var moves) && moves.ValueKind == JsonValueKind.True ? point : null;
+
+    /// <summary>A displacement row (m_kPoint.m_bMovement), the only kind LC_PerformEffect_Agent.SkillStartMove moves a unit by.</summary>
+    public bool IsMovement => MovementPoint != null;
+
+    /// <summary>The displacement's m_kPoint.m_iMovementTime (ms), the client's own time when a 31112 names none; 0 without one.</summary>
+    public int MovementMs => MovementPoint is { } point && point.TryGetProperty("m_iMovementTime", out var ms) && ms.TryGetInt32(out int t) ? t : 0;
+
+    /// <summary>The displacement's m_kPoint.m_fHeight (m), the rise _customizeBattleAnim adds along m_kHeightCurveName to
+    /// a move that is not enum_SkillMoveType.Move3D; 0 without one.</summary>
+    public float MovementHeight => MovementPoint is { } point && point.TryGetProperty("m_fHeight", out var h) && h.TryGetSingle(out float m) ? m : 0;
 
     private JsonElement? Damage => Row.TryGetProperty("m_kDamage", out var damage) ? damage : null;
 
@@ -27,9 +63,28 @@ public readonly record struct SkillEffectData(JsonElement Row)
     /// <summary>The row has a damage part (a hit reaction, a bullet or both).</summary>
     public bool HasDamage => Damage != null;
 
+    private JsonElement? HitReaction => Damage is { ValueKind: JsonValueKind.Object } damage
+        && damage.TryGetProperty("m_kActionDamge", out var reaction) && reaction.ValueKind == JsonValueKind.Object ? reaction : null;
+
     /// <summary>The damage part plays a hit reaction (hit fx, flinch, hit sound).</summary>
-    public bool HasHitReaction => Damage is { ValueKind: JsonValueKind.Object } damage
-        && damage.TryGetProperty("m_kActionDamge", out _);
+    public bool HasHitReaction => HitReaction != null;
+
+    /// <summary>
+    /// The hit reaction makes the target flinch: LC_DamageHelper.ShowHitDisplay enters enum_State.Hit only when
+    /// m_kActionDamge.m_kAni is set (EnterState(Hit, m_kAni)); its gfx and sound come from m_kGfxList / m_kAudioList
+    /// whatever the hit's damage type.
+    /// </summary>
+    public bool Flinches => HitReaction is { } reaction && reaction.TryGetProperty("m_kAni", out _);
+
+    /// <summary>The hit reaction draws something on the unit: an effect prefab (m_kGfxList) or a fresnel flash
+    /// (m_kFresnelEffectData.m_iFresnelEffectId). A reaction with neither (Maximum Over Thrust's 1620402) shows nothing.</summary>
+    public bool HasHitVisual => Damage is { ValueKind: JsonValueKind.Object } damage
+        && damage.TryGetProperty("m_kActionDamge", out var reaction) && reaction.ValueKind == JsonValueKind.Object
+        && (reaction.TryGetProperty("m_kGfxList", out var gfx) && gfx.ValueKind == JsonValueKind.Array
+                && gfx.EnumerateArray().Any(g => g.ValueKind == JsonValueKind.Object && g.TryGetProperty("m_kGfxName", out var name)
+                    && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 })
+            || reaction.TryGetProperty("m_kFresnelEffectData", out var flash) && flash.ValueKind == JsonValueKind.Object
+                && flash.TryGetProperty("m_iFresnelEffectId", out var id) && id.TryGetInt64(out long value) && value > 0);
 
     /// <summary>The bullet's prefab name, or null when the row flies none.</summary>
     public string? BulletName => Bullet is { } bullet && bullet.TryGetProperty("m_kBulletName", out var name)

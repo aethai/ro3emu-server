@@ -66,11 +66,11 @@ public sealed partial class MapTests
             { if (m.Uid == uid) phases.Add("published"); return Task.CompletedTask; };
             Func<MonsterUnit, Task> finalizer = m =>
             { if (m.Uid == uid) { phases.Add("finalized"); finalized.TrySetResult(); } return Task.CompletedTask; };
-            combat.EventDamageRecorded.Add(damage);
-            combat.BeforeLethalPublication.Add(eventBarrier);
-            combat.BeforeKilled.Add(rewardBarrier);
-            combat.Killed.Add(published);
-            combat.AfterLethalPublication.Add(finalizer);
+            using var damageSub = combat.EventDamageRecorded.Subscribe(damage);
+            using var eventSub = combat.BeforeLethalPublication.Subscribe(eventBarrier);
+            using var rewardSub = combat.BeforeKilled.Subscribe(rewardBarrier);
+            using var publishedSub = combat.Killed.Subscribe(published);
+            using var finalizerSub = combat.AfterLethalPublication.Subscribe(finalizer);
             try
             {
                 await SwingWait.UntilDoneAsync(_app.Services.GetRequiredService<GameLoop>(), _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null), uid);
@@ -88,11 +88,6 @@ public sealed partial class MapTests
             finally
             {
                 reward.ResolveKillForTest = null;
-                combat.EventDamageRecorded.Remove(damage);
-                combat.BeforeLethalPublication.Remove(eventBarrier);
-                combat.BeforeKilled.Remove(rewardBarrier);
-                combat.Killed.Remove(published);
-                combat.AfterLethalPublication.Remove(finalizer);
             }
         }
     }

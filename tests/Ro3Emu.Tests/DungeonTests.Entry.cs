@@ -96,7 +96,7 @@ public sealed partial class DungeonTests
             // the current fallback swing is lethal after an intentional pull, never on arrival.
             Assert.True(Assert.Single(retaliation.Dsts).IsDead);
             Assert.Equal((DungeonRes)2, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
-            Assert.Empty(Session(alice).Dungeons!.Records);
+            Assert.Empty(Session(alice).Instances.Dungeons!.Records);
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(DungeonService.AwardNotify));
         }
         else
@@ -107,7 +107,7 @@ public sealed partial class DungeonTests
             var award = await Next(alice, DungeonService.AwardNotify, SyncMultiDungeonAwardNotify.Parser);
             Assert.InRange(award.PassTime, 3000, 30_000); // Duration remains milliseconds.
             Assert.Equal(100, Items(alice, 1250900));
-            Assert.Single(Session(alice).Dungeons!.Records);
+            Assert.Single(Session(alice).Instances.Dungeons!.Records);
         }
         await alice.SendGameAsync(DungeonService.Leave, new LeaveDungeonReq());
         Assert.Equal(0, (await Next(alice, DungeonService.Leave, LeaveDungeonRsp.Parser)).Result);
@@ -126,7 +126,7 @@ public sealed partial class DungeonTests
                 self.Base.Property.Single(p => p.Idx == 2001).Data);
             await Next(alice, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
                 n => !n.BDead && n.SceneEntry == outside.SceneEntry);
-            Assert.Empty(Session(alice).Dungeons!.Records);
+            Assert.Empty(Session(alice).Instances.Dungeons!.Records);
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(DungeonService.AwardNotify));
         }
         Assert.False(Session(alice).Dead);

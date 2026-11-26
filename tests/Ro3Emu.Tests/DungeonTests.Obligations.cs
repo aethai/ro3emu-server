@@ -26,8 +26,7 @@ public sealed partial class DungeonTests
             if (ReferenceEquals(monster, actor)) staged.TrySetResult();
             return Task.CompletedTask;
         };
-        var hooks = Service<CombatService>().BeforeKilled;
-        hooks.Insert(hooks.FindIndex(h => h.Target is RewardService), stageNotice);
+        using var stageSub = Service<CombatService>().BeforeKilled.Subscribe(stageNotice, order: -1);
         FixtureSql.Execute(Service<AccountStore>(), """
             CREATE TRIGGER fail_terminal_kill BEFORE INSERT ON operation_receipt
             WHEN NEW.command_kind='monster-kill' BEGIN SELECT RAISE(ABORT, 'kill receipt fault'); END
@@ -56,7 +55,6 @@ public sealed partial class DungeonTests
         }
         finally
         {
-            hooks.Remove(stageNotice);
             FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_terminal_kill");
         }
     }
@@ -96,7 +94,7 @@ public sealed partial class DungeonTests
         Assert.Equal(100, Items(recovered, 1250900));
         Assert.Equal(90000, Currency(recovered, 2));
         Assert.Empty(Service<DungeonObligationStore>().Pending((long)recovered.Self!.Uuid));
-        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(recovered).Dungeons!.Statistics[room]);
+        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(recovered).Instances.Dungeons!.Statistics[room]);
         Assert.Equal(liveDamage, report.SceneStatistics[room].RoleStatistics[(long)recovered.Self.Uuid].TotalDamage);
         await OnLoop(() => Service<DungeonService>().DeliverPendingAsync(Session(recovered)));
         Assert.Equal(100, Items(recovered, 1250900));
@@ -252,7 +250,7 @@ public sealed partial class DungeonTests
         var request = new EnterDungeonReq { SceneEntry = story };
         string original = Service<GameData>().Row("DungeonConfig", story)!.Value
             .GetProperty("_kResSceneEditorName").GetString()!;
-        string source = Path.Combine(RepoRoot(), "data", "sceneeditor", original + ".json");
+        string source = Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", original + ".json");
         string directory = Path.Combine(_dataDir, "sceneeditor");
         Directory.CreateDirectory(directory);
         string stem = Path.Combine(directory, "synthetic_aoe_1054001");
@@ -311,7 +309,7 @@ public sealed partial class DungeonTests
         Assert.Equal(2, hit.Dsts.Count(d => actors.Any(actor => d.DstID == actor.Uid && d.IsDead)));
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
         Assert.Equal(1, EarnedSourceCount(room));
-        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Dungeons!.Statistics[room]);
+        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Instances.Dungeons!.Statistics[room]);
         var stats = report.SceneStatistics[room].RoleStatistics[(long)alice.Self!.Uuid];
         Assert.Equal(2, stats.KillNpcData[5300036].LongValue);
         Assert.Equal(hit.Dsts.Where(d => actors.Any(actor => d.DstID == actor.Uid)).Sum(d => d.Damage),
@@ -392,7 +390,7 @@ public sealed partial class DungeonTests
         Assert.Equal(2, EarnedSourceCount(room));
         foreach (var actor in actors)
             Assert.True(await Service<CharacterService>().RewardSourceCommittedAsync(actor.RewardSource!.Key));
-        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Dungeons!.Statistics[room]);
+        var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Instances.Dungeons!.Statistics[room]);
         Assert.Equal(1, report.SceneStatistics[room].RoleStatistics[(long)alice.Self!.Uuid]
             .KillNpcData[5300036].LongValue);
         Assert.Equal(1, report.SceneStatistics[room].RoleStatistics[(long)bob.Self!.Uuid]
@@ -446,6 +444,6 @@ public sealed partial class DungeonTests
         Assert.Empty(Service<DungeonObligationStore>().Pending(role));
         Assert.Single(Service<DungeonObligationStore>().FrozenRoom(room));
         Assert.Equal(0, Items(recovered, 1250900));
-        Assert.DoesNotContain(Session(recovered).Dungeons!.Records.Values, record => record.Passed);
+        Assert.DoesNotContain(Session(recovered).Instances.Dungeons!.Records.Values, record => record.Passed);
     }
 }

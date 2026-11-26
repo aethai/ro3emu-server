@@ -22,7 +22,7 @@ internal sealed class TerritorySchemaPlan(RealmStateKind kind) : DbPlan
                 "CREATE TABLE IF NOT EXISTS territory_escort(id INTEGER PRIMARY KEY CHECK(id=1),state BLOB NOT NULL)",
             RealmStateKind.GuildLeague =>
                 "CREATE TABLE IF NOT EXISTS guild_league(id INTEGER PRIMARY KEY CHECK(id=1),state BLOB NOT NULL)",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+            _ => throw new InvalidOperationException("Unsupported realm state kind.")
         };
         using var cmd = DbSql.Command(db, tx, sql);
         int changed = cmd.ExecuteNonQuery();
@@ -60,7 +60,7 @@ internal sealed class TerritoryRealmReadPlan(RealmStateKind kind) : DbReadPlan
             RealmStateKind.TerritoryWars => "territory_wars",
             RealmStateKind.TerritoryEscort => "territory_escort",
             RealmStateKind.GuildLeague => "guild_league",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+            _ => throw new InvalidOperationException("Unsupported realm state kind.")
         };
         using var cmd = DbSql.Command(db, tx, $"SELECT state FROM {table} WHERE id=1");
         return cmd.ExecuteScalar() is byte[] bytes ? (byte[])bytes.Clone() : null;

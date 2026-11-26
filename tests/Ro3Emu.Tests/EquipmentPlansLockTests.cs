@@ -25,7 +25,7 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -38,7 +38,6 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -206,18 +205,18 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         long dagger = Stored(alice).Single(i => i.Entry == Dagger).Guid;
         await Equip(alice, dagger, 1);
-        await OnLoop(s => { s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1] = long.MaxValue; return Task.CompletedTask; });
+        await OnLoop(s => { s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1] = long.MaxValue; return Task.CompletedTask; });
         await Switch(alice, 1, ErrorCodes.ItemMissing);
         await OnLoop(s =>
         {
-            var grid = s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid;
+            var grid = s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid;
             grid[1] = dagger;
             grid[2] = dagger;
             return Task.CompletedTask;
         });
         await Switch(alice, 1, ErrorCodes.EquipSlot);
         Assert.Equal(1, Stored(alice).Single(i => i.Guid == dagger).Grid);
-        await OnLoop(s => { s.EquipmentPlans.EquipPlans[1].ItemsEquipGrid.Clear(); return Task.CompletedTask; });
+        await OnLoop(s => { s.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid.Clear(); return Task.CompletedTask; });
         await Gm($"!item {Shirt} 99"); // shirt already in bag: 100 occupied gear cells
         await Switch(alice, 1, ErrorCodes.BagFull);
         Assert.Equal(0, StoredPlans(alice).CurrentEquipPlan);
@@ -396,13 +395,6 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         var cards = Stored(alice).Where(i => i.Entry == Lunatic).ToArray();
         Assert.Equal(1, cards.Single(i => i.IsLocked).Stack);
         Assert.Equal(2, cards.Single(i => !i.IsLocked).Stack);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

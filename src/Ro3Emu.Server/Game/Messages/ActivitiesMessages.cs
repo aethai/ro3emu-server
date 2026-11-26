@@ -1,209 +1,119 @@
-#pragma warning disable CS1998 // arms that only send or return keep the uniform async shape
-using Google.Protobuf;
 using Romsg;
+using Ro3Emu.Server.Game.Messaging;
 
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Dungeons, the tower, daily and timed activities, festivals, training, lottery, AFK and build plans.</summary>
-public sealed class ActivitiesMessages(PraiseService praise, CasualBattleService casual, DailyActivityService daily, TowerService tower, ValhallaService valhalla, FlyingDragonService dragon, MonsterHuntService monsterHunt, FirstHeartService firstHeart, DungeonService dungeons, DungeonMatchService dungeonMatches, WildAfkService afk, NewActivityService activities, TimedEventService timedEvents, TimedBattleService timedBattles, FestivalService festival, TrainingService training, LotteryService lottery, GenreService genre, GuildHuntingService hunting) : Messaging.IMessageModule
+public sealed class ActivitiesMessages(
+    PraiseService praise,
+    CasualBattleService casual,
+    DailyActivityService daily,
+    TowerService tower,
+    ValhallaService valhalla,
+    FlyingDragonService dragon,
+    MonsterHuntService monsterHunt,
+    FirstHeartService firstHeart,
+    DungeonService dungeons,
+    DungeonMatchService dungeonMatches,
+    WildAfkService afk,
+    NewActivityService activities,
+    TimedEventService timedEvents,
+    TimedBattleService timedBattles,
+    FestivalService festival,
+    TrainingService training,
+    LotteryService lottery,
+    GenreService genre,
+    GuildHuntingService hunting) : IMessageModule
 {
     private const uint SetAutoBattle = 31054;
 
-    public void Map(Messaging.MessageRoutes routes)
+    public void Map(MessageRoutes routes)
     {
-        routes.AdmitEconomic(id => id is >= 82800 and <= 82828); // genre build plans
-        routes.AdmitRole(id => id is NewActivityService.PassPanelMsg); // marks the session and syncs its own 5027
-        routes.Map(NewActivityService.PassPanelMsg, "pass", (session, _, _) => activities.PassPanelAsync(session));
-        routes.AdmitEconomic(id => id is >= 84061 and <= 84067); // training
-        routes.AdmitEconomic(id => id is LotteryService.DrawRequest);
         routes.AdmitEconomic((_, id, body) => activities.IsOfflineOwnerRequest(id, body) || activities.IsEventOwnerRequest(id, body));
         routes.AdmitEconomic((_, id, body) => festival.IsOwnerRequest(id, body));
         routes.AdmitEconomic(timedEvents.IsOwnerRequest);
         routes.AdmitEconomic(IsTimedBattleOwnerRequest);
         routes.AdmitEconomic(training.IsOwnerRequest);
-        // A solo private floor (its return position, room and handoff); as Realm p99 1.2 s at 500 players.
-        // Valhalla Trials: a layer starts a solo private dungeon like a tower floor; a Blessing spends coins.
-        routes.AdmitRole(id => id is ValhallaService.Challenge);
-        routes.AdmitEconomic(id => id is ValhallaService.Pray);
-        // Monster Hunt stage claims pay their awards.
-        routes.AdmitEconomic(id => id is MonsterHuntService.GainAreaAward or MonsterHuntService.GainMonsterAward);
-        // Seven-Day Goal task and score claims pay their awards.
-        routes.AdmitEconomic(id => id is FirstHeartService.GetTaskReward or FirstHeartService.GetScoreReward);
-        routes.AdmitRole(id => id is TowerService.Info or TowerService.SetPets or TowerService.FirstPassRange
-            or TowerService.ClaimFirstPass or TowerService.Sweep or TowerService.End or TowerService.Start);
-        routes.AdmitRole(id => id is DungeonService.SetJobPosition or DungeonService.SetGuide or DungeonService.ClaimFirstPass
-            or DungeonService.Statistics or DungeonService.StatisticsHistory or DungeonService.StatisticsCurrent
-            or DungeonService.StatisticsModule or DungeonService.QueryResult
-            or DungeonService.HallOfFame or DungeonService.MarkBlessings or PraiseService.Praise);
-        // Final Trial honor claims pay their awards (DungeonService.RealmOfGods reserves the role and the claim).
-        routes.AdmitEconomic(id => id is DungeonService.ClaimHonor);
 
-        routes.Map(82800, "genre", async (session, msgId, body) =>
+        MapGenre(routes);
+        MapActivities(routes);
+        MapMatchesAndTimedBattles(routes);
+        MapDailyAndDungeons(routes);
+        MapTowerAndAfk(routes);
+    }
+
+    private void MapGenre(MessageRoutes routes)
+    {
+        void MapOwn<TReq>(uint id, Func<GameSession, TReq, Task> fn, Func<TReq, long>? peer = null)
+            where TReq : Google.Protobuf.IMessage<TReq>, new() =>
+            routes.Map<TReq>(id, "genre", RouteAdmission.Economic,
+                (s, r) => genre.RunOwnedAsync(s, () => fn(s, r), peer?.Invoke(r) ?? 0, codes: false));
+
+        routes.Map(GenreService.Seek, "genre", RouteAdmission.Economic, s => genre.RunOwnedAsync(s, () => genre.SeekAsync(s), 0, codes: true));
+        MapOwn<GenreResponserReq>(GenreService.Respond, genre.RespondAsync, r => r.SeekUserId);
+        MapOwn<GenreResponserSendPlanReq>(GenreService.SendPlan, genre.SendRecommendationAsync, r => r.SeekUserId);
+        MapOwn<GenreResponserSaveReq>(GenreService.SaveRec, genre.SaveRecommendationAsync, r => r.SeekUserId);
+        MapOwn<GenreResponserDeleteReq>(GenreService.DeleteRec, genre.DeleteRecommendationAsync, r => r.SeekerUserId);
+        MapOwn<GenreSeekerDeleteReq>(GenreService.DeleteSeeker, genre.DeleteSeekerAsync, r => r.ResponseUserId);
+        MapOwn<SwitchGenrePlanReq>(GenreService.SwitchPlan, genre.SwitchAsync);
+        routes.Map(GenreService.Code, "genre", RouteAdmission.Economic, s => genre.RunOwnedAsync(s, () => genre.CodeAsync(s), 0, codes: true));
+        routes.Map(GenreService.MyRecs, "genre", RouteAdmission.Economic, s => genre.RunOwnedAsync(s, () => genre.MyRecommendationsAsync(s), 0, codes: false));
+        MapOwn<GenreGetAllOtherRecommendReq>(GenreService.Others, genre.OthersAsync, r => r.ResponseUserID);
+        MapOwn<GenreGetMyRecConcretePlanReq>(GenreService.Concrete, genre.ConcreteAsync, r => r.SeekerUserId);
+        MapOwn<GenreSeekerApplyPlanReq>(GenreService.ApplyRec, genre.ApplyRecommendationAsync, r => r.ResponseUserId);
+        MapOwn<GenreChangePlanNameReq>(GenreService.RenamePlan, genre.RenameAsync);
+        MapOwn<GenreGetPlanPropertyReq>(GenreService.Property, genre.PropertyAsync);
+        MapOwn<GenreResponserNameSaveReq>(GenreService.RenameRec, genre.RenameRecommendationAsync, r => r.SeekUserId);
+        MapOwn<GenrePlanPowerReq>(GenreService.PlanPower, genre.PowerAsync);
+        routes.Map(GenreService.Season, "genre", RouteAdmission.Economic, s => genre.RunOwnedAsync(s, () => genre.SeasonAsync(s), 0, codes: false));
+        MapOwn<GenreAttrSettingSchoolReq>(GenreService.School, genre.SchoolAsync);
+        routes.Map(GenreService.QueryRecs, "genre", RouteAdmission.Economic, s => genre.RunOwnedAsync(s, () => genre.QueryRecommendationsAsync(s), 0, codes: false));
+        routes.Map<GenreResponseCodeReq>(GenreService.RespondCode, "genre", RouteAdmission.Economic, genre.RespondCodeRequestAsync);
+    }
+
+    private void MapActivities(MessageRoutes routes)
+    {
+        routes.Map(NewActivityService.PassPanelMsg, "pass", RouteAdmission.Role, activities.PassPanelAsync);
+        routes.Map(NewActivityService.GetList, "activities", RouteAdmission.Default, activities.ListAsync);
+        routes.Map<NewActivityGetRewardCommonReq>(NewActivityService.GetReward, "activities", RouteAdmission.Default, activities.ClaimAsync);
+        routes.Map<CommonActivityReq>(NewActivityService.Common, "activities", RouteAdmission.Default, activities.CommonAsync);
+        routes.Map<CreateOrderReq>(NewActivityService.CreateOrder, "activities", RouteAdmission.Default, activities.CreateOrderAsync);
+        routes.Map<PayResultReq>(NewActivityService.PayResult, "activities", RouteAdmission.Default, activities.PayResultAsync);
+        routes.Map(NewActivityService.FirstRechargeAward, "activities", RouteAdmission.Default, activities.FirstRechargeAwardsAsync);
+        routes.Map(NewActivityService.FirstRechargeUpdate, "activities", RouteAdmission.Default, _ => { });
+        routes.Map<GetThreeDayLevelAwardReq>(NewActivityService.LevelAward, "activities", RouteAdmission.Default, activities.LevelAwardAsync);
+        routes.Map<GetThreeDayFunctionPreviewAwardReq>(NewActivityService.FunctionPreviewAward, "activities", RouteAdmission.Default, activities.FunctionPreviewAsync);
+        routes.Map<NewActivityPreSubmitItemReq>(NewActivityService.PreSubmit, "activities", RouteAdmission.Default, activities.PreSubmitAsync);
+        routes.Map<NewActivityPreGetDataReq>(NewActivityService.PreGetData, "activities", RouteAdmission.Default, activities.PreGetDataAsync);
+        routes.Map<NewActivityPreReceiveRewardReq>(NewActivityService.PreReceive, "activities", RouteAdmission.Default, activities.PreReceiveAsync);
+        routes.Map<NewActivityFragmentGatherAskReq>(NewActivityService.FragmentAsk, "activities", RouteAdmission.Default, activities.FragmentAskAsync);
+        routes.Map<NewActivityFragmentGatherSendReq>(NewActivityService.FragmentSend, "activities", RouteAdmission.Default, activities.FragmentSendAsync);
+        routes.Map<NewActivityFragmentGatherCraftReq>(NewActivityService.FragmentCraft, "activities", RouteAdmission.Default, activities.FragmentCraftAsync);
+        routes.Map<NewActivityFragmentGatherProgressReq>(NewActivityService.FragmentProgress, "activities", RouteAdmission.Default, activities.FragmentProgressAsync);
+        routes.Map<NewActivityFragmentGatherAskFinishedReq>(NewActivityService.FragmentAskFinished, "activities", RouteAdmission.Default, activities.FragmentAskFinishedAsync);
+        routes.Map<WorldExplorationFillPhaseNodeReq>(NewActivityService.WorldFill, "activities", RouteAdmission.Default, activities.WorldFillAsync);
+        routes.Map<LotteryReq>(LotteryService.DrawRequest, "lottery", RouteAdmission.Economic, lottery.DrawAsync);
+        routes.Map(TrainingService.ChallengeMode, "training", RouteAdmission.Economic, s => training.ModeAsync(s, true));
+        routes.Map<TrainingAimAwardReq>(TrainingService.AimAward, "training", RouteAdmission.Economic, training.ClaimAsync);
+        routes.Map(TrainingService.ExitChallengeMode, "training", RouteAdmission.Economic, s => training.ModeAsync(s, false));
+        routes.Map<TrainingUpdateWoodNpcAttrReq>(TrainingService.UpdateWoodNpc, "training", RouteAdmission.Economic, training.UpdateAsync);
+        routes.Map(TrainingService.Reconnect, "training", RouteAdmission.Economic, s => training.ReconnectAsync(s, false));
+        routes.Map(TrainingService.ChallengeReconnect, "training", RouteAdmission.Economic, s => training.ReconnectAsync(s, true));
+        routes.Map(TrainingService.ChallengeReset, "training", RouteAdmission.Economic, training.ResetAsync);
+        routes.Map<ActivityReq>(TimedEventService.Common, "timedEvents", RouteAdmission.Default, timedEvents.CommonAsync);
+        routes.Map<ActivityDataUploadReq>(TimedEventService.Upload, "timedEvents", RouteAdmission.Default, timedEvents.UploadAsync);
+    }
+
+    private void MapMatchesAndTimedBattles(MessageRoutes routes)
+    {
+        routes.Map<StartMatchReq>(DungeonMatchService.StartMatch, "dungeonMatches", RouteAdmission.Default, async (session, startMatch) =>
         {
-            await genre.RunOwnedAsync(session, () => genre.SeekAsync(session), 0, codes: true);
-        });
-        routes.Map(82801, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreResponserReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.RespondAsync(session, request), request.SeekUserId, codes: false);
-        });
-        routes.Map(82802, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreResponserSendPlanReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.SendRecommendationAsync(session, request), request.SeekUserId, codes: false);
-        });
-        routes.Map(82803, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreResponserSaveReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.SaveRecommendationAsync(session, request), request.SeekUserId, codes: false);
-        });
-        routes.Map(82804, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreResponserDeleteReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.DeleteRecommendationAsync(session, request), request.SeekerUserId, codes: false);
-        });
-        routes.Map(82805, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreSeekerDeleteReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.DeleteSeekerAsync(session, request), request.ResponseUserId, codes: false);
-        });
-        routes.Map(82806, "genre", async (session, msgId, body) =>
-        {
-            var request = SwitchGenrePlanReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.SwitchAsync(session, request), 0, codes: false);
-        });
-        routes.Map(82807, "genre", async (session, msgId, body) =>
-        {
-            await genre.RunOwnedAsync(session, () => genre.CodeAsync(session), 0, codes: true);
-        });
-        routes.Map(82808, "genre", async (session, msgId, body) =>
-        {
-            await genre.RunOwnedAsync(session, () => genre.MyRecommendationsAsync(session), 0, codes: false);
-        });
-        routes.Map(82809, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreGetAllOtherRecommendReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.OthersAsync(session, request), request.ResponseUserID, codes: false);
-        });
-        routes.Map(82810, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreGetMyRecConcretePlanReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.ConcreteAsync(session, request), request.SeekerUserId, codes: false);
-        });
-        routes.Map(82813, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreSeekerApplyPlanReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.ApplyRecommendationAsync(session, request), request.ResponseUserId, codes: false);
-        });
-        routes.Map(82816, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreChangePlanNameReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.RenameAsync(session, request), 0, codes: false);
-        });
-        routes.Map(82823, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreGetPlanPropertyReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.PropertyAsync(session, request), 0, codes: false);
-        });
-        routes.Map(82824, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreResponserNameSaveReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.RenameRecommendationAsync(session, request), request.SeekUserId, codes: false);
-        });
-        routes.Map(82825, "genre", async (session, msgId, body) =>
-        {
-            var request = GenrePlanPowerReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.PowerAsync(session, request), 0, codes: false);
-        });
-        routes.Map(82826, "genre", async (session, msgId, body) =>
-        {
-            await genre.RunOwnedAsync(session, () => genre.SeasonAsync(session), 0, codes: false);
-        });
-        routes.Map(82827, "genre", async (session, msgId, body) =>
-        {
-            var request = GenreAttrSettingSchoolReq.Parser.ParseFrom(body.Span);
-            await genre.RunOwnedAsync(session, () => genre.SchoolAsync(session, request), 0, codes: false);
-        });
-        routes.Map(82828, "genre", async (session, msgId, body) =>
-        {
-            await genre.RunOwnedAsync(session, () => genre.QueryRecommendationsAsync(session), 0, codes: false);
-        });
-        routes.Map(82812, "genre", async (session, msgId, body) =>
-            await genre.RespondCodeRequestAsync(session, GenreResponseCodeReq.Parser.ParseFrom(body.Span)));
-        routes.Map(NewActivityService.GetList, "activities", async (session, msgId, body) =>
-        {
-            await activities.ListAsync(session);
-        });
-        routes.Map(NewActivityService.GetReward, "activities", async (session, msgId, body) =>
-        {
-            await activities.ClaimAsync(session, NewActivityGetRewardCommonReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(NewActivityService.Common, "activities", async (session, msgId, body) =>
-        {
-            await activities.CommonAsync(session, CommonActivityReq.Parser.ParseFrom(body.Span));
-        });
-        // The cash shop (MG_Pay): free products, NewActivityService.Purchases. 2004 is the server's notice only.
-        routes.Map(NewActivityService.CreateOrder, "activities", async (session, msgId, body) =>
-            await activities.CreateOrderAsync(session, CreateOrderReq.Parser.ParseFrom(body.Span)));
-        routes.Map(NewActivityService.PayResult, "activities", async (session, msgId, body) =>
-            await activities.PayResultAsync(session, PayResultReq.Parser.ParseFrom(body.Span)));
-        routes.Map(NewActivityService.FirstRechargeAward, "activities", async (session, msgId, body) =>
-            await activities.FirstRechargeAwardsAsync(session));
-        routes.Map(NewActivityService.FirstRechargeUpdate, "activities", async (session, msgId, body) => { });
-        routes.Map(NewActivityService.LevelAward, "activities", async (session, msgId, body) =>
-        {
-            await activities.LevelAwardAsync(session, GetThreeDayLevelAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(NewActivityService.FunctionPreviewAward, "activities", async (session, msgId, body) =>
-        {
-            await activities.FunctionPreviewAsync(session, GetThreeDayFunctionPreviewAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82960, "activities", async (session, msgId, body) =>
-        {
-            await activities.PreSubmitAsync(session, NewActivityPreSubmitItemReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82961, "activities", async (session, msgId, body) =>
-        {
-            await activities.PreGetDataAsync(session, NewActivityPreGetDataReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82962, "activities", async (session, msgId, body) =>
-        {
-            await activities.PreReceiveAsync(session, NewActivityPreReceiveRewardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82963, "activities", async (session, msgId, body) =>
-        {
-            await activities.FragmentAskAsync(session, NewActivityFragmentGatherAskReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82964, "activities", async (session, msgId, body) =>
-        {
-            await activities.FragmentSendAsync(session, NewActivityFragmentGatherSendReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82965, "activities", async (session, msgId, body) =>
-        {
-            await activities.FragmentCraftAsync(session, NewActivityFragmentGatherCraftReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82966, "activities", async (session, msgId, body) =>
-        {
-            await activities.FragmentProgressAsync(session, NewActivityFragmentGatherProgressReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82967, "activities", async (session, msgId, body) =>
-        {
-            await activities.FragmentAskFinishedAsync(session, NewActivityFragmentGatherAskFinishedReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(83450, "activities", async (session, msgId, body) =>
-        {
-            await activities.WorldFillAsync(session, WorldExplorationFillPhaseNodeReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(82681, "dungeonMatches", async (session, msgId, body) =>
-        {
-            var startMatch = StartMatchReq.Parser.ParseFrom(body.Span);
             if (dungeonMatches.WantsEntry(startMatch.MatchEntryId) || startMatch.MatchData?.MultiDungeon != null)
                 await dungeonMatches.StartMatchAsync(session, startMatch);
             else await timedBattles.StartMatchAsync(session, startMatch);
         });
-        routes.Map(82682, "dungeonMatches", async (session, msgId, body) =>
+        routes.Map<CancelMatchReq>(DungeonMatchService.CancelMatch, "dungeonMatches", RouteAdmission.Default, async (session, cancelMatch) =>
         {
-            var cancelMatch = CancelMatchReq.Parser.ParseFrom(body.Span);
             if (dungeonMatches.Owns(session) || dungeonMatches.WantsEntry(cancelMatch.MatchEntryId) || cancelMatch.MatchData?.MultiDungeon != null)
                 await dungeonMatches.CancelMatchAsync(session, cancelMatch);
             else if (await timedBattles.CancelMatchAsync(session, cancelMatch)
@@ -211,291 +121,105 @@ public sealed class ActivitiesMessages(PraiseService praise, CasualBattleService
                 await dungeonMatches.StartMatchAsync(session, new StartMatchReq
                 { MatchEntryId = cancelMatch.NextMatchEntry, MatchData = cancelMatch.NextMatchData?.Clone() });
         });
-        routes.Map(82637, "dungeonMatches", async (session, msgId, body) =>
+        routes.Map<MatchReadyReq>(DungeonMatchService.Ready, "dungeonMatches", RouteAdmission.Default, async (session, matchReady) =>
         {
-            var matchReady = MatchReadyReq.Parser.ParseFrom(body.Span);
             if (dungeonMatches.Owns(session) || dungeonMatches.WantsEntry(matchReady.MatchEntryId))
                 await dungeonMatches.ReadyAsync(session, matchReady);
             else await timedBattles.ReadyAsync(session, matchReady);
         });
-        routes.Map(82634, "dungeonMatches", async (session, msgId, body) =>
+        routes.Map<MatchReadyReminderReq>(DungeonMatchService.Reminder, "dungeonMatches", RouteAdmission.Default, dungeonMatches.RemindAsync);
+        routes.Map<DragonIslandClaimRankRewardReq>(TimedBattleService.DragonClaim, "timedBattles", RouteAdmission.Default, timedBattles.ClaimDragonAsync);
+        routes.Map<SelectRoleCareerReq>(TimedBattleService.SelectCareer, "timedBattles", RouteAdmission.Default, timedBattles.SelectCareerAsync);
+        routes.Map<SelectRolePositionReq>(TimedBattleService.SelectPosition, "timedBattles", RouteAdmission.Default, timedBattles.SelectPositionAsync);
+        routes.Map<InsertChickenItemReq>(TimedBattleService.InsertItem, "timedBattles", RouteAdmission.Default, timedBattles.InsertAsync);
+        routes.Map<UseChickenItemReq>(TimedBattleService.UseItem, "timedBattles", RouteAdmission.Default, timedBattles.UseAsync);
+        routes.Map<DiscardChickenItemReq>(TimedBattleService.DiscardItem, "timedBattles", RouteAdmission.Default, timedBattles.DiscardAsync);
+        routes.Map<PickUpChickenItemReq>(TimedBattleService.PickupItem, "timedBattles", RouteAdmission.Default, timedBattles.PickupAsync);
+        routes.Map<PickUpAllChickenItemReq>(TimedBattleService.PickupAll, "timedBattles", RouteAdmission.Default, timedBattles.PickupAllAsync);
+        routes.Map(TimedBattleService.ForceDead, "timedBattles", RouteAdmission.Default, timedBattles.ForceDeadAsync);
+        routes.Map(TimedBattleService.StartRevive, "timedBattles", RouteAdmission.Default, timedBattles.StartReviveAsync);
+        routes.Map<ChickenRelifeReq>(TimedBattleService.Relife, "timedBattles", RouteAdmission.Default, timedBattles.RelifeAsync);
+        routes.Map<ChickenRelifeOtherReq>(TimedBattleService.RelifeOther, "timedBattles", RouteAdmission.Default, timedBattles.RelifeOtherAsync);
+        routes.Map<ChickenItemUpgradeReq>(TimedBattleService.ItemUpgrade, "timedBattles", RouteAdmission.Default, timedBattles.UpgradeAsync);
+        routes.Map(TimedBattleService.ItemUpgradeAll, "timedBattles", RouteAdmission.Default, timedBattles.UpgradeAllAsync);
+        routes.Map<AdventureEventSelectReq>(TimedBattleService.AdventureSelect, "timedBattles", RouteAdmission.Default, timedBattles.SelectAdventureAsync);
+        routes.Map<AdventureRefreshReq>(TimedBattleService.AdventureRefresh, "timedBattles", RouteAdmission.Default, timedBattles.RefreshAdventureAsync);
+        routes.Map<SelectFollowReq>(TimedBattleService.SelectFollow, "timedBattles", RouteAdmission.Default, timedBattles.SelectFollowAsync);
+        routes.Map<ChickenChangeWatchPlayerReq>(TimedBattleService.ChangeWatch, "timedBattles", RouteAdmission.Default, timedBattles.ChangeWatchAsync);
+        routes.Map<ChickenOpenPanelReq>(TimedBattleService.OpenPanel, "timedBattles", RouteAdmission.Default, timedBattles.OpenPanelAsync);
+        routes.Map<HiddenTreasureRoundInfoReq>(TimedBattleService.OnePieceInfo, "timedBattles", RouteAdmission.Default, timedBattles.OnePieceInfoAsync);
+    }
+
+    private void MapDailyAndDungeons(MessageRoutes routes)
+    {
+        routes.Map<TeamConfirmRemindersReq>(DungeonService.ConfirmReminder, "dungeons", RouteAdmission.Default, async (session, remind) =>
         {
-            await dungeonMatches.RemindAsync(session, MatchReadyReminderReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(84071, "timedBattles", async (session, msgId, body) =>
-        {
-            await timedBattles.ClaimDragonAsync(session, DragonIslandClaimRankRewardReq.Parser.ParseFrom(body.Span));
-        });
-        // Survivor Battle inside the match (TimedBattleService.Chicken*): careers, landing, items, revival, giving up.
-        routes.Map(TimedBattleService.SelectCareer, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.SelectCareerAsync(session, SelectRoleCareerReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.SelectPosition, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.SelectPositionAsync(session, SelectRolePositionReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.InsertItem, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.InsertAsync(session, InsertChickenItemReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.UseItem, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.UseAsync(session, UseChickenItemReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.DiscardItem, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.DiscardAsync(session, DiscardChickenItemReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.PickupItem, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.PickupAsync(session, PickUpChickenItemReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.PickupAll, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.PickupAllAsync(session, PickUpAllChickenItemReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.ForceDead, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.ForceDeadAsync(session));
-        routes.Map(TimedBattleService.StartRevive, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.StartReviveAsync(session));
-        routes.Map(TimedBattleService.Relife, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.RelifeAsync(session, ChickenRelifeReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.RelifeOther, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.RelifeOtherAsync(session, ChickenRelifeOtherReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.ItemUpgrade, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.UpgradeAsync(session, ChickenItemUpgradeReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.ItemUpgradeAll, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.UpgradeAllAsync(session));
-        routes.Map(TimedBattleService.AdventureSelect, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.SelectAdventureAsync(session, AdventureEventSelectReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.AdventureRefresh, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.RefreshAdventureAsync(session, AdventureRefreshReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.SelectFollow, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.SelectFollowAsync(session, SelectFollowReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.ChangeWatch, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.ChangeWatchAsync(session, ChickenChangeWatchPlayerReq.Parser.ParseFrom(body.Span)));
-        routes.Map(TimedBattleService.OpenPanel, "timedBattles", async (session, msgId, body) =>
-            await timedBattles.OpenPanelAsync(session, ChickenOpenPanelReq.Parser.ParseFrom(body.Span)));
-        routes.Map(83351, "timedBattles", async (session, msgId, body) =>
-        {
-            await timedBattles.OnePieceInfoAsync(session, HiddenTreasureRoundInfoReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(83410, "lottery", async (session, msgId, body) =>
-        {
-            await lottery.DrawAsync(session, LotteryReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TrainingService.ChallengeMode, "training", async (session, msgId, body) =>
-        {
-            await training.ModeAsync(session, true);
-        });
-        routes.Map(TrainingService.AimAward, "training", async (session, msgId, body) =>
-        {
-            await training.ClaimAsync(session, TrainingAimAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TrainingService.ExitChallengeMode, "training", async (session, msgId, body) =>
-        {
-            await training.ModeAsync(session, false);
-        });
-        routes.Map(TrainingService.UpdateWoodNpc, "training", async (session, msgId, body) =>
-        {
-            await training.UpdateAsync(session, TrainingUpdateWoodNpcAttrReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TrainingService.Reconnect, "training", async (session, msgId, body) =>
-        {
-            await training.ReconnectAsync(session, false);
-        });
-        routes.Map(TrainingService.ChallengeReconnect, "training", async (session, msgId, body) =>
-        {
-            await training.ReconnectAsync(session, true);
-        });
-        routes.Map(TrainingService.ChallengeReset, "training", async (session, msgId, body) =>
-        {
-            await training.ResetAsync(session);
-        });
-        routes.Map(TimedEventService.Common, "timedEvents", async (session, msgId, body) =>
-        {
-            await timedEvents.CommonAsync(session, ActivityReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TimedEventService.Upload, "timedEvents", async (session, msgId, body) =>
-        {
-            await timedEvents.UploadAsync(session, ActivityDataUploadReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(42047, "dungeons", async (session, msgId, body) =>
-        {
-            var remind = TeamConfirmRemindersReq.Parser.ParseFrom(body.Span);
             if (!await timedBattles.TryRemindRiftAsync(session, remind)) await dungeons.RemindAsync(session, remind);
         });
-        routes.Map(DailyActivityService.RingAccept, "festival", async (session, msgId, body) =>
+        routes.Map<CommonDailyActivityReq>(DailyActivityService.RingAccept, "festival", RouteAdmission.Default, async (session, dailyRequest) =>
         {
-            var dailyRequest = CommonDailyActivityReq.Parser.ParseFrom(body.Span);
             if (dailyRequest.RainbowKoiBet != null) await festival.BetAsync(session, dailyRequest);
-            // Branch 200 gveHuntingQueryResult (MG_Activity.proto:310) is the Hunting Challenge's, not the Ring's.
             else if (dailyRequest.GveHuntingQueryResult != null) await hunting.QueryResultAsync(session, dailyRequest);
-            // Branch 120 casualBattleSignUp is Mock Battle's (CasualBattleService).
             else if (dailyRequest.CasualBattleSignUp != null) await casual.SignUpAsync(session, dailyRequest);
             else await daily.AcceptRingAsync(session, dailyRequest);
         });
-        routes.Map(DailyActivityService.StageGain, "daily", async (session, msgId, body) =>
+        routes.Map<StageRewardGainReq>(DailyActivityService.StageGain, "daily", RouteAdmission.Default, daily.ClaimAsync);
+        routes.Map<StageRewardBatchGainReq>(DailyActivityService.StageBatchGain, "daily", RouteAdmission.Default, daily.BatchClaimAsync);
+        routes.Map<FirstHeartGetTaskRewardReq>(FirstHeartService.GetTaskReward, "firstHeart", RouteAdmission.Economic, firstHeart.ClaimTaskAsync);
+        routes.Map<FirstHeartGetScoreRewardReq>(FirstHeartService.GetScoreReward, "firstHeart", RouteAdmission.Economic, firstHeart.ClaimScoreAsync);
+        routes.Map<AreaConcurGainMonsterAwardReq>(MonsterHuntService.GainMonsterAward, "monsterHunt", RouteAdmission.Economic, monsterHunt.ClaimMonsterAsync);
+        routes.Map<AreaConcurGainAreaAwardReq>(MonsterHuntService.GainAreaAward, "monsterHunt", RouteAdmission.Economic, monsterHunt.ClaimAreaAsync);
+        routes.Map<FlyingDragonStartProduceReq>(FlyingDragonService.Start, "flyingDragon", RouteAdmission.Default, dragon.StartAsync);
+        routes.Map(FlyingDragonService.Assist, "flyingDragon", RouteAdmission.Default, dragon.AssistAsync);
+        routes.Map(FlyingDragonService.Query, "flyingDragon", RouteAdmission.Default, dragon.QueryAsync);
+        routes.Map(FlyingDragonService.Accelerate, "flyingDragon", RouteAdmission.Default, dragon.AccelerateAsync);
+        routes.Map(FlyingDragonService.Complete, "flyingDragon", RouteAdmission.Default, dragon.CompleteAsync);
+        routes.Map(FlyingDragonService.ThumbsUp, "flyingDragon", RouteAdmission.Default, dragon.ThumbsUpAsync);
+        routes.Map<HeroicSpiritChallengeReq>(ValhallaService.Challenge, "valhalla", RouteAdmission.Role, valhalla.ChallengeAsync);
+        routes.Map(ValhallaService.Pray, "valhalla", RouteAdmission.Economic, valhalla.PrayAsync);
+        routes.Map<ConfirmTeamDungeonReq>(DungeonService.Confirm, "dungeons", RouteAdmission.Default, async (session, confirm) =>
         {
-            await daily.ClaimAsync(session, StageRewardGainReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DailyActivityService.StageBatchGain, "daily", async (session, msgId, body) =>
-        {
-            await daily.BatchClaimAsync(session, StageRewardBatchGainReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(FirstHeartService.GetTaskReward, "firstHeart", async (session, msgId, body) =>
-        {
-            await firstHeart.ClaimTaskAsync(session, FirstHeartGetTaskRewardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(FirstHeartService.GetScoreReward, "firstHeart", async (session, msgId, body) =>
-        {
-            await firstHeart.ClaimScoreAsync(session, FirstHeartGetScoreRewardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(MonsterHuntService.GainMonsterAward, "monsterHunt", async (session, msgId, body) =>
-        {
-            await monsterHunt.ClaimMonsterAsync(session, AreaConcurGainMonsterAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(MonsterHuntService.GainAreaAward, "monsterHunt", async (session, msgId, body) =>
-        {
-            await monsterHunt.ClaimAreaAsync(session, AreaConcurGainAreaAwardReq.Parser.ParseFrom(body.Span));
-        });
-        // The Starshatter ritual is one per server: its requests keep the default realm-wide admission.
-        routes.Map(FlyingDragonService.Start, "flyingDragon", async (session, msgId, body) =>
-            await dragon.StartAsync(session, FlyingDragonStartProduceReq.Parser.ParseFrom(body.Span)));
-        routes.Map(FlyingDragonService.Assist, "flyingDragon", async (session, msgId, body) => await dragon.AssistAsync(session));
-        routes.Map(FlyingDragonService.Query, "flyingDragon", async (session, msgId, body) => await dragon.QueryAsync(session));
-        routes.Map(FlyingDragonService.Accelerate, "flyingDragon", async (session, msgId, body) => await dragon.AccelerateAsync(session));
-        routes.Map(FlyingDragonService.Complete, "flyingDragon", async (session, msgId, body) => await dragon.CompleteAsync(session));
-        routes.Map(FlyingDragonService.ThumbsUp, "flyingDragon", async (session, msgId, body) => await dragon.ThumbsUpAsync(session));
-        routes.Map(ValhallaService.Challenge, "valhalla", async (session, msgId, body) =>
-        {
-            await valhalla.ChallengeAsync(session, HeroicSpiritChallengeReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(ValhallaService.Pray, "valhalla", async (session, msgId, body) =>
-        {
-            await valhalla.PrayAsync(session); // NullArg: the client sends no body
-        });
-        routes.Map(DungeonService.Confirm, "dungeons", async (session, msgId, body) =>
-        {
-            var confirm = ConfirmTeamDungeonReq.Parser.ParseFrom(body.Span);
             if (!await timedBattles.TryConfirmRiftAsync(session, confirm)) await dungeons.ConfirmAsync(session, confirm);
         });
-        routes.Map(DungeonService.ClientEvent, "training", async (session, msgId, body) =>
+        routes.Map<ClientDungeonEvent>(DungeonService.ClientEvent, "training", RouteAdmission.Default, async (session, dungeonEvent) =>
         {
-            var dungeonEvent = ClientDungeonEvent.Parser.ParseFrom(body.Span);
             if (!await training.TryEventAsync(session, dungeonEvent)) await dungeons.ClientEventAsync(session, dungeonEvent);
         });
-        routes.Map(DungeonService.Statistics, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.StatisticsAsync(session);
-        });
-        routes.Map(DungeonService.StatisticsHistory, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.StatisticsHistoryAsync(session, DungeonStatisticsInfoWithDungeonReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.StatisticsCurrent, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.StatisticsCurrentAsync(session);
-        });
-        routes.Map(DungeonService.StatisticsModule, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.StatisticsModuleAsync(session);
-        });
-        routes.Map(DungeonService.QueryResult, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.QueryResultAsync(session, QueryDungeonResultReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.SetJobPosition, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.SetPositionAsync(session, MultiDungeonSetJobPositionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.SetGuide, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.SetGuideAsync(session, MultiDungeonSetJobPositionGuideFlagReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.ClaimFirstPass, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.ClaimFirstPassAsync(session, ClaimFirstPassAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.HallOfFame, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.HallOfFameAsync(session, QueryHallOfFameInfoReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.MarkBlessings, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.MarkBlessingsAsync(session, MultiDungeonMarkSacredBlessingsReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.ClaimHonor, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.ClaimHonorAsync(session, MultiDungeonClaimHonorAwardReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.Transfer, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.TransferAsync(session, DungeonTeamTransferReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.Follow, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.FollowAsync(session, DungeonTeamFollowReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.SwapPosition, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.SwapPositionAsync(session, DungeonTeamSwapPositionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.SetFlag, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.SetFlagAsync(session, DungeonTeamSetFlagReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.Rally, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.RallyAsync(session, DungeonTeamRallyReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(CasualBattleService.RallyReply, "dungeons", async (session, msgId, body) =>
-        {
-            await casual.RallyReplyAsync(session, DungeonTeamRallyReplyReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(PraiseService.Praise, "praise", async (session, msgId, body) =>
-        {
-            await praise.PraiseAsync(session, MultiDungeonPraiseReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(DungeonService.ModuleButton, "dungeons", async (session, msgId, body) =>
-        {
-            await dungeons.ModuleButtonAsync(session, DungeonModuleButtonReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TowerService.Start, "tower", async (session, msgId, body) =>
-        {
-            await tower.StartAsync(session, ClimTowerStartReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TowerService.Info, "tower", async (session, msgId, body) =>
-        {
-            await tower.InfoAsync(session);
-        });
-        routes.Map(TowerService.SetPets, "tower", async (session, msgId, body) =>
-        {
-            await tower.SetPetsAsync(session, SetClimTowerPetsReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TowerService.FirstPassRange, "tower", async (session, msgId, body) =>
-        {
-            await tower.FirstPassRangeAsync(session, QueryClimbTowerFirstPassRangeReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(TowerService.ClaimFirstPass, "tower", async (session, msgId, body) =>
-        {
-            await tower.ClaimFirstPassAsync(session);
-        });
-        routes.Map(SetAutoBattle, "afk", async (session, msgId, body) =>
-        {
-            await afk.SetAutoBattleAsync(session, SetAutoBattleReq.Parser.ParseFrom(body.Span).IsAutoBattle);
-        });
-        routes.Map(WildAfkService.Info, "afk", async (session, msgId, body) =>
-        {
-            await afk.InfoAsync(session);
-        });
-        routes.Map(WildAfkService.Collection, "afk", async (session, msgId, body) =>
-        {
-            await afk.CollectAsync(session, SetMonsterCollectionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(WildAfkService.Start, "afk", async (session, msgId, body) =>
-        {
-            await afk.ToggleAsync(session, true);
-        });
-        routes.Map(WildAfkService.Pause, "afk", async (session, msgId, body) =>
-        {
-            await afk.ToggleAsync(session, false);
-        });
-        routes.Map(WildAfkService.Magnification, "afk", async (session, msgId, body) =>
-        {
-            await afk.ToggleAsync(session, SetHighMagnificationReq.Parser.ParseFrom(body.Span).Status, legacy: true);
-        });
-        routes.Map(WildAfkService.Snapshot, "afk", async (session, msgId, body) =>
-        {
-            await afk.SnapshotAsync(session);
-        });
+        routes.Map(DungeonService.Statistics, "dungeons", RouteAdmission.Role, dungeons.StatisticsAsync);
+        routes.Map<DungeonStatisticsInfoWithDungeonReq>(DungeonService.StatisticsHistory, "dungeons", RouteAdmission.Role, dungeons.StatisticsHistoryAsync);
+        routes.Map(DungeonService.StatisticsCurrent, "dungeons", RouteAdmission.Role, dungeons.StatisticsCurrentAsync);
+        routes.Map(DungeonService.StatisticsModule, "dungeons", RouteAdmission.Role, dungeons.StatisticsModuleAsync);
+        routes.Map<QueryDungeonResultReq>(DungeonService.QueryResult, "dungeons", RouteAdmission.Role, dungeons.QueryResultAsync);
+        routes.Map<MultiDungeonSetJobPositionReq>(DungeonService.SetJobPosition, "dungeons", RouteAdmission.Role, dungeons.SetPositionAsync);
+        routes.Map<MultiDungeonSetJobPositionGuideFlagReq>(DungeonService.SetGuide, "dungeons", RouteAdmission.Role, dungeons.SetGuideAsync);
+        routes.Map<ClaimFirstPassAwardReq>(DungeonService.ClaimFirstPass, "dungeons", RouteAdmission.Economic, dungeons.ClaimFirstPassAsync);
+        routes.Map<QueryHallOfFameInfoReq>(DungeonService.HallOfFame, "dungeons", RouteAdmission.Role, dungeons.HallOfFameAsync);
+        routes.Map<MultiDungeonMarkSacredBlessingsReq>(DungeonService.MarkBlessings, "dungeons", RouteAdmission.Role, dungeons.MarkBlessingsAsync);
+        routes.Map<MultiDungeonClaimHonorAwardReq>(DungeonService.ClaimHonor, "dungeons", RouteAdmission.Economic, dungeons.ClaimHonorAsync);
+        routes.Map<DungeonTeamTransferReq>(CasualBattleService.Transfer, "dungeons", RouteAdmission.Default, casual.TransferAsync);
+        routes.Map<DungeonTeamFollowReq>(CasualBattleService.Follow, "dungeons", RouteAdmission.Default, casual.FollowAsync);
+        routes.Map<DungeonTeamSwapPositionReq>(CasualBattleService.SwapPosition, "dungeons", RouteAdmission.Default, casual.SwapPositionAsync);
+        routes.Map<DungeonTeamSetFlagReq>(CasualBattleService.SetFlag, "dungeons", RouteAdmission.Default, casual.SetFlagAsync);
+        routes.Map<DungeonTeamRallyReq>(CasualBattleService.Rally, "dungeons", RouteAdmission.Default, casual.RallyAsync);
+        routes.Map<DungeonTeamRallyReplyReq>(CasualBattleService.RallyReply, "dungeons", RouteAdmission.Default, casual.RallyReplyAsync);
+        routes.Map<MultiDungeonPraiseReq>(PraiseService.Praise, "praise", RouteAdmission.Role, praise.PraiseAsync);
+        routes.Map<DungeonModuleButtonReq>(DungeonService.ModuleButton, "dungeons", RouteAdmission.Default, dungeons.ModuleButtonAsync);
+    }
+
+    private void MapTowerAndAfk(MessageRoutes routes)
+    {
+        routes.Map<ClimTowerStartReq>(TowerService.Start, "tower", RouteAdmission.Role, tower.StartAsync);
+        routes.Map(TowerService.Info, "tower", RouteAdmission.Role, tower.InfoAsync);
+        routes.Map<SetClimTowerPetsReq>(TowerService.SetPets, "tower", RouteAdmission.Role, tower.SetPetsAsync);
+        routes.Map<QueryClimbTowerFirstPassRangeReq>(TowerService.FirstPassRange, "tower", RouteAdmission.Role, tower.FirstPassRangeAsync);
+        routes.Map(TowerService.ClaimFirstPass, "tower", RouteAdmission.Role, tower.ClaimFirstPassAsync);
+        routes.Map<SetAutoBattleReq>(SetAutoBattle, "afk", RouteAdmission.Role, (s, req) => afk.SetAutoBattleAsync(s, req.IsAutoBattle));
+        routes.Map(WildAfkService.Info, "afk", RouteAdmission.Default, afk.InfoAsync);
+        routes.Map<SetMonsterCollectionReq>(WildAfkService.Collection, "afk", RouteAdmission.Default, afk.CollectAsync);
+        routes.Map(WildAfkService.Start, "afk", RouteAdmission.Default, s => afk.ToggleAsync(s, true));
+        routes.Map(WildAfkService.Pause, "afk", RouteAdmission.Default, s => afk.ToggleAsync(s, false));
+        routes.Map<SetHighMagnificationReq>(WildAfkService.Magnification, "afk", RouteAdmission.Default, (s, req) => afk.ToggleAsync(s, req.Status, legacy: true));
+        routes.Map(WildAfkService.Snapshot, "afk", RouteAdmission.Default, afk.SnapshotAsync);
     }
 
     // Shared match packets retain legacy admission if either end belongs to an unconverted dungeon family.

@@ -124,3 +124,32 @@ them (one group of three numbers a rule; a group that is not usable refuses the 
 `!fieldexp clear` leaves none (the client's rates) and `!fieldexp reset` brings back the configured ones. The change lives in
 memory: the configuration is not written, so the next start uses `Ro3Emu:FieldExpRates` again. Like every GM command it follows
 `GmAccounts` (docs/guide/gm-access.md); the loopback endpoint answers to anyone on the host when that list is empty.
+
+## Leash and return
+
+- `AIConfig._iUnFightType` 1 with `_iUnFightParam` (cm) is the leash. In 50 of the 67 rows that have a type-1 entry
+  its value equals `_iChaseDistance` (20000001, the AI of 270 field monsters such as Goblin Archer, Flora, Mantis:
+  1800). `_iUnFightBUFF` lists the buffs of a monster that left its fight: 900001 (a 5 s marker), 901501 (+100 % move
+  speed) and, for 1 420 monsters, 900101 (`T_AXadd0_etc [[2,10000,101,3]]`, 100 % of max HP). 542 monsters' AIs,
+  20000001 among them, do not list 900101.
+- *(inferred)* The leash bounds where the monster chases. It loses its target when the target stands where the
+  monster could not hit it without leaving the circle around its home: farther than the leash plus its attack range
+  (a monster that cannot walk: the leash alone). A player who shoots it from just beyond the circle is still fought.
+  A chase blocked on the straight line walks around the obstacle.
+- *(inferred)* Back home from a lost fight, the monster's HP is restored only when its AI lists 900101 (or the NPC has
+  no AI row); the others keep their damage.
+
+## Maps nobody is on
+
+- *(inferred)* A public field map is created the first time a player enters it and keeps its monsters afterwards, so a
+  long-running server ticks every field map anyone visited. A monster no player shows and with nothing in progress
+  (no walk, fight, pet or companion fight, march, return or timed slow) only moves its roam clock in its tick
+  (`MonsterService.Dormant`).
+- *(inferred)* A map with no player on it whose units all rested after the last pass is ticked once a second instead
+  of every loop tick (`MapInstance.Tick`). A unit still walking or fighting keeps it on every tick; a player arriving
+  or a unit added wakes it at once. On 20 empty field maps (about 19 000 monsters) this took the map tick from
+  73 ms/s to 2 ms/s and its allocation from 16 MB/s to 0.
+- *(inferred)* An aggressive monster a player shows looks for a target every fourth loop tick (200 ms), staggered by
+  uid, not on every tick. The look reads every player that shows the monster, so on a crowded line (200 players, a
+  thousand monsters) it grew with the square of the crowd: LoadTest S3 with 1,000 bots spent 113 ms/s on map ticks,
+  25 ms/s with the stagger. A player walking into range is noticed within 200 ms.

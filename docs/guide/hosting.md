@@ -43,19 +43,39 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
   on an open field whose own spawns hold a common monster (at least 10% of them) more than
   `Ro3Emu__Ro1AggressiveMaxLevelGap` levels below it (default 15; `0` turns the gate off). Dungeons, towns, Territory
   War sandboxes, story and team rooms, bosses and MVPs, and monsters a map's spawns do not place keep the RO1 behaviour.
+- **Pets walking beside their owner** (off by default, as in the client): `Ro3Emu__PetWorldFollower=true` shows the pet
+  of the active setup plan in the field next to its owner. The client draws a deployed pet only while its guardian skill
+  plays; the walking pet is the emulator's own (inferred).
+- **Night look** (not the original game, off by default): `Ro3Emu__NightCycle=true` makes each player's client draw a
+  dark layer over towns and fields by the player's own PC clock (dusk 17-19, night 19-05, dawn 05-06), never in
+  dungeons, raids or story scenes. GMs can try it with `!day`, `!dusk`, `!night`, `!dawn` and `!time`
+  ([night look](../systems/night-cycle.md)).
+- **Overhead guild names and emblems on all maps** (off by default, as in the client): `Ro3Emu__GuildOverheadAllMaps=true`
+  lifts the client's 3-map limit so overhead guild names and emblems appear on every map instead of only the three
+  configured maps.
 - **Backups:** the database is backed up to `data/backups/` at start and every 6 hours (newest 20 kept). All but the
   newest two are gzip-compressed (`.db.gz`, about a quarter of the size); `Ro3Emu.Server --restore-backup` takes either
   kind. `Ro3Emu__Backup__Keep`, `Ro3Emu__Backup__IntervalHours` and `Ro3Emu__Backup__Uncompressed` (or `Backup` under
   `Ro3Emu` in `appsettings.json`) change the three numbers; `Uncompressed` equal to `Keep` compresses nothing.
   A backup leaves 1 GB free for the live database (`Ro3Emu__Backup__ReserveMegabytes`): when the disk is short it removes
-  the oldest copies (never the newest two), or skips the backup and logs it as critical. From 4 GB
-  (`Ro3Emu__Backup__BigDatabaseMegabytes`, 0 turns this off) a restart makes no copy while the newest is younger than the
-  interval, and scheduled copies are integrity checked once a day (`Ro3Emu__Backup__BigDatabaseCheckHours`).
+  the oldest copies (never the newest two), or skips the backup and logs it as critical. `Ro3Emu__Backup__MaxTotalMegabytes`
+  (default `0`, unlimited) caps the total size of completed backups in `data/backups/` by pruning the oldest copies past
+  the newest two. From 4 GB (`Ro3Emu__Backup__BigDatabaseMegabytes`, 0 turns this off) a restart makes no copy while the
+  newest is younger than the interval, and scheduled copies are integrity checked once a day
+  (`Ro3Emu__Backup__BigDatabaseCheckHours`).
+- **Startup integrity check:** on startup `AccountStore` runs `PRAGMA quick_check(5)` before opening the writer
+  (`Ro3Emu__StartupIntegrityCheck`, default `true`). Set `Ro3Emu__StartupFullIntegrityCheck=true` (default `false`) to
+  run a full `PRAGMA integrity_check(5)` instead.
 - **Database size:** every reward, purchase and activity writes a receipt so a lost or repeated request is never paid
-  twice. Receipts older than 2 days are trimmed to their hashes every hour, in small batches
-  (`Ro3Emu__ReceiptRetention__Days`, `__BatchSize`, `__IntervalMinutes`; `Days` 0 keeps them whole). The space freed
-  is reused, so the file stops growing; to shrink it on disk, stop the server and run `VACUUM` on `data/ro3emu.db`
-  once (`sqlite3 data/ro3emu.db "VACUUM"`).
+  twice. A retry comes within seconds, so receipts older than 2 days are trimmed to their hashes every hour, in small
+  batches (`Ro3Emu__ReceiptRetention__Days`, `__BatchSize`, `__IntervalMinutes`; `Days` 0 keeps them whole). Two opt-in
+  retention windows default to `0` (disabled): `Ro3Emu__ReceiptRetention__LedgerDays` rolls `economy_entry` rows older
+  than that many days into `economy_daily_aggregate` and prunes the raw legs, and `Ro3Emu__ReceiptRetention__MailDays`
+  extracts compact replay keys into `mail_delivery_replay` before compacting older `mail/*` receipt payloads. The space
+  freed is reused, so the file stops growing; to shrink it on disk, stop the server and run `VACUUM` on
+  `data/ro3emu.db` once (`sqlite3 data/ro3emu.db "VACUUM"`). A database that grew with monster kills before the
+  child results were trimmed too (#473) is cleaned the same way after the update: the first run trims the old receipts
+  in the background, then `VACUUM` gives the space back.
 - **Test realm switches** (not the original game, off by default): `Ro3Emu__Testing__AlwaysOpen=true` opens every
   To-Do activity at any hour of any weekday (Survivor Battle, Dragon Coffin Island, Ilmata, the bonfire, Festival
   Invitation, Wedding Crashers, Hunting Challenge, Mock Battle, the Commendation Vault...), each repeating back to back

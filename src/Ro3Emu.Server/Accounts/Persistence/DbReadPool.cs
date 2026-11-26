@@ -3,20 +3,20 @@ using Ro3Emu.Server.Diagnostics;
 
 namespace Ro3Emu.Server.Accounts.Persistence;
 
-/// <summary>Two bounded read-only workers. Each result is detached before its short snapshot ends.</summary>
+/// <summary>Bounded read-only workers. Each result is detached before its short snapshot ends.</summary>
 public sealed class DbReadPool : IDisposable
 {
-    public const int WorkerCount = 2, MaxWaitingJobs = 64;
+    public const int WorkerCount = 4, MaxWaitingJobs = 256;
     private readonly object _gate = new();
     private readonly Queue<Job> _queue = new();
-    private readonly Thread[] _threads = new Thread[WorkerCount];
-    private readonly TaskCompletionSource[] _exited = new TaskCompletionSource[WorkerCount];
+    private readonly Thread[] _threads;
+    private readonly TaskCompletionSource[] _exited;
     private readonly string _connectionString;
     private readonly DbAccessMetrics _metrics;
     private readonly ServerMetrics? _serverMetrics;
     private readonly ILogger? _log;
     private readonly TimeSpan _stopTimeout;
-    private readonly DbReadPlan?[] _active = new DbReadPlan?[WorkerCount];
+    private readonly DbReadPlan?[] _active;
     private int _waiting;
     private bool _stopping;
     private Exception? _terminalError;
@@ -24,15 +24,19 @@ public sealed class DbReadPool : IDisposable
     private sealed record Job(DbReadPlan Plan, TaskCompletionSource<object?> Done);
 
     public DbReadPool(string databasePath, DbAccessMetrics metrics, ServerMetrics? serverMetrics = null, ILogger? log = null,
-        TimeSpan? stopTimeout = null)
+        TimeSpan? stopTimeout = null, int workerCount = WorkerCount, string threadPrefix = "ro3-db-read")
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(workerCount, 1);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
         _metrics = metrics; _serverMetrics = serverMetrics; _log = log; _stopTimeout = stopTimeout ?? TimeSpan.FromSeconds(5);
-        for (int i = 0; i < WorkerCount; i++)
+        _threads = new Thread[workerCount];
+        _exited = new TaskCompletionSource[workerCount];
+        _active = new DbReadPlan?[workerCount];
+        for (int i = 0; i < workerCount; i++)
         {
             int worker = i;
             _exited[i] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            _threads[i] = new Thread(() => Run(worker)) { IsBackground = true, Name = $"ro3-db-read-{i}" };
+            _threads[i] = new Thread(() => Run(worker)) { IsBackground = true, Name = $"{threadPrefix}-{i}" };
             using (ExecutionContext.SuppressFlow()) _threads[i].Start();
         }
     }
@@ -78,7 +82,7 @@ public sealed class DbReadPool : IDisposable
             using var db = new SqliteConnection(_connectionString);
             using (var measurement = _serverMetrics?.MeasureDatabaseOpen()) db.Open();
             SqliteMetrics.Attach(db, _serverMetrics);
-            using (var queryOnly = db.CreateCommand()) { queryOnly.CommandText = "PRAGMA query_only=ON"; queryOnly.ExecuteNonQuery(); }
+            using (var queryOnly = db.CreateCommand()) { queryOnly.CommandText = "PRAGMA query_only=ON; PRAGMA cache_size=-16000; PRAGMA temp_store=MEMORY;"; queryOnly.ExecuteNonQuery(); }
             DbWriteGuard.AttachRead(db, _metrics, "reader/snapshot");
             while (true)
             {
@@ -141,7 +145,8 @@ public sealed class DbReadPool : IDisposable
                     string.Join(",", _active.Where(x => x != null).Cast<DbReadPlan>()
                     .Concat(_queue.Select(x => x.Plan))
                     .Select(x => x.Label.Length > 64 ? x.Label[..64] : x.Label).Distinct().Take(8)));
-            _log?.LogError("Database reader shutdown timed out with activeJobs={ActiveJobs}, queuedJobs={QueuedJobs}, pendingBytes={PendingBytes}, labels={Labels}; active snapshots retain worker connections until completion",
+            _log?.LogError("Database reader shutdown timed out with activeJobs={ActiveJobs}, queuedJobs={QueuedJobs}, "
+                + "pendingBytes={PendingBytes}, labels={Labels}; active snapshots retain worker connections until completion",
                 debt.active, debt.waiting, debt.bytes, debt.labels);
         }
     }

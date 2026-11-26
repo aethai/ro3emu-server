@@ -7,7 +7,7 @@ using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Server.Economy;
 
-/// <summary>E05e semantic change per beneficiary, independently checked against the persisted holdings.</summary>
+/// <summary>Event economy semantic change per beneficiary, independently checked against the persisted holdings.</summary>
 public readonly record struct EventEconomyOwnerDelta(EconomyOwner Owner, EconomyAsset Asset, long Delta);
 
 /// <summary>A frozen event result and its authorized faucets, sinks and beneficiaries. No gameplay callback enters SQL.</summary>
@@ -110,7 +110,7 @@ public static class EventEconomy
     public static EconomyCatalog Catalog(GameData data) => Catalogs.GetValue(data, value =>
         new EconomyCatalog(value.Table("ItemConfig").ToDictionary(row => long.Parse(row.Key, CultureInfo.InvariantCulture),
             row => GameData.Int(row.Value, "_iType") == 1 ? EconomyAssetKind.Currency : EconomyAssetKind.Item),
-            value.Table("PublicParamConfig").TryGetValue("AUCTION_CURRENCY", out var bonus) ? bonus.GetInt64() : 1));
+            Data.Config.PublicParams.Of(value).AUCTIONCURRENCY ?? 1));
 
     public static EventEconomyMutation ForRole(GameData data, GameSession session, string kind, string source,
         IEnumerable<(int Entry, long Count)> costs, IEnumerable<AwardGrant> grants, object outcome)

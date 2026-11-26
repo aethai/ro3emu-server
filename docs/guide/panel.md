@@ -199,6 +199,8 @@ game, loading or waiting for a reconnect, as the HTTP character deletion is. Eve
 
 **Server control** (Admins):
 
+- **Rankings** can hide characters owned by listed Moderators, GMs and Admins from public character boards and profile ranks. The setting defaults to off and takes effect when saved. Guild standings and in-game rewards use their existing rankings.
+
 - **Restart or shut down** now or in up to a day. The players in the game are told on the GM marquee at once and again
   15, 10, 5, 3, 2 and 1 minutes and 30 and 10 seconds before; then the server stops the way Ctrl+C stops it (the loop
   drains, the database closes). A plan can be cancelled (the players are told) and lives in memory: a restart forgets

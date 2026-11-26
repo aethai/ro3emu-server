@@ -44,7 +44,6 @@ public sealed class DragonIslandTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -133,8 +132,8 @@ public sealed class DragonIslandTests : IAsyncLifetime
             loaded = await Next(bot, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser, s => s.DungeonId == instance);
         }
         // Two camps, not six factions; each starts at its own point.
-        Assert.Equal(1, Session(alice).EventFaction);
-        Assert.Equal(2, Session(bob).EventFaction);
+        Assert.Equal(1, Session(alice).Instances.EventFaction);
+        Assert.Equal(2, Session(bob).Instances.EventFaction);
         Assert.Equal(0, loaded.Stage);
         long open = loaded.StageModuleData.StageStartTime / 1000;
         Assert.Equal(open + 30, loaded.StageModuleData.StageEndTime / 1000);

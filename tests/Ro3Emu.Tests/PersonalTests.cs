@@ -27,8 +27,7 @@ public sealed class PersonalTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> InWorld(string name, bool create = true)
@@ -192,12 +191,12 @@ public sealed class PersonalTests : IAsyncLifetime
         // Fashion: permanently lit appearances' _iFashionScore (WardRobeConfig 10030417 scores 10).
         var data = _app.Services.GetRequiredService<GameData>();
         int Fashion(Dictionary<object, object?> seen) => RoleAdditionBaseInfo.Parser.ParseFrom((byte[])seen["Base"]!).FashionScore;
-        long before = WardrobeService.FashionScore(data, Session("bob").Wardrobe);
+        long before = WardrobeService.FashionScore(data, Session("bob").Profile.Wardrobe);
         Assert.Equal(before, Fashion(await Card(alice, b, "Base")));
         await WaitUntil(() =>
         {
-            Session("bob").Wardrobe!.AllLightUpAppearances[10030417] = new DBAppearanceInfo { AppearanceId = 10030417 };
-            Session("bob").Wardrobe!.AllLightUpAppearances[10030419] = new DBAppearanceInfo { AppearanceId = 10030419, OverdueTimeMs = 1 };
+            Session("bob").Profile.Wardrobe!.AllLightUpAppearances[10030417] = new DBAppearanceInfo { AppearanceId = 10030417 };
+            Session("bob").Profile.Wardrobe!.AllLightUpAppearances[10030419] = new DBAppearanceInfo { AppearanceId = 10030419, OverdueTimeMs = 1 };
             return true;
         }, "wardrobe not changed");
         Assert.Equal(before + 10, Fashion(await Card(alice, b, "Base"))); // the leased one does not count
@@ -230,7 +229,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(0, full.UpvoteTimes[0].All);
         var seed = await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => !i.SyncAllMark);
         Assert.True(seed.UpvoteTimes[0].Del);
-        Assert.Empty(Session("alice").Personal!.UpvoteTimes);
+        Assert.Empty(Session("alice").Social.Personal!.UpvoteTimes);
 
         // 5044: the own card reads the worn title and honor; the defaults are worn and owned.
         var outfit = await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, i => i.SyncAllMark);
@@ -243,6 +242,31 @@ public sealed class PersonalTests : IAsyncLifetime
         await Gm("alice", "!lvl 50");
         var walk = await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.UnlockInfos.ContainsKey(6));
         Assert.True(walk.UnlockInfos[6].Inc.UnlockMap[1002].All);
+    }
+
+    [ClientDataFact]
+    public async Task UntouchedProfileMatchesTheOwnersCardOnlineAndOffline()
+    {
+        await using var reader = await InWorld("Reader");
+        var owner = await InWorld("Owner");
+        long id = (long)owner.Self!.Uuid;
+        var initial = await Next(owner, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.SyncAllMark);
+        var expected = initial.PlanInfos[initial.CurPlanId].All;
+        Assert.Empty(expected.DecalInfos);
+
+        async Task Inspect(bool online)
+        {
+            var fields = await Card(reader, id, "Name", "Base", "Online", "Personal");
+            Assert.Equal("Owner", fields["Name"]);
+            Assert.Equal(online, fields["Online"]);
+            Assert.Equal(expected, PersonalInfo.Parser.ParseFrom(Assert.IsType<byte[]>(fields["Personal"])));
+        }
+
+        await Inspect(true);
+        await owner.DisposeAsync();
+        await WaitUntil(() => !_app.Services.GetRequiredService<SessionRegistry>().All()
+            .Any(s => s.Role?.Id == id), "owner still online");
+        await Inspect(false);
     }
 
     [ClientDataFact]
@@ -275,7 +299,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(PersonalService.ErrStickers, (await Save(alice, 1, twice)).Result); // one owned, two placed
 
         // The pose is a PerformanceConfig emote the role has unlocked; the editor preselects one (50001) even for a sign edit.
-        var unlockedPoses = Session("alice").EmojiPlay!.EmojiUnlocks.ToHashSet();
+        var unlockedPoses = Session("alice").Social.EmojiPlay!.EmojiUnlocks.ToHashSet();
         int lockedPose = _app.Services.GetRequiredService<GameData>().Table("PerformanceConfig").Values
             .Select(r => (int)GameData.Int(r, "_iID")).First(id => id > 0 && !unlockedPoses.Contains(id));
         var posed = stuck.Clone(); posed.RoleInfos.Add(new PersonalRoleInfo { ActionId = lockedPose });
@@ -288,8 +312,8 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal(0, (await Save(alice, 1, stuck)).Result);
         var changed = await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.PlanInfos.ContainsKey(1));
         Assert.Equal("Hello there", changed.PlanInfos[1].Inc.Sign);
-        Assert.Equal("", Session("alice").Personal!.PlanInfos[1].PlanName);
-        Assert.Equal(Sticker, Session("alice").Personal!.PlanInfos[1].DecalInfos.Single().DecalId);
+        Assert.Equal("", Session("alice").Social.Personal!.PlanInfos[1].PlanName);
+        Assert.Equal(Sticker, Session("alice").Social.Personal!.PlanInfos[1].DecalInfos.Single().DecalId);
         Assert.Equal(1, Session("alice").Progress!.Currency[Sticker]); // placed, not spent
 
         // 82560 rename: PersonalTemplateLimit 7, not empty.
@@ -304,7 +328,7 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.Equal("Mine", (await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser,
             i => i.PlanInfos.ContainsKey(2))).PlanInfos[2].Inc.PlanName);
 
-        // Others: Base carries the card's avatar fields; "Personal" only when asked for and only a card the client parses.
+        // Others: Base carries the card's avatar fields; "Personal" only when asked for with the selected preset.
         var seen = await Card(bob, aliceId, "Base", "Personal");
         var card = PersonalInfo.Parser.ParseFrom((byte[])seen["Personal"]!);
         Assert.Equal("Hello there", card.Sign);
@@ -318,14 +342,16 @@ public sealed class PersonalTests : IAsyncLifetime
         Assert.False(social.ContainsKey("PersonalUpvoteList")); // an empty list would reach pairs(nil)
         Assert.False((await Card(bob, aliceId, "Base")).ContainsKey("PopularityStar"));
 
-        // 82559 to preset 2 (no stickers): the client could not parse it, so it is not published.
+        // Switching to an undecorated preset must still return that preset to the viewer.
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 5 });
         Assert.Equal(PersonalService.ErrPreset, (await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser)).Result);
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 2 });
         var current = await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser);
         Assert.Equal((0, 2), (current.Result, current.PlanId));
         Assert.Equal(2, (await Next(alice, PersonalService.Sync, DBPersonalInfoIncrement.Parser, i => i.HasCurPlanId)).CurPlanId);
-        Assert.False((await Card(bob, aliceId, "Base", "Personal")).ContainsKey("Personal"));
+        var plain = PersonalInfo.Parser.ParseFrom((byte[])(await Card(bob, aliceId, "Base", "Personal"))["Personal"]!);
+        Assert.Equal("Mine", plain.PlanName);
+        Assert.Empty(plain.DecalInfos);
         await alice.SendGameAsync(PersonalService.UpdateCurPlan, new UpdateCurPersonalPlanReq { PlanId = 1 });
         Assert.Equal(0, (await Next(alice, PersonalService.UpdateCurPlan, UpdateCurPersonalPlanResp.Parser)).Result);
 

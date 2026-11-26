@@ -1,118 +1,64 @@
-#pragma warning disable CS1998 // arms that only send or return keep the uniform async shape
-using Google.Protobuf;
 using Romsg;
+using Ro3Emu.Server.Game.Messaging;
 
 namespace Ro3Emu.Server.Game;
 
 /// <summary>Shops, mail claims, auctions, player trade and stalls.</summary>
-public sealed class EconomyMessages(ShopService shops, MailService mail, AuctionService auctions, TradeService trade, StallsService stalls,
-    TimedBattleService timedBattles) : Messaging.IMessageModule
+public sealed class EconomyMessages(
+    ShopService shops,
+    MailService mail,
+    AuctionService auctions,
+    TradeService trade,
+    StallsService stalls,
+    TimedBattleService timedBattles) : IMessageModule
 {
-    public void Map(Messaging.MessageRoutes routes)
+    public void Map(MessageRoutes routes)
     {
-        // Trade, stalls, auctions and mail claims reserve the goods and currencies they move themselves.
+        // Trade and stalls handle their own message ranges via interceptors and reserve their goods themselves.
         routes.AdmitEconomic(id => id is >= 32601 and <= 32630); // trade
         routes.AdmitEconomic(id => id is >= 33401 and <= 33418); // stalls
-        routes.AdmitEconomic(id => id is >= 82000 and <= 82020); // auctions
-        routes.AdmitEconomic(id => id is MailService.ClaimMail);
-        // Present/Pick reserve the recipient's own "gifts" blob themselves (another role, not the sender's).
-        routes.AdmitEconomic(id => id is ShopService.CommodityPresent or ShopService.CommodityPick);
-        routes.AdmitRole(id => id is >= 82332 and <= 82340); // ordinary shops
-        routes.AdmitRole(id => id is ShopService.ItemExchange); // Currency Redemption: the sender's own currencies
         routes.Intercept("trade", id => id is >= 32601 and <= 32630, (session, msgId, body) =>
             session.Role != null && session.Progress != null ? trade.HandleAsync(session, msgId, body) : Task.FromResult(false));
         routes.Intercept("stalls", id => id is >= StallsService.Start and <= StallsService.Share, (session, msgId, body) =>
             session.Role != null && session.Progress != null ? stalls.HandleAsync(session, msgId, body) : Task.FromResult(false));
 
-        routes.Map(ShopService.BuyCommodity, "shops", async (session, msgId, body) =>
+        MapShopsAndMail(routes);
+        MapAuctions(routes);
+    }
+
+    private void MapShopsAndMail(MessageRoutes routes)
+    {
+        routes.Map<BuyCommodityReq>(ShopService.BuyCommodity, "shops", RouteAdmission.Role, async (session, buy) =>
         {
-            var buy = BuyCommodityReq.Parser.ParseFrom(body.Span);
             // A Survivor Battle shop NPC is paid from the match pack (TimedBattleService.ChickenShop).
             if (!await timedBattles.TryBuyAsync(session, buy)) await shops.BuyAsync(session, buy);
         });
-        routes.Map(TimedBattleService.DungeonShop, "shops", async (session, msgId, body) =>
-            await timedBattles.GetDungeonShopAsync(session, GetDungeonShopReq.Parser.ParseFrom(body.Span)));
-        routes.Map(ShopService.ItemExchange, "shops", async (session, msgId, body) =>
-            await shops.ExchangeCurrencyAsync(session, ItemExchangeReq.Parser.ParseFrom(body.Span)));
-        routes.Map(ShopService.BatchBuyCommodity, "shops", async (session, msgId, body) =>
-        {
-            await shops.BatchBuyAsync(session, BatchBuyCommodityReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(ShopService.CommodityCollect, "shops", async (session, msgId, body) =>
-        {
-            await shops.CollectAsync(session, CommodityCollectReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(ShopService.CommodityPresent, "shops", async (session, msgId, body) =>
-        {
-            await shops.PresentAsync(session, CommodityPresentReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(ShopService.CommodityPick, "shops", async (session, msgId, body) =>
-        {
-            await shops.PickAsync(session, CommodityPickReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(ShopService.CommodityGetInfo, "shops", async (session, msgId, body) =>
-        {
-            await shops.CommodityInfoAsync(session, CommodityGetInfoReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(MailService.ClaimMail, "mail", async (session, msgId, body) =>
-        {
-            await mail.ClaimAsync(session, ClaimMailReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Query, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.QueryAsync(session, QueryAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Bid, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.BidAsync(session, BiddingAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.History, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.HistoryAsync(session, QueryHistoryAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Self, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.SelfAsync(session, QuerySelfAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.QueryBonus, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.QueryBonusAsync(session, QueryAuctionBonusReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.GetBonus, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.GetBonusAsync(session, GetAuctionBonusReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Get, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.GetAsync(session, GetAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Cancel, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.CancelAsync(session, CancelBiddingAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Quit, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.QuitAsync(session, QuitAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.BatchBid, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.BatchBidAsync(session, BatchBiddingAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Resume, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.ResumeAsync(session);
-        });
-        routes.Map(AuctionService.PreStack, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.PreStackAsync(session, PreAuctionItemStackQueryReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.BatchCancel, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.BatchCancelAsync(session, BatchCancelBiddingAuctionReq.Parser.ParseFrom(body.Span));
-        });
-        routes.Map(AuctionService.Count, "auctions", async (session, msgId, body) =>
-        {
-            await auctions.CountAsync(session, QueryAuctionCountReq.Parser.ParseFrom(body.Span));
-        });
+        routes.Map<GetDungeonShopReq>(TimedBattleService.DungeonShop, "shops", RouteAdmission.Role, timedBattles.GetDungeonShopAsync);
+        routes.Map<ItemExchangeReq>(ShopService.ItemExchange, "shops", RouteAdmission.Role, shops.ExchangeCurrencyAsync);
+        routes.Map<BatchBuyCommodityReq>(ShopService.BatchBuyCommodity, "shops", RouteAdmission.Role, shops.BatchBuyAsync);
+        routes.Map<CommodityCollectReq>(ShopService.CommodityCollect, "shops", RouteAdmission.Role, shops.CollectAsync);
+        // Present/Pick reserve the recipient's own "gifts" blob themselves (another role, not the sender's).
+        routes.Map<CommodityPresentReq>(ShopService.CommodityPresent, "shops", RouteAdmission.Economic, shops.PresentAsync);
+        routes.Map<CommodityPickReq>(ShopService.CommodityPick, "shops", RouteAdmission.Economic, shops.PickAsync);
+        routes.Map<CommodityGetInfoReq>(ShopService.CommodityGetInfo, "shops", RouteAdmission.Role, shops.CommodityInfoAsync);
+        routes.Map<ClaimMailReq>(MailService.ClaimMail, "mail", RouteAdmission.Economic, mail.ClaimAsync);
+    }
+
+    private void MapAuctions(MessageRoutes routes)
+    {
+        routes.Map<QueryAuctionReq>(AuctionService.Query, "auctions", RouteAdmission.Economic, auctions.QueryAsync);
+        routes.Map<BiddingAuctionReq>(AuctionService.Bid, "auctions", RouteAdmission.Economic, auctions.BidAsync);
+        routes.Map<QueryHistoryAuctionReq>(AuctionService.History, "auctions", RouteAdmission.Economic, auctions.HistoryAsync);
+        routes.Map<QuerySelfAuctionReq>(AuctionService.Self, "auctions", RouteAdmission.Economic, auctions.SelfAsync);
+        routes.Map<QueryAuctionBonusReq>(AuctionService.QueryBonus, "auctions", RouteAdmission.Economic, auctions.QueryBonusAsync);
+        routes.Map<GetAuctionBonusReq>(AuctionService.GetBonus, "auctions", RouteAdmission.Economic, auctions.GetBonusAsync);
+        routes.Map<GetAuctionReq>(AuctionService.Get, "auctions", RouteAdmission.Economic, auctions.GetAsync);
+        routes.Map<CancelBiddingAuctionReq>(AuctionService.Cancel, "auctions", RouteAdmission.Economic, auctions.CancelAsync);
+        routes.Map<QuitAuctionReq>(AuctionService.Quit, "auctions", RouteAdmission.Economic, auctions.QuitAsync);
+        routes.Map<BatchBiddingAuctionReq>(AuctionService.BatchBid, "auctions", RouteAdmission.Economic, auctions.BatchBidAsync);
+        routes.Map(AuctionService.Resume, "auctions", RouteAdmission.Economic, auctions.ResumeAsync);
+        routes.Map<PreAuctionItemStackQueryReq>(AuctionService.PreStack, "auctions", RouteAdmission.Economic, auctions.PreStackAsync);
+        routes.Map<BatchCancelBiddingAuctionReq>(AuctionService.BatchCancel, "auctions", RouteAdmission.Economic, auctions.BatchCancelAsync);
+        routes.Map<QueryAuctionCountReq>(AuctionService.Count, "auctions", RouteAdmission.Economic, auctions.CountAsync);
     }
 }

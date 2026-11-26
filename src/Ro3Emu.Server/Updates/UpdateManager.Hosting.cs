@@ -8,7 +8,8 @@ public sealed partial class UpdateManager
     private string HostingSummary() => Hosting.Mode switch
     {
         UpdateHostingMode.Systemd => "The server runs under systemd: an install swaps the files and the unit (Restart=always, as ./server.sh --service writes it) starts the new version.",
-        UpdateHostingMode.Service => "The server runs as a Windows service: an install renames the running files aside and the service wrapper starts the new version (it must start the server again when it exits with code 75).",
+        UpdateHostingMode.Service => "The server runs as a Windows service: an install renames the running files aside "
+            + "and the service wrapper starts the new version (it must start the server again when it exits with code 75).",
         UpdateHostingMode.Docker => "The server runs in a container, whose image is built and replaced outside the server. The page downloads and checks a release; the image is updated by hand.",
         UpdateHostingMode.App => "The server runs under RO3Emu.exe or the launcher, which stop with it. The page downloads and checks a release; the install is done by hand.",
         UpdateHostingMode.Manual => "The server was started by hand, so nothing would start it again after an install. The page downloads and checks a release; the install is done by hand.",

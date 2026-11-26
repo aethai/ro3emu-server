@@ -31,7 +31,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101; o.SeasonStart = "2026-10-05";
         }, _clock);
@@ -42,7 +42,6 @@ public sealed class ShopCycleTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -87,7 +86,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var bot = await Enter(legacyCounter: true);
         await Gm("!quest done 10105020"); await Gm("!item 1 30000");
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(bot));
-        Assert.Equal("S1", Session(bot).Shop!.Bought[Offer].Period);
+        Assert.Equal("S1", Session(bot).Social.Shop!.Bought[Offer].Period);
         var season = Service<SeasonService>();
         var breakLocal = DateTimeOffset.FromUnixTimeSeconds(season.Times().SeasonBreakStartTime).LocalDateTime;
         var newStart = breakLocal.Date.AddDays(breakLocal.TimeOfDay == TimeSpan.Zero ? 0 : 1);
@@ -100,7 +99,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var sync = await Next(again, ShopService.ShopSync, DBShopInfoIncrement.Parser);
         Assert.False(sync.CommodityBuyTimes.ContainsKey(Offer));
         Assert.Equal(0, await Buy(again));
-        Assert.Equal("S2", Session(again).Shop!.Bought[Offer].Period);
+        Assert.Equal("S2", Session(again).Social.Shop!.Bought[Offer].Period);
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(again));
     }
 
@@ -119,7 +118,7 @@ public sealed class ShopCycleTests : IAsyncLifetime
                 new BuyCommodityReq { CommodityId = Offer, Count = 1 })));
         Assert.Equal(money, character.CountOf(session, 1));
         Assert.Equal(tokens, character.CountOf(session, 1250709));
-        Assert.False(session.Shop!.Bought.ContainsKey(Offer));
+        Assert.False(session.Social.Shop!.Bought.ContainsKey(Offer));
         FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_shop");
         Assert.Equal(0, await Buy(bot));
     }
@@ -133,25 +132,16 @@ public sealed class ShopCycleTests : IAsyncLifetime
         var character = Service<CharacterService>();
         long money = character.CountOf(session, 1), tokens = character.CountOf(session, 1250709);
         Action<GameSession> failAfterCommit = _ => throw new IOException("injected post-commit notification failure");
-        character.StateChanged.Add(failAfterCommit);
-        try
+        using (character.StateChanged.Subscribe(failAfterCommit))
         {
             await Assert.ThrowsAsync<IOException>(() => Service<GameLoop>().InvokeAsync(() => Service<ShopService>().BuyAsync(session,
                 new BuyCommodityReq { CommodityId = Offer, Count = 1 })));
         }
-        finally { character.StateChanged.Remove(failAfterCommit); }
         Assert.Equal(money - 7500, character.CountOf(session, 1));
-        Assert.Equal(tokens + 1, character.CountOf(session, 1250709));
-        Assert.Equal(1, session.Shop!.Bought[Offer].Count);
+        Assert.Equal(tokens + 5, character.CountOf(session, 1250709)); // "Pet Egg x5" (_iIsShowCount 5)
+        Assert.Equal(1, session.Social.Shop!.Bought[Offer].Count);
         var persisted = JsonSerializer.Deserialize<ShopService.ShopState>(Service<RoleStore>().LoadShop(session.Role!.Id)!)!;
         Assert.Equal(1, persisted.Bought[Offer].Count);
         Assert.Equal(ErrorCodes.PurchaseLimit, await Buy(bot));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

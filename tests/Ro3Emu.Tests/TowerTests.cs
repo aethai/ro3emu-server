@@ -28,7 +28,7 @@ public sealed class TowerTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -44,7 +44,6 @@ public sealed class TowerTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -89,29 +88,48 @@ public sealed class TowerTests : IAsyncLifetime
         return (await Next(bot, TowerService.Start, ClimTowerStartRes.Parser)).Result;
     }
 
-    private static async Task<(SwitchSceneLineResp Scene, DungeonBaseInfoNotify Dungeon, EntityBase[] Monsters)> EnterFloor(BotClient bot, int floor, bool inside = false)
+    /// <summary>The first entry switches to a new tower instance (70010); a floor started from inside the tower is
+    /// reset in place (30124) on the same instance, with no 70010 that would end the client's auto battle.</summary>
+    private static async Task<(long Instance, DungeonBaseInfoNotify Dungeon, EntityBase[] Monsters)> EnterFloor(BotClient bot, int floor, bool inside = false)
     {
+        using var switched = bot.Inbox.Expect(e => e.IsGame(MsgId.SwitchSceneLine));
         Assert.Equal(0, await StartRequest(bot, floor, inside));
-        var sw = await Next(bot, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);
-        Assert.Equal(2100001, sw.SceneEntry);
-        Assert.NotEqual(sw.SceneEntry, sw.SceneID);
-        Assert.Equal(4, (int)sw.Reason);
-        await bot.SendGameAsync(MsgId.PlayerAsset, new PlayerAssetReq());
-        await Next(bot, MsgId.PlayerAsset, PlayerAssetResp.Parser);
-        await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = sw.SceneEntry });
-        Assert.Equal(0, (await Next(bot, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
-        var self = await Next(bot, MsgId.EntitySelf, EntitySelf.Parser);
-        Assert.InRange(self.Base.MovementInfo.Pos.X, 127.9f, 128.1f);
-        Assert.InRange(self.Base.MovementInfo.Pos.Z, 149.7f, 150.1f);
+        long instance;
+        if (inside)
+        {
+            await Next(bot, DungeonService.Reset, DungeonResetNtf.Parser);
+            instance = 0;
+        }
+        else
+        {
+            var sw = SwitchSceneLineResp.Parser.ParseFrom((await switched.WaitAsync(TimeSpan.FromSeconds(10))).Body);
+            Assert.Equal(2100001, sw.SceneEntry);
+            Assert.NotEqual(sw.SceneEntry, sw.SceneID);
+            Assert.Equal(4, (int)sw.Reason);
+            instance = sw.SceneID;
+            await bot.SendGameAsync(MsgId.PlayerAsset, new PlayerAssetReq());
+            await Next(bot, MsgId.PlayerAsset, PlayerAssetResp.Parser);
+            await bot.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = sw.SceneEntry });
+            Assert.Equal(0, (await Next(bot, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
+            var self = await Next(bot, MsgId.EntitySelf, EntitySelf.Parser);
+            Assert.InRange(self.Base.MovementInfo.Pos.X, 127.9f, 128.1f);
+            Assert.InRange(self.Base.MovementInfo.Pos.Z, 149.7f, 150.1f);
+        }
         var dungeon = await Next(bot, TowerService.DungeonInfo, DungeonBaseInfoNotify.Parser);
-        Assert.Equal(sw.SceneID, dungeon.DungeonId);
+        if (inside) instance = dungeon.DungeonId;
+        Assert.Equal(instance, dungeon.DungeonId);
+        Assert.Equal(inside, !switched.IsCompleted);
         Assert.Equal(floor, dungeon.InitData.ClimbTowerInit.LayerConfID);
         Assert.Equal(new[] { (long)bot.Self!.Uuid }, Assert.Single(dungeon.Vars).Vi64);
         Assert.True(dungeon.StageModuleData.StageEndTime > dungeon.StageModuleData.StageStartTime);
         // Ignore retained world/previous-attempt AOI events in the bot's inbox.
-        var aoi = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
-            v => v.Bases.Any(b => b.EntityType == 1 && b.BornTimeMs >= dungeon.StageModuleData.StageStartTime));
-        return (sw, dungeon, aoi.Bases.Where(b => b.EntityType == 1 && b.BornTimeMs >= dungeon.StageModuleData.StageStartTime).ToArray());
+        bool Fresh(EntityBase b) => b.EntityType == 1 && b.BornTimeMs >= dungeon.StageModuleData.StageStartTime;
+        var aoi = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.Bases.Any(Fresh));
+        if (!inside) return (instance, dungeon, aoi.Bases.Where(Fresh).ToArray());
+        // In place the player already sees the scene: each spawn shows in its own 31037.
+        await Task.Delay(500);
+        return (instance, dungeon, [.. bot.Inbox.Snapshot().Where(e => e.IsGame(GameAoiSink.SyncAoiView))
+            .SelectMany(e => AoIViewChangeData.Parser.ParseFrom(e.Body).Bases).Where(Fresh).DistinctBy(b => b.Uuid)]);
     }
 
     private async Task Kill(BotClient bot, ulong uid)
@@ -127,7 +145,7 @@ public sealed class TowerTests : IAsyncLifetime
                 // Controlled combat fixture: shorten the fight after asserting the configured spawn HP.
                 // The ordinary 31102 cast and shared damage/death callbacks still determine the outcome.
                 monster.Hp = 1;
-                monster.Advance(MonsterService.NowMs);
+                monster.Advance(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 monster.Moving = false;
                 monster.NextRoamMs = long.MaxValue;
                 position = monster.Pos;
@@ -168,7 +186,7 @@ public sealed class TowerTests : IAsyncLifetime
         await Eligible(alice);
         await OnLoop(() =>
         {
-            Session(alice).Tower!.ChallengeTime = DateTimeOffset.UtcNow.AddDays(-15).ToUnixTimeMilliseconds();
+            Session(alice).Instances.Tower!.ChallengeTime = DateTimeOffset.UtcNow.AddDays(-15).ToUnixTimeMilliseconds();
             return Task.CompletedTask;
         });
         var entered = await EnterFloor(alice, 1);
@@ -177,7 +195,7 @@ public sealed class TowerTests : IAsyncLifetime
         await OnLoop(() =>
         {
             Assert.Equal(1200, Service<MonsterService>().Template(24000001)!.MaxHp);
-            Assert.All(Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Scene.SceneID), m =>
+            Assert.All(Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Instance), m =>
             {
                 Assert.Equal(1080, m.Template.MaxHp);
                 Assert.Equal(9000, m.DamageRatio);
@@ -220,14 +238,14 @@ public sealed class TowerTests : IAsyncLifetime
             bool ready = false;
             await OnLoop(() =>
             {
-                floor = [.. Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Scene.SceneID)];
+                floor = [.. Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Instance)];
                 ready = floor.Length == 2 && floor.All(m => buffs.UnitAttributes(m).Any(a => a.Id == 215));
                 return Task.CompletedTask;
             });
             if (ready) break;
             Assert.True(DateTime.UtcNow < until, "suppression buff not applied");
         }
-        Assert.Equal(new TowerService.Suppression(5000001, -1000, -1000), Session(alice).TowerAttempt!.Suppressed);
+        Assert.Equal(new TowerService.Suppression(5000001, -1000, -1000), Session(alice).Instances.TowerAttempt!.Suppressed);
         Assert.All(floor, m =>
         {
             Assert.Equal(10000, m.DamageRatio);
@@ -257,7 +275,7 @@ public sealed class TowerTests : IAsyncLifetime
         await alice.SendGameAsync(TowerService.ClaimFirstPass, new ClimbTowerClaimFirstPassRewardReq());
         Assert.NotEqual(0, (await Next(alice, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser)).Result);
         Assert.Equal(0, Count(alice, 1250709));
-        Assert.Null(Session(alice).TowerAttempt);
+        Assert.Null(Session(alice).Instances.TowerAttempt);
     }
 
     [ClientDataFact]
@@ -322,7 +340,7 @@ public sealed class TowerTests : IAsyncLifetime
             Assert.True(packets.FindIndex(e => e.IsGame(TowerService.End)) < packets.FindIndex(e => e.IsGame(TowerService.TowerSync) && !DBClimTowerIncrement.Parser.ParseFrom(e.Body).SyncAllMark));
 
             var replay = await EnterFloor(alice, 1, inside: true);
-            Assert.NotEqual(entered.Scene.SceneID, replay.Scene.SceneID);
+            Assert.Equal(entered.Instance, replay.Instance); // the same scene, reset in place
             foreach (var monster in replay.Monsters) await Kill(alice, monster.Uuid);
             var again = await Next(alice, TowerService.End, ClimTowerEndNotify.Parser);
             Assert.True(again.ClimTowerResult);
@@ -388,13 +406,13 @@ public sealed class TowerTests : IAsyncLifetime
         await other.SendGameAsync(TowerService.ClaimFirstPass, new ClimbTowerClaimFirstPassRewardReq());
         Assert.Equal(ErrorCodes.Unknown, (await Next(other, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser)).Result);
         Assert.Equal(0, Count(other, 1250709));
-        Assert.Equal(0, Session(other).Tower!.ServerFirstPassClaimedLayer);
+        Assert.Equal(0, Session(other).Instances.Tower!.ServerFirstPassClaimedLayer);
         FailTowerWrites(false);
         await other.SendGameAsync(TowerService.ClaimFirstPass, new ClimbTowerClaimFirstPassRewardReq());
         var claim = await Next(other, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser);
         Assert.Equal((0, 10L), (claim.Result, claim.ClaimedUpToLayer));
         Assert.Equal(10, Count(other, 1250709));
-        Assert.Equal(0, Session(other).Tower!.LayerConfID); // honor is independent of personal clears
+        Assert.Equal(0, Session(other).Instances.Tower!.LayerConfID); // honor is independent of personal clears
         await other.SendGameAsync(TowerService.ClaimFirstPass, new ClimbTowerClaimFirstPassRewardReq());
         Assert.Equal(ErrorCodes.Parameter, (await Next(other, TowerService.ClaimFirstPass, ClimbTowerClaimFirstPassRewardRes.Parser)).Result);
         Assert.Equal(10, Count(other, 1250709));
@@ -416,7 +434,7 @@ public sealed class TowerTests : IAsyncLifetime
         await Eligible(bob);
         var a = await EnterFloor(alice, 1);
         var b = await EnterFloor(bob, 1);
-        Assert.NotEqual(a.Scene.SceneID, b.Scene.SceneID);
+        Assert.NotEqual(a.Instance, b.Instance);
         await OnLoop(() =>
         {
             Assert.DoesNotContain(Session(bob), Service<World>().Viewers(Session(alice)));
@@ -432,7 +450,7 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Equal(0, Count(alice, 1250709));
         foreach (var monster in a.Monsters) await Kill(alice, monster.Uuid);
         Assert.True((await Next(alice, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
-        Assert.False(Session(bob).TowerAttempt!.Settled);
+        Assert.False(Session(bob).Instances.TowerAttempt!.Settled);
         Assert.Equal(0, Count(bob, 1250709));
     }
 
@@ -446,15 +464,15 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.SwitchingScenes, await StartRequest(alice, 1));
         await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = RoleStore.SpawnSceneEntry });
         Assert.Equal(ErrorCodes.SceneMissing, (await Next(alice, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
-        Assert.False(Session(alice).TowerAttempt!.Loaded);
-        Assert.Empty(Session(alice).TowerAttempt!.Monsters);
+        Assert.False(Session(alice).Instances.TowerAttempt!.Loaded);
+        Assert.Empty(Session(alice).Instances.TowerAttempt!.Monsters);
         await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 2100001 });
         Assert.Equal(0, (await Next(alice, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
         await Next(alice, TowerService.DungeonInfo, DungeonBaseInfoNotify.Parser);
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.Bases.Any(b => b.EntityTemplateID == 24000001));
         await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = 2100001 });
         Assert.Equal(ErrorCodes.SceneMissing, (await Next(alice, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
-        Assert.Equal(2, Session(alice).TowerAttempt!.Monsters.Count);
+        Assert.Equal(2, Session(alice).Instances.TowerAttempt!.Monsters.Count);
     }
 
     [ClientDataFact]
@@ -463,7 +481,7 @@ public sealed class TowerTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         await Eligible(alice);
         var a = await EnterFloor(alice, 1);
-        await OnLoop(() => { Session(alice).TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
+        await OnLoop(() => { Session(alice).Instances.TowerAttempt!.StartedAt -= TimeSpan.FromSeconds(60); return Task.CompletedTask; });
         await Kill(alice, a.Monsters[0].Uuid);
         var end = await Next(alice, TowerService.End, ClimTowerEndNotify.Parser);
         Assert.False(end.ClimTowerResult);
@@ -498,8 +516,7 @@ public sealed class TowerTests : IAsyncLifetime
             if (ReferenceEquals(monster, final)) staged.TrySetResult();
             return Task.CompletedTask;
         };
-        var hooks = Service<CombatService>().BeforeKilled;
-        hooks.Insert(hooks.FindIndex(h => h.Target is RewardService), stageNotice);
+        using var stageSub = Service<CombatService>().BeforeKilled.Subscribe(stageNotice, order: -1);
         FailTowerWrites(true);
         await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
@@ -517,7 +534,7 @@ public sealed class TowerTests : IAsyncLifetime
             if (await Service<GameLoop>().InvokeAsync(() => Task.FromResult(final.Hp == 1 || final.Dead))) break;
             Assert.True(DateTime.UtcNow < until, "the refused kill never restored the monster's HP");
         }
-        hooks.Remove(stageNotice);
+        stageSub.Dispose();
         Assert.False(final.Dead);
         Assert.Equal(1, final.Hp);
         Assert.False(await Service<CharacterService>().RewardSourceCommittedAsync(final.RewardSource!.Key));
@@ -527,8 +544,8 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Equal(4, Count(alice, 1250709));
         Assert.Equal(0, Count(alice, 1250701));
         Assert.Equal(4, Session(alice).Items.Where(i => i.Entry == 1250709).Sum(i => i.Stack));
-        Assert.Equal(0, Session(alice).Tower!.LayerConfID);
-        Assert.Empty(Session(alice).Tower!.RewardRecord);
+        Assert.Equal(0, Session(alice).Instances.Tower!.LayerConfID);
+        Assert.Empty(Session(alice).Instances.Tower!.RewardRecord);
         Assert.Empty(Service<RoleStore>().LoadTowerFirstPasses(1, 1));
         FailTowerWrites(false);
         await Task.Delay(600); // the walk in Kill cancels the swing above, which then holds the next one (CombatService.CancelCastAsync)
@@ -553,12 +570,12 @@ public sealed class TowerTests : IAsyncLifetime
             await Eligible(alice);
             role = (long)alice.Self!.Uuid;
             var entered = await EnterFloor(alice, 1);
-            room = entered.Scene.SceneID;
+            room = entered.Instance;
             await Kill(alice, entered.Monsters[0].Uuid);
             Vec3 position = null!;
             await OnLoop(() =>
             {
-                attempt = Session(alice).TowerAttempt!;
+                attempt = Session(alice).Instances.TowerAttempt!;
                 final = Service<World>().AllUnits().OfType<MonsterUnit>()
                     .Single(m => m.Uid == (long)entered.Monsters[1].Uuid);
                 final.Hp = 1;
@@ -584,23 +601,19 @@ public sealed class TowerTests : IAsyncLifetime
                 }
                 return Task.CompletedTask;
             };
-            var hooks = Service<CombatService>().BeforeKilled;
-            hooks.Insert(hooks.FindIndex(h => h.Target is RewardService), failApply);
+            using var failSub = Service<CombatService>().BeforeKilled.Subscribe(failApply, order: -1);
             // Held from here on: the fault closes the connection, after which the registry may already have dropped it.
             var session = Session(alice);
-            try
-            {
-                await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
-                await alice.SendGameAsync(CombatService.UseSkill,
-                    new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
-                Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-                await staged.Task.WaitAsync(Wait);
-                await faulted.Task.WaitAsync(Wait);
-                // The child reward permit aborts first; the parent cast then finalizes the paid death.
-                for (int i = 0; i < 100 && (!session.Channel.PeerClosed || !final.Dead); i++) await Task.Delay(20);
-                Assert.True(session.Channel.PeerClosed);
-            }
-            finally { hooks.Remove(failApply); }
+            await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = position, BStop = true, SpeedRate = 1 });
+            await alice.SendGameAsync(CombatService.UseSkill,
+                new CastSkillReq { SkillId = 1000001, TargetId = final.Uid });
+            Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+            await staged.Task.WaitAsync(Wait);
+            await faulted.Task.WaitAsync(Wait);
+            // The child reward permit aborts first; the parent cast then finalizes the paid death.
+            for (int i = 0; i < 100 && (!session.Channel.PeerClosed || !final.Dead); i++) await Task.Delay(20);
+            Assert.True(session.Channel.PeerClosed);
+            failSub.Dispose();
             Assert.Equal(1, applyFaults);
             Assert.True(final.Dead);
             Assert.True(final.RewardSettlement!.Committed);
@@ -615,13 +628,12 @@ public sealed class TowerTests : IAsyncLifetime
         }
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Null(Service<InstanceService>().Find(room));
-        Assert.Null(Session(recovered).TowerAttempt);
-        Assert.Equal(1, Session(recovered).Tower!.LayerConfID);
-        Assert.True(Session(recovered).Tower!.RewardRecord[1]);
+        Assert.Null(Session(recovered).Instances.TowerAttempt);
+        Assert.Equal(1, Session(recovered).Instances.Tower!.LayerConfID);
+        Assert.True(Session(recovered).Instances.Tower!.RewardRecord[1]);
         Assert.Equal(5, Count(recovered, 1250709));
         Assert.Equal(9, Count(recovered, 1250701));
     }
@@ -638,7 +650,7 @@ public sealed class TowerTests : IAsyncLifetime
         MonsterUnit[] actors = [];
         await OnLoop(async () =>
         {
-            actors = [.. Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Scene.SceneID)];
+            actors = [.. Service<World>().AllUnits().OfType<MonsterUnit>().Where(m => m.InstanceId == entered.Instance)];
             Assert.Equal(2, actors.Length);
             actors[0].Moving = actors[1].Moving = false;
             actors[1].X = actors[0].X;
@@ -689,13 +701,65 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Empty(end.RewardNotify.Rewards);
         Assert.True(Session(alice).Dead);
         Assert.Equal(0, Count(alice, 1250709));
-        Assert.Empty(Session(alice).Tower!.RewardRecord);
+        Assert.Empty(Session(alice).Instances.Tower!.RewardRecord);
         await alice.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
         Assert.Equal(0, (await Next(alice, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser)).Result);
         await Next(alice, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);
         await Task.Delay(1200); // pending normal attacks cannot deliver a second result after leaving
         Assert.Single(alice.Inbox.Snapshot(), e => e.IsGame(TowerService.End));
-        Assert.Null(Session(alice).TowerAttempt);
+        Assert.Null(Session(alice).Instances.TowerAttempt);
+    }
+
+    [ClientDataFact]
+    public async Task TryAgainAfterDeathRevivesAtFullHpOnAFreshFloor()
+    {
+        await using var alice = await InWorld("Alice");
+        await Eligible(alice, level: 33);
+        var lost = await EnterFloor(alice, 1);
+        await OnLoop(() => Service<CharacterService>().SetHpSpAsync(Session(alice), 1, null));
+        await alice.SendGameAsync(MsgId.Walk, new WalkReq { Pos = lost.Monsters[0].MovementInfo.Pos, BStop = true, SpeedRate = 1 });
+        await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser,
+            hit => hit.Dsts.Any(d => d.DstID == (long)alice.Self!.Uuid && d.IsDead));
+        Assert.False((await Next(alice, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
+        Assert.True(Session(alice).Dead);
+
+        // The Failed panel's Try Again sends 32801 from inside the tower while the challenger is still dead.
+        var retry = await EnterFloor(alice, 1, inside: true);
+        Assert.Equal(lost.Instance, retry.Instance); // the same scene, reset in place
+        Assert.Equal(2, retry.Monsters.Length);
+        await Next(alice, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => !info.BDead);
+        var s = Session(alice);
+        Assert.False(s.Dead);
+        Assert.Equal(Service<CharacterService>().Stats(s)[101], Service<CharacterService>().Stats(s)[2000]);
+        Assert.Equal(retry.Instance, s.Instances.TowerAttempt!.InstanceId);
+    }
+
+    [ClientDataFact]
+    public async Task TheNextFloorMovesThePlayerBackToTheBornPointAfterTheReset()
+    {
+        await using var alice = await InWorld("Alice");
+        await Eligible(alice);
+        var first = await EnterFloor(alice, 1);
+        foreach (var monster in first.Monsters) await Kill(alice, monster.Uuid);
+        Assert.True((await Next(alice, TowerService.End, ClimTowerEndNotify.Parser)).ClimTowerResult);
+        var born = Service<WorldData>().Map(2100001)!.Born!.Value;
+        float walkedTo = 0;
+        await OnLoop(() => { walkedTo = Session(alice).Position.Z; return Task.CompletedTask; });
+        Assert.True(Math.Abs(walkedTo - born.Z) > 1, "the kills walked the player off the born point");
+
+        // LC_Actor_AutoAttack._resetScene pauses auto battle at the 30124; only _refreshAutoPathCache resumes it, and
+        // it runs on Unit.LocalPlayerGridChange alone, so the reset must be followed by a server move of the player.
+        long self = (long)alice.Self!.Uuid;
+        using var teleport = alice.Inbox.Expect(e => e.IsGame(GameAoiSink.MovementChange) && MovementChangeNtf.Parser.ParseFrom(e.Body).Uid == self);
+        await EnterFloor(alice, 2, inside: true);
+        var moved = await teleport.WaitAsync(Wait);
+        var move = MovementChangeNtf.Parser.ParseFrom(moved.Body);
+        Assert.Equal(MovementTransitionType.MoveTransForceTeleport, move.TransType);
+        Assert.Equal((born.X, born.Z), (move.MovementInfo.Pos.X, move.MovementInfo.Pos.Z));
+        var packets = alice.Inbox.Snapshot().ToList();
+        int reset = packets.FindLastIndex(e => e.IsGame(DungeonService.Reset)), started = packets.FindLastIndex(e => e.IsGame(TowerService.DungeonInfo));
+        Assert.InRange(packets.IndexOf(moved), reset + 1, started - 1);
+        await OnLoop(() => { Assert.Equal(born.Z, Session(alice).Position.Z); return Task.CompletedTask; });
     }
 
     [ClientDataFact]
@@ -710,7 +774,7 @@ public sealed class TowerTests : IAsyncLifetime
         await Eligible(alice);
         var a = await EnterFloor(alice, 6);
         Assert.Single(a.Monsters);
-        Assert.Equal(4, Session(alice).TowerAttempt!.Spawns.Count);
+        Assert.Equal(4, Session(alice).Instances.TowerAttempt!.Spawns.Count);
         await alice.SendGameAsync(TowerService.LeaveDungeon, new LeaveDungeonReq());
         await Next(alice, TowerService.LeaveDungeon, LeaveDungeonRsp.Parser);
         var sw = await Next(alice, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);
@@ -719,8 +783,8 @@ public sealed class TowerTests : IAsyncLifetime
         await Task.Delay(3200); // all three delayed waves are due; none may resurrect the abandoned attempt
         await OnLoop(() =>
         {
-            Assert.Null(Session(alice).TowerAttempt);
-            Assert.DoesNotContain(Service<World>().AllUnits(), u => u.InstanceId == a.Scene.SceneID);
+            Assert.Null(Session(alice).Instances.TowerAttempt);
+            Assert.DoesNotContain(Service<World>().AllUnits(), u => u.InstanceId == a.Instance);
             return Task.CompletedTask;
         });
         Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(TowerService.End));
@@ -742,7 +806,7 @@ public sealed class TowerTests : IAsyncLifetime
         await using var relog = await InWorld("Alice", create: false);
         Assert.Equal(RoleStore.SpawnSceneEntry, Session(relog).SceneEntry);
         Assert.Equal(0, Session(relog).InstanceId);
-        Assert.Null(Session(relog).TowerAttempt);
+        Assert.Null(Session(relog).Instances.TowerAttempt);
         Assert.Equal(0, Count(relog, 1250709));
         await OnLoop(() => { Assert.DoesNotContain(Service<World>().AllUnits(), u => u.InstanceId == instance); return Task.CompletedTask; });
     }
@@ -756,13 +820,6 @@ public sealed class TowerTests : IAsyncLifetime
             await Task.Delay(20);
         }
         Assert.Fail("role did not disconnect");
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
     /// <summary>

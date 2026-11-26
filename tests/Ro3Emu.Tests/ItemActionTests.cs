@@ -48,8 +48,7 @@ public sealed class ItemActionTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> InWorld(string name, bool create = true)
@@ -59,6 +58,42 @@ public sealed class ItemActionTests : IAsyncLifetime
         long id = create ? (await b.CreateRoleAsync(name)).RoleBaseInfo.Id : b.Roles.Single().Id;
         await b.EnterWorldAsync(id); await WorldSettle.StallsAsync(_app.Services);
         return b;
+    }
+
+    // Food keeps its end across a logout. What a scene clears, what has no end of its own and what ran out while away do not come back.
+    [ClientDataFact]
+    public async Task TimedBuffsMarkedForItOutliveALogoutWithTheEndTheyHad()
+    {
+        const int food = 985001, sceneBound = 1258001, endless = 4901401, shortLived = 980801;
+        var alice = await InWorld("Alice");
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        long role = (long)alice.Self!.Uuid;
+        GameSession Player() => Sessions.All().Single(x => x.Role?.Id == role);
+        ActiveBuff before = await loop.InvokeAsync(async () =>
+        {
+            foreach (var id in new[] { food, sceneBound, endless }) await buffs.AddAsync(Player(), id, 0, role);
+            await buffs.AddAsync(Player(), shortLived, 100, role);
+            int at = Player().Buffs.FindIndex(b => b.ConfigId == food);
+            Player().Buffs[at] = Player().Buffs[at] with { Changes = [(1033, 25)] };
+            return Player().Buffs[at];
+        });
+        await Task.Delay(150);
+
+        await using var back = await Relogin(alice, "Alice");
+        var shown = await Next(back, BuffService.BuffUpdate, BuffUpdateNotify.Parser, n => n.Buffs.Any(b => b.ConfigId == food));
+        Assert.Equal(before.ExpireMs, shown.Buffs.Single(b => b.ConfigId == food).ExpireTime);
+        var kept = await loop.InvokeAsync(() => Task.FromResult(Player().Buffs.ToArray()));
+        var returned = Assert.Single(kept, b => b.ConfigId == food);
+        Assert.Equal(before.ExpireMs, returned.ExpireMs);
+        Assert.Equal([(1033L, 25d)], returned.Changes);
+        Assert.DoesNotContain(kept, b => b.ConfigId is sceneBound or endless or shortLived);
+
+        // The economy snapshot reads the kept buffs as a known, strict shape: no asset, no unknown schema.
+        var database = _app.Services.GetRequiredService<AccountStore>().DatabasePath;
+        var catalog = Ro3Emu.Server.Economy.EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
+        var snapshot = Ro3Emu.Server.Economy.EconomySnapshotReader.Read(database, catalog, "auto");
+        Assert.DoesNotContain(snapshot.Issues, i => i.Key.Contains("offline_buffs", StringComparison.Ordinal));
     }
 
     private async Task<BotClient> Relogin(BotClient bot, string name)
@@ -194,7 +229,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         Assert.Equal(PersonalService.ErrConfig, await Use(alice, 1960003)); // action 50004 has no row
         Assert.Equal(1, Count(alice, 1960003));
 
-        var plan = (await Read("alice", s => PersonalService.Current(s.Personal)!)).Clone();
+        var plan = (await Read("alice", s => PersonalService.Current(s.Social.Personal)!)).Clone();
         plan.ThemeId = 1003;
         var save = new UpdatePersonalAppearanceReq { PlanId = 1, Info = plan };
         Assert.Equal(0, (await Request(alice, PersonalService.UpdateAppearance, save, UpdatePersonalAppearanceResp.Parser)).Result);
@@ -219,7 +254,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         Assert.Equal(0, await Use(alice, 1910002)); // [349,10002]: head 100002, permanent
         var head = await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, m => m.SocialOutfitContainer.ContainsKey(1));
         Assert.Equal(1, Count(alice, 1910002));
-        Assert.Equal(3, (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos[100002].Status);
+        Assert.Equal(3, (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos[100002].Status);
         Assert.NotNull(head);
         Assert.Equal(SocialOutfitService.ErrAlreadyUnlocked, await Use(alice, 1910002));
         Assert.Equal(1, Count(alice, 1910002));
@@ -227,14 +262,14 @@ public sealed class ItemActionTests : IAsyncLifetime
         // 1910003 [[349,10003],[349,10004]]: 100003 for a male role, 100004 for a female one.
         int sex = await Read("alice", s => s.Role!.Sex);
         Assert.Equal(0, await Use(alice, 1910003));
-        var owned = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos;
+        var owned = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[1].SocialOutfitInfos;
         Assert.True(owned.ContainsKey(sex == 2 ? 100004 : 100003));
         Assert.False(owned.ContainsKey(sex == 2 ? 100003 : 100004));
 
         // 1950015 [349,50015]: honor 500015 for 86400 s; a second use extends it.
         long now = _clock.GetUtcNow().ToUnixTimeSeconds();
         Assert.Equal(0, await Use(alice, 1950015));
-        var timed = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500015];
+        var timed = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500015];
         Assert.Equal(2, timed.Status);
         Assert.Equal(now + 86400, timed.ExpireTimestamp);
 
@@ -256,7 +291,7 @@ public sealed class ItemActionTests : IAsyncLifetime
         _clock.Advance(TimeSpan.FromSeconds(86401));
         await Next(alice, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser,
             m => m.SocialOutfitEquip.TryGetValue(5, out var worn) && (worn.All?.CfgId == 500000 || worn.Inc?.CfgId == 500000));
-        Assert.False((await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer.ContainsKey(5));
+        Assert.False((await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer.ContainsKey(5));
 
         await using var again = await Relogin(alice, "Alice");
         var full = await Next(again, SocialOutfitService.Sync, DBSocialOutfitIncrement.Parser, m => m.SyncAllMark);
@@ -308,7 +343,7 @@ public sealed class ItemActionTests : IAsyncLifetime
 
         // Used in time it activates the honor for its own 24 hours.
         Assert.Equal(0, await Use(alice, 1950019));
-        var honor = (await Read("alice", s => s.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500019];
+        var honor = (await Read("alice", s => s.Social.SocialOutfit!)).SocialOutfitContainer[5].SocialOutfitInfos[500019];
         Assert.Equal(2, honor.Status);
         Assert.Equal(claimed + 86400, honor.ExpireTimestamp);
 

@@ -13,7 +13,7 @@ public sealed partial class PanelOperations
     private const int SummaryText = 200;
 
     private Task<Dictionary<long, FeedbackTriageRow>> TriageAsync() =>
-        accounts.ReadAsync<Dictionary<long, FeedbackTriageRow>>(new FeedbackTriageRead());
+        accounts.ReadPanelAsync<Dictionary<long, FeedbackTriageRow>>(new FeedbackTriageRead());
 
     private static string StatusOf(Dictionary<long, FeedbackTriageRow> triage, long id) =>
         triage.TryGetValue(id, out var row) ? row.Status : NewStatus;
@@ -39,7 +39,7 @@ public sealed partial class PanelOperations
         var report = await Task.Run(() => feedback.Store.Read(id - 1, null, 1).FirstOrDefault(r => r.Id == id));
         if (report == null) return null;
         (await TriageAsync()).TryGetValue(id, out var t);
-        var notes = await accounts.ReadAsync<List<FeedbackNoteRow>>(new FeedbackNotesRead(id));
+        var notes = await accounts.ReadPanelAsync<List<FeedbackNoteRow>>(new FeedbackNotesRead(id));
         return new PanelReport(report.Id, report.Time, report.Source, report.Account, report.RoleId, report.RoleName, report.Level,
             report.Career, report.Scene, report.Map, report.Instance, report.Line, report.X, report.Y, report.Z, report.Text, report.Truncated,
             report.Context, t?.Status ?? NewStatus, t?.Assignee, t == null ? null : DateTimeOffset.FromUnixTimeSeconds(t.UpdatedUtc), t?.UpdatedBy,

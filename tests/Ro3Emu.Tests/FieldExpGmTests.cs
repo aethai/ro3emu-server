@@ -21,7 +21,7 @@ public sealed class FieldExpGmTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.FieldExpRates = [new FieldExpRule { MinLevel = 1, MaxLevel = 10, Percent = 150 }];
         });
@@ -30,8 +30,7 @@ public sealed class FieldExpGmTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
     private async Task Gm(string line)
@@ -112,12 +111,5 @@ public sealed class FieldExpGmTests : IAsyncLifetime
 
         rewards.SetFieldExpRules([new FieldExpRule { MinLevel = 41, MaxLevel = 50, Percent = 300 }]); // the killer is not in the range
         Assert.Equal(field, await JobExp(FieldMonster, 1));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 }

@@ -54,7 +54,6 @@ public sealed class ReconnectTests : IAsyncLifetime
             if (!_stopped) await _app.StopAsync();
             await _app.DisposeAsync();
         }
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 

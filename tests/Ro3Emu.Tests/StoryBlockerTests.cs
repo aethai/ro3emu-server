@@ -25,7 +25,7 @@ public sealed class StoryBlockerTests : IAsyncLifetime
         var (http, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -36,7 +36,6 @@ public sealed class StoryBlockerTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -206,12 +205,5 @@ public sealed class StoryBlockerTests : IAsyncLifetime
         await Gm("!lvl 53");
         for (int i = 0; i < 100 && await Read(s => s.Tasks!.Infos[706990].IsChapterLocked); i++) await Task.Delay(20);
         Assert.False(await Read(s => s.Tasks!.Infos[706990].IsChapterLocked));
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

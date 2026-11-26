@@ -43,4 +43,33 @@ public sealed class StreamConvertorTests
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(allocated < 200_000, $"{allocated} bytes for 1000 frames");
     }
+
+    [Fact]
+    public void PartialByteChunksAcrossFrameBoundariesInflateCleanly()
+    {
+        var key = Enumerable.Range(10, 20).Select(i => (byte)i).ToArray();
+        var server = new StreamConvertor(key);
+        var client = new StreamConvertor(key);
+        var expected = new List<byte>();
+        var wire = new MemoryStream();
+        var random = new Random(42);
+        for (int i = 0; i < 40; i++)
+        {
+            var payload = new byte[random.Next(1, 500)];
+            random.NextBytes(payload);
+            expected.AddRange(payload);
+            client.ConvertOutput(payload, wire);
+        }
+
+        var received = new List<byte>();
+        byte[] allWire = wire.ToArray();
+        int pos = 0;
+        while (pos < allWire.Length)
+        {
+            int step = Math.Min(random.Next(1, 7), allWire.Length - pos);
+            received.AddRange(server.ConvertInput(allWire.AsSpan(pos, step)));
+            pos += step;
+        }
+        Assert.Equal(expected, received);
+    }
 }

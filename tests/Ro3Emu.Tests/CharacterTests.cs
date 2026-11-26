@@ -23,7 +23,7 @@ public sealed class CharacterTests : IAsyncLifetime
     {
         var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
         // Game tables come from the repository's data/config export (tools/ConfigExport).
-        string gameData = Path.Combine(RepoRoot(), "data");
+        string gameData = Path.Combine(ClientData.RepoRoot, "data");
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
@@ -40,7 +40,6 @@ public sealed class CharacterTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -472,7 +471,7 @@ public sealed class CharacterTests : IAsyncLifetime
             await buying.WaitAsync(Wait);
             Assert.Equal(currency - 2000, roles.LoadProgress(role).Currency[1]);
             Assert.Equal(stack + 2, items.Load(role).Where(i => i.Entry == potion).Sum(i => i.Stack));
-            Assert.Equal(2, source.Shop!.Bought[commodity].Count);
+            Assert.Equal(2, source.Social.Shop!.Bought[commodity].Count);
             Assert.Equal(987654, (await Next(bob, ShopService.BuyCommodity, BuyCommodityResp.Parser,
                 r => r.CommodityId == 987654)).CommodityId);
             // A fresh, unbound permit can still address this socket. Receiving its sentinel
@@ -583,7 +582,7 @@ public sealed class CharacterTests : IAsyncLifetime
             var s = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
             s.Progress!.SkillBar[1] = 10000;
             // ... and a plan's manual bar (SkillAssignPlan.ManualLoadSkill), which the wheel prefers.
-            var plan = s.SkillPlans!.SkillAssignPlans[s.SkillPlans.CurrentPlanIndex];
+            var plan = s.Combat.SkillPlans!.SkillAssignPlans[s.Combat.SkillPlans.CurrentPlanIndex];
             plan.ManualLoadSkill.Clear();
             plan.ManualLoadSkill.Add(new SkillData { SkillId = 10000, SkillLevel = 1 });
             return Task.CompletedTask;
@@ -676,11 +675,56 @@ public sealed class CharacterTests : IAsyncLifetime
         Assert.Contains("20", done.ErrInfo);
     }
 
-    private static string RepoRoot()
+    [ClientDataFact]
+    public async Task StatPointPreviewFromEntitySelfMatchesTheCommittedStats()
     {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
+        await using var alice = await InWorld("Alice");
+        await Next(alice, CharacterService.BaseAttrSync, BaseAttrInfoIncrement.Parser);
+        var data = _app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>();
+        var self = alice.Self!.Property.ToDictionary(p => (int)p.Idx, p => (p.Data, p.BaseData));
+        // Novice lv1 MaxHP: raw 70 (AttriBaseLv 30 + VIT 1 * 40) before VIT's +0.2 %, final 71.
+        Assert.Equal((71, 70), self[101]);
+
+        // The panel's preview of STR 1 -> 5 and VIT 1 -> 5, before anything is sent.
+        var preview = ClientPointPreview(data, self, 1, 4).Concat(ClientPointPreview(data, self, 3, 4))
+            .ToDictionary(p => p.Key, p => p.Value);
+
+        var req = new AllocateAttrPointReq { PlanIndex = 0 };
+        foreach (var (stat, value) in new[] { (1, 5), (2, 1), (3, 5), (4, 1), (5, 1), (6, 1) }) req.Points[stat] = value;
+        await alice.SendGameAsync(CharacterService.AllocateAttrPoints, req);
+        Assert.Equal(0, (await Next(alice, CharacterService.AllocateAttrPoints, AllocateAttrPointRsp.Parser)).Result);
+        var committed = await Next(alice, CharacterService.OnePropertyChange, OnePropertyChange.Parser,
+            m => m.Property.Propertys.Any(p => p.PropertyId == 3 && p.Data == 5));
+        var after = committed.Property.Propertys.ToDictionary(p => (int)p.PropertyId, p => p.Data);
+        foreach (int root in new[] { 101, 103 }) // MaxHP, PATK
+            Assert.Equal(after[root], (long)Math.Ceiling(preview[root] - 1e-6));
+    }
+
+    /// <summary>
+    /// The client's preview of one base stat's change (LC_DAL_PlayerInfo._refreshFinalLocalVal, melee
+    /// AttributeConversionConfig._kAttribute1): each target gains coefficient * delta, then every touched group is
+    /// rebuilt from ServerAttrBaseInfo (baseData, or data when baseData is 0, _changeProperty) per _iCalculateType.
+    /// Returns the previewed value of each group root (dataType 0 roots only: the ones compared).
+    /// </summary>
+    private static Dictionary<int, double> ClientPointPreview(
+        Ro3Emu.Server.Data.GameData data, Dictionary<int, (long Data, long Base)> self, int stat, int delta)
+    {
+        double Scale(int id, double v) => Ro3Emu.Server.Data.Config.AttributeConfig.Get(data, id)?.DataType switch
+        { 1 => v / 10000, 2 => v / 100, _ => v };
+        double ServerBase(int id) => self.TryGetValue(id, out var p) ? (p.Base != 0 ? Scale(id, p.Base) : p.Data) : 0;
+        var add = new Dictionary<int, double>();
+        foreach (var pair in Ro3Emu.Server.Data.Config.AttributeConversionConfig.Get(data, stat)!.Value.Attribute1)
+            add[(int)pair[0]] = add.GetValueOrDefault((int)pair[0]) + Scale((int)pair[0], pair[1]) * delta;
+        var rows = data.Table("AttributeConfig").Values.Select(r => new Ro3Emu.Server.Data.Config.AttributeConfig(r)).ToList();
+        var preview = new Dictionary<int, double>();
+        foreach (int root in add.Keys.Select(id => (int)Ro3Emu.Server.Data.Config.AttributeConfig.Get(data, id)!.Value.PreAttri).Distinct())
+        {
+            var b = new double[7];
+            foreach (var m in rows.Where(r => r.PreAttri == root))
+                b[m.CalculateType] += ServerBase((int)m.Id) + add.GetValueOrDefault((int)m.Id);
+            preview[root] = b[1] * (1 + b[2] + b[6]) * (1 + b[4]) + b[3];
+        }
+        return preview;
     }
 
 }

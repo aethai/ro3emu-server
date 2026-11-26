@@ -20,7 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Ro3Emu.Setup\Ro3Emu.Setup.csproj" />
+    <ProjectReference Include="..\..\src\Ro3Emu.ClientPatching\Ro3Emu.ClientPatching.csproj" />
+    <ProjectReference Include="..\..\src\Ro3Emu.Setup.Core\Ro3Emu.Setup.Core.csproj" />
     <ProjectReference Include="..\..\src\Ro3Emu.DataExport\Ro3Emu.DataExport.csproj" />
   </ItemGroup>
 

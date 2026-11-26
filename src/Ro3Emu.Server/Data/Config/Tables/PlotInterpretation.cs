@@ -8,4 +8,5 @@ public readonly partial record struct PlotInterpretation(JsonElement Row)
 {
     [ConfigField("_iID")] public partial long Id { get; }
     [ConfigField("_iType")] public partial long Type { get; }
+    [ConfigField("_kTrigger")] public partial long[] Trigger { get; }
 }

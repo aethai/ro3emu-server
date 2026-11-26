@@ -22,13 +22,12 @@ public sealed class MountTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (h, m, g) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
+        _app = ServerHost.Create([], o => { o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g; }, _clock);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dir, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {
@@ -98,7 +97,7 @@ public sealed class MountTests : IAsyncLifetime
         await UnlockMount(a, "alice", 1501013);
         await Gm("alice", "!item 1501013 1");
         long guid = Session("alice").Items.Single(i => i.Entry == 1501013).Guid;
-        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => { Session("alice").ItemCds.Clear(); return Task.CompletedTask; });
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => { Session("alice").Combat.ItemCds.Clear(); return Task.CompletedTask; });
         await a.SendGameAsync(31323, new ItemUseReq { ItemGuid = guid, ItemCount = 1 });
         Assert.Equal(ErrorCodes.MountAlreadyOwned, (await Next(a, 31323, ItemUseResp.Parser)).Result);
         Assert.Contains(Session("alice").Items, i => i.Guid == guid);
@@ -244,6 +243,119 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(rolled.CfgId, Session("alice").Mounts!.Mounts[req.MountId].EtChantInfo[1].EtChantData[1]);
     }
 
+    /// <summary>
+    /// The Lord of the Starry Firmament's _kFlySwitchSkills (3112101 Take Flight / 3112201 Burrow Underground):
+    /// MountService.FlySkills grants only the direction matching the current flight state, and neither one ends the
+    /// ride the way an ordinary cast does (MountService.DismountForCastAsync, WorldCoreService.MountFlightSwitchAsync).
+    /// Each switch carries the rider with a 31112 on its _kLogicData displacement (3112121 up, 3112221 down).
+    /// </summary>
+    [ClientDataFact]
+    public async Task TakeOffAndLandingSkillsToggleFlightWithoutDismounting()
+    {
+        const int up = 3112101, down = 3112201, dragon = 60060010;
+        await using var a = await InWorld("Alice");
+        await UnlockMount(a, "alice", 1501004);
+        await a.SendGameAsync(32743, new PlayerMountsSetCfgReq { MountId = dragon });
+        await Next(a, 32743, PlayerMountsSetCfgResp.Parser);
+        await a.SendGameAsync(32745, new PlayerRiderMountReq { Tp = (eRiderType)1 });
+        Assert.Equal(0, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
+        var s = Session("alice");
+        Assert.Equal(dragon, MountService.Rider(s));
+        Assert.False(s.WorldState.Flying);
+        const long flyBit = 1L << 42; // eObjectStateFly (43)
+
+        // The HUD only offers the buttons from SkillWheelMount1/2 (slots 8/9); riding the dragon fills both at once.
+        var wheel = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+            Task.FromResult(_app.Services.GetRequiredService<SkillService>().Build(s).SkillWheel.WhellSkills));
+        Assert.Equal(up, wheel[8].SkillConfigId);
+        Assert.Equal(down, wheel[9].SkillConfigId);
+
+        // Landing is refused on the ground: only Take Flight is granted while not flying.
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role!.Id });
+        Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+
+        var ground = s.Position.Clone();
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
+        Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var climb = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser); // _kLogicData[1]: 1133 ms in
+        Assert.Equal((3112121, MountFlight.Move3D, 1600), (climb.EffectId, climb.MoveType, climb.MoveTimeMs));
+        Assert.Equal(ground.Y + 20, climb.EndPos.Y, 3); // no aimed point: the row's own m_fHeight straight up
+        Assert.Equal(climb.EndPos.Y, s.Position.Y, 3);
+        Assert.True(s.WorldState.Flying);
+        Assert.Equal(dragon, MountService.Rider(s)); // the take-off did not get the rider off
+        Assert.Equal(flyBit, s.StatusBits & flyBit); // LC_UnitBase.CheckFlyMask: the client only enters flight on this bit
+        Assert.Contains(s.Buffs, b => b.ConfigId == down && b.ExpireMs > 0); // the landing skill's id as a buff, tag 3100000
+
+        // Take Flight again is refused in the air: only Burrow Underground is granted while flying.
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
+        Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+
+        await Task.Delay(5100); // both skills share _iPubCDGroup 31101 (5 s), real time: CombatService.Now is wall-clock
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = down, TargetId = s.Role.Id, TargetPos = ground });
+        Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var descent = await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser);
+        Assert.Equal((3112221, MountFlight.Move3D), (descent.EffectId, descent.MoveType));
+        Assert.Equal(ground.Y, descent.EndPos.Y, 1); // the aimed ground point
+        Assert.False(s.WorldState.Flying);
+        Assert.Equal(dragon, MountService.Rider(s));
+        Assert.Equal(0, s.StatusBits & flyBit);
+        Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
+
+        // Getting off or swapping mounts in the air is refused (ErrorCodeConfig 2045 "Cannot mount or dismount while
+        // Flying"): a client that gets off in flight is left hovering without a mount and cannot walk.
+        await Task.Delay(5100);
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = up, TargetId = s.Role.Id });
+        Assert.Equal(0, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(a, CombatService.SkillMove, SkillStartMoveNotify.Parser);
+        Assert.True(s.WorldState.Flying);
+        await a.SendGameAsync(32745, new PlayerRiderMountReq { Tp = (eRiderType)0 });
+        Assert.Equal(ErrorCodes.MountFlying, (await Next(a, 32745, PlayerRiderMountResp.Parser)).Result);
+        await a.SendGameAsync(32743, new PlayerMountsSetCfgReq { MountId = 0 });
+        Assert.Equal(ErrorCodes.MountFlying, (await Next(a, 32743, PlayerMountsSetCfgResp.Parser)).Result);
+        Assert.True(s.WorldState.Flying);
+        Assert.Equal(dragon, MountService.Rider(s));
+
+        // A ride the server ends by itself (the mount expires) lands the rider first, with the flight buff and status bit.
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+        {
+            s.Mounts!.Mounts[dragon].OverdueTimeMs = _clock.GetUtcNow().ToUnixTimeMilliseconds() - 1;
+            return _app.Services.GetRequiredService<MountService>().ReconcileAsync(s);
+        });
+        await Next(a, WorldCoreService.FixLand, FixLandNtf.Parser);
+        Assert.False(s.WorldState.Flying);
+        Assert.Equal(0, MountService.Rider(s));
+        Assert.Equal(0, s.StatusBits & flyBit);
+        Assert.DoesNotContain(s.Buffs, b => b.ConfigId == down);
+    }
+
+    /// <summary>
+    /// The Worldscorch Feather costume (WardRobeConfig 40060010) names Take Flight 3112101 in _iSkillID, but only the
+    /// wardrobe and shop panels read that field, to preview a skill (UI_Sys_WardrobePanelCtrl._showDetailsInfo,
+    /// UI_Sys_AppearanceShopWidgetCtrl): it is the Lord of the Starry Firmament's take-off (MountsConfig 60060010
+    /// _kFlySwitchSkills; SkillConfig 3112101 _iDescription 10110300421 speaks of the dragon). The client flies only a
+    /// ridden fly mount (LC_Unit_Player.IsRideFlyMount, MountsConfig._iType), so the costume grants no flight switch.
+    /// </summary>
+    [ClientDataFact]
+    public async Task WorldscorchFeatherCostumeGrantsNoTakeFlight()
+    {
+        const int costume = 40060010, voucher = 3016401, takeFlight = 3112101; // 3016401: ItemConfig action 200
+        await using var a = await InWorld("Alice");
+        await UnlockMount(a, "alice", voucher);
+        var use = new WardRobeUseAppearanceReq();
+        use.AppearanceIds.Add(costume);
+        await a.SendGameAsync(WardrobeService.Use, use);
+        Assert.Equal(0, (await Next(a, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
+        var s = Session("alice");
+        Assert.Equal(costume, s.Profile.Wardrobe!.CurUseAppearances[4]);
+
+        var wheel = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
+            Task.FromResult(_app.Services.GetRequiredService<SkillService>().Build(s).SkillWheel.WhellSkills));
+        Assert.Equal(0, wheel.TryGetValue(8, out var mount1) ? mount1.SkillConfigId : 0);
+        Assert.Equal(0, wheel.TryGetValue(9, out var mount2) ? mount2.SkillConfigId : 0);
+        await a.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = takeFlight, TargetId = s.Role!.Id });
+        Assert.Equal(ErrorCodes.SkillNotLearned, (await Next(a, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+    }
+
     [ClientDataFact]
     public async Task QuestRideDeliveryPersistsAcrossRelogAndRecycleRemovesOnlyTemporaryRide()
     {
@@ -298,7 +410,7 @@ public sealed class MountTests : IAsyncLifetime
         var session = Session("alice");
         Assert.Equal(TaskState.Delivery, session.Tasks!.Infos[10101250].Status);
         Assert.True(session.Mounts!.Mounts.ContainsKey(mount));
-        Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
+        Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
         Assert.DoesNotContain(session.Items, i => i.Entry == voucher);
 
         await a.SendGameAsync(WardrobeService.Use, new WardRobeUseAppearanceReq { AppearanceIds = { mount } });
@@ -328,7 +440,7 @@ public sealed class MountTests : IAsyncLifetime
             await Next(a, MountService.SetConfig, PlayerMountsSetCfgResp.Parser);
             var session = Session("alice");
             Assert.True(session.Mounts!.Mounts.ContainsKey(mount));
-            Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
+            Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(mount));
             // The second one is refused as already owned, not consumed.
             Assert.Equal(1, session.Items.Where(i => i.Entry == voucher).Sum(i => i.Stack));
         }
@@ -357,7 +469,7 @@ public sealed class MountTests : IAsyncLifetime
         int originalStack = voucher.Stack;
         var character = _app.Services.GetRequiredService<CharacterService>();
         int uses = 0;
-        character.ItemUsed.Add((s, item, count) => { if (s == session && item == entry) uses += count; });
+        character.ItemUsed.Subscribe((s, item, count) => { if (s == session && item == entry) uses += count; });
 
         await player.SendGameAsync(CharacterService.ShortcutBarSave, new ShortcutBarSaveReq { SlotIndex = 0, ItemGuid = guid });
         Assert.Equal(0, (await Next(player, CharacterService.ShortcutBarSave, ShortcutBarSaveRes.Parser)).Result);
@@ -369,7 +481,7 @@ public sealed class MountTests : IAsyncLifetime
         var cooldown = Assert.Single((await Next(player, CharacterService.ItemsCdNotify, ItemsCDNotify.Parser)).Items);
         Assert.Equal(entry, cooldown.ItemId);
         Assert.True(cooldown.ItemCd > before);
-        Assert.Equal(cooldown.ItemCd, session.ItemCds[entry]);
+        Assert.Equal(cooldown.ItemCd, session.Combat.ItemCds[entry]);
         var saved = _app.Services.GetRequiredService<RoleStore>().LoadBagState(session.Role!.Id);
         Assert.NotNull(saved);
         Assert.Equal(cooldown.ItemCd, DBItemsInfo.Parser.ParseFrom(saved).ItemCds.Data[entry]);
@@ -378,7 +490,7 @@ public sealed class MountTests : IAsyncLifetime
         else Assert.Equal(originalStack - 1, session.Items.Single(i => i.Guid == guid).Stack);
         Assert.Equal(1, uses);
         if (mount) Assert.True(session.Mounts!.Mounts.ContainsKey(unlockedId));
-        else Assert.True(session.Wardrobe!.AllLightUpAppearances.ContainsKey(unlockedId));
+        else Assert.True(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(unlockedId));
         Assert.DoesNotContain(player.Inbox.Snapshot().Skip(start), e => e.IsGame(CharacterService.ItemUse));
         Assert.Single(player.Inbox.Snapshot().Skip(start), e => e.IsGame(CharacterService.ItemsCdNotify));
     }
@@ -400,7 +512,7 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Empty(session.Mounts!.Mounts);
         Assert.Equal(before, roles.LoadMounts(session.Role.Id));
         Assert.Equal(beforeBag, roles.LoadBagState(session.Role.Id));
-        Assert.False(session.ItemCds.ContainsKey(1501013));
+        Assert.False(session.Combat.ItemCds.ContainsKey(1501013));
     }
 
     // Mount ownership and its WardRobeConfig type-6 appearance (WardrobeService.Mounts.cs): the wardrobe Mount tab
@@ -426,7 +538,7 @@ public sealed class MountTests : IAsyncLifetime
         Assert.Equal(0, (await Next(a, MountService.Unlock, PlayerMountUnLockNtf.Parser)).EndTime);
         Assert.DoesNotContain(a.Inbox.Snapshot().Skip(start), e => e.IsGame(WardrobeService.UnlockNotice));
         var session = Session("alice"); var roles = _app.Services.GetRequiredService<RoleStore>();
-        Assert.Equal(0, session.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
+        Assert.Equal(0, session.Profile.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
         Assert.True(StoredWardrobe(roles, session.Role!.Id).AllLightUpAppearances.ContainsKey(BigPoring));
         Assert.True(StoredMounts(roles, session.Role.Id).Mounts.ContainsKey(BigPoring));
     }
@@ -445,7 +557,7 @@ public sealed class MountTests : IAsyncLifetime
             _app.Services.GetRequiredService<CharacterService>().UseItemAsync(session, new ItemUseReq { ItemGuid = guid, ItemCount = 1 })));
         Assert.Contains(session.Items, i => i.Guid == guid && i.Stack == 1);
         Assert.Empty(session.Mounts!.Mounts);
-        Assert.False(session.Wardrobe!.AllLightUpAppearances.ContainsKey(BigPoring));
+        Assert.False(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(BigPoring));
         Assert.Equal(mounts, roles.LoadMounts(session.Role.Id));
         Assert.Equal(wardrobe, roles.LoadWardrobe(session.Role.Id));
     }
@@ -459,22 +571,22 @@ public sealed class MountTests : IAsyncLifetime
         var loop = _app.Services.GetRequiredService<GameLoop>();
         long due = session.Mounts!.Mounts[TimedMount].OverdueTimeMs;
         Assert.True(due > _clock.GetUtcNow().ToUnixTimeMilliseconds());
-        Assert.Equal(due, session.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+        Assert.Equal(due, session.Profile.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         Assert.Equal(due, (await Next(a, MountService.Unlock, PlayerMountUnLockNtf.Parser)).EndTime);
 
         await Gm("alice", "!item 1501023 1"); // a second timed unlock extends both from the current expiry
-        await loop.InvokeAsync(() => { session.ItemCds.Clear(); return Task.CompletedTask; });
+        await loop.InvokeAsync(() => { session.Combat.ItemCds.Clear(); return Task.CompletedTask; });
         await a.SendGameAsync(31323, new ItemUseReq { ItemGuid = session.Items.Single(i => i.Entry == 1501023).Guid, ItemCount = 1 });
         Assert.Equal(0, (await Next(a, 31323, ItemUseResp.Parser)).Result); // the first reply was consumed by UnlockMount
         due += 600_000;
         Assert.Equal(due, session.Mounts!.Mounts[TimedMount].OverdueTimeMs);
-        Assert.Equal(due, session.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+        Assert.Equal(due, session.Profile.Wardrobe!.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         Assert.Equal(due, StoredWardrobe(roles, session.Role!.Id).AllLightUpAppearances[TimedMount].OverdueTimeMs);
 
         var wear = new WardRobeUseAppearanceReq(); wear.AppearanceIds.Add(TimedMount);
         await a.SendGameAsync(WardrobeService.Use, wear);
         Assert.Equal(0, (await Next(a, WardrobeService.Use, WardRobeUseAppearanceRes.Parser)).Result);
-        Assert.Equal(TimedMount, session.Wardrobe!.CurUseAppearances[MountSlot]);
+        Assert.Equal(TimedMount, session.Profile.Wardrobe!.CurUseAppearances[MountSlot]);
 
         await loop.InvokeAsync(() =>
         {
@@ -482,8 +594,8 @@ public sealed class MountTests : IAsyncLifetime
             return _app.Services.GetRequiredService<MountService>().ReconcileAsync(session);
         });
         Assert.False(session.Mounts!.Mounts.ContainsKey(TimedMount));
-        Assert.False(session.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedMount));
-        Assert.False(session.Wardrobe.CurUseAppearances.ContainsKey(MountSlot));
+        Assert.False(session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedMount));
+        Assert.False(session.Profile.Wardrobe.CurUseAppearances.ContainsKey(MountSlot));
         await Next(a, MountService.Sync, DBMountsInfoIncrement.Parser, p => p.Mounts.TryGetValue(TimedMount, out var m) && m.Del);
         await Next(a, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
             p => p.AllLightUpAppearances.TryGetValue(TimedMount, out var look) && look.Del);
@@ -516,8 +628,8 @@ public sealed class MountTests : IAsyncLifetime
             });
             await Next(a, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
                 p => p.AllLightUpAppearances.ContainsKey(BigPoring) && p.AllLightUpAppearances.ContainsKey(TimedMount));
-            Assert.Equal(0, session.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
-            Assert.Equal(due, session.Wardrobe.AllLightUpAppearances[TimedMount].OverdueTimeMs);
+            Assert.Equal(0, session.Profile.Wardrobe!.AllLightUpAppearances[BigPoring].OverdueTimeMs);
+            Assert.Equal(due, session.Profile.Wardrobe.AllLightUpAppearances[TimedMount].OverdueTimeMs);
         }
         var saved = StoredWardrobe(roles, role);
         Assert.Equal(0, saved.AllLightUpAppearances[BigPoring].OverdueTimeMs);
@@ -543,7 +655,7 @@ public sealed class MountTests : IAsyncLifetime
             await loop.InvokeAsync(() =>
             {
                 // A role saved by the previous server: the Fashion shop lit the look in 5034 but wrote no 5012 ownership.
-                var looks = session.Wardrobe!.Clone();
+                var looks = session.Profile.Wardrobe!.Clone();
                 looks.AllLightUpAppearances[BigPoring] = new DBAppearanceInfo { AppearanceId = BigPoring };
                 looks.AllLightUpAppearances[DisabledLook] = new DBAppearanceInfo { AppearanceId = DisabledLook };
                 roles.SaveWardrobe(role, looks.ToByteArray());
@@ -584,13 +696,10 @@ public sealed class MountTests : IAsyncLifetime
         await a.SendGameAsync(MountService.Ride, new PlayerRiderMountReq { Tp = (eRiderType)1 });
         Assert.Equal(0, (await Next(a, MountService.Ride, PlayerRiderMountResp.Parser)).Result);
         var session = Session("alice");
-        Assert.Equal(BigPoring, session.Wardrobe!.CurUseAppearances[MountSlot]);
+        Assert.Equal(BigPoring, session.Profile.Wardrobe!.CurUseAppearances[MountSlot]);
         Assert.Equal(BigPoring, MountService.Rider(session));
         Assert.Equal(1050, session.Speed);
     }
-
-    private static string RepoRoot()
-    { for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName; throw new DirectoryNotFoundException(); }
 
     private sealed class ManualClock(DateTimeOffset initial) : TimeProvider
     {

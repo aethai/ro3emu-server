@@ -25,7 +25,7 @@ public sealed class OpenContentTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -39,15 +39,7 @@ public sealed class OpenContentTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 
     private async Task<BotClient> InWorld(string name)
@@ -132,7 +124,7 @@ public sealed class OpenContentTests : IAsyncLifetime
             services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null)));
         var functions = services.GetRequiredService<FunctionService>();
         Assert.False(await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(functions.ConditionMet(session, 21000010))));
-        var info = await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(session.NewActivities!.ActivityInfo[112]));
+        var info = await services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(session.Activities.NewActivities!.ActivityInfo[112]));
         Assert.False(info.IsShielded);
     }
 
@@ -211,7 +203,7 @@ public sealed class OpenContentTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var clock = _app.Services.GetRequiredService<TerritoryWarsClock>();
         var state = await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(
-            _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice").TerritoryEscort!));
+            _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Alice").Instances.TerritoryEscort!));
         Assert.True(clock.Cycle > 0);
         Assert.Equal(clock.Cycle, state.Cycle);
         Assert.Equal(clock.SeasonStart, state.SeasonStart);
@@ -222,9 +214,9 @@ public sealed class OpenContentTests : IAsyncLifetime
     {
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!season 102");
-        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent keeps playbook 101"));
+        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent keeps playbook 101", StringComparison.Ordinal));
         await Gm("alice", "!seasonnext 102 2026-11-01");
-        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent: there is no season rollover"));
+        await Next(alice, GmCommands.BroadcastNotify, BroadCastNotify.Parser, m => m.Content.StartsWith("OpenContent: there is no season rollover", StringComparison.Ordinal));
         Assert.Equal(101, _app.Services.GetRequiredService<SeasonService>().PlayBook);
     }
 }

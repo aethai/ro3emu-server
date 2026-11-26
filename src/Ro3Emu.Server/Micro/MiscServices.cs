@@ -7,6 +7,7 @@ namespace Ro3Emu.Server.Micro;
 public sealed class ClusterRecommendService(IOptions<ServerOptions> options) : IMicroService
 {
     public string Name => "ClusterRecommendService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args) =>
         ValueTask.FromResult<object?>(method == "getRecommendCluster"
@@ -22,6 +23,7 @@ public sealed class ClusterRecommendService(IOptions<ServerOptions> options) : I
 public sealed class PlatformProxyService : IMicroService
 {
     public string Name => "PlatformProxyService";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args) =>
         ValueTask.FromResult<object?>(method == "sensitiveCheck"
@@ -39,6 +41,7 @@ public sealed class PhonestGateService(GateAuthRegistry auths, AccountStore acco
     : IMicroService
 {
     public string Name => "PhonestGate";
+    public MicroAdmission Admission => MicroAdmission.SelfManaged;
 
     public async ValueTask<object?> InvokeAsync(MicroSession session, string method, object? args) => method switch
     {

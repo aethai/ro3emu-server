@@ -34,8 +34,9 @@ public sealed class PetTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
+            o.PetWorldFollower = true; // the follower projection under test (off by default)
         }, _clock);
         await _app.StartAsync();
         _http = $"http://127.0.0.1:{http}";
@@ -45,7 +46,6 @@ public sealed class PetTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -314,7 +314,7 @@ public sealed class PetTests : IAsyncLifetime
         });
         await bot.SendGameAsync(PetService.SwitchPlan, new PetSwitchPlanReq { TargetIndex = 2 });
         Assert.Equal(0, (await Next(bot, PetService.SwitchPlan, PetSwitchPlanResp.Parser)).Result);
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         await Next(bot, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(bobo.Uuid));
         await Next(viewer, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(bobo.Uuid));
         await bot.SendGameAsync(PetService.SwitchPlan, new PetSwitchPlanReq { TargetIndex = 0 });
@@ -331,7 +331,7 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, PetService.StateUpdate, PetStateUpdateResp.Parser)).Result);
         await Next(bot, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(newUid));
         await Next(viewer, 31037, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(newUid));
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
     }
 
     [ClientDataFact]
@@ -487,7 +487,7 @@ public sealed class PetTests : IAsyncLifetime
         await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
         {
             using var held = await CharacterService.Lock(Session);
-            Session.Lottery!.PityRecords[permanentKey] = new LotteryPityRecord { PityCount = 59, MustCount = 60 };
+            Session.Activities.Lottery!.PityRecords[permanentKey] = new LotteryPityRecord { PityCount = 59, MustCount = 60 };
             await Task.CompletedTask;
         });
         await Gm("!item 1250709 2");
@@ -495,15 +495,15 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, PetService.GenerateEgg, PetGenEggRes.Parser)).Result);
         var egg = Saved(bot).IncubationSlot[1].IncubateInfo[10009];
         Assert.Contains(egg.AwardId, GuaranteedItems(permanentDraw));
-        var record = Session.Lottery!.PityRecords[permanentKey];
+        var record = Session.Activities.Lottery!.PityRecords[permanentKey];
         Assert.Equal((0, 60, 1), (record.PityCount, record.MustCount, record.HitPityCount));
         await bot.SendGameAsync(PetService.GenerateEgg, new PetGenEggReq { RoundId = 10008, SlotId = 1 });
         Assert.Equal(0, (await Next(bot, PetService.GenerateEgg, PetGenEggRes.Parser)).Result);
-        var limited = Session.Lottery.PityRecords[(int)limitedDraw];
+        var limited = Session.Activities.Lottery.PityRecords[(int)limitedDraw];
         Assert.Equal(1, limited.TotalCount);
         Assert.Equal(GuaranteedItems(limitedDraw).Contains(Saved(bot).IncubationSlot[1].IncubateInfo[10008].AwardId) ? 0 : 1,
             limited.PityCount);
-        Assert.Equal(0, Session.Lottery.PityRecords[permanentKey].PityCount);
+        Assert.Equal(0, Session.Activities.Lottery.PityRecords[permanentKey].PityCount);
     }
 
     private static long[] Flat(JsonElement row, string key) =>
@@ -675,6 +675,44 @@ public sealed class PetTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task OpeningTheHatcheryLevelsARoomWhoseBarIsAlreadyFull()
+    {
+        await using var bot = await InWorld();
+        await Unlock(hatch: true);
+        await Gm("!delitem 1");
+        var data = _app.Services.GetRequiredService<GameData>();
+        var cost = data.Row("PetIncubationRoomConfig", 2)!.Value.GetProperty("_kCost")[0];
+        int coin = cost[0].GetInt32();
+        long price = cost[1].GetInt64(), bar = GameData.Int(data.Row("PetIncubationRoomConfig", 2)!.Value, "_iExp");
+        // A bar that filled while the next step was unaffordable (or before rooms levelled themselves) stays full.
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            using var held = await CharacterService.Lock(Session);
+            Session.Pets!.IncubationExp = 20;
+            Roles.SavePets(RoleId(bot), Session.Pets.ToByteArray());
+        });
+        await bot.SendGameAsync(PetService.OpenRoom, new NullArg());
+        await Next(bot, PetService.OpenRoom, NullArg.Parser);
+        // The level-up panel compares the room level with the one last opened, so that stays behind.
+        Assert.Equal((2L, 10L, 1L), (Saved(bot).IncubationLv, Saved(bot).IncubationExp, Saved(bot).OnOpenUIRoomLv));
+
+        // Room 2's step costs money: a full bar waits for it and the next opening buys the step.
+        await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
+        {
+            using var held = await CharacterService.Lock(Session);
+            Session.Pets!.IncubationExp = bar;
+            Roles.SavePets(RoleId(bot), Session.Pets.ToByteArray());
+        });
+        await bot.SendGameAsync(PetService.OpenRoom, new NullArg());
+        await Next(bot, PetService.OpenRoom, NullArg.Parser);
+        Assert.Equal((2L, bar), (Saved(bot).IncubationLv, Saved(bot).IncubationExp));
+        await Gm($"!item {coin} {price}");
+        await bot.SendGameAsync(PetService.OpenRoom, new NullArg());
+        await Next(bot, PetService.OpenRoom, NullArg.Parser);
+        Assert.Equal((3L, 0L, 0L), (Saved(bot).IncubationLv, Saved(bot).IncubationExp, Count(bot, coin)));
+    }
+
+    [ClientDataFact]
     public async Task FastHatchRequiresRoomTwoAndAtomicallyConsumesMaterialsAndAccelerators()
     {
         await using var bot = await InWorld();
@@ -703,6 +741,16 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(5, Saved(bot).IncubationCount);
         Assert.Equal(5, Saved(bot).IncubationHistory.Count);
         Assert.Empty(Saved(bot).IncubationSlot);
+        // Empty slots before and after: the drawn eggs travel as placed, then removed, so the client's slot data
+        // changes after the pity sync and the S-class countdown redraws (RefreshPoolSlot -> RefreshPetHit).
+        var events = bot.Inbox.Snapshot().ToList();
+        DBPetInfoIncrement Pets(int i) => DBPetInfoIncrement.Parser.ParseFrom(events[i].Body);
+        int placed = events.FindLastIndex(e => e.IsGame(5017) && DBPetInfoIncrement.Parser.ParseFrom(e.Body).IncubationSlot.Values.Any(v => v.All != null));
+        int removed = events.FindLastIndex(e => e.IsGame(5017) && DBPetInfoIncrement.Parser.ParseFrom(e.Body).IncubationSlot.Values.Any(v => v.Del));
+        Assert.True(placed >= 0 && placed < removed);
+        Assert.Equal(5, Pets(placed).IncubationSlot.Values.Count(v => v.All?.IncubateInfo.ContainsKey(10001) == true));
+        Assert.Equal(5, Pets(removed).IncubationSlot.Values.Count(v => v.Del));
+        Assert.True(events.FindLastIndex(e => e.IsGame(LotteryService.LotterySync)) < placed);
         var before = Saved(bot).ToByteArray();
         await bot.SendGameAsync(PetService.FastEgg, new FastIncubateReq { RoundId = 10001 });
         Assert.NotEqual(0, (await Next(bot, PetService.FastEgg, FastIncubateRes.Parser)).Result);
@@ -718,7 +766,7 @@ public sealed class PetTests : IAsyncLifetime
         await Gm("!lvl 40");
         await bot.SendGameAsync(PetService.StateUpdate, new PetStateUpdateReq { PetId = 10001, Target = (PetStateSource_Type)2, TargetSlotIndex = 1 });
         Assert.Equal(0, (await Next(bot, PetService.StateUpdate, PetStateUpdateResp.Parser)).Result);
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         await bot.SendGameAsync(PetService.ChangePlanName, new PetChangePlanNameReq { TargetIndex = 0, Name = "Support" });
         Assert.Equal(0, (await Next(bot, PetService.ChangePlanName, PetChangePlanNameResp.Parser)).Result);
         Assert.Equal("Support", Saved(bot).SetupPlans[0].PlanName);
@@ -797,7 +845,7 @@ public sealed class PetTests : IAsyncLifetime
         await Next(again, 5017, DBPetInfoIncrement.Parser);
         Assert.Equal(10001, Saved(again).SetupPlans[0].SetUpPets[1]);
         Assert.False(_app.Services.GetRequiredService<FunctionService>().IsOpen(Session, 33));
-        Assert.Null(Session.PetActor);
+        Assert.Null(Session.Profile.PetActor);
         Assert.DoesNotContain(again.Inbox.Snapshot(), e => e.IsGame(31037) && AoIViewChangeData.Parser.ParseFrom(e.Body).Bases.Any(b => b.EntityType == 7));
     }
 
@@ -862,12 +910,5 @@ public sealed class PetTests : IAsyncLifetime
         Assert.Equal(0, Count(bot, 1250715));
         Assert.Equal(50, Count(bot, 1631005)); // PetBaseConfig 31005 _kDecompose [1631005,50]
         Assert.Equal(Saved(bot), Session.Pets);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

@@ -18,7 +18,7 @@ public sealed class RoleHandover(GameLoop loop, OwnerRegistry owners, RoleStore 
     internal Action<GameSession>? Beginning { get; set; }
 
     /// <summary>Configured after construction to keep the ownership registry independent of game services. The keys
-    /// are what the cleanup writes (C/D 15: the role's own keys plus the shared state its exit publishes, not Realm).</summary>
+    /// are what the cleanup writes (the role's own keys plus the shared state its exit publishes, not Realm).</summary>
     public void Configure(Func<GameSession, Task> cleanup, Func<GameSession, ReservationKey[]> keys)
     {
         _cleanup = cleanup ?? throw new ArgumentNullException(nameof(cleanup));

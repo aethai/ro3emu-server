@@ -26,8 +26,8 @@ public sealed partial class SkillCombatTests
             {
                 monster.Hp = Math.Max(1, (long)(monster.Template.MaxHp * life));
                 var s = Session("alice");
-                s.SkillCds.Clear();
-                s.SkillModeCds.Clear();
+                s.Combat.SkillCds.Clear();
+                s.Combat.SkillModeCds.Clear();
                 return Task.CompletedTask;
             });
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1510201, TargetId = monster.Uid });

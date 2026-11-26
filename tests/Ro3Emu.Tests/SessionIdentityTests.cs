@@ -71,6 +71,94 @@ public sealed class SessionIdentityTests
     }
 
     [Fact]
+    public async Task ByRoleAndByAccountTrackLiveSessionsInConstantTime()
+    {
+        var registry = Registry();
+        var session = Game();
+        var role = RoleOf("alice");
+        await registry.SignInAsync(session, "alice", register: true);
+        Assert.Same(session, registry.ByAccount("alice"));
+        Assert.Null(registry.ByAccount("bob"));
+        Assert.Null(registry.ByRole(role.Id));
+
+        session.Role = role;
+        Assert.Same(session, registry.ByRole(role.Id));
+
+        session.Role = null;
+        Assert.Null(registry.ByRole(role.Id));
+
+        session.Role = role;
+        registry.Unregister(session);
+        Assert.Null(registry.ByRole(role.Id));
+        Assert.Null(registry.ByAccount("alice"));
+    }
+
+    [Fact]
+    public async Task DisplacedSessionClearsByRoleAndLateUnregisterNeverDropsNewerSession()
+    {
+        var registry = Registry();
+        var older = Game();
+        var newer = Game();
+        var roleA = RoleOf("alice");
+        var roleB = new Role(100002, "alice", 1, "Alt", 1, 1000, 1, 0, 0, 0, 10111, 0, 0, 0, 0);
+
+        await registry.SignInAsync(older, "alice", register: true);
+        older.Role = roleA;
+        Assert.Same(older, registry.ByRole(roleA.Id));
+
+        // Relogin displaces the older session: its stale role must vanish from ByRole immediately even if older.Role stays set.
+        await registry.SignInAsync(newer, "alice", register: true);
+        Assert.Same(newer, registry.ByAccount("alice"));
+        Assert.Null(registry.ByRole(roleA.Id));
+        Assert.Null(older.Registry);
+
+        // Selecting a different role on the newer session must not resurrect roleA; older's late Unregister must not drop newer.
+        newer.Role = roleB;
+        Assert.Same(newer, registry.ByRole(roleB.Id));
+        Assert.Null(registry.ByRole(roleA.Id));
+
+        registry.Unregister(older);
+        Assert.Same(newer, registry.ByAccount("alice"));
+        Assert.Same(newer, registry.ByRole(roleB.Id));
+        Assert.Null(registry.ByRole(roleA.Id));
+
+        // If the newer session takes over the same role, older's late Unregister still keeps newer bound.
+        newer.Role = roleA;
+        Assert.Same(newer, registry.ByRole(roleA.Id));
+        registry.Unregister(older);
+        Assert.Same(newer, registry.ByRole(roleA.Id));
+    }
+
+    [Fact]
+    public async Task BroadcastSkipsNonMatchingSessions()
+    {
+        var registry = Registry();
+        var session = Game();
+        await registry.SignInAsync(session, "alice", register: true);
+
+        // No matching sessions: returns cleanly without touching Channel.
+        await registry.BroadcastAsync(30001, new Phonest.Proto.DisconnectClientInfo(), _ => false);
+    }
+
+    [Fact]
+    public void SessionSlotStoresAndClearsRoleScopedState()
+    {
+        var roleSlot = new SessionSlot<List<int>>(clearOnRoleReset: true);
+        var connSlot = new SessionSlot<List<string>>(clearOnRoleReset: false);
+        var session = Game();
+
+        Assert.Null(session.GetSlot(roleSlot));
+        session.GetOrCreateSlot(roleSlot).Add(42);
+        session.GetOrCreateSlot(connSlot).Add("keep");
+        Assert.Equal([42], session.GetSlot(roleSlot));
+        Assert.Equal(["keep"], session.GetSlot(connSlot));
+
+        session.ClearRoleLoadState();
+        Assert.Null(session.GetSlot(roleSlot));
+        Assert.Equal(["keep"], session.GetSlot(connSlot));
+    }
+
+    [Fact]
     public void AMicroConnectionThatChangesAccountStopsReceivingTheFirstOnesPushes()
     {
         var micro = new MicroSessions(NullLogger<MicroSessions>.Instance);

@@ -184,7 +184,7 @@ public sealed partial class TerritoryWarsTests
         Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));
         // The volley started the cannon's cooldown: the skill's _iCD or its reload, the longer.
         var skill = Ro3Emu.Server.Data.Config.SkillConfig.Get(Service<Ro3Emu.Server.Data.GameData>(), 4900701)!.Value;
-        await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(skill.Cd, 3000) + 300));
+        _clock.AdvanceMs(Math.Max(skill.Cd, 3000) + 300);
         await Fire(1500, new Vec3 { Y = 1, Z = 0.02f }); // what the client sends: up and down near the cannon
         Assert.Equal(0, (await Next(a, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
         Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));

@@ -6,7 +6,7 @@ This system is implemented against the clientB export (`re/clientB/lua-src/`).
 
 - Tower: `32803` validates and saves four `DBClimTower.petIds` positions; `5065` and `32805` return the saved formation. `32809` carries per-pet deaths and clears them on a new floor. Starting pets are owner-bound type-7 actors in the private floor; combat uses `31100`, `31101`, `31048`, `31049` and ordinary tower kill settlement. Formation changes during an unsettled attempt are refused, preventing HP/cooldown resets.
 - AFK: durable `5035 DBWildAFKInfo`, `43401`, `43403`, `43404`, `43406`, `43409`, `43410`, `43411`, and `43412`. `31054` supplies the existing client auto-battle switch. `39000` type 5 preserves wire boolean presence and syncs `5061`; an omitted sibling is not reset when another checkbox changes.
-- Per-role AFK metadata lives in the `wild_afk` blob: allowance, fractional consumption, daily epoch/consumption, cumulative drop totals, snapshots and favorites. The tick's reconcile of a running clock is written lazily, at most 30 s after the first unsaved change **(inferred)**, so a crash can hand back up to that much consumed time; toggles, kills, the daily reset and leaving the world write at once. Disconnect and role switching cannot charge offline time or inherit another role's activity. Queued accounting, item/EXP grants, delayed attacks and kill callbacks verify the original role after asynchronous waits, preventing an old role's combat from rewarding a newly selected role.
+- Per-role AFK metadata lives in the `wild_afk` blob: allowance, fractional consumption, daily epoch/consumption, cumulative drop totals, snapshots and favorites. Every reconcile of a clock that keeps running (the tick's, a kill's, a query's) is written lazily, at most 30 s after the first unsaved change **(inferred)**, so a crash can hand back up to that much consumed time; a field kill's record is written with its reward, together with the clock, and no lazy write is submitted while that reward is pending. Toggles, a pause, the end of Bonus Time, the daily reset and leaving the world write at once. Disconnect and role switching cannot charge offline time or inherit another role's activity. Queued accounting, item/EXP grants, delayed attacks and kill callbacks verify the original role after asynchronous waits, preventing an old role's combat from rewarding a newly selected role.
 - The daily row uses quest `500130 [106901,3600]` through `5027`, and normal quest delivery updates row 106 in `5004` and grants its configured award once. The last eligible second is settled before the daily reset. A failed award remains pending and is retried before reset, including reconnect. Bonus Time re-settles the quests when the consumed time reaches a new whole minute (the quests' unit), not every second **(inferred)**.
 - HTTP and both gates use the `ServerOptions.ListenAddress()` contract: loopback for a loopback `PublicHost`, otherwise every interface; nonempty `BindAddress` overrides it, including wildcard addresses. Tests bind loopback. The [README](../../README.md) documents this configuration.
 
@@ -41,3 +41,15 @@ dotnet test tests/Ro3Emu.Tests --filter "FullyQualifiedName~TowerPetTests|FullyQ
 ```
 
 These tests do not cover visual behavior in the game client.
+
+A floor started from inside the tower (32801 `isInClimTower`: the next floor, a replay or Try Again) reuses the
+settled floor's room: the server sends 30124 `DungeonResetNtf` and starts the floor (30401, 32809, pets, spawns) on
+the same scene, without a 70010. The client keeps its scene for it (`LC_ClimbTowerHelper` marks the current scene,
+`LC_Scene_Sync._dungeonResetNtf` reloads it), and `LC_Actor_AutoAttack._resetScene` keeps auto battle on through
+`DungeonConfig[2100001]._kResetChangeAutoBattle` [1, 27]; a 70010 would turn it off (`GameLogic.lua`, the
+`Unit.SwitchScene` handler). The first entry and the 30402 exit still switch scenes.
+
+`_resetScene` only pauses auto battle and caches scene point 27 (the start point); `_refreshAutoPathCache` walks
+there and resumes it, and it runs only on `Unit.LocalPlayerGridChange`. After the 30124 the server therefore moves
+the player back to the floor's born point with a same-map teleport (`MOVEMENT_CHANGE` ForceTeleport), which raises
+that event; a player left where he stood keeps a paused auto battle. The born point as the target is **(inferred)**.

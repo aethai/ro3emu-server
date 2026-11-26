@@ -36,7 +36,7 @@ public sealed partial class StallsTests : IAsyncLifetime
         var (port, microPort, gamePort) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = port; o.MicroGatePort = microPort; o.GameGatePort = gamePort;
         }, _clock);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{port}";
@@ -45,7 +45,6 @@ public sealed partial class StallsTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -110,6 +109,14 @@ public sealed partial class StallsTests : IAsyncLifetime
             return ((string)r["MailId"]!, Convert.ToInt32(p["cfg_id"]), (bool)p["giftReceived"]!,
                 p.TryGetValue("items", out var bytes) ? MailItemList.Parser.ParseFrom((byte[])bytes!) : new MailItemList());
         })];
+    }
+
+    private async Task<byte[]> SaleMailParams(BotClient seller)
+    {
+        var reply = await seller.MicroAsync("MailService", "getUserMailList", new() { ["Uid"] = Id(seller).ToString(System.Globalization.CultureInfo.InvariantCulture), ["Start"] = 0, ["Limit"] = 150, ["MailType"] = 1 });
+        var sale = Assert.IsType<object?[]>(reply["MailList"]).Select(raw => Assert.IsType<Dictionary<object, object?>>(Assert.IsType<Dictionary<object, object?>>(raw)["Params"]))
+            .Single(p => Convert.ToInt32(p["cfg_id"], System.Globalization.CultureInfo.InvariantCulture) == 1029);
+        return Assert.IsType<byte[]>(sale["content_params"]);
     }
 
     private async Task Claim(BotClient bot, params int[] templates)
@@ -278,7 +285,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         }
 
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync(); // Same market DB; no owner connected and no saved login line.
         await using var buyer = await InWorld("Buyer");
         await Ready(buyer);
@@ -299,6 +305,25 @@ public sealed partial class StallsTests : IAsyncLifetime
         Assert.Equal(0, listing.Result);
         Assert.Equal(2, listing.Info.Baseinfo.SceneLineNum);
         Assert.Equal(0, await Purchase(buyer, sellerId, listing.Info.Itembase[0].StallsItemID));
+    }
+
+    [ClientDataFact]
+    public async Task StallActorWearsTheSellersWornWardrobe()
+    {
+        await using var seller = await InWorld("Outfit"); await using var buyer = await InWorld("Looker");
+        await Ready(seller); await Ready(buyer);
+        await Gm(seller, "!item 1000100 2");
+        long guid = Items(seller).Single(i => i.Entry == 1000100).Guid;
+        // An outfit slot beside the creation hair: the puppet must not fall back to the hair-only look.
+        var worn = await Service<GameLoop>().InvokeAsync(() =>
+        {
+            var wardrobe = Session(seller).Profile.Wardrobe!; wardrobe.CurUseAppearances[2] = 4242;
+            return Task.FromResult(wardrobe.CurUseAppearances.ToDictionary(p => p.Key, p => p.Value));
+        });
+        Assert.Equal(0, (await Open(seller, Offer(guid))).Result);
+        var aoi = await Next(buyer, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, m => m.Bases.Any(b => b.StallsInfo?.StallsID == Id(seller)));
+        var stall = aoi.Bases.Single(b => b.StallsInfo?.StallsID == Id(seller)).StallsInfo;
+        Assert.Equal(worn.OrderBy(p => p.Key), stall.CurUseAppearances.OrderBy(p => p.Key));
     }
 
     [ClientDataFact]
@@ -335,6 +360,9 @@ public sealed partial class StallsTests : IAsyncLifetime
         Assert.Equal(42, received.Attrs![999]); Assert.Equal("history", received.StringAttrs![510]);
         Assert.Equal(5, received.Enchantments[7].Attr[103]); Assert.Equal(123, received.Enchantments[7].GetTime);
         Assert.Equal(2, received.BindType); Assert.NotEqual(guid, received.Guid);
+        var sale = StallsRecord.Parser.ParseFrom(await SaleMailParams(seller)); // the client reads mail 1029 as a StallsRecord
+        Assert.Equal((1000100, 1, Id(buyer), "Buyer", 2), (sale.ItemEntryID, sale.ItemNum, sale.Buyerid, sale.Buyername, sale.CoinEntryID));
+        Assert.Equal(9100, sale.Gainmoney); Assert.Equal(900, sale.Tradetax);
         await Claim(seller, 1029); Assert.Equal(9100, Money(seller, 2));
         await seller.SendGameAsync(StallsService.End, new PlayerStallsEndReq());
         Assert.Equal(0, (await Next(seller, StallsService.End, PlayerStallsEndResp.Parser)).Result);
@@ -500,7 +528,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         }
 
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await InitializeAsync(); // Same database, fresh services, sessions, world and inventory objects.
         await using var returningBuyer = await InWorld("Buyer", create: false);
         await Warp(returningBuyer, 10111, 251, 2);
@@ -527,13 +554,6 @@ public sealed partial class StallsTests : IAsyncLifetime
         await returningSeller.SendGameAsync(StallsService.Info, new PlayerStallsInfoReq());
         var info = await Next(returningSeller, StallsService.Info, PlayerStallsInfoResp.Parser);
         Assert.Equal(sellerId, info.CurrentStallsID); Assert.Empty(info.Info.Itembase);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            if (File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) return d.FullName;
-        throw new DirectoryNotFoundException();
     }
     private sealed class MutableClock : TimeProvider
     {

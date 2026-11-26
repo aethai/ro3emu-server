@@ -73,7 +73,7 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101; o.SeasonStart = "2026-05-19";
         }, _clock);
@@ -448,7 +448,7 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         int round = Service<TerritoryWarsClock>().Current.Round;
         await OnLoop(() =>
         {
-            session.TerritoryEscort!.ScoreByRound[round] = 3000;
+            session.Instances.TerritoryEscort!.ScoreByRound[round] = 3000;
             return Task.CompletedTask;
         });
         long beforeCurrency = Service<CharacterService>().CountOf(session, 1);
@@ -469,7 +469,7 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
             bool claimed = false;
             await OnLoop(() =>
             {
-                claimed = session.TerritoryEscort!.ClaimedByRound.GetValueOrDefault(round)?.Contains(0) == true;
+                claimed = session.Instances.TerritoryEscort!.ClaimedByRound.GetValueOrDefault(round)?.Contains(0) == true;
                 return Task.CompletedTask;
             });
             Assert.False(claimed);
@@ -477,9 +477,9 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
             Assert.Equal(0, SqlCount("SELECT count(*) FROM operation_receipt WHERE command_kind=$source", "event/escort-claim"));
         }
         finally { release.Set(); accounts.BeforeCommitForTest = null; }
-        for (int i = 0; i < 50 && session.TerritoryEscort!.ClaimedByRound.GetValueOrDefault(round)?.Contains(0) != true; i++)
+        for (int i = 0; i < 50 && session.Instances.TerritoryEscort!.ClaimedByRound.GetValueOrDefault(round)?.Contains(0) != true; i++)
             await Task.Delay(20);
-        Assert.Contains(0, session.TerritoryEscort!.ClaimedByRound[round]);
+        Assert.Contains(0, session.Instances.TerritoryEscort!.ClaimedByRound[round]);
         Assert.Equal(beforeCurrency + 5000, Service<CharacterService>().CountOf(session, 1));
         Assert.Equal(1, SqlCount("SELECT count(*) FROM operation_receipt WHERE command_kind=$source", "event/escort-claim"));
         Assert.Equal(1, SqlCount("SELECT count(*) FROM economy_entry WHERE asset_kind=2 AND asset_id=1 AND delta=5000 AND operation_id IN (SELECT operation_id FROM operation_receipt WHERE command_kind=$source)", "event/escort-claim"));
@@ -552,12 +552,5 @@ public sealed class TerritoryEscortTests : IAsyncLifetime
         await Service<TerritoryEscortService>().CreditGuildGoodsAsync(ownerGuild, 1, "test:escort:fault:other-credit");
         Assert.Equal(1, DurablePickedCargo());
         Assert.Equal(before + 1, SqlCount("SELECT count(*) FROM operation_source WHERE source_key LIKE $source", "escort-cargo:%:claim"));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repository data/config");
     }
 }

@@ -36,7 +36,7 @@ public sealed partial class PanelOperations
     private static string Target(long character, string? name) => AdminAudit.Character(name, character);
 
     /// <summary>The character's session in the game, on the loop.</summary>
-    private GameSession? Online(long character) => sessions.All().FirstOrDefault(s => s.Role?.Id == character);
+    private GameSession? Online(long character) => sessions.ByRole(character);
 
     /// <summary>Runs a GM line for the character's live session as the panel's GM console does; null when it is not in
     /// the game, else the replies. A <paramref name="refuse"/> that answers (on the loop, before the line runs) stops it:
@@ -190,7 +190,7 @@ public sealed partial class PanelOperations
     }
 
     public async Task<IReadOnlyList<PanelDeletedCharacter>> DeletedCharactersAsync(string account) =>
-        [.. (await accounts.ReadAsync<List<DeletedRoleRow>>(new DeletedRolesRead(account))).Select(r => new PanelDeletedCharacter(
+        [.. (await accounts.ReadPanelAsync<List<DeletedRoleRow>>(new DeletedRolesRead(account))).Select(r => new PanelDeletedCharacter(
             r.Id, r.Name, ClassName(r.Career), r.Level, DateTimeOffset.FromUnixTimeSeconds(r.DeletedTime), r.NameFree))];
 
     /// <summary>The class's English name (JobConfig._iName), as the panel's other pages show it.</summary>

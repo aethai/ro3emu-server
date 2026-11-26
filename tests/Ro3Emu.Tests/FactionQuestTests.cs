@@ -41,7 +41,6 @@ public sealed class FactionQuestTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -75,7 +74,7 @@ public sealed class FactionQuestTests : IAsyncLifetime
     {
         await using var bot = await InWorld();
         Assert.False(await Has(Quest)); // function 7202 is closed below its level
-        await Run(s => { s.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Profile.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
         await At(Quest, 0);
         foreach (long id in new[] { CrystalOne, OrcOne, RivalOne }) await Offered(id);
         Assert.False(await Has(CrystalThree));
@@ -99,16 +98,16 @@ public sealed class FactionQuestTests : IAsyncLifetime
     public async Task CampTierAndDailyCap()
     {
         await using var bot = await InWorld();
-        await Run(s => { s.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Profile.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
         await Offered(CrystalOne);
-        await Run(s => { s.TerritoryWars!.Camp = (int)EPvpRoleCampNum.Guild; Tasks.OnFactionCampChanged(s); });
+        await Run(s => { s.Instances.TerritoryWars!.Camp = (int)EPvpRoleCampNum.Guild; Tasks.OnFactionCampChanged(s); });
         await Offered(CrystalThree);
         await Gone(CrystalOne);
 
-        await Run(s => s.TaskRuntime.FactionPoints = 2990);
+        await Run(s => s.Activities.TaskRuntime.FactionPoints = 2990);
         await Gm("!quest done " + RivalThree); // +20, of which 10 fit under the 3000 cap
         await At(Quest, 10);
-        Assert.Equal(3000, await Read(() => Session.TaskRuntime.FactionPoints));
+        Assert.Equal(3000, await Read(() => Session.Activities.TaskRuntime.FactionPoints));
         await Gone(CrystalThree);
     }
 
@@ -127,7 +126,7 @@ public sealed class FactionQuestTests : IAsyncLifetime
         long before = await Read(() => store.Get(guild)!.Money);
         Assert.Equal(1000, await Read(() => Service<GuildCaravanService>().FactionGuildFunds(Session)));
 
-        await Run(s => { s.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Profile.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
         await At(Quest, 0);
         await Gm("!quest finish " + Quest);
         await Offered(Claim);
@@ -144,15 +143,15 @@ public sealed class FactionQuestTests : IAsyncLifetime
     public async Task CompletionClaimAndNewDay()
     {
         await using var bot = await InWorld();
-        await Run(s => { s.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Profile.GmAllFunctionsOpen = true; Tasks.OnStateChanged(s); });
         await At(Quest, 0);
         await Gm("!quest finish " + Quest);
         await Offered(Claim); // [104001,72,30307,10000106], claimed from the UI
         Assert.True(await Read(() => TaskService.IsDelivered(Session, Quest)));
 
-        await Run(s => { s.TaskRuntime.FactionDay -= 86_400; s.TaskRuntime.FactionPoints = 1200; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Activities.TaskRuntime.FactionDay -= 86_400; s.Activities.TaskRuntime.FactionPoints = 1200; Tasks.OnStateChanged(s); });
         await At(Quest, 0);
         Assert.False(await Has(Claim));
-        Assert.Equal(0, await Read(() => Session.TaskRuntime.FactionPoints));
+        Assert.Equal(0, await Read(() => Session.Activities.TaskRuntime.FactionPoints));
     }
 }

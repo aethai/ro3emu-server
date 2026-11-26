@@ -43,7 +43,6 @@ public sealed class LibraryMonsterTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -127,9 +126,9 @@ public sealed class LibraryMonsterTests : IAsyncLifetime
             await Kill(s, 900003, NotCodex);
             var kills = Balanced(opening, Cut()).Receipts;
             Assert.Equal(3, kills.Count(r => r.CommandKind == "monster-kill")); // besides any quest the kills complete
-            Assert.Equal(2, await Read(() => s.Library!.Monsters[Codex].KillCount));
-            Assert.False(await Read(() => s.Library!.Monsters[Codex].Unlock));
-            Assert.False(await Read(() => s.Library!.Monsters.ContainsKey(NotCodex)));
+            Assert.Equal(2, await Read(() => s.Profile.Library!.Monsters[Codex].KillCount));
+            Assert.False(await Read(() => s.Profile.Library!.Monsters[Codex].Unlock));
+            Assert.False(await Read(() => s.Profile.Library!.Monsters.ContainsKey(NotCodex)));
             // Stored with the kill, not by a separate save; the client is told by a 5057 change.
             var stored = DBLibraryInfo.Parser.ParseFrom(Service<RoleStore>().LoadLibrary(role)!);
             Assert.Equal(2, stored.Monsters[Codex].KillCount);
@@ -144,7 +143,7 @@ public sealed class LibraryMonsterTests : IAsyncLifetime
             var ledger = Balanced(opening, Cut());
             Assert.Equal("cd13e/library-award", Assert.Single(ledger.Receipts).CommandKind);
             Assert.All(ledger.Legs.Where(l => l.Kind == EconomyLegKind.Source), l => Assert.Equal(EconomyReason.LibraryReward, l.Reason));
-            Assert.True(await Read(() => s.Library!.Monsters[Codex].Unlock));
+            Assert.True(await Read(() => s.Profile.Library!.Monsters[Codex].Unlock));
             Assert.Equal(before + 10, await PointsOf(s)); // PublicParamConfig.LibraryMonsterUnlockReward
             var change = await Next(alice, CardService.LibrarySync, DBLibraryInfoIncrement.Parser,
                 m => m.Monsters.TryGetValue(Codex, out var f) && (f.All?.Unlock == true || f.Inc?.Unlock == true));
@@ -153,8 +152,8 @@ public sealed class LibraryMonsterTests : IAsyncLifetime
             Assert.Equal(before + 10, await PointsOf(s));
 
             await Kill(s, 900004, Codex); // counting goes on after the unlock
-            Assert.Equal(3, await Read(() => s.Library!.Monsters[Codex].KillCount));
-            Assert.True(await Read(() => s.Library!.Monsters[Codex].Unlock));
+            Assert.Equal(3, await Read(() => s.Profile.Library!.Monsters[Codex].KillCount));
+            Assert.True(await Read(() => s.Profile.Library!.Monsters[Codex].Unlock));
         }
         await LoggedOut("alice");
         await using var again = await InWorld("Alice", create: false);

@@ -5,7 +5,8 @@
 - [Play on your own PC](guide/play.md): RO3Emu.exe, its commands, what it changes in the game folder
 - [Play with friends and host a server](guide/hosting.md): Windows and Linux hosting, ports, backups, hardware
 - [What works](features.md): every playable system
-- [For developers](development.md): running from source, layout, tests, releases, architecture
+- [For developers](development.md): running from source, layout, tests, releases
+- [Architecture](architecture.md): module map, message pipeline, threading, persistence, and [architecture decisions](decisions/)
 
 ## Guides: running a server
 
@@ -29,6 +30,7 @@
 | Pets | [pets](systems/pet.md) · [ordinary guardian skills](systems/pet-guardian-skills.md) · [pets in the world](systems/pet-world-follow.md) · [tower companions and Bonus Time](systems/tower-pets-afk.md) |
 | Life jobs | [life jobs and production](systems/lifejob.md) · [gathering](systems/gathering.md) |
 | Social | [Tavern](systems/tavern.md) |
+| World look | [optional night look](systems/night-cycle.md) |
 | Economy | [gift codes](systems/gift-codes.md) · [currency redemption and paid products](systems/shop-currency.md) · [trade and stalls](systems/trade-stalls.md) · [auctions](systems/auction.md) · [mail](systems/mail.md) · [durable activity settlement](systems/durable-settlement.md) |
 | Guilds | [guilds](systems/guild.md) · [territory wars](systems/territory-wars.md) · [escort and guild trading](systems/territory-escort.md) |
 | Instances | [dungeons](systems/dungeon.md) · [story dungeon inventory](systems/dungeon-inventory.md) |

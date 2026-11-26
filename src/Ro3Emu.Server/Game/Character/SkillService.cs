@@ -1,0 +1,1142 @@
+using System.Text.Json;
+using Romsg;
+using Google.Protobuf;
+using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>
+/// Skills of a role: the 5025 DBSkillData dataset (learnable list, learned levels, skill points per
+/// job rank, the normal attack and the skill bar), learning (31151) and the bar (31153). Skill ids are group ids
+/// (SkillConfig._iSkillID) here; casts use the row id of a level (group*100 + level, see RealId).
+/// </summary>
+public sealed partial class SkillService
+{
+    public const uint SkillDataSync = 5025;
+    public const uint PlanUpdate = 31151;
+    public const uint SkillLoad = 31153;
+    public const uint SwitchPlan = 31152, RenamePlan = 31157, PlanNameChange = RenamePlan;
+    public const uint SkillReset = 31156, QueueUpdate = 31159, SwitchGenre = 31160;
+    private const int PlanCount = 5; // (inferred) PublicParamConfig.SchemeNum.
+    private const int BarSlots = 6;
+    private const int BattleMountSlot = 2, MainHandGrid = 1, ViceHandGrid = 2;
+    private const long FightBit = 1L << 15;
+
+    private readonly GameData _data;
+    private readonly CharacterService _character;
+    private readonly RoleStore _roles;
+    private readonly TimeProvider _clock;
+    internal TimeProvider Clock => _clock;
+    private readonly ILogger<SkillService> _log;
+    private Dictionary<(int Group, int Level), int>? _rowIds;
+    private Dictionary<int, int>? _upgradedGroupByBase;
+
+    /// <summary>Combat-owned dynamic queue eligibility (LC_DynamicParamMgr).</summary>
+    public Func<GameSession, int, bool>? QueueEligibility { get; set; }
+    /// <summary>Ordinary pet guardian projection; LC_System_Skill consumes whellSkills[SkillWheelPet].</summary>
+    internal Func<GameSession, SkillWheelSlot?>? PetWheel { get; set; }
+    /// <summary>A flying mount's take-off/landing pair; JoyStickSkillNormalMixin shows them from
+    /// whellSkills[SkillWheelMount1/2] only, so without this the HUD never offers the buttons.</summary>
+    internal Func<GameSession, (SkillWheelSlot Up, SkillWheelSlot Down)?>? MountFlyWheel { get; set; }
+
+    public SkillService(GameData data, CharacterService character, RoleStore roles, TimeProvider clock, ILogger<SkillService> log)
+    {
+        this._data = data;
+        this._character = character;
+        this._roles = roles;
+        this._clock = clock;
+        this._log = log;
+        character.ProgressHandlers.Subscribe(SyncAsync);
+    }
+
+    /// <summary>SkillConfig row id of a group at a level (mode 0), or 0.</summary>
+    public int RealId(int group, int level)
+    {
+        _rowIds ??= _data.Table("SkillConfig").Values
+            .Where(r => GameData.Int(r, "_iMode") == 0)
+            .GroupBy(r => ((int)GameData.Int(r, "_iSkillID"), (int)GameData.Int(r, "_iLevel")))
+            .ToDictionary(g => g.Key, g => (int)GameData.Int(g.First(), "_iID"));
+        return _rowIds.GetValueOrDefault((group, level));
+    }
+
+    /// <summary>SkillConfig._iMaxLevel is the learnable cap.</summary>
+    public int MaxLevel(int group) => _data.Row("SkillConfig", RealId(group, 1)) is { } row
+        ? (int)GameData.Int(row, "_iMaxLevel") : 0;
+
+    /// <summary>
+    /// The career's normal attack: JobConfig._kSkillNormalID (a row id). (inferred) The Magician careers name 1200001, which has
+    /// no SkillConfig row; those take their unarmed JobAttackConfig row, the career's or the nearest parent's.
+    /// </summary>
+    public int NormalAttack(int career) => _normalAttacks.GetOrAdd(career, FindNormalAttack);
+
+    // Level() asks for the career's attack group on every passive of every stat sheet; both are fixed per career.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _normalAttacks = new(), _attackGroups = new();
+
+    private int AttackGroup(int career) => _attackGroups.GetOrAdd(career, c =>
+        _data.Row("SkillConfig", NormalAttack(c)) is { } atk ? (int)GameData.Int(atk, "_iSkillID") : -1);
+
+    private int FindNormalAttack(int career)
+    {
+        int named = _data.Row("JobConfig", career) is { } job && job.TryGetProperty("_kSkillNormalID", out var n) && n.ValueKind == JsonValueKind.Array && n.GetArrayLength() > 0
+            ? n[0].GetInt32() : 1000001;
+        if (_data.Row("SkillConfig", named) != null) return named;
+        return _unnamedAttacks.GetOrAdd(career, c =>
+        {
+            foreach (int own in Enumerable.Reverse(CareerChain(c)))
+                if (JobAttackConfig.All(_data).Where(r => r.JobId == own && r.MountId == 0 && AttackWeaponKey(r) is -1 or 0)
+                    .Select(r => (int)r.SkillId).FirstOrDefault(id => _data.Row("SkillConfig", id) != null) is > 0 and var attack) return attack;
+            return 1000001;
+        });
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _unnamedAttacks = new();
+
+    internal int Rank(int career) => (int)(_data.Row("JobConfig", career) is { } job ? Math.Max(1, GameData.Int(job, "_iJobRank")) : 1);
+
+    /// <summary>The career and its parents (JobConfig._iParentId), novice first.</summary>
+    private List<int> CareerChain(int career)
+    {
+        var chain = new List<int>();
+        for (int c = career; c > 0 && chain.Count < 8 && _data.Row("JobConfig", c) is { } job; c = (int)GameData.Int(job, "_iParentId")) chain.Insert(0, c);
+        return chain;
+    }
+
+    /// <summary>
+    /// The career's Lineup skill group (JobConfig._iQueueSkillId, a row id: 1400001 for the Acolyte line, SkillConfig
+    /// _iSystemType 6 "SkillQueue"), or 0. It is in no SkillTreeConfig row. The client lists the skill window's Lineup tab only
+    /// when its skill list holds this skill (LC_SkillGrowthHelper.GetHasSkillQueue: a group whose row has that system
+    /// type), and puts the Lineup button on the bar when the wheel's queue slot holds its row id.
+    /// </summary>
+    internal int QueueGroup(int career) => _queueGroups.GetOrAdd(career, c =>
+    {
+        foreach (int chained in CareerChain(c).AsEnumerable().Reverse())
+            if (_data.Row("JobConfig", chained) is { } job && new JobConfig(job).QueueSkillId is > 0 and var id
+                && _data.Row("SkillConfig", id) is { } row && new SkillConfig(row) is { SystemType: QueueSystemType } queue)
+                return (int)queue.SkillId;
+        return 0;
+    });
+
+    internal const int QueueSystemType = 6;
+
+    /// <summary>Any career's Lineup group (LC_CFG_SkillConfig.GetSkillIsSkillQueue at level 1): a job advance (Swordman 11399
+    /// to Knight 11430) leaves the earlier one at its free level 1 in every saved plan.</summary>
+    private bool IsQueueGroup(int group) => SkillConfig.Get(_data, RealId(group, 1)) is { SystemType: QueueSystemType };
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> _queueGroups = new();
+
+    // Tree/Replacements are pure functions of the career and static game data. Level() asked for the tree of every
+    // passive group on every stat sheet (~60 full SkillTreeConfig scans per Stats, ~90% of a siege's loop time).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyDictionary<int, int>> _replacements = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, IReadOnlyList<(int Group, int Career)>> _trees = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, HashSet<int>> _treeGroups = new();
+
+    private IReadOnlyDictionary<int, int> Replacements(int career) => _replacements.GetOrAdd(career, c => _data.Row("JobConfig", c) is { } row
+        ? GameData.Pairs(row, "_kSkillReplace").ToDictionary(p => (int)p.Id, p => (int)p.Value)
+        : []);
+
+    /// <summary>Learnable skill groups of a career chain (SkillTreeConfig rows _iX1.._iX7) with the career that teaches them.</summary>
+    internal IReadOnlyList<(int Group, int Career)> Tree(int career) => _trees.GetOrAdd(career, BuildTree);
+
+    internal bool InTree(int career, int group) => _treeGroups.GetOrAdd(career, c => [.. Tree(c).Select(t => t.Group)]).Contains(group);
+
+    private List<(int Group, int Career)> BuildTree(int career)
+    {
+        var list = new List<(int Group, int Career)>();
+        var replacements = Replacements(career);
+        foreach (int c in CareerChain(career))
+            foreach (var row in _data.Table("SkillTreeConfig").Values.Where(r => GameData.Int(r, "_iJob") == c).OrderBy(r => GameData.Int(r, "_iY")))
+                for (int x = 1; x <= 7; x++)
+                    if (GameData.Int(row, $"_iX{x}") is var g and > 0)
+                        list.Add((replacements.GetValueOrDefault((int)g, (int)g), c));
+        return [.. list.DistinctBy(t => t.Group)];
+    }
+
+    private int Initial(RoleProgress p, int group)
+    {
+        if (_data.Row("SkillConfig", RealId(group, 1)) is not { } row) return 0;
+        int activation = (int)GameData.Int(row, "_iActivateCondition");
+        return activation <= 0 || p.Level >= activation ? (int)GameData.Int(row, "_iInitialLevel") : 0;
+    }
+
+    /// <summary>Skill points per job rank: earned from JobLvConfig._iSkillPoint (whole earlier ranks, current rank up to the job level) minus spent.</summary>
+    private Dictionary<int, int> SkillPoints(RoleProgress p)
+    {
+        var points = new Dictionary<int, int>();
+        int currentRank = Rank(p.Career);
+        for (int rank = 1; rank <= currentRank; rank++)
+        {
+            int earned = 0;
+            for (int lv = 1; lv <= 100; lv++)
+            {
+                if (rank == currentRank && lv > p.JobLevel) break;
+                if (_data.Row("JobLvConfig", rank * 100L + lv) is not { } row) break;
+                earned += (int)GameData.Int(row, "_iSkillPoint");
+            }
+            points[rank] = earned;
+        }
+        foreach (var (group, career) in Tree(p.Career))
+        {
+            int rank = Rank(career);
+            if (points.ContainsKey(rank) && p.Skills.TryGetValue(group, out int level))
+                points[rank] -= Math.Max(0, level - Initial(p, group));
+        }
+        return points;
+    }
+
+    /// <summary>The points each rank would have left with a plan's levels.</summary>
+    private Dictionary<int, int> PlanPoints(RoleProgress p, SkillPlan plan)
+    {
+        var preview = CharacterService.GenreCloneProgress(p);
+        preview.Skills.Clear();
+        foreach (var (group, assigned) in plan.SkillAssigns)
+            if (assigned.SkillLevel > Initial(preview, group)) preview.Skills[group] = assigned.SkillLevel;
+        return SkillPoints(preview);
+    }
+
+    /// <summary>Effective learned level including configured initial skills and the normal attack.</summary>
+    public int Level(RoleProgress p, int group)
+    {
+        int initial = InTree(p.Career, group) ? Initial(p, group) : 0;
+        if (AttackGroup(p.Career) == group) initial = Math.Max(1, initial);
+        if (TreeAttackGroups(p.Career).Contains(group)) initial = Math.Max(1, initial);
+        if (group > 0 && group == QueueGroup(p.Career)) initial = Math.Max(1, initial); // everyone has the Lineup button
+        int saved = Math.Max(p.Skills.GetValueOrDefault(group), p.GrantedSkills.GetValueOrDefault(group));
+        foreach (var (old, replacement) in Replacements(p.Career))
+            if (replacement == group) saved = Math.Max(saved, p.Skills.GetValueOrDefault(old));
+        return Math.Max(saved, initial);
+    }
+
+    private DBSkillData BuildFresh(GameSession session)
+    {
+        var p = session.Progress!;
+        int atk = NormalAttack(p.Career);
+        int atkGroup = _data.Row("SkillConfig", atk) is { } a ? (int)GameData.Int(a, "_iSkillID") : 0;
+        var tree = Tree(p.Career);
+        var skillData = new DBSkillData { MaxPlanCount = PlanCount, CurrentPlanIndex = 0, CurrentAtkSkillId = atk };
+        if (atkGroup > 0) skillData.SkillList.Add(atkGroup);
+        skillData.SkillList.Add(tree.Select(t => t.Group).Where(g => g != atkGroup).Distinct());
+        if (QueueGroup(p.Career) is > 0 and var queueGroup && !skillData.SkillList.Contains(queueGroup)) skillData.SkillList.Add(queueGroup);
+        foreach (int attack in TreeAttackGroups(p.Career).Order())
+            if (!skillData.SkillList.Contains(attack)) skillData.SkillList.Add(attack);
+
+        var plan = new SkillPlan { IsUnlock = true };
+        foreach (int group in skillData.SkillList)
+            plan.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Level(p, group) };
+        plan.SkillQueue[0] = new SkillData(); // the client pairs() it unguarded
+        plan.ManualLoadSkill.Add(new SkillData()); // repeated load lists are read by the client even when empty
+        plan.AutoLoadSkill.Add(new SkillData());
+        foreach (var (rank, points) in SkillPoints(p)) plan.SkillPoints[rank] = Math.Max(0, points);
+        skillData.SkillAssignPlans.Add(plan);
+        for (int index = 1; index < PlanCount; index++)
+        {
+            var blank = new SkillPlan { IsUnlock = true };
+            foreach (int group in skillData.SkillList)
+                blank.SkillAssigns[group] = new SkillData
+                {
+                    SkillId = group,
+                    SkillLevel = group == atkGroup || TreeAttackGroups(p.Career).Contains(group) ? 1 : Initial(p, group)
+                };
+            blank.SkillQueue[0] = new SkillData(); // paired by the client even in a fresh plan.
+            blank.ManualLoadSkill.Add(new SkillData());
+            blank.AutoLoadSkill.Add(new SkillData());
+            var blankProgress = CharacterService.GenreCloneProgress(p);
+            blankProgress.Skills.Clear();
+            foreach (var (rank, points) in SkillPoints(blankProgress)) blank.SkillPoints[rank] = Math.Max(0, points);
+            skillData.SkillAssignPlans.Add(blank);
+        }
+
+        var wheel = new SkillWheel { AtkSkillId = atk };
+        foreach (var (slot, group) in Bar(p))
+            if (RealId(group, Level(p, group)) is var id and > 0) wheel.WhellSkills[slot] = new SkillWheelSlot { SkillConfigId = id, Enable = true };
+        skillData.SkillWheel = wheel;
+        skillData.OriginSkillWheel = wheel.Clone();
+        return skillData;
+    }
+
+    /// <summary>Load 5025 plans once per selected role, preserving the former single active progression plan.</summary>
+    private void StageLoad(GameSession session, byte[]? saved)
+    {
+        DBSkillData state;
+        if (saved is null) state = BuildFresh(session);
+        else if (LegacyJson(saved))
+        {
+            try { state = ImportLegacyJson(session, saved); }
+            catch (JsonException ex)
+            {
+                _log.LogWarning(ex, "Invalid legacy skill plans for role {Role}; reconstructing from progress", session.Role!.Id);
+                state = BuildFresh(session);
+            }
+        }
+        else state = DBSkillData.Parser.ParseFrom(saved);
+        var fresh = BuildFresh(session);
+        while (state.SkillAssignPlans.Count > PlanCount) state.SkillAssignPlans.RemoveAt(state.SkillAssignPlans.Count - 1);
+        while (state.SkillAssignPlans.Count < PlanCount) state.SkillAssignPlans.Add(fresh.SkillAssignPlans[state.SkillAssignPlans.Count].Clone());
+        foreach (var plan in state.SkillAssignPlans)
+            foreach (var (group, free) in fresh.SkillAssignPlans[1].SkillAssigns)
+                if (!plan.SkillAssigns.ContainsKey(group)) plan.SkillAssigns[group] = free.Clone();
+        state.MaxPlanCount = PlanCount;
+        if (state.CurrentPlanIndex is < 0 or >= PlanCount) state.CurrentPlanIndex = 0;
+        state.SkillList.Clear();
+        state.SkillList.Add(fresh.SkillList);
+        state.CurrentAtkSkillId = fresh.CurrentAtkSkillId;
+        // The role progress columns remain the selected plan's authoritative combat values.
+        // A stale saved plan must not clear live skills before StageSkillPlan reports a refusal.
+        if (saved is not null)
+        {
+            var staged = CharacterService.GenreCloneProgress(session.Progress!);
+            int result = StageSkillPlan(session, state, staged, state.CurrentPlanIndex);
+            if (result == 0) CopySkills(staged, session.Progress!);
+            else
+            {
+                _log.LogWarning("{Name} rebuilds invalid saved plan {Plan} from authoritative progress: {Result}",
+                    session.Role!.Name, state.CurrentPlanIndex, result);
+                session.Combat.SkillPlans = state;
+                state = Build(session);
+                var rebuilt = CharacterService.GenreCloneProgress(session.Progress!);
+                if (StageSkillPlan(session, state, rebuilt, state.CurrentPlanIndex) == 0)
+                    CopySkills(rebuilt, session.Progress!);
+            }
+        }
+        session.Combat.SkillPlans = state;
+        session.Combat.SkillPlans = Build(session); // persist the selected plan's authoritative wheel after legacy import/job changes
+    }
+
+    private static bool LegacyJson(byte[] blob)
+    {
+        int i = 0;
+        while (i < blob.Length && blob[i] is (byte)' ' or (byte)'\r' or (byte)'\n' or (byte)'\t') i++;
+        return i < blob.Length && blob[i] == (byte)'{';
+    }
+
+    private static int JsonInt(JsonElement obj, string name, int fallback = 0) =>
+        obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out int number) ? number : fallback;
+
+    private static Dictionary<int, int> JsonMap(JsonElement obj, string name)
+    {
+        var result = new Dictionary<int, int>();
+        if (!obj.TryGetProperty(name, out var map) || map.ValueKind != JsonValueKind.Object) return result;
+        foreach (var entry in map.EnumerateObject())
+            if (int.TryParse(entry.Name, out int key) && entry.Value.ValueKind == JsonValueKind.Number
+                && entry.Value.TryGetInt32(out int value)) result[key] = value;
+        return result;
+    }
+
+    /// <summary>One-time import of the premerge JSON State/PlanState shape into the shared protobuf owner.</summary>
+    private DBSkillData ImportLegacyJson(GameSession session, byte[] blob)
+    {
+        using var document = JsonDocument.Parse(blob);
+        var json = document.RootElement;
+        if (json.ValueKind != JsonValueKind.Object || !json.TryGetProperty("Plans", out var savedPlans)
+            || savedPlans.ValueKind != JsonValueKind.Array) throw new JsonException("Legacy plans are absent");
+        var fresh = BuildFresh(session);
+        var imported = fresh.Clone();
+        imported.SkillAssignPlans.Clear();
+        int index = 0;
+        foreach (var source in savedPlans.EnumerateArray())
+        {
+            if (index == PlanCount) break;
+            if (source.ValueKind != JsonValueKind.Object) throw new JsonException("Legacy plan is not an object");
+            var plan = fresh.SkillAssignPlans[1].Clone();
+            plan.IsUnlock = !source.TryGetProperty("Unlocked", out var unlocked)
+                || unlocked.ValueKind != JsonValueKind.False;
+            plan.Name = source.TryGetProperty("Name", out var name) && name.ValueKind == JsonValueKind.String
+                ? name.GetString() ?? "" : "";
+            plan.SkillGenre = JsonInt(source, "Genre");
+            foreach (var (group, level) in JsonMap(source, "Levels"))
+                plan.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = level };
+            ImportLegacyLoads(source, "Manual", "ManualLevels", plan.ManualLoadSkill, plan, session.Progress!);
+            ImportLegacyLoads(source, "Auto", "AutoLevels", plan.AutoLoadSkill, plan, session.Progress!);
+            var queueLevels = JsonMap(source, "QueueLevels");
+            foreach (var (slot, group) in JsonMap(source, "Queue"))
+                if (slot >= 0 && slot < PositiveParam(Data.Config.PublicParams.Of(_data).QueueNum, 12))
+                    plan.SkillQueue[slot] = new SkillData
+                    {
+                        SkillId = group,
+                        SkillLevel = queueLevels.GetValueOrDefault(slot, PlanLevel(session.Progress!, plan, group))
+                    };
+            imported.SkillAssignPlans.Add(plan);
+            index++;
+        }
+        imported.CurrentPlanIndex = JsonInt(json, "Current");
+        _log.LogInformation("Imported legacy JSON skill plans for role {Role}", session.Role!.Id);
+        return imported;
+    }
+
+    private int PlanLevel(RoleProgress progress, SkillPlan plan, int group) => Math.Max(Initial(progress, group),
+        plan.SkillAssigns.GetValueOrDefault(group)?.SkillLevel ?? 0);
+
+    private void ImportLegacyLoads(JsonElement source, string mapName, string levelsName,
+        Google.Protobuf.Collections.RepeatedField<SkillData> destination, SkillPlan plan, RoleProgress progress)
+    {
+        var slots = JsonMap(source, mapName);
+        var levels = JsonMap(source, levelsName);
+        destination.Clear();
+        int last = slots.Keys.Where(slot => slot is >= 1 and <= BarSlots).DefaultIfEmpty(0).Max();
+        for (int slot = 1; slot <= Math.Max(1, last); slot++)
+        {
+            int group = slots.GetValueOrDefault(slot);
+            destination.Add(new SkillData
+            {
+                SkillId = group,
+                SkillLevel = group > 0 ? levels.GetValueOrDefault(slot, PlanLevel(progress, plan, group)) : 0
+            });
+        }
+    }
+
+    /// <summary>Frozen plan and its active progress publish together after the owned receipt.</summary>
+    private async Task CommitAsync(GameSession session, DBSkillData next, RoleProgress? progress = null,
+        string kind = "cd13c/skill-plan", Action? applied = null)
+    {
+        var tx = _roles.NewTransaction();
+        tx.ItemDelta(session.Role!.Id, session.Items, session.Items);
+        if (progress != null) tx.Progress(session.Role.Id, progress);
+        tx.RoleBlob(session.Role.Id, "skill_plans", next.ToByteArray());
+        tx.WithEconomy(_character.ProgressionEconomy(session, kind, [], [],
+            new
+            {
+                Plans = Convert.ToBase64String(next.ToByteArray()), Skills = progress?.Skills,
+                Bar = progress?.SkillBar
+            }));
+        await _roles.CommitAsync(tx, kind, _ =>
+        {
+            session.Combat.SkillPlans = next;
+            if (progress != null) CopySkills(progress, session.Progress!);
+            applied?.Invoke();
+        });
+    }
+
+    public async Task LoadAsync(GameSession session)
+    {
+        using var held = await CharacterService.Lock(session);
+        var saved = _roles.LoadSkillPlans(session.Role!.Id);
+        var original = session.Progress!;
+        var priorPlans = session.Combat.SkillPlans;
+        var staged = CharacterService.GenreCloneProgress(original);
+        DBSkillData next;
+        session.Progress = staged;
+        try { StageLoad(session, saved); next = session.Combat.SkillPlans!; }
+        finally { session.Progress = original; session.Combat.SkillPlans = priorPlans; }
+        bool changedProgress = !staged.Skills.OrderBy(x => x.Key).SequenceEqual(original.Skills.OrderBy(x => x.Key)) ||
+            !staged.SkillBar.OrderBy(x => x.Key).SequenceEqual(original.SkillBar.OrderBy(x => x.Key));
+        if (saved == null || !saved.AsSpan().SequenceEqual(next.ToByteArray()) || changedProgress)
+            await CommitAsync(session, next, changedProgress ? staged : null, "cd13c/skill-login-reconcile");
+        else session.Combat.SkillPlans = next;
+    }
+
+    public DBSkillData Build(GameSession session)
+    {
+        if (session.Combat.SkillPlans == null) throw new InvalidOperationException("Skill plans must be loaded before use.");
+        var state = session.Combat.SkillPlans!.Clone();
+        var current = state.SkillAssignPlans[state.CurrentPlanIndex];
+        current.SkillAssigns.Clear();
+        var generated = BuildFresh(session);
+        foreach (var (group, level) in generated.SkillAssignPlans[0].SkillAssigns) current.SkillAssigns[group] = level.Clone();
+        current.SkillPoints.Clear();
+        foreach (var (rank, points) in generated.SkillAssignPlans[0].SkillPoints) current.SkillPoints[rank] = points;
+        state.SkillList.Clear();
+        state.SkillList.Add(generated.SkillList);
+        foreach (var plan in state.SkillAssignPlans)
+        {
+            foreach (var (old, replacement) in Replacements(session.Progress!.Career))
+            {
+                if (plan.SkillAssigns.TryGetValue(old, out var assignment))
+                {
+                    plan.SkillAssigns.Remove(old);
+                    int level = Math.Max(plan.SkillAssigns.GetValueOrDefault(replacement)?.SkillLevel ?? 0, assignment.SkillLevel);
+                    plan.SkillAssigns[replacement] = new SkillData { SkillId = replacement, SkillLevel = level };
+                }
+                foreach (var load in plan.ManualLoadSkill.Concat(plan.AutoLoadSkill).Concat(plan.SkillQueue.Values))
+                    if (load.SkillId == old) load.SkillId = replacement;
+            }
+            foreach (int group in generated.SkillList)
+                if (!plan.SkillAssigns.ContainsKey(group))
+                    plan.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Initial(session.Progress!, group) };
+            var preview = CharacterService.GenreCloneProgress(session.Progress!);
+            preview.Skills.Clear();
+            foreach (int group in generated.SkillList)
+                if (plan.SkillAssigns.TryGetValue(group, out var assigned)
+                    && assigned.SkillLevel > Initial(preview, group)) preview.Skills[group] = assigned.SkillLevel;
+            plan.SkillPoints.Clear();
+            foreach (var (rank, points) in SkillPoints(preview)) plan.SkillPoints[rank] = Math.Max(0, points);
+            // A rebuilt plan (a job change, an invalid saved plan) keeps no bar, Auto-Battle or queue slot for a skill
+            // the plan no longer has: the client casts its AutoLoadSkill list as is and every cast came back 3002.
+            PruneLoads(plan, preview);
+            CompactQueue(plan);
+            if (plan.ManualLoadSkill.Count == 0) plan.ManualLoadSkill.Add(new SkillData());
+            if (plan.AutoLoadSkill.Count == 0) plan.AutoLoadSkill.Add(new SkillData());
+        }
+        state.CurrentAtkSkillId = generated.CurrentAtkSkillId;
+        state.SkillWheel = generated.SkillWheel;
+        state.OriginSkillWheel = generated.OriginSkillWheel;
+        var selected = state.SkillAssignPlans[state.CurrentPlanIndex];
+        if (selected.ManualLoadSkill.Any(skill => skill.SkillId > 0))
+        {
+            state.SkillWheel.WhellSkills.Clear();
+            for (int slot = 1; slot <= Math.Min(BarSlots, selected.ManualLoadSkill.Count); slot++)
+                if (selected.ManualLoadSkill[slot - 1] is { SkillId: > 0 } skill && BarGroup(session.Progress!, skill.SkillId) is var group and > 0
+                    && RealId(group, group == skill.SkillId ? skill.SkillLevel : Level(session.Progress!, group)) is var id and > 0)
+                    state.SkillWheel.WhellSkills[slot] = new SkillWheelSlot { SkillConfigId = id, Enable = true };
+        }
+        if (selected.SkillQueue.Values.Any(skill => skill.SkillId > 0) && QueueGroup(session.Progress!.Career) is > 0 and var lineup
+            && RealId(lineup, 1) is var lineupId and > 0)
+        {
+            state.SkillWheel.SkillQueue = new SkillWheelSlot { SkillConfigId = lineupId, Enable = true };
+            // LC_System_Skill._refreshJoystickSkill copies whellSkills. GetCanUseSkillQueueSkillId in
+            // LC_SkillGrowthHelper reads slot 7 from that map; the separate skillQueue field cannot expose the button.
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelSkillQueue] = state.SkillWheel.SkillQueue.Clone();
+        }
+        if (PetWheel?.Invoke(session) is { } pet)
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelPet] = pet;
+        if (MountFlyWheel?.Invoke(session) is { } fly)
+        {
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelMount1] = fly.Up;
+            state.SkillWheel.WhellSkills[(int)SkillWheelSlotType.SkillWheelMount2] = fly.Down;
+        }
+        state.OriginSkillWheel = state.SkillWheel.Clone();
+        return state;
+    }
+
+    /// <summary>The skill bar: saved slots, or the learned active skills in tree order when nothing was set.</summary>
+    private IEnumerable<(int Slot, int Group)> Bar(RoleProgress p)
+    {
+        if (p.SkillBar.Count > 0)
+        {
+            foreach (var (slot, saved) in p.SkillBar.OrderBy(s => s.Key))
+                if (BarGroup(p, saved) is var group and > 0 && Level(p, group) > 0) yield return (slot, group);
+            yield break;
+        }
+        int next = 1;
+        // The PC bar renders whellSkills, not atkSkillId, and the client attacks a selected target by
+        // itself only with eSelectTargetNormalAttack set, so expose the career's learned normal attack
+        // in a clickable slot (inferred, as for a Novice, who has no other active skill at level 1).
+        if (CareerNormalGroup(p.Career) is var attack and > 0 && Level(p, attack) > 0 && IsActive(attack)) yield return (next++, attack);
+        foreach (var (group, _) in Tree(p.Career))
+        {
+            if (next > BarSlots) break;
+            if (Level(p, group) > 0 && IsActive(group) && !IsChainNormalGroup(p, group)) yield return (next++, group);
+        }
+    }
+
+    /// <summary>
+    /// The group a bar slot shows. A normal attack on the bar is the career's own: the tree and a saved bar still hold
+    /// the earlier careers' (the Novice's 10000), and shown, the client cast the Novice's 1000001 instead of the career's
+    /// (1300001 for an Archer). Without its own (a Mage's 1200001 has no SkillConfig row) the slot is empty (0).
+    /// </summary>
+    private int BarGroup(RoleProgress p, int group)
+    {
+        if (IsChainNormalGroup(p, group)) return CareerNormalGroup(p.Career);
+        if (!TreeAttackGroups(AnyCareer).Contains(group)) return group;
+        // The skill tree's attack cell (a Swordman's 10010) is the career's own attack on the bar too (inferred); a career
+        // without one (a Mage) keeps its own cell's attack (12999 with a staff), and another career's cell shows nothing.
+        return CareerNormalGroup(p.Career) is > 0 and var own ? own : TreeAttackGroups(p.Career).Contains(group) ? group : 0;
+    }
+
+    /// <summary>
+    /// The normal-attack groups the skill window shows for a career: JobAttackConfig rows of the career (its attack per
+    /// weapon type and battle mount; <see cref="AnyCareer"/> for every career's). The PC skill tree shows the player's
+    /// current one in place of the Novice normal attack (the Novice page's first cell: UI_Sys_Skill_AddBitWidgetBaseCtrl
+    /// and UI_Sys_Skill_ItemPageWidgetCtrl swap GetNoviceNormalSkillID's group for Lua_CFG_JobAttackConfig.GetNormalSkillID
+    /// of the local player), and that cell is where a normal attack taken off the bar is dragged back from. The cell can
+    /// only be dragged at a level above 0 in the plan's skillAssigns (UI_Sys_Skill_SetItemWidget_PCCtrl._refreshCanDrag,
+    /// LocalAllSkills), so these groups are learned at level 1 like the career's own attack. They are in no
+    /// SkillTreeConfig row: a Swordman's is 10010 (1001001), not JobConfig._kSkillNormalID's 11000.
+    /// </summary>
+    private HashSet<int> TreeAttackGroups(int career) => _treeAttacks.GetOrAdd(career, c => [.. JobAttackConfig.All(_data)
+        .Where(r => c == AnyCareer || r.JobId == c)
+        .Select(r => SkillConfig.Get(_data, r.SkillId) is { } row ? (int)row.SkillId : 0)
+        .Where(group => group > 0)]);
+
+    private const int AnyCareer = 0;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, HashSet<int>> _treeAttacks = new();
+
+    /// <summary>Active skills can go on the bar: SkillConfig._iBasicType 1 (passives such as Sword Mastery have 0).</summary>
+    private bool IsActive(int group) =>
+        RealId(group, 1) is var id and > 0 && _data.Row("SkillConfig", id) is { } row && GameData.Int(row, "_iBasicType") == 1;
+
+    /// <summary>The skill group of a career's normal attack (JobConfig._kSkillNormalID).</summary>
+    private int CareerNormalGroup(int career) =>
+        _data.Row("SkillConfig", NormalAttack(career)) is { } row ? (int)new SkillConfig(row).SkillId : 0;
+
+    /// <summary>The normal attack of the career or of one before it (the Novice's 10000 for every career).</summary>
+    private bool IsChainNormalGroup(RoleProgress p, int group) =>
+        group > 0 && CareerChain(p.Career).Any(career => CareerNormalGroup(career) == group);
+
+    private bool IsNormalGroup(RoleProgress p, int group) =>
+        _data.Row("SkillConfig", NormalAttack(p.Career)) is { } row && GameData.Int(row, "_iSkillID") == group;
+
+    /// <summary>
+    /// The normal attack the player makes now (JobAttackConfig; else the career's), as Lua_CFG_JobAttackConfig._getData reads
+    /// it: the career's rows of the weapon key, else its rows without a weapon, and in those the ridden battle mount's row,
+    /// else the row without a mount. (inferred) A career with no rows (2210) uses its nearest parent's. The client asks this
+    /// table for its skill window alone; its bar and auto-attack cast what the wheel holds (LC_System_Skill: whellSkills,
+    /// LC_DAL_SkillDevelop: atkSkillId), so the server sends it there.
+    /// </summary>
+    public int CurrentAttack(GameSession session)
+    {
+        if (session.Progress is not { } p) return 0;
+        long mount = session.Mounts?.MountIds.GetValueOrDefault(BattleMountSlot) is { IsRiding: true } ride ? ride.MountId : 0;
+        long key = WeaponKey(session);
+        foreach (int career in Enumerable.Reverse(CareerChain(p.Career)))
+        {
+            var rows = JobAttackConfig.All(_data).Where(r => r.JobId == career).ToArray();
+            if (rows.Length == 0) continue;
+            var tier = rows.Where(r => AttackWeaponKey(r) == key).ToArray();
+            if (tier.Length == 0) tier = [.. rows.Where(r => AttackWeaponKey(r) == -1)];
+            foreach (long wanted in new[] { mount, 0L })
+                if (tier.Where(r => r.MountId == wanted).Select(r => (int)r.SkillId).FirstOrDefault(id => _data.Row("SkillConfig", id) != null) is > 0 and var attack)
+                    return attack;
+            break;
+        }
+        return NormalAttack(p.Career);
+    }
+
+    /// <summary>
+    /// Whether this normal attack may be cast now: the current one only, so a faster attack of another weapon can't be chosen.
+    /// A bow's Arrow Attack is not _iIsNormalAtk, and the client's GetNormalSkill then falls back on Normal Attack, so with
+    /// such a current attack the _iIsNormalAtk rows stay castable too (inferred).
+    /// </summary>
+    internal bool MayCastAttack(GameSession session, SkillConfig attack)
+    {
+        // By group: a cast can resolve to the mode row of its skill (CombatService.EffectiveSkillRow), with its own row id.
+        if (SkillConfig.Get(_data, CurrentAttack(session)) is not { } current) return false;
+        return attack.SkillId == current.SkillId || attack.IsNormalAtk == 1 && current.IsNormalAtk != 1;
+    }
+
+    private static long AttackWeaponKey(JobAttackConfig row) => row.WeaponType switch
+    {
+        [] => -1,
+        [var one] => one * 10,
+        [var main, var off, ..] => main * 10 + off,
+    };
+
+    /// <summary>LC_UnitBase.RefreshWeaponData and the head of _getData: the weapon's _iSubType * 10, plus 1 for two of a kind.</summary>
+    private long WeaponKey(GameSession session)
+    {
+        long SubType(int grid) => session.Items.FirstOrDefault(i => i.Grid == grid) is { } item && _data.Row("ItemConfig", item.Entry) is { } row
+            ? new ItemConfig(row).SubType : 0;
+        long main = SubType(MainHandGrid), off = SubType(ViceHandGrid);
+        return (main > 0 ? main : off) * 10 + (main > 0 && main == off ? 1 : 0);
+    }
+
+    /// <summary>
+    /// Sent, never saved: the plan and the origin wheel keep the career's own attack. The current plan shows one learned
+    /// _iIsNormalAtk group, because GetNormalSkill (LC_Actor_AutoAttack) takes the first it finds; a bow's Arrow Attack is not
+    /// one, so then Normal Attack stays learned.
+    /// </summary>
+    private void ApplyCurrentAttack(GameSession session, DBSkillData state)
+    {
+        int attack = session.WheelAttack = CurrentAttack(session);
+        if (attack == 0 || SkillConfig.Get(_data, attack) is not { } held) return;
+        state.CurrentAtkSkillId = attack;
+        state.SkillWheel.AtkSkillId = attack;
+        var career = session.Progress!.Career;
+        int own = CareerNormalGroup(career);
+        foreach (var slot in state.SkillWheel.WhellSkills.Values)
+            if (SkillConfig.Get(_data, slot.SkillConfigId) is { } row && ((int)row.SkillId == own || row.IsNormalAttack(_data) && TreeAttackGroups(career).Contains((int)row.SkillId)))
+                slot.SkillConfigId = attack;
+        if (held.IsNormalAtk != 1) return;
+        foreach (var (group, assign) in state.SkillAssignPlans[state.CurrentPlanIndex].SkillAssigns)
+            if (group != held.SkillId && SkillConfig.Get(_data, RealId(group, 1)) is { IsNormalAtk: 1 }) assign.SkillLevel = 0;
+    }
+
+    /// <summary>MountService.RideChanged and worn gear changes: a change of the normal attack sends the wheel, and an attack
+    /// loop goes on with the new attack.</summary>
+    internal Task AttackInputChangedAsync(GameSession session)
+    {
+        if (session.Combat.SkillPlans == null || CurrentAttack(session) is var attack && attack == session.WheelAttack) return Task.CompletedTask;
+        if (session.Attack is { } loop && SkillConfig.Get(_data, loop.SkillId) is { } running && running.IsNormalAttack(_data)) loop.SkillId = attack;
+        return SyncAsync(session);
+    }
+
+    /// <summary>The state the client is sent: the stored plans with the current normal attack applied.</summary>
+    internal DBSkillData Shown(GameSession session)
+    {
+        var state = Build(session);
+        ApplyCurrentAttack(session, state);
+        ApplyFollowUps(session, state);
+        return state;
+    }
+
+    public async Task SyncAsync(GameSession session)
+    {
+        if (session.Combat.SkillPlans == null) await LoadAsync(session);
+        var state = Shown(session);
+        // A granted skill (a socketed card's Skill(3)) is listed with its level in the current plan, where the skill panel's
+        // card skills read it (UI_Sys_SkillPanelModel.GetCardSkillList: ServerAllSkills = skillList, then the plan's
+        // skillAssigns with level > 0). It is sent, never saved in a plan: a plan switch checks its groups against the tree.
+        if (session.Progress is { GrantedSkills.Count: > 0 } progress)
+        {
+            var current = state.SkillAssignPlans[state.CurrentPlanIndex];
+            foreach (var (group, level) in progress.GrantedSkills)
+            {
+                if (!state.SkillList.Contains(group)) state.SkillList.Add(group);
+                current.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = level };
+            }
+        }
+        await CharacterService.SyncAsync(session, SkillDataSync, state);
+    }
+
+    /// <summary>Build a role-progress candidate from an owned skill plan before a Build-window switch.</summary>
+    internal int StageSkillPlan(GameSession session, DBSkillData state, RoleProgress progress, int index)
+    {
+        if (index is < 0 or >= PlanCount || index >= state.SkillAssignPlans.Count || !state.SkillAssignPlans[index].IsUnlock)
+            return ErrorCodes.Parameter;
+        var source = state.SkillAssignPlans[index];
+        var tree = Tree(progress.Career).ToDictionary(t => t.Group, t => t.Career);
+        // BuildFresh stores normal attacks in plans, but Level grants the current attack implicitly.
+        // Ignore those from the current career chain when an older plan is selected after a job change, and the skill
+        // tree's attack cell (TreeAttackGroups), in no SkillTreeConfig row of the career.
+        var normalAttacks = CareerChain(progress.Career)
+            .Select(c => _data.Row("SkillConfig", NormalAttack(c)) is { } row ? (int)GameData.Int(row, "_iSkillID") : 0)
+            .Where(group => group > 0).Concat(TreeAttackGroups(AnyCareer)).ToHashSet();
+        progress.Skills.Clear();
+        foreach (var (group, assignment) in source.SkillAssigns)
+        {
+            if (assignment.SkillLevel == 1 && normalAttacks.Contains(group)) continue;
+            if (assignment.SkillLevel <= 1 && IsQueueGroup(group)) continue; // the Lineup button: free, in no skill tree row
+            if (assignment.SkillLevel < 0 || assignment.SkillLevel > MaxLevel(group)
+                || (!tree.ContainsKey(group) && assignment.SkillLevel > 0)) return ErrorCodes.SkillNotInTree;
+            if (assignment.SkillId != 0 && assignment.SkillId != group) return ErrorCodes.Parameter;
+            if (assignment.SkillLevel > Initial(progress, group)) progress.Skills[group] = assignment.SkillLevel;
+        }
+        var remaining = SkillPoints(progress);
+        if (remaining.Values.Any(v => v < 0))
+        {
+            // A rank over its points refuses only what spends more than the plan already did. The GM grant (110) charges none,
+            // so such a plan was refused here on every bar edit, plan switch and refund, its levels unchanged. (inferred) It
+            // stays usable and can give levels back. At login the saved plan is not trusted: the role's progress decides.
+            var before = session.Combat.SkillPlans is { } saved && index < saved.SkillAssignPlans.Count
+                ? PlanPoints(progress, saved.SkillAssignPlans[index]) : SkillPoints(session.Progress!);
+            if (remaining.Any(rank => rank.Value < Math.Min(0, before.GetValueOrDefault(rank.Key)))) return ErrorCodes.SkillPointsShort;
+        }
+        if (progress.Skills.Any(kv => RealId(kv.Key, kv.Value) == 0)) return ErrorCodes.SkillMaxLevel;
+        if (!PrerequisitesMet(progress)) return ErrorCodes.SkillPrerequisite;
+        source.SkillPoints.Clear();
+        foreach (var (rank, points) in remaining) source.SkillPoints[rank] = Math.Max(0, points);
+        progress.SkillBar.Clear();
+        for (int slot = 1; slot <= Math.Min(BarSlots, source.ManualLoadSkill.Count); slot++)
+            if (source.ManualLoadSkill[slot - 1] is { SkillId: > 0 } skill && Level(progress, skill.SkillId) > 0)
+                progress.SkillBar[slot] = skill.SkillId;
+        state.CurrentPlanIndex = index;
+        return 0;
+    }
+
+    public async Task SwitchPlanAsync(GameSession session, SwitchPlanReq req)
+    {
+        bool changed = false;
+        {
+            using var held = await CharacterService.Lock(session);
+            var next = Build(session);
+            var progress = CharacterService.GenreCloneProgress(session.Progress!);
+            int result = req.Plan is < 0 or >= PlanCount || !next.SkillAssignPlans[req.Plan].IsUnlock
+                ? ErrorCodes.Parameter : PlanSwitchCooldownError(session);
+            if (result == 0) result = StageSkillPlan(session, next, progress, req.Plan);
+            if (result == 0 && req.Plan != session.Combat.SkillPlans!.CurrentPlanIndex)
+            {
+                await CommitAsync(session, next, progress, "cd13c/skill-switch",
+                    () => session.Combat.SkillPlanSwitchUtc = _clock.GetUtcNow().UtcDateTime);
+                changed = true;
+            }
+            await session.SendGameAsync(SwitchPlan, new SwitchPlanResp { Result = result, Plan = req.Plan, Flag = 0 });
+            if (result == 0) await SyncAsync(session);
+        }
+        if (changed) await OnActivePlanChangedAsync(session);
+    }
+
+    public async Task RenamePlanAsync(GameSession session, SkillPlanChangeNameReq req)
+    {
+        using var held = await CharacterService.Lock(session);
+        int result = req.Plan is < 0 or >= PlanCount || !session.Combat.SkillPlans!.SkillAssignPlans[req.Plan].IsUnlock
+            || string.IsNullOrWhiteSpace(req.Name) || req.Name.Any(char.IsControl)
+            || req.Name.EnumerateRunes().Count() > PositiveParam(Data.Config.PublicParams.Of(_data).SchemeNameNumMax, 8) ? ErrorCodes.Parameter : 0;
+        if (result == 0)
+        {
+            var next = session.Combat.SkillPlans!.Clone();
+            next.SkillAssignPlans[req.Plan].Name = req.Name;
+            await CommitAsync(session, next, kind: "cd13c/skill-rename");
+        }
+        await session.SendGameAsync(RenamePlan, new SkillPlanChangeNameResp { Result = result, Plan = req.Plan, Name = result == 0 ? req.Name : "" });
+        if (result == 0) await SyncAsync(session);
+    }
+
+    public Task ChangeNameAsync(GameSession session, SkillPlanChangeNameReq req) => RenamePlanAsync(session, req);
+
+    private static bool InCombat(GameSession session) => (session.StatusBits & FightBit) != 0;
+
+    private static int PositiveParam(long? value, int fallback) => value is > 0 ? (int)value.Value : fallback;
+
+    /// <summary>Shared gate for direct skill switches and Build-window child switches.</summary>
+    internal int PlanSwitchCooldownError(GameSession session) => InCombat(session) ? ErrorCodes.Parameter
+        : _clock.GetUtcNow().UtcDateTime - session.Combat.SkillPlanSwitchUtc < TimeSpan.FromSeconds(PositiveParam(Data.Config.PublicParams.Of(_data).SchemeCD, 3))
+            ? ErrorCodes.Cooldown : 0;
+
+    /// <summary>Run skill-change observers after a combined Build transaction releases the character lock.</summary>
+    internal async Task OnActivePlanChangedAsync(GameSession session)
+    {
+        foreach (var handler in Learned.Handlers) await handler(session);
+    }
+
+    internal static void CopySkills(RoleProgress from, RoleProgress to)
+    {
+        to.SourceRevision = from.SourceRevision;
+        to.Skills.Clear();
+        foreach (var kv in from.Skills) to.Skills[kv.Key] = kv.Value;
+        to.SkillBar.Clear();
+        foreach (var kv in from.SkillBar) to.SkillBar[kv.Key] = kv.Value;
+    }
+
+    private Dictionary<int, int> UpgradeGroups() => _upgradedGroupByBase ??= _data.Table("SkillConfig").Values
+        .Where(r => GameData.Int(r, "_iMode") == 0 && GameData.Int(r, "_iLevel") == 1
+                    && GameData.Int(r, "_iSkillAdvanced") > 0)
+        .GroupBy(r => (int)GameData.Int(r, "_iSkillAdvanced"))
+        .ToDictionary(g => g.Key, g => (int)GameData.Int(g.First(), "_iSkillID"));
+
+    /// <summary>31151 accepts desired levels, including dependent refunds, as one final graph.</summary>
+    public async Task PlanUpdateAsync(GameSession session, SkillGrowthSkillPlanUpdateReq req)
+    {
+        bool learned = false;
+        using (await CharacterService.Lock(session))
+        {
+            var p = session.Progress!;
+            var plans = Build(session);
+            int code = req.Plan is < 0 or >= PlanCount || !plans.SkillAssignPlans[req.Plan].IsUnlock
+                ? ErrorCodes.Parameter : 0;
+            var tree = Tree(p.Career).Select(t => t.Group).ToHashSet();
+            if (code == 0)
+            {
+                var selected = plans.SkillAssignPlans[req.Plan];
+                foreach (var (group, target) in req.LevelUpList)
+                {
+                    code = !tree.Contains(group) ? ErrorCodes.SkillNotInTree
+                        : target.SkillId != 0 && target.SkillId != group ? ErrorCodes.Parameter
+                        : target.SkillLevel > MaxLevel(group) ? ErrorCodes.SkillMaxLevel
+                        : target.SkillLevel < 0 || target.SkillLevel < Initial(p, group) && !RefundsWithPrerequisite(p, group, target.SkillLevel)
+                            ? ErrorCodes.Parameter : 0;
+                    if (code != 0) break;
+                    selected.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Math.Max(target.SkillLevel, Initial(p, group)) };
+                }
+                if (code == 0)
+                    foreach (var (group, target) in req.LevelUpList)
+                        if (target.SkillLevel > (session.Combat.SkillPlans!.SkillAssignPlans[req.Plan].SkillAssigns
+                                .GetValueOrDefault(group)?.SkillLevel ?? 0)
+                            && UpgradeGroups().TryGetValue(group, out int upgraded)
+                            && selected.SkillAssigns.GetValueOrDefault(upgraded)?.SkillLevel > 0)
+                        { code = ErrorCodes.SkillPrerequisite; break; }
+                if (code == 0)
+                {
+                    var candidate = CharacterService.GenreCloneProgress(p);
+                    int oldIndex = plans.CurrentPlanIndex;
+                    code = StageSkillPlan(session, plans, candidate, req.Plan);
+                    plans.CurrentPlanIndex = oldIndex;
+                    if (code == 0)
+                    {
+                        PruneLoads(selected, candidate);
+                        await CommitAsync(session, plans, req.Plan == oldIndex ? candidate : null,
+                            "cd13c/skill-update");
+                        learned = true;
+                        await SyncAsync(session);
+                    }
+                }
+            }
+            _log.LogInformation("{Name} learns {Skills}: {Result}", session.Role!.Name,
+                string.Join(",", req.LevelUpList.Select(kv => $"{kv.Key}:{kv.Value.SkillLevel}")),
+                code == 0 ? "ok" : "refused");
+            await session.SendGameAsync(PlanUpdate, new SkillGrowthSkillPlanUpdateResp { Result = code });
+        }
+        // Learned observers may take the same StateLock (cart capacity); run them after the commit and reply.
+        if (learned) foreach (var handler in Learned.Handlers) await handler(session);
+    }
+
+    /// <summary>Skills were learned (quests: 104012 CheckCostJobPoint).</summary>
+    public AsyncHook<GameSession> Learned { get; } = new("SkillService.Learned");
+
+    /// <summary>
+    /// GM panel 110 GmCurAllSkillLevUpMax (GMConfig 3007: 1 learns every skill of the current job and stage at its
+    /// max level, 0 clears them) on the active plan. (inferred) The grant costs no skill points: the plan shows none
+    /// left. Groups are added in tree order while the plan's prerequisites still hold, so of an exclusive pair
+    /// (_kPreSkillRequired level -1) the first stays and a base skill gives way to its advanced form in the tree.
+    /// </summary>
+    internal async Task<string> GmLearnAllAsync(GameSession session, bool learn)
+    {
+        int learned;
+        {
+            using var held = await CharacterService.Lock(session);
+            var plans = Build(session);
+            var selected = plans.SkillAssignPlans[plans.CurrentPlanIndex];
+            var progress = CharacterService.GenreCloneProgress(session.Progress!);
+            progress.Skills.Clear();
+            if (learn)
+            {
+                var tree = Tree(progress.Career).Select(t => t.Group).ToList();
+                var pending = tree.Where(g => MaxLevel(g) > Initial(progress, g) && RealId(g, MaxLevel(g)) > 0
+                    && !(UpgradeGroups().TryGetValue(g, out int advanced) && tree.Contains(advanced))).ToList();
+                // A prerequisite later in the tree is met on a later pass.
+                for (bool added = true; added;)
+                {
+                    added = false;
+                    foreach (int group in pending.ToArray())
+                    {
+                        progress.Skills[group] = MaxLevel(group);
+                        if (PrerequisitesMet(progress)) { pending.Remove(group); added = true; }
+                        else progress.Skills.Remove(group);
+                    }
+                }
+            }
+            foreach (int group in plans.SkillList)
+                selected.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Level(progress, group) };
+            selected.SkillPoints.Clear();
+            foreach (var (rank, points) in SkillPoints(progress)) selected.SkillPoints[rank] = Math.Max(0, points);
+            PruneLoads(selected, progress);
+            await CommitAsync(session, plans, progress, "cd13c/skill-gm");
+            await SyncAsync(session);
+            learned = progress.Skills.Count;
+        }
+        await OnActivePlanChangedAsync(session);
+        return learn ? $"{learned} skills learned at their max level (no skill points charged)." : "Skills cleared to their free levels.";
+    }
+
+    /// <summary>Skill points spent on the current tree (learned levels above the free initial ones).</summary>
+    public int SpentPoints(RoleProgress p) => p.Skills.Sum(kv => Math.Max(0, kv.Value - Initial(p, kv.Key)));
+
+    /// <summary>311001 filters by the teaching career's rank, just as the skill-point dataset does.</summary>
+    public int SpentPoints(RoleProgress p, int rank) => Tree(p.Career)
+        .Where(t => Rank(t.Career) == rank).Select(t => t.Group).Distinct()
+        .Sum(g => Math.Max(0, p.Skills.GetValueOrDefault(g) - Initial(p, g)));
+
+    /// <summary>
+    /// A 31151 target of 0 under a free level. Only a skill with a prerequisite gets one: taking that prerequisite away, the
+    /// client sets every skill that depends on it to 0 (LC_SkillGrowthHelper.LocalMinusSkillLevel, LocalResetSkillList,
+    /// ResetSkillByJobId; Sight Sprout on Sight), while the minus button alone stops at the free level (CanSkillMinusPoint).
+    /// (inferred) The free level stays, as <see cref="PrerequisitesMet"/> has it: the next 5025 shows it to the client again.
+    /// </summary>
+    private bool RefundsWithPrerequisite(RoleProgress p, int group, int target) => target == 0
+        && SkillConfig.Get(_data, RealId(group, Initial(p, group))) is { } row && row.PreSkillRequired.Any(pre => pre is [_, > 0]);
+
+    /// <summary>
+    /// Evaluate desired-level row prerequisites, including the negative required-level sentinel. They hold for the levels
+    /// the role paid for. A free level has none to meet: the client's reset before a recommended build gives Sight Sprout (Wizard,
+    /// _iInitialLevel 1, needs Sight 1, the only such row) its free level with Sight at 0 (LC_SkillGrowthHelper.ResetAllChanged),
+    /// and counts that as a build nothing was spent in (LC_DAL_SkillDevelop.IsSchemeEmpty); no recommended build
+    /// (JobProfessSkillConfig) lists Sprout or pays a point for it. (inferred) The original's handling of it is not known.
+    /// </summary>
+    private bool PrerequisitesMet(RoleProgress p)
+    {
+        var tree = Tree(p.Career).Select(t => t.Group).ToHashSet();
+        foreach (int group in tree)
+        {
+            int level = Level(p, group);
+            if (level <= Initial(p, group)) continue;
+            if (_data.Row("SkillConfig", RealId(group, level)) is not { } row) return false;
+            if (!row.TryGetProperty("_kPreSkillRequired", out var pre) || pre.ValueKind != JsonValueKind.Array) continue;
+            foreach (var req in pre.EnumerateArray())
+                if (req.ValueKind == JsonValueKind.Array && req.GetArrayLength() >= 2 && GameData.Number(req[0]) is { } g
+                    && GameData.Number(req[1]) is { } l)
+                {
+                    int actual = tree.Contains((int)g) ? Level(p, (int)g) : 0;
+                    if (l == -1 ? actual > 0 : l > 0 && actual < l) return false;
+                }
+        }
+        return true;
+    }
+
+    private void PruneLoads(SkillPlan plan, RoleProgress progress)
+    {
+        foreach (var list in new[] { plan.ManualLoadSkill, plan.AutoLoadSkill })
+            foreach (var load in list)
+                if (load.SkillId > 0)
+                {
+                    int level = Level(progress, load.SkillId);
+                    if (level <= 0) { load.SkillId = 0; load.SkillLevel = 0; }
+                    else load.SkillLevel = Math.Min(load.SkillLevel, level);
+                }
+        foreach (var key in plan.SkillQueue.Keys.ToArray())
+        {
+            var load = plan.SkillQueue[key];
+            int level = Level(progress, load.SkillId);
+            if (load.SkillId > 0 && level <= 0) plan.SkillQueue.Remove(key);
+            else if (load.SkillId > 0) load.SkillLevel = Math.Min(load.SkillLevel, level);
+        }
+        CompactQueue(plan);
+    }
+
+    /// <summary>
+    /// The queue holds its skills only, plus an empty slot 0 while it is empty: the client pairs() it unguarded
+    /// (LC_DAL_SkillDevelop.RefreshSkillDalInfo), but counts every entry as a Lineup slot in use, one dot on the Skill Bar
+    /// button each (UI_Sys_Main_JoyStickSkillQueueItemWidgetCtrl._refreshQueuePointNum: table.count), and looks up each
+    /// entry's cooldown for the button (_refreshQueueSkillCDInfo). An emptied slot left as an empty entry showed as a dot.
+    /// </summary>
+    private static void CompactQueue(SkillPlan plan)
+    {
+        foreach (var (slot, queued) in plan.SkillQueue.ToArray())
+            if (queued.SkillId <= 0) plan.SkillQueue.Remove(slot);
+        if (plan.SkillQueue.Count == 0) plan.SkillQueue[0] = new SkillData();
+    }
+
+    /// <summary>31153: put a skill on a bar slot (socketNum = slot - 1), remove it, or replace one.</summary>
+    public async Task LoadAsync(GameSession session, SkillLoadReq req)
+    {
+        using var held = await CharacterService.Lock(session);
+        var p = session.Progress!;
+        var plans = Build(session);
+        var selected = plans.SkillAssignPlans[plans.CurrentPlanIndex];
+        var loadList = req.IsManual ? selected.ManualLoadSkill : selected.AutoLoadSkill;
+        if (req.IsManual && loadList.All(skill => skill.SkillId == 0))
+            foreach (var (slot, barGroup) in Bar(p))
+            {
+                while (loadList.Count < slot) loadList.Add(new SkillData());
+                loadList[slot - 1] = new SkillData { SkillId = barGroup, SkillLevel = Level(p, barGroup) };
+            }
+        int target = req.SocketNum;
+        int op = (int)req.OpType;
+        int group = req.Info?.SkillId ?? 0;
+        int code = InCombat(session) || target is < 0 or >= BarSlots || op is < 1 or > 3
+            ? ErrorCodes.Parameter : 0;
+        // A drop from the skill window is a Load onto a taken slot too, with no ReplaceInfo: the window's drag data has iSlotIndex 0
+        // (UI_Sys_Skill_SetItemWidget_PCCtrl._refreshCanDrag, UI_Sys_Main_JoyStickSkillItemWidget_PCCtrl._progressDragItem). It
+        // takes the slot, as the client's own edit model does (UI_Sys_GenreManualEditSkillModel.ChangeSlotVal).
+        // The client names a slot's skill by the group of the wheel row it shows (a normal attack shows as the career's own,
+        // BarGroup), so a stored normal attack of another group (the tree cell's 10010, a Novice's 10000) matches it.
+        bool Same(int stored, int shown) => stored == shown || stored > 0 && BarGroup(p, stored) is > 0 and var bar && bar == BarGroup(p, shown);
+        if (code == 0 && op == 2)
+        {
+            if (target >= loadList.Count || !Same(loadList[target].SkillId, group)
+                || req.IsManual && loadList.Count(skill => skill.SkillId > 0) <= 1)
+                code = ErrorCodes.Parameter;
+        }
+        else if (code == 0)
+        {
+            int learned = Level(p, group);
+            if (group <= 0 || learned <= 0 || !IsActive(group)
+                || req.Info!.SkillLevel < 1 || req.Info.SkillLevel > learned
+                || op == 3 && (target >= loadList.Count || !Same(loadList[target].SkillId, req.ReplaceInfo?.SkillId ?? 0)))
+                code = ErrorCodes.SkillNotLearned;
+        }
+        if (code == 0)
+        {
+            while (loadList.Count <= target) loadList.Add(new SkillData());
+            if (op == 2) loadList[target] = new SkillData();
+            else
+            {
+                foreach (var skill in loadList.Where(skill => Same(skill.SkillId, group)))
+                { skill.SkillId = 0; skill.SkillLevel = 0; }
+                loadList[target] = req.Info!.Clone();
+            }
+            if (req.IsManual)
+            {
+                var progress = CharacterService.GenreCloneProgress(p);
+                int result = StageSkillPlan(session, plans, progress, plans.CurrentPlanIndex);
+                if (result != 0) code = result;
+                else
+                {
+                    await CommitAsync(session, plans, progress, "cd13c/skill-load");
+                }
+            }
+            else await CommitAsync(session, plans, kind: "cd13c/skill-load");
+            if (code == 0) { session.Combat.SkillPlans = plans; await SyncAsync(session); }
+        }
+        await session.SendGameAsync(SkillLoad, new SkillLoadResp { Result = code, IsManual = req.IsManual });
+    }
+
+    /// <summary>31156 sender was not recovered. (inferred) Clear this plan's paid allocations without a fee.</summary>
+    public async Task ResetAsync(GameSession session, SkillResetReq req)
+    {
+        bool changed = false;
+        {
+            using var held = await CharacterService.Lock(session);
+            var plans = Build(session);
+            int code = req.Plan is < 0 or >= PlanCount || !plans.SkillAssignPlans[req.Plan].IsUnlock
+                || InCombat(session) ? ErrorCodes.Parameter : 0;
+            if (code == 0)
+            {
+                var selected = plans.SkillAssignPlans[req.Plan];
+                foreach (var (group, assigned) in selected.SkillAssigns)
+                    assigned.SkillLevel = IsNormalGroup(session.Progress!, group) ? 1 : Initial(session.Progress!, group);
+                var progress = CharacterService.GenreCloneProgress(session.Progress!);
+                int oldIndex = plans.CurrentPlanIndex;
+                code = StageSkillPlan(session, plans, progress, req.Plan);
+                plans.CurrentPlanIndex = oldIndex;
+                if (code == 0)
+                {
+                    PruneLoads(selected, progress);
+                    if (req.Plan == oldIndex)
+                    {
+                        await CommitAsync(session, plans, progress, "cd13c/skill-reset");
+                        changed = true;
+                    }
+                    else await CommitAsync(session, plans, kind: "cd13c/skill-reset");
+                    session.Combat.SkillPlans = plans;
+                    await SyncAsync(session);
+                }
+            }
+            await session.SendGameAsync(SkillReset, new SkillResetResp { Result = code, Plan = req.Plan });
+        }
+        if (changed) await OnActivePlanChangedAsync(session);
+    }
+
+    public async Task SwitchGenreAsync(GameSession session, SkillSwitchGenreReq req)
+    {
+        using var held = await CharacterService.Lock(session);
+        int code = req.Genre < 0 ? ErrorCodes.Parameter : 0; // (inferred) exact genre enumeration is not exported.
+        if (code == 0)
+        {
+            var plans = Build(session);
+            plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillGenre = req.Genre;
+            await CommitAsync(session, plans, kind: "cd13c/skill-genre");
+            await SyncAsync(session);
+        }
+        await session.SendGameAsync(SwitchGenre, new SkillSwitchGenreResp { Result = code });
+    }
+
+    public async Task QueueUpdateAsync(GameSession session, SkillQueueUpdateReq req)
+    {
+        using var held = await CharacterService.Lock(session);
+        var plans = Build(session);
+        int op = (int)req.OpType;
+        int group = req.Info?.SkillId ?? 0;
+        int code = req.Plan is < 0 or >= PlanCount || !plans.SkillAssignPlans[req.Plan].IsUnlock
+            || req.Plan != plans.CurrentPlanIndex || InCombat(session)
+            || req.QueueIndex < 0 || req.QueueIndex >= PositiveParam(Data.Config.PublicParams.Of(_data).QueueNum, 12) || op is < 1 or > 3
+                ? ErrorCodes.Parameter : 0;
+        if (code == 0)
+        {
+            var selected = plans.SkillAssignPlans[req.Plan];
+            var old = selected.SkillQueue.GetValueOrDefault(req.QueueIndex);
+            if (op != 2)
+            {
+                var row = _data.Row("SkillConfig", RealId(group, 1));
+                int learned = Level(session.Progress!, group);
+                // The Lineup tab lists a learned skill whose level row has _iQueue 1 (or the dynamic override), but not a
+                // base skill whose upgrade is learned (LC_SkillGrowthHelper.GetSkillQueueCanEquipList, CheckSkillCanEquip,
+                // CheckHasUpgradAndLevel; its passive check reads an unset global, bNotPassivity, and never runs).
+                if (group <= 0 || learned <= 0 || row is not { }
+                    || !(QueueEligibility?.Invoke(session, group) ?? GameData.Int(row.Value, "_iQueue") == 1)
+                    || UpgradeGroups().TryGetValue(group, out int upgrade) && Level(session.Progress!, upgrade) > 0
+                    || req.Info!.SkillLevel < 1 || req.Info.SkillLevel > learned)
+                    code = ErrorCodes.SkillNotLearned;
+            }
+            if (code == 0 && op == 2 && (group <= 0 || old is not { SkillId: > 0 } || old.SkillId != group))
+                code = ErrorCodes.Parameter;
+            if (code == 0 && op == 3 && old is not { SkillId: > 0 }) code = ErrorCodes.Parameter;
+            if (code == 0)
+            {
+                // The Lineup tab sends only Load and Unload (UI_Sys_Skill_QueueWidgetBaseCtrl): a skill dropped on a taken
+                // slot loads over it, and a swap is two Loads, the dragged skill to the target slot, then the target's
+                // skill back to the dragged one's. (inferred) A Load moves the skill: it leaves any other slot it held.
+                if (op == 2) selected.SkillQueue.Remove(req.QueueIndex);
+                else
+                {
+                    foreach (var (slot, queued) in selected.SkillQueue.ToArray())
+                        if (queued.SkillId == group) selected.SkillQueue.Remove(slot);
+                    selected.SkillQueue[req.QueueIndex] = req.Info!.Clone();
+                }
+                CompactQueue(selected);
+                await CommitAsync(session, plans, kind: "cd13c/skill-queue");
+                await SyncAsync(session);
+            }
+        }
+        await session.SendGameAsync(QueueUpdate, new SkillQueueUpdateResp { Result = code, Plan = req.Plan });
+    }
+}

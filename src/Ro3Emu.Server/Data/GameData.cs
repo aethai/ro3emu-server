@@ -13,10 +13,18 @@ namespace Ro3Emu.Server.Data;
 /// A missing table is empty, except that a client export must carry every table and field the server declares
 /// (Data/Config, checked by <see cref="Config.ConfigValidator"/> during the preload).
 /// </summary>
-public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> log)
+public sealed partial class GameData(IOptions<ServerOptions> options, ILogger<GameData> log)
 {
     private readonly Dictionary<string, Dictionary<string, JsonElement>> _tables = [];
     private readonly object _sync = new();
+    // SkillTemplate by script show: a cast asks for its template on every hit moment and target (#484), and the lookup built
+    // its table key and an enumerator each time. Templates never change once loaded.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement?> _skillTemplates = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> _derived = new();
+
+    /// <summary>A value computed from the tables once per host (the tables never change after loading), for readers on
+    /// hot paths that would otherwise parse the same rows on every call.</summary>
+    internal T Derived<T>(string key, Func<T> build) where T : class => (T)_derived.GetOrAdd(key, _ => build());
     private volatile Dictionary<long, string>? _texts;
     private volatile FrozenDictionary<string, Dictionary<string, JsonElement>>? _frozen;
 
@@ -84,19 +92,36 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
         }
         Text(0); // builds the text index
         // A client export (with export.json) must carry every declared table and field; any data set must give each
-        // declared field values of its kind. A mismatch stops the server here, before players are admitted.
+        // declared field values of its kind. Missing keyed constant entries warn and fall back to server defaults so
+        // a newer client export that drops or renames a PublicParam/constant key does not block startup.
         bool export = File.Exists(Path.Combine(Root, ExportManifest));
-        Config.ConfigValidator.Check(this, Config.ConfigTables.All, strict: export);
+        var warnings = Config.ConfigValidator.Check(this, Config.ConfigTables.All, strict: export, failOnMissingConstants: false);
+        if (warnings.Count > 0)
+            LogMissingConfigConstants(log, warnings.Count, string.Join(", ", warnings.Take(20)));
         log.LogInformation(
             "Game data preloaded: {Tables} tables in {Ms} ms, managed heap {Mb} MB, {Views} config views checked{Strict}",
             files.Length, watch.ElapsedMilliseconds, GC.GetTotalMemory(false) >> 20, Config.ConfigTables.All.Count,
             export ? " against the client export" : "");
     }
 
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Game data export is missing {Count} keyed config constant(s); server fallbacks will be used: {Sample}")]
+    private static partial void LogMissingConfigConstants(ILogger logger, int count, string sample);
+
     /// <summary>tools/ConfigExport writes this next to config/ for a complete client export.</summary>
     public const string ExportManifest = "export.json";
 
-    public JsonElement? Row(string table, long id) => Table(table).TryGetValue(id.ToString(), out var row) ? row : null;
+    public JsonElement? Row(string table, long id)
+    {
+        // The key is formatted on the stack and looked up as a span: id.ToString() was a string per row read, and rows are
+        // read thousands of times a second in combat. Same text as ToString() (current culture, as before).
+        var rows = Table(table);
+        Span<char> key = stackalloc char[24];
+        if (rows is Dictionary<string, JsonElement> dict && dict.TryGetAlternateLookup<ReadOnlySpan<char>>(out var lookup)
+            && id.TryFormat(key, out int written, default, System.Globalization.CultureInfo.CurrentCulture))
+            return lookup.TryGetValue(key[..written], out var hit) ? hit : null;
+        return rows.TryGetValue(id.ToString(), out var row) ? row : null;
+    }
 
     /// <summary>Localized text (Localization_en: id -> {_kDes}); config "names" are arrays of text ids.</summary>
     public string Text(long id)
@@ -167,9 +192,12 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     public static long Int(JsonElement row, string field) => Config.ConfigValue.Integral(row, field);
 
     /// <summary>A field holding [[id, value, ...], ...] (attribute lists): (id, first value) pairs.</summary>
-    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field)
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var list) ? Pairs(list) : [];
+
+    public static IEnumerable<(long Id, double Value)> Pairs(JsonElement? element)
     {
-        if (!row.TryGetProperty(field, out var list) || list.ValueKind != JsonValueKind.Array) yield break;
+        if (element is not { ValueKind: JsonValueKind.Array } list) yield break;
         foreach (var pair in list.EnumerateArray())
         {
             if (pair.ValueKind == JsonValueKind.Array && pair.GetArrayLength() >= 2 && Number(pair[0]) is { } id && Number(pair[1]) is { } value)
@@ -184,7 +212,10 @@ public sealed class GameData(IOptions<ServerOptions> options, ILogger<GameData> 
     /// A skill template (Config/Skill/skill_<scriptShow>.lua exported to data/skills): m_fAtkRange (m), m_fTotalTime (s),
     /// m_kAtkPoints (hit moments in s on the template timeline).
     /// </summary>
-    public JsonElement? SkillTemplate(long scriptShow)
+    public JsonElement? SkillTemplate(long scriptShow) =>
+        _skillTemplates.TryGetValue(scriptShow, out var known) ? known : _skillTemplates.GetOrAdd(scriptShow, LoadSkillTemplate(scriptShow));
+
+    private JsonElement? LoadSkillTemplate(long scriptShow)
     {
         string key = "skills/skill_" + scriptShow;
         if (_frozen is { } frozen && frozen.TryGetValue(key, out var hit)) return hit.Values.Cast<JsonElement?>().FirstOrDefault();

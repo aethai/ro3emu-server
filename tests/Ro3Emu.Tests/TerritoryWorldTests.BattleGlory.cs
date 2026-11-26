@@ -46,8 +46,8 @@ public sealed partial class TerritoryWorldTests
         Task Kill(bool assisted) => OnLoop(async () =>
         {
             if (assisted)
-                foreach (var hit in combat.PvpDealtAsync) await hit(Session(helper), Session(victim), 100, false);
-            foreach (var killed in combat.PlayerKilled) await killed(Session(killer), Session(victim));
+                await combat.PvpDealtAsync.InvokeAsync(Session(helper), Session(victim), 100, false);
+            await combat.PlayerKilled.InvokeAsync(Session(killer), Session(victim));
         });
         // The purse applies after the receipt commits: wait for the expected balance.
         async Task Merit(BotClient bot, long expected)
@@ -77,7 +77,7 @@ public sealed partial class TerritoryWorldTests
         // Rank 2 needs 1000 points: not reached yet.
         await killer.SendGameAsync(TerritoryWarsService.GloryRankReward, new BattleGloryRankRewardReq { RankReward = { [2] = 1 } });
         Assert.Equal(ErrorCodes.NoRankReward, (await Next(killer, TerritoryWarsService.GloryRankReward, BattleGloryRankRewardResp.Parser)).Result);
-        await OnLoop(() => { Session(killer).TerritoryWars!.Glory.Rank = 3; return Task.CompletedTask; });
+        await OnLoop(() => { Session(killer).Instances.TerritoryWars!.Glory.Rank = 3; return Task.CompletedTask; });
         await killer.SendGameAsync(TerritoryWarsService.GloryRankReward, new BattleGloryRankRewardReq { RankReward = { [2] = 1 } });
         var claimed = await Next(killer, TerritoryWarsService.GloryRankReward, BattleGloryRankRewardResp.Parser);
         Assert.Equal(0, claimed.Result);
@@ -122,7 +122,7 @@ public sealed partial class TerritoryWorldTests
             var tx = roles.NewTransaction();
             tx.RoleBlob(id, "territory_wars", JsonSerializer.SerializeToUtf8Bytes(role));
             await roles.CommitAsync(tx, "test/glory season");
-            Service<SessionRegistry>().All().First(s => s.Role?.Id == id).TerritoryWars = role;
+            Service<SessionRegistry>().All().First(s => s.Role?.Id == id).Instances.TerritoryWars = role;
         });
         await Save(firstId, pastPoints: 500, points: 40);
         await Save(secondId, pastPoints: 300, points: 90);

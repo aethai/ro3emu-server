@@ -40,7 +40,6 @@ public sealed class ConnectQuestTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -130,7 +129,7 @@ public sealed class ConnectQuestTests : IAsyncLifetime
             Service<TaskService>().OnBonusTimeConsumedAsync(Session("alice"), seconds));
         Task BobRuns(bool running) => Service<GameLoop>().InvokeAsync(() =>
         {
-            var info = Session("bob").WildAfk!.Info;
+            var info = Session("bob").Activities.WildAfk!.Info;
             info.IsHighMagnification = running;
             info.IsSuspended = false;
             return Task.CompletedTask;

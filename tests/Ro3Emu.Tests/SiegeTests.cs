@@ -21,10 +21,12 @@ public sealed partial class SiegeTests : IAsyncLifetime
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
     private sealed class Clock(long start) : TimeProvider
     {
-        private long _seconds = start;
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeSeconds(Interlocked.Read(ref _seconds));
+        private long _ms = start * 1000;
+        public long NowMs => Interlocked.Read(ref _ms);
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.FromUnixTimeMilliseconds(Interlocked.Read(ref _ms));
         public override TimeZoneInfo LocalTimeZone => Zone;
-        public void Set(long value) => Interlocked.Exchange(ref _seconds, value);
+        public void Set(long value) => Interlocked.Exchange(ref _ms, value * 1000);
+        public void AdvanceMs(long ms) => Interlocked.Add(ref _ms, ms);
     }
     // The exported siege occurrence (DailyActivityConfig 115) in the week of 12 Oct 2026, and the following one.
     private readonly ScheduleRows.Window _siege, _nextSiege;
@@ -59,7 +61,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game; o.PlayBook = 101; o.SeasonStart = "2026-05-19";
             o.GmAccounts = ["siegegm"];
         }, _clock);
@@ -68,14 +70,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-    private static string RepoRoot()
-    {
-        for (var p = new DirectoryInfo(AppContext.BaseDirectory); p != null; p = p.Parent)
-            if (File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) return p.FullName;
-        throw new DirectoryNotFoundException();
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
     private async Task<BotClient> Bot(string name, bool create = true)
     {
@@ -305,7 +300,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
                     }
                 });
             Assert.Equal(gd, Service<TerritoryWarsService>().OwnerOf(1));
-            var run = Session(attack).SiegeBattle!;
+            var run = Session(attack).Instances.SiegeBattle!;
             await OnLoop(() => Service<SceneService>().TeleportInMapAsync(Session(defense),
                 Service<Ro3Emu.Server.Maps.WorldData>().Map(2230101)!.Points[44]));
             await defense.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = run.Crystal!.Uid });
@@ -314,15 +309,15 @@ public sealed partial class SiegeTests : IAsyncLifetime
             await defense.SendGameAsync(GuildService.Leave, new GuildMemberLeaveReq());
             Assert.Equal(0, (await Next(defense, GuildService.Leave, GuildMemberLeaveResp.Parser)).Result);
             await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
-            Assert.Null(Session(defense).SiegeBattle);
-            Assert.Equal(0, Session(defense).EventFaction);
+            Assert.Null(Session(defense).Instances.SiegeBattle);
+            Assert.Equal(0, Session(defense).Instances.EventFaction);
             Assert.False(Service<TerritoryWarsService>().Hostile(Session(attack), Session(defense)));
             // Guild departure sends a real return handoff; finish it before advancing the load deadline clock.
             var returned = await Next(defense, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);
             await defense.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = returned.SceneEntry });
             Assert.Equal(0, (await Next(defense, MsgId.SceneLoaded, SceneLoadedResp.Parser)).Result);
             await Next(defense, MsgId.EntitySelf, EntitySelf.Parser);
-            // CombatService's action tail uses MonsterService.NowMs (real time), not this test's window clock.
+            // CombatService's action tail uses DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() (real time), not this test's window clock.
             await Task.Delay(1200);
             // The crystal falls in the Crystal stage: after Prepare, the gate and the inner city's three guardians.
             _clock.Set(_siege.Start + 301);
@@ -371,10 +366,11 @@ public sealed partial class SiegeTests : IAsyncLifetime
                 cancelled.TrySetResult((cast, target.Dead));
                 return Task.CompletedTask;
             };
+            IDisposable? captureSub = null, cancelSub = null;
             await OnLoop(() =>
             {
-                combat.BeforeLethalPublication.Insert(0, captureLethalCast);
-                combat.Killed.Insert(0, cancelAfterLethal);
+                captureSub = combat.BeforeLethalPublication.Subscribe(captureLethalCast, order: -1000);
+                cancelSub = combat.Killed.Subscribe(cancelAfterLethal, order: -1000);
                 return Task.CompletedTask;
             });
             SiegeDungeonResultNtf result;
@@ -388,12 +384,8 @@ public sealed partial class SiegeTests : IAsyncLifetime
             }
             finally
             {
-                await OnLoop(() =>
-            {
-                combat.Killed.Remove(cancelAfterLethal);
-                combat.BeforeLethalPublication.Remove(captureLethalCast);
-                return Task.CompletedTask;
-            });
+                cancelSub?.Dispose();
+                captureSub?.Dispose();
             }
             var (cancelledCast, crystalWasDead) = await cancelled.Task.WaitAsync(Wait);
             Assert.NotNull(cancelledCast);
@@ -419,21 +411,20 @@ public sealed partial class SiegeTests : IAsyncLifetime
                 .RoleStatistics[Session(attack).Role!.Id];
             Assert.Equal(notifiedStats.ExtraData[1021007].LongValue, storedStats.ExtraData[1021007].LongValue);
             var box = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-            var loserMail = Assert.Single(box.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            var loserMail = Assert.Single(box.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
             Assert.Equal(10501, loserMail.TemplateId);
             Assert.Equal(new[] { new MailService.Attachment(1250709, 10), new MailService.Attachment(1, 5000) }, loserMail.Attachments);
             var winnerBox = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(Session(attack).Role!.Id)!)!;
-            var winnerMail = Assert.Single(winnerBox.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            var winnerMail = Assert.Single(winnerBox.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
             Assert.Equal(10500, winnerMail.TemplateId);
             Assert.Equal(new[] { new MailService.Attachment(1250709, 20), new MailService.Attachment(1, 10000) }, winnerMail.Attachments);
             await OnLoop(() => Task.CompletedTask); // settlement fanout has finished before inspecting the departed client.
             Assert.DoesNotContain(defense.Inbox.Snapshot(), e => e.IsGame(TerritoryWarsService.SiegeResultNotify));
             await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
             var after = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-            Assert.Single(after.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+            Assert.Single(after.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
         }
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        await StartAsync();
+        await _app.StopAsync(); await _app.DisposeAsync(); await StartAsync();
         await using var returning = await Bot("SiegeDefender", create: false);
         Assert.Equal(winningGuild, Service<TerritoryWarsService>().OwnerOf(1));
         var fullSiege = await Next(returning, 5020, DBRoleSiegeDataIncrement.Parser, d => d.SyncAllMark);
@@ -443,7 +434,7 @@ public sealed partial class SiegeTests : IAsyncLifetime
         Assert.Equal(winningGuild, Assert.Single(persisted.Infos).GuildInfo.Guid);
         await OnLoop(Service<TerritoryWarsService>().ReconcileAsync);
         var mailbox = JsonSerializer.Deserialize<MailService.Mailbox>(Service<RoleStore>().LoadMailbox(defenseRole)!)!;
-        Assert.Single(mailbox.Letters, m => m.DeliveryKey.StartsWith("siege:"));
+        Assert.Single(mailbox.Letters, m => m.DeliveryKey.StartsWith("siege:", StringComparison.Ordinal));
     }
 
     private async Task Enter(BotClient bot, int expectedCamp)

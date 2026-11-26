@@ -1,6 +1,8 @@
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Romsg;
+using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
@@ -46,16 +48,18 @@ public sealed class PetAoiTests
             Role = new Role(id, "acc", 1, name, 1, 1000, 1, 0, 0, 0, scene, x, 0, z, 0),
             SceneEntry = scene,
             Position = new Vec3 { X = x, Z = z },
-            PreviousPosition = new Vec3 { X = x, Z = z },
+            WorldState = { PreviousPosition = new Vec3 { X = x, Z = z } },
         };
     }
+
+    private static readonly IOptions<ServerOptions> Follower = Options.Create(new ServerOptions { PetWorldFollower = true });
 
     private static PetFollowerActor Pet(GameSession owner, long id = 1L << 52, int petId = 10001) =>
         new(id, owner.Role!.Id, petId, 2300440, 1, owner.Position.Clone(), owner.Face, 700, 1);
 
     private static WalkReq To(GameSession owner, float x, float z, bool stop = false)
     {
-        owner.PreviousPosition = owner.Position;
+        owner.WorldState.PreviousPosition = owner.Position;
         owner.Position = new Vec3 { X = x, Z = z };
         return new WalkReq { Pos = owner.Position, BStop = stop, SpeedRate = 1, Dir = 90 };
     }
@@ -150,7 +154,7 @@ public sealed class PetAoiTests
         await _world.TurnAsync(owner, 45);
         Assert.True(pet.IsMoving);
         Assert.Equal(45f, pet.Face);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001", StringComparison.Ordinal)));
         Assert.DoesNotContain(_sink.Events, e => e.Contains("~pet:"));
 
         var shortJump = To(owner, 106, 100, stop: true);
@@ -165,7 +169,7 @@ public sealed class PetAoiTests
         await _world.TurnAsync(owner, 90);
         Assert.Equal(90f, pet.Face);
         Assert.InRange(Distance(pet.Position, owner.Position), 2.99f, 3.01f);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001"))); // turn reaches owner and peer
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("^pet:10001", StringComparison.Ordinal))); // turn reaches owner and peer
         Assert.DoesNotContain(_sink.Events, e => e.Contains("~pet:"));
 
         _sink.Events.Clear();
@@ -189,18 +193,18 @@ public sealed class PetAoiTests
         var start = To(owner, 100, 100);
         await _world.MoveAsync(owner, start);
         Assert.True(pet.IsMoving);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
         Assert.Equal(MovementType.MoveTypeWalk, GameAoiSink.PetMovement(owner, pet, start).MovementInfo.MoveType);
 
         _sink.Events.Clear();
         await _world.MoveAsync(owner, To(owner, 100, 100));
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
 
         _sink.Events.Clear();
         var stop = To(owner, 100, 100, stop: true);
         await _world.MoveAsync(owner, stop);
         Assert.False(pet.IsMoving);
-        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001")));
+        Assert.Equal(2, _sink.Events.Count(e => e.EndsWith("~pet:10001", StringComparison.Ordinal)));
         Assert.Equal(MovementType.MoveTypeNone, GameAoiSink.PetMovement(owner, pet, stop).MovementInfo.MoveType);
 
         _sink.Events.Clear();
@@ -366,6 +370,29 @@ public sealed class PetAoiTests
         Assert.InRange(Distance(next.Position, owner.Position), 2.99f, 3.01f);
     }
 
+    /// <summary>
+    /// #bug-reports "Show pet always": by default a deployed pet stays out of the world, as in the client, which shows it
+    /// only in its guardian skill (LC_Scene_Sync._useInSkill). The loaded progress would reach the function gate, which
+    /// throws on the absent services: the option stops the refresh before it.
+    /// </summary>
+    [Fact]
+    public async Task ADeployedPetHasNoWorldFollowerByDefault()
+    {
+        var owner = Player("Owner", 11);
+        var plan = new DBPetSetUpPlan();
+        plan.SetUpPets[1] = 10001;
+        var roster = new DBPetInfo { CurrentPlan = 1 };
+        roster.SetupPlans[1] = plan;
+        roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
+        owner.Pets = roster;
+        owner.Progress = new RoleProgress { Level = 50 };
+
+        await new PetFollowerService(_world, null!, null!, Options.Create(new ServerOptions())).RefreshAsync(owner);
+        await _world.JoinAsync(owner);
+        Assert.Null(owner.Profile.PetActor);
+        Assert.Empty(_sink.Events);
+    }
+
     [Fact]
     public async Task OwnedSupportPetDoesNotCreateFollower()
     {
@@ -377,9 +404,9 @@ public sealed class PetAoiTests
         roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
         owner.Pets = roster;
 
-        await new PetFollowerService(_world, null!, null!).RefreshAsync(owner);
+        await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
-        Assert.Null(owner.PetActor);
+        Assert.Null(owner.Profile.PetActor);
         Assert.Empty(_sink.Events);
     }
 
@@ -394,9 +421,9 @@ public sealed class PetAoiTests
         roster.ListPet[10001] = new PetData { PetId = 10001, Level = 1, Star = 1 };
         owner.Pets = roster;
 
-        await new PetFollowerService(_world, null!, null!).RefreshAsync(owner);
+        await new PetFollowerService(_world, null!, null!, Follower).RefreshAsync(owner);
         await _world.JoinAsync(owner);
-        Assert.Null(owner.PetActor);
+        Assert.Null(owner.Profile.PetActor);
         Assert.Empty(_sink.Events);
     }
 }

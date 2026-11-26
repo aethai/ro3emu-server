@@ -23,7 +23,7 @@ public sealed class ChatTypingTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync();
@@ -36,13 +36,6 @@ public sealed class ChatTypingTests : IAsyncLifetime
         using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={Path.Combine(_dir, "ro3emu.db")}");
         Microsoft.Data.Sqlite.SqliteConnection.ClearPool(db);
         try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var d = new DirectoryInfo(AppContext.BaseDirectory);
-        while (d != null && !File.Exists(Path.Combine(d.FullName, "Ro3Emu.slnx"))) d = d.Parent;
-        return d?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 
     private async Task<(BotClient Bot, long Id)> InWorld(string name)

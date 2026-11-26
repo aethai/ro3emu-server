@@ -10,6 +10,7 @@ using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
 
@@ -39,7 +40,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.SeasonStart = "2026-10-08";
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
@@ -54,7 +55,6 @@ public sealed partial class DungeonTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -158,6 +158,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
             // while the network Walk/Cast frames are still in transit.
             await Service<SceneService>().TeleportInMapAsync(Session(bot),
                 new MapPoint(actor.X + 1, actor.Y, actor.Z, actor.Face));
+            Session(bot).Position.Y = actor.Y; // an airship flies off the ground the teleport lands on
             // A revive can leave this actor returning home. Engage through the owner before the
             // controlled HP setup, so the next return-completion tick cannot restore full health.
             Service<MonsterService>().Engage(actor, Session(bot));
@@ -276,11 +277,20 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(bob);
             dead.Dead = true; // controlled death fixture through the same registered owner callbacks
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var noRevive = await Next(bob, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser, info => info.BDead);
         Assert.Equal(0, noRevive.ReviveTime);
-        Assert.Equal(ErrorCodes.FeatureUnavailable, Service<DungeonService>().ExternalReviveError(Session(bob)));
+        // NoRevive refuses Bob's own revive, not a teammate's: the boss's count is the party's.
+        Assert.Equal(0, Service<DungeonService>().ExternalReviveError(Session(bob)));
+        await OnLoop(() =>
+        {
+            var attempt = Session(bob).DungeonAttempt!;
+            attempt.RevivesUsed[Session(alice).Role!.Id] = (int)new TenGameplayBossConfig(attempt.Plan.Boss!.Value).OriginalReviveNum;
+            Assert.Equal(ErrorCodes.PartyRevivesUsedUp, Service<DungeonService>().ExternalReviveError(Session(bob)));
+            attempt.RevivesUsed.Clear();
+            return Task.CompletedTask;
+        });
         await bob.SendGameAsync(CombatService.Relive, new EntityReliveReq());
         Assert.Equal(ErrorCodes.FeatureUnavailable,
             (await Next(bob, CombatService.Relive, EntityReliveAck.Parser)).Result);
@@ -292,7 +302,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         await alice.SendGameAsync(DungeonService.StatisticsCurrent, new GetDungeonStatisticsInDungeonReq());
         Assert.Equal(0, (await Next(alice, DungeonService.StatisticsCurrent,
             GetDungeonStatisticsInDungeonResp.Parser)).Result);
-        Assert.Empty(Session(alice).Dungeons!.Records);
+        Assert.Empty(Session(alice).Instances.Dungeons!.Records);
         Assert.Equal(0, Items(alice, 1250900));
         await Kill(alice, actor);
         foreach (var bot in new[] { alice, bob, carol })
@@ -460,7 +470,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(alice);
             dead.Dead = true;
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var autoRevive = await Next(alice, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => info.BDead);
@@ -511,7 +521,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         {
             var dead = Session(alice);
             dead.Dead = true;
-            foreach (var handler in Service<CombatService>().PlayerDied) await handler(dead);
+            await Service<CombatService>().PlayerDied.InvokeAsync(dead);
         });
         var revive = await Next(alice, DungeonService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => info.BDead);
@@ -570,7 +580,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         var born = Service<WorldData>().Map(story)!.Born!.Value;
         string original = Service<GameData>().Row("DungeonConfig", story)!.Value
             .GetProperty("_kResSceneEditorName").GetString()!;
-        string source = Path.Combine(RepoRoot(), "data", "sceneeditor", original + ".json");
+        string source = Path.Combine(ClientData.RepoRoot, "data", "sceneeditor", original + ".json");
         string directory = Path.Combine(_dataDir, "sceneeditor");
         Directory.CreateDirectory(directory);
         string stem = Path.Combine(directory, "synthetic_1054001");
@@ -608,10 +618,10 @@ public sealed partial class DungeonTests : IAsyncLifetime
     {
         static bool ClearPublished(DBMultiDungeonInfoIncrement update, int used)
             => update.DungeonInfo.TryGetValue(Multi, out var dungeon) &&
-                (dungeon.All?.AwardInfo.FirstOrDefault() is { IsFirst: 2 } full && full.UseNumber == used ||
-                 dungeon.Inc?.AwardInfo?.All?.Value.FirstOrDefault() is { IsFirst: 2 } all && all.UseNumber == used ||
+                (dungeon.All?.AwardInfo.FirstOrDefault() is { IsFirst: DungeonService.FirstAwardComplete } full && full.UseNumber == used ||
+                 dungeon.Inc?.AwardInfo?.All?.Value.FirstOrDefault() is { IsFirst: DungeonService.FirstAwardComplete } all && all.UseNumber == used ||
                  dungeon.Inc?.AwardInfo?.Inc?.Value.FirstOrDefault() is { } counter &&
-                    (used == 1 ? counter.HasIsFirst && counter.IsFirst == 2 : counter.HasUseNumber && counter.UseNumber == used));
+                    (used == 1 ? counter.HasIsFirst && counter.IsFirst == DungeonService.FirstAwardComplete : counter.HasUseNumber && counter.UseNumber == used));
         SyntheticSolo(daily: true); // test-only admission and reset fixture; original team minimum is three
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!lvl 99");
@@ -624,11 +634,11 @@ public sealed partial class DungeonTests : IAsyncLifetime
         await Next(alice, DungeonService.Sync, DBMultiDungeonInfoIncrement.Parser, update => ClearPublished(update, 1));
         Assert.Equal(90000, Currency(alice, 2));
         Assert.Equal(100, Items(alice, 1250900));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var firstCounter = ((DBMultiDungeonInfo)Session(alice).Synced[DungeonService.Sync]).DungeonInfo[Multi].AwardInfo[0];
         Assert.Equal(2, firstCounter.TotalNumber);
         Assert.Equal(1, firstCounter.UseNumber);
-        Assert.Equal(2, firstCounter.IsFirst);
+        Assert.Equal(DungeonService.FirstAwardComplete, firstCounter.IsFirst); // cleared, its first-clear reward unclaimed
 
         // The exported panel adds a free first clear. The next clear spends the one recurring charge.
         await alice.SendGameAsync(DungeonService.ClientEvent, new ClientDungeonEvent { StrCmd = "DungeonReset" });
@@ -644,7 +654,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         Assert.Equal(100, secondResult.Rewards[1250900]);
         Assert.Equal(180000, Currency(alice, 2));
         Assert.Equal(200, Items(alice, 1250900));
-        Assert.Equal(0, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(0, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var spentCounter = ((DBMultiDungeonInfo)Session(alice).Synced[DungeonService.Sync]).DungeonInfo[Multi].AwardInfo[0];
         Assert.Equal(2, spentCounter.UseNumber);
 
@@ -661,10 +671,10 @@ public sealed partial class DungeonTests : IAsyncLifetime
 
         _clock.Advance(TimeSpan.FromDays(1));
         await OnLoop(() => Service<DungeonService>().SyncAsync(Session(alice)));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         _clock.Advance(TimeSpan.FromDays(10));
         await OnLoop(() => Service<DungeonService>().SyncAsync(Session(alice)));
-        Assert.Equal(2, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(2, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var saved = JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons((long)alice.Self!.Uuid)!)!;
         Assert.Equal(2, saved.Allowances["50101:101:1"].Remaining);
 
@@ -686,7 +696,8 @@ public sealed partial class DungeonTests : IAsyncLifetime
                 if (ReferenceEquals(monster, fourthBoss)) settled.TrySetResult();
                 return Task.CompletedTask;
             };
-            await OnLoop(() => { Service<CombatService>().Killed.Add(observeSettlement); return Task.CompletedTask; });
+            IDisposable? sub = null;
+            await OnLoop(() => { sub = Service<CombatService>().Killed.Subscribe(observeSettlement); return Task.CompletedTask; });
             try
             {
                 await Kill(alice, fourthBoss);
@@ -696,7 +707,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
             }
             finally
             {
-                await OnLoop(() => { Service<CombatService>().Killed.Remove(observeSettlement); return Task.CompletedTask; });
+                sub?.Dispose();
             }
             // A repeated failed delivery must keep the same entitlement and publish no result.
             await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() =>
@@ -713,7 +724,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
             Assert.Equal(180000, Currency(alice, 2));
             Assert.Equal(180000, Service<RoleStore>().LoadProgress(roleId).Currency.GetValueOrDefault(2));
             Assert.Equal(200, Items(alice, 1250900));
-            Assert.Equal(2, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+            Assert.Equal(2, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         }
         finally { FixtureSql.Execute(Service<AccountStore>(), "DROP TRIGGER fail_dungeons"); }
         await OnLoop(() => Service<DungeonService>().DeliverPendingAsync(Session(alice)));
@@ -721,7 +732,7 @@ public sealed partial class DungeonTests : IAsyncLifetime
         Assert.Empty(Service<DungeonObligationStore>().Pending(roleId));
         Assert.Equal(270000, Currency(alice, 2));
         Assert.Equal(300, Items(alice, 1250900));
-        Assert.Equal(1, Session(alice).Dungeons!.Allowances["50101:101:1"].Remaining);
+        Assert.Equal(1, Session(alice).Instances.Dungeons!.Allowances["50101:101:1"].Remaining);
         var recovered = JsonSerializer.Deserialize<DungeonService.State>(Service<RoleStore>().LoadDungeons(roleId)!)!;
         Assert.Equal(1, recovered.Allowances["50101:101:1"].Remaining);
         await OnLoop(() => Service<DungeonService>().DeliverPendingAsync(Session(alice)));
@@ -752,13 +763,6 @@ public sealed partial class DungeonTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => Now.ToUniversalTime();
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
         public void Advance(TimeSpan by) => Now = Now.Add(by);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 
 }

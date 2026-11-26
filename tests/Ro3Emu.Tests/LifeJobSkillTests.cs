@@ -22,7 +22,7 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
         var (h, m, g) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = h; o.MicroGatePort = m; o.GameGatePort = g;
         });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{h}";
@@ -31,15 +31,7 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var p = new DirectoryInfo(AppContext.BaseDirectory);
-        while (p != null && !File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) p = p.Parent;
-        return p?.FullName ?? throw new DirectoryNotFoundException("repository");
     }
 
     private Task<T> OnLoop<T>(Func<GameSession, Task<T>> fn) => _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() =>
@@ -72,7 +64,7 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
             await Gm("!item 1290998 20");
             await b.SendGameAsync(LifeJobService.UpgradeTitle, new UpGradeJobTileReq { JobId = 1 });
             Assert.Equal(0, (await Next(b, LifeJobService.UpgradeTitle, UpGradeJobTileResp.Parser, _ => true)).Result);
-            var offers = await OnLoop(s => Task.FromResult(s.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].OptionalSkills.Values.ToArray()));
+            var offers = await OnLoop(s => Task.FromResult(s.Season.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].OptionalSkills.Values.ToArray()));
             Assert.Equal(3, offers.Length); Assert.Contains(1000, offers);
             await b.SendGameAsync(LifeJobService.ChooseTitle, new ChooseTitlePointReq
             { LifejobId = (LifeJobType)1, Level = 1, TitlePoint = 1000 });
@@ -90,15 +82,15 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
             });
             Assert.Equal(0, result);
             var state = await OnLoop(s => Task.FromResult((
-                Vigor: s.Restrictions!.RestrictCount[1004].Count,
-                Exp: s.LifeJob!.LifeJobInfoMap[1].JobExp)));
+                Vigor: s.Season.Restrictions!.RestrictCount[1004].Count,
+                Exp: s.Season.LifeJob!.LifeJobInfoMap[1].JobExp)));
             Assert.Equal(481, state.Vigor); Assert.True(state.Exp > 0);
 
             await Gm("!item 1290999 10");
             await b.SendGameAsync(LifeJobService.RefreshTitle, new RefreshTitlePointReq { LifejobId = 1, Level = 1 });
             Assert.Equal(0, (await Next(b, LifeJobService.RefreshTitle, RefreshTitlePointResp.Parser, _ => true)).Result);
             var refreshed = await OnLoop(s => Task.FromResult((
-                Skill: s.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].SelectedSkill,
+                Skill: s.Season.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].SelectedSkill,
                 Tokens: s.Items.Where(i => i.Entry == 1290999).Sum(i => i.Stack))));
             Assert.Equal(1000, refreshed.Skill); Assert.Equal(0, refreshed.Tokens);
         }
@@ -106,8 +98,8 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
         await again.LoginAsync("alice", "pw"); await again.EnterGateAsync();
         await again.EnterWorldAsync(again.Roles.Single().Id);
         var persisted = await OnLoop(s => Task.FromResult((
-            Skill: s.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].SelectedSkill,
-            Vigor: s.Restrictions!.RestrictCount[1004].Count)));
+            Skill: s.Season.LifeJob!.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[1].SelectedSkill,
+            Vigor: s.Season.Restrictions!.RestrictCount[1004].Count)));
         Assert.Equal(1000, persisted.Skill); Assert.Equal(481, persisted.Vigor);
     }
 
@@ -126,14 +118,14 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
         {
             // Skill 1100 is in miner slot four's configured pool. Seed 19 prior uses so
             // one operation deterministically reaches the configured 20-use boundary.
-            var title = s.LifeJob!.LifeJobInfoMap[1].TitleInfo;
+            var title = s.Season.LifeJob!.LifeJobInfoMap[1].TitleInfo;
             title.JobLevel = 5;
             title.JobTitleDetail[4] = new LifeJobTitleSkillInfo
             {
                 OriginalSkill = 1100, SelectedSkill = 1100,
                 ExtraInfo = new SkillExtraInfo { Param1 = 19 },
             };
-            var next = s.LifeJob.Clone();
+            var next = s.Season.LifeJob.Clone();
             var baseMain = new AwardGrant(1291010, 4);
             var grants = new List<AwardGrant> { baseMain };
             var costs = new List<(int Entry, long Count)>();
@@ -145,7 +137,7 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
             return Task.FromResult((
                 Total: grants.Where(x => x.Entry == 1291010).Sum(x => x.Count),
                 Staged: next.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[4].ExtraInfo.Param1,
-                Published: s.LifeJob.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[4].ExtraInfo.Param1));
+                Published: s.Season.LifeJob.LifeJobInfoMap[1].TitleInfo.JobTitleDetail[4].ExtraInfo.Param1));
         });
         Assert.Equal(5, state.Total); // base stack of four, plus exactly one main item
         Assert.Equal(0, state.Staged); Assert.Equal(19, state.Published);
@@ -172,7 +164,7 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
             title.JobTitleDetail[5] = new LifeJobTitleSkillInfo { OriginalSkill = 3074, SelectedSkill = 3074 };
             life.LifeJobInfoMap[3] = new DBLifeJobInfoDetail { JobId = 3, JobLevel = 1, TitleInfo = title };
             normalize!.Invoke(service, [life]);
-            s.LifeJob = life;
+            s.Season.LifeJob = life;
             return Task.FromResult((Original: title.JobTitleDetail[4].OriginalSkill,
                 Effective: title.JobTitleDetail[4].SelectedSkill,
                 Extra: title.SkillExtraSkill.Keys.Order().ToArray()));
@@ -182,12 +174,12 @@ public sealed class LifeJobSkillTests : IAsyncLifetime
 
         await OnLoop(s =>
         {
-            var title = s.LifeJob!.LifeJobInfoMap[3].TitleInfo;
+            var title = s.Season.LifeJob!.LifeJobInfoMap[3].TitleInfo;
             title.JobTitleDetail.Remove(4); // remove the grant, then rebuild entitlements
-            normalize!.Invoke(service, [s.LifeJob]);
+            normalize!.Invoke(service, [s.Season.LifeJob]);
             return Task.FromResult(0);
         });
-        Assert.Empty(await OnLoop(s => Task.FromResult(s.LifeJob!.LifeJobInfoMap[3].TitleInfo.SkillExtraSkill)));
+        Assert.Empty(await OnLoop(s => Task.FromResult(s.Season.LifeJob!.LifeJobInfoMap[3].TitleInfo.SkillExtraSkill)));
         await OnLoop(async s =>
         {
             await service.ChooseTitleAsync(s,

@@ -26,7 +26,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -39,7 +39,6 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -74,7 +73,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
             return current;
         });
 
-        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily!);
+        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily!);
         var afterState = JsonSerializer.Deserialize<DailyActivityService.DailyState>(beforeDaily)!;
         afterState.Claims.Add(987654);
         byte[] afterDaily = JsonSerializer.SerializeToUtf8Bytes(afterState);
@@ -173,7 +172,7 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         };
         await SetAutoDecompose(bot, filter);
         Assert.NotNull(roles.LoadAutoDecompose(role));
-        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Daily!);
+        byte[] beforeDaily = JsonSerializer.SerializeToUtf8Bytes(session.Activities.Daily!);
         var afterState = JsonSerializer.Deserialize<DailyActivityService.DailyState>(beforeDaily)!;
         afterState.Claims.Add(987655);
         byte[] afterDaily = JsonSerializer.SerializeToUtf8Bytes(afterState);
@@ -265,12 +264,5 @@ public sealed class MergeInventoryAwardTests : IAsyncLifetime
         await bot.SendGameAsync(EquipmentService.ItemAutoDecomposeSetting, filter);
         var reply = await bot.Inbox.WaitAsync(e => e.IsGame(EquipmentService.ItemAutoDecomposeSetting), TimeSpan.FromSeconds(5));
         Assert.Equal(0, ItemAutoDecomposeSettingResp.Parser.ParseFrom(reply.Body).Result);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

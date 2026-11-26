@@ -1,0 +1,134 @@
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Romsg;
+using Ro3Emu.Server.Data.Config;
+using Ro3Emu.Server.Maps;
+
+namespace Ro3Emu.Server.Game;
+
+/// <summary>Skills with a first press and a second: High-Energy Impact's flight and landing, Move back Shadow Echo's shadow and return.</summary>
+public sealed partial class SkillCastingService
+{
+    private const int FlyingBuff = 1632901, ImpactShieldBuff = 1633301, PulseBuff = 1633501, PulseGroup = 16335, TornadoEnhanceBuff = 1633601, TornadoEnhanceGroup = 16336;
+    private const int ShadowEchoGroup = 15329, ShadowReturnBuffGroup = 115334;
+    private const string ShadowReturnScript = "RetreatingShadows2", ShadowReturnSeasonScript = "RetreatingShadows2S1";
+    private const long PulseRatioBasis = 100;
+    private const float PulseRadius = 8;
+    private const int PulseTargets = 14, FlightOutlastsMs = 500, ShadowReturnMs = 200;
+
+    private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; public JsonElement Row; }
+    private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
+
+    /// <summary>High-Energy Impact: "become Flying and gain a Shield ... You can Move and have [Immunity] during this
+    /// time. Tap the skill again or wait until the Flying duration ends to attack Below".
+    /// The first row's damage is its landing's, whose mode row (ten up) the flight buff switches the skill to. The flight lasts the row's action time.
+    /// Left alone, the take-off's own show lands: show 16307 plays the landing animation Skill16_3 at 2.983 s and its impact effects at 3.367 s, and its
+    /// m_kAtkPoints [0, 3.2, 3.367] hit at 3.2 s of its 5.017 s. The landing hits at that second attack point (<see cref="LandingOffset"/>); at the
+    /// action's end it came about 1.7 s after the client had shown the impact.</summary>
+    internal async Task HighEnergyTakeOffAsync(GameSession s, ActiveSkillCast action)
+    {
+        var skill = new SkillConfig(action.Row);
+        await ApplyEffectsAsync(s, WithRow(action, skill.WithDamage([], [])), action.Origin);
+        int flight = Math.Max(1, action.ActionMs);
+        await _buffs.AddAsync(s, FlyingBuff, flight + FlightOutlastsMs, s.Role!.Id); // the landing ends it, and it must still be there for that
+        await _buffs.AddAsync(s, ControlImmunity, flight, s.Role.Id);
+        if (SkillConfig.Get(_data, skill.Id + 10) is not { } landing) return;
+        int fallsIn = Math.Max(1, LandingOffset(skill, action) - (int)Math.Max(0, Now - action.StartMs));
+        ScheduleRuntime(action.WorldScene, TimeSpan.FromMilliseconds(fallsIn), async () =>
+        {
+            if (s.Dead || s.Role?.Id != action.OwnerId || s.WorldScene != action.WorldScene || !s.Buffs.Any(b => b.ConfigId == FlyingBuff)) return;
+            var request = action.Request.Clone();
+            request.SkillId = (int)landing.Id;
+            request.TargetPos = s.Position.Clone();
+            var fall = new ActiveSkillCast
+            {
+                Id = NextSessionId(), OwnerId = action.OwnerId, WorldScene = action.WorldScene, SceneGeneration = s.SceneGeneration, Attachment = s.Attachment,
+                Request = request, Row = new SkillConfig(landing.WithoutBuff1()).Row, Origin = s.Position.Clone(), StartMs = Now, ChantMs = 0, ActionMs = 1,
+            };
+            await ApplyEffectsAsync(s, fall, s.Position.Clone());
+        });
+    }
+
+    /// <summary>When the take-off's show lands by itself: its attack point after the take-off's, else the action's end.</summary>
+    private int LandingOffset(SkillConfig skill, ActiveSkillCast action)
+    {
+        var template = _data.SkillTemplate(skill.ScriptShow);
+        return SkillShow.AttackPoints(template) is [_, var landing, ..]
+            ? ImpactOffset(template, landing, action.ChantMs, action.ActionMs) : Math.Max(1, action.ActionMs);
+    }
+
+    /// <summary>The landing: "For every ${7} enemies hit by this attack, gain @{2} stacks of Shield equal to ${8}% of your Max HP ... This also Enhances your next Axe Tornado, Launching
+    /// [High-Energy Pulse] a number of times based on the number of enemies hit". The pulse's row is not in the data: its ${11}% to up to 14 within 8 m is the text's (inferred).</summary>
+    private async Task HighEnergyLandingAsync(GameSession s, SkillConfig skill, IReadOnlyList<MonsterUnit> processed)
+    {
+        foreach (var flying in s.Buffs.Where(b => b.ConfigId == FlyingBuff).ToArray()) await _buffs.RemoveAsync(s, flying);
+        if (processed.Count == 0) return;
+        var stats = _character.Stats(s);
+        int shieldMs = skill.DescData.Length > 9 && int.TryParse(skill.DescData[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds) ? seconds * 1000 : 10000;
+        foreach (var _ in processed) await ApplySkillBuffAsync(stats, s, ImpactShieldBuff, shieldMs, s.Role!.Id);
+        await _buffs.AddUntilSpentAsync(s, PulseBuff, s.Role!.Id, Math.Min(processed.Count, 5));
+        await _buffs.AddUntilSpentAsync(s, TornadoEnhanceBuff, s.Role.Id);
+    }
+
+    /// <summary>The Axe Tornado that follows a landing: its mode row runs, and it spends the enhancement and its pulses.</summary>
+    private async Task HighEnergyPulsesAsync(GameSession s, SkillConfig tornado)
+    {
+        if (!_buffs.HasBuffPiles(s, TornadoEnhanceGroup, 1)) return;
+        int pulses = s.Buffs.Where(b => b.ConfigId / 100 == PulseGroup).Sum(b => b.PileCount);
+        foreach (var used in s.Buffs.Where(b => b.ConfigId / 100 is PulseGroup or TornadoEnhanceGroup).ToArray()) await _buffs.RemoveAsync(s, used);
+        if (SkillConfig.Get(_data, 1630701) is not { DescData: { Length: > 10 } desc } || !long.TryParse(desc[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out long percent)) return;
+        var pulse = tornado.AsDescribedHit(percent * PulseRatioBasis, 0, 1, PulseTargets);
+        for (int i = 0; i < pulses; i++)
+        {
+            var around = MonstersNear(s, s.Position, PulseRadius).Take(PulseTargets).ToList();
+            if (around.Count > 0) await CastExtraAsync(s, pulse, around);
+        }
+    }
+
+    /// <summary>Move back Shadow Echo: "Leaves a shadow in place. Cast in a selected direction to move ... Cast again within ${2} seconds to return to the shadow." Its cooldown waits for the
+    /// return or the end of that time, or the second press would meet it.
+    /// The status the first press gives names the return row (RetreatingShadows2), which the wheel then shows in the slot (SkillService.FollowUps).</summary>
+    internal bool ReturnsToShadow(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1" or ShadowReturnScript or ShadowReturnSeasonScript
+        && _shadowSpots.TryGetValue(s, out var spot) && spot.At != null && spot.Until > Now;
+
+    internal void LeaveShadow(GameSession s, ActiveSkillCast action)
+    {
+        var skill = new SkillConfig(action.Row);
+        double seconds = skill.DescData.Length > 1 && double.TryParse(skill.DescData[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double read) ? read : 6;
+        var spot = _shadowSpots.GetOrCreateValue(s);
+        spot.At = s.Position.Clone();
+        spot.Until = Now + (long)(seconds * 1000);
+        var row = spot.Row = action.Row;
+        ScheduleRuntime(action.WorldScene, TimeSpan.FromSeconds(seconds), async () =>
+        {
+            if (spot.At == null || s.Role?.Id != action.OwnerId) return; // it returned, and that started the cooldown
+            spot.At = null;
+            spot.Ending = true;
+            await StartCooldownAsync(s, row);
+            spot.Ending = false;
+        });
+    }
+
+    /// <summary>The first press starts no cooldown: LeaveShadow starts it when the time is up, and the return when it comes.</summary>
+    private bool ShadowEchoWaits(GameSession s, JsonElement row) => Script(row) is "RetreatingShadows" or "RetreatingShadowsS1"
+        && !(_shadowSpots.TryGetValue(s, out var spot) && (spot.Ending || spot.At != null && spot.Until > Now));
+
+    internal async Task ReturnToShadowAsync(GameSession s, ActiveSkillCast action)
+    {
+        if (!_shadowSpots.TryGetValue(s, out var spot) || spot.At is not { } at) return;
+        // The return row has a cooldown of its own: Move back Shadow Echo's starts at the return, as on a second press of its own row.
+        if (Script(action.Row) is ShadowReturnScript or ShadowReturnSeasonScript && spot.Row.ValueKind == JsonValueKind.Object) await StartCooldownAsync(s, spot.Row);
+        spot.At = null;
+        var start = s.Position.Clone();
+        int effect = MovementEffect(new SkillConfig(action.Row).ScriptShow).Id;
+        await ToPlayerAndViewersAsync(s, SkillMove, new SkillStartMoveNotify
+        {
+            EntityID = (ulong)s.Role!.Id, StartPos = start, EndPos = at, SkillConfigId = action.Request.SkillId,
+            EffectId = effect, StartTimestampMs = Now, MoveType = 1, Face = action.Request.Face, MoveTimeMs = ShadowReturnMs,
+        });
+        s.CarryBySkill(start, at, Now, ShadowReturnMs);
+        await _world.MoveAsync(s, new WalkReq { Pos = at, Dir = s.Face, Face = s.Face, BStop = true }, forceTeleport: true);
+        foreach (var mark in s.Buffs.Where(b => b.ConfigId / 100 is ShadowEchoGroup or ShadowReturnBuffGroup).ToArray()) await _buffs.RemoveAsync(s, mark);
+    }
+}

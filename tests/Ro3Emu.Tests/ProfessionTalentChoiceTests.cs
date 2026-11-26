@@ -64,7 +64,7 @@ public sealed class ProfessionTalentChoiceTests
             Session.Tasks ??= new DBTaskInfo();
             Session.Tasks.CompleteTaskNum[10101170] = 1;
             Session.Tasks.CompleteTaskNum[10103160] = 1;
-            Session.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = parentPurchased ? 1 : 0;
+            Session.Season.SeasonTalent!.Plan[0].TalentNodes[1].CurrentLevel = parentPurchased ? 1 : 0;
             await Talents.SyncAsync(Session);
         });
 
@@ -94,8 +94,8 @@ public sealed class ProfessionTalentChoiceTests
         await f.Start();
         await using var bot = await f.Host.InWorldAsync("Choice");
         await f.Unlock();
-        Assert.False(f.Session.SeasonTalent!.UnlockedNode[4]); // the old handler refused here
-        Assert.False(f.Session.SeasonTalent.UnlockedTrees[20]); // node 1 alone: total Talent Lv 1 of 2
+        Assert.False(f.Session.Season.SeasonTalent!.UnlockedNode[4]); // the old handler refused here
+        Assert.False(f.Session.Season.SeasonTalent.UnlockedTrees[20]); // node 1 alone: total Talent Lv 1 of 2
         Assert.Equal(0, await Choose(bot, 11)); // an unrelated choice must survive replacements
         Assert.Equal(0, await Choose(bot, 4));
         var before = f.Saved();
@@ -110,8 +110,8 @@ public sealed class ProfessionTalentChoiceTests
         Assert.Equal(before, f.Saved());
 
         Assert.Equal(0, await Choose(bot, 5));
-        Assert.Equal(0, f.Session.SeasonTalent.Plan[0].TalentNodes[4].CurrentLevel);
-        Assert.Equal(1, f.Session.SeasonTalent.Plan[0].TalentNodes[5].CurrentLevel);
+        Assert.Equal(0, f.Session.Season.SeasonTalent.Plan[0].TalentNodes[4].CurrentLevel);
+        Assert.Equal(1, f.Session.Season.SeasonTalent.Plan[0].TalentNodes[5].CurrentLevel);
         Assert.Equal(0, await Choose(bot, 8)); // generic job-0 effect, no child to choose
         var after = f.Saved();
         Assert.Equal(0, after.Plan[0].TalentNodes[3].CurrentLevel);
@@ -122,7 +122,7 @@ public sealed class ProfessionTalentChoiceTests
         // Only the active plan's saved levels may change.
         foreach (var (id, node) in before.Plan[1].TalentNodes)
             Assert.Equal(node.CurrentLevel, after.Plan[1].TalentNodes[id].CurrentLevel);
-        Assert.Equal(after, f.Session.SeasonTalent);
+        Assert.Equal(after, f.Session.Season.SeasonTalent);
         Assert.True(after.UnlockedTrees[20]); // switching replaced a path, it never added levels: 1 + 1 + 2 = 4
     }
 
@@ -136,11 +136,11 @@ public sealed class ProfessionTalentChoiceTests
         await f.Unlock(parentPurchased: false);
         Assert.Equal(ErrorCodes.TalentLocked, await Choose(bot, 4));
         await f.Unlock();
-        var before = f.Session.SeasonTalent!.Clone();
+        var before = f.Session.Season.SeasonTalent!.Clone();
         Assert.Equal(ErrorCodes.TalentInvalid, await Choose(bot, 3)); // branch has unselected children
         Assert.Equal(ErrorCodes.TalentInvalid, await Choose(bot, 7)); // another career's option
         Assert.Equal(ErrorCodes.TalentInvalid, await Choose(bot, 999));
-        Assert.Equal(before, f.Session.SeasonTalent);
+        Assert.Equal(before, f.Session.Season.SeasonTalent);
         Assert.Null(f.Host.Service<RoleStore>().LoadSeasonTalent(f.Session.Role!.Id));
     }
 
@@ -158,7 +158,7 @@ public sealed class ProfessionTalentChoiceTests
             BEGIN SELECT RAISE(ABORT, 'deliberate choice failure'); END;
             """);
         Assert.Equal(ErrorCodes.Unknown, await Choose(bot, 5));
-        Assert.Equal(before, f.Session.SeasonTalent);
+        Assert.Equal(before, f.Session.Season.SeasonTalent);
         Assert.Equal(before, f.Saved());
         FixtureSql.Execute(f.Host.Service<AccountStore>(), "DROP TRIGGER reject_profession");
         Assert.Equal(0, await Choose(bot, 5));

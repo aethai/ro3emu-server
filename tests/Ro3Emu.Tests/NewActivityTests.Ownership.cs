@@ -21,7 +21,7 @@ public sealed partial class NewActivityTests
             {
                 Func<Task> beforeSync = async () => { waiting.SetResult(); await release.Task; };
                 var operation = (Task<int>)commit.Invoke(Service<NewActivityService>(),
-                    [session, session.NewActivities!.Clone(), null, null, null, null, null, false, beforeSync, null, null, null, null])!;
+                    [session, session.Activities.NewActivities!.Clone(), null, null, null, null, null, false, beforeSync, null, null, null, null])!;
                 await operation;
                 resumed = true;
             }

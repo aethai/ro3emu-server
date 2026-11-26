@@ -52,7 +52,6 @@ public sealed partial class GroupContentTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -185,8 +184,8 @@ public sealed partial class GroupContentTests : IAsyncLifetime
         long instance = 0;
         foreach (var bot in new[] { alice, bob })
             (instance, info) = await Load(bot, CasualBattleService.Scene);
-        Assert.Equal(1, Session(alice).EventFaction);
-        Assert.Equal(2, Session(bob).EventFaction);
+        Assert.Equal(1, Session(alice).Instances.EventFaction);
+        Assert.Equal(2, Session(bob).Instances.EventFaction);
         Assert.Equal(0, info.Stage);
         Assert.Equal([1L, 0, 2, 0], info.Vars.Single(v => v.VarId == 304).Vi64);
         long open = info.StageModuleData.StageStartTime / 1000;
@@ -612,8 +611,8 @@ public sealed partial class GroupContentTests : IAsyncLifetime
         Assert.Equal((DungeonRes)1, (await Next(alice, DungeonService.Result, DungeonResNotify.Parser)).Res);
         await Next(alice, DungeonService.AwardNotify, SyncMultiDungeonAwardNotify.Parser);
         // The clear is the Hidden Realm's: its record, not the drawn Hard boss's.
-        Assert.True(Session(alice).Dungeons!.Records["50199:1"].Passed);
-        Assert.False(Session(alice).Dungeons!.Records.ContainsKey($"{drawn.Random.MultiDungeonId}:{drawn.Random.MarkId}"));
+        Assert.True(Session(alice).Instances.Dungeons!.Records["50199:1"].Passed);
+        Assert.False(Session(alice).Instances.Dungeons!.Records.ContainsKey($"{drawn.Random.MultiDungeonId}:{drawn.Random.MarkId}"));
         for (int i = 0; i < 100 && AwardInfo(alice, 50199, 1).FirstPassState != MultiDungeonFirstPassState.PassLongTime; i++)
             await Task.Delay(20); // 5062 follows the award notify
         Assert.Equal(MultiDungeonFirstPassState.PassLongTime, AwardInfo(alice, 50199, 1).FirstPassState);

@@ -20,7 +20,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
 {
     private const int Card = 1420100, Npc = 5000055;
     private const long Quest = 10104080;
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "e02-hooks-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "e02-hooks-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -31,7 +31,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         Service<SeasonService>().SetPlayBook(101);
@@ -41,8 +41,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
     {
         Service<AccountStore>().BeforeOwnedCommitForTest = null;
         Service<AccountStore>().BeforeOwnedApplyForTest = null;
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> Enter(string name, bool create = true)
     {
@@ -83,7 +82,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
     };
     private Task Credit(GameSession participant, MonsterUnit monster) => OnLoop(() =>
     {
-        foreach (var handler in Service<CombatService>().Dealt) handler(participant, monster, 1);
+        Service<CombatService>().Dealt.Invoke(participant, monster, 1);
         return Task.CompletedTask;
     });
     private Task Commit(GameSession killer, MonsterUnit monster) => OnLoop(() => Service<RewardService>().PrepareKilledAsync(killer, monster));
@@ -105,9 +104,9 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         var alice = Session(aliceBot); var bob = Session(bobBot); var monster = Monster(alice);
         long aliceRole = alice.Role!.Id, bobRole = bob.Role!.Id;
         await Credit(bob, monster);
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var opening = S3EconomyReader.Read(_directory, catalog);
-        long beforeKills = alice.WildAfk!.Info.TodayKillCount;
+        long beforeKills = alice.Activities.WildAfk!.Info.TodayKillCount;
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Service<AccountStore>().BeforeOwnedCommitForTest = label =>
@@ -156,8 +155,8 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         await retired!.WaitAsync(TimeSpan.FromSeconds(10));
         await using var again = await Enter("Alice", create: false);
         var reloaded = Session(again);
-        Assert.Equal(1, Count(reloaded)); Assert.Equal(beforeKills + 1, reloaded.WildAfk!.Info.TodayKillCount);
-        Assert.True(reloaded.Library!.Cards.ContainsKey(Card));
+        Assert.Equal(1, Count(reloaded)); Assert.Equal(beforeKills + 1, reloaded.Activities.WildAfk!.Info.TodayKillCount);
+        Assert.True(reloaded.Profile.Library!.Cards.ContainsKey(Card));
         Assert.False(Service<RoleStore>().HasTaskFollowup(aliceRole));
         var replay = Monster(reloaded);
         replay.RewardSource = monster.RewardSource;
@@ -184,13 +183,12 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         Assert.True(DBLibraryInfo.Parser.ParseFrom(Service<RoleStore>().LoadLibrary(role)).Cards.ContainsKey(Card));
         var source = monster.RewardSource;
         // Rebuild the entire service graph from the same database; no old settlement/session survives.
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        await InitializeAsync();
+        await _app.StopAsync(); await _app.DisposeAsync(); await InitializeAsync();
         await using var again = await Enter("Alice", create: false);
         var recovered = Session(again);
-        Assert.Equal(1, Count(recovered)); Assert.Equal(1, recovered.WildAfk!.Info.TodayKillCount);
+        Assert.Equal(1, Count(recovered)); Assert.Equal(1, recovered.Activities.WildAfk!.Info.TodayKillCount);
         Assert.Equal(1, recovered.Items.Single(i => i.Entry == Card).Stack);
-        Assert.True(recovered.Library!.Cards.ContainsKey(Card));
+        Assert.True(recovered.Profile.Library!.Cards.ContainsKey(Card));
         Assert.False(Service<RoleStore>().HasTaskFollowup(role));
         var replay = Monster(recovered); replay.RewardSource = source;
         await Commit(recovered, replay);
@@ -221,7 +219,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
                 s.Tasks = s.Tasks!.Clone(); s.Tasks.Infos[Quest].CompleteNum[0] = value;
                 Service<RoleStore>().SaveTasks(s.Role!.Id, s.Tasks.ToByteArray());
             }
-            var afk = alice.WildAfk!;
+            var afk = alice.Activities.WildAfk!;
             afk.Info.TodayKillCount = 5; afk.TotalDrops[1] = 19;
             afk.RemainderMs = 427; afk.ConsumedTodaySeconds = 17;
             afk.Persisted = JsonSerializer.SerializeToUtf8Bytes(afk);
@@ -230,7 +228,7 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         await Commit(alice, monster);
         Assert.Equal(4, Count(alice)); Assert.Equal(4, SavedCount(role));
         Assert.Equal(7, Count(bob)); Assert.Equal(7, SavedCount(bob.Role.Id));
-        Assert.Equal(6, alice.WildAfk!.Info.TodayKillCount); Assert.Equal(6, SavedAfk(role).Info.TodayKillCount);
+        Assert.Equal(6, alice.Activities.WildAfk!.Info.TodayKillCount); Assert.Equal(6, SavedAfk(role).Info.TodayKillCount);
         Assert.Equal(26, SavedAfk(role).TotalDrops[1]); Assert.Equal(427, SavedAfk(role).RemainderMs);
         Assert.Equal(17, SavedAfk(role).ConsumedTodaySeconds);
         Assert.Equal(1, Receipts());
@@ -238,11 +236,5 @@ public sealed class E02KillHooksTests : IAsyncLifetime
         await Commit(alice, monster);
         Assert.Equal(0, bob.Tasks!.Infos[301010].CompleteNum[0]);
         Assert.Equal(4, Count(alice)); Assert.Equal(7, Count(bob)); Assert.Equal(1, Receipts());
-    }
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException();
     }
 }

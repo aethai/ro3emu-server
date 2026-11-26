@@ -49,7 +49,6 @@ public sealed class StageRewardTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -140,7 +139,7 @@ public sealed class StageRewardTests : IAsyncLifetime
             r => r.Req.StageIds.SequenceEqual(stages))).Result;
     }
 
-    private Task<int[]> Claims() => State(s => s.Daily!.Claims.Order().ToArray());
+    private Task<int[]> Claims() => State(s => s.Activities.Daily!.Claims.Order().ToArray());
 
     /// <summary>The coins of a stage's award (every type-3/4/6 award here pays item 1 first).</summary>
     private long StageCoins(int stage)
@@ -192,7 +191,7 @@ public sealed class StageRewardTests : IAsyncLifetime
         Assert.Equal(0, await Batch(bot, 3003, 3004));
         Assert.Equal(coins + StageCoins(3003) + StageCoins(3004), await Count(Coins));
         Assert.Equal((int[])[3002, 3003, 3004], await Claims());
-        string source = await State(s => $"daily-stage/{s.Role!.Id}/{s.Daily!.DailyEpoch}/3003,3004");
+        string source = await State(s => $"daily-stage/{s.Role!.Id}/{s.Activities.Daily!.DailyEpoch}/3003,3004");
         Assert.Equal(1, OwnedSourceCount(source, "cd13e/daily-stage"));
 
         await LoggedOut(bot);
@@ -216,7 +215,7 @@ public sealed class StageRewardTests : IAsyncLifetime
         Assert.Equal(0, await Batch(bot, 4001));
         Assert.Equal((int[])[4001], await Claims());
         Assert.Equal(coins, await Count(Coins));
-        Assert.Equal(1, OwnedSourceCount(await State(s => $"daily-stage/{s.Role!.Id}/{s.Daily!.DailyEpoch}/4001"),
+        Assert.Equal(1, OwnedSourceCount(await State(s => $"daily-stage/{s.Role!.Id}/{s.Activities.Daily!.DailyEpoch}/4001"),
             "cd13e/daily-stage"));
 
         await Gm("alice", $"!item {Points} 130"); // 4002 (50), 4003 (130); 4004 needs 230
@@ -249,7 +248,7 @@ public sealed class StageRewardTests : IAsyncLifetime
     public async Task SurvivorStagesFollowTheRankAndRankOneNeedsPoints()
     {
         var bot = await InWorld("Alice");
-        Assert.Equal(1, await State(s => s.TimedBattle!.ChickenRank));
+        Assert.Equal(1, await State(s => s.Instances.TimedBattle!.ChickenRank));
         Assert.Equal(ErrorCodes.CurrencyShort, await Claim(bot, 6001)); // rank 1 without points in it
         await Gm("alice", $"!item {ChickenPoints} 10");
         long coins = await Count(Coins);
@@ -259,7 +258,7 @@ public sealed class StageRewardTests : IAsyncLifetime
         Assert.Equal(ErrorCodes.CurrencyShort, await Claim(bot, 6002));
 
         await Gm("alice", "!chicken rank 3");
-        Assert.Equal(3, await State(s => s.TimedBattle!.ChickenRank));
+        Assert.Equal(3, await State(s => s.Instances.TimedBattle!.ChickenRank));
         coins = await Count(Coins);
         Assert.Equal(ErrorCodes.CurrencyShort, await Batch(bot, 6002, 6003, 6004));
         Assert.Equal(ErrorCodes.RewardClaimed, await Batch(bot, 6001, 6002, 6003));
@@ -270,7 +269,7 @@ public sealed class StageRewardTests : IAsyncLifetime
 
         await LoggedOut(bot);
         await using var again = await InWorld("Alice", create: false);
-        Assert.Equal(3, await State(s => s.TimedBattle!.ChickenRank));
+        Assert.Equal(3, await State(s => s.Instances.TimedBattle!.ChickenRank));
         Assert.Equal((int[])[6001, 6002, 6003], await Claims());
         Assert.Equal(ErrorCodes.RewardClaimed, await Claim(again, 6003));
         Assert.Equal(ErrorCodes.CurrencyShort, await Claim(again, 6004));
@@ -307,7 +306,7 @@ public sealed class StageRewardTests : IAsyncLifetime
             await Settled();
         }
         finally { accounts.BeforeCommitForTest = null; }
-        Assert.False(await State(s => s.Library!.Cards[Lunatic].Unlock));
+        Assert.False(await State(s => s.Profile.Library!.Cards[Lunatic].Unlock));
         Assert.False(DBLibraryInfo.Parser.ParseFrom(roles.LoadLibrary(role)!).Cards[Lunatic].Unlock);
         Assert.False(roles.HasTaskFollowup(role));
         Assert.Equal(0, await Count(Points));
@@ -321,7 +320,7 @@ public sealed class StageRewardTests : IAsyncLifetime
         long expected = CollectionPoints(GameData.Int(data.Row("ItemConfig", Lunatic)!.Value, "_iQuality"));
         Assert.True(expected > 0);
         Assert.Equal(expected, await Count(Points));
-        Assert.True(await State(s => s.Library!.Cards[Lunatic].Unlock));
+        Assert.True(await State(s => s.Profile.Library!.Cards[Lunatic].Unlock));
         Assert.True(DBLibraryInfo.Parser.ParseFrom(roles.LoadLibrary(role)!).Cards[Lunatic].Unlock);
         Assert.Equal(1, OwnedSourceCount($"library-card/{role}/{Lunatic}", "cd13e/library-award"));
         Assert.Equal(ErrorCodes.AlreadyUnlocked, await Unlock(bot, Lunatic, false));
@@ -333,14 +332,14 @@ public sealed class StageRewardTests : IAsyncLifetime
         await Settled();
         expected += CollectionPoints(4);
         Assert.Equal(expected, await Count(Points));
-        Assert.False(await State(s => s.Library!.Cards[treasurable].TreasureUnlock)); // a normal copy is not a Collector card
+        Assert.False(await State(s => s.Profile.Library!.Cards[treasurable].TreasureUnlock)); // a normal copy is not a Collector card
         Assert.Equal(0, await Unlock(bot, treasurable, true)); // (inferred) the treasure unlock pays nothing
         Assert.Equal(expected, await Count(Points));
 
         await LoggedOut(bot);
         await using var again = await InWorld("Alice", create: false);
         Assert.Equal(expected, await Count(Points));
-        Assert.True(await State(s => s.Library!.Cards[treasurable].TreasureUnlock));
+        Assert.True(await State(s => s.Profile.Library!.Cards[treasurable].TreasureUnlock));
         Assert.Equal(ErrorCodes.AlreadyUnlocked, await Unlock(again, Lunatic, false));
         Assert.Equal(expected, await Count(Points));
         Assert.Equal(1, OwnedSourceCount($"library-card/{role}/{Lunatic}", "cd13e/library-award"));
@@ -379,6 +378,6 @@ public sealed class StageRewardTests : IAsyncLifetime
         await using var third = await InWorld("Alice", create: false);
         await Settled();
         Assert.Equal(expected, await Count(Points));
-        Assert.False(await State(s => s.Library!.Cards[Hidden].Unlock));
+        Assert.False(await State(s => s.Profile.Library!.Cards[Hidden].Unlock));
     }
 }

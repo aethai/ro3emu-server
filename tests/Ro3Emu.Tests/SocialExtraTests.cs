@@ -21,7 +21,7 @@ public sealed class SocialExtraTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -34,7 +34,6 @@ public sealed class SocialExtraTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -237,20 +236,29 @@ public sealed class SocialExtraTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RecommendationRequiresRealCandidatesInAllFourCategories()
+    public async Task RecommendationFillsEveryCategoryWhenItHasACandidate()
     {
         var (alice, a) = await InWorld("Alice");
         var (bob, b) = await InWorld("Bob", sex: 2);
         await using var _ = alice;
         await using var __ = bob;
         await alice.SendGameAsync(FriendExtraService.Recommend, new FetchRecommendFriendsReq());
-        Assert.NotEqual(0, (await Next(alice, FriendExtraService.Recommend, FetchRecommendFriendsResp.Parser)).Result);
+        // Bob is under the level floor, so nobody qualifies: the code with no tip, not "Unknown error" on opening the panel.
+        Assert.Equal(ErrorCodes.NoRecommendedFriends, (await Next(alice, FriendExtraService.Recommend, FetchRecommendFriendsResp.Parser)).Result);
 
         using (var http = new HttpClient())
         {
             (await http.PostAsync($"{_http}/ro3emu/gm?account=alice", Operator.Command("!lvl 15 1"))).EnsureSuccessStatusCode();
             (await http.PostAsync($"{_http}/ro3emu/gm?account=bob", Operator.Command("!lvl 15 1"))).EnsureSuccessStatusCode();
         }
+        // Online with no recent team and no shared job: still a list, every array present for the client.
+        await alice.SendGameAsync(FriendExtraService.Recommend, new FetchRecommendFriendsReq());
+        var early = await Next(alice, FriendExtraService.Recommend, FetchRecommendFriendsResp.Parser);
+        Assert.Equal(0, early.Result);
+        Assert.Contains(b, early.DiffSex);
+        Assert.Contains(b, early.LevelRange);
+        Assert.Contains(b, early.RecentTeam);
+        Assert.Contains(b, early.SameJob);
         await alice.SendGameAsync(TeamService.TeamCreate, new TeamCreateReq { TeamType = TeamType.Five, TargetId = 1001 });
         long team = (await Next(alice, TeamService.TeamCreate, TeamCreateResp.Parser)).TeamId;
         await alice.SendGameAsync(TeamService.TeamInvite, new InviteIntoTeamReq { Guid = b });
@@ -265,12 +273,14 @@ public sealed class SocialExtraTests : IAsyncLifetime
         Assert.Contains(b, result.LevelRange);
         Assert.Contains(b, result.RecentTeam);
         Assert.Contains(b, result.SameJob);
-    }
 
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
+        // LC_TeamHelper.StopFollow sends the defaults: type None, isFollow false. That used to answer "Client Parameter error" and
+        // leave the follow on until the player left the team.
+        await bob.SendGameAsync(TeamService.TeamFollow, new TeamFollowOperReq { Type = ETeamFollowType.Team, IsFollow = true });
+        Assert.Equal(0, (await Next(bob, TeamService.TeamFollow, TeamFollowOperResp.Parser, m => m.IsFollow)).Result);
+        await bob.SendGameAsync(TeamService.TeamFollow, new TeamFollowOperReq());
+        Assert.Equal(0, (await Next(bob, TeamService.TeamFollow, TeamFollowOperResp.Parser, m => !m.IsFollow)).Result);
+        await bob.SendGameAsync(TeamService.TeamFollow, new TeamFollowOperReq { IsFollow = true });
+        Assert.Equal(ErrorCodes.Parameter, (await Next(bob, TeamService.TeamFollow, TeamFollowOperResp.Parser, m => m.IsFollow)).Result);
     }
 }

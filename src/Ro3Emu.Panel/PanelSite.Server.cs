@@ -19,6 +19,7 @@ public sealed partial class PanelSite
     private static partial Regex BackupName();
 
     internal sealed record ScheduleForm(string? Kind, int Minutes, string? Reason, string? Backup);
+    internal sealed record RankingVisibilityForm(bool? HideStaff);
     internal sealed record MaintenanceForm(bool On, string? Note);
 
     private IEnumerable<Route> ServerRoutes() =>
@@ -27,6 +28,12 @@ public sealed partial class PanelSite
         Post("/api/admin/server/schedule", Access.Admin, ScheduleAsync),
         Post("/api/admin/server/cancel", Access.Admin, async call => await _ops.CancelScheduleAsync(call.Signed)
             ? Reply.Ok(new { cancelled = true }) : Reply.Error(StatusCodes.Status404NotFound, "Nothing is scheduled.")),
+        Post("/api/admin/server/rankings", Access.Admin, async call =>
+        {
+            if ((await BodyAsync<RankingVisibilityForm>(call))?.HideStaff is not bool enabled) return Bad("Choose whether to hide staff.");
+            await _ops.SetHideStaffRankingsAsync(call.Signed, enabled);
+            return Reply.Ok(new { hideStaff = enabled });
+        }),
         Post("/api/admin/server/maintenance", Access.Admin, MaintenanceAsync),
         Post("/api/admin/backups", Access.Admin, async call => Reply.Ok(new { name = await _ops.BackupNowAsync(call.Signed) })),
         Get("/api/admin/backups/{}", Access.Admin, DownloadBackupAsync),

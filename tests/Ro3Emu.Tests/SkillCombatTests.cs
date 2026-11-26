@@ -25,7 +25,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var ports = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = ports.Item1; o.MicroGatePort = ports.Item2; o.GameGatePort = ports.Item3;
         });
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -34,7 +34,6 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name)
@@ -54,12 +53,6 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
     {
         using var client = new HttpClient();
         (await client.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(line))).EnsureSuccessStatusCode();
-    }
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException();
     }
     /// <summary>
     /// Learns the skill under the character's StateLock. A GM !lvl or !job leaves follow-up work (a quest reward, a
@@ -133,7 +126,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             first.Hp = second.Hp = 100000;
             _app.Services.GetRequiredService<RoleHandover>().BeforeCleanupForTest = session =>
                 session == player ? releaseCleanup.Task : Task.CompletedTask;
-            _app.Services.GetRequiredService<CombatService>().DealtAsync.Add(async (source, target, _, _) =>
+            _app.Services.GetRequiredService<CombatService>().DealtAsync.Subscribe(async (source, target, _, _) =>
             {
                 if (source != player || target != first && target != second) return;
                 dealt++;
@@ -185,17 +178,17 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             first.Hp = 1;
             second.Hp = 100000;
             var combat = _app.Services.GetRequiredService<CombatService>();
-            combat.MonsterDamageApplied.Add((source, target, _) =>
+            combat.MonsterDamageApplied.Subscribe((source, target, _) =>
             {
                 if (source == player && target == first) applied++;
                 return Task.CompletedTask;
             });
-            combat.Killed.Add((source, target) =>
+            combat.Killed.Subscribe((source, target) =>
             {
                 if (source == player && target == first) { killCount++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.DealtAsync.Add(async (source, target, _, _) =>
+            combat.DealtAsync.Subscribe(async (source, target, _, _) =>
             {
                 if (source != player) return;
                 dealt++;
@@ -302,7 +295,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         Assert.Equal((long)alice.Self!.Uuid, field.Owner); Assert.Equal(point, field.MovementInfo.Pos);
         await Loop.InvokeAsync(() => _app.Services.GetRequiredService<CombatService>().ClearSkillsAsync(Session("alice")));
         await Next(bob, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, x => x.LeaveAoi.Contains(field.Uuid));
-        Assert.Empty(Session("alice").SkillObjects);
+        Assert.Empty(Session("alice").Combat.SkillObjects);
     }
 
     [ClientDataFact]
@@ -330,13 +323,13 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
         Assert.Equal(0, accepted.Result);
         var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
-        Assert.Equal((long)bob.Self.Uuid, Assert.Single(hit.Dsts).DstID); Assert.Equal(DamageType.Heal, hit.Dsts[0].DamageType);
+        Assert.Equal(DamageType.Heal, Assert.Single(hit.Dsts, d => d.DstID == (long)bob.Self.Uuid).DamageType); // "for you and the designated ST ally"
         await Task.Delay(600);
         Session("alice").NoRegenUntilMs = long.MaxValue; // a recovery tick would pay for the refused cast
         await Loop.InvokeAsync(() => Character.SetHpSpAsync(Session("alice"), null, 0));
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1400101 });
         Assert.Equal(ErrorCodes.SkillCostShort, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        Assert.False(Session("alice").SkillCds.ContainsKey(14001));
+        Assert.False(Session("alice").Combat.SkillCds.ContainsKey(14001));
     }
 
     [ClientDataFact]
@@ -353,12 +346,12 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         {
             player.NoRegenUntilMs = long.MaxValue; // a recovery tick would lift this 1 HP out of one lethal hit
             await Character.SetHpSpAsync(player, 1, null);
-            combat.TakenAsync.Add(async (_, target, _) =>
+            combat.TakenAsync.Subscribe(async (_, target, _) =>
             {
                 if (target != player || !target.Dead) return;
                 entered.TrySetResult(); await release.Task;
             });
-            combat.PlayerDied.Add(target =>
+            combat.PlayerDied.Subscribe(target =>
             {
                 if (target == player) settled.TrySetResult();
                 return Task.CompletedTask;
@@ -401,13 +394,13 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         await Loop.InvokeAsync(() =>
         {
             target.Hp = 1;
-            combat.DealtAsync.Add(async (source, monster, _, _) =>
+            combat.DealtAsync.Subscribe(async (source, monster, _, _) =>
             {
                 if (monster != target) return;
                 dealtCount++;
                 if (source == Session("alice")) { entered.TrySetResult(); await release.Task; }
             });
-            combat.Killed.Add((_, monster) =>
+            combat.Killed.Subscribe((_, monster) =>
             {
                 if (monster == target) { killCount++; killed.TrySetResult(); }
                 return Task.CompletedTask;
@@ -460,7 +453,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         }
         await Loop.InvokeAsync(() =>
         {
-            combat.SetEventPvPHandlers((source, target) => source == a && target == b, (_, _) => Task.CompletedTask);
+            combat.AddRuleForTest(new DelegateCombatRule { EventCanFight = (source, target) => source == a && target == b });
             return Task.CompletedTask;
         });
         long hp = Character.Stats(b)[2000];
@@ -492,7 +485,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
             b.NoRegenUntilMs = long.MaxValue; // the exact HP below must not meet a recovery tick
             await Character.SetHpSpAsync(b, 1, null);
             await Character.SetHpSpAsync(a, null, long.MaxValue);
-            a.SkillCds.Clear(); a.SkillModeCds.Clear();
+            a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear();
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1200401, TargetId = b.Role.Id });
         accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
@@ -501,7 +494,7 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         var protectedHit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SessionId == accepted.SessionId);
         Assert.False(Assert.Single(protectedHit.Dsts).IsDead);
         Assert.False(b.Dead);
-        Assert.NotNull(b.ImmuneDeathOffer);
+        Assert.NotNull(b.Combat.ImmuneDeathOffer);
         Assert.Equal(1, Character.Stats(b)[2000]);
     }
 
@@ -517,11 +510,11 @@ public sealed partial class SkillCombatTests : IAsyncLifetime
         long delivered = 0;
         await Loop.InvokeAsync(() =>
         {
-            combat.CastLanded.Add((_, _) => { landed++; return Task.CompletedTask; });
-            combat.DamageAdjusters.Add((_, _, _, _, _) => { adjusted++; return 17; });
-            combat.ExtraHitDamage.Add((_, _, _, _) => { extra++; return 3; });
-            combat.DealtAsync.Add((_, _, _, amount) => { dealt++; delivered = amount; return Task.CompletedTask; });
-            combat.ExtraHeal.Add((_, _) => { healed++; return 23; });
+            combat.CastLanded.Subscribe((_, _) => { landed++; return Task.CompletedTask; });
+            combat.DamageAdjusters.Subscribe((_, _, _, _, _) => { adjusted++; return 17; });
+            combat.ExtraHitDamage.Subscribe((_, _, _, _) => { extra++; return 3; });
+            combat.DealtAsync.Subscribe((_, _, _, amount) => { dealt++; delivered = amount; return Task.CompletedTask; });
+            combat.ExtraHeal.Subscribe((_, _) => { healed++; return 23; });
             return Task.CompletedTask;
         });
         await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1100101, TargetId = target.Uid });

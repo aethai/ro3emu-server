@@ -21,7 +21,7 @@ public sealed class SkillProtocolTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = httpPort;
             o.MicroGatePort = microPort;
             o.GameGatePort = gamePort;
@@ -34,7 +34,6 @@ public sealed class SkillProtocolTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -102,7 +101,7 @@ public sealed class SkillProtocolTests : IAsyncLifetime
             // different from the selected level 1 in the active manual wheel slot.
             session.Progress!.Skills[10011] = 2;
             session.Progress.SkillBar[3] = 10011;
-            var plan = session.SkillPlans!.SkillAssignPlans[session.SkillPlans.CurrentPlanIndex];
+            var plan = session.Combat.SkillPlans!.SkillAssignPlans[session.Combat.SkillPlans.CurrentPlanIndex];
             while (plan.ManualLoadSkill.Count < 3) plan.ManualLoadSkill.Add(new SkillData());
             plan.ManualLoadSkill[2] = new SkillData { SkillId = 10011, SkillLevel = 1 };
             return Task.CompletedTask;
@@ -127,7 +126,7 @@ public sealed class SkillProtocolTests : IAsyncLifetime
 
         await alice.SendGameAsync(CombatService.TrainingOperation, new BattleTrainingGroundOpReq { OpType = (BattleTrainingGroundOpType)1 });
         Assert.Equal(0, (await Next(alice, CombatService.TrainingOperation, BattleTrainingGroundOpResp.Parser)).Result);
-        Assert.True(session.SkillProtocol.TrainingPaused);
+        Assert.True(session.Combat.SkillProtocol.TrainingPaused);
         int before = alice.Inbox.Snapshot().Count(e => e.IsGame(CombatService.DamageStatistics));
         var actual = new Romsg.DamageStatistics
         {
@@ -147,12 +146,5 @@ public sealed class SkillProtocolTests : IAsyncLifetime
         var boss = await Next(alice, CombatService.BossAllSkillCds, BossAllSkillShowCdRes.Parser);
         Assert.Equal(ErrorCodes.SkillTargetInvalid, boss.Result);
         Assert.Empty(boss.BossSkillCds);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("Repository data/config");
     }
 }

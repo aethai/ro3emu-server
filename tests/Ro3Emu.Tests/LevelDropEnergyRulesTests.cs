@@ -53,7 +53,6 @@ public sealed class LevelDropEnergyRulesTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -230,7 +229,7 @@ public sealed class LevelDropEnergyRulesTests : IAsyncLifetime
         Assert.Equal(DragonMount, GameData.Int(row, "_iBelongMount"));
         await using var bot = await InWorld("Rider");
         var session = Session(bot);
-        Assert.False(session.Energy.ContainsKey(DragonEnergy));
+        Assert.False(session.Combat.Energy.ContainsKey(DragonEnergy));
         var skill = Data.Row("SkillConfig", DragonEnergy)!.Value;
         Assert.False(Service<BuffService>().CanSpendEnergy(session, skill));
         await Gm(bot, "!lvl 10");

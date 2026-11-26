@@ -163,7 +163,7 @@ public sealed partial class AuctionTests
         }
         finally { auctions.BeforeNoticeForTest = null; release.TrySetResult(); }
         Assert.Equal(0, (await first.WaitAsync(Wait)).Result);
-        Assert.Single(Mailbox(alice).Letters, letter => letter.DeliveryKey.StartsWith($"auction:{row.Id}:outbid:"));
+        Assert.Single(Mailbox(alice).Letters, letter => letter.DeliveryKey.StartsWith($"auction:{row.Id}:outbid:", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed partial class AuctionTests
         try
         {
             await entered.Task.WaitAsync(Wait);
-            Assert.Equal(0, Session(alice).Auction?.PreBuyNum.GetValueOrDefault("4:5001:1200000") ?? 0);
+            Assert.Equal(0, Session(alice).Social.Auction?.PreBuyNum.GetValueOrDefault("4:5001:1200000") ?? 0);
             // The transport serializes one socket's requests; invoke this independent reader
             // directly on the loop to exercise the owner fence instead of the socket queue.
             query = Service<GameLoop>().InvokeAsync(() => Service<AuctionService>().PreStackAsync(Session(alice),
@@ -220,7 +220,7 @@ public sealed partial class AuctionTests
             Assert.Equal(ErrorCodes.Unknown, (await Bid(alice, row.Id, 2000, BiddingType.Fixed)).Result);
             Assert.Equal(before, Currency(alice));
             Assert.Equal(0, Service<AuctionStore>().Get(row.Id)!.Owner);
-            Assert.DoesNotContain(Mailbox(alice).Letters, letter => letter.DeliveryKey.StartsWith($"auction:{row.Id}:"));
+            Assert.DoesNotContain(Mailbox(alice).Letters, letter => letter.DeliveryKey.StartsWith($"auction:{row.Id}:", StringComparison.Ordinal));
         }
         finally { FixtureSql.Execute(accounts, "DROP TRIGGER fail_fixed_auction"); }
         Assert.Equal(0, (await Bid(alice, row.Id, 2000, BiddingType.Fixed)).Result);

@@ -7,7 +7,7 @@ namespace Ro3Emu.Server.Economy;
 /// <summary>A caller-authorized, positive change to one denomination.</summary>
 public readonly record struct EconomyQuantity(EconomyAsset Asset, long Quantity);
 
-/// <summary>Frozen progression and conversion result for an E04 reward.</summary>
+/// <summary>Frozen progression and conversion result for a reward settlement.</summary>
 public sealed record EconomyRewardEvidence(
     int BeforeBaseLevel, long BeforeBaseExp, int AfterBaseLevel, long AfterBaseExp,
     int BeforeJobLevel, long BeforeJobExp, int AfterJobLevel, long AfterJobExp,
@@ -21,7 +21,7 @@ public sealed record EconomyRewardEvidence(
 /// <summary>Detached semantic intent for one admitted transaction. IDs are stable across internal retry.</summary>
 public sealed class EconomyMutation
 {
-    // Stage G: one options instance; a new one per mutation rebuilt the JSON type metadata every time.
+    // Shared options instance: a new one per mutation rebuilt the JSON type metadata every time.
     private static readonly JsonSerializerOptions CanonicalJson =
         new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
     // The shipped item catalog has 3,190 denominations. Allow both cost and goods for
@@ -130,12 +130,16 @@ public sealed class EconomyMutation
 
     public static bool IsRewardCommand(string command) => command is
         "monster-kill" or "gather-yield" or "dungeon-reward" or "tower-reward" or "world-revive" or
-        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or "cd13e/journey-victory" or
+        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award"
+            or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award"
+            or "cd13e/daily-stage" or "cd13e/journey-victory" or
         "cd13e/character-exp" or "cd13e/grant" or "cd13e/gm-grant";
 
     public static bool IsOwnedExchangeCommand(string command) => command is
         "cd13e/tower-milestone" or "cd13e/grant" or "cd13e/character-exp" or
-        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award" or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award" or "cd13e/daily-stage" or "cd13e/journey-victory" or
+        "cd13e/quest-award" or "cd13e/achievement-award" or "cd13e/advguild-award" or "cd13e/monsterhunt-award"
+            or "cd13e/guild-award" or "cd13e/growthclass-award" or "cd13e/library-award" or "cd13e/firstheart-award"
+            or "cd13e/daily-stage" or "cd13e/journey-victory" or
         "cd13e/gm-grant" or "cd13e/daily-reset";
 
     private static EconomyRewardEvidence Freeze(EconomyRewardEvidence value) => value with
@@ -183,7 +187,8 @@ public sealed class EconomyMutation
 }
 
 public sealed class EconomyOperationConflictException(string message) : InvalidOperationException(message);
-public sealed class EconomyOutcomeUnknownException(string operationId, Exception writeFailure, Exception resolutionFailure) : IOException("Economic operation " + operationId + " has an unresolved commit outcome; owner reload is required.",
+public sealed class EconomyOutcomeUnknownException(string operationId, Exception writeFailure, Exception resolutionFailure)
+    : IOException("Economic operation " + operationId + " has an unresolved commit outcome; owner reload is required.",
         new AggregateException(writeFailure, resolutionFailure))
 {
     public string OperationId { get; } = operationId;

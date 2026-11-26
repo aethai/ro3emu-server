@@ -26,7 +26,7 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -39,7 +39,6 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -361,7 +360,7 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
             [ReservationKey.Role(s.Role!.Id)], s, async () =>
             {
                 // The exact recovery assertion starts at 1 HP; exclude unrelated five-second combat regeneration.
-                s.LastCombatMs = MonsterService.NowMs;
+                s.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 s.StatusBits |= 1L << 15;
                 s.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
                 await Service<CharacterService>().SetHpSpAsync(s, 1, null);
@@ -437,12 +436,5 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
 
     private void SetRow(string table, long id, object row) =>
         ((Dictionary<string, JsonElement>)Data.Table(table))[id.ToString()] = JsonSerializer.SerializeToElement(row);
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 
 }

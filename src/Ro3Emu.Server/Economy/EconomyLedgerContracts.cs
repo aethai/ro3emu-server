@@ -2,7 +2,7 @@ namespace Ro3Emu.Server.Economy;
 
 public enum EconomyLegKind { Source = 1, Sink = 2, Transfer = 3, Metadata = 4 }
 
-/// <summary>E00 catalogue v1. Unknown/correction/generic-save reasons cannot qualify.</summary>
+/// <summary>Economy reason catalogue v1. Unknown/correction/generic-save reasons cannot qualify.</summary>
 public enum EconomyReason
 {
     Unknown = 0, StarterGrant = 1, MonsterDrop = 2, QuestReward = 3, DailyReward = 4,
@@ -20,12 +20,12 @@ public enum EconomyReason
     WardrobeCost = 44, WardrobeGoods = 45, TotemCost = 46, TotemGoods = 47,
     EmblemCost = 48, EmblemGoods = 49, GenreCost = 50, GenreGoods = 51,
     PetGoods = 52, TotemRefund = 53,
-    DungeonRewardDelivery = 54, // E04 used 41 on its branch; 41 was already InventoryRelocation on master
-    // E05a reserved persisted values; do not renumber or reuse sibling branch ranges.
+    DungeonRewardDelivery = 54, // Persisted value 54 (41 was already InventoryRelocation)
+    // Reserved persisted family economy values; do not renumber or reuse.
     EquipmentCost = 140, AppraisalCost = 141, EnchantCost = 142, EnchantRefund = 143,
     CardInput = 144, CardOutput = 145, ShopPayment = 146, ShopGoods = 147,
     ItemBoxGoods = 148, // award box contents (cd13a/character-box)
-    // C/D 13e + E02 reserved range 120-139.
+    // Reserved persisted owned-exchange range 120-139.
     OwnedGrant = 120, OwnedAwardCost = 121, DailyReset = 122,
     AchievementReward = 123, // achievement / Trophy tier claims (cd13e/achievement-award)
     AdventureGroupReward = 124, // Adventure Group level reward claims (cd13e/advguild-award)
@@ -34,22 +34,23 @@ public enum EconomyReason
     GrowthClassReward = 127, // Growth Classroom rank rewards (cd13e/growthclass-award)
     LibraryReward = 128, // Codex monster unlock Collection Points (cd13e/library-award)
     FirstHeartReward = 129, // Seven-Day Goal task and score reward claims (cd13e/firstheart-award)
-    // C/D 13d used 41-45 on its branch; renumbered at merge (the values are persisted).
+    // Persisted economy values; do not renumber.
     FriendGiftCost = 55, CaravanPendingDelivery = 56, GuildActivityCost = 57,
     GuildServiceCost = 58, ChallengePendingDelivery = 59,
     ValhallaCost = 60, // Valhalla Trials Blessing: Einherjar Coins spent on the Odin statue (cd13b/valhalla-pray)
     ParagonCost = 61, ParagonGoods = 62, // Astral Level Star Cores installed / returned (cd13b/paragon-*)
-    // Persisted values 200..219 are reserved exclusively for C/D 13c / E05c.
+    GuildFoundingRefund = 63, // the guild creation cost returned by mail when a founding fails
+    // Persisted values 200..219 are reserved exclusively for progression economy reasons.
     LifeCost = 200, LifeGoods = 201, SeasonCost = 202, SeasonGoods = 203,
     SeasonRefund = 204, SkillPlanCost = 205, SkillPlanRefund = 206,
     CastAdmissionCost = 207, CastAdmissionRefund = 208,
-    // E03 escrow families.
+    // Escrow economy families.
     MarketSlotUnlock = 301, StallOpenFee = 302, GuildMarketFee = 303
 }
 
 public static class EconomyReasonCatalog
 {
-    public const string Version = "economy-reasons-v15"; // each merge of a branch's reasons gets a new version
+    public const string Version = "economy-reasons-v16"; // each merge of a branch's reasons gets a new version
 
     public static bool Allows(EconomyReason reason, EconomyLegKind kind) => reason switch
     {
@@ -64,7 +65,7 @@ public static class EconomyReasonCatalog
         EconomyReason.OwnedGrant or EconomyReason.AchievementReward or EconomyReason.AdventureGroupReward or EconomyReason.MonsterHuntReward or EconomyReason.GuildReward or
         EconomyReason.GrowthClassReward or EconomyReason.LibraryReward or EconomyReason.FirstHeartReward or
         EconomyReason.LifeGoods or EconomyReason.SeasonGoods or EconomyReason.SeasonRefund or
-        EconomyReason.SkillPlanRefund or EconomyReason.CastAdmissionRefund or EconomyReason.ParagonGoods => kind == EconomyLegKind.Source,
+        EconomyReason.SkillPlanRefund or EconomyReason.CastAdmissionRefund or EconomyReason.ParagonGoods or EconomyReason.GuildFoundingRefund => kind == EconomyLegKind.Source,
         EconomyReason.GmRemove or EconomyReason.NpcShopPayment or EconomyReason.CraftInput or
         EconomyReason.DecomposeInput or EconomyReason.ItemUse or EconomyReason.RefineCost or
         EconomyReason.SkillCost or EconomyReason.PetCost or EconomyReason.MarketTax or
@@ -113,7 +114,7 @@ public sealed record EconomySourceClaim(string SourceKey, string OperationId);
 
 /// <summary>
 /// An adapter must certify the entire (FromExclusive, ThroughInclusive] range and retained source claims.
-/// E00 defines this in-memory boundary only; E01 binds it to the merged C/D receipt/watermark and archive reader.
+/// In-memory boundary bound to the persisted receipt/watermark and archive reader.
 /// Empty legs do not certify absence of writes. CompleteHistory may only be true for an independently read,
 /// continuous manifest. PriorSourceClaims include retained/tombstoned source keys before the opening cut.
 /// </summary>

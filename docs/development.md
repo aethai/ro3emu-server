@@ -2,7 +2,8 @@
 
 ## Running from source
 
-You need only the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). `scripts\start.cmd` builds the server, the
+You need only the [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) and the ASP.NET Core
+[.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) the projects run on. `scripts\start.cmd` builds the server, the
 client DLLs and RO3Emu from source and runs RO3Emu with this repository as its home; `scripts\join.cmd <address>` does the
 same for joining, and both take any RO3Emu.exe option. On Linux, `scripts/server.sh` builds and runs the server from source.
 
@@ -32,7 +33,7 @@ chunks into standard Lua 5.4 bytecode for any decompiler.
 | `src/Ro3Emu.ClientTools` | client patcher (patch, restore, play; the chat and voice redirects) and patch-repository releases |
 | `src/Ro3Emu.ClientHooks` · `src/Ro3Emu.Loc` | code injected into the client: Lua patches, party voice and the English text layer |
 | `src/Ro3Emu.Bot` · `src/Ro3Emu.BotCli` | a scripted client speaking the real protocol (tests, load, extra players) |
-| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S5 with protocol bots |
+| `src/Ro3Emu.LoadTest` | load runner: scenarios S1-S9 with protocol bots |
 | `src/Ro3Emu.Launcher` · `src/Ro3Emu.Patcher` | a player launcher and its content-addressed update engine |
 | `tests/` | end-to-end tests: the server in-process, bots over real sockets |
 | `tools/` | Lua, config, nav and message-table export, release scripts |
@@ -58,7 +59,14 @@ dotnet run -c Release --project src/Ro3Emu.LoadTest -- --scenario S2 --server-lo
 ```
 
 S1 is a login storm (500 logins in 60 s), S2 300 players in one town, S3 500 players in a mixed economy with a ledger
-check, S4 map changes and relogs, S5 a full castle siege (two guilds of 80). Each report marks every target (tick p99,
+check, S4 map changes and relogs, S5 a full castle siege (two guilds of 80), S6 100 players fighting on one field,
+S7 the same fight plus the background requests a real client sends while it plays (a flyer's moves, the activity poll),
+S8 S7 in parties of four that fight together, so kills have several contributors, and S9 level 99 players on auto
+battle: each bot takes one of the client's level 99 GM presets (job, skill build and bar, gear, mount, talents), farms on
+an open field map with a few others and sends what a live server's farming players send (a cast from its bar every
+205 ms, its own auction list every 525 ms, a walk when the target is out of reach, a ping). S3's bots cast about once
+every 7 s, S9's about five times a second, so S9 is the one to size a server for players on auto battle.
+Each report marks every target (tick p99,
 reply latency, login time, players per view, database work on the loop, GC, CPU, memory) as PASS, FAIL or NOT MEASURED
 with the evidence. Against a server started elsewhere (`--server URL`), pass a copy of its `data/operator.token` with
 `--operator-token-file`: the metrics and the GM tool answer only with it.

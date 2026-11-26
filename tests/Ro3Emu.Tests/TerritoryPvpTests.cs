@@ -25,7 +25,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         SureHitRolls.Install(_app); // lethal hits are prepared; a FLEE miss would only be noise
@@ -36,7 +36,6 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -57,13 +56,6 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
 
     private GameSession Session(BotClient bot) => Service<SessionRegistry>().All()
         .Single(s => s.Account == bot.Account && s.Role != null);
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
-    }
 
     [ClientDataFact]
     public async Task ExplicitTerritoryPilesDoNotChangeOrdinaryBuffStacking()
@@ -119,9 +111,9 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             var victim = Session(enemy);
             source.Position = victim.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == victim;
-            combat.PvpDealt.Add((a, b, amount, lethal) => { if (a == source && b == victim) dealt.Add((amount, lethal)); });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == victim });
+            combat.PvpDealt.Subscribe((a, b, amount, lethal) => { if (a == source && b == victim) dealt.Add((amount, lethal)); });
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == victim) { killed++; killNotified.TrySetResult(); }
                 return Task.CompletedTask;
@@ -129,7 +121,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await Service<CharacterService>().SetHpSpAsync(victim, 1, null);
             // This verifies effective damage against exactly 1 HP. Exclude the unrelated five-second
             // out-of-combat regeneration tick while the wire requests below are in flight.
-            victim.LastCombatMs = MonsterService.NowMs;
+            victim.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victim.StatusBits |= 1L << 15;
             victim.NoRegenUntilMs = long.MaxValue; // fighting does not pause regeneration
         });
@@ -189,19 +181,19 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == target;
-            combat.PvpDealt.Add((a, b, amount, dead) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == target });
+            combat.PvpDealt.Subscribe((a, b, amount, dead) =>
             {
                 if (a == source && b == target) dealt.Add((amount, dead));
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) { kills++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            Service<CharacterService>().ExtraAttributes.Add(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
+            Service<CharacterService>().ExtraAttributes.Subscribe(s => s == source ? [(103, 1000d), (109, 10000d)] : []);
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
-            target.LastCombatMs = MonsterService.NowMs;
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<BuffService>().AddSupportAsync(target, 2354401, 30000, 1L << 51, shield);
@@ -255,25 +247,25 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
-            combat.PvpDealt.Add((a, b, _, _) => { if (a == source && b == target) scoredHits++; });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => hostile && a == source && b == target });
+            combat.PvpDealt.Subscribe((a, b, _, _) => { if (a == source && b == target) scoredHits++; });
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) kills++;
                 return Task.CompletedTask;
             });
             var character = Service<CharacterService>();
-            character.ExtraAttributes.Add(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
+            character.ExtraAttributes.Subscribe(s => s == source ? [(103, 10000d), (109, 10000d)] : []);
             maximum = character.Stats(target)[101];
             await character.SetHpSpAsync(target, maximum, null);
-            target.LastCombatMs = MonsterService.NowMs;
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             var buffs = Service<BuffService>();
             await buffs.AddAsync(target, 1430501, 30000, target.Role!.Id);
             if (revokeDuringShield) await buffs.AddSupportAsync(target, 2354401, 30000, 1L << 51, 1);
             int removedConfig = revokeDuringShield ? 2354401 : 1430501;
-            buffs.Changed.Add(p =>
+            buffs.Changed.Subscribe(p =>
             {
                 if (p == target && !p.Buffs.Any(b => b.ConfigId == removedConfig))
                 {
@@ -323,17 +315,17 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             var target = Session(victim);
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => a == source && b == target;
-            combat.PvpDealt.Add((a, b, _, lethal) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => a == source && b == target });
+            combat.PvpDealt.Subscribe((a, b, _, lethal) =>
             {
                 if (a == source && b == target && lethal) source.SceneLoading = true; // departure during hit publication
             });
-            combat.PlayerDied.Add(p =>
+            combat.PlayerDied.Subscribe(p =>
             {
                 if (p == target) { deaths++; deathPublished.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (a == source && b == target) attributedKills++;
                 return Task.CompletedTask;
@@ -378,19 +370,19 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         {
             source.Position = target.Position.Clone();
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => hostile && a == source && b == target;
-            combat.CastLanded.Add((a, _) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => hostile && a == source && b == target });
+            combat.CastLanded.Subscribe((a, _) =>
             {
                 if (a == source) landed.TrySetResult();
                 return Task.CompletedTask;
             });
-            combat.PvpDealt.Add((a, b, _, _) => { if (a == source && b == target) hits++; });
-            combat.PlayerDied.Add(p =>
+            combat.PvpDealt.Subscribe((a, b, _, _) => { if (a == source && b == target) hits++; });
+            combat.PlayerDied.Subscribe(p =>
             {
                 if (p == target) deaths++;
                 return Task.CompletedTask;
             });
-            target.LastCombatMs = MonsterService.NowMs;
+            target.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             target.StatusBits |= 1L << 15;
             target.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(target, 1, null);
@@ -439,38 +431,40 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             firstSession.Progress!.Skills[12013] = 1;
             secondSession.Progress!.Skills[12013] = 1;
             await Service<CharacterService>().SetLevelAsync(victimSession, 99, null);
-            await Service<CharacterService>().SetHpSpAsync(victimSession, 180, null);
-            victimSession.LastCombatMs = MonsterService.NowMs;
+            await Service<CharacterService>().SetLevelAsync(firstSession, 99, null); // defense counts the attacker's level (DefenseFactor)
+            await Service<CharacterService>().SetLevelAsync(secondSession, 99, null);
+            await Service<CharacterService>().SetHpSpAsync(victimSession, 300, null);
+            victimSession.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             victimSession.StatusBits |= 1L << 15;
             victimSession.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
-            Assert.Equal(180, victimSession.CurrentHp);
+            Assert.Equal(300, victimSession.CurrentHp);
             var position = victimSession.Position;
             var probe = await Service<MonsterService>().SpawnSingleAsync(victimSession.SceneEntry, 5000001,
                 new MapPoint(position.X, position.Y, position.Z, 0));
             Assert.NotNull(probe);
             probe.Hp = 1;
             var combat = Service<CombatService>();
-            combat.PlayerHostile = (a, b) => (a == firstSession || a == secondSession) && b == victimSession;
-            combat.PvpDealt.Add((a, b, amount, lethal) =>
+            combat.AddRuleForTest(new DelegateCombatRule { PlayerHostile = (a, b) => (a == firstSession || a == secondSession) && b == victimSession });
+            combat.PvpDealt.Subscribe((a, b, amount, lethal) =>
             {
                 if (b == victimSession) dealt.Add((a, amount, lethal));
             });
-            combat.PlayerKilled.Add((a, b) =>
+            combat.PlayerKilled.Subscribe((a, b) =>
             {
                 if (b == victimSession) { deaths++; killed.TrySetResult(); }
                 return Task.CompletedTask;
             });
-            combat.MonsterDamageApplied.Add((a, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((a, m, _) =>
             {
                 if (a != firstSession || m != probe) return Task.CompletedTask;
                 held.TrySetResult();
                 return release.Task;
             });
-            combat.Killed.Insert(0, (a, m) =>
+            combat.Killed.Subscribe((a, m) =>
             {
                 if (a == firstSession && m == probe) probeKilled.TrySetResult();
                 return Task.CompletedTask;
-            });
+            }, order: -1000);
         });
 
         try
@@ -478,7 +472,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             await first.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1201301, TargetPos = victimSession.Position.Clone() });
             Assert.Equal(0, (await Next(first, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
             await held.Task.WaitAsync(Wait); // the first AoE reserved HP, then its real monster callback yielded
-            Assert.True(victimSession.CurrentHp is > 0 and < 180,
+            Assert.True(victimSession.CurrentHp is > 0 and < 300,
                 $"first reserved HP={victimSession.CurrentHp}, dead={victimSession.Dead}, dealt={dealt.Count}");
             Assert.False(victimSession.Dead);
 
@@ -519,14 +513,14 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             Assert.NotNull(first);
             first.Hp = 1;
             var combat = Service<CombatService>();
-            combat.MonsterDamageApplied.Add((_, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((_, m, _) =>
                 m == first ? Task.FromException(new InvalidOperationException("test callback failure")) : Task.CompletedTask);
-            combat.Killed.Insert(0, (_, m) =>
+            combat.Killed.Subscribe((_, m) =>
             {
                 if (m == first) { firstKills++; firstKilled.TrySetResult(); }
                 return Task.CompletedTask;
-            });
-            combat.Dealt.Add((_, m, amount) =>
+            }, order: -1000);
+            combat.Dealt.Subscribe((_, m, amount) =>
             {
                 if (m == second && amount > 0) secondDamaged.TrySetResult();
             });
@@ -563,7 +557,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         MonsterUnit target = null!, untouched = null!;
         int attributedKills = 0;
-        long lastCombat = source.LastCombatMs;
+        long lastCombat = source.Combat.LastCombatMs;
         long untouchedCombat = 0, untouchedStatus = 0;
         await OnLoop(async () =>
         {
@@ -589,13 +583,13 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
             untouchedCombat = untouched.LastCombatMs;
             untouchedStatus = untouched.StatusBits;
             var combat = Service<CombatService>();
-            combat.MonsterDamageApplied.Add((a, m, _) =>
+            combat.MonsterDamageApplied.Subscribe((a, m, _) =>
             {
                 if (a != source || m != target) return Task.CompletedTask;
                 held.TrySetResult();
                 return release.Task;
             });
-            combat.Killed.Add((a, m) =>
+            combat.Killed.Subscribe((a, m) =>
             {
                 if (a == source && m == target) attributedKills++;
                 return Task.CompletedTask;
@@ -622,7 +616,7 @@ public sealed class TerritoryPvpTests : IAsyncLifetime
         Assert.Equal(untouchedCombat, untouched.LastCombatMs);
         Assert.Equal(untouchedStatus, untouched.StatusBits);
         Assert.DoesNotContain(source.Buffs, b => b.ConfigId == 1100201);
-        Assert.Equal(lastCombat, source.LastCombatMs);
+        Assert.Equal(lastCombat, source.Combat.LastCombatMs);
         Assert.Equal(0, attributedKills);
     }
 }

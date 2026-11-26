@@ -1,0 +1,156 @@
+using Microsoft.Extensions.DependencyInjection;
+using Romsg;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
+using Ro3Emu.Server.Game;
+
+namespace Ro3Emu.Tests;
+
+public sealed partial class SkillCombatTests
+{
+    /// <summary>Does a cast's self buff land on a player standing next to the caster, in or out of the caster's party?</summary>
+    private async Task<bool> BobGetsAsync(int job, int group, int skill, int buff, bool sameParty)
+    {
+        await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job " + job); await Teach("alice", group);
+        var (a, b) = (Session("alice"), Session("bob"));
+        a.GmCastSkill = skill;
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        using var partyRule = combat.OverrideRulesForTest(new DelegateCombatRule { SameParty = (_, _) => sameParty });
+        await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var deadline = DateTime.UtcNow + Wait;
+        while (!a.Buffs.Any(x => x.ConfigId == buff) && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.Contains(a.Buffs, x => x.ConfigId == buff);
+        await Task.Delay(200);
+        return b.Buffs.Any(x => x.ConfigId == buff);
+    }
+
+    [ClientDataFact] // Sacred Lily: "You and Party Members": a stranger stands aside
+    public async Task APartyTextSkipsAStranger()
+    {
+        int buff = (int)SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), 1430401)!.Value.Buff1[0][0];
+        Assert.False(await BobGetsAsync(1430, 14304, 1430401, buff, sameParty: false));
+    }
+
+    [ClientDataFact]
+    public async Task APartyTextReachesAMember()
+    {
+        int buff = (int)SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), 1430401)!.Value.Buff1[0][0];
+        Assert.True(await BobGetsAsync(1430, 14304, 1430401, buff, sameParty: true));
+    }
+
+    [ClientDataFact] // Magnificat: "for you and up to ${2} allies", under a self-only selector
+    public async Task MagnificatReachesAnAlly()
+    {
+        int buff = (int)SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), 1410501)!.Value.Buff1[0][0];
+        Assert.True(await BobGetsAsync(1410, 14105, 1410501, buff, sameParty: false));
+    }
+
+    /// <summary>The SkillHit a buff cast by Alice sends while Bob stands next to her, in her party or not.</summary>
+    private async Task<(SkillHitInfo Hit, long Alice, long Bob)> BuffHitAsync(int job, int group, int skill, bool sameParty)
+    {
+        await using var alice = await InWorld("Alice"); await using var bob = await InWorld("Bob");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job " + job); await Teach("alice", group);
+        var (a, b) = (Session("alice"), Session("bob"));
+        a.GmCastSkill = skill;
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        using var partyRule = combat.OverrideRulesForTest(new DelegateCombatRule { SameParty = (_, _) => sameParty });
+        await Loop.InvokeAsync(() => { b.Position = a.Position.Clone(); return Task.CompletedTask; });
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = skill, TargetPos = a.Position.Clone(), Face = a.Face });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var hit = await Next(alice, CombatService.SkillHit, SkillHitInfo.Parser, x => x.SessionId == accepted.SessionId);
+        return (hit, a.Role!.Id, b.Role!.Id);
+    }
+
+    [ClientDataFact] // Magnificat: no damage to list, yet its hit effect plays on the caster and on each ally the buff reached
+    public async Task MagnificatShowsItsHitOnEveryAllyItReaches()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1410, 14105, 1410501, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.Contains(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(DamageType.DamageShare, d.DamageType));
+        // The drawn entry of its own range (EffectData 1410502, fx_buff_ourladysing), not HitEffect's fallback 1000002 (a struck unit's flinch).
+        Assert.Equal(1410502, hit.ShowPoint);
+    }
+
+    [ClientDataFact] // Sacred Lily: its range 430400-430499 has no hit entry, so the buff lands and no SkillHit plays a struck unit's flinch
+    public async Task SacredLilySendsNoHitWithoutAHitEntry()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job 1430"); await Teach("alice", 14304);
+        var a = Session("alice");
+        a.GmCastSkill = 1430401;
+        int buff = (int)SkillConfig.Get(_app.Services.GetRequiredService<GameData>(), 1430401)!.Value.Buff1[0][0];
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1430401, TargetPos = a.Position.Clone(), Face = a.Face });
+        var accepted = await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser);
+        Assert.Equal(0, accepted.Result);
+        var deadline = DateTime.UtcNow + Wait;
+        while (!a.Buffs.Any(x => x.ConfigId == buff) && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.Contains(a.Buffs, x => x.ConfigId == buff);
+        await Task.Delay(300);
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SessionId == accepted.SessionId);
+    }
+
+    [ClientDataFact] // Crazy Uproar: "your and up to ${2} allies ... within a ${1}-meter radius": its hit effect plays on the caster and on the ally the buff reached
+    public async Task CrazyUproarShowsItsHitOnEveryAllyItReaches()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1600, 16008, 1600801, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.Contains(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Auto Guard: "increasing your PDEF and MDEF": a self buff, so its hit effect plays on the caster and not on a bystander
+    public async Task AutoGuardShowsItsHitOnTheCasterOnly()
+    {
+        var (hit, alice, bob) = await BuffHitAsync(1140, 11408, 1140801, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.DoesNotContain(hit.Dsts, d => d.DstID == bob);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Shield Reflect: "Grants you [Shield Reflect]"
+    public async Task ShieldReflectShowsItsHitOnTheCaster()
+    {
+        var (hit, alice, _) = await BuffHitAsync(1140, 11410, 1141001, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Battle Chant: the caster at least shows its hit effect (who else it reaches is not asserted)
+    public async Task BattleChantShowsItsHitOnTheCaster()
+    {
+        var (hit, alice, _) = await BuffHitAsync(1150, 11503, 1150301, sameParty: true);
+        Assert.Contains(hit.Dsts, d => d.DstID == alice);
+        Assert.All(hit.Dsts, d => Assert.Equal(0L, d.Damage));
+    }
+
+    [ClientDataFact] // Safety Wall: "melee Physical"; a melee magic hit passes through and spends nothing
+    public async Task SafetyWallStopsMeleePhysicalOnly()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99"); await Gm("alice", "!job 1200"); await Teach("alice", 12011);
+        var a = Session("alice");
+        a.GmCastSkill = 1201101;
+        var data = _app.Services.GetRequiredService<GameData>();
+        var physical = SkillConfig.Get(data, 1001001)!.Value;
+        var magic = new SkillConfig(data.Table("SkillConfig").Values.First(r => new SkillConfig(r).DmgType == 2 && new SkillConfig(r).DistanceType == 1));
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1201101, TargetPos = a.Position.Clone(), Face = a.Face });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        var deadline = DateTime.UtcNow + Wait;
+        while (a.Combat.SkillObjects.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(50);
+        Assert.NotEmpty(a.Combat.SkillObjects);
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        await Loop.InvokeAsync(async () =>
+        {
+            int charges = a.Combat.SkillObjects[0].Charges;
+            Assert.False(await combat.GroundProtectsAsync(a, magic.Row));
+            Assert.Equal(charges, a.Combat.SkillObjects[0].Charges);
+            Assert.True(await combat.GroundProtectsAsync(a, physical.Row));
+        });
+    }
+}

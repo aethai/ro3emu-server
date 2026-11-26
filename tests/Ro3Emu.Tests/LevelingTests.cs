@@ -68,7 +68,6 @@ public sealed class LevelingTests
             await Bot.DisposeAsync();
             await _app.StopAsync();
             await _app.DisposeAsync();
-            SqliteConnection.ClearAllPools();
             try { Directory.Delete(_dir, true); } catch (IOException) { }
         }
     }
@@ -113,13 +112,13 @@ public sealed class LevelingTests
         await host.Gm("!job 1100");
         await host.Gm("!lvl 20");
         await host.Gm($"!item {MintedCoin} 100000");
-        await Until(() => host.Read(s => s.SeasonTalent!.UnlockedNode.GetValueOrDefault(10101001)), "tree 10101 open");
+        await Until(() => host.Read(s => s.Season.SeasonTalent!.UnlockedNode.GetValueOrDefault(10101001)), "tree 10101 open");
         int learned = 0;
         while (await host.Read(s => s.Tasks!.Infos[TalentChild].Status) == TaskState.Running && learned < 60)
         {
-            var node = await host.Read(s => s.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
+            var node = await host.Read(s => s.Season.SeasonTalent!.UnlockedNode.Where(kv => kv.Value).Select(kv => kv.Key)
                 .Where(id => GameData.Int(data.Row("SeasonTalentConfig", id)!.Value, "_iTalentTreeID") == 10101
-                    && (s.SeasonTalent.Plan[s.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0)
+                    && (s.Season.SeasonTalent.Plan[s.Season.SeasonTalent.CurPlanId].TalentNodes.GetValueOrDefault(id)?.CurrentLevel ?? 0)
                         < GameData.Int(data.Row("SeasonTalentConfig", id)!.Value, "_iMaxLevel"))
                 .Order().FirstOrDefault());
             Assert.True(node != 0, $"no tree 10101 node left after {learned} levels");
@@ -175,7 +174,7 @@ public sealed class LevelingTests
         var ring = await host.Request(DailyActivityService.RingAccept,
             new CommonDailyActivityReq { ActivityId = 3302, RunRingTaskAccept = new RunRingTaskAcceptReq() }, CommonDailyActivityRes.Parser);
         Assert.Equal(0, ring.Result);
-        int root = await host.Read(s => s.Daily!.ActiveRingStart);
+        int root = await host.Read(s => s.Activities.Daily!.ActiveRingStart);
         for (int task = root; task < root + 10; task++)
         {
             await host.Gm($"!quest done {task}");

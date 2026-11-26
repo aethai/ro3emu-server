@@ -9,6 +9,8 @@ namespace Ro3Emu.Tests;
 
 public sealed class ServerMetricsTests
 {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public async Task ConcurrentRuntimeMetricOwnersDoNotReconfigureOrDeadlockEventPipe()
     {
@@ -22,7 +24,7 @@ public sealed class ServerMetricsTests
             }
         }))).WaitAsync(TimeSpan.FromSeconds(30));
     }
-    private static JsonElement Snapshot(ServerMetrics metrics) => JsonSerializer.SerializeToElement(metrics.Snapshot(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    private static JsonElement Snapshot(ServerMetrics metrics) => JsonSerializer.SerializeToElement(metrics.Snapshot(), WebJson);
 
     [Fact]
     public void HistogramKeepsExactCountsAndConservativeQuantilesUnderContention()

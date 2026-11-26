@@ -59,8 +59,8 @@ public sealed partial class DungeonTests
             if (ReferenceEquals(m, actors[0])) firstObserved.TrySetResult();
             return Task.CompletedTask;
         };
-        combat.DealtAsync.Add(holdFirst);
-        combat.Killed.Add(observeFirst);
+        using var holdSub = combat.DealtAsync.Subscribe(holdFirst);
+        using var observeSub = combat.Killed.Subscribe(observeFirst);
         dungeon.AfterTerminalKillsPrecountedForTest = attempt =>
         {
             if (attempt.Room.Id != room) return Task.CompletedTask;
@@ -95,7 +95,7 @@ public sealed partial class DungeonTests
                 hit => hit.SrcID == (long)bob.Self!.Uuid && hit.Dsts.Any(d => d.DstID == actors[1].Uid && d.IsDead));
             foreach (var bot in new[] { alice, bob })
                 Assert.Equal((DungeonRes)1, (await Next(bot, DungeonService.Result, DungeonResNotify.Parser)).Res);
-            var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Dungeons!.Statistics[room]);
+            var report = DungeonStatisticsInfoWithDungeon.Parser.ParseFrom(Session(alice).Instances.Dungeons!.Statistics[room]);
             var stats = report.SceneStatistics[room].RoleStatistics;
             Assert.Equal(1, stats[(long)alice.Self!.Uuid].KillNpcData[5300036].LongValue);
             Assert.Equal(1, stats[(long)bob.Self!.Uuid].KillNpcData[5300036].LongValue);
@@ -109,8 +109,6 @@ public sealed partial class DungeonTests
             releaseFirst.TrySetResult();
             releaseFreeze.TrySetResult();
             dungeon.AfterTerminalKillsPrecountedForTest = null;
-            combat.DealtAsync.Remove(holdFirst);
-            combat.Killed.Remove(observeFirst);
         }
     }
 }

@@ -1,9 +1,7 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Time.Testing;
 using Romsg;
 using Ro3Emu.Bot;
-using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
@@ -13,64 +11,32 @@ namespace Ro3Emu.Tests;
 /// <summary>Real RefreshInfo miner-node acquisition and authoritative life gathering.</summary>
 public sealed class GatheringTests : IAsyncLifetime
 {
-    private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-gather-" + Guid.NewGuid().ToString("N"));
-    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private WebApplication _app = null!;
-    private string _http = "";
+    private static readonly TimeSpan Wait = TestServer.DefaultWait;
+    private readonly FakeTimeProvider _clock = TestServer.CreateFakeClock();
+    private TestServer _server = null!;
     private const long Scene = 10522;
 
     public async Task InitializeAsync()
     {
-        var (httpPort, microPort, gamePort) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o =>
+        _server = await TestServer.StartClientAsync(o =>
         {
-            o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
-            o.HttpPort = httpPort;
-            o.MicroGatePort = microPort;
-            o.GameGatePort = gamePort;
             o.Ro1AggressiveMonsters = false; // field monsters near the nodes would interrupt the gathering casts
-        });
-        await _app.StartAsync();
-        _http = $"http://127.0.0.1:{httpPort}";
+        }, _clock);
     }
 
-    public async Task DisposeAsync()
-    {
-        await _app.StopAsync();
-        await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
+    public Task DisposeAsync() => _server.DisposeAsync().AsTask();
 
-    private async Task<BotClient> InWorld(string name, bool create = true)
-    {
-        var bot = new BotClient(_http, File.ReadAllText(Path.Combine(_dataDir, "gate_rsa_public.pem")));
-        await bot.LoginAsync(name.ToLowerInvariant(), "pw");
-        await bot.EnterGateAsync();
-        long id = create ? (await bot.CreateRoleAsync(name)).RoleBaseInfo.Id : bot.Roles.Single().Id;
-        await bot.EnterWorldAsync(id);
-        return bot;
-    }
+    private Task<BotClient> InWorld(string name, bool create = true) => _server.InWorldAsync(name, create);
 
-    private static async Task<T> Next<T>(BotClient bot, uint msgId, Google.Protobuf.MessageParser<T> parser, Func<T, bool>? match = null)
-        where T : Google.Protobuf.IMessage<T>
-    {
-        var e = await bot.Inbox.WaitAsync(e => e.IsGame(msgId) && (match == null || match(parser.ParseFrom(e.Body))), Wait);
-        return parser.ParseFrom(e.Body);
-    }
+    private static Task<T> Next<T>(BotClient bot, uint msgId, Google.Protobuf.MessageParser<T> parser, Func<T, bool>? match = null)
+        where T : Google.Protobuf.IMessage<T> => TestServer.NextAsync(bot, msgId, parser, match);
 
-    private async Task Gm(string account, string command)
-    {
-        using var http = new HttpClient();
-        (await http.PostAsync($"{_http}/ro3emu/gm?account={account}", Operator.Command(command))).EnsureSuccessStatusCode();
-    }
+    private Task Gm(string account, string command) => _server.GmAsync(account, command);
 
     private static int Count(BotClient bot, uint id) => bot.Inbox.Snapshot().Count(e => e.IsGame(id));
 
     private Task<T> OnLoop<T>(string account, Func<GameSession, T> read) =>
-        _app.Services.GetRequiredService<GameLoop>().InvokeAsync(() => Task.FromResult(
-            read(_app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == account))));
+        _server.OnLoopAsync(() => Task.FromResult(read(_server.Session(account))));
 
     private async Task<EntityBase> EnterMinerField(BotClient bot, string account)
     {
@@ -88,7 +54,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.True(node.BornTimeMs > 0);
         Assert.NotEmpty(node.CollectionInfo.CollectCd);
         Assert.NotEmpty(node.CollectionInfo.CollectCountByPlayer);
-        var points = _app.Services.GetRequiredService<WorldData>().Map(Scene)!.GatheringPoints;
+        var points = _server.Service<WorldData>().Map(Scene)!.GatheringPoints;
         Assert.Contains(points, p => p.Id == node.CollectionInfo.PointConfigId && p.GroupId == 1371 && p.RefreshId == 10522201);
         await Gm(account, FormattableString.Invariant($"!jump {node.MovementInfo.Pos.X:0.00} {node.MovementInfo.Pos.Z:0.00}"));
         await Next(bot, GameAoiSink.MovementChange, MovementChangeNtf.Parser, m => m.Uid == (long)bot.Self!.Uuid);
@@ -104,7 +70,7 @@ public sealed class GatheringTests : IAsyncLifetime
 
     private IReadOnlyList<string> GatherSources()
     {
-        using var db = new SqliteConnection($"Data Source={Path.Combine(_dataDir, "ro3emu.db")};Mode=ReadOnly");
+        using var db = new SqliteConnection($"Data Source={Path.Combine(_server.DataDir, "ro3emu.db")};Mode=ReadOnly;Pooling=False");
         db.Open();
         using var query = db.CreateCommand();
         query.CommandText = "SELECT source_key FROM operation_receipt WHERE command_kind='gather-yield' ORDER BY commit_seq";
@@ -121,12 +87,13 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.Equal(0, (await Next(bot, LifeJobService.SwitchLife, SwitchLifeJobResp.Parser)).Result);
     }
 
-    private static async Task Cast(BotClient bot, EntityBase node)
+    private async Task Cast(BotClient bot, EntityBase node, int advanceSeconds = 5)
     {
         await bot.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.Equal(0, (await Next(bot, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
         await Next(bot, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Collection);
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(advanceSeconds));
         await Next(bot, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && !n.Interrupt);
     }
@@ -138,16 +105,15 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var bob = await InWorld("Bob");
         var node = await EnterMinerField(alice, "alice");
         await LearnMiner(alice);
-        var accounts = _app.Services.GetRequiredService<AccountStore>();
-        var loop = _app.Services.GetRequiredService<GameLoop>();
-        var registry = _app.Services.GetRequiredService<SessionRegistry>();
-        var owner = registry.All().Single(s => s.Account == "alice");
-        var other = registry.All().Single(s => s.Account == "bob");
+        var accounts = _server.Service<AccountStore>();
+        var loop = _server.Loop;
+        var owner = _server.Session("alice");
+        var other = _server.Session("bob");
         var staged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gmDeferred = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var owners = _app.Services.GetRequiredService<Ro3Emu.Server.Game.Ownership.OwnerRegistry>();
-        byte[] before = Google.Protobuf.MessageExtensions.ToByteArray(owner.LifeJob!);
+        var owners = _server.Service<Ro3Emu.Server.Game.Ownership.OwnerRegistry>();
+        byte[] before = Google.Protobuf.MessageExtensions.ToByteArray(owner.Season.LifeJob!);
         accounts.BeforeOwnedCommitForTest = label =>
         {
             if (label != "economy/gather-yield") return Task.CompletedTask;
@@ -157,18 +123,21 @@ public sealed class GatheringTests : IAsyncLifetime
         Task? gm = null;
         await alice.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.Equal(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
+        await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+            n => n.DataInfo.EType == InteractInfo.Types.EState.Collection);
         try
         {
+            await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
             await staged.Task.WaitAsync(Wait);
             Assert.Empty(GatherSources());
-            Assert.Equal(before, Google.Protobuf.MessageExtensions.ToByteArray(owner.LifeJob!));
+            Assert.Equal(before, Google.Protobuf.MessageExtensions.ToByteArray(owner.Season.LifeJob!));
             Assert.DoesNotContain(alice.Inbox.Snapshot(), e => e.IsGame(GatheringService.StateChange)
                 && InteractChangeNtf.Parser.ParseFrom(e.Body) is { Interrupt: false, DataInfo.EType: InteractInfo.Types.EState.Idle });
             gm = Gm("alice", "!speed 701");
             await gmDeferred.Task.WaitAsync(Wait);
-            await loop.InvokeAsync(() => _app.Services.GetRequiredService<DungeonService>().SetGuideAsync(other,
+            await loop.InvokeAsync(() => _server.Service<DungeonService>().SetGuideAsync(other,
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = true })).WaitAsync(Wait);
-            Assert.True(other.Dungeons!.FirstSetted);
+            Assert.True(other.Instances.Dungeons!.FirstSetted);
             Assert.False(gm.IsCompleted);
         }
         finally
@@ -179,8 +148,8 @@ public sealed class GatheringTests : IAsyncLifetime
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && !n.Interrupt);
         await gm!.WaitAsync(Wait);
         Assert.Single(GatherSources());
-        Assert.Equal(1, owner.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]);
-        var items = _app.Services.GetRequiredService<ItemStore>().Load(owner.Role!.Id);
+        Assert.Equal(1, owner.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]);
+        var items = _server.Service<ItemStore>().Load(owner.Role!.Id);
         Assert.True(items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack) > 0);
     }
 
@@ -190,20 +159,21 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var node = await EnterMinerField(alice, "alice");
         await LearnMiner(alice);
-        _app.Services.GetRequiredService<AccountStore>().FailNextEconomyAcknowledgementForTest();
+        _server.Service<AccountStore>().FailNextEconomyAcknowledgementForTest();
         await Cast(alice, node);
         var first = GatherSources();
         Assert.Single(first);
         Assert.StartsWith("gather/", first[0]);
         var initial = await OnLoop("alice", s =>
             (Materials: s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             Count: s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             Count: s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.Equal(1, initial.Count);
         await alice.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
         Assert.Equal(first, GatherSources());
 
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(node.Uuid));
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(3));
         var refresh = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             v => v.Bases.Any(b => b.CollectionInfo?.PointConfigId == node.CollectionInfo.PointConfigId && b.Uuid != node.Uuid));
         var next = refresh.Bases.Single(b => b.CollectionInfo?.PointConfigId == node.CollectionInfo.PointConfigId);
@@ -213,7 +183,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.NotEqual(sources[0], sources[1]);
         var after = await OnLoop("alice", s =>
             (Materials: s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             Count: s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             Count: s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.True(after.Materials > initial.Materials);
         Assert.Equal(2, after.Count);
     }
@@ -224,7 +194,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var node = await EnterMinerField(alice, "alice");
         await LearnMiner(alice);
-        var accounts = _app.Services.GetRequiredService<AccountStore>();
+        var accounts = _server.Service<AccountStore>();
         int attempts = 0;
         accounts.BeforeOwnedCommitForTest = label =>
         {
@@ -232,12 +202,12 @@ public sealed class GatheringTests : IAsyncLifetime
                 throw new IOException("test gather precommit failure");
             return Task.CompletedTask;
         };
-        try { await Cast(alice, node); }
+        try { await Cast(alice, node, advanceSeconds: 7); }
         finally { accounts.BeforeOwnedCommitForTest = null; }
         Assert.Equal(2, attempts);
         Assert.Single(GatherSources());
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
     }
 
     [ClientDataFact]
@@ -246,16 +216,15 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var node = await EnterMinerField(alice, "alice");
         await LearnMiner(alice);
-        var character = _app.Services.GetRequiredService<CharacterService>();
+        var character = _server.Service<CharacterService>();
         int faults = 0;
         Action<GameSession> fail = _ => { faults++; throw new IOException("test gather postcommit notice failure"); };
-        character.StateChanged.Add(fail);
-        try { await Cast(alice, node); }
-        finally { character.StateChanged.Remove(fail); }
+        using (character.StateChanged.Subscribe(fail))
+            await Cast(alice, node, advanceSeconds: 7);
         Assert.Equal(1, faults);
         Assert.Single(GatherSources());
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         await alice.SendGameAsync(GatheringService.Interaction, Request(node));
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
         Assert.Single(GatherSources());
@@ -272,7 +241,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await LearnMiner(alice);
         await LearnMiner(bob);
         long aliceRole = await OnLoop("alice", s => s.Role!.Id);
-        var accounts = _app.Services.GetRequiredService<AccountStore>();
+        var accounts = _server.Service<AccountStore>();
         var failedApply = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         accounts.BeforeOwnedApplyForTest = label =>
         {
@@ -287,25 +256,26 @@ public sealed class GatheringTests : IAsyncLifetime
         {
             await alice.SendGameAsync(GatheringService.Interaction, Request(node));
             Assert.Equal(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
+            await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
+                n => n.DataInfo.EType == InteractInfo.Types.EState.Collection);
+            await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
             await failedApply.Task.WaitAsync(Wait);
         }
         finally { accounts.BeforeOwnedApplyForTest = null; }
         Assert.Single(GatherSources());
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(6));
         await Next(bob, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(node.Uuid));
         // C/D quarantine deliberately requires process recovery; no stale snapshot is allowed to reconnect/save. The
         // server aborts Alice's connection, so the owner is read by role: her session may already be gone.
-        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var loop = _server.Loop;
         Assert.Equal(Ro3Emu.Server.Game.Ownership.RoleOwnerState.RecoveryRequired,
             await loop.InvokeAsync(() => Task.FromResult(loop.Owners!.Cached(aliceRole)!.State)));
         await alice.DisposeAsync();
         await bob.DisposeAsync();
-        await _app.StopAsync();
-        await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
-        await InitializeAsync();
+        await _server.RestartAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Equal(1, await OnLoop("alice", s =>
-            s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+            s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.Single(GatherSources());
         await using var nextBob = await InWorld("Bob", create: false);
         var next = await EnterMinerField(nextBob, "bob");
@@ -320,12 +290,11 @@ public sealed class GatheringTests : IAsyncLifetime
         await using var alice = await InWorld("Alice");
         var node = await EnterMinerField(alice, "alice");
         await LearnMiner(alice);
-        var loop = _app.Services.GetRequiredService<GameLoop>();
-        var life = _app.Services.GetRequiredService<LifeJobService>();
+        var loop = _server.Loop;
+        var life = _server.Service<LifeJobService>();
         var result = await loop.InvokeAsync(async () =>
         {
-            var session = _app.Services.GetRequiredService<SessionRegistry>().All()
-                .Single(s => s.Account == "alice" && s.Role != null);
+            var session = _server.Session("alice");
             using var held = await CharacterService.Lock(session);
             var (error, original) = life.ResolveGather(session, 100100, 0, Scene,
                 node.CollectionInfo.PointConfigId);
@@ -379,13 +348,14 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.Equal((long)alice.Self!.Uuid, state.Uid);
         Assert.Equal((long)node.Uuid, state.DataInfo.ActiveObjId);
         Assert.Equal(3100101, state.DataInfo.CollectionInfo.PlayInfo.PlayConfigId);
-        Assert.True(state.DataInfo.CollectionInfo.PlayInfo.PlayEndTimeStamp > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Assert.True(state.DataInfo.CollectionInfo.PlayInfo.PlayEndTimeStamp > _clock.GetUtcNow().ToUnixTimeMilliseconds());
         int itemsBefore = Count(alice, CharacterService.ItemsSync);
         int lifeBefore = Count(alice, LifeJobService.LifeSync);
         int vigorBefore = Count(alice, LifeJobService.RestrictSync);
 
         await alice.SendGameAsync(GatheringService.Interaction, req);
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && !n.Interrupt);
         Assert.True(Count(alice, CharacterService.ItemsSync) > itemsBefore);
@@ -393,7 +363,7 @@ public sealed class GatheringTests : IAsyncLifetime
         Assert.True(Count(alice, LifeJobService.RestrictSync) > vigorBefore);
         var (material, pointCount) = await OnLoop("alice", s =>
             (s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             s.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
+             s.Season.LifeJob!.GeneralCollectionTimesByMap[Scene].Times[node.CollectionInfo.PointConfigId]));
         Assert.True(material >= 4);
         Assert.Equal(1, pointCount);
         var removed = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.LeaveAoi.Contains(node.Uuid));
@@ -402,7 +372,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await alice.SendGameAsync(GatheringService.Interaction, req);
         Assert.NotEqual(0, (await Next(alice, GatheringService.Interaction, NpcInteractionRsp.Parser)).Result);
         int after = Count(alice, CharacterService.ItemsSync);
-        await Task.Delay(2500); // RefreshInfo._iRefreshTime=2, interpreted as seconds (inferred).
+        await _server.AdvanceAsync(TimeSpan.FromMilliseconds(2500)); // RefreshInfo._iRefreshTime=2, interpreted as seconds (inferred).
         Assert.Equal(after, Count(alice, CharacterService.ItemsSync));
         await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             v => v.Bases.Any(b => b.EntityTemplateID == 7010001 && b.CollectionInfo?.PointConfigId == node.CollectionInfo.PointConfigId));
@@ -439,7 +409,7 @@ public sealed class GatheringTests : IAsyncLifetime
         await alice.WalkAsync(pos.X + 0.3f, pos.Y, pos.Z, stop: true);
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && n.Interrupt);
-        await Task.Delay(4700);
+        await _server.AdvanceAsync(TimeSpan.FromMilliseconds(4700));
         Assert.Equal(before, Count(alice, CharacterService.ItemsSync));
 
         await Gm("alice", "!jump 200 200");
@@ -478,6 +448,7 @@ public sealed class GatheringTests : IAsyncLifetime
             n => n.DataInfo.EType == InteractInfo.Types.EState.Collection);
         int aliceItems = Count(alice, CharacterService.ItemsSync);
         int bobItems = Count(bob, CharacterService.ItemsSync);
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle);
         await Next(bob, GatheringService.StateChange, InteractChangeNtf.Parser,
@@ -508,7 +479,7 @@ public sealed class GatheringTests : IAsyncLifetime
         var change = await Next(alice, MsgId.SwitchSceneLine, SwitchSceneLineResp.Parser);
         await alice.SendGameAsync(MsgId.SceneLoaded, new SceneLoadedReq { SceneId = change.SceneEntry });
         await Next(alice, MsgId.EntitySelf, EntitySelf.Parser);
-        await Task.Delay(4700);
+        await _server.AdvanceAsync(TimeSpan.FromMilliseconds(4700));
         Assert.Equal(items, Count(alice, CharacterService.ItemsSync));
     }
 
@@ -525,12 +496,12 @@ public sealed class GatheringTests : IAsyncLifetime
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Collection);
         await alice.DisposeAsync();
-        await Task.Delay(4700);
+        await _server.AdvanceAsync(TimeSpan.FromMilliseconds(4700));
 
         await using var again = await InWorld("Alice", create: false);
         var (material, counted) = await OnLoop("alice", s =>
             (s.Items.Where(i => i.Entry is 1291010 or 1291020 or 1291021).Sum(i => i.Stack),
-             s.LifeJob!.GeneralCollectionTimesByMap.TryGetValue(Scene, out var map)
+             s.Season.LifeJob!.GeneralCollectionTimesByMap.TryGetValue(Scene, out var map)
                  && map.Times.ContainsKey(node.CollectionInfo.PointConfigId)));
         Assert.Equal(0, material);
         Assert.False(counted);
@@ -554,15 +525,8 @@ public sealed class GatheringTests : IAsyncLifetime
         await Next(alice, GatheringService.StateChange, InteractChangeNtf.Parser,
             n => n.DataInfo.EType == InteractInfo.Types.EState.Idle && n.Interrupt);
         Assert.NotEqual(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-        await Task.Delay(4700);
+        await _server.AdvanceAsync(TimeSpan.FromMilliseconds(4700));
         Assert.Equal(items, Count(alice, CharacterService.ItemsSync));
         Assert.Equal(vigor, Count(alice, LifeJobService.RestrictSync));
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data", "config"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("data/config");
     }
 }

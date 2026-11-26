@@ -17,13 +17,13 @@ namespace Ro3Emu.Tests;
 /// <summary>C/D 13a/E05a: real dispatcher, deadline and GM competitors, and exact economic outcomes.</summary>
 public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
 {
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "cd13a-character-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "cd13a-character-" + Guid.NewGuid().ToString("N"));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
     private GameSession Alice => Service<SessionRegistry>().All().Single(s => s.Account == "alice");
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private EconomySnapshot Cut() => S3EconomyReader.Read(_directory, Catalog.Value);
     private EconomyLedgerWindow Window(EconomySnapshot a, EconomySnapshot b) =>
         S3EconomyReader.ReadLedger(_directory, Catalog.Value, a, b)!;
@@ -33,7 +33,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{web}";
@@ -41,8 +41,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> Enter(string name = "Alice")
@@ -139,7 +138,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         await Task.WhenAll(gm!, timerDone.Task).WaitAsync(Wait);
         Assert.Same(dagger, s.Items.Single(i => i.Guid == dagger.Guid));
         Assert.Equal(1, dagger.Grid); Assert.Equal(oldPotions - 1, potion.Stack);
-        Assert.Equal(dagger.Guid, s.EquipmentPlans.EquipPlans[0].ItemsEquipGrid[1]);
+        Assert.Equal(dagger.Guid, s.Profile.EquipmentPlans.EquipPlans[0].ItemsEquipGrid[1]);
         Assert.Equal(3, s.Items.Where(i => i.Entry == 1200000).Sum(i => i.Stack));
         var closing = Cut(); var ledger = Window(opening, closing); Exact(opening, closing, ledger);
         Assert.Contains(ledger.Legs, x => x.Reason == EconomyReason.InventoryRelocation && x.Asset.Id == dagger.Entry);
@@ -151,7 +150,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
     {
         await using var bot = await Enter();
         var s = Alice; var item = s.Items.Single(i => i.Entry == 1000000);
-        int count = item.Stack; byte[] bag = s.BagState.Info.ToByteArray();
+        int count = item.Stack; byte[] bag = s.Profile.BagState.Info.ToByteArray();
         var beforeRevisions = Service<RoleStore>().ReadRevisionVector(s.Role!.Id);
         var opening = Cut();
         FixtureSql.Execute(Service<AccountStore>(), """
@@ -162,7 +161,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         {
             await Assert.ThrowsAsync<SqliteException>(() => Owned(owner => Service<CharacterService>().UseItemAsync(owner,
                 new ItemUseReq { ItemGuid = item.Guid, ItemCount = 1 })));
-            Assert.Equal(count, item.Stack); Assert.Equal(bag, s.BagState.Info.ToByteArray());
+            Assert.Equal(count, item.Stack); Assert.Equal(bag, s.Profile.BagState.Info.ToByteArray());
             Assert.Equal(count, Service<ItemStore>().Load(s.Role!.Id).Single(i => i.Guid == item.Guid).Stack);
             var rolledBack = Service<RoleStore>().ReadRevisionVector(s.Role.Id);
             foreach (string part in new[] { "inventory", "bag_state", "equip_plans", "stat_plans", "card_plans", "shop" })
@@ -211,7 +210,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         {
             await bot.SendGameAsync(ShopService.BuyCommodity, new BuyCommodityReq { CommodityId = offer, Count = 2 });
             await entered.Task.WaitAsync(Wait);
-            Assert.Equal(balance, s.Progress.Currency[1]); Assert.False(s.Shop!.Bought.ContainsKey(offer));
+            Assert.Equal(balance, s.Progress.Currency[1]); Assert.False(s.Social.Shop!.Bought.ContainsKey(offer));
             Assert.Equal(oldGoods, s.Items.Where(i => i.Entry == goods).Sum(i => i.Stack));
             Assert.Equal(balance - 2 * price, Service<RoleStore>().LoadProgress(s.Role!.Id).Currency[1]);
             Assert.Equal(oldGoods + 2, Service<ItemStore>().Load(s.Role.Id).Where(i => i.Entry == goods).Sum(i => i.Stack));
@@ -222,14 +221,7 @@ public sealed class CharacterFamilyOwnerTests : IAsyncLifetime
         Assert.Equal((0, 2, price), (reply.Result, reply.BuyTimes, reply.Price));
         var closing = Cut(); var ledger = Window(opening, closing);
         Assert.Equal(kind, Assert.Single(ledger.Receipts).CommandKind);
-        Assert.Equal(balance - 2 * price, s.Progress.Currency[1]); Assert.Equal(2, s.Shop!.Bought[offer].Count);
+        Assert.Equal(balance - 2 * price, s.Progress.Currency[1]); Assert.Equal(2, s.Social.Shop!.Bought[offer].Count);
         Exact(opening, closing, ledger);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

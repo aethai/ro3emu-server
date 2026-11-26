@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Ro3Emu.Bot;
 using Ro3Emu.Server;
 
@@ -23,80 +22,24 @@ public static class SyntheticData
 }
 
 /// <summary>
-/// A whole server on the synthetic fixture: free loopback ports, a throwaway data dir, bots ready to play. Stop and
-/// start again (<see cref="RestartAsync"/>) keep the data dir, so a test can check what survives a restart.
+/// Compatibility wrapper over <see cref="TestServer"/> on the synthetic fixture.
 /// </summary>
 public sealed class SyntheticHost : IAsyncDisposable
 {
-    private readonly Action<ServerOptions>? _configure;
-    private readonly TimeProvider? _clock;
+    private readonly TestServer _server;
 
-    private SyntheticHost(string dataDir, Action<ServerOptions>? configure, TimeProvider? clock)
-    {
-        DataDir = dataDir;
-        this._configure = configure;
-        this._clock = clock;
-    }
+    private SyntheticHost(TestServer server) => _server = server;
 
-    public string DataDir { get; }
-    public WebApplication App { get; private set; } = null!;
-    public string Http { get; private set; } = "";
+    public string DataDir => _server.DataDir;
+    public WebApplication App => _server.App;
+    public string Http => _server.Http;
 
-    public static async Task<SyntheticHost> StartAsync(Action<ServerOptions>? configure = null, TimeProvider? clock = null)
-    {
-        var host = new SyntheticHost(Path.Combine(Path.GetTempPath(), "ro3emu-synthetic-" + Guid.NewGuid().ToString("N")), configure, clock);
-        await host.StartCoreAsync();
-        return host;
-    }
+    public static async Task<SyntheticHost> StartAsync(Action<ServerOptions>? configure = null, TimeProvider? clock = null) =>
+        new(await TestServer.StartSyntheticAsync(configure, clock));
 
-    private async Task StartCoreAsync()
-    {
-        var (web, micro, gate) = TestPorts.FreePorts();
-        App = ServerHost.Create([], o =>
-        {
-            o.DataDir = DataDir;
-            o.GameDataDir = SyntheticData.Dir;
-            o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = gate;
-            _configure?.Invoke(o);
-        }, _clock);
-        await App.StartAsync();
-        Http = $"http://127.0.0.1:{web}";
-    }
-
-    public T Service<T>() where T : notnull => App.Services.GetRequiredService<T>();
-
-    /// <summary>A bot that has not logged in yet.</summary>
-    public BotClient NewBot() => new(Http, File.ReadAllText(Path.Combine(DataDir, "gate_rsa_public.pem"))) { OperatorToken = Operator.Token };
-
-    /// <summary>A bot logged in as <paramref name="name"/> (lower case account, password "pw") with a role in the world:
-    /// a new role, or with <paramref name="create"/> false the account's only one.</summary>
-    public async Task<BotClient> InWorldAsync(string name, bool create = true)
-    {
-        var bot = NewBot();
-        await bot.LoginAsync(name.ToLowerInvariant(), "pw");
-        await bot.EnterGateAsync();
-        long role = create ? (await bot.CreateRoleAsync(name)).RoleBaseInfo.Id : bot.Roles.Single().Id;
-        await bot.EnterWorldAsync(role);
-        return bot;
-    }
-
-    /// <summary>Stops the server and starts a new one on the same data dir (new ports).</summary>
-    public async Task RestartAsync()
-    {
-        await StopCoreAsync();
-        await StartCoreAsync();
-    }
-
-    private async Task StopCoreAsync()
-    {
-        await App.StopAsync();
-        await App.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await StopCoreAsync();
-        try { Directory.Delete(DataDir, true); } catch (IOException) { }
-    }
+    public T Service<T>() where T : notnull => _server.Service<T>();
+    public BotClient NewBot() => _server.NewBot();
+    public Task<BotClient> InWorldAsync(string name, bool create = true) => _server.InWorldAsync(name, create);
+    public Task RestartAsync() => _server.RestartAsync();
+    public ValueTask DisposeAsync() => _server.DisposeAsync();
 }

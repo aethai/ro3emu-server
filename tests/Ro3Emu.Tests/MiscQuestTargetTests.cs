@@ -41,7 +41,6 @@ public sealed class MiscQuestTargetTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
@@ -107,27 +106,27 @@ public sealed class MiscQuestTargetTests : IAsyncLifetime
 
         await Accept(302091); // [101021,2,60030020] "Ride the Lion mount"
         await At(302091, 0);
-        await Run(s => { s.MountState.QuestMount = 60030020; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Profile.MountState.QuestMount = 60030020; Tasks.OnStateChanged(s); });
         await Done(302091);
 
         await Accept(306060); // [103016,5] "Use 5 minutes of boosted auto-battle time"
-        await Run(s => { s.WildAfk!.Info.SumHighMultiplierTime = 299; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Activities.WildAfk!.Info.SumHighMultiplierTime = 299; Tasks.OnStateChanged(s); });
         await At(306060, 4);
-        await Run(s => { s.WildAfk!.Info.SumHighMultiplierTime = 300; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Activities.WildAfk!.Info.SumHighMultiplierTime = 300; Tasks.OnStateChanged(s); });
         await Done(306060);
 
         foreach (long task in new long[] { 201001, 201002, 201003 }) await Accept(task);
         await Run(s =>
         {
-            s.AreaConcur ??= new DBAreaConcurInfo();
-            s.AreaConcur.MapInfo[10100101] = new AreaConcurMapInfo { IsClaimedAward = true };
-            s.AreaConcur.AreaInfo[101001] = new AreaConcurAreaInfo { ClaimedAward = { [1] = true } };
+            s.Activities.AreaConcur ??= new DBAreaConcurInfo();
+            s.Activities.AreaConcur.MapInfo[10100101] = new AreaConcurMapInfo { IsClaimedAward = true };
+            s.Activities.AreaConcur.AreaInfo[101001] = new AreaConcurAreaInfo { ClaimedAward = { [1] = true } };
             Tasks.OnStateChanged(s);
         });
         await At(201001, 1); // [318001,2]
         await Done(201002); // [318002,1]
         await At(201003, 0); // [318003,10100102], another map
-        await Run(s => { s.AreaConcur!.MapInfo[10100102] = new AreaConcurMapInfo { IsClaimedAward = true }; Tasks.OnStateChanged(s); });
+        await Run(s => { s.Activities.AreaConcur!.MapInfo[10100102] = new AreaConcurMapInfo { IsClaimedAward = true }; Tasks.OnStateChanged(s); });
         await Done(201001);
         await Done(201003);
     }
@@ -181,8 +180,8 @@ public sealed class MiscQuestTargetTests : IAsyncLifetime
         Assert.Null(await QuestProbe.ReadAsync(_app, "alice", 301000));
         await Run(s =>
         {
-            var info = s.NewActivities!.ActivityInfo.Values.FirstOrDefault(a => a.ActivityParam?.WorldExploration != null);
-            if (info == null) s.NewActivities.ActivityInfo[111] = info = new PlayerActivityInfo
+            var info = s.Activities.NewActivities!.ActivityInfo.Values.FirstOrDefault(a => a.ActivityParam?.WorldExploration != null);
+            if (info == null) s.Activities.NewActivities.ActivityInfo[111] = info = new PlayerActivityInfo
             { ActivityParam = new PlayerActivityParam { WorldExploration = new DBWorldExploration() } };
             var exploration = info.ActivityParam.WorldExploration;
             if (!exploration.PhaseInfos.TryGetValue(101, out var phase)) exploration.PhaseInfos[101] = phase = new() { PhaseCfgId = 101 };

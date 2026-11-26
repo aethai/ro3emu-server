@@ -23,13 +23,12 @@ public sealed class WorldCoreTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var (hp, mp, gp) = TestPorts.FreePorts();
-        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data"); o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp; });
+        _app = ServerHost.Create([], o => { o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data"); o.HttpPort = hp; o.MicroGatePort = mp; o.GameGatePort = gp; });
         await _app.StartAsync(); _http = $"http://127.0.0.1:{hp}";
     }
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_directory, true); } catch (IOException) { }
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
     private async Task<BotClient> InWorld(string name, bool create = true)
     {
@@ -117,7 +116,7 @@ public sealed class WorldCoreTests : IAsyncLifetime
                 && SyncRoleVisitMapInfoNtf.Parser.ParseFrom(e.Body).Mapid.Contains(10100));
             await loop.InvokeAsync(() => Service<DungeonService>().SetGuideAsync(Player("bob"),
                 new MultiDungeonSetJobPositionGuideFlagReq { GuideFlag = true })).WaitAsync(Wait);
-            Assert.True(Player("bob").Dungeons!.FirstSetted);
+            Assert.True(Player("bob").Instances.Dungeons!.FirstSetted);
         }
         finally
         {
@@ -201,10 +200,10 @@ public sealed class WorldCoreTests : IAsyncLifetime
         Assert.NotEqual(0, (await Next(alice, WorldCoreService.MonitorCustom, MonitorCustomDataResp.Parser)).Result);
         await alice.SendGameAsync(31043, new MiniMapStatus { IsOpen = true });
         await Next(alice, WorldCoreService.MiniMap, MiniMapMsg.Parser, p => p.MiniInfo.All(i => i.Uid != (ulong)b.Role.Id));
-        var before = a.SyncVersions[CharacterService.ItemsSync];
+        var before = a.Profile.SyncVersions[CharacterService.ItemsSync];
         await alice.SendGameAsync(MsgId.PlayerAsset, new PlayerAssetReq { AssetType = { 6 } });
         Assert.Contains(6L, (await Next(alice, MsgId.PlayerAsset, PlayerAssetResp.Parser)).AssetType);
-        Assert.True(a.SyncVersions[CharacterService.ItemsSync] > before);
+        Assert.True(a.Profile.SyncVersions[CharacterService.ItemsSync] > before);
         long scene = a.SceneEntry;
         await alice.SendGameAsync(WorldCoreService.SceneQueue, new SceneQueuingReq { SceneId = 10100 });
         Assert.NotEqual(0, (await Next(alice, 99999, APIErrorMsg.Parser, p => p.OriginMsgId == WorldCoreService.SceneQueue)).ErrorCode);
@@ -256,7 +255,7 @@ public sealed class WorldCoreTests : IAsyncLifetime
             var row = System.Text.Json.Nodes.JsonNode.Parse(rows["10100"].GetRawText())!;
             row["_iRoleCntLimit"] = 1; row["_iAllowCreateLine"] = 0;
             rows["10100"] = System.Text.Json.JsonSerializer.SerializeToElement(row);
-            Service<SceneService>().Leaving.Add(async s => { if (s == a) { left.TrySetResult(); await release.Task; } });
+            Service<SceneService>().Leaving.Subscribe(async s => { if (s == a) { left.TrySetResult(); await release.Task; } });
             return Task.CompletedTask;
         });
         var first = Service<GameLoop>().InvokeAsync(() => Service<SceneService>().EnterSceneAsync(a, 10100));
@@ -397,10 +396,26 @@ public sealed class WorldCoreTests : IAsyncLifetime
         Assert.Contains(10111, saved.Mapid);
     }
 
-    private static string RepoRoot()
+    [ClientDataFact]
+    public async Task MiniMapOnlyIncludesNearbyMonsters()
     {
-        var p = new DirectoryInfo(AppContext.BaseDirectory);
-        while (p != null && !Directory.Exists(Path.Combine(p.FullName, "data", "config"))) p = p.Parent;
-        return p?.FullName ?? throw new DirectoryNotFoundException("data/config");
+        await using var alice = await InWorld("MiniMapAlice");
+        var s = Player("minimapalice");
+        await ChangeScene(alice, s, 10111);
+        MonsterUnit? near = null, far = null;
+        await Service<GameLoop>().InvokeAsync(() =>
+        {
+            var world = Service<World>();
+            near = s.VisibleUnits.OfType<MonsterUnit>().FirstOrDefault(m => !m.Dead);
+            far = world.UnitsIn(s.WorldScene).OfType<MonsterUnit>().FirstOrDefault(m => !m.Dead && !s.VisibleUnits.Contains(m));
+            return Task.CompletedTask;
+        });
+        Assert.NotNull(near);
+        Assert.NotNull(far);
+        await alice.SendGameAsync(31043, new MiniMapStatus { IsOpen = true });
+        var mini = await Next(alice, WorldCoreService.MiniMap, MiniMapMsg.Parser,
+            p => p.MiniInfo.Any(i => i.Uid == (ulong)s.Role!.Id));
+        Assert.Contains(mini.MiniInfo, i => i.Uid == (ulong)near!.Uid);
+        Assert.DoesNotContain(mini.MiniInfo, i => i.Uid == (ulong)far!.Uid);
     }
 }

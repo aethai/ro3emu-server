@@ -15,19 +15,12 @@ namespace Ro3Emu.Tests;
 /// <summary>Detached friend projections share durable owner revisions with game and store writers.</summary>
 public sealed class SocialOwnerTests : IAsyncLifetime
 {
-    private readonly string _dataDir = Path.Combine(RepoRoot(), ".loadtest-temp",
+    private readonly string _dataDir = Path.Combine(ClientData.RepoRoot, ".loadtest-temp",
         "social-owner-" + Guid.NewGuid().ToString("N"));
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
-
-    private static string RepoRoot()
-    {
-        for (var path = new DirectoryInfo(AppContext.BaseDirectory); path != null; path = path.Parent)
-            if (File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) return path.FullName;
-        throw new InvalidOperationException("repository root");
-    }
 
     private async Task DisposeDetachedAsync(BotClient bot, long role)
     {
@@ -60,7 +53,6 @@ public sealed class SocialOwnerTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 

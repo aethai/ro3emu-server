@@ -10,6 +10,8 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="MessagePack" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -35,6 +37,7 @@
   <ItemGroup>
     <!-- The synthetic game data (SyntheticData.Dir, docs/guide/testing.md): hand-written, every value invented. -->
     <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

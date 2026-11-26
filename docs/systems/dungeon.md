@@ -244,6 +244,11 @@ original-server encounter parity:
    Killing all configured actors before the time limit wins; timeout, surrender or defeat loses.
 5. For finite OnClickRevive counts, the boss's initial count is per participant. The existing map resurrection point,
    full HP and all-dead loss when no revival option remains are inferred. Scene 3120401 is explicitly NoRevive.
+   NoRevive refuses only the dead player's own revive (ErrorCodeConfig 554). In a boss room (Phantom Realm, every
+   TenGameplayBossConfig dungeon) a teammate's skill or item revive works while the party's count lasts: the boss's
+   `_iOriginalReviveNum` plus the Divine Blessing's `_iAddReviveNum` ("the number of party Revives available in the
+   Dungeon"), then ErrorCodeConfig 570 "Not enough party Revive attempts remaining". Sharing it across the whole room
+   and spending one per revive are inferred.
    The top-level automatic mode appears only in other gameplay types here; no script-only mode is given a generic
    self-revive bypass.
 6. Only the leader may surrender or reset. Reset requires settlement, repeats admission/readiness and creates a new
@@ -255,8 +260,16 @@ original-server encounter parity:
    increment, and later periods accumulate increments up to the configured cap. No allowance is spent on entry.
    Not original: `Ro3Emu:Testing:UnlimitedRewards` (a test realm switch, [activities](activities.md#test-realm-switches-ro3emutesting))
    pays every won clear without checking or spending the balance, and 5062 shows nothing used.
-9. A first personal clear grants the same configured personal reward without spending a recurring balance. The
-   independent first-pass state changes directly to Finish=2 after automatic settlement; no separate bonus is invented.
+9. A first personal clear grants the same configured personal reward without spending a recurring balance.
+   Separately, the boss's first-clear reward (`TenGameplayBossConfig._iPartAward`, MultiverseGroupConfig ->
+   AwardConfig) is paid by claim: 5062 `isFirst` is 1 (Complete) once the boss is cleared and unpaid, and 82587 pays it,
+   rolled once, in the commit that marks it paid (`State.FirstPassPaid`); `isFirst` is then 2 (Finish). Claiming a Hard
+   boss also pays the Normal boss in the same `_kBoss` slot when that one is still unpaid ("you will directly Claim that
+   Boss's Normal First Clear Rewards", Phantom Realm rules). A boss with `_iPartAward` 0 shows Finish once cleared.
+   Paying by claim instead of at settlement (82584 `firstPassAward`), and offering it to roles cleared earlier, is the
+   maintainer's choice *(inferred: the client supports both)*. The paid flags reset with the season, as the records do,
+   so each season pays the reward again (the maintainer's decision on #228; the Realm of the Gods rules say "First Clear
+   records ... from the previous Season's dungeon will not be Kept", and the Phantom Realm rules don't say).
 10. Normal spends its own extra balance first, then an unlocked same-type Hard balance, paying the selected Normal
     boss's reward. When Lua's same-type lookup has multiple Hard candidates, the lowest config id wins.
 11. Team-boss world loot is suppressed because the personal award is paid with its allowance. Story results report
@@ -317,7 +330,8 @@ Reconstructed story encounters (`ReconstructedDungeons`, switch `Ro3Emu:Reconstr
   (`LC_DunGeon_VarDefine.lua:736-741`, processed by `LC_SceneCom_GuideGfx`, which draws each route as the guide arrow
   line), and to an empty list in a 30404 var change after the clear. **(inferred)**: the scripts that set 10021 are
   not in the client, so all routes show from the start (a scene's routes chain into one path: the Culvert's 19 ends
-  where 21 starts). `DungeonService.GuideWays`, `SceneEditorGuides`.
+  where 21 starts), unless the scene names each step's routes (`guides.routes`, 1000301 and 1000401): then a step shows only its
+  own, in 30401 and in a 30404 var change when it begins. `DungeonService.GuideWays`, `SceneEditorGuides`.
 - Solo tuning: the story bosses were built for the original's allied NPC
   companions (mostly not reproduced); untuned, a level-matched player died in 3-36 s and needed 3-38 minutes to win.
   `soloTuning` scales each story template's HP and attack (basis points) so a Swordman at the boss level, every stat
@@ -365,12 +379,15 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
     interaction 5300021, message 5300022), 'Help the Professor Up' (5300026, message 5300023) and the chest (5300052,
     message 5300024), each interaction opened by buff group 53014.
   - The airship (1000501): the chitchat with Bobo, the captain, Wule and Boya (their gated auto-range bubbles
-    5300031-5300034, all four), the boarding and the Evil Boss as before, the look around after the battle (five
+    5300031-5300034), the boarding and the Evil Boss as before, the look around after the battle (five
     bubbles 5300048-5300052) and the talk with the injured captain (dialogue 530003802, whose option triggers
     interaction 5300039 and message 5300039). Stage 2, the cannons, is **inferred**: each 'Board the Cannon' (5300006) on
     one of the three Cannons 5300022 fires 5365001 from the player at the nearest enemy airship (5300015 at point 24,
     5300053 at 61), and three boardings sink a ship at any level; sinking both ends the stage. The original's
     UpperCannon gameplay status (GameplayStatusConfig 12) has no abilities in the client data.
+    The chitchat and the look around each end on the first crew bubble the player walks into (**inferred**): their
+    DungeonQuestConfig goal is [1], which the tracker shows without a counter, so it could never say who was still
+    missing, and waiting for every bubble left players stuck at 'Take a look around'.
   - Payon Forest (1022001): 'Cover Boya and Wule' (reach the standoff point 22 between them and Eddga), then Eddga
     with Boya and Wule (5300086/5300087) fighting beside the player as companions (below).
   - The Peco Peco nest (1051001): the Elusive Pecopeco with the Ancient Nest and Bragis shown.
@@ -417,21 +434,35 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   after it. The engine is generic (`DungeonService.Scripted`): nothing knows a scene, task or NPC id.
   A step may also have a ride (`after.ride`, a `m_kGuidePoints` route): when a player completes it by using an actor,
   that actor walks the route at its own `UnitConfig._fSpeed` (the Deniro: 5.25 m/s) and the participants are moved
-  with it in 100 ms forced-position steps, then the teleport and the next step follow (`DungeonService.Ride.cs`).
+  with it every 100 ms, then the teleport and the next step follow (`DungeonService.Ride.cs`). A seated rider's seat
+  carries it; a rider who is not seated is told to walk there itself (**(proven)** transType 3 ServerControl calls the
+  local player's controlled unit's `SetMoveTargetPos` in every scene, the one transition type a surface scene does not
+  ignore: `LC_Scene_Sync.lua`, `_syncUnitMoveState`) and other viewers are told as if it had walked there.
+  `after.speed` sets the carrier's speed in percent for the ride (sent as attribute 113, which the client moves it
+  at). With `after.drive` (a region) a seated driver steers the carrier after the route (seat `_iType` 0, Driver:
+  `LC_PassengerComponent` hands it the vehicle, `ChangeControlUnit`, and unblocks Move): the carrier follows the
+  driver's walk reports, the exit button is refused (**(inferred)**: holding the driver until the region is a guess,
+  play-tested), and a walk into the region puts the riders down before the teleport; the leg between two reports is
+  tested too, as at 150% a driver can cross the narrow region between them. Other players in the dungeon do not see the
+  Deniro move during the drive: `DroveAsync` updates it on the server only (left for later, only a solo run was
+  played). With `after.alone` the carrier walks the route by itself (nobody is moved with it, it offers no
+  interaction on the way and is shown again where it parked, as the client keeps an NPC's interaction range where it
+  appeared **(inferred)**). 1000301: after the feeding the Deniro walks guide 35 to Bobo's place alone at 150%, then the
+  ride seats the player, who drives it down guide 36 to region 31 (play-tested).
   **(inferred)**: the client has no ride rule (the route and the scene's camera animation are data with no trigger, and
   the original's server script is not shipped), so the speed, the step size and the missing mount are guesses and the
   camera animation (`mianstorybingyicamera`) is not played.
   A step may also hold (`after.hold`, ms, scaled by `ScriptedScenePacePercent`): once it is completed, the next step or the
   result waits that long, so what the step showed is not cut. **(inferred)**: the original script is not shipped and the
   client data has no duration for these, so the airship's holds are estimates (the chitchat's 13 s is the longest of its four
-  bubbles, 12 to 22 words each at `PublicParamConfig.BubblePerWordTime` 2; 2 s between boarding groups, 3 s after the Evil Boss,
+  bubbles, any of which ends it, 12 to 22 words each at `PublicParamConfig.BubblePerWordTime` 2; 2 s between boarding groups, 3 s after the Evil Boss,
   4.5 s for the captain's closing line). When a scripted scene is settled its defeated enemies keep their bodies and go by their
   own `_iBodyRemainTime` (Eddga's body stays where it fell); the living ones and the scene actors are cleared as before.
-  An actor interaction whose `NPCInteractConfig._iStatusID` is a vehicle status (the Deniro's first Ride, 5300005)
-  seats the player in the actor's seat through `WorldInteractionService` (32702, seat 32704; the client's exit button
-  works as for any vehicle); the actor puts them down after 2 s (`SeatedRideMs`, **(inferred)**: nothing in the
-  client says how long the first, failing ride lasts) or when they leave the scene. The second Ride (5300008) has no
-  gameplay status, so the player is not seated during the ride to the depths.
+  An actor interaction whose `NPCInteractConfig._iStatusID` is a vehicle status (the Deniro's Ride, 5300005) seats the
+  player in the actor's seat through `WorldInteractionService` (32702, seat 32704); in 1000301 the seat holds them
+  while they drive the Deniro (the client's exit button and the interaction 4900025 are refused, `ExitHeld`) until
+  the end region puts them down, or they leave the scene. The Deniro's 'Try to Ride' (5300008, no gameplay status,
+  buff 5365101) is not a step of this reconstruction: the walk to Bobo's place follows the feeding.
 - Client events: 32700 on a scene actor (its own UID namespace) with one of the actor's `_iInteractID`, also counted as
   the dungeon message of that interaction's server-hosted action 210 `SendDungeonMessage` (the client never runs it);
   a walk into a server region (regionType 2; no client consumer registers them, so the client never reports them;
@@ -446,11 +477,21 @@ Reconstructed scripted scenes (`Reconstructed/scripted-scenes.json`, same switch
   once in a 30404 var-change event and
   never kept in 30401 (the client calls the function on every push). Louie's game plays stories 1013 and 1014 (plots
   140010 and 140020), which no task triggers and which show this Culvert, Louie's gang and dialogues 1010627001-004.
+- Slides: a step's `slide` (1000201's egg passage) switches each participant's client to its own steerable slide
+  (`LC_Movement_Controller_Slide`) with custom data in 31018 (`enum_CustomData`): Player_SlideSpeed 5400003
+  [side, down] in cm/s, Player_SlideCameraId 5400005, then Player_SlideState 5400001 = 1 (the client enters the slide
+  only once it has a speed). The client moves the player down the steepest slope, steers it with the joystick and
+  reports its position every 0.1 s, so a sliding walk skips the walk check (`SceneService.WalkOnRide`;
+  PublicParamConfig.IgnoreVerifyMaps lists 1000201 and 1000301) and a region is tested along the leg since the last
+  report. The step's buff (5363201, the speed lines; cleared by a scene change or death) is given with it. The step's
+  completion sends state 0 and plays its end skill's 31100 timeline; leaving the scene first also ends it. The speeds,
+  camera 14, the buff and the scene's 1 s wait before its continuation (`continueAfterMs`, then the client's
+  black-screen transition) are **(inferred)**, chosen in play-testing.
 - The next step (or the settlement) after a completing event runs in its own owner scope (`GameLoop.PostLegacy`): the
   route of the message that completed it does not reserve the settlement's role locks. Scene actors are room props
   (`InstanceService.AddPropAsync`), removed at settlement and before the room's final cleanup.
 - Guessed (see each scene's "guessed" list): the corridor region that ends 1000201's first stage, Bobo's place there,
-  the jump as a teleport, the ride to the depths as a walk of guide route 36 (see below), no exploding ant eggs, no seamless 1000201 to 1000301 transfer, which bell hides
+  the jump as a teleport, the Deniro's walk to Bobo's place after the feeding and the ride to the depths as a drive to region 31 (see below), no exploding ant eggs, no seamless 1000201 to 1000301 transfer, which bell hides
   Katie (from both stories), a wrong guess changing nothing, the instrument retrieved within 4 m of mark point 37.
 - `DungeonTests.Scripted` resolves each scene against the client data, plays each one through its client events (wrong
   and premature events included) to a clear, and checks that the story step is delivered and the next one offered.
@@ -474,14 +515,15 @@ Not implemented or unqualified:
   [dungeon-inventory.md](dungeon-inventory.md) for the per-scene inventory.
 - Exported team-boss identity and scene are used, but boss phases, scripted waves/delays, mechanics and task scores
   are not recovered from UI phase descriptions. The team test qualifies a basic boss combat loop, not its encounter.
-- Matchmaking, tactical-team changes, auction/party rewards, honor and an independently mapped first-pass bonus.
-  82587 refuses with RewardMissing; `_iPartAward` and preview rewards do not invent an auction payout.
+- Tactical-team changes: a run keeps its preformed squad (`DungeonService.SendRosterAsync`); there is no reorganization.
+- Auction lots come only from the boss's configured `_iGuildAward` roll; `_iPartAward` and preview items never become
+  lots.
 - 30123 belongs to Dragon Island and 30132 to Dragon Island/LeisureForty client paths, so ordinary dungeons do not
   emit those mode-specific pushes. The 30126 alias/scoring formula is unverified; no fabricated scoring push is sent.
 - Full client UI behavior, especially empty auction/first-pass repeated fields in 82584. This has not been checked
   in the original client; protobuf/wire tests do not prove screen rendering.
 
-Tests (`DungeonTests`, `TowerTests`, `TowerShopTests`):
+Tests (`DungeonTests`, `TowerTests`, `TowerShopTests`, `FirstPassAwardTests`):
 
 - The revive case moves the player with the authoritative in-map teleport before its wire kill; the server rejects
   a 33 m walk immediately after a revive as a speed violation.

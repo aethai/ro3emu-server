@@ -71,8 +71,8 @@ public sealed partial class LotteryActivityTests
         var boundary = new DateTimeOffset(tomorrow, _clock.LocalTimeZone.GetUtcOffset(tomorrow));
         _clock.Set(boundary.AddMilliseconds(-1));
         await DrainDeadlines();
-        Assert.Equal(1, session.Lottery!.LotteryPool[201].DailyCount);
-        var before = session.Lottery.Clone();
+        Assert.Equal(1, session.Activities.Lottery!.LotteryPool[201].DailyCount);
+        var before = session.Activities.Lottery.Clone();
         var tickets = session.Items.Where(i => i.Entry == 1250717).Sum(i => i.Stack);
         // This is the original polling transformation, driven at exactly the same late clock instant.
         DBLotteryData? expected = null;
@@ -80,13 +80,13 @@ public sealed partial class LotteryActivityTests
             expected = (DBLotteryData)typeof(LotteryService).GetMethod("Project", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(service, [session, before, true])!);
         Assert.NotNull(expected);
-        Assert.Equal(expected, session.Lottery);
-        Assert.Equal(0, session.Lottery.LotteryPool[201].DailyCount);
-        Assert.Equal(before.PityRecords, session.Lottery.PityRecords);
+        Assert.Equal(expected, session.Activities.Lottery);
+        Assert.Equal(0, session.Activities.Lottery.LotteryPool[201].DailyCount);
+        Assert.Equal(before.PityRecords, session.Activities.Lottery.PityRecords);
         Assert.Equal(tickets, session.Items.Where(i => i.Entry == 1250717).Sum(i => i.Stack));
         using var stored = JsonDocument.Parse(_app.Services.GetRequiredService<RoleStore>().LoadLottery(session.Role!.Id)!);
         Assert.Equal(expected, DBLotteryData.Parser.ParseFrom(stored.RootElement.GetProperty("Data").GetBytesFromBase64()));
-        Assert.Equal(session.LotteryDay, stored.RootElement.GetProperty("Day").GetInt64());
+        Assert.Equal(session.Activities.LotteryDay, stored.RootElement.GetProperty("Day").GetInt64());
         var bytes = _app.Services.GetRequiredService<RoleStore>().LoadLottery(session.Role.Id);
         await DrainDeadlines();
         Assert.Equal(bytes, _app.Services.GetRequiredService<RoleStore>().LoadLottery(session.Role.Id));
@@ -107,9 +107,9 @@ public sealed partial class LotteryActivityTests
         await loop.InvokeAsync(() => { loop.Remove(_app.Services.GetRequiredService<Deadlines>()); return Task.CompletedTask; });
         _clock.Set(DateTimeOffset.FromUnixTimeSeconds(window.End).AddMilliseconds(-1));
         await loop.InvokeAsync(() => lottery.ReconcileAsync(session));
-        Assert.True(session.Lottery!.LotteryPool[201].IsOpen);
+        Assert.True(session.Activities.Lottery!.LotteryPool[201].IsOpen);
         await RunLotteryDeadlineAt(session, DateTimeOffset.FromUnixTimeSeconds(window.End).AddMilliseconds(250));
-        Assert.False(session.Lottery.LotteryPool[201].IsOpen);
+        Assert.False(session.Activities.Lottery.LotteryPool[201].IsOpen);
         await bot.SendGameAsync(LotteryService.DrawRequest, new LotteryReq { PoolId = 201, Type = ELotteryPoolType.GachaCountMin });
         Assert.Equal(ErrorCodes.ActivityClosed, (await Next(bot, LotteryService.DrawRequest, LotteryResp.Parser)).Result);
         using var saved = JsonDocument.Parse(_app.Services.GetRequiredService<RoleStore>().LoadLottery(session.Role.Id)!);

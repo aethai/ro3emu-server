@@ -53,12 +53,10 @@ public sealed partial class DungeonTests
             session.Dead = true;
         });
         Action<GameSession> fail = s => { if (s == session) throw new InvalidOperationException("postcommit test hook"); };
-        Service<CharacterService>().StateChanged.Add(fail);
-        try
+        using (Service<CharacterService>().StateChanged.Subscribe(fail))
         {
             await Assert.ThrowsAsync<InvalidOperationException>(() => OnLoop(() => Service<WorldCoreService>().ItemReviveAsync(session)));
         }
-        finally { Service<CharacterService>().StateChanged.Remove(fail); }
         Assert.False(session.Dead);
         Assert.True(Service<CharacterService>().Stats(session)[2000] > 0);
         Assert.Equal(before - 1, Items(alice, 1112001));
@@ -105,7 +103,6 @@ public sealed partial class DungeonTests
         }
         await _app.StopAsync();
         await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         await InitializeAsync();
         await using var recovered = await InWorld("Alice", create: false);
         Assert.Equal(role, (long)recovered.Self!.Uuid);
@@ -133,13 +130,11 @@ public sealed partial class DungeonTests
             aborted = true;
             s.Channel.Abort(); // StateChanged follows the durable receipt and the revive claim's synchronous Apply.
         };
-        Service<CharacterService>().StateChanged.Add(abort);
-        try
+        using (Service<CharacterService>().StateChanged.Subscribe(abort))
         {
             try { await OnLoop(() => Service<WorldCoreService>().ItemReviveAsync(session)); }
             catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
         }
-        finally { Service<CharacterService>().StateChanged.Remove(abort); }
         Assert.True(aborted);
         Assert.False(session.Dead);
         Assert.Equal(before - 1, Items(alice, 1112001));
@@ -364,7 +359,7 @@ public sealed partial class DungeonTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<CombatService>().PlayerDied.Add(async player =>
+            Service<CombatService>().PlayerDied.Subscribe(async player =>
             {
                 if (player != session) return;
                 entered.TrySetResult();
@@ -421,7 +416,7 @@ public sealed partial class DungeonTests
         Assert.Null(Service<InstanceService>().Find(instance));
         await Next(alice, CombatService.ReviveInfo, SyncClientPlayerReviveInfoNtf.Parser,
             info => !info.BDead && info.SceneEntry == outside);
-        Assert.Empty(session.Dungeons!.Records);
+        Assert.Empty(session.Instances.Dungeons!.Records);
         await alice.SendGameAsync(DungeonService.Leave, new LeaveDungeonReq());
         Assert.Equal(ErrorCodes.SceneMissing, (await Next(alice, DungeonService.Leave, LeaveDungeonRsp.Parser)).Result);
         _clock.Advance(TimeSpan.FromSeconds(10));
@@ -452,7 +447,7 @@ public sealed partial class DungeonTests
         await OnLoop(async () =>
         {
             foreach (var monster in session.DungeonAttempt!.Room.Monsters) monster.Dead = true;
-            session.LastCombatMs = MonsterService.NowMs;
+            session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             session.StatusBits |= 1L << 15;
             session.NoRegenUntilMs = long.MaxValue; // fighting no longer pauses regeneration
             await Service<CharacterService>().SetHpSpAsync(session, hp, sp);
@@ -643,7 +638,7 @@ public sealed partial class DungeonTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await OnLoop(() =>
         {
-            Service<SceneService>().Leaving.Add(async s =>
+            Service<SceneService>().Leaving.Subscribe(async s =>
             {
                 if (s != Session(alice)) return;
                 entered.TrySetResult();

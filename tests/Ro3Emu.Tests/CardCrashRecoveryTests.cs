@@ -28,7 +28,7 @@ public sealed class CardCrashRecoveryTests
         var (http, micro, game) = TestPorts.FreePorts();
         var app = ServerHost.Create([], o =>
         {
-            o.DataDir = dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
         });
         await app.StartAsync();
@@ -63,7 +63,7 @@ public sealed class CardCrashRecoveryTests
             await Task.Delay(20);
         app.Services.GetRequiredService<TaskService>().BeforeProgress = session =>
         {
-            if (session.Library?.Cards.TryGetValue(card, out var value) != true || !value.TreasureUnlock)
+            if (session.Profile.Library?.Cards.TryGetValue(card, out var value) != true || !value.TreasureUnlock)
                 return Task.CompletedTask;
             PublishBarrier(barrier, role, card);
             return Task.Delay(Timeout.InfiniteTimeSpan);
@@ -75,18 +75,18 @@ public sealed class CardCrashRecoveryTests
     [ClientDataFact]
     public async Task ProcessCrashAfterLibraryCommitRecoversQuestOnceOnReconnect()
     {
-        string scratchRoot = Path.GetFullPath(Path.Combine(RepoRoot(), ".loadtest-temp"));
+        string scratchRoot = Path.GetFullPath(Path.Combine(ClientData.RepoRoot, ".loadtest-temp"));
         string dataDir = Path.Combine(scratchRoot, "step08-card-crash-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dataDir);
         string barrier = Path.Combine(dataDir, "committed.barrier");
         var start = new ProcessStartInfo("dotnet")
         {
-            WorkingDirectory = RepoRoot(), UseShellExecute = false, CreateNoWindow = true,
+            WorkingDirectory = ClientData.RepoRoot, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
         };
         foreach (string argument in new[] { "vstest", typeof(CardCrashRecoveryTests).Assembly.Location,
             "--TestCaseFilter:FullyQualifiedName~CrashChildAfterLibraryCommit",
-            "--ResultsDirectory:" + Path.Combine(RepoRoot(), ".loadtest", "step08-results") })
+            "--ResultsDirectory:" + Path.Combine(ClientData.RepoRoot, ".loadtest", "step08-results") })
             start.ArgumentList.Add(argument);
         start.Environment[CrashDirEnv] = dataDir;
         start.Environment[BarrierEnv] = barrier;
@@ -167,7 +167,7 @@ public sealed class CardCrashRecoveryTests
             var (http, micro, game) = TestPorts.FreePorts();
             app = ServerHost.Create([], o =>
             {
-                o.DataDir = dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+                o.DataDir = dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
                 o.HttpPort = http; o.MicroGatePort = micro; o.GameGatePort = game;
             });
             await app.StartAsync();
@@ -241,11 +241,4 @@ public sealed class CardCrashRecoveryTests
     private static int HighQualityCard(GameData data) => (int)GameData.Int(data.Table("ItemConfig").Values.First(row =>
         GameData.Int(row, "_iType") == 4 && GameData.Int(row, "_iSubType") == 400 &&
         GameData.Int(row, "_iQuality") >= 4), "_iID");
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "data"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new DirectoryNotFoundException("repo data");
-    }
 }

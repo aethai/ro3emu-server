@@ -28,7 +28,7 @@ public sealed class PowerTests : IAsyncLifetime
         _app = ServerHost.Create([], o =>
         {
             o.DataDir = _dataDir;
-            o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = http;
             o.MicroGatePort = micro;
             o.GameGatePort = game;
@@ -41,15 +41,7 @@ public sealed class PowerTests : IAsyncLifetime
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("repo root not found");
     }
 
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -117,8 +109,8 @@ public sealed class PowerTests : IAsyncLifetime
             gear.Enchantments[enchant] = new ItemEnchantment { Attr = new() { [103] = 1 } };
             s.Items.Add(gear);
             s.Items.Add(new InvItem { Guid = 9_100_002, Entry = cardEntry, Stack = 1, Grid = CharacterService.CardGrid(1, 1), Attrs = new() { [502] = 1 } });
-            s.EquipLevels.Strength[1] = 1;
-            s.EquipLevels.Refine[1] = 1;
+            s.Profile.EquipLevels.Strength[1] = 1;
+            s.Profile.EquipLevels.Refine[1] = 1;
             await Service<PowerService>().PublishAsync(s);
             return true;
         });
@@ -236,7 +228,7 @@ public sealed class PowerTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, DailyActivityService.StageBatchGain, StageRewardBatchGainResp.Parser)).Result);
         await alice.SendGameAsync(DailyActivityService.StageGain, new StageRewardGainReq { StageId = 8003 });
         Assert.Equal(ErrorCodes.CurrencyShort, (await Next(alice, DailyActivityService.StageGain, StageRewardGainResp.Parser)).Result);
-        var claims = await OnLoop("Alice", s => Task.FromResult(s.Daily!.Claims.ToArray()));
+        var claims = await OnLoop("Alice", s => Task.FromResult(s.Activities.Daily!.Claims.ToArray()));
         Assert.Contains(1, claims);
         Assert.Contains(8001, claims);
         Assert.Contains(8002, claims);
@@ -257,7 +249,7 @@ public sealed class PowerTests : IAsyncLifetime
         long[] Deploy(GameSession s, long mark)
         {
             var guids = new List<long>();
-            s.Emblems.Plans[s.Emblems.CurrentPlan].Slots.Clear();
+            s.Profile.Emblems.Plans[s.Profile.Emblems.CurrentPlan].Slots.Clear();
             s.Items.RemoveAll(i => i.Entry == echo);
             for (int slot = 1; slot <= 4; slot++)
             {
@@ -268,7 +260,7 @@ public sealed class PowerTests : IAsyncLifetime
                 };
                 for (int i = 0; i < 4; i++) item.Attrs[1021 + i] = mark;
                 s.Items.Add(item);
-                s.Emblems.Plans[s.Emblems.CurrentPlan].Slots[slot] = item.Guid;
+                s.Profile.Emblems.Plans[s.Profile.Emblems.CurrentPlan].Slots[slot] = item.Guid;
                 guids.Add(item.Guid);
             }
             return [.. guids];
@@ -280,10 +272,10 @@ public sealed class PowerTests : IAsyncLifetime
             s.Progress.Stats[0] = 99; // a visible floor(STR / 4) bonus, below the cap of 50
             Deploy(s, 0); // no lit mark: the plan scores items only
             var bare = character.Stats(s);
-            long barePower = emblems.GenrePower(s, s.Emblems).SeasonPower;
+            long barePower = emblems.GenrePower(s, s.Profile.Emblems).SeasonPower;
             Deploy(s, 1001);
             var lit = character.Stats(s);
-            long litPower = emblems.GenrePower(s, s.Emblems).SeasonPower;
+            long litPower = emblems.GenrePower(s, s.Profile.Emblems).SeasonPower;
             var skills = emblems.ResonanceSkills(s).Order().ToArray();
             long stage = EmblemService.Resonances(s, Data)[1001];
             s.Progress.Career = 1100; // another job: the conversion and job-bound rows do not apply

@@ -23,10 +23,10 @@ public sealed class MailAdventureEconomyTests : IAsyncLifetime
         public void Advance(long value) => Interlocked.Add(ref _seconds, value);
     }
 
-    private readonly string _directory = Path.Combine(RepoRoot(), ".loadtest-temp", "e03-mail-adventure-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(ClientData.RepoRoot, ".loadtest-temp", "e03-mail-adventure-" + Guid.NewGuid().ToString("N"));
     private readonly TestClock _clock = new();
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(8);
-    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(RepoRoot(), "data")));
+    private static readonly Lazy<EconomyCatalog> Catalog = new(() => EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data")));
     private WebApplication _app = null!;
     private string _http = "";
     private T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -63,7 +63,7 @@ public sealed class MailAdventureEconomyTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
             o.PlayBook = 101; o.SeasonStart = "2026-10-05";
         }, _clock);
@@ -76,13 +76,6 @@ public sealed class MailAdventureEconomyTests : IAsyncLifetime
         await _app.StopAsync(); await _app.DisposeAsync();
         SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        var path = new DirectoryInfo(AppContext.BaseDirectory);
-        while (path != null && !File.Exists(Path.Combine(path.FullName, "Ro3Emu.slnx"))) path = path.Parent;
-        return path?.FullName ?? throw new InvalidOperationException("repo root");
     }
 
     private async Task<BotClient> InWorld(string name)
@@ -172,9 +165,9 @@ public sealed class MailAdventureEconomyTests : IAsyncLifetime
         {
             var session = Service<SessionRegistry>().All().Single(s => s.Role?.Id == (long)bot.Self!.Uuid);
             await Service<NewActivityService>().ReconcileAsync(session);
-            var eve = session.NewActivities!.ActivityInfo[117];
+            var eve = session.Activities.NewActivities!.ActivityInfo[117];
             Assert.True(eve.CycleStartTime > 0 && eve.CycleEndTime <= _clock.GetUtcNow().ToUnixTimeSeconds());
-            Assert.Equal(eve.CycleStartTime, session.ActivityRuntime.EveSettledCycleStart);
+            Assert.Equal(eve.CycleStartTime, session.Activities.ActivityRuntime.EveSettledCycleStart);
             var saved = System.Text.Json.JsonSerializer.Deserialize<ActivityRuntimeState>(
                 Service<RoleStore>().LoadActivityRuntime(session.Role!.Id)!);
             Assert.Equal(eve.CycleStartTime, saved!.EveSettledCycleStart);

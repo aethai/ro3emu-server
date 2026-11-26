@@ -1,0 +1,41 @@
+using System.Text.Json;
+using Ro3Emu.Server.Data;
+
+namespace Ro3Emu.Server.Game;
+
+public sealed partial class CombatService
+{
+    /// <summary>A player's chant from the role's own sheet, by the formula the client shows (<see cref="ChantMilliseconds"/>).</summary>
+    internal int ChantMs(GameSession s, JsonElement row) => ChantMilliseconds(_data, row, _character.Stats(s));
+
+    private const int PhenGroup = 20240;
+
+    /// <summary>Card: Phen, 2024001..4: "Control effects cannot interrupt casting." See <see cref="BreakForbiddenCastAsync"/>.</summary>
+    internal static bool ControlCannotInterrupt(GameSession s) => s.Buffs.Any(b => b.ConfigId / 100 == PhenGroup && b.ExpireMs > s.NowMs);
+
+    /// <summary>A*cspd/(B+C*cspd) from PublicParamConfig, cast speed clamped to FinalAtkSpdThdAndCastSpdThd[1].</summary>
+    private static double VariableChantReduction(GameData data, double castSpeed)
+    {
+        var p = Data.Config.PublicParams.Of(data);
+        double speed = Math.Max(0, castSpeed);
+        if (p.FinalAtkSpdThdAndCastSpdThd is { Length: > 1 } limits) speed = Math.Min(speed, limits[1]);
+        double denominator = (p.VariableChantPerParamB ?? 0) + (p.VariableChantPerParamC ?? 0) * speed;
+        return denominator > 0 ? (p.VariableChantPerParamA ?? 0) * speed / denominator : 0;
+    }
+
+    /// <summary>LC_DAL_PlayerInfo.GetRealPropertyValue(PreVarChant): per_varchant - A*cspd/(B+C*cspd).
+    /// AttributeConfig 201..204 names additive/percentage variable/fixed CT; PublicParamConfig supplies A/B/C.
+    /// (inferred) Apply the displayed variable factor to the configured variable time, fixed separately, floor ms.
+    /// A negative factor cannot schedule a hit before acceptance. Absent formula inputs preserve the base timing.
+    /// (inferred) Card: Phen's "Variable CT +25%" is 1335 buff_per_varchant, of calculation type 4 in group 202: the group's formula
+    /// multiplies a base of 0 and gives it nothing, so it adds here as 202 does. Only Phen's four rows carry 1335.</summary>
+    internal static int ChantMilliseconds(GameData data, JsonElement row, StatSheet stats)
+    {
+        double reduction = VariableChantReduction(data, stats[AttributeId.CastSpeed]);
+        double variable = Math.Max(0, GameData.Int(row, "_iChantVar") + stats[AttributeId.VarChant])
+            * Math.Max(0, 1 + (stats[AttributeId.PerVarChant] + stats[AttributeId.BuffPerVarChant]) / 10000.0 - reduction);
+        double fixedTime = Math.Max(0, GameData.Int(row, "_iChantFix") + stats[AttributeId.FixChant])
+            * Math.Max(0, 1 + stats[AttributeId.PerFixChant] / 10000.0);
+        return (int)Math.Clamp(Math.Floor(variable + fixedTime), 0, int.MaxValue);
+    }
+}

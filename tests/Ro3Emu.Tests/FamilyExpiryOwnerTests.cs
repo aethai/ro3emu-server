@@ -28,7 +28,7 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _directory; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _directory; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game;
         }, _clock);
         await _app.StartAsync(); _http = $"http://127.0.0.1:{web}";
@@ -37,7 +37,6 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _app.StopAsync(); await _app.DisposeAsync();
-        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_directory, true); } catch (IOException) { }
     }
 
@@ -108,7 +107,7 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
         var due = DateTimeOffset.FromUnixTimeMilliseconds(_clock.GetUtcNow().ToUnixTimeMilliseconds() + 1250);
         await Service<GameLoop>().InvokeAsync(async () =>
         {
-            var info = Session.Wardrobe!.Clone();
+            var info = Session.Profile.Wardrobe!.Clone();
             info.AllLightUpAppearances[TimedHead] = new DBAppearanceInfo
             { AppearanceId = TimedHead, OverdueTimeMs = due.ToUnixTimeMilliseconds() };
             Service<RoleStore>().SaveWardrobe(Session.Role!.Id, info.ToByteArray());
@@ -125,7 +124,7 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
             await staged.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await Service<GameLoop>().InvokeAsync(() =>
             {
-                Assert.False(Session.Wardrobe!.CurUseAppearances.ContainsKey(1));
+                Assert.False(Session.Profile.Wardrobe!.CurUseAppearances.ContainsKey(1));
                 _clock.Set(due);
                 Service<Deadlines>().Tick(default);
                 return Task.CompletedTask;
@@ -139,9 +138,9 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
         await Service<GameLoop>().InvokeAsync(() => { Service<Deadlines>().Tick(default); return Task.CompletedTask; });
         await Next(bot, WardrobeService.WardrobeSync, DBWardRobeInfoIncrement.Parser,
             p => p.AllLightUpAppearances.TryGetValue(TimedHead, out var head) && head.Del);
-        Assert.False(Session.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedHead));
-        Assert.False(Session.Wardrobe.CurUseAppearances.ContainsKey(1));
-        Assert.Equal(Session.Wardrobe.ToByteArray(), Service<RoleStore>().LoadWardrobe(Session.Role!.Id));
+        Assert.False(Session.Profile.Wardrobe!.AllLightUpAppearances.ContainsKey(TimedHead));
+        Assert.False(Session.Profile.Wardrobe.CurUseAppearances.ContainsKey(1));
+        Assert.Equal(Session.Profile.Wardrobe.ToByteArray(), Service<RoleStore>().LoadWardrobe(Session.Role!.Id));
     }
 
     private Task ArmStageBarrier(string familyLabel, string deadlineOrigin, TaskCompletionSource staged,
@@ -170,12 +169,5 @@ public sealed class FamilyExpiryOwnerTests : IAsyncLifetime
         private long _ticks = initial.UtcTicks;
         public void Set(DateTimeOffset value) => Interlocked.Exchange(ref _ticks, value.UtcTicks);
         public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _ticks), TimeSpan.Zero);
-    }
-
-    private static string RepoRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx"))) return dir.FullName;
-        throw new DirectoryNotFoundException("repository root");
     }
 }

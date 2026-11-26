@@ -53,8 +53,8 @@ public sealed partial class GenreTests
             await reached.Task.WaitAsync(OwnerWait);
             await Service<GameLoop>().InvokeAsync(() =>
             {
-                Assert.Equal(0, other.Genre!.ResponseId);
-                Assert.True(mine.Genre!.MyRecommend?.MyRecommendPlans.Count is null or 0);
+                Assert.Equal(0, other.Profile.Genre!.ResponseId);
+                Assert.True(mine.Profile.Genre!.MyRecommend?.MyRecommendPlans.Count is null or 0);
                 return Task.CompletedTask;
             });
             // The other participant is reached through another socket; it must wait on the same role key.
@@ -74,7 +74,7 @@ public sealed partial class GenreTests
         Assert.Equal("Kept", saved.GenreMap.SystemMap[1].PlanName);
         Assert.Equal(response.ResponseId, saved.ResponseId);
         Assert.Contains(response.ResponseId, saved.OtherRecommend.Recommend[mine.Role!.Id].GenrePlans.Keys);
-        Assert.Contains(response.ResponseId, mine.Genre!.MyRecommend.MyRecommendPlans[other.Role.Id].GenrePlans.Keys);
+        Assert.Contains(response.ResponseId, mine.Profile.Genre!.MyRecommend.MyRecommendPlans[other.Role.Id].GenrePlans.Keys);
     }
 
     private async Task<long> GearRecommendation(BotClient donor, BotClient seeker)
@@ -136,7 +136,7 @@ public sealed partial class GenreTests
         var response = await Next(donor, 82812, GenreResponseCodeResp.Parser);
         Assert.Equal(0, response.Result);
         await using var restored = await login!.WaitAsync(OwnerWait);
-        var state = Session(restored).Genre!;
+        var state = Session(restored).Profile.Genre!;
         Assert.Equal(response.ResponseId, state.ResponseId);
         Assert.Contains(response.ResponseId, state.OtherRecommend.Recommend[Session(donor).Role!.Id].GenrePlans.Keys);
         Assert.Equal(state.ToByteArray(), Service<RoleStore>().LoadGenre(seekerId));
@@ -183,7 +183,7 @@ public sealed partial class GenreTests
         Assert.Equal(0, (await Next(seeker, 82813, GenreSeekerApplyPlanResp.Parser)).Result);
         await using var restored = await login!.WaitAsync(OwnerWait);
         Assert.Equal(donorId, Session(restored).Role!.Id);
-        Assert.Equal(ownGuid, Session(seeker).EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
+        Assert.Equal(ownGuid, Session(seeker).Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
         Assert.Equal(1, Service<ItemStore>().Load(Session(seeker).Role!.Id).Single(i => i.Guid == ownGuid).Grid);
     }
 
@@ -197,7 +197,7 @@ public sealed partial class GenreTests
         var donorSession = Session(donor); var target = Session(seeker);
         long donorGuid = donorSession.Items.Single(i => i.Entry == 2010121).Guid;
         long ownGuid = target.Items.Single(i => i.Entry == 2010121).Guid;
-        var catalog = EconomyCatalog.Load(Path.Combine(RepoRoot(), "data"));
+        var catalog = EconomyCatalog.Load(Path.Combine(ClientData.RepoRoot, "data"));
         var database = Service<AccountStore>().DatabasePath;
         var opening = EconomySnapshotReader.Read(database, catalog, "auto");
         var reached = Signal(); var release = Signal(); var deferred = Signal();
@@ -242,7 +242,7 @@ public sealed partial class GenreTests
         (await gm!.WaitAsync(OwnerWait)).EnsureSuccessStatusCode();
         Assert.Equal(1, target.Items.Single(i => i.Guid == ownGuid).Grid);
         Assert.DoesNotContain(donorSession.Items, i => i.Guid == donorGuid);
-        Assert.Equal(ownGuid, target.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
+        Assert.Equal(ownGuid, target.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
     }
 
     [ClientDataFact]
@@ -283,7 +283,7 @@ public sealed partial class GenreTests
         Assert.Equal(0, (await Next(seeker, 82813, GenreSeekerApplyPlanResp.Parser)).Result);
         Assert.Equal(0, (await Next(donor, CharacterService.EquipItemOpr, EquipItemOprResp.Parser)).Result);
         Assert.Equal(1, donorSession.Items.Single(i => i.Guid == donorGuid).Grid);
-        Assert.Equal(ownGuid, recipient.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
+        Assert.Equal(ownGuid, recipient.Profile.EquipmentPlans.EquipPlans[1].ItemsEquipGrid[1]);
         Assert.NotEqual(donorGuid, ownGuid);
     }
 
@@ -295,14 +295,14 @@ public sealed partial class GenreTests
         await Level("faultdonor", 40); await Level("faultseeker", 40);
         long response = await GearRecommendation(donor, seeker);
         var session = Session(seeker);
-        var old = session.Genre!.ToByteArray();
+        var old = session.Profile.Genre!.ToByteArray();
         FixtureSql.Execute(Service<AccountStore>(), "CREATE TRIGGER genre_ledger_fault BEFORE INSERT ON economy_entry BEGIN SELECT RAISE(ABORT,'genre ledger fault'); END");
         try
         {
             await seeker.SendGameAsync(82813, new GenreSeekerApplyPlanReq
             { PlanId = 1, ResponseId = response, ResponseUserId = Session(donor).Role!.Id, SystemType = { [3] = 1 } });
             Assert.Equal(ErrorCodes.Unknown, (await Next(seeker, 82813, GenreSeekerApplyPlanResp.Parser)).Result);
-            Assert.Equal(old, session.Genre.ToByteArray());
+            Assert.Equal(old, session.Profile.Genre.ToByteArray());
             Assert.Equal(old, Service<RoleStore>().LoadGenre(session.Role!.Id));
             Assert.Equal(0, session.Items.Single(i => i.Entry == 2010121).Grid);
             Assert.Equal(0, Service<ItemStore>().Load(session.Role.Id).Single(i => i.Entry == 2010121).Grid);

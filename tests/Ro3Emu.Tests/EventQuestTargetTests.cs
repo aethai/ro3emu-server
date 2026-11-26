@@ -44,7 +44,7 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
         var (web, micro, game) = TestPorts.FreePorts();
         _app = ServerHost.Create([], o =>
         {
-            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(RepoRoot(), "data");
+            o.DataDir = _dataDir; o.GameDataDir = Path.Combine(ClientData.RepoRoot, "data");
             o.HttpPort = web; o.MicroGatePort = micro; o.GameGatePort = game; o.PlayBook = 101; o.SeasonStart = "2026-05-19";
             o.GmAccounts = ["eventgm", "eventseason"];
         }, _clock);
@@ -54,15 +54,7 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _app.StopAsync(); await _app.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { Directory.Delete(_dataDir, true); } catch (IOException) { }
-    }
-
-    private static string RepoRoot()
-    {
-        for (var p = new DirectoryInfo(AppContext.BaseDirectory); p != null; p = p.Parent)
-            if (File.Exists(Path.Combine(p.FullName, "Ro3Emu.slnx"))) return p.FullName;
-        throw new DirectoryNotFoundException();
+        await _app.StopAsync(); await _app.DisposeAsync(); try { Directory.Delete(_dataDir, true); } catch (IOException) { }
     }
 
     private async Task<BotClient> Bot(string name)
@@ -176,8 +168,8 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
         await Shows(h, 4900020, 0); // the Gate stage passed it: the assists step shows
         await OnLoop(async () =>
         {
-            foreach (var handler in Service<CombatService>().PvpDealtAsync) await handler(h, d, 10, false);
-            foreach (var handler in Service<CombatService>().PvpDealtAsync) await handler(a, d, 10, true);
+            await Service<CombatService>().PvpDealtAsync.InvokeAsync(h, d, 10, false);
+            await Service<CombatService>().PvpDealtAsync.InvokeAsync(a, d, 10, true);
         });
         Assert.Equal(1, await Read(() => wars.SiegeTrackerValue(h, 210003)));
         Assert.Equal(0, await Read(() => wars.SiegeTrackerValue(a, 210003))); // the killer is no assist
@@ -194,11 +186,11 @@ public sealed class EventQuestTargetTests : IAsyncLifetime
         tasks.GuildWarPoints = _ => 12000;
         await OnLoop(() =>
         {
-            s.NewActivities ??= new DBNewActivityInfo();
+            s.Activities.NewActivities ??= new DBNewActivityInfo();
             var world = new DBWorldExploration();
             foreach (var (phase, rate) in new[] { (101L, 10000), (102L, 5050), (103L, 0) })
                 world.PhaseInfos[phase] = new DBWorldExplorationPhase { PhaseCfgId = phase, TotalRate = rate };
-            s.NewActivities.ActivityInfo[111] = new PlayerActivityInfo { ActivityParam = new PlayerActivityParam { WorldExploration = world } };
+            s.Activities.NewActivities.ActivityInfo[111] = new PlayerActivityInfo { ActivityParam = new PlayerActivityParam { WorldExploration = world } };
             return Task.CompletedTask;
         });
         await QuestProbe.GmAsync(_http, "eventseason", "!quest accept 120006");

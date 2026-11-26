@@ -24,6 +24,13 @@ public sealed record MonsterTemplate(
     public float BattleCallRange { get; init; }
     /// <summary>AIConfig _iBattleCallResponse 1: it answers such a call.</summary>
     public bool AnswersBattleCall { get; init; }
+    /// <summary>Metres a skill reaches past its centre (<see cref="Data.Config.UnitConfig.DamageRadius"/>).</summary>
+    public float DamageRadius { get; init; }
+    /// <summary>NPCConfig _iNPCSubType 3 MT_MINI, 4 MT_MVP, 6 MT_BOSS, as the boss skills and Paragon count them.</summary>
+    public bool IsBoss { get; init; }
+    /// <summary>Its HP is restored when it is back from a lost fight: AIConfig _iUnFightBUFF holds the full-heal buff
+    /// (MonsterService.ResetHealBuff), or the NPC has no AI row (inferred).</summary>
+    public bool HealsOnReturn { get; init; } = true;
 }
 
 /// <summary>A live monster on a map (entityType 1): HP, home point, current walk segment and AI state. The siege war
@@ -70,6 +77,10 @@ public class MonsterUnit : WorldUnit
     public TowerPetUnit? PetTarget { get; set; }
     public long NextSwingMs { get; set; }
     public long NextChaseMs { get; set; }
+    /// <summary>When this monster may search a way around an obstacle again: a straight walk failed, and the search is not free.</summary>
+    public long NextPathMs { get; set; }
+    /// <summary>The players who have engaged it since it last left combat: losing its target, it turns to the nearest of them.</summary>
+    public List<Game.GameSession> Hated { get; } = [];
     public bool Returning { get; set; }
     /// <summary>Back home it keeps its damage instead of healing to full (the siege castle, TerritoryWarsService.SiegeObjects).</summary>
     public bool KeepsDamage { get; set; }
@@ -90,6 +101,10 @@ public class MonsterUnit : WorldUnit
     /// <summary>A destination it walks to between fights instead of roaming at home (MonsterService.March); null: none.</summary>
     public MonsterMarch? March { get; set; }
 
+    /// <summary>Players this unit does not pick as a target on sight (MonsterService.NearestTarget); null: none. A hit
+    /// from them still makes them its target.</summary>
+    public Func<GameSession, bool>? Ignores { get; set; }
+
     /// <summary>Status bits (property 2701); bit 15 = fighting.</summary>
     public long StatusBits { get; set; }
 
@@ -102,6 +117,8 @@ public class MonsterUnit : WorldUnit
     public Action<EntityBase>? EntityExtras { get; set; }
 
     public override void Tick(MapInstance map, GameTime time) => Brain?.Tick(this, map);
+
+    internal override bool Resting => Viewers.Count == 0 && Brain?.Dormant(this) != false;
 
     /// <summary>Position along the current segment at <paramref name="nowMs"/> (updates X/Y/Z).</summary>
     public void Advance(long nowMs)
@@ -192,4 +209,7 @@ public sealed class MonsterMarch(float goalX, float goalZ, float arriveRadius)
 public interface IMonsterBrain
 {
     void Tick(MonsterUnit monster, MapInstance map);
+
+    /// <summary>Nothing is in progress for it: its tick only moves the roam clock.</summary>
+    bool Dormant(MonsterUnit monster);
 }

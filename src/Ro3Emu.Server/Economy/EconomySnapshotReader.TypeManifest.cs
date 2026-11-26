@@ -11,7 +11,7 @@ public static partial class EconomySnapshotReader
     /// protobuf cannot silently classify a new balance as progression. Review the decoder and bump this pin when
     /// the persisted format changes; a matching runtime type alone is not a reviewed economic classification.
     /// </summary>
-    // C/D 13e: Dungeon.State.PendingJourney names a captured act/cycle, not a second holding of
+    // Dungeon.State.PendingJourney names a captured act/cycle, not a second holding of
     // its dungeon loot. Authored Journey boss acts have no direct goods; later node claims stay separate.
     // Emotes: role.emoji_play is DBEmojiPlayInfo (emote ids: favourites, unlocks, idle emote); no balance, no asset.
     // Achievements: role.achievements is DBRoleAchievementInfo (statuses, score counters, points, claimed reward and
@@ -65,6 +65,8 @@ public static partial class EconomySnapshotReader
     // Job EXP catch-up: role.job_exp_catchup is CharacterService.JobExpCatchUpState: the Job EXP paid to the role, what
     // later job advances still owe it and the rank last paid, no balance and no asset; the EXP comes with its cd13e/grant
     // receipts.
+    // Offline buffs: role.offline_buffs is BuffService.OfflineBuffState (the timed buffs a logout keeps, with their end and
+    // attribute changes): no balance and no asset; the food or item that granted them was spent by its own receipt.
     // Tavern: role.barroom is TavernService.RoleState (Star Power received from Tavern gifts, its week, active days and
     // today's time in a room): counters, no balance and no asset; the gift drink is spent by the event/tavern-gift receipt.
     // Shop gifts: role.gifts is ShopService.GiftState (sent and received gift orders): records, no balance and no asset;
@@ -101,7 +103,10 @@ public static partial class EconomySnapshotReader
     // newactivity receipt that also saves them.
     // Leaderboard rewards: server_state rank_rewards (RankRewardService) names each rewarded board's last settlement
     // time. A key, no balance: the goods are the rank letters' attachments, each delivered once by its delivery key.
-    public const string ExpectedFormatManifestHash = "77E95F108A58DBEB382686AF5C92D2F471FDFA040CD939D96667B0E8F626026D";
+    // First-clear rewards: role.dungeons DungeonService.State.FirstPassPaid names the bosses whose _iPartAward was paid;
+    // once-only markers, no balance and no asset (the goods are paid by the dungeon/first-pass-award receipt that writes
+    // the marker).
+    public const string ExpectedFormatManifestHash = "A3ECEE99900F588A769DC553C1304940B58C85BF888C0D950462F6D4C3F95227";
     public static string FormatManifestHash => State.FormatManifestHash;
 
     private sealed partial class State
@@ -140,7 +145,9 @@ public static partial class EconomySnapshotReader
                 foreach (var p in type.GetProperties(BindingFlags.Instance | BindingFlags.Public).OrderBy(x => x.Name, StringComparer.Ordinal))
                 {
                     if (p.GetIndexParameters().Length != 0 || p.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition == JsonIgnoreCondition.Always) continue;
-                    entries.Add($"json:{type.FullName}:{p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name}:{p.PropertyType.FullName}:{p.GetCustomAttribute<JsonConverterAttribute>()?.ConverterType?.FullName}");
+                    var jsonName = p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name;
+                    var converter = p.GetCustomAttribute<JsonConverterAttribute>()?.ConverterType?.FullName;
+                    entries.Add($"json:{type.FullName}:{jsonName}:{p.PropertyType.FullName}:{converter}");
                     TypeShape(p.PropertyType);
                 }
                 foreach (var f in type.GetFields(BindingFlags.Instance | BindingFlags.Public).Where(x => x.IsDefined(typeof(JsonIncludeAttribute))))

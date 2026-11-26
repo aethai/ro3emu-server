@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Client DLL patching and launch helpers shared by RO3Emu.exe (Setup), Ro3EmuLauncher and Ro3Emu.ClientTools. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mono.Cecil" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ro3Emu.ClientTools" />
+    <InternalsVisibleTo Include="Ro3Emu.Setup.Core" />
+    <InternalsVisibleTo Include="RO3Emu" />
+    <InternalsVisibleTo Include="Ro3Emu.Setup.Tests" />
+    <InternalsVisibleTo Include="Ro3EmuLauncher" />
+  </ItemGroup>
+
+</Project>
