@@ -1,6 +1,7 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Globalization;
 using Google.Protobuf;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
@@ -176,6 +177,8 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
     internal GameSession? Online(long id) => sessions.ByRole(id);
     internal GuildStore.State? Own(GameSession session) => session.Role == null ? null : store.ForRole(session.Role.Id);
 
+    internal const string GuildOverheadEnableCommand = "guildoverhead on";
+
     private async Task LoginCoreAsync(GameSession session)
     {
         HookDeposits();
@@ -185,6 +188,8 @@ public sealed partial class GuildService(GameData data, GuildStore store, RoleSt
         var personal = Personal(session.Role!.Id);
         await SavePersonalAsync(session, guild == null ? WithoutGuild(personal) : RoleInfo(guild, guild.Members[session.Role.Id], personal));
         await SyncRole(session);
+        if (options.Value.GuildOverheadAllMaps)
+            await session.SendGameRawAsync(GmCommands.ClientDiagnosticsMsg, Encoding.UTF8.GetBytes(GuildOverheadEnableCommand));
         if (guild != null)
         {
             await SendFull(session, guild, false);

@@ -99,6 +99,7 @@ namespace Ro3Emu.ClientHooks
             _requestCallback = null;
             _requestArray = null;
             VoiceClient.Shutdown(); // voice must not outlive the game connection (mic left open after logout)
+            GuildOverhead.ResetSession();
         }
 
         /// <summary>Same hand-off as the Tencent adapter: cmd, length, pinned pointer, error code in the shared array.</summary>

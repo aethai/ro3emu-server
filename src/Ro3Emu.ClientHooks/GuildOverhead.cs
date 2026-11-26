@@ -5,13 +5,16 @@ using UnityEngine;
 namespace Ro3Emu.ClientHooks
 {
     /// <summary>
-    /// Restores overhead guild names and guild emblems on all maps:
+    /// Restores overhead guild emblems via <see cref="SpriteRegion"/> and optionally lifts the client's per-map limit
+    /// so guild names and emblems show on every map:
     /// <list type="bullet">
-    /// <item>Wraps LC_HudHelper.GetMapLimitParam so ShowGuildName and ShowGuildIcon stay enabled on every map instead
-    /// of only the three dragon raid maps.</item>
+    /// <item>By default, respects the original client's <c>LC_HudHelper.GetMapLimitParam</c> (only the three maps
+    /// configured with ShowGuildName/ShowGuildIcon, plus escort carts). When the server enables
+    /// <c>Ro3Emu:GuildOverheadAllMaps</c> and sends <c>guildoverhead on</c> over message 77012, wraps
+    /// <c>GetMapLimitParam</c> so ShowGuildName and ShowGuildIcon stay enabled on every map.</item>
     /// <item>Wraps LC_HudElement_Guild.RefreshAll to restore the removed emblem branch (GuildIconSprite,
-    /// GuildFrameSprite and ShowGuildIcon from GuildIconConfig.GetSmallIcon) and rebuilds the nameplate when a
-    /// player's emblem changes.</item>
+    /// GuildFrameSprite and ShowGuildIcon from GuildIconConfig.GetSmallIcon) whenever the current map allows guild
+    /// emblems (or all-maps mode is on), and rebuilds the nameplate when a player's emblem changes.</item>
     /// <item>Wraps LC_MeshUI_NamePlate.UpdateGuildState and SetImage to toggle Layout_GuildArea (forcing a HUDUber
     /// redraw on new sprites), apply neutral white tint so packed atlas colors render unmodified via
     /// <see cref="SpriteRegion"/>, preload the Guild_Icon SpriteAtlas, and retry emblem SetImage calls until the atlas
@@ -52,10 +55,34 @@ namespace Ro3Emu.ClientHooks
 
         private static LA_LuaManager _manager;
         private static Obf_R.Obf_Cf _env;
-        private static Obf_R.Obf_ff _global, _whiteColor;
-        private static Obf_R.Obf_Ef _next, _rawEqual, _origMapLimit, _origRefreshAll, _origUpdateGuild, _origSetImage;
-        private static bool _hookedGuild, _hookedPlate, _reported;
+        private static Obf_R.Obf_ff _global, _helper, _whiteColor;
+        private static Obf_R.Obf_Ef _next, _rawEqual, _getMeta, _setMeta, _origMapLimit, _origRefreshAll, _origUpdateGuild, _origSetImage;
+        private static bool _allMaps, _hookedGuild, _hookedPlate, _reported;
         private static int _tickCount;
+
+        /// <summary>From Diagnostics (message 77012): "on" enables overhead guild names/emblems on all maps, "off" restores the original 3-map limit.</summary>
+        internal static void Command(string value)
+        {
+            bool enable = string.Equals((value ?? "").Trim(), "on", StringComparison.OrdinalIgnoreCase);
+            if (_allMaps == enable) return;
+            _allMaps = enable;
+            Debug.Log("[Ro3Emu.GuildOverhead] all-maps mode: " + (_allMaps ? "on" : "off"));
+            RefreshHudSettings();
+        }
+
+        /// <summary>Resets per-server session state on logout so connecting to another server starts with the default 3-map limit.</summary>
+        internal static void ResetSession()
+        {
+            if (!_allMaps) return;
+            _allMaps = false;
+            RefreshHudSettings();
+        }
+
+        private static void RefreshHudSettings()
+        {
+            try { _helper?.Obf_RuA<Obf_R.Obf_Ef>("MarkSettingChanged")?.Obf_HuA(); }
+            catch (Exception e) { Once(e); }
+        }
 
         private static readonly Dictionary<string, string> LastEmblem = new Dictionary<string, string>(StringComparer.Ordinal);
         private static readonly List<Obf_R.Obf_ff> PendingRebuild = new List<Obf_R.Obf_ff>();
@@ -68,9 +95,12 @@ namespace Ro3Emu.ClientHooks
             _manager = manager;
             _env = env;
             _global = global;
+            _helper = null;
             _whiteColor = null;
             _next = global?.Obf_RuA<Obf_R.Obf_Ef>("next");
             _rawEqual = global?.Obf_RuA<Obf_R.Obf_Ef>("rawequal");
+            _getMeta = global?.Obf_RuA<Obf_R.Obf_Ef>("getmetatable");
+            _setMeta = global?.Obf_RuA<Obf_R.Obf_Ef>("setmetatable");
             _origMapLimit = _origRefreshAll = _origUpdateGuild = _origSetImage = null;
             _hookedGuild = _hookedPlate = _reported = false;
             _tickCount = 0;
@@ -88,11 +118,14 @@ namespace Ro3Emu.ClientHooks
                     Debug.LogWarning("[Ro3Emu.GuildOverhead] lc_hudhelper.GetMapLimitParam not found");
                     return;
                 }
+                _helper = helper;
                 _origMapLimit = getLimit;
                 helper.Obf_luA<string, MapLimitMethod>("GetMapLimitParam", MapLimitWrapper);
                 PreloadAtlas();
                 HookModules();
-                Debug.Log("[Ro3Emu.GuildOverhead] installed (guild=" + _hookedGuild + ", plate=" + _hookedPlate + ")");
+                if (_allMaps) RefreshHudSettings();
+                Debug.Log("[Ro3Emu.GuildOverhead] installed (guild=" + _hookedGuild + ", plate=" + _hookedPlate + ", allMaps=" + _allMaps
+                    + ", keys=" + (HudProp("ShowGuildName") ?? "?") + "/" + (AttrKey("Guild") ?? "?") + ")");
             }
             catch (Exception e)
             {
@@ -164,10 +197,10 @@ namespace Ro3Emu.ClientHooks
 
         private static void PatchPropertyHandler(Obf_R.Obf_ff plate)
         {
-            long guildDisplay = HudProp("GuildDisplay");
-            if (guildDisplay == long.MinValue) return;
+            object guildDisplay = HudProp("GuildDisplay");
+            if (guildDisplay == null) return;
             var handlers = plate.Obf_RuA<Obf_R.Obf_ff>("PropertyHandlers");
-            var entry = handlers?.Obf_ruA<long, Obf_R.Obf_ff>(guildDisplay);
+            var entry = handlers?.Obf_ruA<object, Obf_R.Obf_ff>(guildDisplay);
             entry?.Obf_luA<long, SelfMethod>(1L, UpdateGuildWrapper);
         }
 
@@ -175,18 +208,47 @@ namespace Ro3Emu.ClientHooks
         {
             var res = _origMapLimit?.Obf_HuA(a1, a2);
             object ret = res != null && res.Length > 0 ? res[0] : null;
-            if (ret is Obf_R.Obf_ff table)
+            if (_allMaps && ret is Obf_R.Obf_ff table && _env != null && _next != null)
             {
                 try
                 {
-                    long showName = HudProp("ShowGuildName");
-                    long showIcon = HudProp("ShowGuildIcon");
-                    if (showName != long.MinValue) table.Obf_luA<long, bool>(showName, true);
-                    if (showIcon != long.MinValue) table.Obf_luA<long, bool>(showIcon, true);
+                    // Return a shallow copy so the client's cached default table in LC_HudHelper stays untouched when all-maps turns off.
+                    var copy = _env.Obf_wTA();
+                    object cursor = null;
+                    for (int guard = 0; guard < 1024; guard++)
+                    {
+                        var pair = _next.Obf_HuA(table, cursor);
+                        if (pair == null || pair.Length < 2 || pair[0] == null) break;
+                        cursor = pair[0];
+                        copy.Obf_luA<object, object>(pair[0], pair[1]);
+                    }
+                    if (_getMeta != null && _setMeta != null)
+                    {
+                        var mt = _getMeta.Obf_HuA(table);
+                        if (mt != null && mt.Length > 0 && mt[0] != null) _setMeta.Obf_HuA(copy, mt[0]);
+                    }
+                    object showName = HudProp("ShowGuildName");
+                    object showIcon = HudProp("ShowGuildIcon");
+                    if (showName != null) copy.Obf_luA<object, bool>(showName, true);
+                    if (showIcon != null) copy.Obf_luA<object, bool>(showIcon, true);
+                    return copy;
                 }
                 catch (Exception e) { Once(e); }
             }
             return ret;
+        }
+
+        private static bool MapAllowsGuildIcon(Obf_R.Obf_ff unit)
+        {
+            if (_allMaps) return true;
+            long escortSubType = _global == null ? long.MinValue : LuaPatches.ToLong(_global.Obf_LuA<object>("enum_NpcSubType.EscortCart"));
+            if (escortSubType != long.MinValue && LuaPatches.ToLong(unit.Obf_RuA<object>("m_iSubType")) == escortSubType)
+                return true;
+            object showIcon = HudProp("ShowGuildIcon");
+            if (showIcon == null) return false;
+            var res = _origMapLimit?.Obf_HuA();
+            return res != null && res.Length > 0 && res[0] is Obf_R.Obf_ff table
+                && IsTruthy(table.Obf_ruA<object, object>(showIcon));
         }
 
         private static void OnRefreshAll(Obf_R.Obf_ff self)
@@ -201,10 +263,11 @@ namespace Ro3Emu.ClientHooks
         {
             var unit = CallTable(self, "GetUnit");
             if (unit == null) return;
-            long isMask = AttrKey("IsMaskFace");
-            if (isMask != long.MinValue && IsTruthy(CallOne(unit, "GetHeadInfoDataRaw", isMask))) return;
-            long guildAttr = AttrKey("Guild");
-            if (guildAttr == long.MinValue || LuaPatches.ToLong(CallOne(unit, "GetHeadInfoData", guildAttr)) <= 0) return;
+            if (!MapAllowsGuildIcon(unit)) return;
+            object isMask = AttrKey("IsMaskFace");
+            if (isMask != null && IsTruthy(CallOne(unit, "GetHeadInfoDataRaw", isMask))) return;
+            object guildAttr = AttrKey("Guild");
+            if (guildAttr == null || LuaPatches.ToLong(CallOne(unit, "GetHeadInfoData", guildAttr)) <= 0) return;
 
             var setting = CallTable(self, "GetCachedSetting");
             var context = self.Obf_RuA<Obf_R.Obf_ff>("m_kContext");
@@ -212,8 +275,8 @@ namespace Ro3Emu.ClientHooks
             bool selected = context != null && (IsTruthy(context.Obf_RuA<object>("bSelected")) || IsTruthy(context.Obf_RuA<object>("bIsOnHover")));
             if (!showNames && !selected) return;
 
-            long guildIconAttr = AttrKey("GuildIcon");
-            if (guildIconAttr == long.MinValue) return;
+            object guildIconAttr = AttrKey("GuildIcon");
+            if (guildIconAttr == null) return;
             if (!(CallOne(unit, "GetHeadInfoData", guildIconAttr) is Obf_R.Obf_ff icon)) return;
 
             var dbInst = _global.Obf_LuA<Obf_R.Obf_Ef>("Lua_DBManager.GetInstance")?.Obf_HuA(_global.Obf_RuA<object>("Lua_DBManager"));
@@ -236,10 +299,10 @@ namespace Ro3Emu.ClientHooks
 
             var setProp = self.Obf_RuA<Obf_R.Obf_Ef>("SetProperty");
             if (setProp == null) return;
-            long iconSprite = HudProp("GuildIconSprite");
-            long frameSprite = HudProp("GuildFrameSprite");
-            long showIcon = HudProp("ShowGuildIcon");
-            if (iconSprite == long.MinValue || frameSprite == long.MinValue || showIcon == long.MinValue) return;
+            object iconSprite = HudProp("GuildIconSprite");
+            object frameSprite = HudProp("GuildFrameSprite");
+            object showIcon = HudProp("ShowGuildIcon");
+            if (iconSprite == null || frameSprite == null || showIcon == null) return;
             setProp.Obf_HuA(self, iconSprite, iconName);
             setProp.Obf_HuA(self, frameSprite, bgName);
             setProp.Obf_HuA(self, showIcon, true);
@@ -270,8 +333,8 @@ namespace Ro3Emu.ClientHooks
                 var node = self.Obf_RuA<Obf_R.Obf_ff>("Node");
                 if (hud == null || node == null) return;
                 long areaNode = LuaPatches.ToLong(node.Obf_RuA<object>("Layout_GuildArea"));
-                long showProp = HudProp("ShowGuildIcon");
-                if (areaNode == long.MinValue || showProp == long.MinValue) return;
+                object showProp = HudProp("ShowGuildIcon");
+                if (areaNode == long.MinValue || showProp == null) return;
                 bool show = CallOne(hud, "GetProperty", showProp) is bool b && b;
                 var setActive = self.Obf_RuA<Obf_R.Obf_Ef>("SetActive");
                 if (setActive == null) return;
@@ -316,16 +379,16 @@ namespace Ro3Emu.ClientHooks
             try
             {
                 var hud = self.Obf_RuA<Obf_R.Obf_ff>("m_kHud");
-                long showProp = HudProp("ShowGuildIcon");
-                if (areaNode == long.MinValue || hud == null || showProp == long.MinValue) return;
+                object showProp = HudProp("ShowGuildIcon");
+                if (areaNode == long.MinValue || hud == null || showProp == null) return;
                 if (!(CallOne(hud, "GetProperty", showProp) is bool show && show)) return;
 
                 var white = WhiteTable();
                 if (white != null)
                 {
                     self.Obf_RuA<Obf_R.Obf_Ef>("SetColor")?.Obf_HuA(self, node, white);
-                    long colorProp = HudProp(node == bgNode ? "GuildFrameColor" : "GuildIconColor");
-                    if (colorProp != long.MinValue) hud.Obf_RuA<Obf_R.Obf_Ef>("SetProperty")?.Obf_HuA(hud, colorProp, white);
+                    object colorProp = HudProp(node == bgNode ? "GuildFrameColor" : "GuildIconColor");
+                    if (colorProp != null) hud.Obf_RuA<Obf_R.Obf_Ef>("SetProperty")?.Obf_HuA(hud, colorProp, white);
                 }
                 self.Obf_RuA<Obf_R.Obf_Ef>("SetActive")?.Obf_HuA(self, areaNode, false);
                 AddUnique(PendingRedraw, self);
@@ -371,8 +434,8 @@ namespace Ro3Emu.ClientHooks
             if (PendingRedraw.Count == 0) return;
             var batch = PendingRedraw.ToArray();
             PendingRedraw.Clear();
-            long showProp = HudProp("ShowGuildIcon");
-            if (showProp == long.MinValue) return;
+            object showProp = HudProp("ShowGuildIcon");
+            if (showProp == null) return;
             foreach (var mesh in batch)
             {
                 try
@@ -451,11 +514,20 @@ namespace Ro3Emu.ClientHooks
             return node != null && node.Obf_RuA<object>("Layout_GuildArea") != null;
         }
 
-        private static long HudProp(string name) =>
-            _global == null ? long.MinValue : LuaPatches.ToLong(_global.Obf_LuA<object>("enum_HudProperty." + name));
+        // enum_HudProperty and enum_unitAttrClientMap hold string values in the current client
+        // (Lua_HudConfig.lua: ShowGuildName = "ShowGuildName"; Lua_GameDefine.lua: Guild = "Guild"), so the key is
+        // whatever the enum holds: a string, or a number in a client that numbers them. Null when the entry is missing.
+        private static object HudProp(string name) => EnumKey("enum_HudProperty." + name);
 
-        private static long AttrKey(string name) =>
-            _global == null ? long.MinValue : LuaPatches.ToLong(_global.Obf_LuA<object>("enum_unitAttrClientMap." + name));
+        private static object AttrKey(string name) => EnumKey("enum_unitAttrClientMap." + name);
+
+        private static object EnumKey(string path)
+        {
+            object value = _global?.Obf_LuA<object>(path);
+            if (value is string s) return s.Length == 0 ? null : s;
+            long number = LuaPatches.ToLong(value);
+            return number == long.MinValue ? null : (object)number;
+        }
 
         private static Obf_R.Obf_ff CallTable(Obf_R.Obf_ff target, string method)
         {

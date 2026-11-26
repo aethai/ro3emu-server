@@ -540,13 +540,15 @@ public static class ClientPatcher
         return "chat -> ServerImAdapter";
     }
 
-    /// <summary>The hooks DLL ships inside this tool (EmbeddedResource); a repo build is the fallback for development.</summary>
+    private static readonly string[] FallbackConfigs = ["Release", "Debug"];
+
+    /// <summary>The hooks DLL ships inside the host tool (EmbeddedResource); a repo build is the fallback for development.</summary>
     private static string DefaultHooksDll() => Embedded(HooksFile, "Ro3Emu.ClientHooks");
 
-    /// <summary>A client-side DLL embedded in this tool, extracted to a temp file; a repo build is the fallback.</summary>
-    private static string Embedded(string fileName, string project)
+    /// <summary>A client-side DLL embedded in the host tool or this assembly, extracted to a temp file; a repo build is the fallback.</summary>
+    internal static string Embedded(string fileName, string project, System.Reflection.Assembly? resourceAssembly = null)
     {
-        using (var embedded = typeof(ClientPatcher).Assembly.GetManifestResourceStream(fileName))
+        using (var embedded = OpenEmbeddedResource(fileName, resourceAssembly))
         {
             if (embedded != null)
             {
@@ -555,12 +557,39 @@ public static class ClientPatcher
                 return extracted;
             }
         }
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        return FindDevBuild(AppContext.BaseDirectory, project, fileName) ?? Path.Combine(AppContext.BaseDirectory, fileName);
+    }
+
+    internal static string? FindDevBuild(string baseDirectory, string project, string fileName)
+    {
+        for (var dir = new DirectoryInfo(baseDirectory); dir != null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "src", project, "bin", "Debug", "netstandard2.1", fileName);
-            if (File.Exists(candidate)) return candidate;
+            string? newest = null;
+            DateTime newestWriteUtc = DateTime.MinValue;
+            foreach (var config in FallbackConfigs)
+            {
+                var candidate = Path.Combine(dir.FullName, "src", project, "bin", config, "netstandard2.1", fileName);
+                if (!File.Exists(candidate)) continue;
+                var writeUtc = File.GetLastWriteTimeUtc(candidate);
+                if (newest == null || writeUtc > newestWriteUtc)
+                {
+                    newest = candidate;
+                    newestWriteUtc = writeUtc;
+                }
+            }
+            if (newest != null) return newest;
         }
-        return Path.Combine(AppContext.BaseDirectory, fileName);
+        return null;
+    }
+
+    private static Stream? OpenEmbeddedResource(string fileName, System.Reflection.Assembly? resourceAssembly)
+    {
+        System.Reflection.Assembly?[] candidates = [resourceAssembly, System.Reflection.Assembly.GetEntryAssembly(), typeof(ClientPatcher).Assembly];
+        foreach (var assembly in candidates)
+        {
+            if (assembly?.GetManifestResourceStream(fileName) is { } stream) return stream;
+        }
+        return null;
     }
 
     /// <summary>Loads the pristine DLL from the backup, rewrites matching literals, writes it into Managed if anything changed.</summary>

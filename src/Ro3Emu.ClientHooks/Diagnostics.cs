@@ -28,6 +28,9 @@ namespace Ro3Emu.ClientHooks
                     case "time":
                         NightCycle.Command(parts.Length > 1 ? parts[1] : "auto");
                         break;
+                    case "guildoverhead":
+                        GuildOverhead.Command(parts.Length > 1 ? parts[1] : "off");
+                        break;
                     case "panels":
                         Panels();
                         break;
