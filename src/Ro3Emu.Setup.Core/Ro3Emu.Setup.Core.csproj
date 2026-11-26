@@ -22,6 +22,12 @@
     <EmbeddedResource Include="..\Ro3Emu.Loc\translations\*.tsv" LogicalName="translations/%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Our Traditional Chinese translations (the zh-TW language): kept here and not in src/Ro3Emu.Loc because that folder
+       is part of the stamp of the prebuilt client DLLs (tools/release/client-stamp.ps1), which these texts are not in. -->
+  <ItemGroup>
+    <EmbeddedResource Include="translations-zhtw\*.tsv" LogicalName="translations-zhtw/%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="RO3Emu" />
     <InternalsVisibleTo Include="Ro3Emu.Setup.Tests" />
