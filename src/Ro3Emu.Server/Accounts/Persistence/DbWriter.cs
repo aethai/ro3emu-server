@@ -28,7 +28,7 @@ public sealed partial class DbWriter : IDisposable
     /// <summary>Fairness limit: a lazy job older than this alternates with durable work instead of waiting for an
     /// idle writer, so sustained durable load cannot starve lazy parts (position/settings).</summary>
     internal TimeSpan LazyMaxWait { get; set; } = TimeSpan.FromSeconds(2);
-    /// <summary>Bounded backoff for commit errors where SQLite guarantees rollback (BUSY/LOCKED/FULL).</summary>
+    /// <summary>Bounded backoff for transient lock-contention commit errors where SQLite guarantees rollback (BUSY/LOCKED).</summary>
     internal TimeSpan[] CommitRetryDelays { get; set; } =
         [TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300)];
 
@@ -237,24 +237,7 @@ public sealed partial class DbWriter : IDisposable
                 }
             }
             if (groupError == null)
-            {
-                int executed = group.Count(p => p.Executed);
-                if (executed == 0) tx.Rollback();
-                else
-                {
-                    try
-                    {
-                        BeforeGroupCommitForTest?.Invoke();
-                        tx.Commit();
-                    }
-                    catch (Exception commitError)
-                    {
-                        commitFailed = true;
-                        groupError = commitError;
-                    }
-                    if (groupError == null) _metrics.WriterCommitted(executed);
-                }
-            }
+                (groupError, commitFailed) = CommitOrRollback(tx, group.Count(p => p.Executed));
         }
         catch (Exception e)
         {
@@ -269,6 +252,26 @@ public sealed partial class DbWriter : IDisposable
         {
             _failedTerminalGroup = group;
             throw groupError;
+        }
+    }
+
+    private (Exception? Error, bool CommitFailed) CommitOrRollback(SqliteTransaction tx, int executed)
+    {
+        if (executed == 0)
+        {
+            tx.Rollback();
+            return (null, false);
+        }
+        try
+        {
+            BeforeGroupCommitForTest?.Invoke();
+            tx.Commit();
+            _metrics.WriterCommitted(executed);
+            return (null, false);
+        }
+        catch (Exception commitError)
+        {
+            return (commitError, true);
         }
     }
 
@@ -287,42 +290,7 @@ public sealed partial class DbWriter : IDisposable
             if (_log != null) LogCommitRetry(_log, code, toRetry.Count, attempt, delays.Length);
             if (delays[attempt - 1] > TimeSpan.Zero) Thread.Sleep(delays[attempt - 1]);
 
-            Exception? retryError = null;
-            bool retryCommitFailed = false;
-            SqliteTransaction? retryTx = null;
-            try
-            {
-                retryTx = db.BeginTransaction();
-                foreach (int idx in toRetry)
-                {
-                    var fresh = new Pending(group[idx].Job);
-                    group[idx] = fresh;
-                    if (!Execute(db, retryTx, fresh, "g" + (idx + 1).ToString(CultureInfo.InvariantCulture), out retryError))
-                        break;
-                }
-                if (retryError == null)
-                {
-                    int executed = toRetry.Count(i => group[i].Executed);
-                    if (executed == 0) retryTx.Rollback();
-                    else
-                    {
-                        try
-                        {
-                            BeforeGroupCommitForTest?.Invoke();
-                            retryTx.Commit();
-                        }
-                        catch (Exception commitError)
-                        {
-                            retryCommitFailed = true;
-                            retryError = commitError;
-                        }
-                        if (retryError == null) _metrics.WriterCommitted(executed);
-                    }
-                }
-            }
-            catch (Exception e) { retryError ??= e; }
-            finally { retryTx?.Dispose(); }
-
+            var (retryError, retryCommitFailed) = TryReplayGroupOnce(db, group, toRetry);
             if (retryError == null) return (null, false);
             currentError = retryError;
             if (!retryCommitFailed || !IsSafeRollbackRetryError(retryError))
@@ -331,10 +299,33 @@ public sealed partial class DbWriter : IDisposable
         return (currentError, true);
     }
 
-    // Only retry SQLite errors where the transaction is guaranteed rolled back (BUSY=5, LOCKED=6, FULL=13).
-    // Ambiguous I/O errors (IOException, SQLITE_IOERR=10) are never retried because commit outcome is unknown.
+    private (Exception? Error, bool CommitFailed) TryReplayGroupOnce(SqliteConnection db, List<Pending> group, List<int> indices)
+    {
+        Exception? retryError = null;
+        bool retryCommitFailed = false;
+        SqliteTransaction? retryTx = null;
+        try
+        {
+            retryTx = db.BeginTransaction();
+            foreach (int idx in indices)
+            {
+                var fresh = new Pending(group[idx].Job);
+                group[idx] = fresh;
+                if (!Execute(db, retryTx, fresh, "g" + (idx + 1).ToString(CultureInfo.InvariantCulture), out retryError))
+                    break;
+            }
+            if (retryError == null)
+                (retryError, retryCommitFailed) = CommitOrRollback(retryTx, indices.Count(i => group[i].Executed));
+        }
+        catch (Exception e) { retryError ??= e; }
+        finally { retryTx?.Dispose(); }
+        return (retryError, retryCommitFailed);
+    }
+
+    // Only retry transient lock-contention errors where SQLite guarantees rollback (BUSY=5, LOCKED=6).
+    // Terminal storage errors (SQLITE_FULL=13) and ambiguous I/O errors (IOException, SQLITE_IOERR=10) are never retried.
     private static bool IsSafeRollbackRetryError(Exception error) =>
-        error is SqliteException { SqliteErrorCode: 5 or 6 or 13 };
+        error is SqliteException { SqliteErrorCode: 5 or 6 };
 
     private static bool IsTerminalStorageError(Exception error) =>
         error is SqliteException { SqliteErrorCode: 8 or 10 or 11 or 13 or 14 or 26 } or IOException;
