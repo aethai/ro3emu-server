@@ -206,6 +206,31 @@ public sealed class ClientPatcherTests : IDisposable
         }
     }
 
+    [Fact]
+    public void FindDevBuildPicksNewerBetweenReleaseAndDebug()
+    {
+        string fakeRepo = Path.Combine(_client, "fake-repo");
+        string baseDir = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientTools", "bin", "Debug", "net10.0");
+        string releaseDll = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientHooks", "bin", "Release", "netstandard2.1", "Ro3Emu.ClientHooks.dll");
+        string debugDll = Path.Combine(fakeRepo, "src", "Ro3Emu.ClientHooks", "bin", "Debug", "netstandard2.1", "Ro3Emu.ClientHooks.dll");
+        Directory.CreateDirectory(baseDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(releaseDll)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(debugDll)!);
+        File.WriteAllBytes(releaseDll, [1]);
+        File.WriteAllBytes(debugDll, [2]);
+
+        var older = new DateTime(2026, 11, 20, 10, 0, 0, DateTimeKind.Utc);
+        var newer = new DateTime(2026, 11, 25, 10, 0, 0, DateTimeKind.Utc);
+
+        File.SetLastWriteTimeUtc(releaseDll, older);
+        File.SetLastWriteTimeUtc(debugDll, newer);
+        Assert.Equal(debugDll, ClientPatcher.FindDevBuild(baseDir, "Ro3Emu.ClientHooks", "Ro3Emu.ClientHooks.dll"));
+
+        File.SetLastWriteTimeUtc(releaseDll, newer);
+        File.SetLastWriteTimeUtc(debugDll, older);
+        Assert.Equal(releaseDll, ClientPatcher.FindDevBuild(baseDir, "Ro3Emu.ClientHooks", "Ro3Emu.ClientHooks.dll"));
+    }
+
     private sealed class StubResourceAssembly(string resourceName, byte[] payload) : System.Reflection.Assembly
     {
         public override Stream? GetManifestResourceStream(string name) =>

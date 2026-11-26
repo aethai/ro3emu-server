@@ -10,16 +10,17 @@ if (args.Length < 2)
           patch   <client dir> <server url> [gate_rsa_public.pem] [Ro3Emu.ClientHooks.dll] [--verbose]
           restore <client dir>                  put the original DLLs back
           launch  <client dir> [ro3.exe args...]
-          release <client dir> <server url> <gate_rsa_public.pem> <repo dir> <version> [channel] [zstd level] [--signing-key <private.pem>]
+          release <client dir> <server url> <gate_rsa_public.pem> <repo dir> <version> [channel] [zstd level] [--signing-key <private.pem> | --unsigned]
                                                 publish the client patched for that server for Ro3Emu.Launcher
-          release-launcher <repo dir> <channel> <Ro3EmuLauncher.exe> <version> [--signing-key <private.pem>]
+          release-launcher <repo dir> <channel> <Ro3EmuLauncher.exe> <version> [--signing-key <private.pem> | --unsigned]
           scan    <client dir> <text>...        list string literals in the client DLLs
           members <client dir> <dll> <type> [method]  list a type's methods with their parameters
           delete-role <server url> <account> <password> <character name or id>
         <client dir> is the folder with ro3.exe, <server url> e.g. http://203.0.113.5:5380.
         Without a .pem the gate key is downloaded from the server.
-        Channel signing is disabled unless --signing-key <private.pem> (outside any git repo),
-        RO3EMU_CHANNEL_SIGNING_KEY_FILE, or RO3EMU_CHANNEL_SIGNING_KEY is provided.
+        Channel signing is disabled unless --signing-key <private.pem> (outside any git repo and publish repo),
+        RO3EMU_CHANNEL_SIGNING_KEY_FILE, or RO3EMU_CHANNEL_SIGNING_KEY is provided. Pass --unsigned to
+        explicitly drop an existing channel signature.
         """);
     return 1;
 }
@@ -28,17 +29,30 @@ try
 {
     ClientPatcher.VerboseLogs = args.Contains("--verbose");
     string? signingKeyFile = null;
+    bool allowUnsigned = false;
     var positional = new List<string>(args.Length);
     for (int i = 0; i < args.Length; i++)
     {
         if (args[i] == "--verbose") continue;
+        if (args[i] == "--unsigned")
+        {
+            allowUnsigned = true;
+            continue;
+        }
         if (args[i] == "--signing-key")
         {
-            if (i + 1 >= args.Length) throw new ArgumentException("--signing-key requires a path to a PEM file outside the repository");
+            if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1]))
+            {
+                throw new ArgumentException("--signing-key requires a non-empty path to a PEM file outside the repository and publish directory");
+            }
             signingKeyFile = args[++i];
             continue;
         }
         positional.Add(args[i]);
+    }
+    if (allowUnsigned && signingKeyFile != null)
+    {
+        throw new ArgumentException("cannot combine --signing-key and --unsigned");
     }
     args = positional.ToArray();
     switch (args[0])
@@ -54,11 +68,13 @@ try
             return 0;
         case "release":
             if (args.Length < 6) throw new ArgumentException("release needs <client dir> <server url> <pem> <repo dir> <version>");
+            string? releaseKey = allowUnsigned ? null : SigningKeyLoader.Load(signingKeyFile, args[4]);
             return await ReleaseBuilder.PublishAsync(args[1], args[2].TrimEnd('/'), File.ReadAllText(args[3]), args[4], args[5],
-                args.Length > 6 ? args[6] : "test", args.Length > 7 ? int.Parse(args[7]) : 9, LoadSigningKey(signingKeyFile));
+                args.Length > 6 ? args[6] : "test", args.Length > 7 ? int.Parse(args[7]) : 9, releaseKey, allowUnsigned);
         case "release-launcher":
             if (args.Length < 5) throw new ArgumentException("release-launcher needs <repo dir> <channel> <Ro3EmuLauncher.exe> <version>");
-            var withLauncher = await Ro3Emu.Patcher.Publisher.PublishLauncherAsync(args[1], args[2], args[3], args[4], LoadSigningKey(signingKeyFile));
+            string? launcherKey = allowUnsigned ? null : SigningKeyLoader.Load(signingKeyFile, args[1]);
+            var withLauncher = await Ro3Emu.Patcher.Publisher.PublishLauncherAsync(args[1], args[2], args[3], args[4], launcherKey, allowUnsigned);
             Console.WriteLine($"channel {withLauncher.Channel}: game {withLauncher.Version}, launcher {withLauncher.Launcher!.Version}");
             return 0;
         case "scan":
@@ -105,25 +121,4 @@ static async Task<string> ServerKey(string serverUrl)
     var url = serverUrl.TrimEnd('/') + "/ro3emu/gate-key.pem";
     Console.WriteLine($"fetching gate key from {url}");
     return await http.GetStringAsync(url);
-}
-
-// Channel signing private keys come only from an external file outside any git repository or a CI secret env var.
-static string? LoadSigningKey(string? cliKeyFile)
-{
-    string? filePath = cliKeyFile ?? Environment.GetEnvironmentVariable("RO3EMU_CHANNEL_SIGNING_KEY_FILE");
-    if (!string.IsNullOrWhiteSpace(filePath))
-    {
-        string full = Path.GetFullPath(filePath);
-        for (var dir = new DirectoryInfo(Path.GetDirectoryName(full)!); dir != null; dir = dir.Parent)
-        {
-            if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git"))
-                || File.Exists(Path.Combine(dir.FullName, "Ro3Emu.slnx")))
-            {
-                throw new InvalidOperationException("Refusing to load channel signing private key from inside a repository; move it outside the repo or use RO3EMU_CHANNEL_SIGNING_KEY.");
-            }
-        }
-        return File.ReadAllText(full);
-    }
-    string? envPem = Environment.GetEnvironmentVariable("RO3EMU_CHANNEL_SIGNING_KEY");
-    return string.IsNullOrWhiteSpace(envPem) ? null : envPem;
 }

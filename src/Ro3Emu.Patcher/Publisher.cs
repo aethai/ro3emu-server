@@ -22,6 +22,8 @@ public sealed class PublishOptions
     public LauncherRelease? Launcher { get; init; }
     /// <summary>Optional RSA-3072 private key PEM; when set, writes channels/&lt;channel&gt;.json.sig alongside the channel.</summary>
     public string? SigningKeyPem { get; init; }
+    /// <summary>Explicitly allow removing an existing channels/&lt;channel&gt;.json.sig when publishing without a signing key.</summary>
+    public bool AllowUnsigned { get; init; }
 }
 
 public sealed record PublishResult(Manifest Manifest, ChannelInfo Channel, int NewChunks, long NewStoredBytes, int ReusedChunks);
@@ -51,19 +53,17 @@ public static class Publisher
     public static async Task<PublishResult> PublishAsync(PublishOptions options, IProgress<string>? log = null, CancellationToken ct = default)
     {
         options.Chunking.Validate();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(options.Version, @"^[0-9A-Za-z][0-9A-Za-z._+-]*$"))
-        {
-            throw new ArgumentException($"Invalid version '{options.Version}'.");
-        }
-        if (!System.Text.RegularExpressions.Regex.IsMatch(options.Channel, @"^[a-z0-9-]+$"))
-        {
-            throw new ArgumentException($"Invalid channel '{options.Channel}'.");
-        }
+        ValidateVersion(options.Version);
+        ValidateChannelName(options.Channel);
 
         string repo = Path.GetFullPath(options.RepoDirectory);
         Directory.CreateDirectory(repo);
         // One publisher at a time: two writing the same chunks or channel race each other.
         using var repoLock = AcquireLock(repo);
+        if (!options.SkipChannel)
+        {
+            EnsureSigningPolicy(repo, options.Channel, options.SigningKeyPem, options.AllowUnsigned);
+        }
         string manifestRelative = $"manifests/{options.Version}.json.zst";
         string manifestPath = Path.Combine(repo, manifestRelative);
         if (File.Exists(manifestPath))
@@ -191,9 +191,37 @@ public static class Publisher
         };
         if (!options.SkipChannel)
         {
-            await WriteChannelAsync(repo, channel, options.SigningKeyPem, ct);
+            await WriteChannelAsync(repo, channel, options.SigningKeyPem, options.AllowUnsigned, ct);
         }
         return new PublishResult(manifest, channel, newChunks, newBytes, reused);
+    }
+
+    private static void ValidateVersion(string version)
+    {
+        if (string.IsNullOrEmpty(version) || !System.Text.RegularExpressions.Regex.IsMatch(version, @"^[0-9A-Za-z][0-9A-Za-z._+-]*$"))
+        {
+            throw new ArgumentException($"Invalid version '{version}'.", nameof(version));
+        }
+    }
+
+    private static void ValidateChannelName(string channelName)
+    {
+        if (string.IsNullOrEmpty(channelName) || !System.Text.RegularExpressions.Regex.IsMatch(channelName, @"^[a-z0-9-]+$"))
+        {
+            throw new ArgumentException($"Invalid channel '{channelName}'.", nameof(channelName));
+        }
+    }
+
+    private static void EnsureSigningPolicy(string repo, string channelName, string? signingKeyPem, bool allowUnsigned)
+    {
+        if (!string.IsNullOrWhiteSpace(signingKeyPem)) return;
+        string sigPath = Path.Combine(repo, "channels", channelName + ".json.sig");
+        if (File.Exists(sigPath) && !allowUnsigned)
+        {
+            throw new InvalidOperationException(
+                $"Channel '{channelName}' is already signed ({Path.GetFileName(sigPath)} exists), " +
+                "but no signing key was provided. Provide a signing key or pass --unsigned (AllowUnsigned) to drop the signature.");
+        }
     }
 
     static FileStream AcquireLock(string repo)
@@ -223,10 +251,13 @@ public static class Publisher
 
     /// <summary>Points a channel at an existing release (promote beta → stable, roll back).</summary>
     public static async Task<ChannelInfo> SetChannelAsync(string repoDirectory, string channelName, string version,
-        LauncherRelease? launcher, string? signingKeyPem = null, CancellationToken ct = default)
+        LauncherRelease? launcher, string? signingKeyPem = null, bool allowUnsigned = false, CancellationToken ct = default)
     {
+        ValidateChannelName(channelName);
+        ValidateVersion(version);
         string repo = Path.GetFullPath(repoDirectory);
         using var repoLock = AcquireLock(repo);
+        EnsureSigningPolicy(repo, channelName, signingKeyPem, allowUnsigned);
         string manifestRelative = $"manifests/{version}.json.zst";
         byte[] bytes = await File.ReadAllBytesAsync(Path.Combine(repo, manifestRelative), ct);
         Manifest.FromCompressedBytes(bytes);
@@ -239,20 +270,22 @@ public static class Publisher
             Published = DateTimeOffset.UtcNow,
             Launcher = launcher,
         };
-        await WriteChannelAsync(repo, channel, signingKeyPem, ct);
+        await WriteChannelAsync(repo, channel, signingKeyPem, allowUnsigned, ct);
         return channel;
     }
 
     /// <summary>Publishes a launcher exe (launcher/&lt;version&gt;/) and points the channel's launcher field at it.</summary>
     public static async Task<ChannelInfo> PublishLauncherAsync(string repoDirectory, string channelName, string exePath,
-        string version, string? signingKeyPem = null, CancellationToken ct = default)
+        string version, string? signingKeyPem = null, bool allowUnsigned = false, CancellationToken ct = default)
     {
+        ValidateChannelName(channelName);
         if (!Version.TryParse(version, out _))
         {
             throw new ArgumentException($"Launcher version must look like 1.2.3, got '{version}'.");
         }
         string repo = Path.GetFullPath(repoDirectory);
         using var repoLock = AcquireLock(repo);
+        EnsureSigningPolicy(repo, channelName, signingKeyPem, allowUnsigned);
         string channelPath = Path.Combine(repo, "channels", channelName + ".json");
         if (!File.Exists(channelPath))
         {
@@ -265,12 +298,14 @@ public static class Publisher
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         await File.WriteAllBytesAsync(target, exe, ct);
         channel.Launcher = new LauncherRelease { Version = version, Url = relative, Sha256 = Hashing.Sha256Hex(exe) };
-        await WriteChannelAsync(repo, channel, signingKeyPem, ct);
+        await WriteChannelAsync(repo, channel, signingKeyPem, allowUnsigned, ct);
         return channel;
     }
 
-    static async Task WriteChannelAsync(string repo, ChannelInfo channel, string? signingKeyPem, CancellationToken ct)
+    static async Task WriteChannelAsync(string repo, ChannelInfo channel, string? signingKeyPem, bool allowUnsigned, CancellationToken ct)
     {
+        ValidateChannelName(channel.Channel);
+        EnsureSigningPolicy(repo, channel.Channel, signingKeyPem, allowUnsigned);
         string path = Path.Combine(repo, "channels", channel.Channel + ".json");
         if (channel.Launcher is null && File.Exists(path))
         {

@@ -56,7 +56,7 @@ namespace Ro3Emu.ClientHooks
         private static LA_LuaManager _manager;
         private static Obf_R.Obf_Cf _env;
         private static Obf_R.Obf_ff _global, _helper, _whiteColor;
-        private static Obf_R.Obf_Ef _next, _rawEqual, _origMapLimit, _origRefreshAll, _origUpdateGuild, _origSetImage;
+        private static Obf_R.Obf_Ef _next, _rawEqual, _getMeta, _setMeta, _origMapLimit, _origRefreshAll, _origUpdateGuild, _origSetImage;
         private static bool _allMaps, _hookedGuild, _hookedPlate, _reported;
         private static int _tickCount;
 
@@ -73,7 +73,9 @@ namespace Ro3Emu.ClientHooks
         /// <summary>Resets per-server session state on logout so connecting to another server starts with the default 3-map limit.</summary>
         internal static void ResetSession()
         {
+            if (!_allMaps) return;
             _allMaps = false;
+            RefreshHudSettings();
         }
 
         private static void RefreshHudSettings()
@@ -97,6 +99,8 @@ namespace Ro3Emu.ClientHooks
             _whiteColor = null;
             _next = global?.Obf_RuA<Obf_R.Obf_Ef>("next");
             _rawEqual = global?.Obf_RuA<Obf_R.Obf_Ef>("rawequal");
+            _getMeta = global?.Obf_RuA<Obf_R.Obf_Ef>("getmetatable");
+            _setMeta = global?.Obf_RuA<Obf_R.Obf_Ef>("setmetatable");
             _origMapLimit = _origRefreshAll = _origUpdateGuild = _origSetImage = null;
             _hookedGuild = _hookedPlate = _reported = false;
             _tickCount = 0;
@@ -203,14 +207,30 @@ namespace Ro3Emu.ClientHooks
         {
             var res = _origMapLimit?.Obf_HuA(a1, a2);
             object ret = res != null && res.Length > 0 ? res[0] : null;
-            if (_allMaps && ret is Obf_R.Obf_ff table)
+            if (_allMaps && ret is Obf_R.Obf_ff table && _env != null && _next != null)
             {
                 try
                 {
+                    // Return a shallow copy so the client's cached default table in LC_HudHelper stays untouched when all-maps turns off.
+                    var copy = _env.Obf_wTA();
+                    object cursor = null;
+                    for (int guard = 0; guard < 1024; guard++)
+                    {
+                        var pair = _next.Obf_HuA(table, cursor);
+                        if (pair == null || pair.Length < 2 || pair[0] == null) break;
+                        cursor = pair[0];
+                        copy.Obf_luA<object, object>(pair[0], pair[1]);
+                    }
+                    if (_getMeta != null && _setMeta != null)
+                    {
+                        var mt = _getMeta.Obf_HuA(table);
+                        if (mt != null && mt.Length > 0 && mt[0] != null) _setMeta.Obf_HuA(copy, mt[0]);
+                    }
                     long showName = HudProp("ShowGuildName");
                     long showIcon = HudProp("ShowGuildIcon");
-                    if (showName != long.MinValue) table.Obf_luA<long, bool>(showName, true);
-                    if (showIcon != long.MinValue) table.Obf_luA<long, bool>(showIcon, true);
+                    if (showName != long.MinValue) copy.Obf_luA<long, bool>(showName, true);
+                    if (showIcon != long.MinValue) copy.Obf_luA<long, bool>(showIcon, true);
+                    return copy;
                 }
                 catch (Exception e) { Once(e); }
             }

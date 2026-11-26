@@ -557,15 +557,29 @@ public static class ClientPatcher
                 return extracted;
             }
         }
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        return FindDevBuild(AppContext.BaseDirectory, project, fileName) ?? Path.Combine(AppContext.BaseDirectory, fileName);
+    }
+
+    internal static string? FindDevBuild(string baseDirectory, string project, string fileName)
+    {
+        for (var dir = new DirectoryInfo(baseDirectory); dir != null; dir = dir.Parent)
         {
+            string? newest = null;
+            DateTime newestWriteUtc = DateTime.MinValue;
             foreach (var config in FallbackConfigs)
             {
                 var candidate = Path.Combine(dir.FullName, "src", project, "bin", config, "netstandard2.1", fileName);
-                if (File.Exists(candidate)) return candidate;
+                if (!File.Exists(candidate)) continue;
+                var writeUtc = File.GetLastWriteTimeUtc(candidate);
+                if (newest == null || writeUtc > newestWriteUtc)
+                {
+                    newest = candidate;
+                    newestWriteUtc = writeUtc;
+                }
             }
+            if (newest != null) return newest;
         }
-        return Path.Combine(AppContext.BaseDirectory, fileName);
+        return null;
     }
 
     private static Stream? OpenEmbeddedResource(string fileName, System.Reflection.Assembly? resourceAssembly)
