@@ -18,6 +18,7 @@ internal static partial class DatabaseMigrations
         new(2, "anticheat_gains_index", ApplyAntiCheatGainsIndex),
         new(3, "retention_tables", ApplyRetentionTables),
         new(4, "trade_listing_table", ApplyTradeListingTable),
+        new(5, "operation_receipt_mail_index", ApplyOperationReceiptMailIndex),
     ];
 
     internal static int CurrentVersion => All[^1].Version;
@@ -126,6 +127,15 @@ internal static partial class DatabaseMigrations
     private static void ApplyTradeListingTable(SqliteConnection db, SqliteTransaction tx)
     {
         TradeListingSql.MigrateFromMarketRecord(db, tx);
+    }
+
+    private static void ApplyOperationReceiptMailIndex(SqliteConnection db, SqliteTransaction tx)
+    {
+        SchemaSql.Execute(db, tx, """
+            CREATE INDEX IF NOT EXISTS operation_receipt_mail_seq
+                ON operation_receipt(commit_seq)
+                WHERE command_kind >= 'mail/' AND command_kind < 'mail0';
+            """);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name})")]

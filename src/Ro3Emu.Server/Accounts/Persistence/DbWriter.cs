@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Ro3Emu.Server.Diagnostics;
 using Ro3Emu.Server.Economy;
@@ -20,12 +21,16 @@ public sealed partial class DbWriter : IDisposable
     private readonly ILogger? _log;
     private readonly TimeSpan _stopTimeout;
     private Job? _active;
+    private IReadOnlyList<Pending>? _failedTerminalGroup;
     private int _durableJobs, _durableBytes, _lazyJobs, _lazyBytes;
     private bool _stopping, _lastWasOverdueLazy;
     private Exception? _terminalError;
     /// <summary>Fairness limit: a lazy job older than this alternates with durable work instead of waiting for an
     /// idle writer, so sustained durable load cannot starve lazy parts (position/settings).</summary>
     internal TimeSpan LazyMaxWait { get; set; } = TimeSpan.FromSeconds(2);
+    /// <summary>Bounded backoff for commit errors where SQLite guarantees rollback (BUSY/LOCKED/FULL).</summary>
+    internal TimeSpan[] CommitRetryDelays { get; set; } =
+        [TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300)];
 
     private sealed record Job(DbPlan Plan, bool Lazy, TaskCompletionSource<object?> Done, long EnqueuedAt);
 
@@ -51,6 +56,7 @@ public sealed partial class DbWriter : IDisposable
     /// <summary>Runs on this thread right after COMMIT with the role parts the plan declares (snapshot invalidation).</summary>
     internal Action<IReadOnlyList<RoleRevisionKey>>? RoleWritesCommitted { get; set; }
     internal bool StopRequested { get { lock (_gate) return _stopping; } }
+    public bool IsTerminalFailed { get { lock (_gate) return _terminalError != null; } }
 
     public Task<T> ExecuteAsync<T>(DbPlan plan, bool lazy = false) => Cast<T>(Enqueue(plan, lazy));
 
@@ -137,10 +143,13 @@ public sealed partial class DbWriter : IDisposable
         {
             _metrics.WriterTerminal();
             _log?.LogCritical(error, "Database writer worker failed; queued plans will fail and no write is admitted");
+            List<Job> droppedDurable, droppedLazy;
             lock (_gate)
             {
                 _stopping = true; _terminalError = error;
-                foreach (var job in _durable.Concat(_lazy))
+                droppedDurable = [.. _durable];
+                droppedLazy = [.. _lazy];
+                foreach (var job in droppedDurable.Concat(droppedLazy))
                 {
                     job.Done.TrySetException(error);
                     _metrics.WriterFinished(job.Lazy, job.Plan.Bytes, false);
@@ -148,6 +157,7 @@ public sealed partial class DbWriter : IDisposable
                 _durable.Clear(); _lazy.Clear();
                 _durableJobs = _durableBytes = _lazyJobs = _lazyBytes = 0;
             }
+            LogDroppedTerminalWork(droppedDurable, droppedLazy);
             if (TerminalFault is { } onTerminal)
             {
                 try { onTerminal(error); }
@@ -157,8 +167,31 @@ public sealed partial class DbWriter : IDisposable
         finally { _exited.TrySetResult(); }
     }
 
+    private void LogDroppedTerminalWork(List<Job> droppedDurable, List<Job> droppedLazy)
+    {
+        if (_log == null) return;
+        var failedJobs = _failedTerminalGroup?.Where(p => p.Error != null).Select(p => p.Job).ToList() ?? [];
+        _failedTerminalGroup = null;
+        var lost = failedJobs.Concat(droppedDurable).Concat(droppedLazy).ToList();
+        if (lost.Count == 0) return;
+        long totalBytes = lost.Sum(j => (long)j.Plan.Bytes);
+        string labels = string.Join(", ", lost.Select(j => j.Plan.Label).Distinct(StringComparer.Ordinal).Take(12));
+        var roles = lost.SelectMany(j => j.Plan.RoleWrites).Select(r => r.RoleId).Distinct().Order().Take(20)
+            .Select(id => id.ToString(CultureInfo.InvariantCulture)).ToArray();
+        string roleList = roles.Length == 0 ? "none" : string.Join(", ", roles);
+        LogTerminalPendingWorkLost(_log, failedJobs.Count, droppedDurable.Count, droppedLazy.Count, totalBytes, labels, roleList);
+    }
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Terminal writer fault callback failed")]
     private static partial void LogTerminalFaultCallbackFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Database commit rolled back with SQLite error {ErrorCode}; retrying {Count} job(s) (attempt {Attempt}/{MaxAttempts})")]
+    private static partial void LogCommitRetry(ILogger logger, int errorCode, int count, int attempt, int maxAttempts);
+
+    [LoggerMessage(Level = LogLevel.Critical,
+        Message = "Uncommitted writes lost on terminal database writer failure: failedGroup={FailedGroup}, "
+            + "droppedDurable={DroppedDurable}, droppedLazy={DroppedLazy}, bytes={Bytes}, labels=[{Labels}], roles=[{Roles}]")]
+    private static partial void LogTerminalPendingWorkLost(ILogger logger, int failedGroup, int droppedDurable, int droppedLazy, long bytes, string labels, string roles);
 
     // Group commit: jobs already queued behind the first one join its transaction, each inside its own
     // savepoint (a failing job rolls back only itself), and one FULL commit makes the group durable. Every job's
@@ -229,10 +262,79 @@ public sealed partial class DbWriter : IDisposable
             if (group.Count == 0) group.Add(new Pending(first)); // BEGIN itself failed: the job still completes
         }
         finally { tx?.Dispose(); }
+        if (commitFailed && groupError is { } retryable && IsSafeRollbackRetryError(retryable))
+            (groupError, commitFailed) = RetryCommittedGroup(db, group, retryable);
         foreach (var pending in group) Finish(db, pending, groupError);
         if (groupError != null && (commitFailed || IsTerminalStorageError(groupError)))
+        {
+            _failedTerminalGroup = group;
             throw groupError;
+        }
     }
+
+    private (Exception? Error, bool CommitFailed) RetryCommittedGroup(SqliteConnection db, List<Pending> group, Exception initialError)
+    {
+        var toRetry = new List<int>(group.Count);
+        for (int i = 0; i < group.Count; i++)
+            if (group[i].Executed) toRetry.Add(i);
+        if (toRetry.Count == 0) return (initialError, true);
+
+        Exception currentError = initialError;
+        var delays = CommitRetryDelays;
+        for (int attempt = 1; attempt <= delays.Length; attempt++)
+        {
+            int code = currentError is SqliteException se ? se.SqliteErrorCode : 0;
+            if (_log != null) LogCommitRetry(_log, code, toRetry.Count, attempt, delays.Length);
+            if (delays[attempt - 1] > TimeSpan.Zero) Thread.Sleep(delays[attempt - 1]);
+
+            Exception? retryError = null;
+            bool retryCommitFailed = false;
+            SqliteTransaction? retryTx = null;
+            try
+            {
+                retryTx = db.BeginTransaction();
+                foreach (int idx in toRetry)
+                {
+                    var fresh = new Pending(group[idx].Job);
+                    group[idx] = fresh;
+                    if (!Execute(db, retryTx, fresh, "g" + (idx + 1).ToString(CultureInfo.InvariantCulture), out retryError))
+                        break;
+                }
+                if (retryError == null)
+                {
+                    int executed = toRetry.Count(i => group[i].Executed);
+                    if (executed == 0) retryTx.Rollback();
+                    else
+                    {
+                        try
+                        {
+                            BeforeGroupCommitForTest?.Invoke();
+                            retryTx.Commit();
+                        }
+                        catch (Exception commitError)
+                        {
+                            retryCommitFailed = true;
+                            retryError = commitError;
+                        }
+                        if (retryError == null) _metrics.WriterCommitted(executed);
+                    }
+                }
+            }
+            catch (Exception e) { retryError ??= e; }
+            finally { retryTx?.Dispose(); }
+
+            if (retryError == null) return (null, false);
+            currentError = retryError;
+            if (!retryCommitFailed || !IsSafeRollbackRetryError(retryError))
+                return (retryError, retryCommitFailed);
+        }
+        return (currentError, true);
+    }
+
+    // Only retry SQLite errors where the transaction is guaranteed rolled back (BUSY=5, LOCKED=6, FULL=13).
+    // Ambiguous I/O errors (IOException, SQLITE_IOERR=10) are never retried because commit outcome is unknown.
+    private static bool IsSafeRollbackRetryError(Exception error) =>
+        error is SqliteException { SqliteErrorCode: 5 or 6 or 13 };
 
     private static bool IsTerminalStorageError(Exception error) =>
         error is SqliteException { SqliteErrorCode: 8 or 10 or 11 or 13 or 14 or 26 } or IOException;

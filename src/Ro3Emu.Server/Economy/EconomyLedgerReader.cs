@@ -28,8 +28,8 @@ public static class EconomyLedgerReader
             issues.Add(new(EconomyIssueKind.Coverage, "ledger/schema", "E01 economy tables are absent."));
             return Empty(realmId, catalog, fromExclusive, throughInclusive, issues);
         }
-        var (storedRealm, watermark) = ReadMetadata(db, tx, realmId, fromExclusive, throughInclusive, issues);
-        var pass = new ReadPass(db, tx, catalog, storedRealm, watermark, fromExclusive, throughInclusive, issues);
+        var (storedRealm, watermark, prunedSeq) = ReadMetadata(db, tx, realmId, fromExclusive, throughInclusive, issues);
+        var pass = new ReadPass(db, tx, catalog, storedRealm, watermark, prunedSeq, fromExclusive, throughInclusive, issues);
         pass.Execute();
         tx.Commit();
         bool complete = issues.Count == 0;
@@ -38,11 +38,11 @@ public static class EconomyLedgerReader
         { CompactedReceipts = pass.CompactedOps.Count };
     }
 
-    private static (string StoredRealm, long Watermark) ReadMetadata(SqliteConnection db, SqliteTransaction tx,
+    private static (string StoredRealm, long Watermark, long PrunedSequence) ReadMetadata(SqliteConnection db, SqliteTransaction tx,
         string realmId, long fromExclusive, long throughInclusive, List<EconomyIssue> issues)
     {
         string storedRealm;
-        long watermark, floor;
+        long watermark, floor, prunedSeq = 0;
         using (var meta = Command(db, tx,
             "SELECT realm_id,next_sequence,retained_floor FROM economy_meta WHERE singleton=1"))
         {
@@ -58,16 +58,16 @@ public static class EconomyLedgerReader
             if ((long)hasPruned.ExecuteScalar()! > 0)
             {
                 using var prunedCmd = Command(db, tx, "SELECT pruned_entry_seq FROM economy_meta WHERE singleton=1");
-                long prunedSeq = prunedCmd.ExecuteScalar() is long p ? p : 0;
+                prunedSeq = prunedCmd.ExecuteScalar() is long p ? p : 0;
                 if (prunedSeq > 0 && fromExclusive < prunedSeq)
                     issues.Add(new(EconomyIssueKind.Coverage, "ledger/pruned",
                         "Requested range includes economy_entry rows already aggregated into economy_daily_aggregate."));
             }
-        return (storedRealm, watermark);
+        return (storedRealm, watermark, prunedSeq);
     }
 
     private sealed class ReadPass(SqliteConnection db, SqliteTransaction tx, EconomyCatalog catalog,
-        string storedRealm, long watermark, long fromExclusive, long throughInclusive, List<EconomyIssue> issues)
+        string storedRealm, long watermark, long prunedSeq, long fromExclusive, long throughInclusive, List<EconomyIssue> issues)
     {
         internal List<EconomyReceipt> Receipts { get; } = [];
         internal List<EconomySourceClaim> Prior { get; } = [];
@@ -170,6 +170,7 @@ public static class EconomyLedgerReader
             // ReceiptRetention dropped this receipt's payload and outcome: its sequence, legs and source claim
             // are still certified below; the intent checks that need those bytes are not possible any more.
             bool compacted = ReceiptBlobs.IsCompacted((byte[])row.GetValue(15));
+            bool pruned = seq <= prunedSeq;
             if (compacted) CompactedOps.Add(op);
             if (row.GetString(4) != storedRealm || !_allReceipts.TryAdd(seq, (op, count, source, row.GetInt64(6), commandKind)))
                 issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + seq, "Duplicate or foreign realm receipt."));
@@ -183,7 +184,7 @@ public static class EconomyLedgerReader
             _commands[op] = commandKind;
             EconomyRewardEvidence? rewardEvidence = null;
             long? beforeProgressRevision = null, afterProgressRevision = null;
-            if (!compacted)
+            if (!compacted && !pruned)
                 (rewardEvidence, beforeProgressRevision, afterProgressRevision) = ValidateReceiptPayload(
                     row, seq, op, source, commandKind, isEvent, family, economic, escrow);
             if (seq > fromExclusive) Receipts.Add(new EconomyReceipt(seq, op, count, [source])
@@ -327,13 +328,15 @@ public static class EconomyLedgerReader
 
         private void VerifyCountsAndSources()
         {
-            // No-prune mode: certify the entire retained prefix, not just the requested window.
+            // Certify leg counts for every unpruned receipt in the prefix; rows at or below prunedSeq were
+            // rolled into economy_daily_aggregate by EconomyRetentionPlan.
             using (var counts = Command(db, tx, """
                 SELECT r.operation_id,r.leg_count,COUNT(e.entry_id),MIN(e.leg_no),MAX(e.leg_no)
                 FROM operation_receipt r LEFT JOIN economy_entry e ON e.operation_id=r.operation_id
-                WHERE r.commit_seq<=$through GROUP BY r.operation_id,r.leg_count
+                WHERE r.commit_seq>$pruned AND r.commit_seq<=$through GROUP BY r.operation_id,r.leg_count
                 """))
             {
+                counts.Parameters.AddWithValue("$pruned", prunedSeq);
                 counts.Parameters.AddWithValue("$through", throughInclusive);
                 using var row = counts.ExecuteReader();
                 while (row.Read())
@@ -389,8 +392,9 @@ public static class EconomyLedgerReader
                     asset_kind,asset_id,asset_epoch,delta,reason_code,leg_kind,edge_no,before_fingerprint,after_fingerprint,
                     source_key,counterparty_owner_kind,counterparty_owner_id,counterparty_compartment_kind,
                     counterparty_compartment_key,counterparty_instance_key
-                    FROM economy_entry WHERE commit_seq<=$through ORDER BY commit_seq,leg_no
+                    FROM economy_entry WHERE commit_seq>$pruned AND commit_seq<=$through ORDER BY commit_seq,leg_no
                 """);
+            entry.Parameters.AddWithValue("$pruned", prunedSeq);
             entry.Parameters.AddWithValue("$through", throughInclusive);
             using var row = entry.ExecuteReader();
             while (row.Read()) ProcessEntryRow(row);
@@ -705,6 +709,7 @@ public static class EconomyLedgerReader
         {
             foreach (var receipt in Receipts)
             {
+                if (receipt.CommitSequence <= prunedSeq) continue;
                 int[] numbers = [.. Legs.Where(x => x.OperationId == receipt.OperationId).Select(x => x.LegNumber).Order()];
                 if (numbers.Length != receipt.LegCount || !numbers.SequenceEqual(Enumerable.Range(0, numbers.Length)))
                     issues.Add(new(EconomyIssueKind.Corruption, "receipt/" + receipt.OperationId, "Leg count or numbering is incomplete."));

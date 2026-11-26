@@ -115,6 +115,9 @@ internal sealed class EconomySchemaPlan : DbPlan
                 letter_id TEXT NOT NULL,
                 PRIMARY KEY(realm_id, source_key)
             );
+            CREATE INDEX IF NOT EXISTS operation_receipt_mail_seq
+                ON operation_receipt(commit_seq)
+                WHERE command_kind >= 'mail/' AND command_kind < 'mail0';
             """);
     }
 
@@ -207,6 +210,9 @@ internal sealed class EconomySchemaPlan : DbPlan
             FROM economy_entry_cd13b;
             CREATE INDEX economy_entry_cut ON economy_entry(commit_seq,entry_id);
             CREATE INDEX operation_source_key ON operation_source(source_key);
+            CREATE INDEX IF NOT EXISTS operation_receipt_mail_seq
+                ON operation_receipt(commit_seq)
+                WHERE command_kind >= 'mail/' AND command_kind < 'mail0';
             DROP TABLE operation_source_cd13b;
             DROP TABLE economy_entry_cd13b;
             """);

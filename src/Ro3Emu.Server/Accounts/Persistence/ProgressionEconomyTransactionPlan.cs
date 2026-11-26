@@ -179,16 +179,8 @@ internal sealed class ProgressionEconomyTransactionPlan(RoleItemPlan child, Econ
         if (source.ExecuteScalar() is null) throw new InvalidDataException("Family receipt lost natural source claim.");
     }
 
-    internal static void ValidateLegCount(SqliteConnection db, SqliteTransaction tx, string operation, int claimed)
-    {
-        using var counts = DbSql.Command(db, tx,
-            "SELECT COUNT(*),MIN(leg_no),MAX(leg_no) FROM economy_entry WHERE operation_id=$op");
-        counts.Parameters.AddWithValue("$op", operation);
-        using var row = counts.ExecuteReader();
-        if (!row.Read() || row.GetInt64(0) != claimed || claimed > 0 &&
-            (row.GetInt64(1) != 0 || row.GetInt64(2) != claimed - 1))
-            throw new InvalidDataException("Family receipt has missing or nonconsecutive ledger legs.");
-    }
+    internal static void ValidateLegCount(SqliteConnection db, SqliteTransaction tx, string operation, int claimed) =>
+        FamilyEconomyTransactionPlan.ValidateLegCount(db, tx, operation, claimed);
 
     private List<EconomyLeg> BuildLegs(
         Dictionary<(EconomyAsset Asset, EconomyLocation Location), EconomyHolding> before,

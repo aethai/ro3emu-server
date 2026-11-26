@@ -178,8 +178,24 @@ internal sealed class FamilyEconomyTransactionPlan(RoleItemPlan child, EconomyMu
         if (source.ExecuteScalar() is null) throw new InvalidDataException("Family receipt lost natural source claim.");
     }
 
+    internal static bool IsOperationPruned(SqliteConnection db, SqliteTransaction tx, string operation)
+    {
+        using (var hasColumn = DbSql.Command(db, tx,
+            "SELECT COUNT(*) FROM pragma_table_info('economy_meta') WHERE name='pruned_entry_seq'"))
+            if ((long)hasColumn.ExecuteScalar()! == 0) return false;
+        using var pruned = DbSql.Command(db, tx, """
+            SELECT CASE WHEN m.pruned_entry_seq > 0 AND r.commit_seq <= m.pruned_entry_seq THEN 1 ELSE 0 END
+            FROM operation_receipt r
+            JOIN economy_meta m ON m.singleton=1
+            WHERE r.operation_id=$op
+            """);
+        pruned.Parameters.AddWithValue("$op", operation);
+        return pruned.ExecuteScalar() is long flag && flag != 0;
+    }
+
     internal static void ValidateLegCount(SqliteConnection db, SqliteTransaction tx, string operation, int claimed)
     {
+        if (IsOperationPruned(db, tx, operation)) return;
         using var counts = DbSql.Command(db, tx,
             "SELECT COUNT(*),MIN(leg_no),MAX(leg_no) FROM economy_entry WHERE operation_id=$op");
         counts.Parameters.AddWithValue("$op", operation);
