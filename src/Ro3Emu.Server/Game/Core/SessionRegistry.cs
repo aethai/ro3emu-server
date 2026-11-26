@@ -49,6 +49,13 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
         lock (_sync)
         {
             _byAccount.TryGetValue(session.Account!, out previous);
+            if (previous != null && previous != session)
+            {
+                if (previous.Role is { } previousRole && _byRole.TryGetValue(previousRole.Id, out var holder)
+                    && ReferenceEquals(holder, previous))
+                    _byRole.Remove(previousRole.Id);
+                if (ReferenceEquals(previous.Registry, this)) previous.Registry = null;
+            }
             _generations.TryGetValue(session.Account!, out long generation);
             session.AccountGeneration = checked(generation + 1);
             _generations[session.Account!] = session.AccountGeneration;
@@ -63,7 +70,8 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
         if ((!oldHandover.IsCompleted || !previous.PredecessorFence.IsCompleted) && owners != null)
             owners.HandoverConflicts++;
         session.PredecessorFence = Task.WhenAll(previous.PredecessorFence, oldHandover);
-        log.LogInformation("{Account} logged in again; closing the older connection {Remote}", session.Account, previous.Channel.Remote);
+        log.LogInformation("{Account} logged in again; closing the older connection {Remote}", session.Account, previous.Channel?.Remote);
+        if (previous.Channel == null) return;
         try
         {
             await previous.Channel.SendAsync(GameGateServer.DisconnectClient, new DisconnectClientInfo { Reason = ReasonKicked });
@@ -85,12 +93,12 @@ public sealed class SessionRegistry(ILogger<SessionRegistry> log, Ownership.Owne
     {
         lock (_sync)
         {
+            if (session.Role is { } role && _byRole.TryGetValue(role.Id, out var byRole) && ReferenceEquals(byRole, session))
+                _byRole.Remove(role.Id);
+            if (ReferenceEquals(session.Registry, this)) session.Registry = null;
             if (session.Account != null && _byAccount.TryGetValue(session.Account, out var current) && current == session)
             {
                 _byAccount.Remove(session.Account);
-                if (session.Role is { } role && _byRole.TryGetValue(role.Id, out var byRole) && ReferenceEquals(byRole, session))
-                    _byRole.Remove(role.Id);
-                session.Registry = null;
                 Publish();
                 UnregisteredForTest?.Invoke(session);
             }

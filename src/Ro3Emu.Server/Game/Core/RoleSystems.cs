@@ -82,21 +82,36 @@ public sealed partial class RoleSystems
     internal async Task LeaveAsync(GameSession session, Func<string, Func<Task>, Task> step, Action savePosition)
     {
         var context = new RoleLeaveContext(session, savePosition);
-        foreach (var entry in _leave)
+        int index = 0;
+        try
         {
-            if (entry.Condition != null && !entry.Condition(context)) continue;
-            switch (entry.Kind)
+            for (; index < _leave.Length; index++)
             {
-                case LeaveStepKind.Essential:
-                    await step(entry.StepName, () => entry.Work(context));
-                    break;
-                case LeaveStepKind.Optional:
-                    try { await entry.Work(context); }
-                    catch (Exception e) { LogOptionalLeaveFailed(_log, entry.StepName, session.Role?.Id, e); }
-                    break;
-                case LeaveStepKind.StateReset:
-                    await entry.Work(context);
-                    break;
+                var entry = _leave[index];
+                if (entry.Condition != null && !entry.Condition(context)) continue;
+                switch (entry.Kind)
+                {
+                    case LeaveStepKind.Essential:
+                        await step(entry.StepName, () => entry.Work(context));
+                        break;
+                    case LeaveStepKind.Optional:
+                        try { await entry.Work(context); }
+                        catch (Exception e) { LogOptionalLeaveFailed(_log, entry.StepName, session.Role?.Id, e); }
+                        break;
+                    case LeaveStepKind.StateReset:
+                        await entry.Work(context);
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            for (int remaining = index + 1; remaining < _leave.Length; remaining++)
+            {
+                var entry = _leave[remaining];
+                if (entry.Kind != LeaveStepKind.StateReset) continue;
+                if (entry.Condition != null && !entry.Condition(context)) continue;
+                await entry.Work(context);
             }
         }
     }

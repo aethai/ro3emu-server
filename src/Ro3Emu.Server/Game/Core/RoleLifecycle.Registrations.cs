@@ -413,13 +413,14 @@ public sealed partial class WildAfkService : IRoleLifecycle
         builder.OnLoad(RoleLifecycleOrder.LoadWildAfk, "WildAfkService.Load", Load);
         builder.OnLogin(RoleLifecycleOrder.LoginWildAfk, "WildAfkService.Login", LoginAsync);
         builder.OnLogin(RoleLifecycleOrder.LoginWildAfkReconcile, "WildAfkService.Reconcile", ReconcileAsync);
-        builder.OnLeaveContext(RoleLifecycleOrder.LeaveWildAfk, "afk", "WildAfkService.Leave", ctx =>
+        builder.OnLeaveContext(RoleLifecycleOrder.LeaveWildAfk, "afk", "WildAfkService.Leave", async ctx =>
         {
             var s = ctx.Session;
-            // AFK.Leave detaches its session state. A held old-day award still needs the old
-            // daily/task rows on the next login, so the ordinary daily reset must wait for it.
-            ctx.DeferDailyBoundary = PendingDailyAward(s.Activities.WildAfk, s.Activities.Daily, s.Tasks, s.Activities.DailyRows);
-            return LeaveAsync(s);
+            var afkState = s.Activities.WildAfk;
+            // LeaveAsync finishes the final AFK tick and detaches s.Activities.WildAfk. Check PendingDailyAward
+            // afterward on the captured state so an award earned during that final tick still defers daily reset.
+            await LeaveAsync(s);
+            ctx.DeferDailyBoundary = PendingDailyAward(afkState, s.Activities.Daily, s.Tasks, s.Activities.DailyRows);
         });
     }
 }
@@ -494,8 +495,8 @@ public sealed partial class TimedBattleService : IRoleLifecycle
         builder.OnLeaveKeys(RoleLifecycleOrder.LeaveKeysTimedBattles, "TimedBattleService.CleanupKeys", CleanupKeys);
         builder.OnLeave(RoleLifecycleOrder.LeaveTimedBattle, "timed battle", "TimedBattleService.LeaveRole", async s =>
         {
-            await LeaveRoleAsync(s);
-            s.Instances.EventFaction = 0;
+            try { await LeaveRoleAsync(s); }
+            finally { s.Instances.EventFaction = 0; }
         });
     }
 }

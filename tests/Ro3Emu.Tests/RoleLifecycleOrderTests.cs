@@ -71,4 +71,27 @@ public sealed class RoleLifecycleOrderTests
                 expected.Length, actual.Count));
         }
     }
+
+    [Fact]
+    public async Task RoleSystemsLeaveRunsRemainingStateResetStepsWhenAnEarlierStepThrows()
+    {
+        bool resetRan = false;
+        var systems = new RoleSystems([new FaultingLeaveLifecycle(() => resetRan = true)],
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<RoleSystems>.Instance);
+        var session = new GameSession(null!, null!);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            systems.LeaveAsync(session, (_, work) => work(), () => { }));
+
+        Assert.True(resetRan);
+    }
+
+    private sealed class FaultingLeaveLifecycle(Action onReset) : IRoleLifecycle
+    {
+        public void RegisterLifecycle(RoleLifecycleBuilder builder)
+        {
+            builder.OnLeave(10, "fault", "FaultingStep", _ => throw new InvalidOperationException("leave failure"));
+            builder.OnLeave(20, "reset", "StateResetStep", _ => onReset(), kind: LeaveStepKind.StateReset);
+        }
+    }
 }
