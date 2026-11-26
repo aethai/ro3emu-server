@@ -271,9 +271,13 @@ public sealed partial class WildAfkService : IGameTicker
         bool wasSuspended = info.IsSuspended;
         info.IsSuspended = info.IsHighMagnification && reason != "active";
         if (info.IsSuspended && !wasSuspended) info.HighMultiplierPausedAt = now / 1000;
-        // A reconcile of a clock that keeps running is lazy, whoever asks for it (the tick, a kill, a query); a reset, a pause
-        // or the end of Bonus Time is durable. The kills' durable writes made every field kill wait on SQLite (#484).
-        Save(s, lazy: publish && !reset && running && info.IsHighMagnification && !info.IsSuspended);
+        // A reconcile is lazy, whoever asks for it (the tick, a kill, a query), also when it pauses or resumes the clock
+        // (no kill for 10 s, auto battle off, death, leaving the map): durable writes there made field kills and each farming
+        // player's pauses wait on SQLite on the loop (#484). A crash loses at most the part's interval, as for the running
+        // clock. Durable: the daily reset, the end of Bonus Time, and leaving the world (publish false); toggles and snapshots
+        // save on their own.
+        bool exhausted = running && !info.IsHighMagnification;
+        Save(s, lazy: publish && !reset && !exhausted);
         if (!publish) return; // Disconnected sockets must not interrupt durable accounting or world cleanup.
         if (consumed > 0) await _tasks.OnBonusTimeConsumedAsync(s, consumed); // Connect target 106014
         // (inferred) The [106901] quests (500130 [106901,3600], 386060 [106901,300]) need and show whole minutes. Settling
