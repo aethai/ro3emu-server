@@ -122,6 +122,12 @@ public sealed class TowerTests : IAsyncLifetime
         Assert.Equal(floor, dungeon.InitData.ClimbTowerInit.LayerConfID);
         Assert.Equal(new[] { (long)bot.Self!.Uuid }, Assert.Single(dungeon.Vars).Vi64);
         Assert.True(dungeon.StageModuleData.StageEndTime > dungeon.StageModuleData.StageStartTime);
+        // The floor timer (UI_Sys_Dungeon_TopInfo_TimeWidget) reads only LC_DunGeon_Actions.SetCountDown, in seconds.
+        var countDown = await Next(bot, DungeonService.Event, DungeonEventNotify.Parser, e => e.CliFuncname == TowerService.SetCountDown
+            && e.Params[0].IntParams[0] > 0); // not the previous floor's stop (0)
+        Assert.Equal(DungeonEventType.DungeonEventInvokeClientFunc, countDown.EventType);
+        Assert.Equal(2100001, countDown.DungeonEntry);
+        Assert.Equal(dungeon.StageModuleData.StageEndTime / 1000, Assert.Single(Assert.Single(countDown.Params).IntParams));
         // Ignore retained world/previous-attempt AOI events in the bot's inbox.
         bool Fresh(EntityBase b) => b.EntityType == 1 && b.BornTimeMs >= dungeon.StageModuleData.StageStartTime;
         var aoi = await Next(bot, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.Bases.Any(Fresh));
@@ -759,6 +765,14 @@ public sealed class TowerTests : IAsyncLifetime
         var packets = alice.Inbox.Snapshot().ToList();
         int reset = packets.FindLastIndex(e => e.IsGame(DungeonService.Reset)), started = packets.FindLastIndex(e => e.IsGame(TowerService.DungeonInfo));
         Assert.InRange(packets.IndexOf(moved), reset + 1, started - 1);
+        // _refreshAutoPathCache drops that walk while a tower DungeonCountDownTimeStamp lies ahead, so the cleared
+        // floor's timer is stopped at its result, before the reset, and the next floor's starts after the move.
+        static long? CountDownTo(BotEvent e) => e.IsGame(DungeonService.Event)
+            && DungeonEventNotify.Parser.ParseFrom(e.Body) is { CliFuncname: TowerService.SetCountDown } n ? n.Params[0].IntParams[0] : null;
+        int ended = packets.FindLastIndex(e => e.IsGame(TowerService.End));
+        int stopped = packets.FindLastIndex(e => CountDownTo(e) == 0), restarted = packets.FindLastIndex(e => CountDownTo(e) > 0);
+        Assert.InRange(stopped, 0, Math.Min(ended, reset) - 1);
+        Assert.True(restarted > started);
         await OnLoop(() => { Assert.Equal(born.Z, Session(alice).Position.Z); return Task.CompletedTask; });
     }
 

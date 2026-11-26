@@ -53,3 +53,10 @@ the same scene, without a 70010. The client keeps its scene for it (`LC_ClimbTow
 there and resumes it, and it runs only on `Unit.LocalPlayerGridChange`. After the 30124 the server therefore moves
 the player back to the floor's born point with a same-map teleport (`MOVEMENT_CHANGE` ForceTeleport), which raises
 that event; a player left where he stood keeps a paused auto battle. The born point as the target is **(inferred)**.
+
+The floor timer (`UI_Sys_Dungeon_TopInfo_TimeWidget` in the tower's HP widget) shows the asset
+`DungeonCountDownTimeStamp`, which only `LC_DunGeon_Actions.SetCountDown(seconds)` writes. Each floor start (first
+entry and in place) sends it after the 30401 as a 30404 `DungeonEventInvokeClientFunc` with the stage end in Unix
+seconds (`PetFloorConfig._iTimeLimit` after the start). The 32802 result stops it with `SetCountDown(0)`
+**(inferred)**: in the tower `_refreshAutoPathCache` skips the walk back, leaving auto battle paused, while that
+timestamp lies in the future, and the client never clears it itself.

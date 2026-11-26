@@ -158,12 +158,8 @@ public sealed class DraculaWeddingService : IGameTicker
     /// own PlayStory, which adds the bride to stories 3001 (home) and 3003 (lair). The plain story var 100020016 would
     /// go straight to LC_CutSceneManager and play them without her.
     /// </summary>
-    private static DungeonEventNotify Story(long scene, long plot) => new()
-    {
-        DungeonEntry = scene, EventType = (DungeonEventType)6, StageNum = 1, LevelNum = 1,
-        CliFuncname = "ClientPlayCutSceneStory",
-        Params = { new EventParams { IntParams = { plot } }, new EventParams { BoolParams = { true } } },
-    };
+    private static DungeonEventNotify Story(long scene, long plot) => DungeonService.InvokeClientFunc(scene, "ClientPlayCutSceneStory",
+        new EventParams { IntParams = { plot } }, new EventParams { BoolParams = { true } });
 
     /// <summary>PublicParamConfig.DraculaWeddingDynamicStoryIdArr {3001, 3003, 3004}: home, lair start, rescue.</summary>
     private long StoryId(int index) =>

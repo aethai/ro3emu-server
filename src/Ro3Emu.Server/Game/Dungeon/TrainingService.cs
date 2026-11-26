@@ -21,6 +21,16 @@ public sealed partial class TrainingService : IGameTicker
 {
     public const uint Sync = 5069, ChallengeMode = 84061, AimAward = 84062, ExitChallengeMode = 84063, UpdateWoodNpc = 84064,
         Reconnect = 84065, ChallengeReconnect = 84066, ChallengeReset = 84067;
+    /// <summary>DungeonVariableConfig 3500000 CTrainFinishTime: the challenge's end (Unix ms). LC_System_Piling starts the
+    /// client's DPS count at that time / 1000 - 60 (_onChallengeFinishTimeChanged, Update), so the count opens at
+    /// <see cref="Attempt.Begin"/> and lasts TrainingChallengeTimeLimit.</summary>
+    private const int TrainFinishTimeVar = 3500000;
+    /// <summary>The "3, 2, 1" before the count, in UI_Sys_GVE_BattleBeginsPanel (dungeon vars 301/302). No client table
+    /// holds its length for the training ground: three seconds is (inferred).</summary>
+    private const int CountdownMs = 3000;
+    /// <summary>UIWords 50074 "Battle Begins", UIWordsDefine.StartWarStr (Lua_UIWordDefine.lua:3436-3437), the word
+    /// LC_DunGeon_Chicken's own start countdown shows (LC_DunGeon_Chicken.lua:2035). Using it here is (inferred).</summary>
+    private const long StartWarWord = 50074;
     private readonly GameData _data;
     private readonly RoleStore _roles;
     private readonly CharacterService _character;
@@ -39,6 +49,7 @@ public sealed partial class TrainingService : IGameTicker
         public int Race = 2, Element = 1, Size = 2;
         public bool Challenge;
         public bool Running;
+        public long Begin;
         public long End;
         public long Damage;
         public bool Settling;
@@ -75,7 +86,8 @@ public sealed partial class TrainingService : IGameTicker
         {
             if (!_attempts.TryGetValue(s, out var a) || a.Dummy != m || s.InstanceId != a.Room.Id || s.SceneLoading)
                 return Task.CompletedTask;
-            if (a.Running && Now < a.End && amount > 0) a.Damage = checked(a.Damage + amount);
+            // Hits during the countdown do not count; the client's own DPS count opens at Begin too (LC_System_Piling).
+            if (a.Running && Now >= a.Begin && Now < a.End && amount > 0) a.Damage = checked(a.Damage + amount);
             // NPCConfig's auto-recovery buffs describe an enduring target. Keep it alive after measured hits (inferred).
             m.Hp = m.Template.MaxHp; m.Target = null;
             return Task.CompletedTask;
@@ -165,7 +177,14 @@ public sealed partial class TrainingService : IGameTicker
             DungeonEntry = a.Room.SceneEntry, DungeonId = a.Room.Id,
             Level = 1, Stage = a.Running ? 105 : 104, ChangeType = (DungeonBaseInfoNotify.Types.eChangeType)2
         };
-        snapshot.Vars.Add(new DungeonVar { VarId = 3500000, Vi64 = { a.Running ? a.End : 0 } });
+        snapshot.Vars.Add(new DungeonVar { VarId = TrainFinishTimeVar, Vi64 = { a.Running ? a.End : 0 } });
+        // LC_DunGeon_Actions.UpdateCountdownEffectParam opens the panel at once when its timestamp is less than
+        // duration + 1 s away (LC_DunGeon_Actions.lua:2095-2224); UI_Sys_GVE_BattleBeginsPanel then counts down to it.
+        if (a.Running && a.Begin > Now)
+        {
+            snapshot.Vars.Add(new DungeonVar { VarId = DungeonService.CountdownEffectParamsVar, Vi64 = { CountdownMs, StartWarWord } });
+            snapshot.Vars.Add(new DungeonVar { VarId = DungeonService.CountdownEffectTimestampVar, Vi64 = { a.Begin } });
+        }
         return s.SendGameAsync(DungeonService.BaseInfo, snapshot);
     }
 
@@ -177,7 +196,7 @@ public sealed partial class TrainingService : IGameTicker
         {
             if (req.StrCmd == "OnPileChallengeStart" && !a.Running)
             {
-                a.Damage = 0; a.End = Now + Duration * 1000L; a.Running = true;
+                a.Damage = 0; a.Begin = Now + CountdownMs; a.End = a.Begin + Duration * 1000L; a.Running = true;
                 await SnapshotAsync(s, a);
             }
             else if (req.StrCmd == "OnPileChallengeReset") await ResetAttemptAsync(s, a);
@@ -235,7 +254,7 @@ public sealed partial class TrainingService : IGameTicker
 
     private async Task ResetAttemptAsync(GameSession s, Attempt a)
     {
-        a.Running = false; a.Damage = 0; a.End = 0; a.Settling = false;
+        a.Running = false; a.Damage = 0; a.Begin = 0; a.End = 0; a.Settling = false;
         await SpawnAsync(s, a); await SnapshotAsync(s, a);
     }
 

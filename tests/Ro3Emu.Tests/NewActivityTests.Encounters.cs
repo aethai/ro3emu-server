@@ -137,9 +137,16 @@ public sealed partial class NewActivityTests
         Assert.Equal(0, (await Next(bot, 84061, TrainingChallengeModeResp.Parser)).Result);
         long challenge = await LoadPrivate(bot, 2100011);
         await bot.SendGameAsync(DungeonService.ClientEvent, new ClientDungeonEvent { StrCmd = "OnPileChallengeStart" });
-        await Next(bot, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
+        var started = await Next(bot, DungeonService.BaseInfo, DungeonBaseInfoNotify.Parser,
             r => r.DungeonId == challenge && r.Vars.Any(v => v.VarId == 3500000 && v.Vi64.Any(t => t > 0)));
+        // UI_Sys_GVE_BattleBeginsPanel's "3, 2, 1, Battle Begins" (vars 302 {ms, UIWord}, 301 the instant it ends), then
+        // the 60 s count: LC_System_Piling opens the client's DPS count at CTrainFinishTime - 60 s.
+        Assert.Equal(new long[] { 3000, 50074 }, started.Vars.Single(v => v.VarId == DungeonService.CountdownEffectParamsVar).Vi64);
+        long begin = started.Vars.Single(v => v.VarId == DungeonService.CountdownEffectTimestampVar).Vi64.Single();
+        Assert.Equal(begin + 60000, started.Vars.Single(v => v.VarId == 3500000).Vi64.Single());
+        Assert.Equal(_clock.GetUtcNow().ToUnixTimeMilliseconds() + 3000, begin);
         await bot.SendGameAsync(DungeonService.ClientEvent, new ClientDungeonEvent { StrCmd = "OnPileChallengeEnterOrExit" });
+        _clock.AdvanceSeconds(3); // hits during the countdown are not measured
         var actor = await Service<GameLoop>().InvokeAsync(() => Task.FromResult(Service<World>().AllUnits()
             .OfType<MonsterUnit>().Single(m => m.InstanceId == challenge)));
         Assert.Equal(2, actor.Template.Race); Assert.Equal(1, actor.Template.Element);
