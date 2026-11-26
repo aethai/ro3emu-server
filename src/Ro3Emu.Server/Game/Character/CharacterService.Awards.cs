@@ -482,6 +482,9 @@ public sealed partial class CharacterService
         foreach (var (key, value) in source.Currency) result.Currency[key] = value;
         foreach (var (key, value) in source.Skills) result.Skills[key] = value;
         foreach (var (key, value) in source.SkillBar) result.SkillBar[key] = value;
+        // Never saved, but a staged or preview copy must still know the skills its equipment grants: SkillService.Build
+        // prunes the bar and the Auto-Battle lists against the copy, and dropped a card skill as unlearned (#571).
+        foreach (var (key, value) in source.GrantedSkills) result.GrantedSkills[key] = value;
         return result;
     }
 
