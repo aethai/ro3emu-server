@@ -82,6 +82,25 @@ public sealed partial class MapTests : IAsyncLifetime
         return parser.ParseFrom(e.Body);
     }
 
+    /// <summary>The text of a GM reply: BroadcastNotify carries it in BroadCastNotify.Content, so the raw body starts
+    /// with the field's tag and length, not with the text.</summary>
+    private static string Notice(BotEvent e) => BroadCastNotify.Parser.ParseFrom(e.Body).Content;
+
+    /// <summary>The ticker spawns the MVPs within a second of start: asks !mvp where 1 until Angeling is alive on
+    /// Poring Island (10214), which answers "10214 x z" ("MVP 1 is not alive (...)" before that).</summary>
+    private async Task AwaitAngelingAsync(BotClient alice)
+    {
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            await Gm("alice", "!mvp where 1");
+            var reply = Notice(await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
+                && Notice(e) is var text && (text.StartsWith("MVP 1 ", StringComparison.Ordinal) || text.StartsWith("10214 ", StringComparison.Ordinal)), Wait));
+            if (reply.StartsWith("10214 ", StringComparison.Ordinal)) return;
+            await Task.Delay(200);
+        }
+        throw new TimeoutException("Angeling (MVP 1) did not spawn on 10214.");
+    }
+
     private async Task Gm(string account, string line)
     {
         using var http = new HttpClient();
@@ -365,14 +384,7 @@ public sealed partial class MapTests : IAsyncLifetime
 
         await Gm("alice", "!lvl 99");
         await Gm("alice", "!quest done 10105090"); // Opens To-Do; 500010 tracks settled MVP participation.
-        // The ticker spawns the MVPs within a second of start; ask until it is alive.
-        for (int i = 0; i < 20; i++)
-        {
-            await Gm("alice", "!mvp where 1");
-            var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify) && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1") || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
-            if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
-            await Task.Delay(300);
-        }
+        await AwaitAngelingAsync(alice);
         await Gm("alice", "!mvp goto 1"); // Poring Island 10214
         var (_, _, npcs) = await FollowSceneChange(alice);
         var angeling = npcs.Bases.FirstOrDefault(b => b.EntityTemplateID == 5020001)
@@ -528,7 +540,8 @@ public sealed partial class MapTests : IAsyncLifetime
             RecordRollbackAndStopRepeat(monster, before, after, damageRestored);
         Func<GameSession, MonsterUnit, long, Task> failDamage = (_, monster, _) =>
             monster.Uid == (long)angeling.Uuid ? Task.FromException(new IOException("Injected MVP damage callback refusal.")) : Task.CompletedTask;
-        using var failSub = combat.EventDamageRecorded.Subscribe(failDamage);
+        // Only this step's hit fails its damage callback: the next step's kill must reach the settlement.
+        var failSub = combat.EventDamageRecorded.Subscribe(failDamage);
         try
         {
             await SwingWait.UntilDoneAsync(_app.Services.GetRequiredService<GameLoop>(), _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null), (long)angeling.Uuid);
@@ -537,7 +550,7 @@ public sealed partial class MapTests : IAsyncLifetime
             Assert.Equal((1L, 1L, false), await damageRestored.Task.WaitAsync(TimeSpan.FromSeconds(10)));
             Assert.Equal(0, ReceiptCount("event/mvp-settlement"));
         }
-        finally { combat.LethalRollbackObservedForTest = null; }
+        finally { failSub.Dispose(); combat.LethalRollbackObservedForTest = null; }
 
         // A failed source probe is an unknown outcome. Retain its original source and resolve it
         // on the next MVP tick; do not roll a second settlement while its result is unknown.
@@ -559,7 +572,8 @@ public sealed partial class MapTests : IAsyncLifetime
             await SwingWait.UntilDoneAsync(_app.Services.GetRequiredService<GameLoop>(), _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == alice.Account && s.Role != null), (long)angeling.Uuid);
             await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = 1000001, TargetId = (long)angeling.Uuid });
             Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
-            await probeFault.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            try { await probeFault.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException error) { throw new InvalidOperationException(string.Join("\n", errors.Messages), error); }
             Assert.Equal(0, ReceiptCount("event/mvp-settlement"));
             Assert.Equal((1L, 1L, false), await unknownRestored.Task.WaitAsync(TimeSpan.FromSeconds(10)));
             Assert.Equal(0, ReceiptCount("event/mvp-settlement"));
@@ -710,15 +724,7 @@ public sealed partial class MapTests : IAsyncLifetime
         try
         {
             await Gm("alice", "!lvl 99");
-            for (int attempt = 0; attempt < 20; attempt++)
-            {
-                await Gm("alice", "!mvp where 1");
-                var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
-                    && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1")
-                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
-                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
-                await Task.Delay(200);
-            }
+            await AwaitAngelingAsync(alice);
             await Gm("alice", "!mvp goto 1");
             var (_, _, npcs) = await FollowSceneChange(alice);
             var angeling = npcs.Bases.FirstOrDefault(b => b.EntityTemplateID == 5020001)

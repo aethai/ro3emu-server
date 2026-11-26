@@ -15,15 +15,7 @@ public sealed partial class MapTests
         try
         {
             await Gm("alice", "!lvl 99");
-            for (int attempt = 0; attempt < 20; attempt++)
-            {
-                await Gm("alice", "!mvp where 1");
-                var reply = await alice.Inbox.WaitAsync(e => e.IsGame(GmCommands.BroadcastNotify)
-                    && (System.Text.Encoding.UTF8.GetString(e.Body).Contains("MVP 1")
-                        || System.Text.Encoding.UTF8.GetString(e.Body).StartsWith("10214 ", StringComparison.Ordinal)), Wait);
-                if (System.Text.Encoding.UTF8.GetString(reply.Body).StartsWith("10214 ", StringComparison.Ordinal)) break;
-                await Task.Delay(200);
-            }
+            await AwaitAngelingAsync(alice);
             await Gm("alice", "!mvp goto 1");
             var (_, _, npcs) = await FollowSceneChange(alice);
             var angeling = npcs.Bases.FirstOrDefault(b => b.EntityTemplateID == 5020001)
