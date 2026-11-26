@@ -171,7 +171,13 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
             return await Request(bot, r => r.SeasonEvePlayChapter = play);
         }
 
+        // LC_ActivityParser_SeasonEve copies clues into kPendingClueMap: all seven listed, the three found ones true.
+        var registry = _app.Services.GetRequiredService<SessionRegistry>();
+        Dictionary<long, bool> Pending() => new(registry.All().Single(s => s.Role?.Name == "Alice")
+            .Activities.NewActivities!.ActivityInfo[117].ActivityParam.SeasonEve.ChapterInfo[1].Clues);
+        Assert.Equal(Enumerable.Range(1, 7).ToDictionary(c => (long)c, _ => false), Pending());
         await FindFirstThree(alice, "alice");
+        Assert.Equal(Enumerable.Range(1, 7).ToDictionary(c => (long)c, c => c <= 3), Pending());
         Assert.Equal(1, (await Global(bob)).ChapterInfo[1].Clues[1]);
         Assert.NotEqual(0, (await Play(alice, false)).Result);
         Assert.Equal(initial.Progress, (await Global(alice)).Progress);
@@ -214,7 +220,6 @@ public sealed class ActivityAdventuresTests : IAsyncLifetime
         Assert.NotEqual(0, (await Request(relog, r => r.SeasonEveSelectWish = new SeasonEveSelectWishReq
         { WishId = 2 })).Result);
 
-        var registry = _app.Services.GetRequiredService<SessionRegistry>();
         var roles = _app.Services.GetRequiredService<Ro3Emu.Server.Accounts.RoleStore>();
         long aliceId = registry.All().Single(s => s.Role?.Name == "Alice").Role!.Id;
         long bobId = registry.All().Single(s => s.Role?.Name == "Bob").Role!.Id;

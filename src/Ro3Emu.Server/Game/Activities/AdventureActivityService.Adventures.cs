@@ -39,7 +39,7 @@ public sealed partial class AdventureActivityService
                 info.ActivityParam.Journey ??= CreateJourney();
                 break;
             case 19:
-                info.ActivityParam.SeasonEve ??= CreateSeasonEve();
+                SeedEvePendingClues(_data, info.ActivityParam.SeasonEve ??= new PlayerActivitySeasonEve());
                 break;
         }
     }
@@ -88,13 +88,37 @@ public sealed partial class AdventureActivityService
     private PlayerActivitySeasonEve CreateSeasonEve()
     {
         var state = new PlayerActivitySeasonEve();
-        foreach (var row in _data.Table("SeasonEveChapterConfig").Values)
-        {
-            long id = GameData.Int(row, "_iId");
-            if (id > 0) state.ChapterInfo[id] = new PlayerSeasonEveChapterInfo();
-        }
+        SeedEvePendingClues(_data, state);
         return state;
     }
+
+    /// <summary>
+    /// Lists every configured chapter and every clue of its SeasonEveChapterConfig._kClueList in
+    /// PlayerSeasonEveChapterInfo.clues: false while pending, true once found; a found clue is never reset.
+    /// LC_ActivityParser_SeasonEve.ParseActivityInfo copies <c>clues</c> into kPendingClueMap.
+    /// LC_SeasonEveHelper.OpenClueSelectionDialog names the Goddess's Hint city (DialogueConfig 200030006, ${1})
+    /// from the map of its first key and offers each key as a SeasonEveClueConfig option, a true one marked finished.
+    /// LC_System_SeasonEve._updateClueNpcs spawns the clue NPC for each false key and removes it for each true one,
+    /// and LC_SeasonEveHelper.GetFinishedNoteCount counts the true values. That every clue of the list is pending
+    /// from the start, rather than a subset of _iClueCount, is (inferred): the failed-play dialogue sends the player
+    /// back to search for more clues after the three a chapter needs.
+    /// </summary>
+    internal static void SeedEvePendingClues(GameData data, PlayerActivitySeasonEve state)
+    {
+        foreach (var chapter in SeasonEveChapterConfig.All(data))
+        {
+            if (chapter.Id < 1) continue;
+            if (!state.ChapterInfo.TryGetValue(chapter.Id, out var progress))
+                state.ChapterInfo[chapter.Id] = progress = new PlayerSeasonEveChapterInfo();
+            foreach (long clue in chapter.ClueList)
+                if (clue > 0 && !progress.Clues.ContainsKey(clue)) progress.Clues[clue] = false;
+        }
+    }
+
+    private static bool EveClueFound(PlayerSeasonEveChapterInfo progress, long clueId) =>
+        progress.Clues.TryGetValue(clueId, out bool found) && found;
+
+    private static int EveFoundClueCount(PlayerSeasonEveChapterInfo progress) => progress.Clues.Values.Count(found => found);
 
     /// <summary>CommonActivityReq's adventure oneofs. The core holds ActivityGate and validates activity state.</summary>
     internal async Task<bool> HandleAdventureCommonAsync(GameSession session, CommonActivityReq req, CommonActivityRes res)
@@ -333,7 +357,7 @@ public sealed partial class AdventureActivityService
         var next = session.Activities.NewActivities!.Clone();
         var state = next.ActivityInfo[activityId].ActivityParam.SeasonEve;
         if (!state.ChapterInfo.TryGetValue(chapterId, out var progress)) return ErrorCodes.Parameter;
-        res.IsFirst = !progress.Clues.ContainsKey(req.ClueId);
+        res.IsFirst = !EveClueFound(progress, req.ClueId);
         res.Index = index;
         res.NoteId = noteId;
         if (!res.IsFirst) return 0;
@@ -365,7 +389,7 @@ public sealed partial class AdventureActivityService
         var next = session.Activities.NewActivities!.Clone();
         if (!next.ActivityInfo[activityId].ActivityParam.SeasonEve.ChapterInfo.TryGetValue(req.ChapterId, out var progress))
             return ErrorCodes.Parameter;
-        if (progress.IsFinish || progress.Clues.Count < GameData.Int(chapter, "_iClueCount")
+        if (progress.IsFinish || EveFoundClueCount(progress) < GameData.Int(chapter, "_iClueCount")
             || Enumerable.Range(1, count).Any(index => req.NoteIds[index] != EveNoteType(index, noteTypes)))
             return ErrorCodes.TaskRequirements;
         foreach (var (key, value) in req.NoteIds) progress.Notes[key] = value;
