@@ -104,11 +104,13 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
         public long RetryAt { get; set; }
 
         // One writer per week (loop only): every SaveAsync takes a ticket; a write covers every ticket taken before
-        // its snapshot, so a caller learns whether the state it asked to save is committed.
+        // its snapshot, so a caller learns whether the state it asked to save is committed. Staged commit-before-publish
+        // snapshots share the same Saving gate via TurnWaiters so overlapping writes cannot reorder in SQLite.
         public bool Saving { get; set; }
         public long Requested { get; set; }
         public long Committed { get; set; }
         public List<(long Ticket, TaskCompletionSource<bool> Done)> Waiting { get; } = [];
+        public Queue<TaskCompletionSource> TurnWaiters { get; } = [];
     }
 
     /// <summary>The event's phase bounds (unix s), from TimeLimitConfig 1074 offsets on the 3303 occurrence.</summary>
@@ -189,6 +191,51 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
         }
     }
 
+    private async Task<bool> CommitWeekSnapshotAsync(Week week,
+        Func<(DBGveHuntingActivityData Data, Runtime Runtime)?> prepare, Action apply)
+    {
+        try
+        {
+            return await _loop.TrackAsync("guild hunt save", async () =>
+            {
+                while (week.Saving)
+                {
+                    var turn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    week.TurnWaiters.Enqueue(turn);
+                    await turn.Task;
+                }
+                week.Saving = true;
+                try
+                {
+                    if (prepare() is not { } snapshot) return false;
+                    try
+                    {
+                        await _accounts.WriteAsync<int>(new GuildHuntingSavePlan(week.Cycle, snapshot.Data.ToByteArray(),
+                            JsonSerializer.SerializeToUtf8Bytes(snapshot.Runtime)));
+                    }
+                    catch (Exception e)
+                    {
+                        LogSnapshotSaveFailed(_log, e, week.Cycle);
+                        if (week.Waiting.Count > 0) { week.Dirty = true; week.RetryAt = Now + RetrySeconds; }
+                        return false;
+                    }
+                    _lastSave = Now;
+                    apply();
+                    if (week.Waiting.Count > 0) await DrainPendingSavesAsync(week);
+                    return true;
+                }
+                finally
+                {
+                    FinishWeekSave(week);
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Guild hunt week {Cycle} snapshot save failed")]
     private static partial void LogSnapshotSaveFailed(ILogger logger, Exception error, long cycle);
 
@@ -205,34 +252,45 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
         week.Saving = true;
         try
         {
-            while (week.Committed < week.Requested)
-            {
-                long covers = week.Requested;
-                week.Dirty = false;
-                _lastSave = Now;
-                try
-                {
-                    await _accounts.WriteAsync<int>(new GuildHuntingSavePlan(week.Cycle, week.Data.ToByteArray(),
-                        JsonSerializer.SerializeToUtf8Bytes(week.Runtime)));
-                }
-                catch (Exception e)
-                {
-                    week.Dirty = true;
-                    week.RetryAt = Now + RetrySeconds;
-                    _log.LogError(e, "Guild hunt week {Cycle} save failed", week.Cycle);
-                    break;
-                }
-                week.Committed = covers;
-            }
+            await DrainPendingSavesAsync(week);
         }
         finally
         {
-            week.Saving = false;
-            // Tickets after the last committed write failed with it; their callers see false and the tick retries.
-            foreach (var (waiting, done) in week.Waiting) done.TrySetResult(waiting <= week.Committed);
-            week.Waiting.Clear();
+            FinishWeekSave(week);
         }
         return ticket <= week.Committed;
+    }
+
+    private async Task DrainPendingSavesAsync(Week week)
+    {
+        while (week.Committed < week.Requested)
+        {
+            long covers = week.Requested;
+            week.Dirty = false;
+            _lastSave = Now;
+            try
+            {
+                await _accounts.WriteAsync<int>(new GuildHuntingSavePlan(week.Cycle, week.Data.ToByteArray(),
+                    JsonSerializer.SerializeToUtf8Bytes(week.Runtime)));
+            }
+            catch (Exception e)
+            {
+                week.Dirty = true;
+                week.RetryAt = Now + RetrySeconds;
+                _log.LogError(e, "Guild hunt week {Cycle} save failed", week.Cycle);
+                break;
+            }
+            week.Committed = covers;
+        }
+    }
+
+    private static void FinishWeekSave(Week week)
+    {
+        week.Saving = false;
+        // Tickets after the last committed write failed with it; their callers see false and the tick retries.
+        foreach (var (waiting, done) in week.Waiting) done.TrySetResult(waiting <= week.Committed);
+        week.Waiting.Clear();
+        while (week.TurnWaiters.TryDequeue(out var waiter)) waiter.TrySetResult();
     }
 
     // ------------------------------------------------------------------ schedule
@@ -382,24 +440,30 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
         try
         {
             if (_current != week || week.Data.IsSettled || NowMs >= week.Data.CandidateEndMs) return;
-            var newcomers = Candidates().Where(g => GroupOf(week, g) == null).ToArray();
-            if (newcomers.Length == 0) return;
-            var nextData = week.Data.Clone();
+            if (!Candidates().Any(g => GroupOf(week, g) == null)) return;
+            DBGveHuntingActivityData? nextData = null;
             var joinedIds = new HashSet<long>();
-            foreach (long guild in newcomers)
+            bool saved = await CommitWeekSnapshotAsync(week, () =>
             {
-                var group = nextData.GroupMap.Values.OrderBy(g => g.GroupId).LastOrDefault();
-                if (group == null || group.GuildIds.Count >= GroupSize)
+                if (_current != week || week.Data.IsSettled || NowMs >= week.Data.CandidateEndMs) return null;
+                var newcomers = Candidates().Where(g => GroupOf(week, g) == null).ToArray();
+                if (newcomers.Length == 0) return null;
+                nextData = week.Data.Clone();
+                joinedIds.Clear();
+                foreach (long guild in newcomers)
                 {
-                    group = new GveHuntingMatchGroup { GroupId = nextData.GroupMap.Count + 1 };
-                    nextData.GroupMap[group.GroupId] = group;
+                    var group = nextData.GroupMap.Values.OrderBy(g => g.GroupId).LastOrDefault();
+                    if (group == null || group.GuildIds.Count >= GroupSize)
+                    {
+                        group = new GveHuntingMatchGroup { GroupId = nextData.GroupMap.Count + 1 };
+                        nextData.GroupMap[group.GroupId] = group;
+                    }
+                    group.GuildIds.Add(guild);
+                    joinedIds.Add(group.GroupId);
                 }
-                group.GuildIds.Add(guild);
-                joinedIds.Add(group.GroupId);
-            }
-            if (!await SaveSnapshotAsync(week.Cycle, nextData, week.Runtime)) return;
-            if (_current != week || week.Data.IsSettled) return;
-            week.Data = nextData;
+                return (nextData, week.Runtime);
+            }, () => week.Data = nextData!);
+            if (!saved) return;
             var joined = joinedIds.Order().Select(id => week.Data.GroupMap[id]).ToList();
             await NotifyMatchedAsync(week, joined);
         }
@@ -596,9 +660,7 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
     {
         try
         {
-            var all = week.Data.GroupMap.Values.SelectMany(g => g.GuildIds).ToArray();
-            var settledData = week.Data.Clone();
-            if (!settledData.IsSettled)
+            if (!week.Data.IsSettled)
             {
                 foreach (var (guild, held) in _bosses.ToArray())
                 {
@@ -606,32 +668,44 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
                     {
                         var score = ScoreOf(week, guild);
                         long dealt = Math.Clamp(held.Boss.Template.MaxHp - held.Boss.Hp, 0, held.Boss.Template.MaxHp);
-                        if (dealt > score.Damage) { score.Damage = dealt; score.ReachMs = Math.Min(NowMs, settledData.StartPhaseEndMs); }
+                        if (dealt > score.Damage) { score.Damage = dealt; score.ReachMs = Math.Min(NowMs, week.Data.StartPhaseEndMs); }
                     }
                     _bosses.Remove(guild);
                     await _instances.RemoveMonsterAsync(held.Room, held.Boss);
                 }
                 _commands.Clear();
-                foreach (var group in settledData.GroupMap.Values)
-                {
-                    var result = new GveHuntingGroupMatchResult { GuildResults = { RankOf(week, group) } };
-                    foreach (long guild in group.GuildIds) settledData.GuildMatchResults[guild] = result;
-                    group.IsSettled = true;
-                }
-                settledData.TopResults.Clear();
-                settledData.TopResults.AddRange(RankOf(week, all.Where(g => ScoreOf(week, g).Damage > 0), TopSize));
-                settledData.IsSettled = true;
             }
-            if (!await SaveSnapshotAsync(week.Cycle, settledData, week.Runtime))
+            DBGveHuntingActivityData? settledData = null;
+            if (!await CommitWeekSnapshotAsync(week, () =>
+            {
+                settledData = week.Data.Clone();
+                if (!settledData.IsSettled)
+                {
+                    var guilds = settledData.GroupMap.Values.SelectMany(g => g.GuildIds).ToArray();
+                    foreach (var group in settledData.GroupMap.Values)
+                    {
+                        var result = new GveHuntingGroupMatchResult { GuildResults = { RankOf(week, group) } };
+                        foreach (long guild in group.GuildIds) settledData.GuildMatchResults[guild] = result;
+                        group.IsSettled = true;
+                    }
+                    settledData.TopResults.Clear();
+                    settledData.TopResults.AddRange(RankOf(week, guilds.Where(g => ScoreOf(week, g).Damage > 0), TopSize));
+                    settledData.IsSettled = true;
+                }
+                return (settledData, week.Runtime);
+            }, () =>
+            {
+                week.Data = settledData!;
+                week.Dirty = false;
+                week.Published = true;
+                _lastSettled = week;
+            }))
             {
                 week.RetryAt = Now + RetrySeconds;
                 _log.LogWarning("Guild hunt {Cycle}: the result is held back until it is saved", week.Cycle);
                 return;
             }
-            week.Data = settledData;
-            week.Dirty = false;
-            week.Published = true;
-            _lastSettled = week;
+            var all = week.Data.GroupMap.Values.SelectMany(g => g.GuildIds).ToArray();
             var byGuild = OnlineByGuild();
             foreach (long guild in all)
             {
@@ -698,15 +772,12 @@ public sealed partial class GuildHuntingService : IGameTicker, IStartupInitializ
                         }
                     }
             }
-            var mailedRuntime = new Runtime
+            if (!await CommitWeekSnapshotAsync(week, () => (week.Data, new Runtime
             {
                 Scores = week.Runtime.Scores,
                 Participants = week.Runtime.Participants,
                 Mailed = true,
-            };
-            if (await SaveSnapshotAsync(week.Cycle, week.Data, mailedRuntime))
-                week.Runtime.Mailed = true;
-            else
+            }), () => week.Runtime.Mailed = true))
                 _mailRetryAt = Now + RetrySeconds;
         }
         finally { _mailing = false; }

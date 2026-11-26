@@ -153,6 +153,42 @@ public sealed class CardAtomicityTests : IAsyncLifetime
             leg.Kind is EconomyLegKind.Source or EconomyLegKind.Sink);
     }
 
+    [ClientDataFact]
+    public async Task SwitchThemeCommitFailureStillRepliesWithPreviousTheme()
+    {
+        await using var bot = new BotClient(_httpUrl, File.ReadAllText(Path.Combine(_dataDir, "gate_rsa_public.pem")));
+        await bot.LoginAsync("alice", "pw");
+        await bot.EnterGateAsync();
+        long role = (await bot.CreateRoleAsync("Alice")).RoleBaseInfo.Id;
+        await bot.EnterWorldAsync(role);
+        await Gm("!item 118 1000");
+
+        var accounts = _app.Services.GetRequiredService<AccountStore>();
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == role);
+        int previousTheme = session.Profile.Library!.OverviewTheme;
+        Assert.NotEqual(2, previousTheme);
+
+        accounts.BeforeCommitForTest = label =>
+        {
+            if (label == "card/switch-theme") throw new InvalidOperationException("theme switch probe");
+        };
+        try
+        {
+            await bot.SendGameAsync(CardService.LibrarySwitchTheme, new LibrarySwitchThemeReq { ThemeId = 2 });
+            var failed = await Next(bot, CardService.LibrarySwitchTheme, LibrarySwitchThemeResp.Parser);
+            Assert.Equal(ErrorCodes.Unknown, failed.Result);
+            Assert.Equal(previousTheme, failed.ThemeId);
+            Assert.Equal(previousTheme, session.Profile.Library.OverviewTheme);
+        }
+        finally { accounts.BeforeCommitForTest = null; }
+
+        await bot.SendGameAsync(CardService.LibrarySwitchTheme, new LibrarySwitchThemeReq { ThemeId = 2 });
+        var succeeded = await Next(bot, CardService.LibrarySwitchTheme, LibrarySwitchThemeResp.Parser);
+        Assert.Equal(0, succeeded.Result);
+        Assert.Equal(2, succeeded.ThemeId);
+        Assert.Equal(2, session.Profile.Library.OverviewTheme);
+    }
+
     private async Task Gm(string command)
     {
         using var client = new HttpClient();
