@@ -31,6 +31,7 @@
     <!-- The voice frame cipher: one copy for the relay, the bot (through this project) and the in-game client hooks,
          which compile it against the client's own mscorlib. -->
     <Compile Include="..\Ro3Emu.ClientHooks\VoiceCipher.cs" Link="Voice\VoiceCipher.cs" />
+    <Compile Include="..\Ro3Emu.ClientHooks\VoiceClip.cs" Link="Voice\VoiceClip.cs" />
   </ItemGroup>
 
   <ItemGroup>

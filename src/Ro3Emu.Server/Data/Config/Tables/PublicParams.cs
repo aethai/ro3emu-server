@@ -279,6 +279,7 @@ public readonly partial record struct PublicParams(IReadOnlyDictionary<string, J
     [ConfigConstant("VariableChantPerParamA")] public partial long? VariableChantPerParamA { get; }
     [ConfigConstant("VariableChantPerParamB")] public partial long? VariableChantPerParamB { get; }
     [ConfigConstant("VariableChantPerParamC")] public partial long? VariableChantPerParamC { get; }
+    [ConfigConstant("VoiceDurationLimit")] public partial long? VoiceDurationLimit { get; }
     [ConfigConstant("VitalityExtraLimit")] public partial long? VitalityExtraLimit { get; }
     [ConfigConstant("VitalityInitCount")] public partial long? VitalityInitCount { get; }
     [ConfigConstant("WorldAuctionEnd")] public partial long? WorldAuctionEnd { get; }

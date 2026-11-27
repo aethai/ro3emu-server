@@ -226,6 +226,9 @@ public sealed class ServerOptions
     /// </summary>
     public int GiftCodeAttemptsPerMinute { get; set; } = 10;
 
+    /// <summary>Chat voice messages (ChatService.Voice): clips the client hooks record, kept in memory for fetching.</summary>
+    public ChatVoiceOptions ChatVoice { get; set; } = new();
+
     /// <summary>Team voice relay proof of concept (Voice/, docs TBD). Off until a port is set.</summary>
     public VoiceOptions Voice { get; set; } = new();
 
@@ -552,6 +555,28 @@ public sealed class BackupOptions
 /// Team voice relay (Talk/Listen/Mute in the party panel). The listener only opens when <see cref="Port"/> is set;
 /// an off relay still answers the 77015 ticket request with port 0 so the client's menu can disable itself cleanly.
 /// </summary>
+/// <summary>
+/// Ro3Emu:ChatVoice (Game.ChatService.Voice): chat voice messages. The client's IM SDK recorded, stored and played clips;
+/// here the hooks record and play and the server keeps each clip in memory, for the players it reached only, until it
+/// expires. Clip length comes from PublicParamConfig VoiceDurationLimit (30 s).
+/// </summary>
+public sealed class ChatVoiceOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>How long a clip can still be played.</summary>
+    public int ClipMinutes { get; set; } = 60;
+
+    /// <summary>All clips together; past it the oldest go first.</summary>
+    public int StoreMegabytes { get; set; } = 64;
+
+    /// <summary>Clips one player may send, "perSecond/burst".</summary>
+    public string Clips { get; set; } = "0.1/4";
+
+    /// <summary>Clip fetches one player may make, "perSecond/burst".</summary>
+    public string Fetches { get; set; } = "1/10";
+}
+
 public sealed class VoiceOptions
 {
     /// <summary>TCP port the voice gate listens on; 0 keeps the relay off.</summary>

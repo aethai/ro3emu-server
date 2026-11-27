@@ -76,6 +76,7 @@ public sealed partial class ChatService
     private enum Cmd : uint
     {
         JoinChannel = 0, QuitChannel = 1, GetJoinedChannel = 2, SendText = 3, NotifyNewText = 4,
+        StartRecordAudio = 5, StopRecordAndSendAudio = 6, CancelRecordAudio = 7, PlayAudio = 8, StopAudio = 9, NotifyNewAudio = 10,
         GetHistory = 11, DeleteHistory = 12,
     }
 
@@ -330,12 +331,47 @@ public sealed partial class ChatService
                 await DownAsync(session, cmd, new DeleteHistoryMessageResponse { ChatResult = true, ChatType = delete.ChatType });
                 break;
 
+            case Cmd.StartRecordAudio or Cmd.StopRecordAndSendAudio or Cmd.CancelRecordAudio or Cmd.PlayAudio or Cmd.StopAudio:
+                await LegacyVoiceAsync(session, cmd);
+                break;
+
             default:
-                // Join via IM (unused), voice messages, translation...: chat_result false (field absent = false).
+                // Join via IM (unused), translation...: chat_result false (field absent = false).
                 _log.LogDebug("chat cmd {Cmd} from {Name} refused", (uint)cmd, session.Role.Name);
                 await DownRawAsync(session, (uint)cmd, 0, []);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Who a line (text or voice) to this channel or whisper reaches, the sender included; null when the sender may not
+    /// use the channel. A whisper reaches its online target, a map channel the members in the sender's scene, a friend
+    /// group (5_) and a team channel only their members.
+    /// </summary>
+    private List<GameSession>? Recipients(GameSession sender, string receiveId, uint chatType)
+    {
+        List<GameSession> recipients;
+        lock (_sync)
+        {
+            if (chatType == ChatTypePrivate)
+            {
+                recipients = [sender];
+                if (long.TryParse(receiveId, out long target) && _online.TryGetValue(target, out var to) && to != sender) recipients.Add(to);
+                return recipients;
+            }
+            recipients = _groups.TryGetValue(receiveId, out var members) ? [.. members] : [];
+            if (MapChannel(receiveId))
+                recipients = [.. recipients.Where(p => !p.SceneLoading && p.WorldScene == sender.WorldScene)];
+            if (!recipients.Contains(sender)) recipients.Add(sender);
+        }
+        if (receiveId.StartsWith("5_", StringComparison.Ordinal))
+        {
+            if (!GuildAllowed(sender, receiveId)) return null;
+            recipients = [.. recipients.Where(p => GuildAllowed(p, receiveId))];
+        }
+        if (TeamChannelId(receiveId) != null)
+            recipients = [.. recipients.Where(p => p == sender || GuildAllowed(p, receiveId))];
+        return recipients;
     }
 
     /// <summary>A line delivered on a group channel, with the ChatChannelType its id starts with ("2_guild"; quest
@@ -390,40 +426,13 @@ public sealed partial class ChatService
 
         if (await FloodRefusedAsync(sender, req)) return;
 
-        List<GameSession> recipients;
         bool local = req.ChatType != ChatTypePrivate && MapChannel(req.ReceiveId);
         long runtime = sender.WorldScene, generation = sender.SceneGeneration;
-        if (local && (sender.SceneLoading || sender.Handoff != null))
+        if (local && (sender.SceneLoading || sender.Handoff != null) || Recipients(sender, req.ReceiveId, req.ChatType) is not { } recipients)
         {
             await DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false });
             return;
         }
-        lock (_sync)
-        {
-            if (req.ChatType == ChatTypePrivate)
-            {
-                recipients = [sender];
-                if (long.TryParse(req.ReceiveId, out long target) && _online.TryGetValue(target, out var to) && to != sender) recipients.Add(to);
-            }
-            else
-            {
-                recipients = _groups.TryGetValue(req.ReceiveId, out var members) ? [.. members] : [];
-                if (MapChannel(req.ReceiveId))
-                    recipients = [.. recipients.Where(p => !p.SceneLoading && p.WorldScene == sender.WorldScene)];
-                if (!recipients.Contains(sender)) recipients.Add(sender);
-            }
-        }
-        if (req.ChatType != ChatTypePrivate && req.ReceiveId.StartsWith("5_", StringComparison.Ordinal))
-        {
-            if (!GuildAllowed(sender, req.ReceiveId))
-            {
-                await DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false });
-                return;
-            }
-            recipients = [.. recipients.Where(p => GuildAllowed(p, req.ReceiveId))];
-        }
-        if (req.ChatType != ChatTypePrivate && TeamChannelId(req.ReceiveId) != null)
-            recipients = [.. recipients.Where(p => p == sender || GuildAllowed(p, req.ReceiveId))];
         if (req.ChatType != ChatTypePrivate) Remember(message, sender);
         _log.LogInformation("Chat {Name} -> {Target} ({Count} recipient(s)): {Text}", sender.Role.Name, req.ReceiveId, recipients.Count, req.Content);
 
