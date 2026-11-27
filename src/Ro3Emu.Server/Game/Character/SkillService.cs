@@ -697,6 +697,7 @@ public sealed partial class SkillService
         {
             if (assignment.SkillLevel == 1 && normalAttacks.Contains(group)) continue;
             if (assignment.SkillLevel <= 1 && IsQueueGroup(group)) continue; // the Lineup button: free, in no skill tree row
+            if (IsEarlierCareersFreeLevel(tree, group, assignment.SkillLevel)) continue;
             if (assignment.SkillLevel < 0 || assignment.SkillLevel > MaxLevel(group)
                 || (!tree.ContainsKey(group) && assignment.SkillLevel > 0)) return ErrorCodes.SkillNotInTree;
             if (assignment.SkillId != 0 && assignment.SkillId != group) return ErrorCodes.Parameter;
@@ -723,6 +724,16 @@ public sealed partial class SkillService
         state.CurrentPlanIndex = index;
         return 0;
     }
+
+    /// <summary>
+    /// A group outside the career's tree at or under its free SkillConfig._iInitialLevel. Every plan lists the tree's groups
+    /// (Build), and a job change into another line (the GM's) leaves the earlier career's in each saved plan, a free one at
+    /// its free level; Reset puts it back there too. Refused with 341, such a plan could neither be switched to nor reset.
+    /// (inferred) It costs nothing and is never applied (StageSkillPlan only applies levels above the free one, Level gives
+    /// a group outside the tree no free level), so it is passed over; a paid level of another tree is still refused.
+    /// </summary>
+    private bool IsEarlierCareersFreeLevel(IReadOnlyDictionary<int, int> tree, int group, int level) => level > 0
+        && !tree.ContainsKey(group) && SkillConfig.Get(_data, RealId(group, 1)) is { } row && level <= row.InitialLevel;
 
     public async Task SwitchPlanAsync(GameSession session, SwitchPlanReq req)
     {
