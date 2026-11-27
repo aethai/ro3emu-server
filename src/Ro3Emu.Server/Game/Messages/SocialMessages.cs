@@ -168,5 +168,8 @@ public sealed class SocialMessages(
         routes.Map(ChatService.ImUserSig, "chat", RouteAdmission.Default, chat.UserSigAsync);
         routes.Map<JoinChatChannelReq>(ChatService.JoinChannel, "chat", RouteAdmission.Role, chat.JoinAsync);
         routes.Map(ChatService.TunnelUp, "chat", RouteAdmission.Role, (session, _, body) => chat.TunnelAsync(session, body));
+        routes.Map(ChatService.VoiceCapability, "chat", RouteAdmission.Role, chat.VoiceCapabilityAsync);
+        routes.Map(ChatService.VoiceUpload, "chat", RouteAdmission.Role, chat.VoiceUploadAsync);
+        routes.Map(ChatService.VoiceFetch, "chat", RouteAdmission.Role, chat.VoiceFetchAsync);
     }
 }

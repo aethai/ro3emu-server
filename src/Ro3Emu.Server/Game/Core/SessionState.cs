@@ -233,6 +233,11 @@ public sealed class SessionSocialState
 {
     /// <summary>Chat groups this player joined (guarded by ChatService's lock).</summary>
     public HashSet<string> ChatGroups { get; } = [];
+    /// <summary>The client hook asked for 77017: it records and plays chat voice messages itself (ChatService.Voice).</summary>
+    public bool ChatVoice { get; set; }
+    /// <summary>Voice clips and clip fetches this player may still send now (ChatService.Voice).</summary>
+    internal RateBucket? VoiceClips { get; set; }
+    internal RateBucket? VoiceFetches { get; set; }
     /// <summary>Emote favourites, unlocks and idle emote (5006, role blob "emoji_play"); EmojiService.</summary>
     public Romsg.DBEmojiPlayInfo? EmojiPlay { get; set; }
     /// <summary>Chat emoticons unlocked by items (5041, role blob "emoji_info"); EmojiService.</summary>

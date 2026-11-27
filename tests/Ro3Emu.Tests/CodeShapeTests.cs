@@ -18,7 +18,7 @@ public sealed class CodeShapeTests
     private const int MaxGameClassLines = 2500;
     private const int MaxLineLength = 200;
 
-    private const int MethodsOver80Lines = 66;
+    private const int MethodsOver80Lines = 65;
     private const int MethodsOver10ParamsInGame = 7;
     private const int ClassesWith15OrMoreDependencies = 25;
     private const int ClassesOver20Dependencies = 0;

@@ -32,31 +32,106 @@ namespace Ro3Emu.ClientHooks
         private static Capture _capture;
         private static Playback _playback;
 
+        // Two users share the devices (main thread): team voice (VoiceClient) and chat voice messages (VoicePtt). While a
+        // message records, the team's mic hears nothing: a whisper must not go out to the party.
+        private static volatile Action<short[]> _teamFrame, _clipFrame;
+        private static bool _teamPlayback, _clipPlayback;
+
         /// <summary>Starts the microphone; <paramref name="onFrame"/> gets every 20 ms frame on the capture thread.</summary>
         public static void StartCapture(Action<short[]> onFrame)
         {
-            if (_capture != null) return;
-            _capture = Capture.Open(onFrame);
+            _teamFrame = onFrame;
+            UpdateCapture();
         }
 
         public static void StopCapture()
         {
-            var capture = _capture;
-            _capture = null;
-            capture?.Close();
+            _teamFrame = null;
+            UpdateCapture();
+        }
+
+        /// <summary>Records a chat voice message; false when no microphone opens.</summary>
+        public static bool StartClipCapture(Action<short[]> onFrame)
+        {
+            _clipFrame = onFrame;
+            UpdateCapture();
+            if (_capture != null) return true;
+            _clipFrame = null;
+            return false;
+        }
+
+        public static void StopClipCapture()
+        {
+            _clipFrame = null;
+            UpdateCapture();
+        }
+
+        private static void UpdateCapture()
+        {
+            bool wanted = _teamFrame != null || _clipFrame != null;
+            if (wanted && _capture == null) _capture = Capture.Open(OnCaptured);
+            else if (!wanted && _capture != null)
+            {
+                var capture = _capture;
+                _capture = null;
+                capture.Close();
+            }
+        }
+
+        /// <summary>Capture thread.</summary>
+        private static void OnCaptured(short[] pcm)
+        {
+            var clip = _clipFrame;
+            if (clip != null) clip(pcm);
+            else _teamFrame?.Invoke(pcm);
         }
 
         public static void StartPlayback()
         {
-            if (_playback != null) return;
-            _playback = Playback.Open();
+            _teamPlayback = true;
+            UpdatePlayback();
         }
 
         public static void StopPlayback()
         {
-            var playback = _playback;
-            _playback = null;
-            playback?.Close();
+            _teamPlayback = false;
+            _playback?.Mixer.Clear();
+            UpdatePlayback();
+        }
+
+        /// <summary>Plays one chat voice message (16 kHz) over whatever team voice plays; false when no output device opens.
+        /// <see cref="ClipPlaying"/> turns false once the mixer has handed out its last sample.</summary>
+        public static bool PlayClip(short[] pcm)
+        {
+            _clipPlayback = true;
+            UpdatePlayback();
+            if (_playback == null) { _clipPlayback = false; return false; }
+            _playback.Mixer.SetClip(pcm);
+            return true;
+        }
+
+        /// <summary>Ends the clip; the device stays open for the next one (auto-play asks at once) until <see cref="StopClip"/>.</summary>
+        public static void ClearClip() => _playback?.Mixer.SetClip(null);
+
+        public static void StopClip()
+        {
+            ClearClip();
+            _clipPlayback = false;
+            UpdatePlayback();
+        }
+
+        public static bool ClipPlaying => _playback?.Mixer.ClipPlaying == true;
+
+        private static void UpdatePlayback()
+        {
+            bool wanted = _teamPlayback || _clipPlayback;
+            if (wanted && _playback == null) _playback = Playback.Open();
+            else if (!wanted && _playback != null)
+            {
+                var playback = _playback;
+                _playback = null;
+                playback.Close();
+            }
         }
 
         /// <summary>A received frame of one speaker (any thread); dropped while playback is off.</summary>
@@ -144,6 +219,20 @@ namespace Ro3Emu.ClientHooks
                 lock (_speakers) _speakers.Clear();
             }
 
+            private short[] _clip;
+            private int _clipAt;
+
+            /// <summary>A chat voice message mixed in whole (no latency cap), or none.</summary>
+            public void SetClip(short[] pcm)
+            {
+                lock (_speakers) { _clip = pcm; _clipAt = 0; }
+            }
+
+            public bool ClipPlaying
+            {
+                get { lock (_speakers) return _clip != null; }
+            }
+
             public void Remove(long id)
             {
                 lock (_speakers) _speakers.Remove(id);
@@ -163,6 +252,11 @@ namespace Ro3Emu.ClientHooks
                         if (speaker.Frames.Count == 0) { speaker.Playing = false; Interlocked.Increment(ref Underruns); continue; } // ran dry: buffer again
                         var frame = speaker.Frames.Dequeue();
                         for (int i = 0; i < FrameSamples; i++) _sum[i] += frame[i];
+                    }
+                    if (_clip != null)
+                    {
+                        for (int i = 0; i < FrameSamples && _clipAt < _clip.Length; i++) _sum[i] += _clip[_clipAt++];
+                        if (_clipAt >= _clip.Length) _clip = null;
                     }
                 }
                 for (int i = 0; i < FrameSamples; i++) output[i] = Clamp((int)(_sum[i] * gain));

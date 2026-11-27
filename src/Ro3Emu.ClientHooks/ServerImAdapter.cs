@@ -14,7 +14,8 @@ namespace Ro3Emu.ClientHooks
     /// (GM_Chat.proto) with a command id, and this adapter tunnels those bytes through the game connection instead of
     /// Tencent's cloud. Frames both ways: uint32 LE cmd ‖ int32 LE errorCode ‖ protobuf.
     /// Up: game message 77010; down: game message 77011.
-    /// Its per-frame pump and receive hook also carry the voice relay ticket (77016) and pump (VoiceClient).
+    /// Its per-frame pump and receive hook also carry the voice relay ticket (77016) and pump (VoiceClient), and chat voice
+    /// messages: cmd 5-9 are answered by VoicePtt once the server has said it takes them (77017, 77019).
     /// </summary>
     public sealed class ServerImAdapter : Obf_ci
     {
@@ -32,6 +33,7 @@ namespace Ro3Emu.ClientHooks
         private Action _requestCallback;
         private LuaArrAccess _requestArray;
         private HappyEngineClient _hooked;
+        private bool _imLoggedIn;
         private OnGameMsgReceived _hook;
 
         private struct Frame
@@ -46,6 +48,7 @@ namespace Ro3Emu.ClientHooks
         {
             Debug.Log("[Ro3Emu.Chat] login as " + userId);
             _status.Enqueue(StatusLoginSucc);
+            _imLoggedIn = true;
         }
 
         /// <summary>Send: remember Lua's reply callback (all replies and pushes go through it), forward the command.</summary>
@@ -54,6 +57,7 @@ namespace Ro3Emu.ClientHooks
             _requestCallback = callback;
             _requestArray = array;
             body = body ?? new byte[0];
+            if (VoicePtt.Handle(cmd, body)) return;
             var frame = new byte[8 + body.Length];
             BitConverter.GetBytes(cmd).CopyTo(frame, 0);
             BitConverter.GetBytes(0).CopyTo(frame, 4);
@@ -70,6 +74,7 @@ namespace Ro3Emu.ClientHooks
         public void Obf_lkD()
         {
             AttachHook();
+            if (_imLoggedIn && _hooked != null) VoicePtt.AskServer();
             int n = 0;
             while (n++ < MaxPerFrame && _status.TryDequeue(out uint status))
             {
@@ -79,6 +84,7 @@ namespace Ro3Emu.ClientHooks
             }
             // Keep server frames queued until Lua has given us its callback (the first Send).
             n = 0;
+            VoicePtt.Pump((cmd, error, body) => _inbound.Enqueue(new Frame { Cmd = cmd, Error = error, Body = body }));
             while (_requestCallback != null && n++ < MaxPerFrame && _inbound.TryDequeue(out var frame)) Deliver(frame);
             while (_diagnostics.TryDequeue(out var line)) Diagnostics.Run(line);
             VoiceClient.Pump();
@@ -98,7 +104,9 @@ namespace Ro3Emu.ClientHooks
             while (_status.TryDequeue(out _)) { }
             _requestCallback = null;
             _requestArray = null;
+            _imLoggedIn = false;
             VoiceClient.Shutdown(); // voice must not outlive the game connection (mic left open after logout)
+            VoicePtt.Reset();
             GuildOverhead.ResetSession();
         }
 
@@ -132,6 +140,7 @@ namespace Ro3Emu.ClientHooks
             _hook = OnMessage;
             client.OnMsgReceived = (OnGameMsgReceived)Delegate.Combine(client.OnMsgReceived, _hook);
             _hooked = client;
+            VoicePtt.Reset(); // a new connection: its server is asked again
             Debug.Log("[Ro3Emu.Chat] hooked HappyEngineClient.OnMsgReceived");
         }
 
@@ -151,6 +160,16 @@ namespace Ro3Emu.ClientHooks
             if (msgId == VoiceProtocol.TicketMsgId)
             {
                 VoiceClient.OnTicket(memory.ToArray());
+                return;
+            }
+            if (msgId == VoiceClip.CapabilityMsgId)
+            {
+                VoicePtt.OnCapability(memory.ToArray());
+                return;
+            }
+            if (msgId == VoiceClip.FetchMsgId)
+            {
+                VoicePtt.OnFetched(memory.ToArray());
                 return;
             }
             if (msgId != DownMsgId || memory.Length < 8) return;

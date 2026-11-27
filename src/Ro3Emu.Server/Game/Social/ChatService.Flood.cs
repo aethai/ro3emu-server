@@ -18,13 +18,19 @@ public sealed partial class ChatService
     /// it out of its recent lines) and shown to nobody; a mute, when it starts and on each line sent during it, also
     /// brings the client's mute tip with the time it ends. GM accounts are exempt.
     /// </summary>
-    private async Task<bool> FloodRefusedAsync(GameSession sender, SendTextChatMessageRequest req)
+    private Task<bool> FloodRefusedAsync(GameSession sender, SendTextChatMessageRequest req) =>
+        FloodRefusedAsync(sender, req.ReceiveId, req.ChatType, req.Content,
+            () => DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false }));
+
+    /// <summary>The same for any line, <paramref name="refuse"/> answering the sender (a voice clip counts as a line with
+    /// no text, which never repeats).</summary>
+    private async Task<bool> FloodRefusedAsync(GameSession sender, string receiveId, uint chatType, string content, Func<Task> refuse)
     {
         if (!_options.Value.ChatFlood.Enabled || _gm.Allowed(sender)) return false;
-        bool open = req.ChatType != ChatTypePrivate && ChannelType(req.ReceiveId) is not (GuildChannelType or TeamChannelType or FriendGroupChannelType);
-        var (verdict, until) = _flood.Check(sender.Account!, req.ReceiveId, open, req.Content);
+        bool open = chatType != ChatTypePrivate && ChannelType(receiveId) is not (GuildChannelType or TeamChannelType or FriendGroupChannelType);
+        var (verdict, until) = _flood.Check(sender.Account!, receiveId, open, content);
         if (verdict == ChatFloodGuard.Verdict.Pass) return false;
-        await DownAsync(sender, Cmd.SendText, new SendTextChatMessageResponse { ChatResult = false });
+        await refuse();
         if (verdict == ChatFloodGuard.Verdict.Duplicate) return true;
         if (verdict == ChatFloodGuard.Verdict.MuteStarted)
             LogMuted(_log, sender.Role!.Name, sender.Account!, until);
