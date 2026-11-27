@@ -213,11 +213,39 @@ public sealed class NavGrid
         if (!Inside(sx, sz) || !Inside(gx, gz) || WalkHeight(bx, bz, ay) is not { } by) return null;
         if (Within(ax, az, bx, bz, maxLeg) && CanWalk(ax, ay, az, bx, bz)) return [(bx, by, bz)];
         int start = sz * Width + sx, goal = gz * Width + gx;
-        var parent = new Dictionary<int, int> { [start] = -1 };
-        var cost = new Dictionary<int, float> { [start] = 0 };
-        var height = new Dictionary<int, float> { [start] = ay };
-        var closed = new HashSet<int>();
-        var open = new PriorityQueue<int, float>();
+        var scratch = Interlocked.Exchange(ref _scratch, null) ?? new SearchScratch();
+        try { return Search(scratch, ax, ay, az, bx, by, bz, sx, sz, gx, gz, start, goal, maxLeg, maxNodes); }
+        finally
+        {
+            // A search that expanded many cells keeps large tables: let them go instead of holding them per map.
+            if (scratch.Cost.Count <= ScratchKeepCells) { scratch.Clear(); Volatile.Write(ref _scratch, scratch); }
+        }
+    }
+
+    /// <summary>The A* tables of one search, reused by the next search on this grid (monsters path every few seconds; new
+    /// tables per search were a steady share of the loop's allocation, #484). Taken with an exchange, so a concurrent
+    /// caller simply gets its own.</summary>
+    private sealed class SearchScratch
+    {
+        public readonly Dictionary<int, int> Parent = [];
+        public readonly Dictionary<int, float> Cost = [];
+        public readonly Dictionary<int, float> Height = [];
+        public readonly HashSet<int> Closed = [];
+        public readonly PriorityQueue<int, float> Open = new();
+
+        public void Clear() { Parent.Clear(); Cost.Clear(); Height.Clear(); Closed.Clear(); Open.Clear(); }
+    }
+
+    private const int ScratchKeepCells = 8192;
+    private SearchScratch? _scratch;
+
+    private List<(float X, float Y, float Z)>? Search(SearchScratch scratch, float ax, float ay, float az, float bx, float by,
+        float bz, int sx, int sz, int gx, int gz, int start, int goal, float maxLeg, int maxNodes)
+    {
+        var (parent, cost, height, closed, open) = (scratch.Parent, scratch.Cost, scratch.Height, scratch.Closed, scratch.Open);
+        parent[start] = -1;
+        cost[start] = 0;
+        height[start] = ay;
         float Heuristic(int x, int z)
         {
             int dx = Math.Abs(x - gx), dz = Math.Abs(z - gz);
