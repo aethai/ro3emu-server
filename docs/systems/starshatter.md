@@ -22,8 +22,8 @@ keeps it in `server_state` (key `flying_dragon`) and follows `PublicParamConfig`
 2. **Progress.** Progress runs from 0 to 10000. It grows by `DragonTaskPerSec` (50) each second, exactly as
    `UI_Sys_Shop_UnblockingPanelCtrl` predicts it, plus `DragonTaskHelpProg` per assist. It ends at
    `ProcessEndTimeStamp`, which is the start plus `DragonTaskLimited`.
-   - When time alone fills the bar, every online player gets 82974 once (inferred). The panel's countdown and the
-     top button's timer stop at 10000 without asking the server, and NPC 107's "Begin the ritual" (condition
+   - When time alone fills the bar, every online player gets 82974 once (inferred). The panel's countdown stops
+     at 10000 without asking the server, the top button's progress never moves by itself, and NPC 107's "Begin the ritual" (condition
      12000007) reads the cached progress, so without it the option never shows.
 3. **Assist (82969).**
    - One per role, never the owner (1521/1519), at most `DragonTaskHelpTimes`.

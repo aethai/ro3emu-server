@@ -151,8 +151,9 @@ public sealed class FlyingDragonTests : IAsyncLifetime
         await Gm(alice, $"!item {LordsMane} 1");
         await Beside(alice, 107);
         Assert.Equal(0, await Ask(alice, FlyingDragonService.Start, new FlyingDragonStartProduceReq()));
-        // One second short of full: the bar then fills with no request from anyone.
-        await Gm(alice, "!dragon progress 9950");
+        // Two seconds short of full (never full already when the GM's own push goes out): the bar then fills with no
+        // request from anyone.
+        await Gm(alice, "!dragon progress 9900");
         static bool FullBar(FlyingDragonProductNotify n) => n.Info.Status == FlyingDragonProductStatus.Product
             && n.Info.ProductInfo.ReleaseProgress == 10000;
         await Next(bob, FlyingDragonService.Notify, FlyingDragonProductNotify.Parser, FullBar);

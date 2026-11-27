@@ -334,8 +334,9 @@ public sealed partial class FlyingDragonService : IGameTicker, IStartupInitializ
     }
 
     /// <summary>
-    /// The bar fills by time alone: every client is told once. The panel's countdown and the top bar's timer stop at
-    /// 10000 without asking (UnblockingPanelCtrl._updateCountdown, MainMenuWidgetBaseNewCtrl._refreshTopLuxuryMenu), and
+    /// The bar fills by time alone: every client is told once. The panel's countdown stops at 10000 without asking
+    /// (UnblockingPanelCtrl._updateCountdown), the top button's progress never moves by itself
+    /// (MainMenuWidgetBaseNewCtrl._refreshTopLuxuryMenu only counts down the time left), and
     /// only 82974/82970 update the cached FlyingDragonProduceInfo that NPC 107's "Begin the ritual" reads. (inferred)
     /// </summary>
     private Task FullAsync() => Full ? PushAllAsync() : Task.CompletedTask;
