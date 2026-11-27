@@ -42,12 +42,16 @@ internal static partial class DatabaseMigrations
         foreach (var migration in All)
         {
             if (migration.Version <= current) continue;
+            // A migration that builds an index or copies a table reads the whole table: on a large database (a 47 GB one
+            // took 22 minutes for v5) the server opens no port meanwhile, so say what it is doing before it starts.
+            if (log != null) LogMigrationStarting(log, migration.Version, migration.Name);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             using var tx = db.BeginTransaction();
             migration.Apply(db, tx);
             SchemaSql.Execute(db, tx, string.Create(CultureInfo.InvariantCulture, $"PRAGMA user_version = {migration.Version};"));
             tx.Commit();
             applied++;
-            if (log != null) LogMigrationApplied(log, migration.Version, migration.Name);
+            if (log != null) LogMigrationApplied(log, migration.Version, migration.Name, clock.Elapsed.TotalSeconds);
         }
         return applied;
     }
@@ -138,6 +142,9 @@ internal static partial class DatabaseMigrations
             """);
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name})")]
-    private static partial void LogMigrationApplied(ILogger logger, int version, string name);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Applying SQLite schema migration v{Version} ({Name}); on a large database this can take minutes, and the server opens its ports when it is done")]
+    private static partial void LogMigrationStarting(ILogger logger, int version, string name);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name}) in {Seconds:0.0} s")]
+    private static partial void LogMigrationApplied(ILogger logger, int version, string name, double seconds);
 }
