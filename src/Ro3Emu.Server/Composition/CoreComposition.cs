@@ -316,7 +316,12 @@ internal static partial class CoreComposition
         if (testing.AlwaysOpen) LogAlwaysOpen(logger);
         if (testing.UnlimitedRewards) LogUnlimitedRewards(logger);
         if (testing.WriterCommitDelayMs > 0) LogWriterCommitDelay(logger, testing.WriterCommitDelayMs);
+        if (testing.VerifyStatsCache) LogVerifyStatsCache(logger);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:Testing:VerifyStatsCache is ON: every reused stat sheet is " +
+        "rebuilt and compared, which costs a full build per use. TESTS ONLY; turn it off for a real realm.")]
+    private static partial void LogVerifyStatsCache(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "!!! Ro3Emu:Testing:AlwaysOpen is ON: every To-Do activity is open at " +
         "any hour, its occurrence repeating all day. TEST AID, not original behaviour; turn it off for a real realm " +

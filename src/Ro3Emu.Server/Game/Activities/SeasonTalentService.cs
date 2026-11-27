@@ -65,6 +65,8 @@ public sealed partial class SeasonTalentService
         var oldNodes = session.Season.SeasonTalent.UnlockedNode.ToDictionary(kv => kv.Key, kv => kv.Value);
         session.Season.TalentEffectsEnabled = Available(session);
         BuildUnlocks(session);
+        // Unlocks change in place; a combat path reading the stats before the refresh below must not reuse the old sheet.
+        session.StatsMemo = null;
         await CharacterService.SyncAsync(session, TalentSync, session.Season.SeasonTalent, session.Season.SeasonTalent.Clone);
         // Seeding false map keys at login cannot alter stats; avoid an extra pre-world 31008.
         if (before != session.Season.TalentEffectsEnabled || (session.Season.TalentEffectsEnabled

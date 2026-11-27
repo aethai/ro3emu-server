@@ -128,6 +128,7 @@ public sealed class TotemEffects : IGameTicker
                     try { maxHp = _character.Stats(s)[101]; }
                     finally { _calculatingHpCondition = false; }
                     long hp = s.CurrentHp ?? maxHp;
+                    s.StatsReadHp = true; // the memoized sheet now depends on HP (CharacterStatsService.Stats)
                     long q = op[2] == 1 ? maxHp > 0 ? (long)Math.Floor(hp * 10000d / maxHp) : 0 : hp;
                     bool active = op[1] switch
                     {

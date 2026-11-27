@@ -1227,6 +1227,7 @@ public sealed partial class CombatService : IGameTicker
         using var held = await CharacterService.Lock(s);
         if (s.Role == null || s.Progress == null || s.Dead || Now < s.NoRegenUntilMs) return;
         if (s.CurrentHp == null && s.CurrentSp == null) return; // unset = full (CharacterService.Stats): nothing to restore
+        _character.ReuseStatsInThisWork(s); // the sheet here and SetHpSpAsync's two reads before and after: one build
         var st = _character.Stats(s);
         if (st[2000] >= st[101] && st[2001] >= st[102]) return;
         long rehp = st[107] + st[101] * st.Data.GetValueOrDefault(1071) / 10000;

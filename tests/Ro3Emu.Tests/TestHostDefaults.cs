@@ -11,7 +11,8 @@ namespace Ro3Emu.Tests;
 /// one to work with, not its founding; GuildTests.Responders set "responders". The game data is the synthetic fixture: a host without GameDataDir would read its tables from its data dir and the economy catalogue from
 /// the client's export above the binaries, so it ran on other data on your machine than in CI (docs/guide/testing.md);
 /// a client-data test sets GameDataDir to data/ itself. Every host has the same operator token (<see cref="Operator"/>),
-/// so the tests reach the loopback tools through one helper. Environment variables reach every ServerHost.Create through
+/// so the tests reach the loopback tools through one helper. Every reuse of a memoized stat sheet is checked against a fresh
+/// build (Testing:VerifyStatsCache), so a test that changes a stat input the memo does not notice fails. Environment variables reach every ServerHost.Create through
 /// its configuration; a test's configure wins.
 /// </summary>
 internal static class TestHostDefaults
@@ -26,5 +27,6 @@ internal static class TestHostDefaults
         Environment.SetEnvironmentVariable("Ro3Emu__GuildFounding", "instant");
         Environment.SetEnvironmentVariable("Ro3Emu__GameDataDir", SyntheticData.Dir);
         Environment.SetEnvironmentVariable("Ro3Emu__OperatorToken", Operator.Token);
+        Environment.SetEnvironmentVariable("Ro3Emu__Testing__VerifyStatsCache", "true");
     }
 }

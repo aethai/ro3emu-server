@@ -118,6 +118,7 @@ public sealed partial class GenreService(
         var progress = s.Progress; var attr = s.Profile.StatPlans.Info; var skill = s.Combat.SkillPlans;
         var equip = s.Profile.EquipmentPlans; var cards = s.Profile.CardPlans; var totem = s.Profile.Totems;
         var pet = s.Pets; var echo = s.Profile.Emblems; var talent = s.Season.SeasonTalent; var owned = s.Items;
+        s.StatsMemoBypass++; // the projected sheet must not be served as, or replace, the role's own
         try
         {
             s.Progress = next.Progress; s.Profile.StatPlans.Info = next.Attrs; s.Combat.SkillPlans = next.Skills;
@@ -130,6 +131,7 @@ public sealed partial class GenreService(
             s.Progress = progress; s.Profile.StatPlans.Info = attr; s.Combat.SkillPlans = skill;
             s.Profile.EquipmentPlans = equip; s.Profile.CardPlans = cards; s.Profile.Totems = totem;
             s.Pets = pet; s.Profile.Emblems = echo; s.Season.SeasonTalent = talent; s.Items = owned;
+            s.StatsMemoBypass--;
         }
     }
 

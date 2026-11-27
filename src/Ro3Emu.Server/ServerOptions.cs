@@ -362,6 +362,10 @@ public sealed class TestingOptions
     /// <summary>Load tests only: the database writer sleeps this long (0-1000 ms) before every commit, emulating a slow
     /// disk such as a VPS one, so loop waits on the writer reproduce on a fast local disk. 0 is off.</summary>
     public int WriterCommitDelayMs { get; set; }
+
+    /// <summary>Tests only: every reuse of a memoized stat sheet (CharacterStatsService.Stats) is compared with a fresh
+    /// build and a difference throws, so a state change the memo does not notice fails the test that makes it.</summary>
+    public bool VerifyStatsCache { get; set; }
 }
 
 /// <summary>
