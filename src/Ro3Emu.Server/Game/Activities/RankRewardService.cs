@@ -141,6 +141,15 @@ public sealed partial class RankRewardService(GameData data, RankService ranks, 
                 $"rank-reward:{board.Id}:{period}:{role}", _ => { }, scope?.Context, contentParams: [place]);
             return true;
         }
+        // This settlement's letter already went to the role with other contents: the award resolves for the role's
+        // progress and the place is read again, so a level gained or a board change between a partly failed settlement
+        // and its retry changes them. The role was paid for this period; retrying can never succeed and kept the whole
+        // board unsettled, so its next settlement was never paid either.
+        catch (Ro3Emu.Server.Economy.EconomyOperationConflictException e)
+        {
+            LogAlreadyMailed(log, e, board.Id, period, role);
+            return true;
+        }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             LogMailFailed(log, e, board.Id, period, role);
@@ -150,6 +159,9 @@ public sealed partial class RankRewardService(GameData data, RankService ranks, 
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rank reward of board {Board}: award {Reward} does not resolve")]
     private static partial void LogAwardMissing(ILogger logger, Exception error, long board, long reward);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rank reward of board {Board} ({Period}) to role {Role} was already mailed with other contents; kept as paid")]
+    private static partial void LogAlreadyMailed(ILogger logger, Exception error, long board, string period, long role);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Rank reward of board {Board} ({Period}) to role {Role} failed")]
     private static partial void LogMailFailed(ILogger logger, Exception error, long board, string period, long role);
