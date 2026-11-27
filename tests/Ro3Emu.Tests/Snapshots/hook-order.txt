@@ -45,9 +45,10 @@ CharacterService.ItemUsed (1)
   TaskService.<.ctor> lambda
 CharacterService.ItemsAwarded (1)
   MountService.<.ctor> lambda
-CharacterService.JobChanged (9)
+CharacterService.JobChanged (10)
   MountService.ReconcileAsync
   TaskService.<.ctor> lambda
+  EmblemService.RefreshEffectsAsync
   AchievementService.<.ctor> lambda
   PassiveSkills.StandingBuffsAsync
   RidingEffects.SyncAsync
@@ -109,15 +110,16 @@ CombatService.CastLanded (4)
   CasualBattleService.CastLandedAsync
   TotemEffects.OnCastAsync
   StealthEffects.BackSlideCamouflageAsync
-CombatService.CastResolved (7)
+CombatService.CastResolved (8)
   CombatService.AutoCounterOnCastAsync
   CombatEffectsService.SupportSkillOnCastAsync
   SkillCastingService.ReadingExtraCastAsync
   SkillCastingService.ClassLoopsOnCastAsync
   CardEffects.OnCastResolvedAsync
   TalentProcs.OnCastResolvedAsync
+  ResonancePassives.OnCastResolvedAsync
   PassiveSkills.OnCastResolvedAsync
-CombatService.DamageAdjusters (10)
+CombatService.DamageAdjusters (11)
   PetCombatService.<WireGuardians> lambda
   PetCombatService.<WireGuardians> lambda
   RaidTrialsService.TrialDamage
@@ -127,6 +129,7 @@ CombatService.DamageAdjusters (10)
   TowerService.<RegisterSuppression> lambda
   TotemEffects.AdjustDamage
   CardEffects.AdjustDamage
+  ResonancePassives.MelodyVulcanDamage
   PassiveSkills.PreyOnTheWeakDamage
 CombatService.Dealt (5)
   TaskService.<.ctor> lambda
@@ -174,7 +177,7 @@ CombatService.IncomingDamageAdjusters (3)
   RaidTrialsService.<WireCombat> lambda
   MvpService.<.ctor> lambda
   TotemEffects.AdjustIncomingDamageAsync
-CombatService.Killed (21)
+CombatService.Killed (22)
   TaskService.OnKillAsync
   RewardService.KilledAsync
   RaidTrialsService.TrialObjectKilledAsync
@@ -195,13 +198,15 @@ CombatService.Killed (21)
   GuildLeagueService.MonsterKilledAsync
   TowerService.KilledAsync
   TalentProcs.OnKilledAsync
+  ResonancePassives.OnKilledAsync
   PassiveSkills.OnKilledAsync
 CombatService.LethalHitRolledBack (1)
   MvpService.RollbackUnpublishedLethal
 CombatService.MonsterDamageAdjusters (1)
   TowerService.<RegisterSuppression> lambda
-CombatService.MonsterDamageApplied (1)
+CombatService.MonsterDamageApplied (2)
   TerritoryEscortService.CartDamagedAsync
+  ResonancePassives.BubblesTakeDamageAsync
 CombatService.PlayerDamageAdjusters (1)
   CardEffects.AdjustDamageTaken
 CombatService.PlayerDied (15)
@@ -220,11 +225,12 @@ CombatService.PlayerDied (15)
   TowerService.PlayerDiedAsync
   TalentProcs.OnDiedAsync
   EmojiService.<.ctor> lambda
-CombatService.PlayerKilled (4)
+CombatService.PlayerKilled (5)
   TaskService.OnFactionPlayerKilledAsync
   FactionWorldService.GloryKilledAsync
   TerritoryEscortService.PlayerKilledAsync
   TalentProcs.OnPlayerKilledAsync
+  ResonancePassives.OnPlayerKilledAsync
 CombatService.PlayerRevived (2)
   PronteraDefenseService.OnRevivedAsync
   TotemEffects.RefreshAsync
@@ -272,6 +278,8 @@ DungeonService.MultiBossCleared (2)
   TaskService.OnConnectBossClearedAsync
 DungeonService.RunTracked (1)
   TaskService.OnDungeonRun
+EmblemService.EffectsChanged (1)
+  SkillCastingService.RefreshSkillParametersAsync
 EmblemService.Upgraded (1)
   TaskService.OnEchoUpgraded
 EquipmentService.Crafted (2)

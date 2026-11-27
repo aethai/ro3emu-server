@@ -36,6 +36,13 @@ public sealed partial class BuffService
         foreach (var buff in list.Where(b => b.ConfigId == configId).ToArray()) await RemoveUnitBuffAsync(unit, buff);
     }
 
+    /// <summary>Remove one source's buffs of one BuffConfig id from a unit (a multi-source buff such as Melody Bubble).</summary>
+    internal async Task RemoveUnitSourceAsync(WorldUnit unit, int configId, long sourceId)
+    {
+        if (!_unitBuffs.TryGetValue(unit.Uid, out var list)) return;
+        foreach (var buff in list.Where(b => b.ConfigId == configId && b.SourceId == sourceId).ToArray()) await RemoveUnitBuffAsync(unit, buff);
+    }
+
     /// <summary>The unit's buff list, created with its owner entry on first use.</summary>
     private List<ActiveBuff> UnitBuffList(WorldUnit unit)
     {

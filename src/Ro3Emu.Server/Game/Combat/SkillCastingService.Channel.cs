@@ -126,7 +126,7 @@ public sealed partial class SkillCastingService
         if (hits.Length == 0) return false;
         foreach (var buff in new SkillConfig(action.Row).Buff1)
             if (buff is [var id, var chance, var duration, ..] && id > 0 && Rolls.Proc(10000) < chance
-                && SkillBuffAllowed?.Invoke(s, s, (int)id) != false)
+                && SkillBuffAllowed?.Invoke(s, s, (int)id) != false && !ComesFromALoop(new SkillConfig(action.Row).ScriptLogic, (int)id))
                 await _buffs.AddAsync(s, (int)id, (int)duration, s.Role!.Id);
         for (int i = 0; i < hits.Length; i++)
         {

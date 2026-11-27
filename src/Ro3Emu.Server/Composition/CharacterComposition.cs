@@ -29,6 +29,7 @@ internal static class CharacterComposition
         services.AddSingleton<CardService>();
         services.AddSingleton<CardEffects>();
         services.AddSingleton<TalentProcs>();
+        services.AddSingleton<ResonancePassives>();
         services.AddSingleton<PassiveSkills>();
         services.AddSingleton<RidingEffects>();
         services.AddSingleton<StealthEffects>();
@@ -136,6 +137,7 @@ internal static class CharacterComposition
     {
         app.Services.GetRequiredService<CardEffects>(); // socketed-card passives and procs (sockets, scene loads, hits)
         app.Services.GetRequiredService<TalentProcs>(); // profession talent procs (cast resolutions)
+        app.Services.GetRequiredService<ResonancePassives>(); // held Soul Echo resonance rows' casts and kills
         app.Services.GetRequiredService<PassiveSkills>(); // learned passives' procs, shields and reactions
         app.Services.GetRequiredService<RidingEffects>(); // a ridden mount's buffs and the riding passives
         app.Services.GetRequiredService<StealthEffects>(); // hiding and detection attributes, reveals, Ruwach

@@ -59,6 +59,8 @@ public sealed partial class EmblemService
         this._log = log;
         character.EmblemAttrFactory = GenerateAttrs;
         character.ExtraAttributes.Subscribe(ResonanceAttributes);
+        // The held rows follow the job line (ResonanceSkills).
+        character.JobChanged.Subscribe(RefreshEffectsAsync);
     }
 
     /// <summary>Set by PowerService: publish 31502/31503/5066 after a Soul Echo change (the caller holds the lock).</summary>
@@ -321,7 +323,11 @@ public sealed partial class EmblemService
         return info;
     }
 
-    private Task SyncAsync(GameSession session) => CharacterService.SyncAsync(session, PlanSync, Build(session));
+    private async Task SyncAsync(GameSession session)
+    {
+        await CharacterService.SyncAsync(session, PlanSync, Build(session));
+        await RefreshEffectsAsync(session);
+    }
 
     private PowerUnit PlanPower(GameSession session, Plan plan) => new() { SeasonPower = PlanPower(session.Items, plan) };
 

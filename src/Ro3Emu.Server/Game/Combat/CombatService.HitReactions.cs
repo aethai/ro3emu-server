@@ -31,9 +31,14 @@ public sealed partial class CombatService
         return true;
     }
 
-    /// <summary>The row a buff's _kLogicData entry names: a row id as it stands, a group at the buff's level.</summary>
-    private SkillConfig? ReactionRow(ActiveBuff buff, long named) =>
-        SkillConfig.Get(_data, named >= 1_000_000 ? named : named * 100 + Math.Max(1, buff.ConfigId % 100));
+    /// <summary>The row a buff's _kLogicData entry names: a row id as it stands, a group at the buff's level in the mode the
+    /// holder's tuples select (Guardian's Might's Switch Thorn makes Reflect Damage's Thorn its mode-1 row).</summary>
+    private SkillConfig? ReactionRow(GameSession p, ActiveBuff buff, long named)
+    {
+        if (named >= 1_000_000) return SkillConfig.Get(_data, named);
+        int level = Math.Max(1, buff.ConfigId % 100);
+        return ModeRow(p, (int)named, level) is { } row ? new SkillConfig(row) : SkillConfig.Get(_data, named * 100 + level);
+    }
 
     private static float FaceTo(Vec3 from, Vec3 to) => (float)(Math.Atan2(to.X - from.X, to.Z - from.Z) * 180 / Math.PI);
 
@@ -63,7 +68,7 @@ public sealed partial class CombatService
                 if (melee) _parried.GetOrCreateValue(p).Value = true;
                 continue;
             }
-            if (BuffConfig.Get(_data, buff.ConfigId)?.LogicData is not [var named, ..] || ReactionRow(buff, named) is not { } counter) continue;
+            if (BuffConfig.Get(_data, buff.ConfigId)?.LogicData is not [var named, ..] || ReactionRow(p, buff, named) is not { } counter) continue;
             float distance = Distance(p.Position, attacker);
             switch (group)
             {

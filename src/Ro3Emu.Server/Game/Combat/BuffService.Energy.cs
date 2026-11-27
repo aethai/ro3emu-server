@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -187,6 +188,13 @@ public sealed partial class BuffService
         await SendEnergyAsync(p, EnhanceSpearCharges, (EPlayerEnergyChangeReason)4);
     }
 
+    /// <summary>Electro Rock (Soul Echo resonance): "The number of [Precision Thrust] casts required to gain ${2} stacks of
+    /// [Rain of Spears] Charge is reduced from ${3} to ${4}." The meter keeps its _iLimitValue; the charge comes at ${4}.</summary>
+    private long PrecisionThreshold(GameSession p, long limit) =>
+        p.ResonanceSkills.Length > 0 && Array.IndexOf(p.ResonanceSkills, EmblemService.ElectroRock) >= 0
+        && SkillConfig.Get(_data, EmblemService.ElectroRock)?.DescData is { } desc
+        && EmblemService.DescribedValue(desc, 3) is > 0 and var reduced ? Math.Min(limit, (long)reduced) : limit;
+
     /// <summary>SkillConfig._kHitRecoverEnergy [energy id, amount], after an accepted hit (inferred server trigger).</summary>
     public async Task RecoverEnergyOnHitAsync(GameSession p, JsonElement skill)
     {
@@ -198,7 +206,7 @@ public sealed partial class BuffService
         long limit = GameData.Int(config, "_iLimitValue");
         meter.Value = Math.Clamp(meter.Value + amount, 0, limit);
         // Precision Thrust: "Gain @{2} stack(s) of [Hundred Spear Pierce] charge for every @{1} HIT(s)": a full 140001 turns into one 140002.
-        if (id == PrecisionCounter && meter.Value >= limit)
+        if (id == PrecisionCounter && meter.Value >= PrecisionThreshold(p, limit))
         {
             meter.Value = 0;
             await AddEnergyAsync(p, RainSpearCharges, 1);

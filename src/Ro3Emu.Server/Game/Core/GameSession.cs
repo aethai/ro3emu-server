@@ -315,6 +315,9 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     internal IReadOnlyList<SkillParameterRules.Modifier> TalentChargeModifiers { get; set; } = [];
     /// <summary>The learned passives' skill tuples with the weapons each needs (CombatService.PassiveModifiers).</summary>
     internal IReadOnlyList<(long[] Weapons, SkillParameterRules.Modifier Modifier)> PassiveSkillModifiers { get; set; } = [];
+    /// <summary>The held Soul Echo resonance rows (SkillConfig ids, sorted) and their skill tuples (EmblemService.ResonanceEffects).</summary>
+    internal int[] ResonanceSkills { get; set; } = [];
+    internal IReadOnlyList<SkillParameterRules.Modifier> ResonanceSkillModifiers { get; set; } = [];
     /// <summary>The active talent plan's Buff(2) rows with their effect's _kDescData (TalentProcs).</summary>
     internal IReadOnlyList<(long Buff, string[] Description)> TalentProcBuffs { get; set; } = [];
     /// <summary>The active talent plan's changes to other buffs' values (BuffConfig._kBuffAttributeList, op 12).</summary>

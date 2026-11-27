@@ -15,6 +15,8 @@ public sealed partial class SkillCastingService
 {
     private const int EmpoweredWargStrikeBuff = 1333101, BladeMeter = 540002, DarkIllusionMarkGroup = 15301, CrossRipperGroup = 15302;
     private const int FirepowerPilesGroup = 16313, FirepowerGroup = 16317, FirepowerBuff = 1631701, CannonEnhanceBuff = 1632001;
+    // Melody Vulcan's form (VulcanArmS1BD2/3) names its own Firepower Loaded, 1631501, whose _kLogicData 1631901 adds 2 to Arm Cannon's mode.
+    private const int MelodyFirepowerGroup = 16315;
     private const int FirepowerAttacks = 3, EnergyReleaseShield = 1635101, EnergyReleaseRow = 1635201, ControlImmunity = 903201;
     private const int JointBeatGroup = 11221, ShatteredPartGroups = 11222, JetAccelerationBuff = 1634901, UltraBashGroup = 11631;
 
@@ -23,9 +25,30 @@ public sealed partial class SkillCastingService
 
     private static bool IsArmCannon(string script) => script.StartsWith("ArmCannon", StringComparison.Ordinal);
 
-    /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.</summary>
-    internal static bool ComesFromALoop(string script, int buff) => buff / 100 == FirepowerGroup && script is "VulcanArm" or "FlameLauncher"
-        || script == "AxeLeapAttack2" && buff == 1634601; // the shield came with the flight
+    /// <summary>The Firepower Loaded a Vulcan Arm or Flame Launcher row names in _kBuff1 (Vulcan Arm's own 1631701 when none).</summary>
+    private static int FirepowerOf(SkillConfig skill)
+    {
+        foreach (var buff in skill.Buff1)
+            if (buff is [var id, ..] && id / 100 is FirepowerGroup or MelodyFirepowerGroup) return (int)id;
+        return FirepowerBuff;
+    }
+
+    /// <summary>The live Firepower Loaded group and the mode buff its _kLogicData names.</summary>
+    private (int Group, long Enhance)? HeldFirepower(GameSession s)
+    {
+        foreach (var buff in s.Buffs)
+            if (buff.ExpireMs > Now && buff.ConfigId / 100 is FirepowerGroup or MelodyFirepowerGroup)
+                return (buff.ConfigId / 100, BuffConfig.Get(_data, buff.ConfigId)?.LogicData is [var enhance, ..] ? enhance : CannonEnhanceBuff);
+        return null;
+    }
+
+    /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.
+    /// AxeLeapAttack2's shield came with the flight; Tetra Vortex's resonance form names Elemental Attunement, which Mixed Accompaniment grants after the
+    /// cast (ResonancePassives).</summary>
+    internal static bool ComesFromALoop(string script, int buff) => buff / 100 is FirepowerGroup or MelodyFirepowerGroup
+            && (script.StartsWith("VulcanArm", StringComparison.Ordinal) || script == "FlameLauncher")
+        || script == "AxeLeapAttack2" && buff == 1634601
+        || buff == ResonancePassives.ElementalAttunement && script.StartsWith("TetraVortex", StringComparison.Ordinal);
 
     private async Task ClassLoopsOnCastAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
     {
@@ -62,17 +85,23 @@ public sealed partial class SkillCastingService
             case "hesehuanying" or "hesehuanyingS1":
                 await _buffs.AddEnergyAsync(s, BladeMeter, (long)Desc(8));
                 break;
-            // Vulcan Arm: "Every ${5} casts ... trigger [Firepower Loaded]": the piles of its first buff.
-            case "VulcanArm" when _buffs.HasBuffPiles(s, FirepowerPilesGroup, (int)Desc(4)) && await _buffs.ConsumeBuffPilesAsync(s, FirepowerPilesGroup, (int)Desc(4)):
+            // Vulcan Arm: "Every ${5} casts ... trigger [Firepower Loaded]": the piles of its first buff. Each form grants the Firepower Loaded
+            // its _kBuff1 names, with the mode buff that one's _kLogicData holds.
+            case var vulcan when vulcan.StartsWith("VulcanArm", StringComparison.Ordinal) && _buffs.HasBuffPiles(s, FirepowerPilesGroup, (int)Desc(4))
+                && await _buffs.ConsumeBuffPilesAsync(s, FirepowerPilesGroup, (int)Desc(4)):
             case "FlameLauncher":
-                await _buffs.AddUntilSpentAsync(s, FirepowerBuff, s.Role!.Id, FirepowerAttacks);
-                await _buffs.AddUntilSpentAsync(s, CannonEnhanceBuff, s.Role!.Id);
+                int firepower = FirepowerOf(skill);
+                long caster = s.Role!.Id;
+                await _buffs.AddUntilSpentAsync(s, firepower, caster, FirepowerAttacks);
+                await _buffs.AddUntilSpentAsync(s, BuffConfig.Get(_data, firepower)?.LogicData is [var enhance, ..] ? (int)enhance : CannonEnhanceBuff, caster);
                 break;
         }
         if (script.StartsWith("AxeTornado", StringComparison.Ordinal)) await HighEnergyPulsesAsync(s, skill);
-        // [Firepower Loaded]: "for ${9} attacks"; each spends a pile, and the last ends the mode it holds.
-        if (IsArmCannon(script) && skill.Mode == 1 && await _buffs.ConsumeBuffPilesAsync(s, FirepowerGroup, 1) && !_buffs.HasBuffPiles(s, FirepowerGroup, 1))
-            foreach (var enhance in s.Buffs.Where(b => b.ConfigId == CannonEnhanceBuff).ToArray()) await _buffs.RemoveAsync(s, enhance);
+        // [Firepower Loaded]: "for ${9} attacks"; each spends a pile, and the last ends the mode it holds. While it lives every Arm Cannon is the
+        // enhanced one (a standing mode such as Melody Cannon's is not a charge).
+        if (IsArmCannon(script) && HeldFirepower(s) is { } fire && await _buffs.ConsumeBuffPilesAsync(s, fire.Group, 1)
+            && !_buffs.HasBuffPiles(s, fire.Group, 1))
+            foreach (var enhance in s.Buffs.Where(b => b.ConfigId == fire.Enhance).ToArray()) await _buffs.RemoveAsync(s, enhance);
         // Joint Beat: "Each hit ... shatters the target's body parts in sequence": the buff's pile count names the part, 11222 to 11225, at their first row.
         if (script == "Qiaoda" && skill.Buff2 is [[_, _, var partMs, ..], ..])
             foreach (var target in processed.Where(m => m.Hp > 0))
