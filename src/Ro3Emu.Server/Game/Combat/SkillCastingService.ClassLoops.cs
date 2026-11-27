@@ -25,6 +25,14 @@ public sealed partial class SkillCastingService
 
     private static bool IsArmCannon(string script) => script.StartsWith("ArmCannon", StringComparison.Ordinal);
 
+    /// <summary>The casts that load Firepower: the _iMaxStack of the counter buff a Vulcan Arm row's _kBuff1 names (its group 16313).</summary>
+    private int FirepowerCasts(SkillConfig skill)
+    {
+        foreach (var buff in skill.Buff1)
+            if (buff is [var id, ..] && id / 100 == FirepowerPilesGroup && BuffConfig.Get(_data, id) is { } counter) return (int)counter.MaxStack;
+        return 0;
+    }
+
     /// <summary>The Firepower Loaded a Vulcan Arm or Flame Launcher row names in _kBuff1 (Vulcan Arm's own 1631701 when none).</summary>
     private static int FirepowerOf(SkillConfig skill)
     {
@@ -85,10 +93,11 @@ public sealed partial class SkillCastingService
             case "hesehuanying" or "hesehuanyingS1":
                 await _buffs.AddEnergyAsync(s, BladeMeter, (long)Desc(8));
                 break;
-            // Vulcan Arm: "Every ${5} casts ... trigger [Firepower Loaded]": the piles of its first buff. Each form grants the Firepower Loaded
-            // its _kBuff1 names, with the mode buff that one's _kLogicData holds.
-            case var vulcan when vulcan.StartsWith("VulcanArm", StringComparison.Ordinal) && _buffs.HasBuffPiles(s, FirepowerPilesGroup, (int)Desc(4))
-                && await _buffs.ConsumeBuffPilesAsync(s, FirepowerPilesGroup, (int)Desc(4)):
+            // Vulcan Arm: "Every ${6} casts of [Vulcan Arm] trigger [Firepower Loaded]" (Melody Vulcan's ${7}): the piles of its first buff,
+            // whose _iMaxStack is that count at every level (15), where ${5} is the damage ratio (15% at Lv. 1, 35% at Lv. 5). Each form
+            // grants the Firepower Loaded its _kBuff1 names, with the mode buff that one's _kLogicData holds.
+            case var vulcan when vulcan.StartsWith("VulcanArm", StringComparison.Ordinal) && FirepowerCasts(skill) is var casts and > 0
+                && _buffs.HasBuffPiles(s, FirepowerPilesGroup, casts) && await _buffs.ConsumeBuffPilesAsync(s, FirepowerPilesGroup, casts):
             case "FlameLauncher":
                 int firepower = FirepowerOf(skill);
                 long caster = s.Role!.Id;
