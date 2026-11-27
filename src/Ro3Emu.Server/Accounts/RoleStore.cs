@@ -225,6 +225,13 @@ public sealed class RoleStore(AccountStore accounts)
     public void SaveEmojiPlay(long id, byte[] value) => SaveBlob(id, "emoji_play", value);
     public byte[]? LoadAchievements(long id) => LoadBlob(id, "achievements");
     public void SaveAchievements(long id, byte[] value, RoleItemPlanBuilder? transaction = null) => SaveBlob(id, "achievements", value, transaction);
+    /// <summary>Achievement progress committed by the writer while the caller awaits it; the game loop does not wait.</summary>
+    internal async Task SaveAchievementsAsync(long id, byte[] value)
+    {
+        var builder = NewTransaction();
+        builder.RoleBlob(id, "achievements", value);
+        await CommitAsync(builder, "achievement/progress");
+    }
     public byte[]? LoadAchievementRuntime(long id) => LoadBlob(id, "achievement_runtime");
     public void SaveAchievementRuntime(long id, byte[] value) => SaveBlob(id, "achievement_runtime", value);
     public byte[]? LoadAdventureGroup(long id) => LoadBlob(id, "adventure_group");
