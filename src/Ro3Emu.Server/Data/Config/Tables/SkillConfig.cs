@@ -38,7 +38,9 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     /// Whether the skill is a career or monster normal attack: _iIsNormalAtk 1, or a career's attack in JobAttackConfig.
     /// The Archer series' attack (1300001 HunterAttack) is the one JobAttackConfig row whose skill has _iIsNormalAtk 0.
     /// </summary>
-    public bool IsNormalAttack(GameData data) => IsNormalAtk == 1 || CareerAttacks(data).Contains(Id);
+    /// <summary>A Basic Attack row: flagged, or a job's attack (JobAttackConfig). A described hit dealt as such a row keeps its
+    /// id but has no group (AsDescribedHit), so the job list does not make it one.</summary>
+    public bool IsNormalAttack(GameData data) => IsNormalAtk == 1 || SkillId != 0 && CareerAttacks(data).Contains(Id);
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameData, HashSet<long>> CareerAttackSets = [];
 
@@ -111,15 +113,25 @@ public readonly partial record struct SkillConfig(JsonElement Row)
 
     /// <summary>
     /// This row as a hit whose damage only a description gives (talent procs): PATK * ratio (basis points) + flat, of an
-    /// element and a target cap (0 keeps the row's). It keeps the row's id, release and show, but drops its group, tags,
-    /// script, buffs and shown hit count, so no skill modifier, script effect or buff of the original applies to it.
+    /// element and a target cap (0 keeps the row's). It keeps the row's id, release, show and _kSkilltag, but drops its group,
+    /// categories (_kSkillCategory), script, buffs and shown hit count, so no skill modifier, script effect or buff of the
+    /// original applies to it. With an element given, an equipped arrow's element (_iAffectByArrow) does not replace it.
     /// </summary>
-    public JsonElement AsDescribedHit(long ratio, long flat, long element, long targetMax = 0)
+    /// <remarks>A described hit is no Basic Attack, whatever row it is dealt as: the texts give its own element ("Extra hits
+    /// of Neutral melee Physical damage ... not considered a Normal Attack"), so a Basic Attack's buffed element and its
+    /// exclusion from Skill damage do not reach it (inferred for the texts that do not say so). <paramref name="basicAttack"/>
+    /// keeps the row's flag.</remarks>
+    public JsonElement AsDescribedHit(long ratio, long flat, long element, long targetMax = 0, bool basicAttack = false)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(Row.GetRawText())!.AsObject();
+        if (!basicAttack) node["_iIsNormalAtk"] = 0;
         node["_kDamageParam1"] = new System.Text.Json.Nodes.JsonArray(ratio);
         node["_kDamageParam2"] = new System.Text.Json.Nodes.JsonArray(flat);
-        if (element > 0) node["_iEleType"] = element;
+        if (element > 0)
+        {
+            node["_iEleType"] = element;
+            node["_iAffectByArrow"] = 0;
+        }
         if (targetMax > 0) node["_iTargetMax"] = targetMax;
         node["_iSkillID"] = 0;
         node["_kSkillCategory"] = new System.Text.Json.Nodes.JsonArray();

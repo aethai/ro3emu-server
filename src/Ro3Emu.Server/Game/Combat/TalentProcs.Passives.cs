@@ -66,6 +66,8 @@ public sealed partial class TalentProcs
         if (SkillConfig.Get(_data, id) is not { } passive || BuffConfig.Get(_data, id)?.LogicData is not { Length: > 0 } logic) return;
         if (Roll(10000) >= LogicValue(s, DoubleAttack, logic, 0)) return;
         var desc = passive.DescData;
+        // "Extra hits of Neutral melee Physical damage ... this damage is not considered a Normal Attack": its rows (1511501,
+        // 1523601) keep _iIsNormalAtk 1; the described hit drops it (SkillConfig.AsDescribedHit).
         var row = DescribedHit(HitRow(DoubleAttackHit) ?? cast, id, (long)(Value(desc, 2) * 100), 0, Neutral);
         for (int i = 0; i < Math.Max(1, (int)Value(desc, 1)) && target.Hp > 0; i++) await _combat.CastExtraAsync(s, row, [target]);
         if (Talent(s, TripleSlash) is not { } triple || !Ready(s, TripleSlash, (long)(Value(triple, 4) * 1000))) return;
