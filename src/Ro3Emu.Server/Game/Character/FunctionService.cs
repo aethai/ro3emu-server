@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -36,6 +37,8 @@ public sealed partial class FunctionService
         this._seasons = seasons;
         this._clock = clock;
         character.ProgressHandlers.Subscribe(SyncAsync);
+        // CondItemCount conditions (functions, talent trees, quests) count these items.
+        character.WatchStateEntries(() => LCConditionList.All(data).SelectMany(row => row.SubConditionValues(CondItemCount)));
         // LC_DAL_ServerInfo.PackServerBasicInfo: iOpenDayCount (the server level and EXP catch-up read it).
         character.ServerDay = ServerDay;
     }

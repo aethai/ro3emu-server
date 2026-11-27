@@ -50,6 +50,7 @@ public sealed partial class LifeJobService
         this._awards = awards; this._roles = roles; this._loop = loop; this._clock = clock; this._log = log;
         character.LifeItemUse = UseLifeItemAsync;
         character.StateChanged.Subscribe(SyncVigorChange);
+        character.WatchStateEntries(() => [VigorCurrencyId]);
         character.ExtraAttributes.Subscribe(FoodAttributes);
         character.ProgressHandlers.Subscribe(OnLevelChangedAsync);
         scene.Leaving.Subscribe(CancelAsync);

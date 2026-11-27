@@ -133,8 +133,42 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
         public Action<GameSession>[]? PendingStateChanged { get; set; }
     }
 
-    /// <summary>After a committed inventory, equipment or stat change; listeners defer any grant work.</summary>
+    /// <summary>After a committed inventory, equipment or stat change; listeners defer any grant work. A monster kill's
+    /// reward raises it only when it touched what a listener reads (CharacterInventoryService.QuietKillReward).</summary>
     public SyncHook<GameSession> StateChanged { get; } = new("CharacterService.StateChanged");
+
+    /// <summary>Only the Astral Level (ParagonLevel/ParagonExp) moved: EXP past the level cap from a kill or a party share.
+    /// <see cref="StateChanged"/> would wake every listener for it; only ParagonService reads it.</summary>
+    public SyncHook<GameSession> AstralChanged { get; } = new("CharacterService.AstralChanged");
+
+    private readonly List<Func<IEnumerable<long>>> _stateEntrySources = [];
+    private readonly Lock _stateEntriesLock = new();
+    private volatile HashSet<int>? _stateEntries;
+
+    /// <summary>
+    /// Items and currencies a <see cref="StateChanged"/> listener reads beyond levels and equipment: quest collect and
+    /// submit targets, condition item counts, daily activity points, pass EXP and tokens, vigor, guild currencies. Each
+    /// listener names its own when it subscribes (read from the tables on first use); a kill reward that grants one of
+    /// them raises the event.
+    /// </summary>
+    internal void WatchStateEntries(Func<IEnumerable<long>> entries)
+    {
+        lock (_stateEntriesLock)
+        {
+            _stateEntrySources.Add(entries);
+            _stateEntries = null; // a listener that subscribes late (GuildWartimeService at the first login) is counted too
+        }
+    }
+
+    internal bool WatchesStateEntry(int entry)
+    {
+        var entries = _stateEntries;
+        if (entries == null)
+            lock (_stateEntriesLock)
+                entries = _stateEntries ??= [.. _stateEntrySources.SelectMany(source => source())
+                    .Where(e => e is > 0 and <= int.MaxValue).Select(e => (int)e)];
+        return entries.Contains(entry);
+    }
 
     /// <summary>For CardService: item, stat and look updates after socket changes (caller holds the lock).</summary>
     internal async Task ItemsChangedAsync(GameSession session, bool stats)

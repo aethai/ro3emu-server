@@ -146,6 +146,39 @@ public sealed class ParagonTests : IAsyncLifetime
         }));
     }
 
+    /// <summary>A kill at the cap moves only the Astral Level: ParagonService hears it, the other StateChanged listeners
+    /// are not woken (CharacterInventoryService.QuietKillReward).</summary>
+    [ClientDataFact]
+    public async Task AKillAtTheCapWakesOnlyTheAstralListeners()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!lvl 99");
+        var s = Session(alice);
+        var character = Service<CharacterService>();
+        int state = 0, astral = 0;
+        using var stateCount = character.StateChanged.Subscribe(x => { if (x == s) state++; });
+        using var astralCount = character.AstralChanged.Subscribe(x => { if (x == s) astral++; });
+        // The level change's quest awards raise StateChanged on their own: wait until they are done.
+        int seen = -1;
+        var quietSince = DateTime.UtcNow;
+        SpinWait.SpinUntil(() =>
+        {
+            if (Volatile.Read(ref state) != seen) (seen, quietSince) = (state, DateTime.UtcNow);
+            return DateTime.UtcNow - quietSince > TimeSpan.FromSeconds(1);
+        }, TimeSpan.FromSeconds(30));
+        var counted = await Service<GameLoop>().InvokeAsync(async () =>
+        {
+            (int State, int Astral) before = (state, astral);
+            Assert.NotNull(await character.ExchangeAsync(s, new ExchangeRequest
+            {
+                BaseExp = 1000, Popup = false, Sync = false,
+                RewardSettlement = new RewardSettlement("kill/astral/" + Guid.NewGuid().ToString("N"), "monster-kill"),
+            }));
+            return (State: state - before.State, Astral: astral - before.Astral);
+        });
+        Assert.Equal((0, 1), counted);
+    }
+
     [ClientDataFact]
     public async Task StarsTakePointsAlongTheirChainInsideAnActiveConstellation()
     {

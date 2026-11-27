@@ -80,6 +80,7 @@ public sealed partial class CharacterService
         if (stillOwner?.Invoke() == false) return string.Empty;
         var p = session.Progress!;
         int oldLevel = p.Level, oldJob = p.JobLevel;
+        long oldParagonLevel = p.ParagonLevel, oldParagonExp = p.ParagonExp;
         // BaseExpAddConfig catch-up bonus below the server level (CharacterService.LevelRules).
         baseExp = WithPursueBonus(p.Level, Math.Max(0, baseExp));
         jobExp = checked(Math.Max(0, jobExp) + JobExpFromBase(baseExp));
@@ -109,7 +110,10 @@ public sealed partial class CharacterService
         {
             await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
             if (stillOwner?.Invoke() == false) return string.Empty;
-            foreach (var handler in StateChanged.Handlers) handler(session);
+            // EXP below a level change is read by no StateChanged listener, only the Astral Level past the cap is: a party
+            // share after every kill re-read every member for nothing (#484, CharacterInventoryService.QuietKillReward).
+            if (p.ParagonLevel != oldParagonLevel || p.ParagonExp != oldParagonExp)
+                foreach (var handler in AstralChanged.Handlers) handler(session);
         }
         return $"Base {p.Level} ({p.Exp}/{BaseExpNeed(p.Level)}), job {p.JobLevel} ({p.JobExp}/{JobExpNeed(p.Career, p.JobLevel)}).";
     }

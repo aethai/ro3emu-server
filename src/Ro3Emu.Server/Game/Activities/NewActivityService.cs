@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Game.Ownership;
 
@@ -148,6 +149,10 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         life.ExplorationNotes = NoteDrops;
         life.ProjectedRestrictions.Subscribe(NoteDrops.Remaining);
         character.StateChanged.Subscribe(QueueRefresh);
+        // ReconcileAsync converts what it owns: pass EXP and premium items, month card tokens, the daily activity points.
+        character.WatchStateEntries(() => BattlePassConfig.All(data).SelectMany(row => new[] { row.ExpCurrencyId, row.PremiumItemId })
+            .Concat(MonthCardConfig.All(data).Select(row => row.Item))
+            .Concat([PassExpCurrency, NovicePassExpCurrency, Liveness]));
         character.ProgressHandlers.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         defense.Changed = s => { InvalidateProjection(s); return Task.CompletedTask; };
         seasons.ScheduleChanged.Subscribe(InvalidateAllSchedules);

@@ -54,6 +54,7 @@ public sealed partial class ParagonService
         this._options = options.Value;
         character.ExtraAttributes.Subscribe(Attributes);
         character.StateChanged.Subscribe(s => _ = SyncIfOpenAsync(s));
+        character.AstralChanged.Subscribe(s => _ = SyncIfOpenAsync(s));
         power.ParagonPower = s => s.Profile.Paragon == null || s.Progress == null ? 0 : Power(s, s.Profile.Paragon);
         rewards.ExtraKillDrops.Subscribe(StarCoreDrops);
         gm.Register("paragon", "exp <n> | level <n> | info (Astral Level test aid)", GmAsync);
