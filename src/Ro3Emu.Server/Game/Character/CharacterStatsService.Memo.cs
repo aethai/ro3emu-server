@@ -14,7 +14,7 @@ public sealed partial class CharacterStatsService
     /// <summary>The longest a memoized build part is reused. It also bounds a change no input below tracks: a function gate
     /// opening at a day boundary (FunctionService CondServerStage), or a state edited in place before its owner's
     /// <see cref="Refresh"/>.</summary>
-    private const long StatsMemoMaxAgeMs = 1000;
+    private const long StatsMemoMaxAgeMs = 3000;
 
     /// <summary>Tests (Ro3Emu:Testing:VerifyStatsCache): every reuse of a memoized sheet is checked against a fresh build.</summary>
     private readonly bool _verifyMemo = options?.Value.Testing.VerifyStatsCache == true;
@@ -35,7 +35,7 @@ public sealed partial class CharacterStatsService
         internal required int Career, S0, S1, S2, S3, S4, S5;
         internal required long Level, SpeedBonus, Mount, StatusBits, SceneGeneration, Skills, Items;
         internal required long? CurrentHp;
-        internal required bool Dead, ReadHp, AllFunctionsOpen;
+        internal required bool Dead, ReadHp, AllFunctionsOpen, TalentEffects;
         internal required ActiveBuff[] Buffs;
         internal required object?[] Inputs;
         internal required StatSheet Sheet;
@@ -75,15 +75,19 @@ public sealed partial class CharacterStatsService
     }
 
     /// <summary>
-    /// The items as the build reads them: worn gear, socketed cards, Soul Echoes, totems and stack counts (function
-    /// conditions). A committed change replaces an item's Attrs and Enchantments (CharacterService.CopyItem,
-    /// EmblemService.PublishItems) and its slot and stack fields, so those references and fields cover it.
+    /// The items as the build reads them: worn gear (grid above 0), socketed cards (below 0), totems (PackType_Totem),
+    /// Soul Echoes (PackType_Emblem) and the items a condition counts (FunctionService CondItemCount, among the watched
+    /// entries). A committed change replaces an item's Attrs and Enchantments (CharacterService.CopyItem,
+    /// EmblemService.PublishItems) and its slot and stack fields, so those references and fields cover it. Loot stacking in
+    /// the bag changes none of them, so it no longer ends the memo.
     /// </summary>
-    private static long ItemSignature(List<InvItem> items)
+    private long ItemSignature(List<InvItem> items)
     {
-        long h = items.Count;
+        long h = 0, read = 0;
         foreach (var item in items)
         {
+            if (item.Grid == 0 && item.Pack is not (TotemPack or EmblemPack) && !character.WatchesStateEntry(item.Entry)) continue;
+            read++;
             h = h * 1_000_003 + item.Guid;
             h = h * 31 + item.Entry;
             h = h * 31 + item.Stack;
@@ -92,10 +96,13 @@ public sealed partial class CharacterStatsService
             h = h * 31 + (item.Attrs == null ? 0 : RuntimeHelpers.GetHashCode(item.Attrs));
             h = h * 31 + RuntimeHelpers.GetHashCode(item.Enchantments);
         }
-        return h;
+        return h * 31 + read;
     }
 
-    private static bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p, long now)
+    /// <summary>PackType_Totem and PackType_Emblem (Lua_GameDefine), where the build finds totems and Soul Echoes.</summary>
+    private const int TotemPack = 4, EmblemPack = 5;
+
+    private bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p, long now)
     {
         if (now < memo.BuiltMs || now - memo.BuiltMs > StatsMemoMaxAgeMs
             // A buff past its expiry stops counting for the talents that check it (SkillParameterRules.HasBuffGroup)
@@ -108,13 +115,14 @@ public sealed partial class CharacterStatsService
             || memo.ReadHp && memo.CurrentHp != session.CurrentHp || memo.StatusBits != session.StatusBits
             || memo.Dead != session.Dead || memo.SceneGeneration != session.SceneGeneration
             || memo.AllFunctionsOpen != session.Profile.GmAllFunctionsOpen
+            || memo.TalentEffects != session.Season.TalentEffectsEnabled
             || memo.Buffs.Length != session.Buffs.Count || !SameInputs(memo.Inputs, session)) return false;
         for (int i = 0; i < memo.Buffs.Length; i++)
             if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
         return memo.Skills == SkillSignature(p) && memo.Items == ItemSignature(session.Items);
     }
 
-    private static StatsMemoEntry Memo(GameSession session, RoleProgress p, long now, bool readHp, StatSheet sheet)
+    private StatsMemoEntry Memo(GameSession session, RoleProgress p, long now, bool readHp, StatSheet sheet)
     {
         long nextExpiry = long.MaxValue;
         foreach (var buff in session.Buffs)
@@ -126,7 +134,7 @@ public sealed partial class CharacterStatsService
             SpeedBonus = session.Combat.SpeedBonus, Mount = MountService.Rider(session), StatusBits = session.StatusBits,
             SceneGeneration = session.SceneGeneration, Skills = SkillSignature(p), Items = ItemSignature(session.Items),
             CurrentHp = session.CurrentHp, Dead = session.Dead, ReadHp = readHp,
-            AllFunctionsOpen = session.Profile.GmAllFunctionsOpen, Buffs = [.. session.Buffs], Inputs = Inputs(session),
+            AllFunctionsOpen = session.Profile.GmAllFunctionsOpen, TalentEffects = session.Season.TalentEffectsEnabled, Buffs = [.. session.Buffs], Inputs = Inputs(session),
             Sheet = sheet,
         };
     }

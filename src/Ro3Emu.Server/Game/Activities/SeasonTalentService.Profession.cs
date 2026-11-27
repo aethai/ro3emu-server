@@ -60,6 +60,7 @@ public sealed partial class SeasonTalentService
             else
             {
                 BuildUnlocks(s);
+                s.StatsMemo = null; // the unlocks changed in place (also when the choice is then refused)
                 var path = ChoicePath(req.TalentId, s.Progress.Career);
                 if (path == null) result = ErrorCodes.TalentInvalid;
                 else if (!s.Season.SeasonTalent.UnlockedNode.GetValueOrDefault(path.Value.Gate)) result = ErrorCodes.TalentLocked;

@@ -284,7 +284,9 @@ public sealed partial class CharacterService
                 if (item == null) { result = ErrorCodes.ItemMissing; break; }
                 if (count <= 0 || count > item.Stack) { result = count <= 0 ? ErrorCodes.Parameter : ErrorCodes.ItemsShort; break; }
                 if (item.IsLocked) { result = ErrorCodes.ItemLocked; break; }
-                if (TotemService.IsReserved(session, item)) { result = ErrorCodes.ItemLocked; break; }
+                // A deployed totem or a worn Soul Echo stays where its plan reads it (EmblemService.Worn finds an echo by
+                // its guid in any pack, so in the cart it kept its stats).
+                if (TotemService.IsReserved(session, item) || EmblemService.IsReserved(session, item)) { result = ErrorCodes.ItemLocked; break; }
                 if (data.Row("ItemConfig", item.Entry) is not { } row) { result = ErrorCodes.ItemNoConfig; break; }
                 if (source == 0 && GameData.Int(row, "_kCanCart") == 0) { result = ErrorCodes.Parameter; break; }
                 int destination = source == 0 ? 100 : ConfigPack(data, row);

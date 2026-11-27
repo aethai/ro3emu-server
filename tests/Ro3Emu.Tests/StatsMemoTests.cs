@@ -6,7 +6,7 @@ namespace Ro3Emu.Tests;
 
 /// <summary>
 /// The memoized stat sheet (CharacterStatsService.Memo): a combat path reuses the build across work items while its
-/// inputs are unchanged, and rebuilds when an item, a skill, a buff or its age says so. Every test host also checks each
+/// inputs are unchanged, and rebuilds when a worn item, a skill, a buff or its age says so. Every test host also checks each
 /// reuse against a fresh build (Testing:VerifyStatsCache), so these cover when the memo is used, not its values.
 /// </summary>
 public sealed class StatsMemoTests : IAsyncLifetime
@@ -54,13 +54,18 @@ public sealed class StatsMemoTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ACommittedItemChangeOrASkillLevelEndsTheMemo()
+    public async Task AWornItemChangeOrASkillLevelEndsTheMemoAndBagLootDoesNot()
     {
         var s = await PlayerAsync();
-        var item = s.Items[0];
+        var loot = new InvItem { Guid = 9_100_001, Entry = 1000000, Stack = 1, Pack = 1 };   // a bag consumable
+        var worn = new InvItem { Guid = 9_100_002, Entry = 2010121, Stack = 1, Pack = 2, Grid = 1 }; // worn gear
+        await _server.OnLoopAsync(() => Assert.Equal(0, HotRead(s, () => s.Items.Add(loot))));
+        await _server.OnLoopAsync(() => Assert.Equal(0, HotRead(s, () => loot.Stack++)));
+        await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => s.Items.Add(worn))));
         // A commit replaces the item's attribute map (CharacterService.CopyItem); the list and its count stay.
-        await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => item.Attrs = new(item.Attrs ?? []))));
-        await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => item.Stack++)));
+        await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => worn.Attrs = new(worn.Attrs ?? []))));
+        await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => worn.Grid = 0))); // taken off
+        await _server.OnLoopAsync(() => s.Items.Remove(worn));
         // Skill levels are copied into the same dictionary (SkillService.CopySkills).
         await _server.OnLoopAsync(() => Assert.Equal(1, HotRead(s, () => s.Progress!.Skills[999_999] = 1)));
         await _server.OnLoopAsync(() => Assert.Equal(0, HotRead(s)));
@@ -84,12 +89,12 @@ public sealed class StatsMemoTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheMemoLastsOneSecond()
+    public async Task TheMemoLastsThreeSeconds()
     {
         var s = await PlayerAsync();
         await _server.OnLoopAsync(() =>
         {
-            _clock.Advance(TimeSpan.FromMilliseconds(1000));
+            _clock.Advance(TimeSpan.FromMilliseconds(3000));
             Assert.Equal(0, HotRead(s));
             _clock.Advance(TimeSpan.FromMilliseconds(1));
             Assert.Equal(1, HotRead(s));
@@ -97,13 +102,15 @@ public sealed class StatsMemoTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ARefreshOrAProjectedPlanNeverServesTheMemo()
+    public async Task ARefreshBuildsAndKeepsItsSheetAndAProjectionNeverServesTheMemo()
     {
         var s = await PlayerAsync();
         await _server.OnLoopAsync(() =>
         {
-            Character.Refresh(s);
-            Assert.Equal(1, HotRead(s));
+            long builds = StatsService.Builds;
+            Character.Refresh(s); // not a combat path, but a sheet built from the inputs now: the next hot read takes it
+            Assert.Equal(1, StatsService.Builds - builds);
+            Assert.Equal(0, HotRead(s));
             s.StatsMemoBypass++;
             try { Assert.Equal(1, HotRead(s)); }
             finally { s.StatsMemoBypass--; }
