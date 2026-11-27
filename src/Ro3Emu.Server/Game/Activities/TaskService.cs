@@ -785,12 +785,25 @@ public sealed partial class TaskService
             {
                 var t = def.Targets[i];
                 if (!Supported(t)) { info.CompleteNum[i] = 0; continue; }
-                long value = TavernStay(session, def, t) is var stay and >= 0 ? stay : PassiveValue(session, t);
+                long value = TavernStay(session, def, t) is var stay and >= 0 ? stay
+                    : AfkLifetime(session, def, t) is var total and >= 0 ? total : PassiveValue(session, t);
                 if (value < 0) continue;
                 info.CompleteNum[i] = Math.Min(Required(session, t), value);
             }
         }
     }
+
+    /// <summary>TaskConfig._iTaskType of the daily quests (500130 [106901,3600]).</summary>
+    private const int DailyTaskType = 5;
+
+    /// <summary>
+    /// 106901 outside the daily quests: the Growth Emblem's 703060 [106901,3600] is a task that never resets, so it reads
+    /// the Bonus Time spent in total (5035 SumHighMultiplierTime), as 306060 does with the same text, not today's
+    /// (inferred). On today's counter it went back to 0 at every daily reset, even once finished. Whole minutes, as the
+    /// daily one (TaskObjectives). -1 for any other target.
+    /// </summary>
+    private static long AfkLifetime(GameSession s, TaskDef def, long[] t) =>
+        t[0] == TAfkSeconds && def.Type != DailyTaskType && s.Activities.WildAfk is { } afk ? afk.Info.SumHighMultiplierTime / 60 * 60 : -1;
 
     private bool Complete(GameSession session, TaskDef def, TaskInfo info)
     {
