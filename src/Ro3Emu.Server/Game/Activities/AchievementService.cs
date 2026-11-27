@@ -602,12 +602,16 @@ public sealed partial class AchievementService : IGameTicker
     }
 
     /// <summary>Progress has no economic effect: a plain blob write per settled event (spec §9.2, inferred: losing the
-    /// last increment on a crash is acceptable), then one 5019 increment.</summary>
+    /// last increment on a crash is acceptable), then one 5019 increment. The write is awaited off the loop (#484); the
+    /// achievement gate keeps one role's commits in order, and a role that left meanwhile keeps its committed state.</summary>
     private async Task CommitProgressAsync(GameSession s, DBRoleAchievementInfo next)
     {
         RefreshLevels(next);
         if (next.Equals(s.Activities.Achievements)) return;
-        _roles.SaveAchievements(s.Role!.Id, next.ToByteArray());
+        var role = s.Role!;
+        var attachment = s.Attachment;
+        await _roles.SaveAchievementsAsync(role.Id, next.ToByteArray());
+        if (!ReferenceEquals(s.Role, role) || !ReferenceEquals(s.Attachment, attachment)) return;
         s.Activities.Achievements = next;
         await CharacterService.SyncAsync(s, Sync, next.Clone());
     }
