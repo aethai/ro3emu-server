@@ -184,6 +184,11 @@ public sealed class RoleSnapshotTests(ITestOutputHelper output) : IAsyncLifetime
         roles.Commit(other, "test/other-tasks-writer");
         Assert.False(accounts.Snapshots.TryBlob(id, "tasks", out _));
         Assert.Equal(new byte[] { 7 }, await loop.InvokeAsync(() => Task.FromResult(roles.LoadTasks(id))));
+        // A lazy save writes its committed bytes through too: a kill transaction reads wild_afk after one (#484).
+        var vector = await roles.ReadRevisionVectorAsync(id);
+        Assert.True(await roles.SaveBlobLazyAsync(id, vector.Epoch, vector.Revision("tasks"), "tasks", [9]));
+        Assert.True(accounts.Snapshots.TryBlob(id, "tasks", out var lazy));
+        Assert.Equal(new byte[] { 9 }, lazy);
         // Leaving the world releases the snapshot.
         await bot.DisposeAsync();
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);

@@ -179,13 +179,18 @@ public sealed class RoleStore(AccountStore accounts)
         catch (RolePlanConflictException) { return false; }
     }
 
-    /// <summary>Lazy blob part: the same CAS chain as the position, on the column's own revision part.</summary>
+    /// <summary>Lazy blob part: the same CAS chain as the position, on the column's own revision part. Like a
+    /// synchronous save it writes the committed bytes through to the session snapshot when it was the part's only
+    /// commit meanwhile, so the next transaction that reads the part (a kill reads wild_afk) is not a loop read.</summary>
     public async Task<bool> SaveBlobLazyAsync(long id, long epoch, long expectedRevision, string column, byte[] value)
     {
         var plan = new RoleBlobWritePlan(id, column, value);
         plan.Expect([new RoleRevisionVector(id, epoch, false, new Dictionary<string, long> { [column] = expectedRevision })]);
-        try { await _accounts.WriteLazyAsync<int>(plan); return true; }
+        var save = _accounts.Snapshots.BeginSave(id, column);
+        bool committed = false;
+        try { await _accounts.WriteLazyAsync<int>(plan); committed = true; return true; }
         catch (RolePlanConflictException) { return false; }
+        finally { _accounts.Snapshots.EndSave(id, column, save, value, committed); }
     }
 
     /// <summary>Commit every entrant's outside position in one transaction before any private handoff.</summary>
