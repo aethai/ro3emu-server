@@ -46,6 +46,10 @@ public sealed class GuildStore(AccountStore accounts)
         public Dictionary<int, List<int>> Rights { get; set; } = [];
         public Dictionary<long, long> Buildings { get; set; } = [];
         public Dictionary<long, long> BuildingEndTimes { get; set; } = [];
+        /// <summary>Guild War Technology: GuildWarTechConfig group to learned level, for the season that started at
+        /// TechSeason (unix s). Another season's levels count as 0 (text 10960000024: it resets every season).</summary>
+        public Dictionary<long, long> TechLevels { get; set; } = [];
+        public long TechSeason { get; set; }
         /// <summary>Guild Activity (item 106) earned this week and last week; ActivityWeek = the week's Monday 05:00 (unix s).</summary>
         public long CurActivity { get; set; }
         public long LastWeekActivity { get; set; }

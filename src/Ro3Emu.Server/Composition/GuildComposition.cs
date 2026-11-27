@@ -25,6 +25,7 @@ internal static class GuildComposition
         services.AddSingleton<DraculaWeddingService>();
         services.AddSingleton<GuildService>();
         services.AddSingleton<GuildWartimeService>();
+        services.AddSingleton<GuildTechService>();
         services.AddSingleton<GuildVoiceService>();
         services.AddSingleton<AdventureGroupStore>();
         services.AddSingleton<AdventureGroupService>();
@@ -43,6 +44,7 @@ internal static class GuildComposition
     public static void WireGuildEvents(WebApplication app)
     {
         app.Services.GetRequiredService<GuildService>().BindWartime(app.Services.GetRequiredService<GuildWartimeService>());
+        app.Services.GetRequiredService<GuildTechService>(); // condition 9008 and the battle stats
         app.Services.GetRequiredService<GuildHomeService>();
         app.Services.GetRequiredService<GuildCampfireService>();
         app.Services.GetRequiredService<GuildHuntingService>(); // boss kills, damage, home entry and the 5840 guard

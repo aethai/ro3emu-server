@@ -143,8 +143,11 @@ public sealed partial class TerritoryEscortService
         await RefreshCartActorsAsync();
         await RefreshCargoActorsAsync();
         if (stageChanged)
+        {
             await RoleFanout.EachAsync(_sessions.All().Where(x => x.Role != null),
                 peer => peer.SendGameAsync(InfoNtf, StageData())); // (inferred) 83078 uses the 83085 three-field wire shape.
+            await RoleFanout.EachAsync(_sessions.All().Where(x => x.Role != null && EscortLine(x)), GuildTechSync);
+        }
         await PublishSceneCountsAsync();
     }
 

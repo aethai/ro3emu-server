@@ -9,6 +9,7 @@ public sealed class SocialMessages(
     TeamService teams,
     EmblemService emblems,
     GuildService guilds,
+    GuildTechService guildTech,
     GuildCaravanService caravan,
     GuildChallengeService guildChallenge,
     FriendExtraService friendExtra,
@@ -108,6 +109,8 @@ public sealed class SocialMessages(
         routes.Map<GuildMemberIDListReq>(GuildService.MemberIds, "guilds", RouteAdmission.Economic, guilds.MemberIdsAsync);
         routes.Map<SyncGuildDataOnceReq>(GuildService.SyncOnce, "guilds", RouteAdmission.Economic, guilds.SyncOnceAsync);
         routes.Map<GuildBuildLevelUpReq>(GuildService.BuildUpgrade, "guilds", RouteAdmission.Economic, guilds.BuildUpgradeAsync);
+        routes.Map(GuildTechService.Query, "guilds", RouteAdmission.Economic, guildTech.QueryAsync);
+        routes.Map<OperateGuildTechReq>(GuildTechService.Operate, "guilds", RouteAdmission.Economic, guildTech.OperateAsync);
         routes.Map<GuildEnterApplyReq>(GuildService.Apply, "guilds", RouteAdmission.Economic, guilds.ApplyAsync);
         routes.Map<GuildEnterApplyOpeReq>(GuildService.ApplyOpe, "guilds", RouteAdmission.Economic, guilds.ApplyOpeAsync);
         routes.Map<GuildInviteReq>(GuildService.Invite, "guilds", RouteAdmission.Economic, guilds.InviteAsync);

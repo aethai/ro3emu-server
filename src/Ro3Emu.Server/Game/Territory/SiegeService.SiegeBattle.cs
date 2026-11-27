@@ -343,6 +343,7 @@ public sealed partial class SiegeService
             var current = state.SiegeRuns[key];
             if (_siegeBattles.TryGetValue(key, out var battle) && !battle.Room.Closed)
             {
+                await RoleFanout.EachAsync(battle.Room.ActiveMembers.Select(m => m.Session), _territory.GuildTechSync);
                 await RoleFanout.EachAsync(battle.Room.ActiveMembers.Select(m => m.Session), async s =>
                 {
                     if (s.Instances.SiegeBattle == battle && !s.SceneLoading && !SiegeMember(s, battle))
