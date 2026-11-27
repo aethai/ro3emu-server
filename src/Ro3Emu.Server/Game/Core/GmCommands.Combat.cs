@@ -237,15 +237,17 @@ internal sealed class CombatGmCommands(
             else
             {
                 HookGmAttributes();
-                var changes = p.GmAttributes ??= [];
                 // A percentage of the group scales the contribution: a few corrections bring the final value to the
-                // asked one when the pipeline allows it (its rounding up can leave it a point off).
+                // asked one when the pipeline allows it (its rounding up can leave it a point off). Each pass sets a new
+                // map, which the stat memo keys on by reference.
                 long reached = before;
                 for (int pass = 0; pass < 3 && reached != target; pass++)
                 {
+                    var changes = new Dictionary<int, double>(p.GmAttributes ?? []);
                     double total = changes.GetValueOrDefault(attr) + (target - reached);
                     if (total == 0) changes.Remove(attr);
                     else changes[attr] = total;
+                    p.GmAttributes = changes;
                     reached = character.Stats(p)[attr];
                 }
                 await character.RefreshStatsAsync(p);

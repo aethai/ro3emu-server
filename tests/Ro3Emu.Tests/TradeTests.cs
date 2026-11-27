@@ -101,7 +101,9 @@ public sealed partial class TradeTests : IAsyncLifetime
         // Nothing grants Credit yet: the client's own "no Credit" state, or every top purchase fails (#609).
         Assert.Equal(TradeService.CreditScoreRatio, initial.CreditScoreRatio);
         await seller.SendGameAsync(TradeService.Credit, new CFindUserCreditScoreRequest());
-        Assert.Equal(0, (await Next(seller, TradeService.Credit, CFindUserCreditScoreResponse.Parser)).Data.CreditScoreRatio);
+        var credit = (await Next(seller, TradeService.Credit, CFindUserCreditScoreResponse.Parser)).Data;
+        Assert.Equal(0, credit.CreditScoreRatio);
+        Assert.Equal(7, credit.UserCreditScoreRate); // the default 1000 is past every TradeCredibilityConfig range: top tier
 
         await Gm("seller", "!lvl 30");
         await Gm("buyer", "!lvl 30");

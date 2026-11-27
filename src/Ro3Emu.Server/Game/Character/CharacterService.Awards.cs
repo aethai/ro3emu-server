@@ -277,7 +277,7 @@ public sealed partial class CharacterService
         int pack = ConfigPack(data, row);
         int left = grant.Count;
         var created = new List<InvItem>();
-        foreach (var item in s.Items.Where(i => CanStackGrant(i, grant.Entry, stackLimit, grant.BindType, grant.ExpireTimeStamp)))
+        foreach (var item in s.Items.Where(i => CanStackGrant(i, pack, grant.Entry, stackLimit, grant.BindType, grant.ExpireTimeStamp)))
         {
             int add = Math.Min(left, stackLimit - item.Stack);
             item.Stack += add;
@@ -529,7 +529,7 @@ public sealed partial class CharacterService
         // (inferred) Even unappraised gear (some ItemConfig rows allow a stack of 2) gets one GUID per piece:
         // rolled stats, appraisal and enchantments belong to the instance and must never merge with another roll.
         int stackLimit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
-        foreach (var item in session.Items.Where(i => CanStackGrant(i, entry, stackLimit, bind)))
+        foreach (var item in session.Items.Where(i => CanStackGrant(i, pack, entry, stackLimit, bind)))
         {
             if (count == 0) break;
             int add = Math.Min(count, stackLimit - item.Stack);
@@ -558,9 +558,10 @@ public sealed partial class CharacterService
         return changed;
     }
 
-    /// <summary>(inferred) Plain rewards stack only onto plain, unlocked instances with the same permanent binding.</summary>
-    internal static bool CanStackGrant(InvItem item, int entry, int limit, int bind, long bindExpire = 0) =>
-        item.Grid == 0 && !item.IsLocked && item.Entry == entry && item.Stack < limit
+    /// <summary>(inferred) Plain rewards stack only onto plain, unlocked instances with the same permanent binding, in the
+    /// bag pack the grant goes to: a stack in the merchant cart (100) or a storage is not the bag.</summary>
+    internal static bool CanStackGrant(InvItem item, int pack, int entry, int limit, int bind, long bindExpire = 0) =>
+        item.Grid == 0 && item.Pack == pack && !item.IsLocked && item.Entry == entry && item.Stack < limit
         && (item.Attrs?.Count ?? 0) == 0 && (item.StringAttrs?.Count ?? 0) == 0 && item.Enchantments.Count == 0
         && item.BindType == bind && item.BindExpire == bindExpire;
 }

@@ -52,7 +52,7 @@ public sealed partial class EmblemService
             else if (code == 0)
                 foreach (long guid in target.Slots.Values)
                 {
-                    var item = session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0 && IsEmblem(_data, i.Entry));
+                    var item = session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0 && i.Pack != MerchantCart && IsEmblem(_data, i.Entry));
                     if (item == null) { code = ErrorCodes.EmblemInvalid; break; }
                     if (!SeasonValid(item.Entry)) { code = ErrorCodes.EmblemOtherSeason; break; }
                 }

@@ -81,8 +81,8 @@ public sealed partial class CharacterInventoryService(
     private static RoleProgress CloneProgress(RoleProgress source) => CharacterService.CloneProgress(source);
     private static void CopyProgress(RoleProgress target, RoleProgress source) => CharacterService.CopyProgress(target, source);
     private static void CopyItem(InvItem target, InvItem source) => CharacterService.CopyItem(target, source);
-    private static bool CanStackGrant(InvItem item, int entry, int limit, int bind, long bindExpire = 0) =>
-        CharacterService.CanStackGrant(item, entry, limit, bind, bindExpire);
+    private static bool CanStackGrant(InvItem item, int pack, int entry, int limit, int bind, long bindExpire = 0) =>
+        CharacterService.CanStackGrant(item, pack, entry, limit, bind, bindExpire);
     private List<InvItem> AddItemCore(GameSession session, int entry, int count, out bool currency,
         bool persist = true, bool notifyItemGained = true, int bind = 0) =>
         character.AddItemCore(session, entry, count, out currency, persist, notifyItemGained, bind);
