@@ -136,7 +136,11 @@ public sealed partial class OwnerRegistry
         if (!_rolesById.TryGetValue(before.RoleId, out var owner)) return;
         if (owner.LifecycleEpoch != before.Epoch) throw new InvalidOperationException("Commit applied to another role lifecycle.");
         var next = owner.Revisions.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
-        foreach (string part in parts.Distinct()) next[part] = checked(before.Revision(part) + 1);
+        // Revisions only grow within a lifecycle. A lazy write's continuation can run after a later synchronous write of the
+        // same part already recorded a newer revision; taking its own "before + 1" then moved the cache back, and the next
+        // write expecting it failed its revision check (a field kill's reward, #484).
+        foreach (string part in parts.Distinct())
+            next[part] = Math.Max(next.GetValueOrDefault(part), checked(before.Revision(part) + 1));
         owner.Revisions = next;
     }
     internal OwnerContext? Current => _loop.CurrentWork?.Ownership is { Active: true } context ? context : null;

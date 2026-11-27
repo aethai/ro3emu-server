@@ -94,4 +94,31 @@ public sealed class RevisionCacheTests : IAsyncLifetime
         Assert.Equal(retries + 1, accounts.VectorCacheRetries);
         Assert.Equal(new byte[] { 9, 9 }, roles.LoadDaily(role));
     }
+
+    [Fact]
+    public async Task ALateCommitRecordNeverMovesTheCachedRevisionBack()
+    {
+        var (bot, s) = await InWorld("Late");
+        await using var _ = bot;
+        var accounts = Service<AccountStore>();
+        var roles = Service<RoleStore>();
+        long role = s.Role!.Id;
+        long retries = accounts.VectorCacheRetries;
+        await Service<GameLoop>().InvokeAsync(() => Service<Ro3Emu.Server.Game.Ownership.OwnerRegistry>().RunSessionAsync("late test",
+            [Ro3Emu.Server.Game.Ownership.ReservationKey.Role(role)], s, () =>
+            {
+                // A lazy write captured the daily part, then a synchronous write of the part committed and was recorded;
+                // the lazy write's own record arrives last, with the older "before".
+                var before = roles.ReadRevisionVector(role);
+                roles.SaveDaily(role, [7]);
+                roles.SaveDaily(role, [8]);
+                long recorded = s.Owner!.Revisions["daily"];
+                Service<Ro3Emu.Server.Game.Ownership.OwnerRegistry>().RecordCommittedRole(before, ["daily"]);
+                Assert.Equal(recorded, s.Owner!.Revisions["daily"]);
+                roles.SaveDaily(role, [9]); // the cached revision is still the durable one: no conflict to retry
+                return Task.CompletedTask;
+            }));
+        Assert.Equal(retries, accounts.VectorCacheRetries);
+        Assert.Equal(new byte[] { 9 }, roles.LoadDaily(role));
+    }
 }
