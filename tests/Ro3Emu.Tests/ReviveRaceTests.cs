@@ -87,4 +87,47 @@ public sealed class ReviveRaceTests : IAsyncLifetime
         Assert.False(session.Dead);
         Assert.True(_app.Services.GetRequiredService<CharacterService>().Stats(session)[2000] > 0);
     }
+
+    [ClientDataFact]
+    public async Task AFieldReviveDoesNotWaitForTheRealm()
+    {
+        await using var bot = new BotClient(_http, File.ReadAllText(Path.Combine(_dir, "gate_rsa_public.pem")));
+        await bot.LoginAsync("alice", "pw");
+        await bot.EnterGateAsync();
+        long id = (await bot.CreateRoleAsync("Alice")).RoleBaseInfo.Id;
+        await bot.EnterWorldAsync(id);
+        var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Id == id);
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        await loop.InvokeAsync(async () =>
+        {
+            session.Dead = true;
+            await _app.Services.GetRequiredService<CharacterService>().SetHpSpAsync(session, 0, 0);
+        });
+        Assert.Equal(0, session.InstanceId);
+
+        // 31013 on an ordinary map changes only this role: it holds the role's admission, not the realm, so
+        // another role's work enters while the revive is still publishing (#484).
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        var owners = _app.Services.GetRequiredService<Ro3Emu.Server.Game.Ownership.OwnerRegistry>();
+        var publishing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        combat.ReviveBroadcastedForTest = async _ => { publishing.TrySetResult(); await release.Task; };
+        try
+        {
+            await bot.SendGameAsync(CombatService.Relive, new EntityReliveReq());
+            await publishing.Task.WaitAsync(TimeSpan.FromSeconds(8));
+            await loop.InvokeAsync(() => owners.RunAsync("other role fixture",
+                [Ro3Emu.Server.Game.Ownership.ReservationKey.Role(id + 1)], () => Task.CompletedTask)).WaitAsync(TimeSpan.FromSeconds(8));
+        }
+        finally
+        {
+            release.TrySetResult();
+            combat.ReviveBroadcastedForTest = null;
+        }
+        var ack = await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.Relive), TimeSpan.FromSeconds(8));
+        Assert.Equal(0, EntityReliveAck.Parser.ParseFrom(ack.Body).Result);
+        await bot.Inbox.WaitAsync(e => e.IsGame(CombatService.ReviveInfo)
+            && !SyncClientPlayerReviveInfoNtf.Parser.ParseFrom(e.Body).BDead, TimeSpan.FromSeconds(8));
+        Assert.False(session.Dead);
+    }
 }

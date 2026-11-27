@@ -180,7 +180,7 @@
 31010	session Realm:legacy: dispatcher/unrouted	refused
 31011	session Realm:legacy: dispatcher/31011	refused
 31012	session Realm:legacy: dispatcher/unrouted	refused
-31013	session Realm:legacy: dispatcher/31013	refused
+31013	economic dispatcher/economic request	refused
 31014	session Realm:legacy: dispatcher/unrouted	refused
 31015	session Realm:legacy: dispatcher/unrouted	refused
 31018	session Realm:legacy: dispatcher/unrouted	refused

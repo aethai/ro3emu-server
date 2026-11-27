@@ -25,6 +25,43 @@ public sealed class WorldMessages(
     CasualBattleService casual) : IMessageModule
 {
     private const uint ChangeViewCfg = 30007, SyncMiniMapStatus = 31043, SceneGetLineInfo = 70009;
+    private const string ReliveOrigin = "dispatcher/31013";
+
+    /// <summary>
+    /// 31013. A revive on an ordinary map changes only this role (HP/SP, its totem passives, a move in its own map), so
+    /// it takes the role's admission instead of the realm (#484). Every special branch needs an instance, a territory
+    /// battle or a dungeon attempt; those keep the realm. The test runs again under the role admission, because a
+    /// queued request can enter an instance meanwhile, and a role admission cannot grow into the realm.
+    /// </summary>
+    private async Task ReliveAsync(GameSession session, EntityReliveReq req)
+    {
+        if (session.Owners is not { } owners) { await ReliveCoreAsync(session, req); return; }
+        if (session.Role is not { } role) return;
+        bool revived = false;
+        if (FieldRevive(session))
+            await owners.RunSessionAsync(ReliveOrigin, [Ownership.ReservationKey.Role(role.Id)], session, async () =>
+            {
+                if (!FieldRevive(session)) return;
+                revived = true;
+                await combat.ReviveAsync(session, req);
+            });
+        if (!revived) await owners.RunSessionAsync(ReliveOrigin, [Ownership.ReservationKey.Realm], session, () => ReliveCoreAsync(session, req));
+    }
+
+    /// <summary>None of the special revive branches applies: timed battles, league and casual matches all require
+    /// the room's instance id (non-zero), the territory war its battle, a dungeon its attempt.</summary>
+    private static bool FieldRevive(GameSession session) =>
+        session.InstanceId == 0 && session.Instances.TerritoryBattle == null && session.DungeonAttempt == null;
+
+    private async Task ReliveCoreAsync(GameSession session, EntityReliveReq req)
+    {
+        if (await timedBattles.TryRefuseReliveAsync(session)) return; // Survivor Battle revives with 82661
+        if (await territory.ReviveAsync(session, req, combat)) return;
+        if (await league.ReviveAsync(session)) return;
+        if (await casual.ReviveAsync(session, req, combat)) return;
+        if (session.DungeonAttempt != null) await dungeons.ReviveAsync(session, req);
+        else await combat.ReviveAsync(session, req);
+    }
 
     public void Map(MessageRoutes routes)
     {
@@ -140,15 +177,7 @@ public sealed class WorldMessages(
         routes.Map<SkillInterruptReq>(CombatService.SkillInterrupt, "combat", RouteAdmission.Economic, combat.InterruptAsync);
         routes.Map<BossAllSkillShowCdReq>(CombatService.BossAllSkillCds, "combat", RouteAdmission.Default, combat.BossCooldownSnapshotAsync);
         routes.Map<BattleTrainingGroundOpReq>(CombatService.TrainingOperation, "combat", RouteAdmission.Default, combat.TrainingOperationAsync);
-        routes.Map<EntityReliveReq>(CombatService.Relive, "territory", RouteAdmission.Default, async (session, req) =>
-        {
-            if (await timedBattles.TryRefuseReliveAsync(session)) return; // Survivor Battle revives with 82661
-            if (await territory.ReviveAsync(session, req, combat)) return;
-            if (await league.ReviveAsync(session)) return;
-            if (await casual.ReviveAsync(session, req, combat)) return;
-            if (session.DungeonAttempt != null) await dungeons.ReviveAsync(session, req);
-            else await combat.ReviveAsync(session, req);
-        });
+        routes.Map<EntityReliveReq>(CombatService.Relive, "territory", RouteAdmission.Economic, ReliveAsync);
         routes.Map<SceneTeleportReq>(SceneService.SceneTeleport, "scene", RouteAdmission.Role, scene.SceneTeleportAsync);
         routes.Map<ClientCustomJumpMapReq>(SceneService.CustomJumpMap, "scene", RouteAdmission.Default, scene.CustomJumpAsync);
     }
