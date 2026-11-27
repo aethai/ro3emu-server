@@ -29,6 +29,8 @@ public sealed partial class ResonancePassives
     private readonly CombatService _combat;
     private readonly BuffService _buffs;
     private readonly GameLoop _loop;
+    private readonly CharacterService _character;
+    private readonly SessionRegistry _sessions;
 
     private sealed class State
     {
@@ -40,12 +42,15 @@ public sealed partial class ResonancePassives
     /// <summary>Phantom Thrust's marks on a monster: the casters and until when (the mark's 10000 ms).</summary>
     private readonly ConditionalWeakTable<MonsterUnit, List<(GameSession Caster, long UntilMs)>> _marks = [];
 
-    public ResonancePassives(GameData data, CombatService combat, BuffService buffs, GameLoop loop)
+    public ResonancePassives(GameData data, CombatService combat, BuffService buffs, GameLoop loop, CharacterService character,
+        SessionRegistry sessions)
     {
         _data = data;
         _combat = combat;
         _buffs = buffs;
         _loop = loop;
+        _character = character;
+        _sessions = sessions;
         combat.CastResolved.Subscribe(OnCastResolvedAsync);
         combat.Killed.Subscribe(OnKilledAsync);
         combat.PlayerKilled.Subscribe(OnPlayerKilledAsync);
@@ -54,6 +59,21 @@ public sealed partial class ResonancePassives
     }
 
     private static bool Holds(GameSession s, int row) => s.ResonanceSkills.Length > 0 && Array.IndexOf(s.ResonanceSkills, row) >= 0;
+
+    /// <summary>The monsters the cast struck: in its hit list with damage (a Miss is in the processed list too).</summary>
+    private static List<MonsterUnit> Struck(IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit) =>
+        [.. processed.Where(m => hit.Dsts.Any(d => d.DstID == m.Uid && d.HitResult != DamageHitResult.Miss && d.Damage + d.SheildDamage > 0))];
+
+    /// <summary>Work for a caster after a delay or from another's hit: in the caster's own work, while the same role
+    /// is in the same scene.</summary>
+    private void Later(GameSession s, TimeSpan delay, Func<Task> work, string origin)
+    {
+        if (s.Role is not { } role) return;
+        long scene = s.SceneGeneration;
+        Task Guarded() => ReferenceEquals(s.Role, role) && s.SceneGeneration == scene && !s.SceneLoading && !s.Dead ? work() : Task.CompletedTask;
+        if (delay <= TimeSpan.Zero) _loop.PostOwned(s, Guarded, origin);
+        else _loop.ScheduleRuntime(delay, () => { _loop.PostOwned(s, Guarded, origin); return Task.CompletedTask; }, origin);
+    }
 
     private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
     {
@@ -64,7 +84,7 @@ public sealed partial class ResonancePassives
         switch ((int)cast.SkillId)
         {
             case PhantomThrust when Holds(s, EmblemService.PixelThrust):
-                await MarkAsync(s, processed);
+                await MarkAsync(s, Struck(processed, hit));
                 break;
             case ShadowPierce when Holds(s, EmblemService.Encore):
                 // "[Shadow Pierce] also grants you a stack of [Delusion] for @{1} sec."
@@ -86,7 +106,7 @@ public sealed partial class ResonancePassives
                 OrganumAfterStigma(s, action);
                 break;
             case ArmCannon when Holds(s, EmblemService.MelodyCannon) && cast.ScriptLogic.Contains("S1BD", StringComparison.Ordinal):
-                await ApplyBubblesAsync(s, action.Row, processed);
+                await ApplyBubblesAsync(s, action.Row, Struck(processed, hit));
                 break;
         }
     }
@@ -121,12 +141,13 @@ public sealed partial class ResonancePassives
         await DelusionKillAsync(killer);
     }
 
+    /// <summary>A player carries the mark as Target Mark (Phantom Thrust's _kBuff2), with its caster as the source.</summary>
     private async Task OnPlayerKilledAsync(GameSession killer, GameSession victim)
     {
         long now = _loop.NowMs;
         foreach (var mark in victim.Buffs.Where(b => b.ConfigId == TargetMark && b.ExpireMs > now).ToArray())
-            if (mark.SourceId == killer.Role?.Id && Holds(killer, EmblemService.PixelThrust))
-                await CombatService.ResetCooldownAsync(killer, PhantomThrust);
+            if (_sessions.ByRole(mark.SourceId) is { } caster && Holds(caster, EmblemService.PixelThrust))
+                await ResetAsync(killer, caster, PhantomThrust);
         await DelusionKillAsync(killer);
     }
 
@@ -134,12 +155,13 @@ public sealed partial class ResonancePassives
     private async Task ResetAsync(GameSession current, GameSession caster, int group)
     {
         if (ReferenceEquals(current, caster)) await CombatService.ResetCooldownAsync(caster, group);
-        else _loop.PostOwned(caster, () => CombatService.ResetCooldownAsync(caster, group), "phantom thrust reset");
+        else Later(caster, TimeSpan.Zero, () => CombatService.ResetCooldownAsync(caster, group), "phantom thrust reset");
     }
 
     /// <summary>
     /// Encore: "[Delusion]: Kill an enemy while this effect is active to immediately reduce [Shadow Pierce]'s cooldown by
-    /// @{2}%." Of its full cooldown, once per Delusion, which the kill spends (inferred).
+    /// @{2}%." Of the cooldown the cast starts (its row's _iCD after Cooldown Reduction), once per Delusion, which the
+    /// kill spends (inferred).
     /// </summary>
     private async Task DelusionKillAsync(GameSession killer)
     {
@@ -148,7 +170,9 @@ public sealed partial class ResonancePassives
         if (delusion == null) return;
         await _buffs.RemoveAsync(killer, delusion);
         int level = (int)Math.Max(1, killer.Progress.Skills.GetValueOrDefault(ShadowPierce));
-        long cooldown = _combat.ModeRow(killer, ShadowPierce, level) is { } row ? new SkillConfig(row).Cd : 0;
+        long cooldown = _combat.ModeRow(killer, ShadowPierce, level) is { } row
+            ? CombatService.ReducedCooldown(new SkillConfig(SkillParameterRules.Effective(killer, _data, row)).Cd,
+                _character.Stats(killer)[AttributeId.PerCd]) : 0;
         long cut = (long)(cooldown * Arg(EmblemService.Encore, 1) / 100);
         if (cut > 0) await CombatService.CutCooldownAsync(killer, ShadowPierce, cut);
     }
@@ -190,12 +214,13 @@ public sealed partial class ResonancePassives
 
     /// <summary>
     /// Mixed Accompaniment: "After casting it, You gain ${2} stacks of Elemental Attunement." Tetra Vortex's mode-1 row
-    /// already lists the buff in _kBuff1 (one pile as the channel starts), so the cast ends with ${2} more than it began.
+    /// lists the buff in _kBuff1 with no time (-1); this grants it instead (SkillCastingService.ComesFromALoop), so a
+    /// cancelled channel grants nothing and the stacks stay until spent.
     /// </summary>
     private async Task AccompanimentAsync(GameSession s)
     {
         int most = (int)Math.Max(1, BuffConfig.Get(_data, ElementalAttunement)?.MaxStack ?? 1);
-        int piles = Math.Min(most, Math.Max(0, AttunementPiles(s) - 1) + (int)Desc(EmblemService.MixedAccompaniment, 1));
+        int piles = Math.Min(most, AttunementPiles(s) + (int)Desc(EmblemService.MixedAccompaniment, 1));
         if (piles > 0 && s.Role is { } role) await _buffs.AddUntilSpentAsync(s, ElementalAttunement, role.Id, piles);
     }
 
@@ -214,7 +239,7 @@ public sealed partial class ResonancePassives
     /// </summary>
     private async Task AttunedCastAsync(GameSession s, SkillConfig cast, IReadOnlyList<MonsterUnit> processed)
     {
-        if (cast.Mode == 0 || cast.DamageParam1 is not [_, var added, ..] || !IsAttuned(_data, cast)) return;
+        if (cast.Mode == 0 || AttunementPiles(s) == 0 || cast.DamageParam1 is not [_, var added, ..] || !IsAttuned(_data, cast)) return;
         if (!await _buffs.ConsumeBuffPilesAsync(s, AttunementGroup, 1)) return;
         var targets = processed.Where(m => m.Hp > 0).ToList();
         if (targets.Count > 0) await _combat.CastExtraAsync(s, cast.AsDescribedHit(added, 0, cast.EleType), targets);

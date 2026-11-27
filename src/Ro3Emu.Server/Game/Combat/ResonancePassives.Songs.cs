@@ -46,23 +46,23 @@ public sealed partial class ResonancePassives
 
     /// <summary>
     /// Organum: "After your [Stigmata] ends, trigger [Organum] once more in the reverse direction." Holy Stigma has no
-    /// time of its own; it ends with its show's m_fTotalTime (skill_4314: 3 s). Organum (11431101, a 7 m circle, so the
-    /// direction is its show's) then strikes up to its _iTargetMax monsters around the Stigma's point (inferred).
+    /// time of its own; it ends with its show (skill_4314 m_fTotalTime, 3 s after its chant). Organum (11431101, a 7 m
+    /// circle, so the direction is its show's) then strikes up to its _iTargetMax monsters around the Stigma's point
+    /// (inferred).
     /// </summary>
     private void OrganumAfterStigma(GameSession s, ActiveSkillCast action)
     {
-        if (s.Role is not { } role || SkillConfig.Get(_data, OrganumRow) is not { } organum) return;
+        if (SkillConfig.Get(_data, OrganumRow) is not { } organum) return;
         var stigma = new SkillConfig(action.Row);
-        double seconds = SkillShow.TotalTime(_data.SkillTemplate(stigma.ScriptShow));
-        long scene = s.SceneGeneration;
+        long ends = action.StartMs + action.ChantMs + (long)(SkillShow.TotalTime(_data.SkillTemplate(stigma.ScriptShow)) * 1000);
         var center = (action.Request.TargetPos ?? s.Position).Clone();
         float radius = (organum.Range is [var range, ..] ? range : 0) / 100f;
-        _loop.ScheduleRuntime(TimeSpan.FromSeconds(seconds), async () =>
+        Later(s, TimeSpan.FromMilliseconds(Math.Max(0, ends - _loop.NowMs)), async () =>
         {
-            if (!ReferenceEquals(s.Role, role) || s.SceneGeneration != scene || s.Dead) return;
+            if (!Holds(s, EmblemService.Organum)) return;
             var targets = _combat.MonstersNear(s, center, radius).Where(m => m.Hp > 0).Take((int)Math.Max(1, organum.TargetMax)).ToList();
             if (targets.Count > 0) await _combat.CastExtraAsync(s, organum.Row, targets);
-        });
+        }, "organum");
     }
 
     private int Piles(GameSession s, int group)
@@ -84,60 +84,54 @@ public sealed partial class ResonancePassives
 
     /// <summary>
     /// Melody Cannon: "Enhance [Cannon] into [Melody Cannon]" (its mode rows, ArmCannonS1BD*). "After a successful HIT,
-    /// applies [Melody Bubble] to the target for @{1} sec." One bubble per caster on a monster (the buff's _iMultiSource);
-    /// a monster that already carries the caster's keeps it (inferred).
+    /// applies [Melody Bubble] to the target for @{1} sec." One bubble per caster on a monster, up to the buff's
+    /// _kMaxMultiSourceCount casters; a monster that already carries the caster's keeps it (inferred).
     /// </summary>
-    private async Task ApplyBubblesAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> processed)
+    private async Task ApplyBubblesAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> struck)
     {
         int ms = (int)(Arg(EmblemService.MelodyCannon, 0) * 1000);
         if (ms <= 0 || s.Role is not { } role) return;
-        foreach (var monster in processed.Where(m => m.Hp > 0))
+        int sources = BuffConfig.Get(_data, MelodyBubble)?.MaxMultiSourceCount is [var cap, ..] && cap > 0 ? (int)cap : int.MaxValue;
+        foreach (var monster in struck.Where(m => m.Hp > 0))
         {
             var bubbles = _bubbles.GetOrCreateValue(monster);
-            if (bubbles.Any(b => b.Caster == s)) continue;
+            if (bubbles.Count >= sources || bubbles.Any(b => b.Caster == s)) continue;
             var bubble = new Bubble(s, row, _loop.NowMs + ms);
             bubbles.Add(bubble);
             await _buffs.AddSupportAsync(monster, MelodyBubble, ms, role.Id);
-            _loop.ScheduleRuntime(TimeSpan.FromMilliseconds(ms), () => BurstAsync(monster, bubble));
+            // "... it explodes and deals damage when its duration ends."
+            Later(s, TimeSpan.FromMilliseconds(ms), () => BurstAsync(monster, bubble), "melody bubble");
         }
     }
 
     /// <summary>"Each time an enemy carrying [Melody Bubble] takes damage, the bubble expands. Upon reaching @{2} stacks, it
-    /// explodes". A burst's own damage expands the others (each bubble is gone before its burst lands).</summary>
+    /// explodes". The burst lands after the hit that filled it, in its caster's own work; its damage expands the others.</summary>
     private async Task BubblesTakeDamageAsync(GameSession s, MonsterUnit monster, long amount)
     {
         if (amount <= 0 || !_bubbles.TryGetValue(monster, out var bubbles) || bubbles.Count == 0) return;
         int most = (int)Arg(EmblemService.MelodyCannon, 1);
         foreach (var bubble in bubbles.ToArray())
         {
-            if (!bubbles.Contains(bubble)) continue;
-            if (++bubble.Stacks < most)
+            if (++bubble.Stacks >= most)
             {
-                if (monster.Hp > 0 && bubble.Caster.Role is { } role && bubble.UntilMs > _loop.NowMs)
-                    await _buffs.AddSupportAsync(monster, MelodyBubble, (int)(bubble.UntilMs - _loop.NowMs), role.Id); // one more pile
+                Later(bubble.Caster, TimeSpan.Zero, () => BurstAsync(monster, bubble), "melody bubble");
                 continue;
             }
-            if (ReferenceEquals(bubble.Caster, s)) await BurstAsync(monster, bubble);
-            // Another caster's bubble bursts in that caster's own work.
-            else if (bubbles.Remove(bubble)) _loop.PostOwned(bubble.Caster, () => LandBurstAsync(monster, bubble), "melody bubble");
+            if (monster.Hp > 0 && bubble.Caster.Role is { } role && bubble.UntilMs > _loop.NowMs)
+                await _buffs.AddSupportAsync(monster, MelodyBubble, (int)(bubble.UntilMs - _loop.NowMs), role.Id); // one more pile
         }
     }
 
     /// <summary>"... dealing @{3} instances of Neutral Ranged Physical DMG equal to Physical ATK*@{4}%. If [Melody Bubble]
     /// does not fully expand and explode, it explodes and deals damage when its duration ends." The hit is the cannon's
-    /// row with that damage.</summary>
+    /// row with that damage. A bubble bursts once, whichever comes first.</summary>
     private async Task BurstAsync(MonsterUnit monster, Bubble bubble)
     {
         if (!_bubbles.TryGetValue(monster, out var bubbles) || !bubbles.Remove(bubble)) return;
-        await LandBurstAsync(monster, bubble);
-    }
-
-    private async Task LandBurstAsync(MonsterUnit monster, Bubble bubble)
-    {
         var caster = bubble.Caster;
         if (caster.Role is not { } role) return;
         await _buffs.RemoveUnitSourceAsync(monster, MelodyBubble, role.Id);
-        if (monster.Hp <= 0 || caster.Dead || caster.WorldScene != monster.WorldScene) return;
+        if (monster.Hp <= 0 || caster.WorldScene != monster.WorldScene) return;
         var burst = new SkillConfig(bubble.Row).AsDescribedHit((long)(Arg(EmblemService.MelodyCannon, 3) * 100), 0, Neutral);
         for (int i = 0; i < Math.Max(1, (int)Arg(EmblemService.MelodyCannon, 2)) && monster.Hp > 0; i++)
             await _combat.CastExtraAsync(caster, burst, [monster]);

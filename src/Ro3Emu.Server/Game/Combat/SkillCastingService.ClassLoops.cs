@@ -42,10 +42,13 @@ public sealed partial class SkillCastingService
         return null;
     }
 
-    /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.</summary>
+    /// <summary>Vulcan Arm and Flame Launcher name Firepower Loaded in _kBuff1, and it comes "Every ${2} casts" and on Flame Launcher: <see cref="ClassLoopsOnCastAsync"/> gives it.
+    /// AxeLeapAttack2's shield came with the flight; Tetra Vortex's resonance form names Elemental Attunement, which Mixed Accompaniment grants after the
+    /// cast (ResonancePassives).</summary>
     internal static bool ComesFromALoop(string script, int buff) => buff / 100 is FirepowerGroup or MelodyFirepowerGroup
             && (script.StartsWith("VulcanArm", StringComparison.Ordinal) || script == "FlameLauncher")
-        || script == "AxeLeapAttack2" && buff == 1634601; // the shield came with the flight
+        || script == "AxeLeapAttack2" && buff == 1634601
+        || buff == ResonancePassives.ElementalAttunement && script.StartsWith("TetraVortex", StringComparison.Ordinal);
 
     private async Task ClassLoopsOnCastAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)
     {
