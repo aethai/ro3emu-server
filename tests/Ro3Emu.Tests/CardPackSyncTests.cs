@@ -120,11 +120,8 @@ public sealed class CardPackSyncTests : IAsyncLifetime
         Assert.Equal(1, items.Load(role).Single(i => i.Entry == Blueprint).Pack);
 
         await Gm("alice", $"!item {Blueprint} 2");
-        for (var until = DateTime.UtcNow + Wait; items.Load(role).Where(i => i.Entry == Blueprint).Sum(i => i.Stack) < 5;)
-        {
-            Assert.True(DateTime.UtcNow < until, "the granted blueprints were not saved");
-            await Task.Delay(50);
-        }
+        Assert.True(SpinWait.SpinUntil(() => items.Load(role).Where(i => i.Entry == Blueprint).Sum(i => i.Stack) == 5, Wait),
+            "the granted blueprints were not saved");
         Assert.All(items.Load(role).Where(i => i.Entry == Blueprint), i => Assert.Equal(1, i.Pack));
         Assert.Equal(5, items.Load(role).Where(i => i.Entry == Blueprint).Sum(i => i.Stack));
     }
