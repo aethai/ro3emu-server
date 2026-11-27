@@ -549,6 +549,16 @@ public sealed class RoleStore(AccountStore accounts)
     public byte[]? LoadTasks(long id)
         => LoadBlob(id, "tasks");
 
+    /// <summary>The stored quests when they are known without reading SQL: staged at login or held by the
+    /// session's snapshot. A commit that wrote them drops the snapshot until the next save.</summary>
+    internal bool TryKnownTasks(long id, out byte[]? tasks)
+    {
+        if (_accounts.TryGetStaged(id, "tasks", out tasks)) return true;
+        if (!_accounts.Snapshots.TryBlob(id, "tasks", out tasks)) return false;
+        tasks = SnapshotVerify.Same(tasks, () => _accounts.ReadSync<byte[]?>(new RoleBlobReadPlan(id, "tasks")), $"role {id} tasks");
+        return true;
+    }
+
     public void SaveTasks(long id, byte[] tasks, RoleItemPlanBuilder? transaction = null)
         => SaveBlob(id, "tasks", tasks, transaction);
 
