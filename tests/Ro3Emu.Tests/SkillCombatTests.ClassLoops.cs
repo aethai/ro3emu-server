@@ -55,6 +55,19 @@ public sealed partial class SkillCombatTests
         Assert.Contains(a.Buffs, b => b.ConfigId == 1632001);
     }
 
+    [ClientDataFact] // "Every ${6} casts": 15 at Lv. 5 too, where ${5} (the damage ratio) is 35
+    public async Task VulcanArmLoadsFirepowerAtFifteenCastsAtLevelFive()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 6400, 16313, 1631305);
+        await Loop.InvokeAsync(() => { a.Progress!.Skills[16313] = 5; return Task.CompletedTask; });
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        await Loop.InvokeAsync(async () => { for (int i = 0; i < 14; i++) await buffs.AddAsync(a, 1631301, 15000, a.Role!.Id); });
+        await CastAndWait(bot, 1631305, dummy);
+        Assert.True(SpinWait.SpinUntil(() => a.Buffs.Any(b => b.ConfigId == 1632001), Wait));
+        Assert.Equal(3, a.Buffs.Where(b => b.ConfigId == 1631701).Sum(b => b.PileCount));
+    }
+
     [ClientDataFact] // Energy Release: countdown, then the blast from its second row, then half the Max HP lost
     public async Task EnergyReleaseGoesOffAfterItsCountdown()
     {
