@@ -55,7 +55,7 @@ public sealed partial class ChatService
         Task Refuse() => DownRawAsync(sender, (uint)Cmd.StopRecordAndSendAudio, VoiceSendFailed, []);
         if (ReadVoiceUpload(sender, body, out var refusal) is not { } upload)
         {
-            _log.LogInformation("Voice clip from {Name} refused: {Reason}", role.Name, refusal);
+            LogVoiceRefused(_log, role.Name, refusal);
             await Refuse();
             return;
         }
@@ -79,7 +79,7 @@ public sealed partial class ChatService
             ExtraParam = upload.Extra,
             AudioDuration = (uint)VoiceClip.Seconds(upload.Samples, upload.Rate),
         };
-        _log.LogInformation("Voice {Name} -> {Target} ({Count} recipient(s)): {Seconds} s", role.Name, upload.ReceiveId, recipients.Count, message.AudioDuration);
+        LogVoiceSent(_log, role.Name, upload.ReceiveId, recipients.Count, message.AudioDuration);
         await DownAsync(sender, Cmd.StopRecordAndSendAudio, new StopRecordAndSendAudioResponse { ChatResult = true, Msg = message });
         var push = new NotifyNewAudioMessage { Msg = message };
         foreach (var to in recipients)
@@ -180,7 +180,7 @@ public sealed partial class ChatService
     /// Cmd 5-9 through the tunnel come from a client without the recording hooks: there is nothing to send, so stop and
     /// send fails (tip 34048) and play answers at once, which ends the bubble's play animation (OnPlayAudioResponse).
     /// </summary>
-    private async Task LegacyVoiceAsync(GameSession session, Cmd cmd)
+    private static async Task LegacyVoiceAsync(GameSession session, Cmd cmd)
     {
         switch (cmd)
         {
@@ -195,4 +195,10 @@ public sealed partial class ChatService
                 break;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Voice clip from {Name} refused: {Reason}")]
+    private static partial void LogVoiceRefused(ILogger logger, string name, string reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Voice {Name} -> {Target} ({Count} recipient(s)): {Seconds} s")]
+    private static partial void LogVoiceSent(ILogger logger, string name, string target, int count, uint seconds);
 }
