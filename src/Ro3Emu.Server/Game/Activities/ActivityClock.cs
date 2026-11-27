@@ -57,8 +57,7 @@ public sealed class ActivityClock(GameData data, SeasonService seasons, TimeProv
             if (begin <= 0 || end <= begin) continue;
             string state = Text(row, "_strStateName");
             if (state.Length == 0) state = "Start";
-            string? unit = new[] { "Month", "Week", "Day", "Hour" }
-                .FirstOrDefault(u => GameData.Int(row, $"_i{u}Start") > 0 || GameData.Int(row, $"_i{u}End") > 0);
+            string? unit = new TimeLimitConfig(row).RepeatUnit;
             if (unit == null)
             {
                 windows.Add(new(state, begin, end));

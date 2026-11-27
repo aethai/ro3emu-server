@@ -34,9 +34,18 @@ public sealed partial class CombatEffectsService
         // Monsters ask this of every player in view on every tick: no closure, and the category read once per buff row.
         long now = Now;
         foreach (var buff in player.Buffs)
-            if (buff.ExpireMs > now && _stealthRows.GetOrAdd(buff.ConfigId, id => BuffConfig.Get(_data, id) is { } row && StealthBuff(row)))
+            if (buff.ExpireMs > now && StealthRow(buff.ConfigId))
                 return true;
         return false;
+    }
+
+    // A lambda passed to GetOrAdd captures this service, so it was a new delegate on every call (#484).
+    private bool StealthRow(int id)
+    {
+        if (_stealthRows.TryGetValue(id, out bool stealth)) return stealth;
+        stealth = BuffConfig.Get(_data, id) is { } row && StealthBuff(row);
+        _stealthRows.TryAdd(id, stealth);
+        return stealth;
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> _stealthRows = new();

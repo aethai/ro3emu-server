@@ -61,8 +61,9 @@ public sealed partial class SkillCastingService
         string script = skill.ScriptLogic;
         var ratios = skill.DamageParam1;
         if (all.Length == 0 || ratios.Length == 0) return null;
-        var plain = new SkillConfig(skill.WithoutBuff1());
-        JsonElement Damage(long ratio) => plain.WithDamage([ratio], skill.DamageParam2);
+        // Built on first use: every cast asks, and most rows have no stages (the copy was most of a cast's allocation, #484).
+        SkillConfig? plain = null;
+        JsonElement Damage(long ratio) => (plain ??= new SkillConfig(skill.WithoutBuff1())).WithDamage([ratio], skill.DamageParam2);
         if (script.StartsWith("TetraVortex", StringComparison.Ordinal) && ratios.Length >= 4 && all.Length >= 4
             && skill.Buff2 is { Length: >= 5 } statuses)
             return [.. Enumerable.Range(0, 4).Select(i => (all[i], new SkillConfig(Damage(ratios[i])).AsStage(

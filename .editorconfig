@@ -85,7 +85,7 @@ dotnet_diagnostic.CA1822.severity = suggestion
 dotnet_diagnostic.CA1848.severity = suggestion
 # 55: use concrete types for performance
 dotnet_diagnostic.CA1859.severity = suggestion
-# 99: avoid constant arrays as arguments
+# 98: avoid constant arrays as arguments
 dotnet_diagnostic.CA1861.severity = suggestion
 # 142: avoid potentially expensive logging
 dotnet_diagnostic.CA1873.severity = suggestion

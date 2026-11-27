@@ -31,6 +31,10 @@ public static class ConfigValue
     public static double[] Numbers(JsonElement row, string field) =>
         row.TryGetProperty(field, out var value) ? NumberList(value) : [];
 
+    /// <summary>How many rows <see cref="IntRows"/> would read, without reading them.</summary>
+    public static int RowCount(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array ? value.GetArrayLength() : 0;
+
     public static long[][] IntRows(JsonElement row, string field) =>
         row.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Array
             ? [.. value.EnumerateArray().Select(IntList)] : [];
