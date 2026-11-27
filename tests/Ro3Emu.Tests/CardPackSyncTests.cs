@@ -18,6 +18,7 @@ namespace Ro3Emu.Tests;
 public sealed class CardPackSyncTests : IAsyncLifetime
 {
     private const int Lunatic = 1420100, Mimic = 1430606, Fragment = 1200500;
+    private const int Blueprint = 1254001; // "Tier @{1} Blueprint - Weapon", _iType 9 (Material) with _iBagTab 4
     private const int ItemTypeCard = 4;
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(5);
     private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "ro3emu-cardpack-" + Guid.NewGuid().ToString("N"));
@@ -94,6 +95,35 @@ public sealed class CardPackSyncTests : IAsyncLifetime
         Assert.Equal(1, full.PackInfo[1].All.Items.Values.Count(i => i.ItemEntry == Fragment));
         Assert.Equal(saved.Sort, full.PackInfo[1].All.SortedIndex[saved.Guid]);
         Assert.Equal(full.PackInfo[1].All.SortedIndex.Count, full.PackInfo[1].All.SortedIndex.Values.Distinct().Count());
+    }
+
+    /// <summary>
+    /// Discord "Wrong item in Divine Totem Tab": materials whose ItemConfig._iBagTab is 4 filled the Divine Totem tab
+    /// (PackType_Totem; BackpackConfig tab 4 lists _iType 7 only). A saved stack moves to the item pack at login, and a
+    /// new one is granted there.
+    /// </summary>
+    [ClientDataFact]
+    public async Task AMaterialNamingTheTotemTabStaysInTheItemPack()
+    {
+        var items = _app.Services.GetRequiredService<ItemStore>();
+        var data = _app.Services.GetRequiredService<GameData>();
+        Assert.Equal(4, GameData.Int(data.Row("ItemConfig", Blueprint)!.Value, "_iBagTab"));
+        long role;
+        await using (var alice = await InWorld("Alice"))
+            role = (long)alice.Self!.Uuid;
+        items.Insert(role, new InvItem { Entry = Blueprint, Stack = 3, Pack = 4, Sort = 1 }); // saved before the fix
+
+        await using var again = await InWorld("Alice", create: false);
+        var full = DBItemsInfoIncrement.Parser.ParseFrom((await again.Inbox.WaitAsync(e => e.IsGame(CharacterService.ItemsSync), Wait)).Body);
+        Assert.Equal(3, full.PackInfo[1].All.Items.Values.Where(i => i.ItemEntry == Blueprint).Sum(i => i.Stack));
+        Assert.DoesNotContain(full.PackInfo.TryGetValue(4, out var totems) ? totems.All?.Items.Values ?? [] : [], i => i.ItemEntry == Blueprint);
+        Assert.Equal(1, items.Load(role).Single(i => i.Entry == Blueprint).Pack);
+
+        await Gm("alice", $"!item {Blueprint} 2");
+        Assert.True(SpinWait.SpinUntil(() => items.Load(role).Where(i => i.Entry == Blueprint).Sum(i => i.Stack) == 5, Wait),
+            "the granted blueprints were not saved");
+        Assert.All(items.Load(role).Where(i => i.Entry == Blueprint), i => Assert.Equal(1, i.Pack));
+        Assert.Equal(5, items.Load(role).Where(i => i.Entry == Blueprint).Sum(i => i.Stack));
     }
 
     /// <summary>

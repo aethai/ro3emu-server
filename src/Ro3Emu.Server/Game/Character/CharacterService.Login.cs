@@ -42,7 +42,7 @@ public sealed partial class CharacterService
         session.Profile.StatPlans = new StatPlanState(roles.LoadStatPlans(role.Id));
         LoadStatPlans(session);
         MigrateEquipmentInstances(session);
-        MigrateCardPackItems(session);
+        MigrateBagPacks(session);
         MigrateAcquireTimeBoundItems(session);
         session.Profile.EquipLevels = roles.LoadEquipLevels(role.Id) is { } levels ? System.Text.Json.JsonSerializer.Deserialize<EquipLevels>(levels) ?? new() : new();
         LoadEquipmentPlans(session);

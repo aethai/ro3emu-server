@@ -73,7 +73,7 @@ public sealed partial class StallsService
                         Id = entry, SystemConfig = (int)entry, Price = (int)price[1], Currency = (int)price[0],
                         Item = new InvItem
                         {
-                            Entry = itemId, Pack = CharacterService.ConfigPack(item), Stack = (int)first[0],
+                            Entry = itemId, Pack = CharacterService.ConfigPack(_data, item), Stack = (int)first[0],
                             BindType = bind.Length > 0 ? (int)bind[0] : 0, BindExpire = bind.Length > 1 ? Now + bind[1] : 0
                         },
                     };

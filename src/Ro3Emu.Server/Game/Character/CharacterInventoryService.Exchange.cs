@@ -333,7 +333,7 @@ public sealed partial class CharacterInventoryService
         foreach (var source in request.ExactGoods ?? [])
         {
             var row = data.Row("ItemConfig", source.Entry)!.Value;
-            int pack = EmblemService.IsEmblem(data, source.Entry) ? 5 : ConfigPack(row);
+            int pack = ConfigPack(data, row);
             var item = source.Clone();
             item.Guid = 0; // (inferred) claimed copy has a fresh bag identity.
             item.Grid = 0;
@@ -545,7 +545,7 @@ public sealed partial class CharacterInventoryService
             session.Progress!.Currency[grant.Entry] = session.Progress.Currency.GetValueOrDefault(grant.Entry) + grant.Count;
             return [];
         }
-        int pack = ConfigPack(row);
+        int pack = ConfigPack(data, row);
         int limit = (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
         int remaining = grant.Count;
         var changed = new List<InvItem>();
