@@ -19,7 +19,8 @@ namespace Ro3Emu.Server.Game;
 /// (1164301: mode 7, 11165601: mode 9, Powerful Auto Counter) for the rest of the block;</item>
 /// <item>a counter, tapped or not, ends the block as it starts: its Parry goes, so the skill shows the block again;</item>
 /// <item>a block that runs out with no tap counters by itself with the row of the Parry it ended on, at the monsters in
-/// that row's area (_kRange) in front of the holder, as a cast of the holder's own (timeline, hit, _kBuff1). A Parry taken
+/// that row's area (_kRange) in front of the holder, and at the players there it may fight, as a cast of the holder's own
+/// (timeline, hit, _kBuff1). A Parry taken
 /// away before its time (a dispel) ends the block with no counter.</item>
 /// </list>
 /// </summary>
@@ -91,6 +92,11 @@ public sealed partial class CombatService
         var targets = MonstersNear(s, s.Position, reach)
             .Where(m => SkillAreaContains(row, s.Position, s.Position, s.Face, m.Pos)).Take((int)Math.Max(1, counter.TargetMax)).ToList();
         await CastForPlayerAsync(s, row, targets);
+        // Players the holder may fight, in the same area, up to the row's count with the monsters.
+        foreach (var enemy in AlliesNear(s, s.Position, reach)
+            .Where(p => p != s && CanPlayerHit(s, p) && SkillAreaContains(row, s.Position, s.Position, s.Face, p.Position))
+            .Take(Math.Max(0, (int)Math.Max(1, counter.TargetMax) - targets.Count)).ToList())
+            await CastExtraOnPlayerAsync(s, counter, enemy);
     }
 
     /// <summary>A counter tapped while the block lives: the block gives way to it and its shared cooldown does not hold it back.</summary>
