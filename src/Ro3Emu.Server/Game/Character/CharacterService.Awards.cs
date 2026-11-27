@@ -274,7 +274,7 @@ public sealed partial class CharacterService
     {
         var row = data.Row("ItemConfig", grant.Entry)!.Value;
         int stackLimit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
-        int pack = TotemService.IsTotem(data, grant.Entry) ? 4 : EmblemService.IsEmblem(data, grant.Entry) ? 5 : ConfigPack(row);
+        int pack = ConfigPack(data, row);
         int left = grant.Count;
         var created = new List<InvItem>();
         foreach (var item in s.Items.Where(i => CanStackGrant(i, grant.Entry, stackLimit, grant.BindType, grant.ExpireTimeStamp)))
@@ -525,8 +525,7 @@ public sealed partial class CharacterService
         }
         bool firstSightCandidate = persist && notifyItemGained && count > 0;
         int gainedCount = count;
-        // Soul Echo uses PackType_Emblem=5 even though its exported ItemConfig._iBagTab is 1.
-        int pack = TotemService.IsTotem(data, entry) ? 4 : EmblemService.IsEmblem(data, entry) ? 5 : ConfigPack(row);
+        int pack = ConfigPack(data, row);
         // (inferred) Even unappraised gear (some ItemConfig rows allow a stack of 2) gets one GUID per piece:
         // rolled stats, appraisal and enchantments belong to the instance and must never merge with another roll.
         int stackLimit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));

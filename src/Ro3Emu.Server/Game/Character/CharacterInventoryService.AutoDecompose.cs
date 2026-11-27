@@ -68,7 +68,7 @@ public sealed partial class CharacterInventoryService
                 continue;
             }
             int limit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
-            int pack = EmblemService.IsEmblem(data, entry) ? 5 : ConfigPack(row);
+            int pack = ConfigPack(data, row);
             int left = count;
             foreach (var item in items.Where(i => CanStackGrant(i, entry, limit, 0)))
             {

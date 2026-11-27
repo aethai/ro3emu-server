@@ -4,6 +4,7 @@ using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Accounts.Persistence;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Economy;
 using Ro3Emu.Server.Maps;
 
@@ -325,29 +326,39 @@ public sealed partial class CharacterInventoryService
     internal int PackCapacity(int pack) => (int)(data.Row("BackpackConfig", pack) is { } row ? GameData.Int(row, "_iTabCapacity") : 0);
 
     private const int PackItem = 1;
-    private const int PackCard = 3;
-    private const int ItemTypeCard = 4;
+
+    /// <summary>The bag packs, PackType_Item (1) to PackType_Emblem (5) (Lua_GameDefine PackType_*, the Backpack window's
+    /// tabs); BackpackConfig row 6 is the pet DecomposeTab, not a pack.</summary>
+    private const int LastBagPack = 5;
 
     /// <summary>
-    /// The bag pack of an ItemConfig row: its _iBagTab, except that PackType_Card holds cards only. BackpackConfig
-    /// tab 3 lists _iTabContent [4] (cards) and tab 1 lists [2,3,9]; the client never reads _iTabContent, it is the
-    /// server's type-to-tab rule. The client depends on it: the 5009 handler (LC_DAL_Knapsack, proto at line 59)
-    /// sorts pack 3 with LC_ItemHelper.SortFuncs[4] (proto at line 1357), which compares kCardInfo.iCardStar of any
-    /// two same-quality items, and ParseItemBaseInfoByPre fills kCardInfo only for enum_ItemType.Card. A non-card
-    /// with _iBagTab 3 (the card fragments 1200500..1200503, type 9) next to a same-quality card therefore made the
-    /// sort throw "attempt to compare number with nil" and the client dropped the whole bag.
+    /// The bag pack of an ItemConfig row: the first BackpackConfig tab whose _iTabContent lists the row's _iType (tab 1
+    /// [2, 3, 9] consumables, packages and materials; 2 [5] equipment; 3 [4] cards; 4 [7] Divine Totems; 5 [8] Soul
+    /// Echoes), else PackType_Item. The client never reads _iTabContent: the Backpack window shows each tab as the pack
+    /// the server filled (LC_DAL_Knapsack.InitPackData keys PackItems by the 5009 packInfo key; UI_Sys_BagBaseCtrl lists
+    /// PackItems[m_eCurrentType]), and the totem and Soul Echo panels read PackItems[PackType_Totem/Emblem].
+    /// ItemConfig._iBagTab is not the pack: totems and Soul Echoes leave it at 1, while 117 materials (Tier N Blueprints,
+    /// the Star Cores, the Ignition Agents, all _iType 9) carry 4 and showed in the Divine Totem tab; its only reader is
+    /// the combine list (LC_CompositionHelper.BuildComposableItemsFromConfig). Pack 3 must also hold cards only: the 5009
+    /// handler sorts it with LC_ItemHelper.SortFuncs[4], which compares kCardInfo.iCardStar, filled only for
+    /// enum_ItemType.Card, so a card fragment (_iBagTab 3, type 9) beside a same-quality card made the sort throw and
+    /// the client dropped the whole bag.
     /// </summary>
-    internal static int ConfigPack(JsonElement row)
+    internal static int ConfigPack(GameData data, JsonElement row)
     {
-        int tab = (int)Math.Max(1, GameData.Int(row, "_iBagTab"));
-        return tab == PackCard && GameData.Int(row, "_iType") != ItemTypeCard ? PackItem : tab;
+        long type = GameData.Int(row, "_iType");
+        for (int pack = PackItem; pack <= LastBagPack; pack++)
+            if (BackpackConfig.Get(data, pack) is { } tab && Array.IndexOf(tab.TabContent, type) >= 0) return pack;
+        return PackItem;
     }
 
-    /// <summary>Moves saved non-cards out of the card pack (granted by _iBagTab alone before <see cref="ConfigPack"/>).</summary>
-    internal void MigrateCardPackItems(GameSession session)
+    /// <summary>Moves saved bag items into the pack <see cref="ConfigPack"/> gives them: rows granted by _iBagTab alone
+    /// (non-cards in the card pack, materials in the Divine Totem pack) or by a path that missed the totem and Soul Echo
+    /// packs. The cart (100) and the storages (101..103) are not bag packs.</summary>
+    internal void MigrateBagPacks(GameSession session)
     {
-        var moved = session.Items.Where(i => i.Grid == 0 && i.Pack == PackCard
-            && data.Row("ItemConfig", i.Entry) is { } row && ConfigPack(row) != PackCard).ToList();
+        var moved = session.Items.Where(i => i.Grid == 0 && i.Pack is >= PackItem and <= LastBagPack
+            && data.Row("ItemConfig", i.Entry) is { } row && ConfigPack(data, row) != i.Pack).ToList();
         if (moved.Count == 0) return;
         var sorts = session.Items.Where(i => i.Grid == 0).GroupBy(i => i.Pack).ToDictionary(g => g.Key, g => g.Max(i => i.Sort));
         var replacements = new Dictionary<InvItem, InvItem>(ReferenceEqualityComparer.Instance);
@@ -355,12 +366,12 @@ public sealed partial class CharacterInventoryService
         foreach (var old in moved.OrderBy(i => i.Sort).ThenBy(i => i.Guid))
         {
             var item = old.Clone();
-            item.Pack = ConfigPack(data.Row("ItemConfig", item.Entry)!.Value);
+            item.Pack = ConfigPack(data, data.Row("ItemConfig", item.Entry)!.Value);
             item.Sort = sorts[item.Pack] = sorts.GetValueOrDefault(item.Pack) + 1;
             builder.ItemUpdate(item);
             replacements[old] = item;
         }
-        roles.Commit(builder, "character/card-pack-migration");
+        roles.Commit(builder, "character/bag-pack-migration");
         session.Items = [.. session.Items.Select(i => replacements.GetValueOrDefault(i, i))];
     }
 
@@ -387,7 +398,7 @@ public sealed partial class CharacterInventoryService
                 currency[group.Key] = count;
                 continue;
             }
-            int pack = EmblemService.IsEmblem(data, group.Key) ? 5 : ConfigPack(row);
+            int pack = ConfigPack(data, row);
             int limit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
             // Bound and unbound grants cannot share a stack (AddItemCore / CanStackGrant).
             foreach (var binding in group.GroupBy(g => g.Bind))
@@ -401,7 +412,7 @@ public sealed partial class CharacterInventoryService
         {
             if (item.Stack <= 0 || item.Grid != 0 || data.Row("ItemConfig", item.Entry) is not { } row
                 || GameData.Int(row, "_iType") == ItemTypeCurrency) return ErrorCodes.ItemNoConfig;
-            int pack = EmblemService.IsEmblem(data, item.Entry) ? 5 : ConfigPack(row);
+            int pack = ConfigPack(data, row);
             addedSlots[pack] = addedSlots.GetValueOrDefault(pack) + 1;
         }
         foreach (var (entry, amount) in currencyGoods ?? new Dictionary<int, long>())

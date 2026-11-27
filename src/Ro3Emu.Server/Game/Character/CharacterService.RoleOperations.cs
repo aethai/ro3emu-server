@@ -287,8 +287,7 @@ public sealed partial class CharacterService
                 if (TotemService.IsReserved(session, item)) { result = ErrorCodes.ItemLocked; break; }
                 if (data.Row("ItemConfig", item.Entry) is not { } row) { result = ErrorCodes.ItemNoConfig; break; }
                 if (source == 0 && GameData.Int(row, "_kCanCart") == 0) { result = ErrorCodes.Parameter; break; }
-                int destination = source == 0 ? 100 : TotemService.IsTotem(data, item.Entry) ? 4
-                    : EmblemService.IsEmblem(data, item.Entry) ? 5 : ConfigPack(row);
+                int destination = source == 0 ? 100 : ConfigPack(data, row);
                 if (count == item.Stack)
                 {
                     item.Pack = destination;

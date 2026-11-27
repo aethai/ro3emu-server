@@ -195,7 +195,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     public Task UseItemAsync(GameSession session, ItemUseReq req) => _inventory.UseItemAsync(session, req);
     internal Task<int> AutoUseItemAsync(GameSession session, long guid) => _inventory.AutoUseItemAsync(session, guid);
     public Task SortAsync(GameSession session, ArrangeItemReq req) => _inventory.SortAsync(session, req);
-    internal static int ConfigPack(JsonElement row) => CharacterInventoryService.ConfigPack(row);
+    internal static int ConfigPack(GameData data, JsonElement row) => CharacterInventoryService.ConfigPack(data, row);
     internal int PlainGrantError(GameSession session, IReadOnlyList<(int Entry, int Count)> goods,
         IReadOnlyList<InvItem>? exactGoods = null, IReadOnlyDictionary<int, long>? currencyGoods = null,
         IReadOnlyList<(int Entry, int Count, int Bind)>? boundGoods = null) =>
@@ -271,7 +271,7 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     internal bool IsEquipment(int entry) => _inventory.IsEquipment(entry);
     internal Dictionary<int, long>? RollAttrs(int entry) => _inventory.RollAttrs(entry);
     internal long AcquireExpiry(int entry) => _inventory.AcquireExpiry(entry);
-    internal void MigrateCardPackItems(GameSession session) => _inventory.MigrateCardPackItems(session);
+    internal void MigrateBagPacks(GameSession session) => _inventory.MigrateBagPacks(session);
     internal void LoadEquipmentPlans(GameSession session) => _inventory.LoadEquipmentPlans(session);
     internal static bool PruneEquipmentPlans(GameSession session) => CharacterInventoryService.PruneEquipmentPlans(session);
     internal static IEnumerable<InvItem> Equipped(GameSession session) => CharacterInventoryService.Equipped(session);

@@ -7,4 +7,5 @@ namespace Ro3Emu.Server.Data.Config;
 public readonly partial record struct BackpackConfig(JsonElement Row)
 {
     [ConfigField("_iTabCapacity")] public partial long TabCapacity { get; }
+    [ConfigField("_iTabContent")] public partial long[] TabContent { get; }
 }

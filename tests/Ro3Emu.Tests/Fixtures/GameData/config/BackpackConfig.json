@@ -1,4 +1,7 @@
 [
-  { "_iID": 1, "_iTabCapacity": 80 },
-  { "_iID": 2, "_iTabCapacity": 40 }
+  { "_iID": 1, "_iTabCapacity": 80, "_iTabContent": [2, 3, 9] },
+  { "_iID": 2, "_iTabCapacity": 40, "_iTabContent": [5] },
+  { "_iID": 3, "_iTabCapacity": 40, "_iTabContent": [4] },
+  { "_iID": 4, "_iTabCapacity": 40, "_iTabContent": [7] },
+  { "_iID": 5, "_iTabCapacity": 40, "_iTabContent": [8] }
 ]
