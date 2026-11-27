@@ -142,7 +142,8 @@ internal static partial class DatabaseMigrations
             """);
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Applying SQLite schema migration v{Version} ({Name}); on a large database this can take minutes, and the server opens its ports when it is done")]
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Applying SQLite schema migration v{Version} ({Name}); on a large database this can take minutes, and the server opens its ports when it is done")]
     private static partial void LogMigrationStarting(ILogger logger, int version, string name);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Applied SQLite schema migration v{Version} ({Name}) in {Seconds:0.0} s")]
