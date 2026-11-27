@@ -49,6 +49,7 @@ public sealed partial class FlyingDragonService : IGameTicker, IStartupInitializ
     private readonly Maps.WorldData _world;
     private DBFlyingDragonProduceInfo? _state;
     private TimeSpan _lastCheck;
+    private long _fullPushed; // the ProcessUniqueId whose full progress every client was last told (in memory only)
 
     public FlyingDragonService(GameData data, CharacterService character, MailService mail, AccountStore accounts,
         SessionRegistry sessions, GameLoop loop, Maps.WorldData world, MvpService mvps, GmCommands gm,
@@ -110,8 +111,14 @@ public sealed partial class FlyingDragonService : IGameTicker, IStartupInitializ
     }
 
     /// <summary>Every online player sees the ritual's top button (MainMenuWidgetBaseNewCtrl), so every change reaches all.</summary>
-    private Task PushAllAsync() => RoleFanout.EachAsync(_sessions.All().Where(p => p.Role != null),
-        p => p.SendGameAsync(Notify, new FlyingDragonProductNotify { Info = View(p) }));
+    private Task PushAllAsync()
+    {
+        if (Full) _fullPushed = State.ProcessUniqueId;
+        return RoleFanout.EachAsync(_sessions.All().Where(p => p.Role != null),
+            p => p.SendGameAsync(Notify, new FlyingDragonProductNotify { Info = View(p) }));
+    }
+
+    private bool Full => State.ProductInfo != null && Progress() >= ProgressFull;
 
     public Task LoginAsync(GameSession s) => Status == FlyingDragonProductStatus.Idle ? Task.CompletedTask
         : s.SendGameAsync(Notify, new FlyingDragonProductNotify { Info = View(s) });
@@ -237,6 +244,10 @@ public sealed partial class FlyingDragonService : IGameTicker, IStartupInitializ
         using (await CharacterService.Lock(s)) result = await AccelerateLockedAsync(s);
         await s.SendGameAsync(Accelerate, new FlyingDragonSelfAccelerateRes { Result = result });
         if (result == 0) await PushAllAsync();
+        // A panel left open past the full bar still offers Ritual Acceleration (its countdown stops at 10000 without a
+        // refresh, UnblockingPanelCtrl._updateCountdown); the full view turns its button into "Go" and opens NPC 107's
+        // "Begin the ritual" (condition 12000007 reads the cached ReleaseProgress). (inferred)
+        else if (result == ErrorCodes.DragonDone && Full) await s.SendGameAsync(Notify, new FlyingDragonProductNotify { Info = View(s) });
     }
 
     private async Task<int> AccelerateLockedAsync(GameSession s)
@@ -315,7 +326,20 @@ public sealed partial class FlyingDragonService : IGameTicker, IStartupInitializ
         _lastCheck = time.Now;
         if (State.CeremonyInfo is { } c && Now >= c.ThumbsUpEndTimeStamp) _loop.PostLegacy(FinishCeremonyAsync, "flying dragon ceremony");
         else if (State.ProductInfo is { } p && Now >= p.ProcessEndTimeStamp) _loop.PostLegacy(TimeOutAsync, "flying dragon timeout");
+        else if (Full && _fullPushed != State.ProcessUniqueId)
+        {
+            _fullPushed = State.ProcessUniqueId;
+            _loop.PostLegacy(FullAsync, "flying dragon full");
+        }
     }
+
+    /// <summary>
+    /// The bar fills by time alone: every client is told once. The panel's countdown stops at 10000 without asking
+    /// (UnblockingPanelCtrl._updateCountdown), the top button's progress never moves by itself
+    /// (MainMenuWidgetBaseNewCtrl._refreshTopLuxuryMenu only counts down the time left), and
+    /// only 82974/82970 update the cached FlyingDragonProduceInfo that NPC 107's "Begin the ritual" reads. (inferred)
+    /// </summary>
+    private Task FullAsync() => Full ? PushAllAsync() : Task.CompletedTask;
 
     /// <summary>The ceremony ends: the owner's dragon (item 1501004, use effect 201 permanent) comes by mail; back to Idle.</summary>
     private async Task FinishCeremonyAsync()

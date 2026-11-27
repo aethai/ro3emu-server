@@ -22,12 +22,16 @@ keeps it in `server_state` (key `flying_dragon`) and follows `PublicParamConfig`
 2. **Progress.** Progress runs from 0 to 10000. It grows by `DragonTaskPerSec` (50) each second, exactly as
    `UI_Sys_Shop_UnblockingPanelCtrl` predicts it, plus `DragonTaskHelpProg` per assist. It ends at
    `ProcessEndTimeStamp`, which is the start plus `DragonTaskLimited`.
+   - When time alone fills the bar, every online player gets 82974 once (inferred). The panel's countdown stops
+     at 10000 without asking the server, the top button's progress never moves by itself, and NPC 107's "Begin the ritual" (condition
+     12000007) reads the cached progress, so without it the option never shows.
 3. **Assist (82969).**
    - One per role, never the owner (1521/1519), at most `DragonTaskHelpTimes`.
    - It pays award `DragonTaskHelpReward`: AwardConfig 1001, one Minted Coin.
    - With a red packet it also pays its share in `DragonTaskReturnItem` (Minted Coin, text 200049).
 4. **Self accelerate (82971).** The owner pays `(10000 - progress) x DragonTaskSpUPEffi` of `DragonTaskSpUPItem`. The
    client shows the button after `DragonTaskSpUPLimited` seconds.
+   - Pressed once the bar is already full it is refused (1524), and the owner gets the full view (inferred).
 5. **Complete (82972).** The owner, at 10000, uses the NPC's "Begin the ritual" option (action 343).
    - The Ceremony starts and marquee 8002 goes out ("in ${2} seconds", `DragonCeremonyLimited`).
    - The red packet's unclaimed shares go back by mail `DragonTaskPacketMail` 1116.
