@@ -8,12 +8,13 @@ namespace Ro3Emu.Tests;
 
 /// <summary>
 /// Switching skill builds over invented data: a saved plan that still holds an earlier career's free skill (a GM job
-/// change into another line).
+/// change into another line), and a recommended build chosen with 31160 (JobProfessConfig, JobProfessSkillConfig) that
+/// costs more points than the job level has earned.
 /// </summary>
 public sealed class SkillBuildSwitchTests
 {
-    private const int Strike = 983, OldFree = 984;
-    private const int FirstCareer = 1000, OtherCareer = 2000;
+    private const int Base = 981, NeedsBase = 982, Strike = 983, OldFree = 984;
+    private const int FirstCareer = 1000, OtherCareer = 2000, Build = 70;
 
     [Fact]
     public async Task APlanHoldingAnEarlierCareersFreeSkillSwitchesInAndResets() => await InWorld(async (host, alice, session) =>
@@ -42,8 +43,60 @@ public sealed class SkillBuildSwitchTests
         Assert.Equal(0, session.Combat.SkillPlans!.CurrentPlanIndex);
     });
 
+    // The build lists 982 (needs 981 at 1), 983 at 2 and 981 at 2: five points where the job level earned three. Its last
+    // skill loses a level, then 983, because 982 needs 981's last level.
+    [Fact]
+    public async Task ChoosingABuildAllocatesItWithinTheEarnedPoints() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        Assert.Equal(0, await SwitchGenre(alice, Build));
+
+        var plan = skills.Build(session).SkillAssignPlans[0];
+        Assert.Equal(Build, plan.SkillGenre);
+        Assert.Equal(1, plan.SkillAssigns[NeedsBase].SkillLevel);
+        Assert.Equal(1, plan.SkillAssigns[Strike].SkillLevel);
+        Assert.Equal(1, plan.SkillAssigns[Base].SkillLevel);
+        Assert.Equal(0, plan.SkillPoints[1]);
+        Assert.Equal(1, skills.Level(session.Progress!, Strike));
+        Assert.Equal(3, skills.SpentPoints(session.Progress!));
+    });
+
+    [Fact]
+    public async Task AllocatingByHandCancelsTheChosenBuild() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        Assert.Equal(0, await SwitchGenre(alice, Build));
+        Assert.Equal(0, await SwitchGenre(alice, Build)); // the build the plan already has: nothing is allocated again
+        Assert.Equal(3, skills.SpentPoints(session.Progress!));
+
+        var refund = new SkillGrowthSkillPlanUpdateReq { Plan = 0 };
+        refund.LevelUpList[Strike] = new SkillData { SkillId = Strike, SkillLevel = 0 };
+        await alice.SendGameAsync(SkillService.PlanUpdate, refund);
+        Assert.Equal(0, (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result);
+        Assert.Equal(0, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(2, skills.SpentPoints(session.Progress!));
+
+        Assert.Equal(0, await SwitchGenre(alice, Build)); // chosen again: allocated again
+        Assert.Equal(3, skills.SpentPoints(session.Progress!));
+    });
+
+    [Fact]
+    public async Task AGenreWithoutABuildOnlyBindsThePlan() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        Assert.Equal(0, await SwitchGenre(alice, 5));
+        Assert.Equal(5, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(0, skills.SpentPoints(session.Progress!));
+    });
+
     private static int Stored(GameSession session, int plan, int group) =>
         session.Combat.SkillPlans!.SkillAssignPlans[plan].SkillAssigns.GetValueOrDefault(group)?.SkillLevel ?? 0;
+
+    private static async Task<int> SwitchGenre(BotClient bot, int genre)
+    {
+        await bot.SendGameAsync(SkillService.SwitchGenre, new SkillSwitchGenreReq { Genre = genre });
+        return (await Next(bot, SkillService.SwitchGenre, SkillSwitchGenreResp.Parser)).Result;
+    }
 
     private static async Task InWorld(Func<SyntheticHost, BotClient, GameSession, Task> test)
     {
@@ -94,6 +147,12 @@ public sealed class SkillBuildSwitchTests
         Write(root, "SkillTreeConfig", $$$"""
             {"1":{"_iID":1,"_iJob":{{{FirstCareer}}},"_iX1":981,"_iX2":982,"_iX3":983,"_iX4":984},
              "2":{"_iID":2,"_iJob":{{{OtherCareer}}},"_iX1":985}}
+            """);
+        Write(root, "JobProfessConfig", $$$"""
+            {"{{{Build}}}":{"_iID":{{{Build}}},"_iProfessionID":7}}
+            """);
+        Write(root, "JobProfessSkillConfig", """
+            {"7101":{"_iID":7101,"_iJobLv":1,"_iJobRank":1,"_iProfessionID":7,"_kDescData":[98201,98302,98102]}}
             """);
     }
 
