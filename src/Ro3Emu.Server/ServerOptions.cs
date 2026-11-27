@@ -570,6 +570,9 @@ public sealed class ChatVoiceOptions
     /// <summary>All clips together; past it the oldest go first.</summary>
     public int StoreMegabytes { get; set; } = 64;
 
+    /// <summary>Clips one account may have stored at once; past it its oldest go first.</summary>
+    public int AccountClips { get; set; } = 20;
+
     /// <summary>Clips one player may send, "perSecond/burst".</summary>
     public string Clips { get; set; } = "0.1/4";
 

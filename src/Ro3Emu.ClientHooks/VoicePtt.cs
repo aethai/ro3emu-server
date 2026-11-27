@@ -37,6 +37,12 @@ namespace Ro3Emu.ClientHooks
         private const int CacheClips = 32;
         /// <summary>A fetch or a playback that has not ended by then ends anyway, so a bubble never stays "playing".</summary>
         private const long SlackMs = 3000;
+        /// <summary>What the output device still holds when the mixer has handed out the last sample (4 buffers of 20 ms).</summary>
+        private const long DeviceTailMs = 100;
+        /// <summary>The playback device closes once no clip has played this long (auto-play asks for the next at once).</summary>
+        private const long IdleCloseMs = 1500;
+        /// <summary>The shortest clip: the chat's timer counts a second from the press, the microphone delivers a little later.</summary>
+        private const int MinimumSamples16k = VoiceAudio.SampleRate * 4 / 5;
 
         private static bool _asked, _ready, _enabled;
         private static int _maxSeconds;
@@ -53,18 +59,18 @@ namespace Ro3Emu.ClientHooks
 
         // Playback.
         private static string _playing;
-        private static bool _answerPending, _started;
-        private static long _endsAtMs;
+        private static bool _answerPending, _started, _deviceHeld;
+        private static long _endsAtMs, _playedOutMs, _idleSinceMs;
         private static readonly Dictionary<string, byte[]> Cache = new Dictionary<string, byte[]>();
         private static readonly LinkedList<string> CacheOrder = new LinkedList<string>();
         private static readonly Stopwatch Clock = Stopwatch.StartNew();
 
-        /// <summary>After the IM login: ask the server whether it takes voice messages (once per connection).</summary>
+        /// <summary>After the IM login, once the game connection's receive hook is in place: ask the server whether it
+        /// takes voice messages (once per connection; ServerImAdapter resets on a new connection).</summary>
         public static void AskServer()
         {
             if (_asked) return;
-            _asked = true;
-            Send(VoiceClip.CapabilityMsgId, VoiceClip.CapabilityRequest());
+            _asked = Send(VoiceClip.CapabilityMsgId, VoiceClip.CapabilityRequest());
         }
 
         /// <summary>Network thread.</summary>
@@ -83,7 +89,7 @@ namespace Ro3Emu.ClientHooks
         {
             if (!VoiceClip.TryReadFetchAnswer(body, out byte status, out string id, out byte[] clip)) return;
             if (status == VoiceClip.FetchOk && VoiceClip.TryReadHeader(clip, out _, out _)) Remember(id, clip);
-            if (id != _playing || !_answerPending) return;
+            if (id != _playing || !_answerPending || _started) return;
             if (status != VoiceClip.FetchOk || !StartPlaying(clip)) EndPlaying(false);
         });
 
@@ -115,7 +121,15 @@ namespace Ro3Emu.ClientHooks
         public static void Pump(Action<uint, int, byte[]> deliver)
         {
             while (Posted.TryDequeue(out var work)) work();
-            if (_answerPending && (_started && !VoiceAudio.ClipPlaying || _endsAtMs > 0 && Clock.ElapsedMilliseconds > _endsAtMs)) EndPlaying(_started);
+            long now = Clock.ElapsedMilliseconds;
+            if (_answerPending && _started && !VoiceAudio.ClipPlaying && _playedOutMs == 0) _playedOutMs = now + DeviceTailMs;
+            if (_answerPending && (_playedOutMs > 0 && now >= _playedOutMs || _endsAtMs > 0 && now > _endsAtMs)) EndPlaying(_started);
+            if (_started || _answerPending) VoiceSettings.Poll(now); // the game's volume, outside team voice too
+            if (_deviceHeld && !_answerPending && now - _idleSinceMs > IdleCloseMs)
+            {
+                _deviceHeld = false;
+                VoiceAudio.StopClip();
+            }
             foreach (var (cmd, error, body) in Answers) deliver(cmd, error, body);
             Answers.Clear();
         }
@@ -126,6 +140,8 @@ namespace Ro3Emu.ClientHooks
             StopRecording();
             Stop();
             _asked = _ready = _enabled = false;
+            _deviceHeld = false;
+            VoiceAudio.StopClip();
             Cache.Clear();
             CacheOrder.Clear();
             while (Posted.TryDequeue(out _)) { }
@@ -141,22 +157,30 @@ namespace Ro3Emu.ClientHooks
             _chatType = fields.TryGetValue(2, out var type) && type is ulong t ? (uint)t : 0;
             _extra = fields.TryGetValue(3, out var extra) ? extra as string ?? "" : "";
             lock (CaptureLock) _recorded = new List<short>(VoiceAudio.SampleRate * Math.Max(1, _maxSeconds));
-            if (!_enabled || !VoiceAudio.StartClipCapture(OnFrame))
+            // An Adventure Group oath stays on this machine (OathToSelf), so it records whether or not the server takes clips.
+            bool allowed = _enabled || IsOath();
+            if (!allowed || !VoiceAudio.StartClipCapture(OnFrame))
             {
                 lock (CaptureLock) _recorded = null;
-                Debug.LogWarning("[Ro3Emu.Chat] voice message not recorded: " + (_enabled ? "no microphone" : "off on this server"));
+                Debug.LogWarning("[Ro3Emu.Chat] voice message not recorded: " + (allowed ? "no microphone" : "off on this server"));
             }
             Answer(StartRecord, 0, VoiceClip.ChatResult(true));
         }
 
-        /// <summary>Capture thread: the clip stops growing at the server's longest clip.</summary>
+        private static bool IsOath() => _chatType == PrivateChat && _receiveId == _selfId.ToString();
+
+        private static int _peak;
+
+        /// <summary>Capture thread: the frame comes with the mic slider's gain applied (VoiceAudio.Capture); the automatic
+        /// gain lifts quiet mics as it does for team voice. The clip stops growing at the server's longest clip.</summary>
         private static void OnFrame(short[] pcm)
         {
+            int peak = VoiceAudio.Agc.Process(pcm);
             lock (CaptureLock)
             {
                 if (_recorded == null || _recorded.Count >= VoiceAudio.SampleRate * (_maxSeconds + 1)) return;
-                float gain = VoiceAudio.MicGain;
-                foreach (short sample in pcm) _recorded.Add(VoiceAudio.Clamp((int)(sample * gain)));
+                _peak = Math.Max(_peak, peak);
+                _recorded.AddRange(pcm);
             }
         }
 
@@ -171,25 +195,34 @@ namespace Ro3Emu.ClientHooks
             }
         }
 
+        private static int TakePeak()
+        {
+            lock (CaptureLock)
+            {
+                int peak = _peak;
+                _peak = 0;
+                return peak;
+            }
+        }
+
         private static void StopAndUpload()
         {
             var recorded = StopRecording();
-            if (recorded == null || recorded.Count < VoiceAudio.SampleRate)
+            int peak = TakePeak();
+            if (recorded == null || recorded.Count < MinimumSamples16k)
             {
                 Answer(StopAndSend, SendFailed, new byte[0]);
                 return;
             }
             byte[] clip = VoiceClip.EncodeFrom16k(recorded);
             VoiceClip.TryReadHeader(clip, out int rate, out int samples);
-            int peak = 0;
-            foreach (short sample in recorded) peak = Math.Max(peak, Math.Abs((int)sample));
             Debug.Log("[Ro3Emu.Chat] voice message recorded: " + (samples * 10 / rate / 10.0) + " s, loudest " + peak + ", " + clip.Length + " bytes");
-            if (_chatType == PrivateChat && _receiveId == _selfId.ToString())
+            if (IsOath())
             {
                 OathToSelf(clip, (uint)VoiceClip.Seconds(samples, rate));
                 return;
             }
-            Send(VoiceClip.UploadMsgId, VoiceClip.Upload(_receiveId, _chatType, _extra, clip));
+            if (!Send(VoiceClip.UploadMsgId, VoiceClip.Upload(_receiveId, _chatType, _extra, clip))) Answer(StopAndSend, SendFailed, new byte[0]);
         }
 
         /// <summary>An Adventure Group oath: a file the Lua can read and keep, announced to the Lua alone.</summary>
@@ -197,6 +230,9 @@ namespace Ro3Emu.ClientHooks
         {
             string dir = Path.Combine(Application.temporaryCachePath, "ro3emu-voice");
             Directory.CreateDirectory(dir);
+            // The Lua copies the oath it was given at once (GetVoiceDeclarationPath); older ones are no longer read.
+            foreach (string old in Directory.GetFiles(dir, "oath-*.ro3a"))
+                try { File.Delete(old); } catch (IOException) { }
             string path = Path.Combine(dir, "oath-" + DateTime.UtcNow.Ticks + ".ro3a");
             File.WriteAllBytes(path, clip);
             string self = _selfId.ToString();
@@ -212,9 +248,10 @@ namespace Ro3Emu.ClientHooks
             var fields = VoiceClip.PbFields(body) ?? new Dictionary<int, object>();
             string file = fields.TryGetValue(1, out var value) ? value as string ?? "" : "";
             Stop();
+            if (string.IsNullOrEmpty(file)) { Answer(Play, SendFailed, VoiceClip.ChatResult(false)); return; }
             _playing = file;
             _answerPending = true;
-            _endsAtMs = 0;
+            _endsAtMs = _playedOutMs = 0;
             if (Cache.TryGetValue(file, out var cached)) { if (!StartPlaying(cached)) EndPlaying(false); return; }
             if (file.EndsWith(".ro3a", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)
                 || Path.IsPathRooted(file))
@@ -226,15 +263,14 @@ namespace Ro3Emu.ClientHooks
             var request = VoiceClip.FetchRequest(file);
             if (request == null) { EndPlaying(false); return; }
             _endsAtMs = Clock.ElapsedMilliseconds + SlackMs * 3; // the fetch itself may take a moment
-            Send(VoiceClip.FetchMsgId, request);
+            if (!Send(VoiceClip.FetchMsgId, request)) EndPlaying(false);
         }
 
         private static bool StartPlaying(byte[] clip)
         {
             var pcm = VoiceClip.Decode(clip);
-            if (pcm == null) return false;
-            VoiceAudio.PlayClip(VoiceClip.To16k(pcm));
-            _started = true;
+            if (pcm == null || !VoiceAudio.PlayClip(VoiceClip.To16k(pcm))) return false;
+            _started = _deviceHeld = true;
             Debug.Log("[Ro3Emu.Chat] voice message playing: " + _playing + ", " + (pcm.Length * 10 / VoiceClip.SampleRate / 10.0) + " s");
             _endsAtMs = Clock.ElapsedMilliseconds + pcm.Length * 1000L / VoiceClip.SampleRate + SlackMs;
             return true;
@@ -247,8 +283,9 @@ namespace Ro3Emu.ClientHooks
             Debug.Log("[Ro3Emu.Chat] voice message " + (played ? "played out: " : "not played: ") + _playing);
             _answerPending = _started = false;
             _playing = null;
-            _endsAtMs = 0;
-            VoiceAudio.StopClip();
+            _endsAtMs = _playedOutMs = 0;
+            _idleSinceMs = Clock.ElapsedMilliseconds;
+            VoiceAudio.ClearClip();
             Answer(Play, played ? 0 : SendFailed, VoiceClip.ChatResult(played));
         }
 
@@ -257,8 +294,9 @@ namespace Ro3Emu.ClientHooks
         {
             _answerPending = _started = false;
             _playing = null;
-            _endsAtMs = 0;
-            VoiceAudio.StopClip();
+            _endsAtMs = _playedOutMs = 0;
+            _idleSinceMs = Clock.ElapsedMilliseconds;
+            VoiceAudio.ClearClip();
         }
 
         private static void Remember(string id, byte[] clip)
@@ -271,7 +309,13 @@ namespace Ro3Emu.ClientHooks
 
         private static void Answer(uint cmd, int error, byte[] body) => Answers.Add((cmd, error, body));
 
-        private static void Send(uint msgId, byte[] body) =>
-            SingletonMonoBehaviour<NW_CBBNetworkManager>.Instance.Obf_jBd(msgId, body);
+        /// <summary>False when there is no game connection to send on.</summary>
+        private static bool Send(uint msgId, byte[] body)
+        {
+            var network = SingletonMonoBehaviour<NW_CBBNetworkManager>.Instance;
+            if (network == null || network.Obf_a == null) return false;
+            network.Obf_jBd(msgId, body);
+            return true;
+        }
     }
 }

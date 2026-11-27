@@ -46,41 +46,40 @@ public sealed partial class ChatService
         await session.SendGameRawAsync(VoiceCapability, VoiceClip.CapabilityAnswer(enabled, VoiceSeconds, VoiceMaxBytes, role.Id));
     }
 
+    private sealed record VoiceUploadRequest(string ReceiveId, uint ChatType, string Extra, byte[] Clip, int Rate, int Samples);
+
     /// <summary>An uploaded clip: checked like a text line to the same channel, stored, and pushed.</summary>
     internal async Task VoiceUploadAsync(GameSession sender, uint _, ReadOnlyMemory<byte> body)
     {
         if (sender.Role is not { } role || sender.Account is not { } account) return;
-        if (VoiceRefusal(sender, body) is { } refusal)
+        Task Refuse() => DownRawAsync(sender, (uint)Cmd.StopRecordAndSendAudio, VoiceSendFailed, []);
+        if (ReadVoiceUpload(sender, body, out var refusal) is not { } upload)
         {
             _log.LogInformation("Voice clip from {Name} refused: {Reason}", role.Name, refusal);
-            await DownRawAsync(sender, (uint)Cmd.StopRecordAndSendAudio, VoiceSendFailed, []);
+            await Refuse();
             return;
         }
-        VoiceClip.TryReadUpload(body.ToArray(), out string receiveId, out uint chatType, out string extra, out byte[] clip);
-        VoiceClip.TryReadHeader(clip, out int rate, out int samples);
-        bool local = chatType != ChatTypePrivate && MapChannel(receiveId);
+        bool local = upload.ChatType != ChatTypePrivate && MapChannel(upload.ReceiveId);
         long runtime = sender.WorldScene, generation = sender.SceneGeneration;
-        if (local && (sender.SceneLoading || sender.Handoff != null) || Recipients(sender, receiveId, chatType) is not { } recipients
-            || VoiceFlooded(sender, receiveId, chatType))
+        if (!GuildAllowed(sender, upload.ReceiveId) || local && (sender.SceneLoading || sender.Handoff != null)
+            || await VoiceRecipientsAsync(sender, role.Id, upload) is not { } recipients)
         {
-            await DownRawAsync(sender, (uint)Cmd.StopRecordAndSendAudio, VoiceSendFailed, []);
+            await Refuse();
             return;
         }
-        // A whisper to a player who blocked the sender reaches the sender only (the client drops it too, LC_DAL_Chat).
-        if (chatType == ChatTypePrivate)
-            recipients = [.. recipients.Where(p => p == sender || p.Role is not { } to || !_friends.Blocks(to.Id, role.Id))];
-        string id = StoreVoiceClip(account, role.Id, recipients, clip);
+        if (await FloodRefusedAsync(sender, upload.ReceiveId, upload.ChatType, "", Refuse)) return;
+        string id = StoreVoiceClip(account, role.Id, recipients, upload.Clip);
         var message = new AudioChatMessage
         {
             MessageId = Interlocked.Increment(ref _nextMessageId).ToString(CultureInfo.InvariantCulture),
             SenderId = role.Id.ToString(CultureInfo.InvariantCulture),
-            ReceiveId = receiveId,
+            ReceiveId = upload.ReceiveId,
             SendTime = (ulong)_clock.GetUtcNow().ToUnixTimeSeconds(),
             AudioFile = id,
-            ExtraParam = extra,
-            AudioDuration = (uint)VoiceClip.Seconds(samples, rate),
+            ExtraParam = upload.Extra,
+            AudioDuration = (uint)VoiceClip.Seconds(upload.Samples, upload.Rate),
         };
-        _log.LogInformation("Voice {Name} -> {Target} ({Count} recipient(s)): {Seconds} s", role.Name, receiveId, recipients.Count, message.AudioDuration);
+        _log.LogInformation("Voice {Name} -> {Target} ({Count} recipient(s)): {Seconds} s", role.Name, upload.ReceiveId, recipients.Count, message.AudioDuration);
         await DownAsync(sender, Cmd.StopRecordAndSendAudio, new StopRecordAndSendAudioResponse { ChatResult = true, Msg = message });
         var push = new NotifyNewAudioMessage { Msg = message };
         foreach (var to in recipients)
@@ -92,27 +91,33 @@ public sealed partial class ChatService
         }
     }
 
-    /// <summary>Why an upload is refused before anything is stored, or null.</summary>
-    private string? VoiceRefusal(GameSession sender, ReadOnlyMemory<byte> body)
+    /// <summary>The upload, or null with why it is refused before anything is stored.</summary>
+    private VoiceUploadRequest? ReadVoiceUpload(GameSession sender, ReadOnlyMemory<byte> body, out string refusal)
     {
         var options = _options.Value.ChatVoice;
-        if (!options.Enabled) return "voice messages are off";
-        if (body.Length > VoiceMaxBytes + 1024) return $"{body.Length} bytes";
-        if (!VoiceClip.TryReadUpload(body.ToArray(), out string receiveId, out _, out string extra, out byte[] clip)) return "malformed upload";
-        if (!VoiceClip.TryReadHeader(clip, out int rate, out int samples)) return "malformed clip";
-        if (samples < rate || samples > (VoiceSeconds + 1) * rate) return $"{samples} samples";
-        if (receiveId.Length == 0 || receiveId.Length > 128 || extra.Length > _options.Value.AntiCheat.ChatMaxLength * 8) return "bad channel or extra";
-        if (_gm.Allowed(sender)) return null;
-        sender.Social.VoiceClips ??= RateBucket.Parse(options.Clips) ?? new RateBucket(0.1, 4);
-        return sender.Social.VoiceClips.TryTake(VoiceNowMs) ? null : "over the clip rate";
+        refusal = "";
+        if (!options.Enabled) refusal = "voice messages are off";
+        else if (body.Length > VoiceMaxBytes + 1024) refusal = $"{body.Length} bytes";
+        else if (!VoiceClip.TryReadUpload(body.ToArray(), out string receiveId, out uint chatType, out string extra, out byte[] clip)) refusal = "malformed upload";
+        else if (!VoiceClip.TryReadHeader(clip, out int rate, out int samples)) refusal = "malformed clip";
+        // The chat counts a second from the press; the microphone starts a little after it (VoicePtt).
+        else if (samples < rate * 4 / 5 || samples > (VoiceSeconds + 1) * rate) refusal = $"{samples} samples";
+        else if (receiveId.Length == 0 || receiveId.Length > 128 || extra.Length > _options.Value.AntiCheat.ChatMaxLength * 8) refusal = "bad channel or extra";
+        else if (!_gm.Allowed(sender) && !(sender.Social.VoiceClips ??= RateBucket.Parse(options.Clips) ?? new RateBucket(0.1, 4)).TryTake(VoiceNowMs))
+            refusal = "over the clip rate";
+        else return new VoiceUploadRequest(receiveId, chatType, extra, clip, rate, samples);
+        return null;
     }
 
-    /// <summary>The chat flood guard (ChatService.Flood) counts a clip as a line; an empty text never repeats.</summary>
-    private bool VoiceFlooded(GameSession sender, string receiveId, uint chatType)
+    /// <summary>Who hears the clip, as for a text line; a whisper to a player who is offline or blocked the sender has
+    /// nobody to reach and is refused (the client drops a blocked sender's clips too, LC_DAL_Chat).</summary>
+    private async Task<List<GameSession>?> VoiceRecipientsAsync(GameSession sender, long senderRole, VoiceUploadRequest upload)
     {
-        if (!_options.Value.ChatFlood.Enabled || _gm.Allowed(sender) || sender.Account is not { } account) return false;
-        bool open = chatType != ChatTypePrivate && ChannelType(receiveId) is not (GuildChannelType or TeamChannelType or FriendGroupChannelType);
-        return _flood.Check(account, receiveId, open, "").Item1 != ChatFloodGuard.Verdict.Pass;
+        if (Recipients(sender, upload.ReceiveId, upload.ChatType) is not { } recipients) return null;
+        if (upload.ChatType != ChatTypePrivate) return recipients;
+        var target = recipients.FirstOrDefault(p => p != sender);
+        if (target?.Role is not { } to || await _friends.BlocksAsync(to.Id, senderRole)) return null;
+        return recipients;
     }
 
     /// <summary>A clip for these listeners under a random id (not guessable, so not enumerable), oldest out past the cap.</summary>
@@ -125,6 +130,14 @@ public sealed partial class ChatService
         lock (_voiceSync)
         {
             DropVoiceClips(now, cap - clip.Length);
+            // One account's clips past its share go oldest first, so a spammer churns only its own.
+            var own = _voiceOrder.Where(e => e.Account == account).Select(e => e.Id).ToList();
+            foreach (string old in own.Take(Math.Max(0, own.Count - Math.Max(1, options.AccountClips) + 1)))
+                if (_voiceClips.Remove(old, out var node0))
+                {
+                    _voiceOrder.Remove(node0);
+                    _voiceBytes -= node0.Value.Clip.Length;
+                }
             var node = _voiceOrder.AddLast(new VoiceClipEntry(id, account, sender, listeners, clip, now + options.ClipMinutes * 60_000L));
             _voiceClips[id] = node;
             _voiceBytes += clip.Length;

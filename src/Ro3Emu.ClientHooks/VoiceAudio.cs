@@ -99,18 +99,23 @@ namespace Ro3Emu.ClientHooks
             UpdatePlayback();
         }
 
-        /// <summary>Plays one chat voice message (16 kHz) over whatever team voice plays; <see cref="ClipPlaying"/> turns
-        /// false once it has played out.</summary>
-        public static void PlayClip(short[] pcm)
+        /// <summary>Plays one chat voice message (16 kHz) over whatever team voice plays; false when no output device opens.
+        /// <see cref="ClipPlaying"/> turns false once the mixer has handed out its last sample.</summary>
+        public static bool PlayClip(short[] pcm)
         {
             _clipPlayback = true;
             UpdatePlayback();
-            _playback?.Mixer.SetClip(pcm);
+            if (_playback == null) { _clipPlayback = false; return false; }
+            _playback.Mixer.SetClip(pcm);
+            return true;
         }
+
+        /// <summary>Ends the clip; the device stays open for the next one (auto-play asks at once) until <see cref="StopClip"/>.</summary>
+        public static void ClearClip() => _playback?.Mixer.SetClip(null);
 
         public static void StopClip()
         {
-            _playback?.Mixer.SetClip(null);
+            ClearClip();
             _clipPlayback = false;
             UpdatePlayback();
         }

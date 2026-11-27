@@ -33,6 +33,7 @@ namespace Ro3Emu.ClientHooks
         private Action _requestCallback;
         private LuaArrAccess _requestArray;
         private HappyEngineClient _hooked;
+        private bool _imLoggedIn;
         private OnGameMsgReceived _hook;
 
         private struct Frame
@@ -47,7 +48,7 @@ namespace Ro3Emu.ClientHooks
         {
             Debug.Log("[Ro3Emu.Chat] login as " + userId);
             _status.Enqueue(StatusLoginSucc);
-            VoicePtt.AskServer();
+            _imLoggedIn = true;
         }
 
         /// <summary>Send: remember Lua's reply callback (all replies and pushes go through it), forward the command.</summary>
@@ -73,6 +74,7 @@ namespace Ro3Emu.ClientHooks
         public void Obf_lkD()
         {
             AttachHook();
+            if (_imLoggedIn && _hooked != null) VoicePtt.AskServer();
             int n = 0;
             while (n++ < MaxPerFrame && _status.TryDequeue(out uint status))
             {
@@ -102,6 +104,7 @@ namespace Ro3Emu.ClientHooks
             while (_status.TryDequeue(out _)) { }
             _requestCallback = null;
             _requestArray = null;
+            _imLoggedIn = false;
             VoiceClient.Shutdown(); // voice must not outlive the game connection (mic left open after logout)
             VoicePtt.Reset();
             GuildOverhead.ResetSession();
@@ -137,6 +140,7 @@ namespace Ro3Emu.ClientHooks
             _hook = OnMessage;
             client.OnMsgReceived = (OnGameMsgReceived)Delegate.Combine(client.OnMsgReceived, _hook);
             _hooked = client;
+            VoicePtt.Reset(); // a new connection: its server is asked again
             Debug.Log("[Ro3Emu.Chat] hooked HappyEngineClient.OnMsgReceived");
         }
 

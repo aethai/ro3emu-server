@@ -158,6 +158,20 @@ public sealed class ChatVoiceTests
     }
 
     [Fact]
+    public async Task AClipToAGuildOfOthersOrToAnOfflinePlayerIsRefused()
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        await using var alice = await host.InWorldAsync("Alice");
+        await CapableAsync(alice);
+        byte[] clip = VoiceClip.EncodeFrom16k(Tone(1.5));
+        await alice.SendGameBytesAsync(ChatService.VoiceUpload, VoiceClip.Upload("2_987654", 2, "", clip)); // a guild she is not in
+        Assert.Equal(1, SendError(await alice.Inbox.WaitAsync(e => SendError(e) != null, Wait)));
+        await alice.SendGameBytesAsync(ChatService.VoiceUpload, VoiceClip.Upload("123456789", 1, "", clip)); // nobody online
+        Assert.True(SpinWait.SpinUntil(() => alice.Inbox.Snapshot().Count(e => SendError(e) == 1) == 2, Wait));
+        Assert.DoesNotContain(alice.Inbox.Snapshot(), e => Pushed(e) != null);
+    }
+
+    [Fact]
     public async Task AClientWithoutTheHooksIsToldItsSendFailed()
     {
         await using var host = await SyntheticHost.StartAsync();
