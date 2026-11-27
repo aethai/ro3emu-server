@@ -17,6 +17,8 @@ CardService.CollectionChanged (2)
   FirstHeartService.<.ctor> lambda
 CardService.SocketsChanged (1)
   CardEffects.RefreshAsync
+CharacterService.AstralChanged (1)
+  ParagonService.<.ctor> lambda
 CharacterService.DynamicProperties (4)
   BuffService.SupportShieldProperties
   BuffService.BlindProperties

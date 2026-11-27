@@ -137,6 +137,10 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     /// reward raises it only when it touched what a listener reads (CharacterInventoryService.QuietKillReward).</summary>
     public SyncHook<GameSession> StateChanged { get; } = new("CharacterService.StateChanged");
 
+    /// <summary>Only the Astral Level (ParagonLevel/ParagonExp) moved: EXP past the level cap from a kill or a party share.
+    /// <see cref="StateChanged"/> would wake every listener for it; only ParagonService reads it.</summary>
+    public SyncHook<GameSession> AstralChanged { get; } = new("CharacterService.AstralChanged");
+
     private readonly List<Func<IEnumerable<long>>> _stateEntrySources = [];
     private readonly Lock _stateEntriesLock = new();
     private volatile HashSet<int>? _stateEntries;

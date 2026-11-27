@@ -110,10 +110,10 @@ public sealed partial class CharacterService
         {
             await SyncAsync(session, RoleBaseInfoSync, BuildBaseInfo(session));
             if (stillOwner?.Invoke() == false) return string.Empty;
-            // EXP below a level change is read by no StateChanged listener except Paragon's (EXP past the cap): a party
+            // EXP below a level change is read by no StateChanged listener, only the Astral Level past the cap is: a party
             // share after every kill re-read every member for nothing (#484, CharacterInventoryService.QuietKillReward).
             if (p.ParagonLevel != oldParagonLevel || p.ParagonExp != oldParagonExp)
-                foreach (var handler in StateChanged.Handlers) handler(session);
+                foreach (var handler in AstralChanged.Handlers) handler(session);
         }
         return $"Base {p.Level} ({p.Exp}/{BaseExpNeed(p.Level)}), job {p.JobLevel} ({p.JobExp}/{JobExpNeed(p.Career, p.JobLevel)}).";
     }

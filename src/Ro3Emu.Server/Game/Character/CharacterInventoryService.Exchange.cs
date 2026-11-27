@@ -489,11 +489,13 @@ public sealed partial class CharacterInventoryService
         // runs this first notification once those fields agree with the already committed bag and cooldown.
         if (s.LifeUse != null) s.LifeUse.PendingStateChanged = [.. StateChanged.Handlers];
         else if (!QuietKillReward(s)) foreach (var handler in StateChanged.Handlers) handler(session);
+        else if (s.LiveProgress.ParagonLevel != s.BeforeProgress.ParagonLevel || s.LiveProgress.ParagonExp != s.BeforeProgress.ParagonExp)
+            foreach (var handler in character.AstralChanged.Handlers) handler(session);
     }
 
     /// <summary>
-    /// A monster kill's reward that changed nothing a <see cref="CharacterService.StateChanged"/> listener reads: no level,
-    /// job level or Paragon change, no equipment plan pruned, nothing auto-decomposed, and no card or watched entry
+    /// A monster kill's reward that changed nothing a <see cref="CharacterService.StateChanged"/> listener reads beyond the
+    /// Astral Level (<see cref="CharacterService.AstralChanged"/>): no level or job level change, no equipment plan pruned, nothing auto-decomposed, and no card or watched entry
     /// (<see cref="CharacterService.WatchStateEntries"/>) among the goods. Every kill raised the event, so eleven services
     /// re-read the role (quests, activities, achievements, power...) about nine times a second under load (#484). A level
     /// change still reaches them through ProgressHandlers and the event (AfterLevelChangeAsync above).
@@ -504,8 +506,7 @@ public sealed partial class CharacterInventoryService
         if (request.RewardSettlement?.CommandKind != "monster-kill" || s.PrunedPlans != null
             || s.Decomposed.DecomposeItemInfo.Count > 0 || request.ItemUpdate != null || request.StageItems != null
             || request.StageAfterGoods != null || s.LiveProgress.Level != s.OriginalProgress.Level
-            || s.LiveProgress.JobLevel != s.OriginalProgress.JobLevel
-            || s.LiveProgress.ParagonLevel != s.BeforeProgress.ParagonLevel || s.LiveProgress.ParagonExp != s.BeforeProgress.ParagonExp)
+            || s.LiveProgress.JobLevel != s.OriginalProgress.JobLevel)
             return false;
         foreach (var item in s.Granted) if (Watched(item.Entry)) return false;
         foreach (var (entry, _) in request.Goods) if (Watched(entry)) return false;
