@@ -33,6 +33,14 @@ The server checks it where the client's `CanEquipToGrid` does, after the apprais
 GM preset op 173 goes through 31400 too, so the two client presets whose weapon their level or job may not wear (5100,
 1310) leave it in the bag.
 
+A two-handed weapon (`_iEquipPart = 1`) is worn in grid 1 only, but the client lists it in both weapon grids of a plan:
+`LC_SchemeMatchHelper.PutOnEquip` writes its guid into `itemsEquipGrid` 1 and 2 (the Genre plans other players build),
+`PutOffEquip` clears both, and the 31400 take-on does the same in `EquipGearDataMap`. A plan (31413, Genre staging and
+adoption) therefore reads the grid 2 repeat of grid 1's two-hander as the same weapon. Its grid 2 card sockets stay closed:
+`LC_CardViewHelper.IsActive` never activates grid 2 beside a two-hander and the card window moves such a slot to grid 1
+(`UI_Sys_CardPanelModel.GetPartSlotByGrid`). The refine and strengthen resonance counts grid levels, not worn items, so a
+two-hander changes nothing there.
+
 A card stays in its grid's socket when the gear leaves, across relogs too, but it only counts while the client calls that
 socket active (`EquipmentStunts.ActiveCards`, `LC_CardViewHelper.IsActive`): a worn item on the grid, always for the costume
 grids 8-10, and for the weapon grids by the career's weapon form and the weapon's part (one dagger on an Assassin opens

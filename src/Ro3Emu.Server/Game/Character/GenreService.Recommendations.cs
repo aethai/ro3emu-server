@@ -470,10 +470,14 @@ public sealed partial class GenreService
                         case Equip when concrete.EquipPlan != null && next.Equipment.EquipPlans.ContainsKey(target):
                             {
                                 var copy = concrete.EquipPlan.Clone();
+                                // A two-handed weapon is listed in grids 1 and 2 (CharacterInventoryService.PlanPlacements):
+                                // both resolve to the same owned instance.
+                                var resolved = new Dictionary<long, long>();
                                 foreach (int slot in copy.ItemsEquipGrid.Keys.ToArray())
                                 {
                                     if (copy.ItemsEquipGrid[slot] == 0) { copy.ItemsEquipGrid.Remove(slot); continue; }
-                                    long owned = Own(copy.ItemsEquipGrid[slot]);
+                                    long donor = copy.ItemsEquipGrid[slot];
+                                    if (!resolved.TryGetValue(donor, out long owned)) resolved[donor] = owned = Own(donor);
                                     if (owned == 0) { result = ErrorCodes.ItemMissing; break; }
                                     copy.ItemsEquipGrid[slot] = owned;
                                 }
