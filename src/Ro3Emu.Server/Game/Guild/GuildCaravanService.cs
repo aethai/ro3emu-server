@@ -500,7 +500,11 @@ public sealed partial class GuildCaravanService(GameData data, GuildStore guilds
             && guild.Members.ContainsKey(role.Id)).ToArray())
         {
             if (Guild(peer)?.Id != guild.Id) continue;
-            var state = await EnsureAsync(peer, guild);
+            // A member who may not run the caravan (Eligible) or whose day did not roll has no panel to update; its
+            // refusal ended the departing player's request and dropped their connection.
+            State state;
+            try { state = await EnsureAsync(peer, guild); }
+            catch (CaravanMembershipChangedException) { continue; }
             await ShowCoreAsync(peer, state);
         }
     }

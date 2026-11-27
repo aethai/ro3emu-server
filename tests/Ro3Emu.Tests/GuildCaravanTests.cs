@@ -226,6 +226,22 @@ public sealed class GuildCaravanTests : IAsyncLifetime
         return json.RootElement.GetProperty("Money").GetInt64();
     }
 
+    /// <summary>A departure pushes the new version to every online member; one who may not run the caravan (below its
+    /// level) threw CaravanMembershipChangedException, which ended the request and dropped the departing player.</summary>
+    [ClientDataFact]
+    public async Task AnIneligibleOnlineMemberDoesNotEndADeparture()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        long guild = await Guild(alice);
+        await Join(alice, bob, guild);
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var bobSession = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Role?.Name == "Bob");
+        await loop.InvokeAsync(() => { bobSession.Progress!.Level = 1; return Task.CompletedTask; });
+        var first = await Show(alice);
+        Assert.Equal(0, (await LoadFiveAndDepart(alice, "Alice", first)).Result); // still connected: its next panel
+    }
+
     [ClientDataFact]
     public async Task EveryCaravanMessageUsesDurableOrdersAndGuildHelp()
     {
