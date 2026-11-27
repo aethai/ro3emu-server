@@ -3,6 +3,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -293,10 +294,28 @@ public sealed partial class TradeService
         {
             UserRoleId = roleId.ToString(CultureInfo.InvariantCulture),
             UserCreditScore = state.CreditPoint, CreditScoreRatio = CreditScoreRatio,
-            UserCreditScoreRate = CreditScoreRatio,
+            UserCreditScoreRate = CredibilityTier(state.CreditPoint),
             LowCreditScoreThreshold = (int)(Data.Config.PublicParams.Of(data).TradeCreditMin ?? 0),
         };
         await s.SendGameAsync(Credit, new CFindUserCreditScoreResponse { Data = info, QueryReason = req.QueryReason });
+    }
+
+    /// <summary>
+    /// user_credit_score_rate is a TradeCredibilityConfig tier, not a ratio: UI_Sys_TradeWidgetCtrl and
+    /// UI_Sys_TradeReputationWidgetCtrl show the icon and text of row max(1, rate). The tier whose _kCredibilityScores range
+    /// holds the score; a score past the last range (the default TradeCreditDefault 1000 against ranges up to 200) takes
+    /// the top tier (inferred: no penalty lowers it yet). The ratio sent here before made every role show the red tier.
+    /// </summary>
+    private int CredibilityTier(long score)
+    {
+        long tier = 1, top = 0;
+        foreach (var row in TradeCredibilityConfig.All(data))
+        {
+            if (row.CredibilityScores is not [var low, var high]) continue;
+            if (score >= low && score <= high) return (int)row.Id;
+            if (high > top) (top, tier) = (high, score > high ? row.Id : tier);
+        }
+        return (int)tier;
     }
 
     private Task PenaltyOrders(GameSession s, CQueryPenaltyOrdersRequest req) =>

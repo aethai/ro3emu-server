@@ -84,7 +84,7 @@ public sealed partial class EmblemService
         foreach (var item in afterItems.Where(i => IsEmblem(_data, i.Entry)))
         {
             // Pre-feature grants followed ItemConfig._iBagTab=1. The client resolves Soul Echo instances in pack 5.
-            if (item.Grid == 0 && (item.Pack != 5 || item.Sort <= 0))
+            if (item.Grid == 0 && item.Pack != MerchantCart && (item.Pack != 5 || item.Sort <= 0))
             {
                 long nextSort = afterItems.Where(i => i.Grid == 0 && i.Pack == 5).Select(i => i.Sort).DefaultIfEmpty(0).Max() + 1;
                 item.Pack = 5;
@@ -246,8 +246,12 @@ public sealed partial class EmblemService
     {
         if (!session.Profile.Emblems.Plans.TryGetValue(session.Profile.Emblems.CurrentPlan, out var plan)) yield break;
         foreach (var guid in plan.Slots.Values.Distinct())
-            if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0) is { } item) yield return item;
+            if (session.Items.FirstOrDefault(i => i.Guid == guid && i.Grid == 0 && i.Pack != MerchantCart) is { } item) yield return item;
     }
+
+    /// <summary>The merchant cart (CareerSpecialService): cargo, not the bag. An echo there is not worn, cannot be set up,
+    /// and login leaves it in the cart (as TotemService.Load does for totems).</summary>
+    private const int MerchantCart = 100;
 
     /// <summary>
     /// Echo Resonance (残响共鸣): lit marks (itemInfos 1021+, up to the entry's _kInitialMark count) of the worn echoes,
@@ -361,7 +365,7 @@ public sealed partial class EmblemService
     {
         using var _ = await CharacterService.Lock(session);
         var plan = Active(session);
-        var item = session.Items.FirstOrDefault(i => i.Guid == req.EmblemGuid && i.Grid == 0);
+        var item = session.Items.FirstOrDefault(i => i.Guid == req.EmblemGuid && i.Grid == 0 && i.Pack != MerchantCart);
         int code = Gate(session);
         if (code == 0) code = req.EmblemPos is < FirstSlot or > LastSlot ? ErrorCodes.EmblemSlot
             : item == null || !IsEmblem(_data, item.Entry) ? ErrorCodes.EmblemInvalid

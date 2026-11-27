@@ -403,7 +403,7 @@ public sealed partial class CharacterInventoryService
             // Bound and unbound grants cannot share a stack (AddItemCore / CanStackGrant).
             foreach (var binding in group.GroupBy(g => g.Bind))
             {
-                long free = session.Items.Where(i => CanStackGrant(i, group.Key, limit, binding.Key)).Sum(i => (long)(limit - i.Stack));
+                long free = session.Items.Where(i => CanStackGrant(i, pack, group.Key, limit, binding.Key)).Sum(i => (long)(limit - i.Stack));
                 long needed = Math.Max(0, binding.Sum(g => (long)g.Count) - free);
                 addedSlots[pack] = addedSlots.GetValueOrDefault(pack) + (needed + limit - 1) / limit;
             }

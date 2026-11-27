@@ -70,7 +70,7 @@ public sealed partial class CharacterInventoryService
             int limit = GameData.Int(row, "_iType") == ItemTypeEquip ? 1 : (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
             int pack = ConfigPack(data, row);
             int left = count;
-            foreach (var item in items.Where(i => CanStackGrant(i, entry, limit, 0)))
+            foreach (var item in items.Where(i => CanStackGrant(i, pack, entry, limit, 0)))
             {
                 int add = Math.Min(left, limit - item.Stack);
                 item.Stack += add;

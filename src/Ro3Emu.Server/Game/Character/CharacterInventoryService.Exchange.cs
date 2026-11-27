@@ -585,7 +585,7 @@ public sealed partial class CharacterInventoryService
         int limit = (int)Math.Max(1, GameData.Int(row, "_iStackLimit"));
         int remaining = grant.Count;
         var changed = new List<InvItem>();
-        foreach (var item in session.Items.Where(i => i.Grid == 0 && !i.IsLocked && i.Enchantments.Count == 0
+        foreach (var item in session.Items.Where(i => i.Grid == 0 && i.Pack == pack && !i.IsLocked && i.Enchantments.Count == 0
             && i.Entry == grant.Entry && i.BindType == grant.BindType
             && i.BindExpire == grant.BindExpire && i.Stack < limit && (i.StringAttrs?.Count ?? 0) == 0
             && (i.Attrs?.GetValueOrDefault(530) ?? 0) == grant.CardType
