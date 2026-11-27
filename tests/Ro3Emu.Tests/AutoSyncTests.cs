@@ -63,6 +63,21 @@ public sealed class AutoSyncTests
     }
 
     [Fact]
+    public void AScalarMapSendsANewOrChangedValueWholeAndDeletesARemovedKey()
+    {
+        var before = new FunctionOpenInfo { FunctionOpenInfos = { [10] = true, [11] = true, [12] = true } };
+        var after = new FunctionOpenInfo { FunctionOpenInfos = { [10] = true, [11] = false, [13] = true } };
+        var inc = (FunctionOpenInfoIncrement)AutoSync.Changes(before, after, 5)!;
+        Assert.False(inc.FunctionOpenInfos.ContainsKey(10)); // unchanged
+        Assert.False(inc.FunctionOpenInfos[11].All);         // changed: the new value whole
+        Assert.Equal(FunctionOpenInfoIncrement.Types.functionOpenInfosFieldIncrement.ValueOneofCase.All, inc.FunctionOpenInfos[11].ValueCase);
+        Assert.True(inc.FunctionOpenInfos[12].Del);
+        Assert.True(inc.FunctionOpenInfos[13].All);          // new key
+        Assert.Equal([11L, 12L, 13L], inc.FunctionOpenInfos.Keys.Order());
+        Assert.Null(AutoSync.Changes(after, after.Clone(), 6));
+    }
+
+    [Fact]
     public void ScalarsAndOptionalPresence()
     {
         var before = new RoleBaseInfo { Id = 7, Level = 1, Exp = 0, Career = 1000 };

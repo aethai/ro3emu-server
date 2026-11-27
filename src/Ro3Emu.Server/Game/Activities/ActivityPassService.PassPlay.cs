@@ -192,7 +192,9 @@ public sealed partial class ActivityPassService
         {
             if (!session.Activities.ActivitiesReady || session.Role == null || session.Activities.NewActivities == null || session.Activities.ActivityRuntime == null) return;
             await PassProgressCoreAsync(session, progress, kills, dungeons, mvps, quest);
-            if (!session.Profile.DeferTaskSync) await _tasks.SyncTasksAsync(session); // the challenges in the season task panel
+            // The challenges in the season task panel: only rows the panel asked for (PassTasks yields none before 77014),
+            // so a kill outside it no longer clones and diffs the whole quest set a second time.
+            if (session.Activities.PassChallengeRows && !session.Profile.DeferTaskSync) await _tasks.SyncTasksAsync(session);
         }
         finally { session.ActivityGate.Release(); scope?.Dispose(); }
     }

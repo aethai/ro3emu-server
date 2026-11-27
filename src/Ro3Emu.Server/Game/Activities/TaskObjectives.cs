@@ -514,7 +514,7 @@ public sealed partial class TaskService
         {
             await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null &&
                 monster.RewardSettlement.TaskParticipantIds?.Contains(s.Role.Id) == true),
-                async s => { using var gate = await LockTasksAsync(s); await SettleAsync(s); });
+                async s => { using var gate = await LockTasksAsync(s); await SettleAsync(s, countsOnly: true); });
             return;
         }
         await RoleFanout.EachAsync(_sessions.All().Where(s => s.Role != null && s.WorldScene == monster.WorldScene && participants.Contains(s.Role.Id)),
@@ -525,7 +525,7 @@ public sealed partial class TaskService
                 TMapKill when t.Length == 3 && t[1] == monster.SceneEntry => 1,
                 TKillOnMap when s == killer && t.Length == 3 && t[2] == monster.SceneEntry => 1,
                 _ => 0,
-            }));
+            }, countsOnly: true));
     }
 
     private Task OnItemUsedAsync(GameSession session, int entry, int count) =>
