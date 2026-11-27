@@ -154,9 +154,9 @@ public sealed partial class SkillCombatTests
         Assert.Contains(a.Buffs, b => b.ConfigId == 11431301);
 
         await CastAndWait(bot, 1430901, dummy);
-        Assert.Contains(bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)),
-            h => h.SkillId == 11431801);
-        Assert.Equal(3, a.Buffs.Single(b => b.ConfigId == 11431701).PileCount);
+        Assert.True(SpinWait.SpinUntil(() => bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit))
+            .Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)).Any(h => h.SkillId == 11431801), Wait));
+        Assert.True(SpinWait.SpinUntil(() => a.Buffs.Any(b => b.ConfigId == 11431701 && b.PileCount == 3), Wait));
     }
 
     [ClientDataFact] // Organum: when Holy Stigma's show ends, Organum strikes its area

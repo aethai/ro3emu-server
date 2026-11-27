@@ -22,6 +22,10 @@ public sealed partial class SkillCombatTests
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
         Assert.True(SpinWait.SpinUntil(() => a.Buffs.Any(b => b.ConfigId == BlockParry), Wait));
         Assert.Equal(ShieldCounterRow, EffectiveId(a, ShieldBlockRow));
+        // The bar's counter key (11638 * 10000 + 4) is told ready, not the block's shared cooldown: the client would not send the tap.
+        var told = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillCdUpdate)).SelectMany(e => SkillCdNotify.Parser.ParseFrom(e.Body).Infos)
+            .Last(i => i.SkillId == 11638 && i.SkillMode == 4);
+        Assert.Equal(0L, told.CdEndTimestampMs);
         a.GmCastSkill = ShieldCounterRow;
         await CastAtAsync(bot, ShieldCounterRow, dummy);
         Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);

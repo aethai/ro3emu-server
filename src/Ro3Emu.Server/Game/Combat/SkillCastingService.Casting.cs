@@ -117,10 +117,11 @@ public sealed partial class SkillCastingService
             else if (req.IsExtraSkill && owned == null && GameData.Int(row.Value, "_iExtraType") == 0) error = ErrorCodes.SkillRequirements;
         }
         var origin = owned?.Pos ?? s.Position;
+        bool counter = false;
         if (error == 0)
         {
             int group = (int)GameData.Int(row!.Value, "_iSkillID"), mode = (int)GameData.Int(row.Value, "_iMode");
-            bool counter = _combat.CountersBlock(s, row.Value);
+            counter = own == null && _combat.CountersBlock(s, row.Value);
             if (own == null && CooldownEnd(s, group, mode) > Now && !counter) error = ErrorCodes.SkillCooldown;
             else if (own == null && Now < s.SwingLockUntilMs - SwingJitterMs && new SkillConfig(row.Value).IsNormalAttack(_data)) error = ErrorCodes.SkillBusy;
             else if (s.SkillCast is { Cancelled: false } active && Now < active.StartMs + active.ChantMs + active.ActionMs
@@ -141,6 +142,8 @@ public sealed partial class SkillCastingService
             if (!lineup) await RefuseCastAsync(s, req, error, errorParam);
             return;
         }
+        // A tapped Shield Block counter ends the block as it starts: no counter of its own when the block runs out.
+        if (counter) await _combat.EndBlockAsync(s);
 
         long id = NextSessionId();
         var lease = s.Attachment;

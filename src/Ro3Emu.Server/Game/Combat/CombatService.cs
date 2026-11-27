@@ -149,6 +149,7 @@ public sealed partial class CombatService : IGameTicker
     public JsonElement? EffectiveSkillRow(GameSession session, int requestedRowId) => Casting.EffectiveSkillRow(session, requestedRowId);
     internal JsonElement? ModeRow(GameSession session, int group, int level) => Casting.ModeRow(session, group, level);
     internal JsonElement? RowInMode(int group, int level, int mode) => Casting.RowInMode(group, level, mode);
+    internal Task CastForPlayerAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets) => Casting.CastForPlayerAsync(s, row, targets);
     public bool SkillModeAllowed(GameSession session, JsonElement row) => Casting.SkillModeAllowed(session, row);
     public bool CanQueueSkill(GameSession session, int group) => Casting.CanQueueSkill(session, group);
     public Task RefreshSkillParametersAsync(GameSession session) => Casting.RefreshSkillParametersAsync(session);
@@ -530,6 +531,7 @@ public sealed partial class CombatService : IGameTicker
         character.ProgressHandlers.Subscribe(buffs.ReconcileEnergyAsync);
         CastResolved.Subscribe(AutoCounterOnCastAsync, order: GuardianHookOrder);
         CastResolved.Subscribe(ShieldBlockOnCastAsync, order: GuardianHookOrder);
+        TakenAsync.Subscribe((_, p, damage) => damage > 0 ? ShieldBlockStruckAsync(p) : Task.CompletedTask); // monster skills too
     }
 
     private long Now => _loop.NowMs;
