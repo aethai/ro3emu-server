@@ -144,6 +144,32 @@ public sealed class FlyingDragonTests : IAsyncLifetime
     }
 
     [ClientDataFact]
+    public async Task EveryoneIsToldOnceWhenTheBarFillsByTimeAndALateAccelerationGetsTheFullView()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        await Gm(alice, $"!item {LordsMane} 1");
+        await Beside(alice, 107);
+        Assert.Equal(0, await Ask(alice, FlyingDragonService.Start, new FlyingDragonStartProduceReq()));
+        // One second short of full: the bar then fills with no request from anyone.
+        await Gm(alice, "!dragon progress 9950");
+        static bool FullBar(FlyingDragonProductNotify n) => n.Info.Status == FlyingDragonProductStatus.Product
+            && n.Info.ProductInfo.ReleaseProgress == 10000;
+        await Next(bob, FlyingDragonService.Notify, FlyingDragonProductNotify.Parser, FullBar);
+        await Next(alice, FlyingDragonService.Notify, FlyingDragonProductNotify.Parser, FullBar);
+        // Only once: the next ticks (one a second) send nothing more.
+        await Assert.ThrowsAsync<TimeoutException>(() => bob.Inbox.WaitAsync(e => e.IsGame(FlyingDragonService.Notify)
+            && FullBar(FlyingDragonProductNotify.Parser.ParseFrom(e.Body)), TimeSpan.FromSeconds(2.5)));
+
+        // A panel left open past the full bar still offers acceleration: refused, but its owner gets the full view.
+        Assert.Equal(ErrorCodes.DragonDone, await Ask(alice, FlyingDragonService.Accelerate, new FlyingDragonSelfAccelerateReq()));
+        await Next(alice, FlyingDragonService.Notify, FlyingDragonProductNotify.Parser, FullBar);
+        Assert.Equal(0, await Ask(alice, FlyingDragonService.Complete, new FlyingDragonCompleteProduceReq()));
+        await Next(bob, FlyingDragonService.Notify, FlyingDragonProductNotify.Parser,
+            n => n.Info.Status == FlyingDragonProductStatus.Ceremony && n.Info.CeremonyInfo.CanThumbsUp);
+    }
+
+    [ClientDataFact]
     public async Task ARitualThatRunsOutReturnsTheManeByMail()
     {
         await using var alice = await InWorld("Alice");
