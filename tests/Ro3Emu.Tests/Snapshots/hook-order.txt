@@ -110,8 +110,9 @@ CombatService.CastLanded (4)
   CasualBattleService.CastLandedAsync
   TotemEffects.OnCastAsync
   StealthEffects.BackSlideCamouflageAsync
-CombatService.CastResolved (8)
+CombatService.CastResolved (9)
   CombatService.AutoCounterOnCastAsync
+  CombatService.ShieldBlockOnCastAsync
   CombatEffectsService.SupportSkillOnCastAsync
   SkillCastingService.ReadingExtraCastAsync
   SkillCastingService.ClassLoopsOnCastAsync
@@ -258,8 +259,9 @@ CombatService.ReviveInfoOwners (5)
 CombatService.Taken (2)
   DungeonService.<BindSubsystems> lambda
   MvpService.OnTaken
-CombatService.TakenAsync (6)
+CombatService.TakenAsync (7)
   PetCombatService.<WireGuardians> lambda
+  CombatService.<.ctor> lambda
   TotemEffects.OnTakenAsync
   CardEffects.<.ctor> lambda
   TalentProcs.OnTakenAsync

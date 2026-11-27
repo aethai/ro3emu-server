@@ -45,6 +45,10 @@ public sealed partial class SkillCastingService
         return SkillParameterRules.Effective(session, _data, requested);
     }
 
+    /// <summary>A group's configured row of a level in one mode, or null when that mode has none.</summary>
+    internal JsonElement? RowInMode(int group, int level, int mode) =>
+        ConfiguredModeRows.TryGetValue((group, level, mode), out int id) ? _data.Row("SkillConfig", id) : null;
+
     /// <summary>A group's configured row of a level in the mode the session's type 15 tuples select, or its mode 0 row when
     /// that mode has none. The tuples' other fields are not applied: <see cref="CastExtraAsync"/> applies them.</summary>
     internal JsonElement? ModeRow(GameSession session, int group, int level)
@@ -132,7 +136,7 @@ public sealed partial class SkillCastingService
     /// it shows, so without an entry the replaced skill (Focused Arrow Strike under Unlimited Shooting) neither swaps
     /// nor lights up. Each entry tells the cooldown the cast check holds for that key (<see cref="CooldownEnd"/>).
     /// </summary>
-    private static async Task SendParametersWithModeCooldownsAsync(GameSession session, SkillBeAffectedParamExNotify update, Dictionary<int, int> modes)
+    private async Task SendParametersWithModeCooldownsAsync(GameSession session, SkillBeAffectedParamExNotify update, Dictionary<int, int> modes)
     {
         var told = session.Combat.SkillProtocol.GroupModes;
         var started = new SkillCdNotify { Uuid = update.Uuid };
@@ -156,10 +160,11 @@ public sealed partial class SkillCastingService
     }
 
     /// <summary>The 31113 entry of a group's mode key: its running cooldown, or an empty entry when none runs.</summary>
-    private static SkillCdInfo ModeCooldown(GameSession session, int group, int mode, long now)
+    private SkillCdInfo ModeCooldown(GameSession session, int group, int mode, long now)
     {
         var info = new SkillCdInfo { SkillId = group, SkillMode = mode };
-        long end = CooldownEnd(session, group, mode);
+        // Shield Block's counter mode is ready while the block lives, whatever the block's shared cooldown (CombatService.ShieldBlock).
+        long end = _combat.BlockCounterMode(session, group, mode) ? 0 : CooldownEnd(session, group, mode);
         if (end > now) { info.CdStartTimestampMs = now; info.CdEndTimestampMs = end; }
         return info;
     }
@@ -223,6 +228,31 @@ public sealed partial class SkillCastingService
             SrcID = s.Role.Id, SkillID = skillId, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face,
             SessionId = NextSessionId(), SkillMs = (int)skill.ActionTime, StartTime = Now, PlayAct = true,
         });
+    }
+
+    /// <summary>
+    /// A cast the server starts for the player (Shield Block's counter when the block runs out): the row's 31100 timeline
+    /// with the caster's action, its hit on the same session, and its _kBuff1 on the caster when nothing is in reach.
+    /// </summary>
+    internal async Task CastForPlayerAsync(GameSession s, JsonElement row, IReadOnlyList<MonsterUnit> targets)
+    {
+        if (s.Role is not { } role) return;
+        var skill = new SkillConfig(row);
+        long id = NextSessionId();
+        await SendCastTimelineAsync(s, new UseInSkillInfo
+        {
+            SrcID = role.Id, SkillID = (int)skill.Id, TargetId = targets.Count > 0 ? targets[0].Uid : role.Id,
+            TargetPos = (targets.Count > 0 ? targets[0].Pos : s.Position).Clone(), Face = s.Face,
+            SessionId = id, ChantMs = 0, SkillMs = SkillMs(s, row), StartTime = Now, PlayAct = true,
+        });
+        if (targets.Count > 0)
+        {
+            await CastExtraAsync(s, row, targets, sessionId: id);
+            return;
+        }
+        foreach (var buff in skill.Buff1)
+            if (buff is [var buffId, var chance, var ms, ..] && buffId > 0 && Rolls.Proc(10000) < chance)
+                await _buffs.AddAsync(s, (int)buffId, (int)ms, role.Id);
     }
 
     public Task SendMonsterTimelineAsync(MonsterUnit monster, UseInSkillInfo info, bool highLevel = false, bool extra = false)

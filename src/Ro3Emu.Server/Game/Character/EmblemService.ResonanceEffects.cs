@@ -15,7 +15,7 @@ public sealed partial class EmblemService
     internal const int PixelThrust = 11130501, ElectroRock = 11130701, GuardiansMight = 11164501,
         ElementalEnsemble = 11230501, MixedAccompaniment = 11230701, CoordinatedHunt = 11336401, RhythmicWarg = 11336601,
         Organum = 11431001, Baptism = 11431401, Encore = 11533001, FreestyleRap = 11533101, MelodyCannon = 11631201,
-        MelodyVulcan = 11631401;
+        MelodyVulcan = 11631401, AbsoluteDefense = 11164701;
 
     /// <summary>Resonance row -> the BuffConfig rows whose skill tuples apply while it is held.</summary>
     private static readonly Dictionary<int, int[]> ResonanceModeBuffs = new()
@@ -23,6 +23,9 @@ public sealed partial class EmblemService
         // "[Phantom Thrust]'s percentage damage multiplier increases by ${1}% ... within ${2} seconds of being HIT":
         // 1133501 sets 11308 to mode 1, whose rows add +15000 to _kDamageParam1 and put Target Mark 1133601 for 10000 ms.
         [PixelThrust] = [1133501],
+        // "[Shield Block]'s DEF and MDEF bonuses increase by ${1}%": Shield Casting Passive 11164101 sets 11638 to mode 3, whose
+        // block grants DMG Reduction 11165801 (+100% DEF/MDEF where 1164501 gives +50%) and Parry 11165501 (CombatService.ShieldBlock).
+        [AbsoluteDefense] = [11164101],
         // "[Reflect Damage] range increases to ${1} meters, ... coefficient increases by ${4}%, and HIT applies Slow":
         // Switch Thorn 11163201 sets 11618 to mode 1 (_kRange 700, 1.5x _kDamageParam1, _kBuff2 slow 11163101).
         [GuardiansMight] = [11163201],
