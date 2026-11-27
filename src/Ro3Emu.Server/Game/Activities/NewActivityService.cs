@@ -680,9 +680,16 @@ public sealed partial class NewActivityService : Messaging.INpcInteractionHandle
         if (lease.AttachmentGeneration == 0) return;
         var queuedKey = (session, lease.AttachmentGeneration);
         lock (_queued) if (!_queued.Add(queuedKey)) return;
+        var queuedRole = session.Role;
+        var queuedAttachment = session.Attachment;
         _loop.PostRuntime(async () =>
         {
             try { if (_deadlines.IsCurrent(session, lease)) await ReconcileAsync(session); }
+            // The role left or attached again while the refresh waited for its admission: the admission refuses it, and
+            // the next login reconciles again. Not a loop failure (logged 72 times per S10 load test run, #484).
+            catch (OperationCanceledException) when (!ReferenceEquals(session.Role, queuedRole)
+                || !ReferenceEquals(session.Attachment, queuedAttachment) || queuedAttachment?.Cancelled == true)
+            { }
             finally { lock (_queued) _queued.Remove(queuedKey); }
         });
     }
