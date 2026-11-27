@@ -511,7 +511,7 @@ public sealed class WildAfkTests : IAsyncLifetime
     }
 
     [ClientDataFact]
-    public async Task BonusSecondsRewriteTheDailyQuestOnlyWhenAWholeMinutePasses()
+    public async Task BonusTimeMinutesUpdateTheDailyQuestWithoutWritingIt()
     {
         await using var bot = await InWorld();
         await Eligible(bot);
@@ -519,7 +519,7 @@ public sealed class WildAfkTests : IAsyncLifetime
         await Auto(bot, true);
         await Kill(bot);
         long role = (long)bot.Self!.Uuid;
-        long Stored() => DBTaskInfo.Parser.ParseFrom(Service<RoleStore>().LoadTasks(role)!).Infos[500130].CompleteNum[0];
+        byte[] Stored() => Service<RoleStore>().LoadTasks(role)!;
         void Running(long consumedToday, long elapsedMs)
         {
             var s = Session(bot).Activities.WildAfk!;
@@ -528,29 +528,30 @@ public sealed class WildAfkTests : IAsyncLifetime
             s.Info.HighMultiplierTimeSeconds = 3000; s.Info.IsSuspended = false;
             s.LastKillAtMs = now; s.AccountedAtMs = now - elapsedMs; s.RemainderMs = 0;
         }
+        byte[] stored = Stored();
         await OnOwnedLoop(bot, "AFK minute fixture", _ =>
         {
             Running(120, 0);
             return Service<TaskService>().RefreshAsync(Session(bot));
         });
-        long written = Stored();
-        Assert.InRange(written, 120, 121);
+        long shown = await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]);
+        Assert.InRange(shown, 120, 121);
+        // The count is read from the AFK state at every login: the minute is not written to the quests (#484).
+        Assert.Equal(stored, Stored());
 
-        await OnOwnedLoop(bot, "AFK seconds fixture", _ => { Running(written, 5000); return Task.CompletedTask; });
+        await OnOwnedLoop(bot, "AFK seconds fixture", _ => { Running(shown, 5000); return Task.CompletedTask; });
         await Query(bot);
-        Assert.True(await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds) >= written + 5);
-        Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
-        Assert.Equal(written, Stored());
-        // A kill settles the quests too; the seconds it consumed must not rewrite them before the minute (#484).
+        Assert.True(await State(bot, s => s.Activities.WildAfk!.ConsumedTodaySeconds) >= shown + 5);
+        Assert.Equal(shown, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
         await KillRecorded(bot);
-        Assert.Equal(written, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
-        Assert.Equal(written, Stored());
+        Assert.Equal(shown, await State(bot, s => s.Tasks!.Infos[500130].CompleteNum[0]));
 
         await OnOwnedLoop(bot, "AFK next minute fixture", _ => { Running(179, 2000); return Task.CompletedTask; });
         await Query(bot);
         await Next(bot, TaskService.TaskInfoSync, DBTaskInfoIncrement.Parser,
             x => x.Infos.TryGetValue(500130, out var q) && q.Inc?.CompleteNum?.All?.Value.Any(n => n >= 180) == true);
-        Assert.True(Stored() >= 180);
+        var written = DBTaskInfo.Parser.ParseFrom(Stored());
+        Assert.True(written.Infos[500130].CompleteNum[0] < 180);
     }
 
     [ClientDataFact]

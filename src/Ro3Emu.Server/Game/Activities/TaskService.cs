@@ -784,15 +784,51 @@ public sealed partial class TaskService
         return true;
     }
 
-    /// <summary>Persists non-reward progress. Deliveries use the atomic award boundary instead.</summary>
+    /// <summary>Persists non-reward progress. Deliveries use the atomic award boundary instead; its SQL check
+    /// compares the stored quests (CharacterService.StageAwardGrants), so a skipped derived change is safe there.</summary>
     private void Save(GameSession session)
     {
         if (session.Role is { } role && session.Tasks != null)
         {
-            _roles.SaveTasks(role.Id, session.Tasks.ToByteArray());
+            byte[] tasks = session.Tasks.ToByteArray();
+            if (!OnlyDerivedProgressChanged(session, role.Id, tasks)) _roles.SaveTasks(role.Id, tasks);
             _roles.SaveTaskRuntime(role.Id, JsonSerializer.SerializeToUtf8Bytes(session.Activities.TaskRuntime));
         }
     }
+
+    /// <summary>
+    /// Targets that <see cref="EvaluatePassive"/> reads from the role's own state, and the Running/Finished status
+    /// that follows from them, are not progress of their own: every login evaluates them again before the first
+    /// sync. When they are the only difference from the stored quests, nothing is written. A minute of Bonus Time
+    /// (106901) otherwise rewrote the quest blob on the loop at the next kill's settlement (#484). Server-side
+    /// persistence of these values is not observable in the client (inferred). Only stored bytes known without a
+    /// SQL read are compared; otherwise the save writes as before.
+    /// </summary>
+    private bool OnlyDerivedProgressChanged(GameSession session, long role, byte[] tasks)
+    {
+        if (!_roles.TryKnownTasks(role, out var stored) || stored == null || stored.AsSpan().SequenceEqual(tasks)) return false;
+        var before = DBTaskInfo.Parser.ParseFrom(stored);
+        var after = DBTaskInfo.Parser.ParseFrom(tasks);
+        WithoutDerivedProgress(session, before);
+        WithoutDerivedProgress(session, after);
+        return before.Equals(after);
+    }
+
+    private void WithoutDerivedProgress(GameSession session, DBTaskInfo tasks)
+    {
+        foreach (var info in tasks.Infos.Values.Where(i => i.Status is Running or Finished))
+        {
+            info.Status = Running;
+            if (!Defs().TryGetValue(info.TaskId, out var def)) continue;
+            for (int i = 0; i < def.Targets.Length && i < info.CompleteNum.Count; i++)
+                if (Derived(session, def, def.Targets[i])) info.CompleteNum[i] = 0;
+        }
+    }
+
+    /// <summary>The targets <see cref="EvaluatePassive"/> overwrites. A value it keeps (a system not loaded
+    /// yet returns -1) is stored progress and compared exactly.</summary>
+    private bool Derived(GameSession session, TaskDef def, long[] t) =>
+        !Supported(t) || TavernStay(session, def, t) >= 0 || PassiveValue(session, t) >= 0;
 
     internal Dictionary<long, TaskDef> Defs()
     {
