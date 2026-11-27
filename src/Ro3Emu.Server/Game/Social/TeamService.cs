@@ -82,22 +82,26 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     private long _nextId = 1L << 24;
     private TimeSpan _sinceUpdate;
 
-    /// <summary>Party EXP multiplier for a kill (‱ of TeamExpBuffNum by same-map members; the split rule itself is inferred).</summary>
-    public int ExpBonus(GameSession killer)
-    {
-        if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return 10000;
-        int sameMap = team.Members.Count(m => Session(m) is { } s && s.WorldScene == killer.WorldScene);
-        return ExpBuff[Math.Clamp(sameMap, 1, ExpBuff.Length) - 1];
-    }
+    /// <summary>Party EXP multiplier for a kill (‱ of TeamExpBuffNum by the killer's group on its map).</summary>
+    public int ExpBonus(GameSession killer) => ExpBuff[Math.Clamp(SameMapMembers(killer).Count + 1, 1, ExpBuff.Length) - 1];
 
-    /// <summary>The killer's party members on the killer's map line, online, alive and not loading a scene (PartyExpShare).</summary>
+    /// <summary>
+    /// The killer's party members on the killer's map line, online, alive and not loading a scene: the party bonuses count
+    /// them and PartyExpShare shares with them. A 40-member team counts only the killer's group of five slots, the party
+    /// the tip speaks of ("2-player Party" to five, Localization 24112-24116): the client groups slots by
+    /// LC_TeamHelper.GetGroupTeamId, (1-based index + 4) // 5, which is the 0-based slot / 5 here. (inferred)
+    /// </summary>
     internal List<GameSession> SameMapMembers(GameSession killer)
     {
         if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return [];
-        return [.. team.Members.Where(m => m != role.Id).Select(Session).OfType<GameSession>()
+        int group = team.Members.IndexOf(role.Id) / GroupSize;
+        return [.. team.Members.Where((m, slot) => m != role.Id && (team.Type != TeamType.Forty || slot / GroupSize == group))
+            .Select(Session).OfType<GameSession>()
             .Where(s => s.WorldScene == killer.WorldScene && s.Progress != null && !s.Dead && !s.SceneLoading
                 && s.Attachment?.Cancelled != true)];
     }
+
+    private const int GroupSize = 5;
 
     /// <summary>
     /// Party item drop rate for a kill (‱): PublicParamConfig.TeamDropBuffWeights per member beyond the first on the same
@@ -106,8 +110,7 @@ public sealed partial class TeamService(SessionRegistry sessions, CharacterServi
     /// </summary>
     public int DropBonus(GameSession killer)
     {
-        if (killer.Role is not { } role || !_byMember.TryGetValue(role.Id, out var team)) return 10000;
-        int sameMap = team.Members.Count(m => Session(m) is { } s && s.WorldScene == killer.WorldScene);
+        int sameMap = SameMapMembers(killer).Count + 1;
         long perMember = Data.Config.PublicParams.Of(_data).TeamDropBuffWeights ?? 0;
         return (int)Math.Clamp(10000 + perMember * (Math.Clamp(sameMap, 1, ExpBuff.Length) - 1), 10000, 100000);
     }

@@ -82,6 +82,7 @@ public sealed partial class WildAfkService : IGameTicker
         rewards.IsFieldAutoBattle = IsFieldAutoBattle;
         rewards.StageAfkKill = StageAfkKill;
         rewards.KillDropsGranted.Subscribe(DropsGrantedAsync);
+        rewards.PartyShareGranted.Subscribe(PartyShareGrantedAsync);
         daily.BeforeReset = BeforeDailyResetAsync;
         daily.PlanAfkRollover = PlanDailyRollover;
     }
@@ -673,6 +674,30 @@ public sealed partial class WildAfkService : IGameTicker
             settlement.AfkRecordStaged = false;
             settlement.ResetAfkStage = null;
         };
+    }
+
+    /// <summary>
+    /// A party member's share of a kill (RewardService PartyExpShare) keeps its Bonus Time running like its own kill would: a
+    /// healer fighting beside the killer is not idle (NoKillTimeout). Its AFK records still count only its own kills. (inferred)
+    /// </summary>
+    private async Task PartyShareGrantedAsync(GameSession s)
+    {
+        if (s.Activities.WildAfk is not { } state || !Unlocked(s) || !Field(s)) return;
+        await state.Gate.WaitAsync();
+        state.Gate.Release();
+        if (!Owns(s, state)) return;
+        using var scope = await EnterStateScopeAsync(s, state, "party-share");
+        if (_loop.Owners != null && scope == null) return;
+        await state.Gate.WaitAsync();
+        try
+        {
+            if (!Owns(s, state) || !s.Combat.AutoBattle || MvpAggro(s)) return;
+            long now = Now;
+            await ReconcileCoreAsync(s, now); // the time before counts as it was (a lapsed monitor stays lapsed)
+            state.LastKillAtMs = now;
+            await ReconcileCoreAsync(s, now);
+        }
+        finally { state.Gate.Release(); }
     }
 
     /// <summary>Record only RewardService's actual granted self drops (including corrected EXP), never inventory grants/quest awards.</summary>

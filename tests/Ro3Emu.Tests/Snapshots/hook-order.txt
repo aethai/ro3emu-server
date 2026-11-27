@@ -352,6 +352,8 @@ RewardService.ExtraKillDrops (3)
 RewardService.KillDropsGranted (2)
   WildAfkService.DropsGrantedAsync
   MonsterHuntService.KilledAsync
+RewardService.PartyShareGranted (1)
+  WildAfkService.PartyShareGrantedAsync
 SceneService.AfterLoaded (6)
   InstanceService.NotifyRecoveredAsync
   WorldEffectsService.ReplayAsync

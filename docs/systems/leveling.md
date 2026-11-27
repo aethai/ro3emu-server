@@ -76,21 +76,29 @@ the Base EXP of open-field kills by the killer's level ([monster AI](monster-ai.
 
 ## Party EXP sharing
 
-Not original: on the original server a kill's EXP goes to the killer alone; the party's part is the bonus
-`PublicParamConfig.TeamExpBuffNum` gives the killer for each member on the same map. A small server can share kill EXP
-with the party instead:
+The client says nothing on how the original split a kill's EXP. Its party tip only promises a bonus for fighting together
+on one field map: `PublicParamConfig.TeamExpBuffNum`, +25% per member up to +100% for five (Localization 24112-24116).
+The server shares a kill with the party by default (owner, 27 Nov 2026; inferred):
 
 ```json
 "Ro3Emu": { "PartyExpShare": { "Enabled": true, "Mode": "Split" } }
 ```
 
-With it on, a kill's Base EXP (after the level gap, the party bonus and `FieldExpRates`) is shared with the killer's party
-members who are online, alive and on the same map line. `Split` divides it evenly between the killer and those members,
-`Full` gives each of them the killer's whole amount. Each member's part is that member's own EXP grant, with its
-catch-up bonus and Job EXP; items stay with the killer. Off by default (`Enabled` false).
+- **The pool.** The Base EXP the monster dropped, times the party bonus.
+- **Who shares.** The killer's party members who are online, alive, not loading a scene and on the same map line. In a
+  40-member team only the killer's group of five slots counts, for the bonus too (`LC_TeamHelper.GetGroupTeamId`).
+- **The parts.** `Split` divides the pool evenly between the killer and those members, `Full` gives each of them all of
+  it.
+- **Each part is personal.** It gets its recipient's own level gap (`LvExpCorrectionConfig`), `FieldExpRates` rule and
+  catch-up bonus, each once, and its Job EXP from that. The Odin Statue's field bonus stays with the killer. Items stay
+  with the killer.
+- **Bonus Time.** A member's part keeps its own Bonus Time running like a kill of its own (no `NoKillTimeout` while it
+  fights beside the killer); its AFK records still count only its own kills.
+
+`Enabled: false` gives a kill's EXP to the killer alone.
 
 ## Tests
 
 ```powershell
-dotnet test tests/Ro3Emu.Tests --filter "FullyQualifiedName~LevelingTests|FullyQualifiedName~DailyTests"
+dotnet test tests/Ro3Emu.Tests --filter "FullyQualifiedName~LevelingTests|FullyQualifiedName~DailyTests|FullyQualifiedName~PartyExpShareTests"
 ```
