@@ -92,6 +92,24 @@ public readonly partial record struct SkillConfig(JsonElement Row)
     [ConfigField("_kSpSkillParam")] public partial long[] SpSkillParam { get; }
 
     /// <summary>
+    /// The description's "@{n}" values: the numbers _iDescription lists after its text id, in order (its colour and link
+    /// tags are strings that are not numbers). Index 0 is @{1}.
+    /// </summary>
+    public double[] DescriptionArgs() => ArgsOf(Description);
+
+    /// <summary>The "@{n}" values of a SkillConfig or BuffConfig _iDescription.</summary>
+    internal static double[] ArgsOf(JsonElement? description)
+    {
+        if (description is not { ValueKind: JsonValueKind.Array } list) return [];
+        var args = new List<double>();
+        foreach (var item in list.EnumerateArray().Skip(1))
+            if (item.ValueKind == JsonValueKind.String && double.TryParse(item.GetString(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double value)) args.Add(value);
+            else if (item.ValueKind == JsonValueKind.Number) args.Add(item.GetDouble());
+        return [.. args];
+    }
+
+    /// <summary>
     /// This row as a hit whose damage only a description gives (talent procs): PATK * ratio (basis points) + flat, of an
     /// element and a target cap (0 keeps the row's). It keeps the row's id, release and show, but drops its group, tags,
     /// script, buffs and shown hit count, so no skill modifier, script effect or buff of the original applies to it.

@@ -10,6 +10,10 @@ internal static class SkillShow
         show is { } row && row.TryGetProperty("m_kAtkPoints", out var points) && points.ValueKind == JsonValueKind.Array
             ? [.. points.EnumerateArray().Select(point => GameData.Number(point) ?? 0)] : [];
 
+    /// <summary>The show's m_fTotalTime in seconds, or 0 when absent.</summary>
+    public static double TotalTime(JsonElement? show) =>
+        show is { } row && row.TryGetProperty("m_fTotalTime", out var total) ? GameData.Number(total) ?? 0 : 0;
+
     /// <summary>The show's m_fAtkRange in meters, or 0 when absent.</summary>
     public static double AttackRange(JsonElement? show) =>
         show is { } row && row.TryGetProperty("m_fAtkRange", out var atk) ? GameData.Number(atk) ?? 0 : 0;

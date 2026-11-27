@@ -68,9 +68,9 @@ public sealed partial class EmblemService
     /// <summary>
     /// SkillInUse (6) of the reached stages: the SkillConfig rows whose _iJob is 0 or in the role's job line, the filter
     /// LC_SpecialEffectHelper (:50-88) applies before naming one. These are season profession-skill variants (e.g.
-    /// 11130101 "Dragon's Descent") whose described behaviour (cast-triggered multipliers, stuns, skill swaps) has no
-    /// config operation and no server-side profession-skill system to attach to. What the combat model supports for a
-    /// held passive row is applied: its _kAttri, like CombatService.PassiveAttributes (empty in every current row).
+    /// 11130101 "Dragon's Descent") whose described behaviour has no config operation of its own: the skill forms they
+    /// switch to are EmblemService.ResonanceEffects', the cast and kill rules ResonancePassives'. A held passive row's
+    /// _kAttri applies too, like CombatService.PassiveAttributes (empty in every current row).
     /// Holding the row exactly while the stage is reached is inferred timing.
     /// </summary>
     internal IEnumerable<int> ResonanceSkills(GameSession session)

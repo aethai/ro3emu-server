@@ -34,4 +34,7 @@ public readonly partial record struct BuffConfig(JsonElement Row)
     [ConfigField("_kDescData")] public partial string[] DescData { get; }
     [ConfigField("_kLogicData")] public partial long[] LogicData { get; }
     [ConfigField("_kSkillAttributeList")] public partial JsonElement? SkillAttributeList { get; }
+
+    /// <summary>The description's "@{n}" values (SkillConfig.DescriptionArgs).</summary>
+    public double[] DescriptionArgs() => SkillConfig.ArgsOf(Description);
 }

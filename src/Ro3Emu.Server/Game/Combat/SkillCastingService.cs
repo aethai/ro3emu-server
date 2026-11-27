@@ -34,7 +34,7 @@ public sealed partial class SkillCastingService
 
     public SkillCastingService(CombatService combat, World world, MonsterService monsters, CharacterService character,
         SkillService skills, SceneService scene, BuffService buffs, SessionRegistry sessions, GameData data,
-        GameLoop loop, SeasonTalentService talents, ILogger<SkillCastingService> log)
+        GameLoop loop, SeasonTalentService talents, EmblemService emblems, ILogger<SkillCastingService> log)
     {
         _combat = combat;
         _world = world;
@@ -50,6 +50,7 @@ public sealed partial class SkillCastingService
         skills.Learned.Subscribe(RefreshSkillParametersAsync, order: -10);
         buffs.Changed.Subscribe(RefreshSkillParametersAsync, order: -10);
         talents.EffectsChanged.Subscribe(RefreshSkillParametersAsync);
+        emblems.EffectsChanged.Subscribe(RefreshSkillParametersAsync);
         scene.Loaded.Subscribe(RefreshSkillParametersAsync);
         scene.Leaving.Subscribe(ClearSceneSkillProtocolAsync, order: SceneService.LeaveOrderCombat);
         skills.QueueEligibility = CanQueueSkill;

@@ -129,6 +129,7 @@ internal static class SkillParameterRules
         var talents = session.TalentSkillModifiers;
         signature = unchecked(((signature * 31 + RuntimeHelpers.GetHashCode(talents)) * 31
             + RuntimeHelpers.GetHashCode(session.PassiveSkillModifiers)) * 31 + RuntimeHelpers.GetHashCode(session.TalentChargeModifiers));
+        signature = unchecked(signature * 31 + RuntimeHelpers.GetHashCode(session.ResonanceSkillModifiers));
         if (talents.Any(t => t.Weapon != 0) || session.PassiveSkillModifiers.Any(p => p.Weapons.Length > 0))
             foreach (var item in session.Items)
                 if (item.Grid is 1 or 2) signature = unchecked((signature * 31 + item.Entry) * 31 + item.Grid);
@@ -138,6 +139,7 @@ internal static class SkillParameterRules
             if (weapons.Length == 0 || weapons.Any(w => Wields(session, data, w))) result.Add(mod);
         foreach (var (weapon, buffGroup, mod) in talents)
             if ((weapon == 0 || Wields(session, data, weapon)) && (buffGroup == 0 || HasBuffGroup(session, data, buffGroup))) result.Add(mod);
+        result.AddRange(session.ResonanceSkillModifiers);
         result.AddRange(session.TalentChargeModifiers);
         foreach (var buff in session.Buffs)
         {

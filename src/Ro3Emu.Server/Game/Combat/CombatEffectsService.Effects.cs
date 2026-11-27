@@ -628,7 +628,8 @@ public sealed partial class CombatEffectsService
 
     /// <summary>"Gain [Endure] while casting this skill" with no row in _kBuff1 (Flowing Shadow, Shadow Guard): its text links buff 903101.</summary>
     private const int EndureBuff = 903101;
-    private static bool EndureWhileCasting(string script) => script is "yingliu" or "yingliuS1" or "qianying";
+    // Thousand Shadows' Freestyle Rap form (qianyingS1) is the same cast (inferred, as yingliuS1 is yingliu's).
+    private static bool EndureWhileCasting(string script) => script is "yingliu" or "yingliuS1" or "qianying" or "qianyingS1";
 
     private int PilesFor(int buffId, int enemiesHit) => BuffConfig.Get(_data, buffId) is { MaxStack: > 1 } buff && SkillShieldRules.IsShield(buff)
         ? (int)Math.Clamp(enemiesHit, 1, buff.MaxStack) : 1;

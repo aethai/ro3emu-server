@@ -49,6 +49,20 @@ public sealed partial class TalentProcs
         if (SkillConfig.Get(_data, row) is { } hit && targets.Count > 0) await _combat.CastExtraAsync(s, hit.Row, targets);
     }
 
+    /// <summary>A named row in the mode the session's tuples select for its group (Rhythmic Warg's followers).</summary>
+    private async Task CastModeRowAsync(GameSession s, long row, IReadOnlyList<MonsterUnit> targets)
+    {
+        if (SkillConfig.Get(_data, row) is not { } plain || targets.Count == 0) return;
+        var hit = _combat.ModeRow(s, (int)plain.SkillId, (int)plain.Level) ?? plain.Row;
+        await _combat.CastExtraAsync(s, hit, targets);
+    }
+
+    /// <summary>Rhythmic Warg (Soul Echo resonance): "the Wolf Minion Summon count for the [King of the Wargs] effect
+    /// increases by @{1}".</summary>
+    private int RhythmicFollowers(GameSession s) =>
+        s.ResonanceSkills.Length > 0 && Array.IndexOf(s.ResonanceSkills, EmblemService.RhythmicWarg) >= 0
+        && SkillConfig.Get(_data, EmblemService.RhythmicWarg)?.DescriptionArgs() is [var extra, ..] ? (int)extra : 0;
+
     /// <summary>A "targeted bow skill": one locked on its target, under the weapon condition its row holds (LC_ConditionList [2001, 11]).</summary>
     private bool TargetedBowSkill(SkillConfig cast) => cast.Release == SkillRelease.Lock && !cast.IsNormalAttack(_data)
         && _data.Row("LC_ConditionList", cast.SkillCondition) is { } condition && new LCConditionList(condition).HasSubCondition(WeaponCondition, BowWeapon);
@@ -66,8 +80,9 @@ public sealed partial class TalentProcs
         if (Holding(s, WargKingGroup) is { } king && BuffConfig.Get(_data, king.ConfigId)?.LogicData is [var chargeRow, var biteRow, ..])
         {
             if (cast.SkillId == WargStrike)
-                for (int follower = 0; follower < WargFollowers && target.Hp > 0; follower++) await CastNamedRowAsync(s, chargeRow, [target]);
-            else if (cast.SkillId == WargBite && target.Hp > 0) await CastNamedRowAsync(s, biteRow, [target]);
+                for (int follower = 0; follower < WargFollowers + RhythmicFollowers(s) && target.Hp > 0; follower++)
+                    await CastModeRowAsync(s, chargeRow, [target]);
+            else if (cast.SkillId == WargBite && target.Hp > 0) await CastModeRowAsync(s, biteRow, [target]);
         }
         var logic = cast.LogicData;
         switch (cast.ScriptLogic)
@@ -134,9 +149,11 @@ public sealed partial class TalentProcs
         }
         var skill = new SkillConfig(row);
         // Crimson Rock: "a ${5}% Chance to trigger Meteorite"; Tetra Vortex the same on its Fire hit, each [chance], and the text links skill/1235001.
+        // Its Elemental Attunement form keeps [6000] while the buff's text raises the chance "to ${2}%" (ResonancePassives).
         if (skill.LogicData is [var meteorite, ..] && target.Hp > 0 && (skill.ScriptLogic.StartsWith("CrimsonRock", StringComparison.Ordinal)
                 || skill.ScriptLogic.StartsWith("TetraVortex", StringComparison.Ordinal) && skill.EleType == FireElement)
-            && _combat.Rolls.Proc(10000) < meteorite) await CastNamedRowAsync(s, MeteoriteRow, [target]);
+            && _combat.Rolls.Proc(10000) < (ResonancePassives.IsAttuned(_data, skill) ? ResonancePassives.AttunedChance(_data) : meteorite))
+            await CastNamedRowAsync(s, MeteoriteRow, [target]);
         // Melt Down: "there is a ${4}% Chance to reduce its PATK and DEF": [PvP chance, its time, the debuff, the debuff's time].
         if (Holding(s, MeltDownGroup) is { } melt && BuffConfig.Get(_data, melt.ConfigId) is { LogicData: [_, _, var debuff, var ms, ..] } meltRow
             && target.Hp > 0 && _combat.Rolls.Proc(100) < Value(meltRow.DescData, 3)) await _buffs.AddSupportAsync(target, (int)debuff, (int)ms, s.Role!.Id);
