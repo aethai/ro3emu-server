@@ -237,6 +237,14 @@ public sealed class GuardianPetTests
         private void Write(string name, object value) =>
             File.WriteAllText(Path.Combine(_root, "config", name + ".json"), JsonSerializer.Serialize(value));
 
+        /// <summary>A pet change as PetService commits one: a new DBPetInfo, which the stat memo sees by reference.</summary>
+        public void EditPets(Action<DBPetInfo> edit)
+        {
+            var next = Session.Pets!.Clone();
+            edit(next);
+            Session.Pets = next;
+        }
+
         public Task Equip() => Loop.InvokeAsync(async () =>
         {
             Session.Progress!.Level = 40;
@@ -304,34 +312,43 @@ public sealed class GuardianPetTests
         await Refused(Child);
         await f.Loop.InvokeAsync(() =>
         {
-            var plan = f.Session.Pets!.SetupPlans[0];
-            plan.SetUpPets.Remove(1);
-            plan.SetUpPets[2] = Pet;
+            f.EditPets(pets =>
+            {
+                pets.SetupPlans[0].SetUpPets.Remove(1);
+                pets.SetupPlans[0].SetUpPets[2] = Pet;
+            });
             return Task.CompletedTask;
         });
         await Refused(); // utility slots keep their passive/stat role but cannot cast Protect
         await f.Loop.InvokeAsync(async () =>
         {
-            var plan = f.Session.Pets!.SetupPlans[0];
-            plan.SetUpPets.Clear();
-            plan.SupportPets[1] = Pet;
+            f.EditPets(pets =>
+            {
+                pets.SetupPlans[0].SetUpPets.Clear();
+                pets.SetupPlans[0].SupportPets[1] = Pet;
+            });
             await f.Character.RefreshStatsAsync(f.Session);
         });
         Assert.Equal(deployed - 13 + 7, await f.Read(() => f.Character.Stats(f.Session)[AttributeId.Atk]));
         await Refused();
         await f.Loop.InvokeAsync(async () =>
         {
-            var plan = f.Session.Pets!.SetupPlans[0];
-            plan.SupportPets.Clear();
-            plan.SetUpPets[99] = Pet; // invalid persisted slot must not grant bonuses or guardian admission
+            f.EditPets(pets =>
+            {
+                pets.SetupPlans[0].SupportPets.Clear();
+                pets.SetupPlans[0].SetUpPets[99] = Pet; // invalid persisted slot must not grant bonuses or guardian admission
+            });
             await f.Character.RefreshStatsAsync(f.Session);
         });
         Assert.Equal(deployed - 13, await f.Read(() => f.Character.Stats(f.Session)[AttributeId.Atk]));
         await Refused();
         await f.Loop.InvokeAsync(() =>
         {
-            f.Session.Pets!.SetupPlans[0].SetUpPets[1] = Pet;
-            f.Session.Pets.ListPet.Clear();
+            f.EditPets(pets =>
+            {
+                pets.SetupPlans[0].SetUpPets[1] = Pet;
+                pets.ListPet.Clear();
+            });
             return Task.CompletedTask;
         });
         await Refused();
@@ -348,8 +365,11 @@ public sealed class GuardianPetTests
         int slot = (int)SkillWheelSlotType.SkillWheelPet;
         await f.Loop.InvokeAsync(async () =>
         {
-            f.Session.Pets!.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
-            f.Session.Pets.SetupPlans[0].SetUpPets[2] = SecondPet;
+            f.EditPets(pets =>
+            {
+                pets.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
+                pets.SetupPlans[0].SetUpPets[2] = SecondPet;
+            });
             await skills.SyncAsync(f.Session);
             Assert.Equal(Wrapper, skills.Build(f.Session).SkillWheel.WhellSkills[slot].SkillConfigId);
         });
@@ -386,11 +406,14 @@ public sealed class GuardianPetTests
         await f.Equip();
         await f.Loop.InvokeAsync(() =>
         {
-            f.Session.Pets!.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
-            var plan = f.Session.Pets.SetupPlans[0];
-            plan.SetUpPets[1] = SecondPet;
-            if (support) plan.SupportPets[1] = Pet;
-            else plan.SetUpPets[2] = Pet;
+            f.EditPets(pets =>
+            {
+                pets.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
+                var plan = pets.SetupPlans[0];
+                plan.SetUpPets[1] = SecondPet;
+                if (support) plan.SupportPets[1] = Pet;
+                else plan.SetUpPets[2] = Pet;
+            });
             return Task.CompletedTask;
         });
         await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = SecondWrapper });
@@ -410,9 +433,12 @@ public sealed class GuardianPetTests
         await f.Equip();
         await f.Loop.InvokeAsync(async () =>
         {
-            f.Session.Pets!.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
-            f.Session.Pets.SetupPlans[0].SetUpPets[1] = SecondPet;
-            f.Session.Pets.SetupPlans[0].SetUpPets[2] = Pet;
+            f.EditPets(pets =>
+            {
+                pets.ListPet[SecondPet] = new PetData { PetId = SecondPet, Star = 1 };
+                pets.SetupPlans[0].SetUpPets[1] = SecondPet;
+                pets.SetupPlans[0].SetUpPets[2] = Pet;
+            });
             await f.Character.SetHpSpAsync(f.Session, 1, null);
         });
         await bot.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = SecondWrapper });
@@ -440,8 +466,11 @@ public sealed class GuardianPetTests
         await f.Equip();
         await f.Loop.InvokeAsync(async () =>
         {
-            f.Session.Pets!.SetupPlans[0].SetUpPets.Remove(1);
-            f.Session.Pets.SetupPlans[0].SetUpPets[2] = Pet;
+            f.EditPets(pets =>
+            {
+                pets.SetupPlans[0].SetUpPets.Remove(1);
+                pets.SetupPlans[0].SetUpPets[2] = Pet;
+            });
             var target = await f.SpawnMonsterAsync();
             // Exercise the shared positive-hit callback used by ordinary guardian damage.
             var row = JsonSerializer.SerializeToElement(new { _iID = SecondChild, _iSystemType = 41, _kSkillCategory = DamageCategory });
@@ -472,15 +501,18 @@ public sealed class GuardianPetTests
             await f.Combat.CastAsync(f.Session, new CastSkillReq { SkillId = Wrapper, TargetId = f.Session.Role!.Id });
             switch (change)
             {
-                case "plan": f.Session.Pets!.CurrentPlan = 1; break;
-                case "unequip": f.Session.Pets!.SetupPlans[0].SetUpPets.Clear(); break;
-                case "star": f.Session.Pets!.ListPet[Pet].Star++; break;
+                case "plan": f.EditPets(pets => pets.CurrentPlan = 1); break;
+                case "unequip": f.EditPets(pets => pets.SetupPlans[0].SetUpPets.Clear()); break;
+                case "star": f.EditPets(pets => pets.ListPet[Pet].Star++); break;
                 case "scene": f.Session.SceneGeneration++; break;
-                case "stage": f.Session.Pets!.ListPet[Pet].StarProgress++; break;
+                case "stage": f.EditPets(pets => pets.ListPet[Pet].StarProgress++); break;
                 case "slot-locked": f.Session.Progress!.Level = 1; break;
                 case "moved-to-utility":
-                    f.Session.Pets!.SetupPlans[0].SetUpPets.Remove(1);
-                    f.Session.Pets.SetupPlans[0].SetUpPets[2] = Pet;
+                    f.EditPets(pets =>
+                    {
+                        pets.SetupPlans[0].SetUpPets.Remove(1);
+                        pets.SetupPlans[0].SetUpPets[2] = Pet;
+                    });
                     break;
             }
         });

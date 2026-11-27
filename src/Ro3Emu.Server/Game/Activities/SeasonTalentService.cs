@@ -326,6 +326,7 @@ public sealed partial class SeasonTalentService
         if (s.Season.SeasonTalent == null || s.Progress == null || !Available(s)) return ErrorCodes.FeatureUnavailable;
         if (SeasonTalentConfig.Get(_data, id) is not { } row) return ErrorCodes.TalentInvalid;
         BuildUnlocks(s);
+        s.StatsMemo = null; // the unlocks changed in place (also when the upgrade is then refused)
         var state = s.Season.SeasonTalent;
         if (!state.UnlockedNode.GetValueOrDefault(id)) return ErrorCodes.TalentLocked;
         oath = row.Type == PvpNodeType;

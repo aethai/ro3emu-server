@@ -29,13 +29,17 @@ public sealed partial class CharacterStatsService(CharacterService character, Ga
     /// Recomputes what ENTITYSELF and AOI bases show of this player (RoleSessionService.PlayerEntity reads it from the
     /// session): the property list (base stats, derived stats, HP/SP, level) and the equipment look.
     /// </summary>
-    public void Refresh(GameSession session)
+    public void Refresh(GameSession session) => RefreshSheet(session);
+
+    /// <summary><see cref="Refresh"/>, returning the sheet it published: built from the inputs, and kept as the memo for
+    /// the combat paths that read it next (a buff change refreshed, then rebuilt twice more).</summary>
+    private StatSheet RefreshSheet(GameSession session)
     {
-        session.StatsMemo = null; // a refresh publishes what changed: always from the inputs
-        var stats = Stats(session);
+        var stats = Sheet(session, fresh: true, out _);
         session.EntityProperties = EntityPropertiesOf(stats);
         session.Profile.EquipLook = EquipInfo(session);
         session.Speed = stats[Speed];
+        return stats;
     }
 
     /// <summary>
@@ -84,7 +88,7 @@ public sealed partial class CharacterStatsService(CharacterService character, Ga
     /// <summary>
     /// The character's full stat sheet. A cast, swing, hit taken, guardian pet pulse, team refresh and power probe read it
     /// repeatedly while nothing it depends on changes. Within an allowed work item (<see cref="ReuseStatsInThisWork"/>) the
-    /// build part is memoized for up to <see cref="StatsMemoMaxAgeMs"/> (1 s) while its inputs are unchanged
+    /// build part is memoized for up to <see cref="StatsMemoMaxAgeMs"/> (3 s) while its inputs are unchanged
     /// (<see cref="StatsMemoEntry"/>) and no buff reached its expiry, and dropped on every <see cref="Refresh"/>. A build
     /// in progress (a totem's HP condition asks for MaxHP) and a projected plan (GenreService) neither read nor store it.
     /// HP, SP and the dynamic properties are applied on every call.
@@ -93,15 +97,20 @@ public sealed partial class CharacterStatsService(CharacterService character, Ga
 
     /// <param name="readsHp">The sheet depends on the current HP (a totem's HP condition, SpecialEffectConfig op 10): a
     /// new HP needs a new sheet, not only new HP values.</param>
-    internal StatSheet Stats(GameSession session, out bool readsHp)
+    internal StatSheet Stats(GameSession session, out bool readsHp) => Sheet(session, fresh: false, out readsHp);
+
+    /// <param name="fresh">A <see cref="Refresh"/>: always from the inputs, and kept as the memo in any work item.</param>
+    private StatSheet Sheet(GameSession session, bool fresh, out bool readsHp)
     {
         var p = session.Progress!;
         long serial = character.WorkSerial?.Invoke() ?? -1;
-        if (serial != session.StatsReuseSerial || session.StatsBuildDepth != 0 || session.StatsMemoBypass != 0)
-            serial = -1; // not in a hot path's work, inside a build or a projection: always fresh
+        if (fresh) session.StatsMemo = null; // a refresh publishes what changed
+        // Not in a hot path's work, inside a build or a projection: always fresh.
+        bool nested = session.StatsBuildDepth != 0 || session.StatsMemoBypass != 0;
+        bool reuse = !fresh && !nested && serial >= 0 && serial == session.StatsReuseSerial;
         long now = session.NowMs; // one reading for the memo's checks and its verification
         StatSheet sheet;
-        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo && Unchanged(memo, session, p, now))
+        if (reuse && session.StatsMemo is StatsMemoEntry memo && Unchanged(memo, session, p, now))
         {
             sheet = memo.Sheet.Clone();
             readsHp = memo.ReadHp;
@@ -111,7 +120,7 @@ public sealed partial class CharacterStatsService(CharacterService character, Ga
         {
             sheet = TrackedBuild(session, p, out readsHp);
             // A Survivor Battle build reads the match's own career and pack, which the memo does not track.
-            if (serial >= 0 && character.MatchAttributes?.Invoke(session) == null)
+            if ((reuse || fresh && !nested) && character.MatchAttributes?.Invoke(session) == null)
                 session.StatsMemo = Memo(session, p, now, readsHp, sheet.Clone());
         }
         ApplyHpSp(session, sheet);
@@ -341,8 +350,7 @@ public sealed partial class CharacterStatsService(CharacterService character, Ga
     internal async Task SendStatsAsync(GameSession session, bool showChange = false)
     {
         var oldIds = session.EntityProperties.Select(p => (int)p.Id).ToHashSet();
-        Refresh(session);
-        var stats = Stats(session);
+        var stats = RefreshSheet(session);
         var all = new AllProperty { EntityID = session.Role!.Id };
         foreach (var id in PropertyIds(stats).Union(oldIds).Union(session.Profile.SentPropertyIds).Order())
         {
