@@ -33,6 +33,12 @@ Or keep a class's own host setup and point it at the fixture: `o.GameDataDir = S
 does not: it looks for `data/config` in the folders above the test binaries and silently uses your client's export,
 so the test passes on your machine and not in CI. A client-data test sets `GameDataDir` to the repository's `data/`.
 
+Every test host also verifies the stat memo (`Ro3Emu:Testing:VerifyStatsCache`, set by `TestHostDefaults`): each time a
+combat path reuses a memoized stat sheet, the server builds it again from its inputs, and a difference ends the test
+process with the role and the attributes that differ. The memo (`CharacterStatsService.Memo.cs`) is keyed on the inputs
+it knows about; that message means a state change it does not notice, usually an object edited in place without a
+`Refresh`. Give the memo that input, or clear `StatsMemo` where the change happens. Don't turn the check off.
+
 When a class has both kinds of tests, put the host and helpers in an abstract base with an abstract `GameDataDir` and
 derive one class per data set (see `GuildHuntingHost`, `MailTestsHost`, `AuctionTestsHost`).
 

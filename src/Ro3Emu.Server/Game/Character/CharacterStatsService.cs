@@ -10,7 +10,8 @@ using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
-public sealed class CharacterStatsService(CharacterService character, GameData data, World world)
+public sealed partial class CharacterStatsService(CharacterService character, GameData data, World world,
+    Microsoft.Extensions.Options.IOptions<ServerOptions>? options = null)
 {
     private const uint OnePropertyChange = CharacterService.OnePropertyChange;
     private const uint AoiAttrChange = CharacterService.AoiAttrChange;
@@ -72,15 +73,6 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         return slots;
     }
 
-    /// <summary>Max ticks (4 * 50 ms = 200 ms) a hot-path memoized build sheet may be reused while all tracked inputs match.</summary>
-    private const long StatsMemoMaxTickAge = 4;
-
-    /// <summary>The build part of a sheet (before HP, SP and the dynamic properties) and what it was computed from.</summary>
-    private sealed record StatsMemoEntry(long Tick, RoleProgress Progress, int Career, long Level,
-        int S0, int S1, int S2, int S3, int S4, int S5, int ItemCount,
-        long SpeedBonus, long Mount, long? CurrentHp, long StatusBits, bool Dead, ActiveBuff[] Buffs,
-        StatSheet Sheet);
-
     /// <summary>A combat/ticker path (cast, hit, swing, guardian pulse, team/power tick) allows <see cref="Stats"/> to reuse
     /// the build part while tracked inputs are unchanged and no <see cref="Refresh"/> ran. Everywhere else (GM ops, trades,
     /// equipment) the sheet is fresh.</summary>
@@ -90,36 +82,39 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
     }
 
     /// <summary>
-    /// The character's full stat sheet. A cast, guardian pet pulse, team refresh and power probe read it repeatedly while
-    /// nothing it depends on changes. Within an allowed work item (<see cref="ReuseStatsInThisWork"/>) the build part is
-    /// memoized across up to <see cref="StatsMemoMaxTickAge"/> ticks (200 ms) while progress, career, level, base stats,
-    /// item count, buff list, HP, combat status, dead flag, mount and GM speed are unchanged, and dropped on every
-    /// <see cref="Refresh"/>. HP, SP and the dynamic properties are applied on every call.
+    /// The character's full stat sheet. A cast, swing, hit taken, guardian pet pulse, team refresh and power probe read it
+    /// repeatedly while nothing it depends on changes. Within an allowed work item (<see cref="ReuseStatsInThisWork"/>) the
+    /// build part is memoized for up to <see cref="StatsMemoMaxAgeMs"/> (1 s) while its inputs are unchanged
+    /// (<see cref="StatsMemoEntry"/>) and no buff reached its expiry, and dropped on every <see cref="Refresh"/>. A build
+    /// in progress (a totem's HP condition asks for MaxHP) and a projected plan (GenreService) neither read nor store it.
+    /// HP, SP and the dynamic properties are applied on every call.
     /// </summary>
-    public StatSheet Stats(GameSession session)
+    public StatSheet Stats(GameSession session) => Stats(session, out _);
+
+    /// <param name="readsHp">The sheet depends on the current HP (a totem's HP condition, SpecialEffectConfig op 10): a
+    /// new HP needs a new sheet, not only new HP values.</param>
+    internal StatSheet Stats(GameSession session, out bool readsHp)
     {
         var p = session.Progress!;
         long serial = character.WorkSerial?.Invoke() ?? -1;
-        if (serial != session.StatsReuseSerial) serial = -1; // not in a hot path's work: always fresh
-        long tick = character.TickSerial?.Invoke() ?? serial;
+        if (serial != session.StatsReuseSerial || session.StatsBuildDepth != 0 || session.StatsMemoBypass != 0)
+            serial = -1; // not in a hot path's work, inside a build or a projection: always fresh
+        long now = session.NowMs; // one reading for the memo's checks and its verification
         StatSheet sheet;
-        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo
-            && tick >= memo.Tick && tick - memo.Tick <= StatsMemoMaxTickAge
-            && Unchanged(memo, session, p))
+        if (serial >= 0 && session.StatsMemo is StatsMemoEntry memo && Unchanged(memo, session, p, now))
+        {
             sheet = memo.Sheet.Clone();
+            readsHp = memo.ReadHp;
+            if (_verifyMemo) VerifyMemo(session, p, sheet, memo);
+        }
         else
         {
-            sheet = BuildStats(session, p);
-            if (serial >= 0)
-                session.StatsMemo = new StatsMemoEntry(tick, p, p.Career, p.Level,
-                    p.Stats[0], p.Stats[1], p.Stats[2], p.Stats[3], p.Stats[4], p.Stats[5],
-                    session.Items.Count, session.Combat.SpeedBonus, MountService.Rider(session),
-                    session.CurrentHp, session.StatusBits, session.Dead, [.. session.Buffs],
-                    sheet.Clone());
+            sheet = TrackedBuild(session, p, out readsHp);
+            // A Survivor Battle build reads the match's own career and pack, which the memo does not track.
+            if (serial >= 0 && character.MatchAttributes?.Invoke(session) == null)
+                session.StatsMemo = Memo(session, p, now, readsHp, sheet.Clone());
         }
-        long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
-        sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
-        sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
+        ApplyHpSp(session, sheet);
         foreach (var provider in character.DynamicProperties.Handlers)
             foreach (var (id, value) in provider(session))
             {
@@ -131,18 +126,12 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
         return sheet;
     }
 
-    private static bool Unchanged(StatsMemoEntry memo, GameSession session, RoleProgress p)
+    /// <summary>HP and SP (2000/2001) are the session's current values within the sheet's maxima; unset means full.</summary>
+    private static void ApplyHpSp(GameSession session, StatSheet sheet)
     {
-        if (!ReferenceEquals(memo.Progress, p) || memo.Career != p.Career || memo.Level != p.Level
-            || memo.S0 != p.Stats[0] || memo.S1 != p.Stats[1] || memo.S2 != p.Stats[2]
-            || memo.S3 != p.Stats[3] || memo.S4 != p.Stats[4] || memo.S5 != p.Stats[5]
-            || memo.ItemCount != session.Items.Count
-            || memo.SpeedBonus != session.Combat.SpeedBonus || memo.Mount != MountService.Rider(session)
-            || memo.CurrentHp != session.CurrentHp || memo.StatusBits != session.StatusBits
-            || memo.Dead != session.Dead || memo.Buffs.Length != session.Buffs.Count) return false;
-        for (int i = 0; i < memo.Buffs.Length; i++)
-            if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
-        return true;
+        long maxHp = sheet[MaxHp], maxSp = sheet[MaxSp];
+        sheet[Hp] = Math.Clamp(session.CurrentHp ?? maxHp, 0, maxHp);
+        sheet[Sp] = Math.Clamp(session.CurrentSp ?? maxSp, 0, maxSp);
     }
 
     private StatSheet BuildStats(GameSession session, RoleProgress p)
@@ -376,10 +365,12 @@ public sealed class CharacterStatsService(CharacterService character, GameData d
     /// </summary>
     public async Task SetHpSpAsync(GameSession session, long? hp, long? sp)
     {
-        var before = Stats(session);
-        if (hp is { } h) session.CurrentHp = Math.Clamp(h, 0, before[MaxHp]);
-        if (sp is { } s) session.CurrentSp = Math.Clamp(s, 0, before[MaxSp]);
-        var stats = Stats(session);
+        var stats = Stats(session, out bool readsHp);
+        if (hp is { } h) session.CurrentHp = Math.Clamp(h, 0, stats[MaxHp]);
+        if (sp is { } s) session.CurrentSp = Math.Clamp(s, 0, stats[MaxSp]);
+        // Only HP and SP moved: the same sheet with them, unless a totem's HP condition reads HP (one build, not two).
+        if (readsHp && hp != null) stats = Stats(session);
+        else ApplyHpSp(session, stats);
         session.EntityProperties = EntityPropertiesOf(stats);
         var all = new AllProperty { EntityID = session.Role!.Id };
         var aoi = new AOIAttrChange { EntityUuid = (ulong)session.Role.Id };

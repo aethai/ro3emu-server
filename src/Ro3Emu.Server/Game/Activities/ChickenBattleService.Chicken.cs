@@ -412,6 +412,8 @@ public sealed partial class ChickenBattleService
             foreach (var player in match.Players)
                 if (run.Players[player].Career == 0) run.Players[player].Career = DefaultCareer(match, run, player);
             SetStage(run, StageShowCareer, now, now + StageMs[StageShowCareer]);
+            // Every player's sheet is the match career's from here, also while the refreshes below take their turns.
+            foreach (var player in InRoom(match)) player.StatsMemo = null;
             foreach (var player in InRoom(match).ToArray())
             {
                 // The career build starts full (inferred).

@@ -614,6 +614,9 @@ public sealed partial class TaskService
 
     internal async Task FlushAsync(GameSession session, bool settled = false)
     {
+        // Quests change in place (accept, give up, settle) and talent and function conditions read them
+        // (FunctionService CondQuestDone, CondRoleHasTask): no combat path may reuse a sheet built before.
+        session.StatsMemo = null;
         if (settled && _roles.HasTaskFollowup(session.Role!.Id))
             await _roles.SaveSettledTasksAsync(session.Role.Id, session.Tasks!.ToByteArray(), JsonSerializer.SerializeToUtf8Bytes(session.Activities.TaskRuntime));
         else Save(session);

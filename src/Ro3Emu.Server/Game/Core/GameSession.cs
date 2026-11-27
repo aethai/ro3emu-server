@@ -214,6 +214,15 @@ public sealed class GameSession(PhonestChannel channel, TrafficLog traffic, Time
     internal object? StatsMemo { get; set; }
     internal long StatsReuseSerial { get; set; } = -1;
 
+    /// <summary>Stat builds in progress on this session (a totem's HP condition builds once more for MaxHP).</summary>
+    internal int StatsBuildDepth { get; set; }
+
+    /// <summary>Set by a build that read <see cref="CurrentHp"/> (TotemEffects op 10): the memo then keys on HP.</summary>
+    internal bool StatsReadHp { get; set; }
+
+    /// <summary>Above 0 while another plan's state stands in for the role's own (GenreService): no memo read or write.</summary>
+    internal int StatsMemoBypass { get; set; }
+
     /// <summary>GM panel combat switches (GmNoCD, GmDamageFix, GmUnlimit), not saved; combat reads the field per cast or hit.</summary>
     public GmCombatSwitches GmCombat { get; set; }
     /// <summary>GM panel attribute changes (GmSetEntityAttr / GmChangeEntityAttr) as raw contributions, not saved.</summary>
