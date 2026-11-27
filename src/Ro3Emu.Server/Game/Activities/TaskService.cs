@@ -120,6 +120,9 @@ public sealed partial class TaskService
         character.ProgressHandlers.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         skills.Learned.Subscribe(s => { QueueRefresh(s); return Task.CompletedTask; });
         character.StateChanged.Subscribe(QueueRefresh);
+        // The items and currency a quest target counts: collect and submit targets, the daily activity points (TLiveness).
+        character.WatchStateEntries(() => Defs().Values.SelectMany(def => def.Targets)
+            .Where(t => t.Length >= 2 && t[0] is TCollect or TSubmit).Select(t => t[1]).Append(ActivityPassService.Liveness));
         character.ItemUsed.Subscribe((s, entry, count) => loop.PostOwned(s, () => OnItemUsedAsync(s, entry, count)));
         equipment.Crafted.Subscribe(OnCraftedAsync);
         equipment.Refined.Subscribe(s => ProgressAsync(s, TRefineCount, _ => 1));

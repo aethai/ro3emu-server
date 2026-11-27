@@ -14,6 +14,12 @@ public readonly partial record struct LCConditionList(JsonElement Row)
     public bool HasSubCondition(long kind, long value) => SubConditionList is { ValueKind: JsonValueKind.Array } list && list.EnumerateArray().Any(sub =>
         sub.TryGetProperty("m_kData", out var data) && data.ValueKind == JsonValueKind.Array && data.GetArrayLength() >= 2
             && data[0].TryGetInt64(out long first) && first == kind && data[1].TryGetInt64(out long second) && second == value);
+    /// <summary>The values of the sub conditions of one kind ([kind, value, ...] in their m_kData): the items of 1020.</summary>
+    public IEnumerable<long> SubConditionValues(long kind) => SubConditionList is { ValueKind: JsonValueKind.Array } list
+        ? list.EnumerateArray().Where(sub => sub.TryGetProperty("m_kData", out var data) && data.ValueKind == JsonValueKind.Array
+            && data.GetArrayLength() >= 2 && data[0].TryGetInt64(out long first) && first == kind && data[1].TryGetInt64(out _))
+            .Select(sub => sub.GetProperty("m_kData")[1].GetInt64())
+        : [];
     [ConfigField("m_bInverse", Optional = true)] public partial bool Inverse { get; }
     [ConfigField("m_kData", Optional = true)] public partial long[] Data { get; }
 }

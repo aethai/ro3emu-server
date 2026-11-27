@@ -516,7 +516,12 @@ public sealed partial class DailyActivityService : IGameTicker
         {
             long seconds = ToUnix(now);
             if (session.Activities.DailyReady && (seconds >= session.Activities.DailyWindowRefreshAt || seconds < session.Activities.DailyWindowSampledAt))
+            {
+                // A timed row that opened since the last window accepts its tracking quest here, not on the next
+                // kill: kill rewards no longer refresh the quests (CharacterInventoryService.QuietKillReward).
+                if (session.Tasks != null) await _tasks.EnsureDailyTrackingCoreAsync(session, TrackingTasks(session));
                 await SyncRowsAsync(session, now);
+            }
             return;
         }
         if (session.Activities.Daily.DailyEpoch < Boundary(now) && BeforeReset is { } settle)

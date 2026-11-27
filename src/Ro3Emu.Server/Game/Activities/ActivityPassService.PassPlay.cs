@@ -108,6 +108,7 @@ public sealed partial class ActivityPassService
         dungeons.Completed.Subscribe((s, _, _) => { PassEvent(s, [(PassGoal.Dungeons, 1)], dungeons: 1); return Task.CompletedTask; });
         mvps.ParticipantSettled.Subscribe(s => PassEvent(s, [(PassGoal.Mvps, 1)], mvps: 1));
         tasks.QuestDelivered.Subscribe((s, task, _) => PassEvent(s, [(PassGoal.Quests, 1)], quest: task));
+        _character.WatchStateEntries(() => [Liveness]);
         _character.StateChanged.Subscribe(s =>
         {
             // Daily activity points are a currency: watch the balance after every award instead of the grants.

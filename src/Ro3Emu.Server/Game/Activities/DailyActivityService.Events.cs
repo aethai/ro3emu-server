@@ -19,7 +19,9 @@ public sealed partial class DailyActivityService
         // their nested ActivityInfo phase state. CharacterService emits only changed map fields in 5004.
         ProjectWindows(rows, seconds);
         session.Activities.DailyWindowSampledAt = seconds;
-        session.Activities.DailyWindowRefreshAt = rows.ActivityData.Values.Select(r => r.EndTime).Where(end => end > seconds)
+        // The next opening or closing: an opening accepts the row's tracking quest (ReconcileCoreAsync).
+        session.Activities.DailyWindowRefreshAt = rows.ActivityData.Values.SelectMany(r => new[] { r.StartTime, r.EndTime })
+            .Where(edge => edge > seconds)
             .Append(ToUnix(now.Date.AddDays(1))) // custom weeks change at civil Monday, before the 05:00 reset
             .Min();
         return CharacterService.SyncAsync(session, ActivitySync, rows);

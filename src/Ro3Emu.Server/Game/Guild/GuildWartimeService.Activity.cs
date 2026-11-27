@@ -81,6 +81,7 @@ public sealed partial class GuildWartimeService
     {
         if (_depositHooked) return;
         _depositHooked = true;
+        character.WatchStateEntries(() => [.. GuildCurrencies.Select(c => (long)c)]);
         character.StateChanged.Subscribe(s =>
         {
             if (s.Role == null || s.Progress is not { } p || !GuildCurrencies.Any(c => p.Currency.GetValueOrDefault(c) > 0)
