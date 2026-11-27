@@ -60,13 +60,14 @@ public sealed partial class FunctionService
     public FunctionOpenInfo Build(GameSession session)
     {
         var info = new FunctionOpenInfo();
-        foreach (var row in _data.Table("FunctionConfig").Values)
-        {
-            long id = GameData.Int(row, "_iID");
+        foreach (long id in FunctionIds)
             if (Shown(session, id)) info.FunctionOpenInfos[id] = true;
-        }
         return info;
     }
+
+    /// <summary>FunctionConfig's ids in table order, read once: every kill's quest flush walks them.</summary>
+    private long[] FunctionIds => _functionIds ??= [.. _data.Table("FunctionConfig").Values.Select(row => GameData.Int(row, "_iID"))];
+    private long[]? _functionIds;
 
     /// <summary>A function the client is told is open. To-Do/Dodo read 5004 and 5059 immediately on unlock; hold only these
     /// two until the daily login sync.</summary>
@@ -77,9 +78,8 @@ public sealed partial class FunctionService
     private bool SameOpenSet(GameSession session, FunctionOpenInfo sent)
     {
         int shown = 0;
-        foreach (var row in _data.Table("FunctionConfig").Values)
+        foreach (long id in FunctionIds)
         {
-            long id = GameData.Int(row, "_iID");
             if (!Shown(session, id)) continue;
             if (!sent.FunctionOpenInfos.TryGetValue(id, out bool open) || !open) return false;
             shown++;
