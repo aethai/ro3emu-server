@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 
 namespace Ro3Emu.Tests;
@@ -16,6 +17,27 @@ public sealed partial class SkillCombatTests
         Assert.Equal(1, combat.AttackElement(a, row));
         await Loop.InvokeAsync(() => buffs.AddAsync(a, 1100201, 60000, a.Role!.Id));
         Assert.Equal(4, combat.AttackElement(a, row));
+    }
+
+    [ClientDataFact] // Double Attack: "Extra hits of Neutral melee Physical damage ... not considered a Normal Attack"
+    public async Task ADescribedHitKeepsItsElementUnderAWeaponElementBuff()
+    {
+        await using var alice = await InWorld("Alice");
+        var a = Session("alice");
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        var data = _app.Services.GetRequiredService<Ro3Emu.Server.Data.GameData>();
+        var hitRow = SkillConfig.Get(data, 1511501)!.Value; // Double Attack's hit row, _iIsNormalAtk 1
+        await Loop.InvokeAsync(() => _app.Services.GetRequiredService<BuffService>().AddAsync(a, 1100201, 60000, a.Role!.Id)); // Magnum Break: Fire
+        Assert.Equal(4, combat.AttackElement(a, hitRow.Row));
+        var described = new SkillConfig(hitRow.AsDescribedHit(5000, 0, 1));
+        Assert.False(described.IsNormalAttack(data));
+        Assert.Equal(1, combat.AttackElement(a, described.Row));
+        // A job's attack row (JobAttackConfig: the Hunter's 1300001, _iIsNormalAtk 0, arrows set its element) as a described
+        // hit is no Basic Attack either, and keeps the element it is given.
+        var hunter = new SkillConfig(SkillConfig.Get(data, 1300001)!.Value.AsDescribedHit(5000, 0, 1));
+        Assert.True(SkillConfig.Get(data, 1300001)!.Value.IsNormalAttack(data));
+        Assert.False(hunter.IsNormalAttack(data));
+        Assert.Equal(0, hunter.AffectByArrow);
     }
 
     [ClientDataFact] // Piety: "Armor element Holy"
