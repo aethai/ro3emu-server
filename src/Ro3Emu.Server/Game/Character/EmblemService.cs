@@ -279,7 +279,7 @@ public sealed partial class EmblemService
         var marks = new Dictionary<long, int>();
         foreach (var item in worn)
         {
-            int lit = EmblemConfig.Get(data, item.Entry) is { } row ? row.InitialMark.Length : 0;
+            int lit = EmblemConfig.Get(data, item.Entry) is { } row ? row.InitialMarkCount : 0;
             for (int i = 0; i < lit && item.Attrs?.TryGetValue(1021 + i, out long mark) == true; i++)
                 marks[mark] = marks.GetValueOrDefault(mark) + 1;
         }

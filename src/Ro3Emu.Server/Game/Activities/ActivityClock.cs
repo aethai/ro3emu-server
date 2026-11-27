@@ -46,12 +46,6 @@ public sealed class ActivityClock(GameData data, SeasonService seasons, TimeProv
     /// <summary>GM test aid windows that stand in for a TimeLimitConfig id's own rows (PronteraDefenseService's !defense).</summary>
     internal System.Collections.Concurrent.ConcurrentDictionary<long, Window> TestWindows { get; } = new();
 
-    // TimeLimitConfig's repeat units, largest first, with their field names built once (Segments runs per quest and
-    // activity check; the interpolated names were a large share of its allocation, #484).
-    private static readonly (string Name, string Start, string End)[] RepeatUnits =
-        [("Month", "_iMonthStart", "_iMonthEnd"), ("Week", "_iWeekStart", "_iWeekEnd"),
-         ("Day", "_iDayStart", "_iDayEnd"), ("Hour", "_iHourStart", "_iHourEnd")];
-
     public IReadOnlyList<Window> Segments(long timeLimitId, long now, int playbook = 101)
     {
         if (!TestWindows.IsEmpty && TestWindows.TryGetValue(timeLimitId, out var test)) return [test];
@@ -63,9 +57,7 @@ public sealed class ActivityClock(GameData data, SeasonService seasons, TimeProv
             if (begin <= 0 || end <= begin) continue;
             string state = Text(row, "_strStateName");
             if (state.Length == 0) state = "Start";
-            string? unit = null;
-            foreach (var (name, startField, endField) in RepeatUnits)
-                if (GameData.Int(row, startField) > 0 || GameData.Int(row, endField) > 0) { unit = name; break; }
+            string? unit = new TimeLimitConfig(row).RepeatUnit;
             if (unit == null)
             {
                 windows.Add(new(state, begin, end));
