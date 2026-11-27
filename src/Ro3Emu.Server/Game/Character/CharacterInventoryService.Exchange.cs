@@ -347,8 +347,12 @@ public sealed partial class CharacterInventoryService
         foreach (var (entry, amount) in request.CurrencyGoods ?? new Dictionary<int, long>())
             s.StagedProgress.Currency[entry] = checked(s.StagedProgress.Currency.GetValueOrDefault(entry) + amount);
         if (request.BaseExp > 0 || request.JobExp > 0)
+        {
             (s.StagedProgress.Level, s.StagedProgress.Exp, s.StagedProgress.JobLevel, s.StagedProgress.JobExp) =
                 (s.NextProgress.Level, s.NextProgress.Exp, s.NextProgress.JobLevel, s.NextProgress.JobExp);
+            // Past the level cap the EXP fed the Astral Level of the staged copy only (ApplyExp): a kill at 99 gave none.
+            (s.StagedProgress.ParagonLevel, s.StagedProgress.ParagonExp) = (s.NextProgress.ParagonLevel, s.NextProgress.ParagonExp);
+        }
     }
 
     private void PublishExchangeSnapshot(ExchangeStaging s, object?[] receipts)

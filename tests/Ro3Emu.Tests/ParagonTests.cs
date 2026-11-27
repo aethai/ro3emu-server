@@ -125,6 +125,27 @@ public sealed class ParagonTests : IAsyncLifetime
         Assert.All(sent.Runegroup.Values, r => Assert.Equal(0, r.Points));
     }
 
+    /// <summary>A kill's reward is an exchange with Base EXP: at the cap it feeds the Astral Level as the GM grant does.</summary>
+    [ClientDataFact]
+    public async Task AnExchangesBaseExpAtTheCapFeedsTheAstralLevel()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm(alice, "!lvl 99");
+        var s = Session(alice);
+        var character = Service<CharacterService>();
+        var before = await Read(() => (s.Progress!.ParagonLevel, s.Progress.ParagonExp));
+        await Service<GameLoop>().InvokeAsync(async () =>
+            Assert.NotNull(await character.ExchangeAsync(s, new ExchangeRequest { BaseExp = 1000, Popup = false, Sync = false })));
+        var after = await Read(() => (s.Progress!.Level, s.Progress.Exp, s.Progress.ParagonLevel, s.Progress.ParagonExp));
+        Assert.Equal((99, 0L), (after.Level, after.Exp));
+        Assert.True((after.ParagonLevel, after.ParagonExp) != before, $"Astral Level stayed at {before}");
+        Assert.Equal((after.ParagonLevel, after.ParagonExp), await Read(() =>
+        {
+            var saved = Service<RoleStore>().LoadProgress(s.Role!.Id);
+            return (saved.ParagonLevel, saved.ParagonExp);
+        }));
+    }
+
     [ClientDataFact]
     public async Task StarsTakePointsAlongTheirChainInsideAnActiveConstellation()
     {
