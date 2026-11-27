@@ -115,6 +115,13 @@ public sealed class MiscQuestTargetTests : IAsyncLifetime
         await Run(s => { s.Activities.WildAfk!.Info.SumHighMultiplierTime = 300; Tasks.OnStateChanged(s); });
         await Done(306060);
 
+        // Growth Emblem 703060 [106901,3600], the same text: the total spent, not today's (which a daily reset zeroes).
+        await Accept(703060);
+        await Run(s => { s.Activities.WildAfk!.ConsumedTodaySeconds = 0; s.Activities.WildAfk.Info.SumHighMultiplierTime = 3599; Tasks.OnStateChanged(s); });
+        await At(703060, 3540); // whole minutes
+        await Run(s => { s.Activities.WildAfk!.Info.SumHighMultiplierTime = 3600; Tasks.OnStateChanged(s); });
+        await Done(703060);
+
         foreach (long task in new long[] { 201001, 201002, 201003 }) await Accept(task);
         await Run(s =>
         {
