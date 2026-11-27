@@ -45,6 +45,10 @@ public sealed partial class SkillCastingService
         return SkillParameterRules.Effective(session, _data, requested);
     }
 
+    /// <summary>A group's configured row of a level in one mode, or null when that mode has none.</summary>
+    internal JsonElement? RowInMode(int group, int level, int mode) =>
+        ConfiguredModeRows.TryGetValue((group, level, mode), out int id) ? _data.Row("SkillConfig", id) : null;
+
     /// <summary>A group's configured row of a level in the mode the session's type 15 tuples select, or its mode 0 row when
     /// that mode has none. The tuples' other fields are not applied: <see cref="CastExtraAsync"/> applies them.</summary>
     internal JsonElement? ModeRow(GameSession session, int group, int level)

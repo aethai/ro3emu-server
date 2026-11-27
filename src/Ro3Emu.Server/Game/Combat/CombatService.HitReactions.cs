@@ -58,6 +58,7 @@ public sealed partial class CombatService
         var attacker = monster?.Pos ?? enemy!.Position;
         // Melee Physical: _iDmgType 2 is magic, _iDistanceType 2 ranged (as ApplyPetSupportResistance reads them).
         bool melee = row is not { } hit || (new SkillConfig(hit).DmgType != 2 && new SkillConfig(hit).DistanceType != 2);
+        await ShieldBlockStruckAsync(p);
         foreach (var buff in p.Buffs.Where(b => b.ExpireMs > Now).ToArray())
         {
             int group = buff.ConfigId / 100;
