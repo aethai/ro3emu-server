@@ -36,6 +36,7 @@ public sealed partial class CombatEffectsService
             var lease = p.Attachment;
             bool Current() => ReferenceEquals(p.Role, targetRole) && p.WorldScene == scene && p.SceneGeneration == generation
                 && ReferenceEquals(p.Attachment, lease) && lease?.Cancelled != true;
+            _character.ReuseStatsInThisWork(p); // the hit reads the target's sheet repeatedly, like a monster swing
             var stats = _character.Stats(p);
             var defender = new CombatService.Fighter(0, 0, 0, 0, p.Progress.Level, ArmorElement(p))
             {

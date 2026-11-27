@@ -637,6 +637,9 @@ public sealed partial class CombatService : IGameTicker
                 || p.SceneGeneration != targetGeneration || !ReferenceEquals(p.Attachment, targetLease)
                 || targetLease?.Cancelled == true) return;
             if (MonsterService.Distance(m, p) > m.Template.AttackRange + 2f || !_buffs.CanSeePosition(m, p.Position)) return; // stepped away
+            // The hit reads the target's sheet several times (defence, damage commit, totems, cards, pets); like a cast it
+            // may reuse it while nothing it depends on changes (#484: every read was a full rebuild).
+            _character.ReuseStatsInThisWork(p);
             var stats = _character.Stats(p);
             var attacker = MonsterFighter(m);
             var defender = new Fighter(0, 0, 0, 0, p.Progress!.Level, ArmorElement(p))
