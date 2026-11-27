@@ -44,8 +44,18 @@ public sealed partial class FunctionService
     public int ServerDay() =>
         (int)Math.Clamp(Math.Floor((_clock.GetUtcNow().ToUnixTimeSeconds() - _seasons.StartTime) / 86400d) + 1, int.MinValue, int.MaxValue);
 
-    public Task SyncAsync(GameSession session) => session.Profile.DeferFunctionSync ? Task.CompletedTask
-        : CharacterService.SyncAsync(session, FunctionOpenSync, Build(session));
+    /// <summary>5056. A quest flush after every kill asks for it; when the open set is what the client was last sent,
+    /// nothing is built and only the version advances, as an empty change does (CharacterService.SyncAsync).</summary>
+    public Task SyncAsync(GameSession session)
+    {
+        if (session.Profile.DeferFunctionSync) return Task.CompletedTask;
+        if (session.Synced.GetValueOrDefault(FunctionOpenSync) is FunctionOpenInfo sent && SameOpenSet(session, sent))
+        {
+            CharacterService.NextVersion(session, FunctionOpenSync);
+            return Task.CompletedTask;
+        }
+        return CharacterService.SyncAsync(session, FunctionOpenSync, Build(session));
+    }
 
     public FunctionOpenInfo Build(GameSession session)
     {
@@ -53,11 +63,28 @@ public sealed partial class FunctionService
         foreach (var row in _data.Table("FunctionConfig").Values)
         {
             long id = GameData.Int(row, "_iID");
-            // To-Do/Dodo read 5004 and 5059 immediately on unlock; hold only these two until daily login sync.
-            if (id > 0 && (session.Activities.DailyReady || id is not (25 or 5902))
-                && IsOpen(session, id)) info.FunctionOpenInfos[id] = true;
+            if (Shown(session, id)) info.FunctionOpenInfos[id] = true;
         }
         return info;
+    }
+
+    /// <summary>A function the client is told is open. To-Do/Dodo read 5004 and 5059 immediately on unlock; hold only these
+    /// two until the daily login sync.</summary>
+    private bool Shown(GameSession session, long id) =>
+        id > 0 && (session.Activities.DailyReady || id is not (25 or 5902)) && IsOpen(session, id);
+
+    /// <summary><see cref="Build"/> would give exactly <paramref name="sent"/>: every shown function is there, and nothing else.</summary>
+    private bool SameOpenSet(GameSession session, FunctionOpenInfo sent)
+    {
+        int shown = 0;
+        foreach (var row in _data.Table("FunctionConfig").Values)
+        {
+            long id = GameData.Int(row, "_iID");
+            if (!Shown(session, id)) continue;
+            if (!sent.FunctionOpenInfos.TryGetValue(id, out bool open) || !open) return false;
+            shown++;
+        }
+        return shown == sent.FunctionOpenInfos.Count;
     }
 
     /// <summary>A FunctionConfig row's open condition holds (a function without a row is not gated).</summary>

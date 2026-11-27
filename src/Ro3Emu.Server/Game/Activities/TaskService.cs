@@ -499,14 +499,17 @@ public sealed partial class TaskService
     /// Adds progress from an event to every running task's matching targets: <paramref name="amount"/> returns how much a
     /// target gains (long.MaxValue = complete it); <paramref name="type"/> limits it to one target type.
     /// </summary>
-    internal async Task ProgressAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null)
+    /// <param name="countsOnly">A kill: only the quests' counts can move here, see <see cref="SettleAsync"/>.</param>
+    internal async Task ProgressAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null,
+        bool countsOnly = false)
     {
         using var gate = await LockTasksAsync(session);
         if (BeforeProgress is { } before) await before(session);
-        await ProgressCoreAsync(session, type, amount, eligible);
+        await ProgressCoreAsync(session, type, amount, eligible, countsOnly);
     }
 
-    private async Task ProgressCoreAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null)
+    private async Task ProgressCoreAsync(GameSession session, int? type, Func<long[], long> amount, Func<TaskDef, bool>? eligible = null,
+        bool countsOnly = false)
     {
         if (session.Tasks == null || session.Progress == null) return;
         bool changed = false;
@@ -528,7 +531,7 @@ public sealed partial class TaskService
                 changed = true;
             }
         }
-        if (changed) await SettleAsync(session);
+        if (changed) await SettleAsync(session, countsOnly);
     }
 
     /// <summary>Re-reads the passive targets (level, job, points, other tasks) and settles.</summary>
@@ -558,14 +561,20 @@ public sealed partial class TaskService
         await SettleAsync(session);
     }
 
-    /// <summary>Finished tasks become status 3, Auto ones are delivered (and their follow-ups accepted) until nothing moves; then one 5027.</summary>
-    internal async Task SettleAsync(GameSession session)
+    /// <summary>
+    /// Finished tasks become status 3, Auto ones are delivered (and their follow-ups accepted) until nothing moves; then
+    /// one 5027. After a kill (<paramref name="countsOnly"/>) that moved no quest the flush skips what reads only quest
+    /// states and the character (functions, talents, Growth Class, daily tracking): a count changes none of them, and a
+    /// level, item or skill change refreshes the quests itself (TaskObjectives.QueueRefresh).
+    /// </summary>
+    internal async Task SettleAsync(GameSession session, bool countsOnly = false)
     {
         if (session.Tasks == null) return;
         var context = RequireTaskOwner(session);
         bool debtIncomplete = false;
         bool requiredFollowup = _roles.HasTaskFollowup(session.Role!.Id);
         var chickenFinished = new List<long>();
+        bool anyMoved = false;
         for (int round = 0; round < 64; round++)
         {
             bool moved = false, storageFailed = false;
@@ -599,32 +608,34 @@ public sealed partial class TaskService
                     else if (requiredFollowup) debtIncomplete = true;
                 }
             }
-            if (storageFailed) break;
-            if (AcceptReady(session) > 0) moved = true;
-            EvaluatePassive(session);
-            if (round == 63 && moved) debtIncomplete = true;
-            if (!moved) break;
+            if (!storageFailed && AcceptReady(session) > 0) moved = true;
+            anyMoved |= moved;
+            if (storageFailed || !moved) break;
+            // The next round starts by evaluating the passive targets; the last one leaves them evaluated.
+            if (round == 63) { EvaluatePassive(session); debtIncomplete = true; }
         }
         // Login runs task settlement before CardService loads 5057. A previous role's Library
         // can still be present on a reused GameSession, so readiness is bound to this attachment.
         bool cardSourceReady = ReferenceEquals(session.CardLibraryReadyAttachment, session.Attachment);
-        await FlushAsync(session, !debtIncomplete && (!requiredFollowup || cardSourceReady));
+        await FlushAsync(session, !debtIncomplete && (!requiredFollowup || cardSourceReady), fanOut: !countsOnly || anyMoved);
         await NotifyChickenFinishedAsync(session, chickenFinished.Where(id => session.Tasks.Infos.GetValueOrDefault(id)?.Status == Finished));
     }
 
-    internal async Task FlushAsync(GameSession session, bool settled = false)
+    /// <param name="fanOut">Also the datasets that read quest states (Growth Class, daily tracking, talents, functions).</param>
+    internal async Task FlushAsync(GameSession session, bool settled = false, bool fanOut = true)
     {
         // Quests change in place (accept, give up, settle) and talent and function conditions read them
         // (FunctionService CondQuestDone, CondRoleHasTask): no combat path may reuse a sheet built before.
-        session.StatsMemo = null;
+        if (fanOut) session.StatsMemo = null;
         if (settled && _roles.HasTaskFollowup(session.Role!.Id))
             await _roles.SaveSettledTasksAsync(session.Role.Id, session.Tasks!.ToByteArray(), JsonSerializer.SerializeToUtf8Bytes(session.Activities.TaskRuntime));
         else Save(session);
         if (!session.Profile.DeferTaskSync)
         {
             await SyncTasksAsync(session);
-            if (SyncGrowthClass is { } growth) await growth(session); // 5045 reads the delivered growth quests
+            if (fanOut && SyncGrowthClass is { } growth) await growth(session); // 5045 reads the delivered growth quests
         }
+        if (!fanOut) return;
         if (session.Activities.DailyReady && RefreshDailyTracking is { } refresh) await refresh(session);
         await _talents.SyncAsync(session); // 5050 before 5056 when quest 10103160 opens function 1003
         await _functions.SyncAsync(session);

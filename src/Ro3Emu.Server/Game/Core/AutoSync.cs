@@ -1,5 +1,6 @@
 using System.Collections;
 using Google.Protobuf;
+using Google.Protobuf.Collections;
 using Google.Protobuf.Reflection;
 
 namespace Ro3Emu.Server.Game;
@@ -92,7 +93,7 @@ public static class AutoSync
 
             if (field.IsMap)
             {
-                DiffMap(field, (IDictionary)value, (IDictionary?)old, incField, inc);
+                DiffMap((IDictionary)value, (IDictionary?)old, incField, inc);
             }
             else if (field.IsRepeated)
             {
@@ -141,26 +142,51 @@ public static class AutoSync
         return inc;
     }
 
-    private static void DiffMap(FieldDescriptor field, IDictionary now, IDictionary? old, FieldDescriptor incField, IMessage inc)
+    private static void DiffMap(IDictionary now, IDictionary? old, FieldDescriptor incField, IMessage inc)
     {
         var incMap = (IDictionary)incField.Accessor.GetValue(inc);
         var wrapperType = incField.MessageType.FindFieldByNumber(2).MessageType; // map entry value = the {all, inc, del} wrapper
-        foreach (DictionaryEntry e in now)
+        MapDiffs.GetOrAdd(now.GetType(), TypedMapDiff)(now, old, incMap, wrapperType);
+    }
+
+    // One typed walk per MapField<TKey, TValue>: through the IDictionary view every key and value of every map was boxed
+    // into a DictionaryEntry on each sync, also the unchanged ones (#484: ~70 MB per 45 s under load).
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Action<IDictionary, IDictionary?, IDictionary, MessageDescriptor>>
+        MapDiffs = new();
+
+    private static Action<IDictionary, IDictionary?, IDictionary, MessageDescriptor> TypedMapDiff(Type mapType) =>
+        typeof(AutoSync).GetMethod(nameof(DiffTypedMap), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .MakeGenericMethod(mapType.GetGenericArguments())
+            .CreateDelegate<Action<IDictionary, IDictionary?, IDictionary, MessageDescriptor>>();
+
+    /// <summary><c>all</c> for a new key, the value's own increment for a changed message value (a changed scalar is
+    /// sent whole), <c>del</c> for a removed key; map values are never null.</summary>
+    private static void DiffTypedMap<TKey, TValue>(IDictionary nowMap, IDictionary? oldMap, IDictionary incMap, MessageDescriptor wrapperType)
+        where TKey : notnull
+    {
+        var now = (MapField<TKey, TValue>)nowMap;
+        var old = (MapField<TKey, TValue>?)oldMap;
+        if (old == null ? now.Count == 0 : now.Equals(old)) return; // the common case: no enumerator at all
+        var same = EqualityComparer<TValue>.Default;
+        int kept = 0;
+        foreach (var (key, value) in now)
         {
-            object? previous = old != null && old.Contains(e.Key) ? old[e.Key] : null;
-            if (previous != null && Equals(previous, e.Value)) continue;
+            TValue? previous = default;
+            bool had = old != null && old.TryGetValue(key, out previous);
+            if (had) kept++;
+            if (had && same.Equals(previous, value)) continue;
             var wrapper = NewMessage(wrapperType);
-            if (e.Value is IMessage message) SetAllOrInc(wrapper, previous as IMessage, message);
-            else wrapper.Descriptor.FindFieldByName("all").Accessor.SetValue(wrapper, e.Value!);
-            incMap[e.Key] = wrapper;
+            if (value is IMessage message) SetAllOrInc(wrapper, had ? previous as IMessage : null, message);
+            else wrapper.Descriptor.FindFieldByName("all").Accessor.SetValue(wrapper, value!);
+            incMap[key] = wrapper;
         }
-        if (old == null) return;
-        foreach (DictionaryEntry e in old)
+        if (old == null || kept == old.Count) return; // every old key is still there: nothing to delete
+        foreach (var (key, _) in old)
         {
-            if (now.Contains(e.Key)) continue;
+            if (now.ContainsKey(key)) continue;
             var wrapper = NewMessage(wrapperType);
             wrapper.Descriptor.FindFieldByName("del").Accessor.SetValue(wrapper, true);
-            incMap[e.Key] = wrapper;
+            incMap[key] = wrapper;
         }
     }
 
