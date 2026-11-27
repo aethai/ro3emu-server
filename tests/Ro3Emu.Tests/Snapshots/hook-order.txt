@@ -110,8 +110,9 @@ CombatService.CastLanded (4)
   CasualBattleService.CastLandedAsync
   TotemEffects.OnCastAsync
   StealthEffects.BackSlideCamouflageAsync
-CombatService.CastResolved (8)
+CombatService.CastResolved (9)
   CombatService.AutoCounterOnCastAsync
+  CombatService.ShieldBlockOnCastAsync
   CombatEffectsService.SupportSkillOnCastAsync
   SkillCastingService.ReadingExtraCastAsync
   SkillCastingService.ClassLoopsOnCastAsync

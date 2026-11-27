@@ -10,7 +10,7 @@ public sealed partial class SkillCombatTests
     private const int ShieldBlockRow = 1163801, ShieldCounterRow = 1163841, PowerfulCounterRow = 1163871;
     private const int BlockParry = 1164201, PowerfulParry = 1164301;
 
-    private int HitsOf(Ro3Emu.Bot.BotClient bot, int row, long target) => bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit))
+    private static int HitsOf(Ro3Emu.Bot.BotClient bot, int row, long target) => bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit))
         .Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)).Count(h => h.SkillId == row && h.Dsts.Any(d => d.DstID == target && d.Damage > 0));
 
     [ClientDataFact] // "Tap this skill again while blocking ... to use [Shield Auto Counter]": the counter row, and the block ends
