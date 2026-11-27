@@ -92,6 +92,16 @@ public sealed partial class TradeService(
     }
 
     /// <summary>5033 full trade preferences, sent after role/base/item state.</summary>
+    /// <summary>
+    /// The Credit a top-goods purchase also costs, in 1/10000 of the price (LC_TradeHelper.GetCreditRatio divides
+    /// credit_score_ratio by 10000; UI_Sys_TradeCell_AvailableWidgetCtrl and UI_Sys_Trade_OrderWidgetCtrl refuse with
+    /// TradeNotEnoughCredit when ceil(price * ratio) exceeds the role's Credit, item 4). Nothing grants Credit yet: the
+    /// client names selling and activity quests as its sources, with no amounts the client holds. 0 is the client's own
+    /// "no Credit" state (IsNilOrZero: no Credit coin in the panel, no check), so top goods can be bought (inferred,
+    /// until a Credit source exists). The 1 sent before made every top purchase need at least 1 Credit.
+    /// </summary>
+    internal const int CreditScoreRatio = 0;
+
     public async Task LoginAsync(GameSession s)
     {
         // No market maintenance inside the login (it reserved the market collections and every participant).
@@ -102,8 +112,9 @@ public sealed partial class TradeService(
         {
             LastRefreshTime = NowMs, LastClientRefreshTime = NowMs,
             CreditPoint = (int)(Data.Config.PublicParams.Of(data).TradeCreditDefault ?? 1000),
-            StallsNum = 6, CreditScoreRatio = 1, // (inferred) initial six free TradeConfigUnlockPlace places.
+            StallsNum = 6, // (inferred) initial six free TradeConfigUnlockPlace places.
         };
+        state.CreditScoreRatio = CreditScoreRatio; // also over a ratio saved before (#609)
         if (state.LastRefreshTime == 0) state.LastRefreshTime = NowMs; // LC_DAL_Trade full sync divides this field.
         s.Social.Trade = state;
         if (saved == null) roles.SaveTrade(s.Role.Id, state.ToByteArray());
