@@ -16,6 +16,7 @@ public sealed class TwoHandedPlanTests : IAsyncDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ro3emu-twohand-" + Guid.NewGuid().ToString("N"));
     private const int Greatsword = 9300001, Sword = 9300002, Shield = 9300003;
     private const long GreatswordGuid = 71, SwordGuid = 72, ShieldGuid = 73;
+    private const int WeaponPower = 1234;
     private SyntheticHost? _host;
 
     public async ValueTask DisposeAsync()
@@ -36,8 +37,16 @@ public sealed class TwoHandedPlanTests : IAsyncDisposable
         var items = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         // _iEquipPart is enum_EquipPosType: TwoHand 1, MainHand 2, ViceHand 3.
         foreach (var (entry, part) in new[] { (Greatsword, 1), (Sword, 2), (Shield, 3) })
-            items[entry.ToString(CultureInfo.InvariantCulture)] = JsonSerializer.SerializeToNode(new { _iID = entry, _iType = CharacterService.ItemTypeEquip, _iEquipPart = part, _iStackLimit = 1 });
+            items[entry.ToString(CultureInfo.InvariantCulture)] = JsonSerializer.SerializeToNode(new
+            {
+                _iID = entry, _iType = CharacterService.ItemTypeEquip, _iEquipPart = part, _iStackLimit = 1, _iEquipId = entry,
+            });
         File.WriteAllText(path, items.ToJsonString());
+        string equipPath = Path.Combine(_root, "config", "EquipConfig.json");
+        var equips = JsonNode.Parse(File.ReadAllText(equipPath))!.AsObject();
+        foreach (int entry in new[] { Greatsword, Sword, Shield })
+            equips[entry.ToString(CultureInfo.InvariantCulture)] = JsonSerializer.SerializeToNode(new { _iID = entry, _iPower = WeaponPower });
+        File.WriteAllText(equipPath, equips.ToJsonString());
         return _host = await SyntheticHost.StartAsync(o => o.GameDataDir = _root);
     }
 
@@ -102,5 +111,25 @@ public sealed class TwoHandedPlanTests : IAsyncDisposable
         var worn = await loop.InvokeAsync(() => Task.FromResult(session.Items.Where(i => i.Grid > 0).ToList()));
         Assert.Equal(greatsword, Assert.Single(worn).Guid);
         Assert.Equal(1, worn[0].Grid);
+    }
+
+    [Fact]
+    public async Task ATwoHanderListedInBothWeaponGridsCountsOnceInPlanPower()
+    {
+        var host = await Start();
+        await using var bot = await host.InWorldAsync("Wielder");
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role != null);
+        var (single, both) = await host.Service<GameLoop>().InvokeAsync(async () =>
+        {
+            await host.Service<CharacterService>().GrantAsync(session, [(Greatsword, 1)]);
+            long guid = session.Items.Single(i => i.Entry == Greatsword).Guid;
+            var info = new DBEquipInfo();
+            info.EquipPlans[0] = new DBEquipPlan { ItemsEquipGrid = { [1] = guid } };
+            info.EquipPlans[1] = new DBEquipPlan { ItemsEquipGrid = { [1] = guid, [2] = guid } };
+            session.PlanPowers!(CharacterService.EquipSync, info);
+            return (info.EquipPlans[0].Power.NormalPower, info.EquipPlans[1].Power.NormalPower);
+        });
+        Assert.True(single >= WeaponPower);
+        Assert.Equal(single, both);
     }
 }

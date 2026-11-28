@@ -1,6 +1,8 @@
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -58,16 +60,18 @@ public sealed partial class CharacterInventoryService
             if (!IsEquipment(item.Entry)) return ErrorCodes.NotEquipment;
             if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) return ErrorCodes.EquipNotInBag;
             if (WearError(item.Entry, progress, sex) is var wear and not 0) return wear;
-            if (grid == ViceHandGrid && IsTwoHandRepeat(plan, guid, item)) continue;
+            if (IsTwoHandRepeat(data, plan, grid, guid, item.Entry)) continue;
             if (!GridsFor(item.Entry, progress).Contains(grid) || !incoming.TryAdd(guid, (item, grid))) return ErrorCodes.EquipSlot;
         }
         return incoming.Values.Any(i => i.Grid == MainHandGrid && PartOf(i.Item.Entry) == TwoHandPart)
             && incoming.Values.Any(i => i.Grid == ViceHandGrid) ? ErrorCodes.EquipSlot : 0;
     }
 
-    /// <summary>Grid 2 of a plan holding the two-handed weapon of its grid 1 (see <see cref="PlanPlacements"/>).</summary>
-    private bool IsTwoHandRepeat(DBEquipPlan plan, long guid, InvItem item) =>
-        plan.ItemsEquipGrid.TryGetValue(MainHandGrid, out long main) && main == guid && PartOf(item.Entry) == TwoHandPart;
+    /// <summary>Grid 2 of a plan holding the two-handed weapon of its grid 1 (see <see cref="PlanPlacements"/>): the same
+    /// weapon, which neither places nor counts a second time.</summary>
+    internal static bool IsTwoHandRepeat(GameData data, DBEquipPlan plan, int grid, long guid, int entry) =>
+        grid == ViceHandGrid && plan.ItemsEquipGrid.TryGetValue(MainHandGrid, out long main) && main == guid
+        && ItemConfig.Get(data, entry)?.EquipPart == TwoHandPart;
 
     /// <summary>Migrate existing worn gear into plan 0, keep names and inactive GUID references.</summary>
     internal void LoadEquipmentPlans(GameSession session)
