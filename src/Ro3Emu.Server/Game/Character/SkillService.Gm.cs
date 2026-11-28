@@ -70,6 +70,7 @@ public sealed partial class SkillService
         {
             if (SkillConfig.Get(_data, id) is not { } skill || !tree.Contains((int)skill.SkillId)) { outside.Add(id); continue; }
             int group = (int)skill.SkillId;
+            // A group listed twice takes its later level: RecommendAddPoint's loop assigns each id's level in turn.
             selected.SkillAssigns[group] = new SkillData { SkillId = group, SkillLevel = Math.Max((int)skill.Level, Initial(p, group)) };
             if (!listed.Contains(group)) listed.Add(group);
         }

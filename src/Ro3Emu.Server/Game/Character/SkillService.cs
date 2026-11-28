@@ -1071,6 +1071,9 @@ public sealed partial class SkillService
                 var selected = plans.SkillAssignPlans[req.Plan];
                 foreach (var (group, assigned) in selected.SkillAssigns)
                     assigned.SkillLevel = IsNormalGroup(session.Progress!, group) ? 1 : Initial(session.Progress!, group);
+                // (inferred) A reset plan no longer holds its build, as the client's own reset (ResetSkillByJobId, then Save:
+                // a 31151 with levels) cancels it; choosing the build again allocates it again.
+                selected.SkillGenre = 0;
                 var progress = CharacterService.GenreCloneProgress(session.Progress!);
                 int oldIndex = plans.CurrentPlanIndex;
                 code = StageSkillPlan(session, plans, progress, req.Plan);
@@ -1100,45 +1103,57 @@ public sealed partial class SkillService
     /// and saving a hand allocation in a bound plan warns that it "will cancel the selected build and disable automatic
     /// point allocation" (UI_Sys_Skill_AddBitWidgetBaseCtrl._onSavaBtnClick, UIWords 33083): the server allocates the
     /// build. A newly chosen build gives the plan the recommended row of its profession as GM 170 does
-    /// (StageProfessionBuild), within the points the job level earned. (inferred) A genre with no JobProfessConfig row,
-    /// the build the plan already has, or a row the plan cannot take, only binds the plan.
+    /// (StageProfessionBuild), within the points the job level earned; the build the plan already has changes nothing.
+    /// The window offers only the career's own builds (UI_Sys_RoleProfessionSelectWindowCtrl._refreshPanel:
+    /// Lua_CFG_JobConfig.GetProfessionsByCareer(PlayerBasicInfo.career), JobConfig._kProfessionID with a JobProfessConfig
+    /// row), and the recommend button refuses in combat (UI_Sys_Skill_AddBitWidgetBaseCtrl._onRecommendBtnClick,
+    /// CheckLocalPlayerIsFightState, UIWords 33052 "You cannot switch Skill Builds during combat."). (inferred) A build
+    /// the plan cannot take is refused with StageSkillPlan's code and not bound.
     /// </summary>
     public async Task SwitchGenreAsync(GameSession session, SkillSwitchGenreReq req)
     {
         bool learned = false;
         using (await CharacterService.Lock(session))
         {
-            int code = req.Genre < 0 ? ErrorCodes.Parameter : 0; // (inferred) exact genre enumeration is not exported.
-            if (code == 0)
+            long profession = OfferedProfession(session.Progress!.Career, req.Genre);
+            int code = InCombat(session) ? ErrorCodes.ActionInBattle : profession == 0 ? ErrorCodes.BuildNotOfJob : 0;
+            var plans = Build(session);
+            if (code == 0 && plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillGenre != req.Genre)
             {
-                var plans = Build(session);
-                RoleProgress? progress = null;
-                if (plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillGenre != req.Genre && JobProfessConfig.Get(_data, req.Genre) is { } build)
-                    (plans, progress) = AllocateBuild(session, plans, build.ProfessionId);
-                plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillGenre = req.Genre;
-                await CommitAsync(session, plans, progress, "cd13c/skill-genre");
-                await SyncAsync(session);
-                learned = progress != null;
+                var progress = CharacterService.GenreCloneProgress(session.Progress!);
+                code = AllocateBuild(session, plans, progress, profession);
+                if (code == 0)
+                {
+                    plans.SkillAssignPlans[plans.CurrentPlanIndex].SkillGenre = req.Genre;
+                    await CommitAsync(session, plans, progress, "cd13c/skill-genre");
+                    await SyncAsync(session);
+                    learned = true;
+                }
             }
             await session.SendGameAsync(SwitchGenre, new SkillSwitchGenreResp { Result = code });
         }
         if (learned) await OnActivePlanChangedAsync(session);
     }
 
-    /// <summary>The plans with a profession's build allocated in the current plan and the progress it gives, or, when the
-    /// plan cannot take it, the plans unchanged and no progress.</summary>
-    private (DBSkillData Plans, RoleProgress? Progress) AllocateBuild(GameSession session, DBSkillData plans, long profession)
+    /// <summary>The profession (JobProfessConfig._iProfessionID) of a build the career's skill window lists, one of its
+    /// JobConfig._kProfessionID with a JobProfessConfig row (Lua_CFG_JobConfig.GetProfessionsByCareer,
+    /// Lua_CFG_JobProfessConfig.CheckProfessId), or 0.</summary>
+    private long OfferedProfession(int career, int genre) => genre > 0 && JobConfig.Get(_data, career) is { } job
+        && job.ProfessionId.Contains(genre) && JobProfessConfig.Get(_data, genre) is { } build ? build.ProfessionId : 0;
+
+    /// <summary>Allocates a profession's build in the current plan, <paramref name="candidate"/> becoming its progress;
+    /// StageSkillPlan's code when the plan cannot take it.</summary>
+    private int AllocateBuild(GameSession session, DBSkillData plans, RoleProgress candidate, long profession)
     {
-        var candidate = CharacterService.GenreCloneProgress(session.Progress!);
         var staged = StageProfessionBuild(session, plans, candidate, profession, fitPoints: true);
         if (staged.Code != 0)
         {
             _log.LogInformation("{Name} keeps the skills of plan {Plan}: build of profession {Profession} refused ({Code})",
                 session.Role?.Name, plans.CurrentPlanIndex, profession, staged.Code);
-            return (Build(session), null);
+            return staged.Code;
         }
         PruneLoads(plans.SkillAssignPlans[plans.CurrentPlanIndex], candidate);
-        return (plans, candidate);
+        return 0;
     }
 
     public async Task QueueUpdateAsync(GameSession session, SkillQueueUpdateReq req)

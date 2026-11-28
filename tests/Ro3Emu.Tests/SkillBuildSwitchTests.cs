@@ -14,7 +14,7 @@ namespace Ro3Emu.Tests;
 public sealed class SkillBuildSwitchTests
 {
     private const int Base = 981, NeedsBase = 982, Strike = 983, OldFree = 984;
-    private const int FirstCareer = 1000, OtherCareer = 2000, Build = 70;
+    private const int FirstCareer = 1000, OtherCareer = 2000, Build = 70, OtherBuild = 71, RowlessBuild = 72;
 
     [Fact]
     public async Task APlanHoldingAnEarlierCareersFreeSkillSwitchesInAndResets() => await InWorld(async (host, alice, session) =>
@@ -81,13 +81,67 @@ public sealed class SkillBuildSwitchTests
     });
 
     [Fact]
-    public async Task AGenreWithoutABuildOnlyBindsThePlan() => await InWorld(async (host, alice, session) =>
+    public async Task AResetPlanTakesItsBuildAgain() => await InWorld(async (host, alice, session) =>
     {
         var skills = host.Service<SkillService>();
-        Assert.Equal(0, await SwitchGenre(alice, 5));
-        Assert.Equal(5, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(0, await SwitchGenre(alice, Build));
+        await alice.SendGameAsync(SkillService.SkillReset, new SkillResetReq { Plan = 0 });
+        Assert.Equal(0, (await Next(alice, SkillService.SkillReset, SkillResetResp.Parser)).Result);
+        Assert.Equal(0, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(0, skills.SpentPoints(session.Progress!));
+
+        Assert.Equal(0, await SwitchGenre(alice, Build));
+        Assert.Equal(3, skills.SpentPoints(session.Progress!));
+    });
+
+    // 71 is the other career's build, 5 no build at all: the career's skill window lists neither.
+    [Fact]
+    public async Task ABuildTheCareerDoesNotOfferIsRefused() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        Assert.Equal(ErrorCodes.BuildNotOfJob, await SwitchGenre(alice, OtherBuild));
+        Assert.Equal(ErrorCodes.BuildNotOfJob, await SwitchGenre(alice, 5));
+        Assert.Equal(0, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+
+        Assert.Equal(0, await SwitchGenre(alice, Build));
+        Assert.Equal(ErrorCodes.BuildNotOfJob, await SwitchGenre(alice, OtherBuild));
+        Assert.Equal(Build, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(3, skills.SpentPoints(session.Progress!));
+    });
+
+    // 72 is offered, but its profession has no recommended row: refused, and the plan stays unbound and untouched.
+    [Fact]
+    public async Task ABuildThePlanCannotTakeIsNotBound() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        Assert.Equal(0, await Update(alice, (Base, 1)));
+        Assert.Equal(ErrorCodes.Parameter, await SwitchGenre(alice, RowlessBuild));
+        Assert.Equal(0, skills.Build(session).SkillAssignPlans[0].SkillGenre);
+        Assert.Equal(1, skills.Level(session.Progress!, Base));
+    });
+
+    [Fact]
+    public async Task NoBuildIsChosenInCombat() => await InWorld(async (host, alice, session) =>
+    {
+        var skills = host.Service<SkillService>();
+        await host.Service<GameLoop>().InvokeAsync(() =>
+        {
+            session.StatusBits |= 1L << 15; // eObjectStateBattling
+            session.Combat.LastCombatMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return Task.CompletedTask;
+        });
+        Assert.Equal(ErrorCodes.ActionInBattle, await SwitchGenre(alice, Build));
+        Assert.Equal(0, skills.Build(session).SkillAssignPlans[0].SkillGenre);
         Assert.Equal(0, skills.SpentPoints(session.Progress!));
     });
+
+    private static async Task<int> Update(BotClient bot, params (int Group, int Level)[] levels)
+    {
+        var request = new SkillGrowthSkillPlanUpdateReq { Plan = 0 };
+        foreach (var (group, level) in levels) request.LevelUpList[group] = new SkillData { SkillId = group, SkillLevel = level };
+        await bot.SendGameAsync(SkillService.PlanUpdate, request);
+        return (await Next(bot, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result;
+    }
 
     private static int Stored(GameSession session, int plan, int group) =>
         session.Combat.SkillPlans!.SkillAssignPlans[plan].SkillAssigns.GetValueOrDefault(group)?.SkillLevel ?? 0;
@@ -127,7 +181,8 @@ public sealed class SkillBuildSwitchTests
             File.Copy(file, target);
         }
         Write(root, "JobConfig", $$$"""
-            {"{{{FirstCareer}}}":{"_iID":{{{FirstCareer}}},"_iJobRank":1},"{{{OtherCareer}}}":{"_iID":{{{OtherCareer}}},"_iJobRank":1}}
+            {"{{{FirstCareer}}}":{"_iID":{{{FirstCareer}}},"_iJobRank":1,"_kProfessionID":[{{{Build}}},{{{RowlessBuild}}}]},
+             "{{{OtherCareer}}}":{"_iID":{{{OtherCareer}}},"_iJobRank":1,"_kProfessionID":[{{{OtherBuild}}}]}}
             """);
         Write(root, "JobLvConfig", """
             {"101":{"_iID":101,"_iSkillPoint":3}}
@@ -149,10 +204,12 @@ public sealed class SkillBuildSwitchTests
              "2":{"_iID":2,"_iJob":{{{OtherCareer}}},"_iX1":985}}
             """);
         Write(root, "JobProfessConfig", $$$"""
-            {"{{{Build}}}":{"_iID":{{{Build}}},"_iProfessionID":7}}
+            {"{{{Build}}}":{"_iID":{{{Build}}},"_iProfessionID":7},"{{{OtherBuild}}}":{"_iID":{{{OtherBuild}}},"_iProfessionID":8},
+             "{{{RowlessBuild}}}":{"_iID":{{{RowlessBuild}}},"_iProfessionID":9}}
             """);
         Write(root, "JobProfessSkillConfig", """
-            {"7101":{"_iID":7101,"_iJobLv":1,"_iJobRank":1,"_iProfessionID":7,"_kDescData":[98201,98302,98102]}}
+            {"7101":{"_iID":7101,"_iJobLv":1,"_iJobRank":1,"_iProfessionID":7,"_kDescData":[98201,98302,98102]},
+             "8101":{"_iID":8101,"_iJobLv":1,"_iJobRank":1,"_iProfessionID":8,"_kDescData":[98501]}}
             """);
     }
 
