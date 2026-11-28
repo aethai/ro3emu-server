@@ -14,8 +14,7 @@ public sealed partial class SkillCastingService
     private const int ShadowEchoGroup = 15329, ShadowReturnBuffGroup = 115334;
     private const string ShadowReturnScript = "RetreatingShadows2", ShadowReturnSeasonScript = "RetreatingShadows2S1";
     private const long PulseRatioBasis = 100;
-    private const float PulseRadius = 8;
-    private const int PulseTargets = 14, FlightOutlastsMs = 500, ShadowReturnMs = 200;
+    private const int FlightOutlastsMs = 500, ShadowReturnMs = 200;
 
     private sealed class ShadowSpot { public Vec3? At; public long Until; public bool Ending; public JsonElement Row; }
     private readonly ConditionalWeakTable<GameSession, ShadowSpot> _shadowSpots = [];
@@ -59,7 +58,8 @@ public sealed partial class SkillCastingService
     }
 
     /// <summary>The landing: "For every ${7} enemies hit by this attack, gain @{2} stacks of Shield equal to ${8}% of your Max HP ... This also Enhances your next Axe Tornado, Launching
-    /// [High-Energy Pulse] a number of times based on the number of enemies hit". The pulse's row is not in the data: its ${11}% to up to 14 within 8 m is the text's (inferred).</summary>
+    /// [High-Energy Pulse] a number of times based on the number of enemies hit". The pulse's row is not in the data: its ${11}% to up to @{5} (5) within @{4} (8) m is the text's (inferred);
+    /// @{1} (14) is Severe Wound's seconds.</summary>
     private async Task HighEnergyLandingAsync(GameSession s, SkillConfig skill, IReadOnlyList<MonsterUnit> processed)
     {
         foreach (var flying in s.Buffs.Where(b => b.ConfigId == FlyingBuff).ToArray()) await _buffs.RemoveAsync(s, flying);
@@ -77,11 +77,14 @@ public sealed partial class SkillCastingService
         if (!_buffs.HasBuffPiles(s, TornadoEnhanceGroup, 1)) return;
         int pulses = s.Buffs.Where(b => b.ConfigId / 100 == PulseGroup).Sum(b => b.PileCount);
         foreach (var used in s.Buffs.Where(b => b.ConfigId / 100 is PulseGroup or TornadoEnhanceGroup).ToArray()) await _buffs.RemoveAsync(s, used);
-        if (SkillConfig.Get(_data, 1630701) is not { DescData: { Length: > 10 } desc } || !long.TryParse(desc[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out long percent)) return;
-        var pulse = tornado.AsDescribedHit(percent * PulseRatioBasis, 0, 1, PulseTargets);
+        if (SkillConfig.Get(_data, 1630701) is not { DescData: { Length: > 10 } desc } landing
+            || !long.TryParse(desc[10], NumberStyles.Integer, CultureInfo.InvariantCulture, out long percent)
+            || landing.DescriptionArgs() is not [_, _, _, var radius, var most, ..]) return;
+        int targets = (int)Math.Max(1, most);
+        var pulse = tornado.AsDescribedHit(percent * PulseRatioBasis, 0, 1, targets);
         for (int i = 0; i < pulses; i++)
         {
-            var around = MonstersNear(s, s.Position, PulseRadius).Take(PulseTargets).ToList();
+            var around = MonstersNear(s, s.Position, (float)radius).Take(targets).ToList();
             if (around.Count > 0) await CastExtraAsync(s, pulse, around);
         }
     }
