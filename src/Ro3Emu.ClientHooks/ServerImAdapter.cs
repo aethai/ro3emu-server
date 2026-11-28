@@ -95,6 +95,9 @@ namespace Ro3Emu.ClientHooks
         public void Obf_LkD()
         {
             _status.Enqueue(StatusLogoutSucc);
+            // NW_ChatNetworkManager:Disconnect on the way back to login or role select (GameLogic.lua), where UnInit
+            // (Obf_mkD) does not run: the next server sends its own chat cooldowns, or none.
+            ChatCooldown.ResetSession();
         }
 
         public void Obf_mkD()
@@ -108,6 +111,7 @@ namespace Ro3Emu.ClientHooks
             VoiceClient.Shutdown(); // voice must not outlive the game connection (mic left open after logout)
             VoicePtt.Reset();
             GuildOverhead.ResetSession();
+            ChatCooldown.ResetSession();
         }
 
         /// <summary>Same hand-off as the Tencent adapter: cmd, length, pinned pointer, error code in the shared array.</summary>

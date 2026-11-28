@@ -31,6 +31,9 @@ namespace Ro3Emu.ClientHooks
                     case "guildoverhead":
                         GuildOverhead.Command(parts.Length > 1 ? parts[1] : "off");
                         break;
+                    case "chatcd":
+                        ChatCooldown.Command(parts.Length > 1 ? parts[1] : "");
+                        break;
                     case "panels":
                         Panels();
                         break;

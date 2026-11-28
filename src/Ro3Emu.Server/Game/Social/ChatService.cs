@@ -42,6 +42,26 @@ public sealed partial class ChatService
         this._gm = gm; this._feedback = feedback; this._guilds = guilds; this._friends = friends; this._character = character; this._data = data;
         this._sessions = sessions; this._options = options; this._flood = flood; this._log = log;
         character.RegisterItemAction(SoundTransmissionAction, UseHornAsync, takesParam: true);
+        _cooldownCommand = CooldownCommand(data, options.Value.ChatCooldowns);
+    }
+
+    private readonly string? _cooldownCommand;
+
+    /// <summary>
+    /// The 77012 line that gives the client hook (Ro3Emu.ClientHooks.ChatCooldown) the server's channel cooldowns:
+    /// "chatcd 2=0,3=1", or null when Ro3Emu:ChatCooldowns is empty (the client's own). A channel that is not a
+    /// ChatChannelConfig _iID stops the start.
+    /// </summary>
+    internal static string? CooldownCommand(GameData data, IReadOnlyDictionary<int, int> cooldowns)
+    {
+        if (cooldowns.Count == 0) return null;
+        foreach (int channel in cooldowns.Keys)
+        {
+            if (Data.Config.ChatChannelConfig.Get(data, channel) == null)
+                throw new InvalidOperationException($"Ro3Emu:ChatCooldowns: {channel} is not a ChatChannelConfig channel (_iID).");
+        }
+        return "chatcd " + string.Join(",", cooldowns.OrderBy(c => c.Key)
+            .Select(c => c.Key.ToString(CultureInfo.InvariantCulture) + "=" + c.Value.ToString(CultureInfo.InvariantCulture)));
     }
 
     /// <summary>Bug reports: "/bug" lines here and the client hook's message (GameMessageHandler routes it through this).</summary>
@@ -130,7 +150,9 @@ public sealed partial class ChatService
     public async Task OnRoleEnteredAsync(GameSession session)
     {
         lock (_sync) _online[session.Role!.Id] = session;
-        await Task.CompletedTask; // functions (chat channels included) are opened by FunctionService
+        // Functions (chat channels included) are opened by FunctionService; the server's channel cooldowns, if any, go here.
+        if (_cooldownCommand != null)
+            await session.SendGameRawAsync(GmCommands.ClientDiagnosticsMsg, System.Text.Encoding.UTF8.GetBytes(_cooldownCommand));
     }
 
     public void OnRoleLeft(GameSession session)
