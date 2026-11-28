@@ -329,6 +329,7 @@ public sealed class GrowthObjectiveTests : IAsyncLifetime
         var bot = await InWorld();
         await Gm("!quest done 10103020"); // function 7
         await Gm("!lvl 50"); // function 83
+        await Gm("!job 1100"); // 2030540's _kJobNeed
         await Gm("!item 2 100000");
         // Stage 1: 1700130 [302003,0,1], 1700136 [302003,3,1]; later stages accepted here.
         await At(1700130, 0);

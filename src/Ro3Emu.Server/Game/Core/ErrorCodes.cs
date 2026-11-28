@@ -166,6 +166,9 @@ public static class ErrorCodes
     public const int AppraiseParameter = 651;   // "Equipment Appraisal"
     public const int EquipNotAppraised = 653;   // "Equipment has not been appraised"
     public const int EquipSlot = 654;           // "Incorrect equipment slot"
+    public const int EquipJob = 655;            // "Incorrect equipment class"
+    public const int EquipSex = 656;            // "Incorrect equipment gender"
+    public const int EquipLevel = 657;          // "Wrong Level"
     public const int NotEquipment = 659;        // "This item is not equipment"
     public const int EquipNotInBag = 660;       // "The equipment is not in your Backpack"
     public const int CraftParameter = 661;

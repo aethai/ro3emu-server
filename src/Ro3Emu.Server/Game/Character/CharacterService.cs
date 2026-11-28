@@ -255,8 +255,8 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     internal static bool IsAppraised(InvItem item) => CharacterInventoryService.IsAppraised(item);
     internal bool IsDualWieldOffHand(GameSession session, int grid) => _inventory.IsDualWieldOffHand(session, grid);
     public Task EquipAsync(GameSession session, EquipItemOprReq req) => _inventory.EquipAsync(session, req);
-    internal int StageEquipmentPlan(DBEquipInfo state, List<InvItem> stagedItems, int index, RoleProgress progress, bool replaceCurrent = false) =>
-        _inventory.StageEquipmentPlan(state, stagedItems, index, progress, replaceCurrent);
+    internal int StageEquipmentPlan(DBEquipInfo state, List<InvItem> stagedItems, int index, RoleProgress progress, int sex,
+        bool replaceCurrent = false) => _inventory.StageEquipmentPlan(state, stagedItems, index, progress, sex, replaceCurrent);
     internal Task SyncEquipmentAsync(GameSession session) => _inventory.SyncEquipmentAsync(session);
     public Task SwitchEquipmentPlanAsync(GameSession session, EquipSwitchPlanReq req) => _inventory.SwitchEquipmentPlanAsync(session, req);
     public Task RenameEquipmentPlanAsync(GameSession session, EquipChangePlanNameReq req) => _inventory.RenameEquipmentPlanAsync(session, req);

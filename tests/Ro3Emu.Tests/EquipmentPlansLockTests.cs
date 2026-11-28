@@ -143,6 +143,7 @@ public sealed class EquipmentPlansLockTests : IAsyncLifetime
         var sharedOut = await Next(alice, CharacterService.EquipSync, DBEquipInfoIncrement.Parser, m => m.HasCurrentEquipPlan && m.CurrentEquipPlan == 1);
         Assert.False(sharedOut.Items.ContainsKey(dagger));
         Assert.Equal(1, Stored(alice).Single(i => i.Guid == dagger).Grid);
+        await Gm("!lvl 20"); // PurpleWeapon's _iLevelNeed
         await Gm($"!item {PurpleWeapon}");
         long weapon = Stored(alice).Single(i => i.Entry == PurpleWeapon).Guid;
         await Equip(alice, weapon, 1);

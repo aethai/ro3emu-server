@@ -14,7 +14,8 @@ public sealed partial class CharacterInventoryService
     private const int EquipmentPlanNameLimit = 8;
 
     /// <summary>Stage 31413's validated grid move for a Genre composite; caller persists all owners together.</summary>
-    internal int StageEquipmentPlan(DBEquipInfo state, List<InvItem> stagedItems, int index, RoleProgress progress, bool replaceCurrent = false)
+    internal int StageEquipmentPlan(DBEquipInfo state, List<InvItem> stagedItems, int index, RoleProgress progress, int sex,
+        bool replaceCurrent = false)
     {
         if (!state.EquipPlans.TryGetValue(index, out var target)) return ErrorCodes.Parameter;
         if (index == state.CurrentEquipPlan && !replaceCurrent) return 0;
@@ -25,6 +26,7 @@ public sealed partial class CharacterInventoryService
             if (item == null) return ErrorCodes.ItemMissing;
             if (!IsEquipment(item.Entry)) return ErrorCodes.NotEquipment;
             if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) return ErrorCodes.EquipNotInBag;
+            if (WearError(item.Entry, progress, sex) is var wear and not 0) return wear;
             if (!GridsFor(item.Entry, progress).Contains(grid) || !incoming.TryAdd(guid, (item, grid))) return ErrorCodes.EquipSlot;
         }
         if (incoming.Values.Any(i => i.Grid == 1 && PartOf(i.Item.Entry) == 1) && incoming.Values.Any(i => i.Grid == 2))
@@ -111,6 +113,8 @@ public sealed partial class CharacterInventoryService
                 if (item == null) { result = ErrorCodes.ItemMissing; break; }
                 if (!IsEquipment(item.Entry)) { result = ErrorCodes.NotEquipment; break; }
                 if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) { result = ErrorCodes.EquipNotInBag; break; }
+                // Only the incoming gear: a role may always switch away from gear it can no longer wear.
+                if (WearError(item.Entry, session.Progress!, session.Role?.Sex ?? 0) is var wear and not 0) { result = wear; break; }
                 if (!GridsFor(item.Entry, session.Progress!).Contains(grid) || !incoming.TryAdd(guid, (item, grid)))
                 { result = ErrorCodes.EquipSlot; break; }
             }

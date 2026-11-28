@@ -97,7 +97,8 @@ public sealed class ParticipationTargetTests : IAsyncLifetime
         long before = (await QuestProbe.ReadAsync(_app, "alice", 705060))!.CompleteNum[0];
         Assert.Equal(await Read(() => Session.Items.LongCount(i => i.Grid > 0 && EquipmentAffixes.Specials(i).Any())), before);
         Assert.True(before < 3);
-        // EquipConfig _kFixedSpecialAttribute gear for grids 2, 4 and 5: every instance carries Stunts.
+        // EquipConfig _kFixedSpecialAttribute gear for grids 2, 4 and 5: every instance carries Stunts. 90000612 asks a first job.
+        await Gm("!job 1100");
         var gear = new[] { (Entry: 90000612, Grid: 2), (Entry: 90000614, Grid: 4), (Entry: 90000615, Grid: 5) };
         var guids = new List<long>();
         foreach (var (entry, _) in gear) guids.Add(await Give(entry));

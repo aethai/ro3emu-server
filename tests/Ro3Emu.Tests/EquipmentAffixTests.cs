@@ -154,6 +154,7 @@ public sealed class EquipmentAffixTests : IAsyncLifetime
             });
             Assert.Equal(ErrorCodes.FeatureUnavailable, (await Appraise(bot, unappraised[0].ItemGuid)).Result);
             await Gm("!quest done 10103020");
+            await Gm("!lvl 20"); // Cutter's _iLevelNeed, worn below
             var reply = await Appraise(bot, [.. unappraised.Select(i => i.ItemGuid)]);
             Assert.Equal(0, reply.Result);
             Assert.Equal(24, reply.AppraiseResult.Count);
