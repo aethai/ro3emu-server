@@ -6,6 +6,7 @@ using Ro3Emu.Bot;
 using Ro3Emu.Server;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
 
@@ -50,7 +51,7 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         await bot.LoginAsync("petcombat", "pw"); await bot.EnterGateAsync();
         long id = (await bot.CreateRoleAsync("Petcombat")).RoleBaseInfo.Id;
         var roster = new DBPetInfo { Inited = true, IncubationLv = 1, OnOpenUIRoomLv = 1 };
-        foreach (int petId in new[] { 13001, 10001, 11001, 21002 })
+        foreach (int petId in new[] { 13001, 10001, 11001, 21002, Sarah, Aliot })
             roster.ListPet[petId] = new PetData { PetId = petId, Level = 12, Star = 1 };
         Service<RoleStore>().SavePets(id, roster.ToByteArray());
         Service<RoleStore>().SaveTower(id, new DBClimTower
@@ -253,5 +254,66 @@ public sealed class TowerPetCombatTests : IAsyncLifetime
         Assert.Equal(0, Service<BuffService>().ShieldAmount(cancelled));
         Assert.DoesNotContain(bot.Inbox.Snapshot().Where(e => e.IsGame(BuffService.BuffUpdate))
             .Select(e => BuffUpdateNotify.Parser.ParseFrom(e.Body)), b => b.Buffs.Any(x => x.SourceId == cancelled.Uid));
+    }
+
+    private const int Sarah = 30004, Aliot = 31001, BlazingThrust = 2334401, AoeSurgery = 2314401;
+
+    private sealed class ProcRolls : CombatRolls
+    {
+        public override double Hit() => 0;
+        public override int Proc(int max) => 0;
+    }
+
+    /// <summary>#649: Sarah's Blazing Thrust (Rect360, [1000, 500]) is one of her attacks and hits the monsters in the
+    /// 10 x 5 m rectangle ahead of her, not one beside it; Aliot's AoE Surgery heals him PATK x _kDamageParam1[1] / 10000.</summary>
+    [ClientDataFact]
+    public async Task SarahsBlazingThrustHitsItsRectangleAndAoeSurgeryHealsAliot()
+    {
+        await using var bot = await InTower();
+        var s = Session; var a = s.Instances.TowerAttempt!;
+        Service<CombatService>().Rolls = new ProcRolls();
+        TowerPetUnit sarah = null!, aliot = null!;
+        MonsterUnit ahead = null!, inside = null!, beside = null!;
+        await Run(async () =>
+        {
+            foreach (var old in a.Pets.ToArray()) await Service<World>().RemoveUnitAsync(old);
+            a.Pets.Clear();
+            int npc = a.Monsters[0].Template.NpcId;
+            foreach (var monster in a.Monsters) monster.Dead = true;
+            var p = s.Position;
+            async Task<MonsterUnit> At(float dx, float dz)
+            {
+                var m = (await Service<MonsterService>().SpawnSingleAsync(s.SceneEntry, npc, new MapPoint(p.X + dx, p.Y, p.Z + dz, 0), a.InstanceId))!;
+                m.Hp = m.Template.MaxHp * 100;
+                m.StaysOutOfBattle = true;
+                return m;
+            }
+            ahead = await At(0, 4); inside = await At(1.5f, 7); beside = await At(5, 4);
+            foreach (int id in new[] { Sarah, Aliot })
+            {
+                var unit = TowerPetUnit.Create(Service<GameData>(), s.Pets!, s, Service<World>(), Service<MonsterService>(),
+                    Service<CombatService>(), NextPetUid(), id, a.InstanceId, p.X, p.Y, p.Z)!;
+                a.Pets.Add(unit); await Service<World>().AddUnitAsync(unit);
+                if (id == Sarah) sarah = unit; else aliot = unit;
+            }
+            Assert.Contains(sarah.AttackSkills, k => k.Id == BlazingThrust);
+            await Service<CombatService>().TowerPetAttackAsync(s, sarah, ahead, BlazingThrust);
+        });
+        var hit = await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == sarah.Uid && h.SkillId == BlazingThrust);
+        Assert.Contains(hit.Dsts, d => d.DstID == ahead.Uid && d.Damage > 0);
+        Assert.Contains(hit.Dsts, d => d.DstID == inside.Uid && d.Damage > 0);
+        Assert.DoesNotContain(hit.Dsts, d => d.DstID == beside.Uid);
+
+        long expected = 0;
+        await Run(async () =>
+        {
+            aliot.Hp = 1;
+            expected = (long)Math.Floor(aliot.CombatStats[AttributeId.Atk]
+                * new SkillConfig(Service<GameData>().Row("SkillConfig", AoeSurgery)!.Value).DamageParam1[1] / 10000.0);
+            await Service<CombatService>().TowerPetAttackAsync(s, aliot, ahead, AoeSurgery);
+        });
+        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SrcID == aliot.Uid && h.SkillId == AoeSurgery);
+        Assert.True(expected > 0);
+        Assert.True(SpinWait.SpinUntil(() => aliot.Hp == 1 + expected, Wait), $"Aliot at {aliot.Hp}, expected {1 + expected}");
     }
 }
