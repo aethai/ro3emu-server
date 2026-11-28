@@ -54,13 +54,19 @@ public sealed partial class CharacterInventoryService
 
     private readonly Dictionary<string, (JsonElement Row, long Grids, long Level)[]> _resonanceRows = [];
 
+    /// <summary>
+    /// The resonance tier reached: _kRequest [grids, level] counts the grids 1-7 whose level is at least that and that wear
+    /// a piece, as the resonance panel counts them (UI_Sys_StrengthenResonancePanelCtrl._canActivateEffect reads
+    /// GetEquipGearDataByGridType before the level). A grid keeps its level while empty, but counts again only when worn.
+    /// </summary>
     internal JsonElement? ResonanceRow(GameSession session, string table)
     {
         var levels = table.StartsWith("Strengthen", StringComparison.Ordinal) ? session.Profile.EquipLevels.Strength : session.Profile.EquipLevels.Refine;
+        var worn = session.Items.Where(i => i.Pack == 2 && i.Grid is >= 1 and <= EquipInfoSlots).Select(i => i.Grid).ToHashSet();
         JsonElement? best = null;
         foreach (var (row, grids, level) in ResonanceRows(table))
         {
-            if (Enumerable.Range(1, EquipInfoSlots).Count(g => levels.GetValueOrDefault(g) >= level) >= grids) best = row;
+            if (Enumerable.Range(1, EquipInfoSlots).Count(g => worn.Contains(g) && levels.GetValueOrDefault(g) >= level) >= grids) best = row;
         }
         return best;
     }

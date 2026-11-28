@@ -29,7 +29,7 @@ public sealed partial class PersonalService
         ErrUnlocked = 3356, ErrUpvoted = 3359, ErrUpvoteSelf = 3361, ErrUpvoteCooldown = 3362,
         ErrPreset = 3363, ErrSignLength = 3364, ErrSignSensitive = 3365, ErrNameLength = 3366, ErrNameSensitive = 3367;
     // The gift panel's effect ids (UI_Sys_Friend_GiftToFriendsPanelCtrl: Intimacy 107, TotalPopularity 108, Charity 109).
-    private const int EffectPopularity = 108, EffectCharity = 109;
+    private const int EffectIntimacy = 107, EffectPopularity = 108, EffectCharity = 109;
     private const int Function = 63;
     // enum_PersonalUnlockType (Lua_GameDefine.lua:13645-13660); the editor's lists check Theme, BackGround and Action
     // (UI_Sys_Personal_EditTheme/EditBg/EditRoleAction_ListWidgetCtrl via LC_PersonalHelper.CheckItemIsOpen).
@@ -354,13 +354,19 @@ public sealed partial class PersonalService
     /// (Charity, record.affection; UI_Sys_Friend_GiftRecordListWidgetCtrl._initView). Likes add none: the client links them
     /// nowhere to popularity.
     /// </summary>
-    public (int Popularity, int Affection) GiftValues(long item, int count)
-    {
-        if (_data.Row("ItemConfig", item) is not { } row) return (0, 0);
-        var effects = GameData.Pairs(row, "_iUseEffect").ToList();
-        int Total(int effect) => (int)Math.Min(int.MaxValue, effects.Where(e => e.Id == effect).Sum(e => (long)e.Value * count));
-        return (Total(EffectPopularity), Total(EffectCharity));
-    }
+    public (int Popularity, int Affection) GiftValues(long item, int count) =>
+        ((int)Math.Min(int.MaxValue, GiftEffect(item, count, EffectPopularity)), (int)Math.Min(int.MaxValue, GiftEffect(item, count, EffectCharity)));
+
+    /// <summary>The item's _iUseEffect <paramref name="effect"/> value times the count.</summary>
+    private long GiftEffect(long item, int count, int effect) => _data.Row("ItemConfig", item) is { } row
+        ? GameData.Pairs(row, "_iUseEffect").Where(e => e.Id == effect).Sum(e => (long)e.Value * count) : 0;
+
+    /// <summary>The items the gift panel offers (FriendlyItemConfig _iItemId, UI_Sys_Friend_GiftToFriendsPanelCtrl).</summary>
+    public bool IsFriendGift(long item) => Data.Config.FriendlyItemConfig.All(_data).Any(r => r.ItemId == item);
+
+    /// <summary>A gift's intimacy: the item's _iUseEffect 107 (Intimacy) times the count, as the gift panel previews it
+    /// (UI_Sys_Friend_GiftToFriendsPanelCtrl._changeGiftShowInfo; a Sparkling Balloon 10, a Plain Balloon 5).</summary>
+    public long GiftIntimacy(long item, int count) => GiftEffect(item, count, EffectIntimacy);
 
     /// <summary>Credits a committed gift: the receiver's popularity, the sender's affection.</summary>
     public async Task CreditGiftAsync(long sender, long receiver, int popularity, int affection)

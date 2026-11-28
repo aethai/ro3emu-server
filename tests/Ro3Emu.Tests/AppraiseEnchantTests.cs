@@ -98,16 +98,32 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
         return await Next(bot, CharacterService.EquipItemOpr, EquipItemOprResp.Parser);
     }
 
-    // RefiningEffectTable level 1 is [7 grids, +3]. Wearing or removing anything keeps the panel's level.
+    // RefiningEffectTable level 1 is [7 grids, +3]: the grids count while they wear a piece (the resonance panel).
     [ClientDataFact]
-    public async Task WearingGearKeepsTheResonanceLevelsInTheReply()
+    public async Task ResonanceCountsTheWornGridsAndTheReplyCarriesIt()
     {
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!quest done 10103020");
-        await Gm("alice", "!lvl 20"); // Orange's _iLevelNeed
-        var gear = await Give(Orange);
-        await alice.SendGameAsync(AppraisalService.Appraise, new EquipAppraiseReq { ItemGuids = { gear.Guid } });
-        Assert.Equal(0, (await Next(alice, AppraisalService.Appraise, EquipAppraiseResp.Parser)).Result);
+        await Gm("alice", "!lvl 20");
+        await Gm("alice", "!job 1100"); // a Swordman has an off-hand piece; a Novice has none
+        // One piece a level-20 Swordman may wear for each grid 1-7: a one-handed weapon, an off-hand, then parts 4-6, two of 7.
+        var data = Service<GameData>();
+        var rows = data.Table("ItemConfig").Values.Where(r => GameData.Int(r, "_iType") == 5 && GameData.Int(r, "_iLevelNeed") <= 20
+            && (r.TryGetProperty("_kJobNeed", out var jobs) && jobs.ValueKind == JsonValueKind.Array
+                ? jobs.EnumerateArray().Any(j => GameData.Number(j) is 0 or 1100) || jobs.GetArrayLength() == 0 : true)).ToList();
+        var owned = Session().Items.Select(i => (long)i.Entry).ToHashSet(); // the starter kit's shirt is part 4 too
+        long Pick(int part, int skip = 0) => rows.Where(r => GameData.Int(r, "_iEquipPart") == part)
+            .Select(r => GameData.Int(r, "_iID")).Where(id => !owned.Contains(id)).Skip(skip).First();
+        long[] entries = [Pick(2), Pick(3), Pick(4), Pick(5), Pick(6), Pick(7), Pick(7, 1)];
+        var gear = new List<InvItem>();
+        foreach (long entry in entries) gear.Add(await Give((int)entry));
+        // Only pieces whose config asks for appraisal come unappraised; the batch takes those.
+        var unappraised = gear.Where(g => g.Attrs?.GetValueOrDefault(3) != 1).Select(g => g.Guid).ToList();
+        if (unappraised.Count > 0)
+        {
+            await alice.SendGameAsync(AppraisalService.Appraise, new EquipAppraiseReq { ItemGuids = { unappraised } });
+            Assert.Equal(0, (await Next(alice, AppraisalService.Appraise, EquipAppraiseResp.Parser)).Result);
+        }
         var session = _app.Services.GetRequiredService<SessionRegistry>().All().Single(s => s.Account == "alice");
         var equipment = _app.Services.GetRequiredService<EquipmentService>();
         await _app.Services.GetRequiredService<GameLoop>().InvokeAsync(async () =>
@@ -116,13 +132,20 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
             Assert.NotNull(await equipment.GmSetLevelAsync(session, [1, 2, 3, 4, 5, 6, 7], 30, refine: false));
         });
 
-        var worn = await Wear(alice, gear.Guid);
+        EquipItemOprResp worn = null!;
+        foreach (var piece in gear.Take(6))
+        {
+            worn = await Wear(alice, piece.Guid);
+            Assert.Equal(0, worn.Result);
+        }
+        Assert.Equal((0, 0), (worn.RefineEffectLv, worn.StrengthenEffectLv)); // six worn grids of seven
+        worn = await Wear(alice, gear[6].Guid);
         Assert.Equal(0, worn.Result);
         Assert.Equal(1, worn.RefineEffectLv);
         Assert.True(worn.StrengthenEffectLv > 0);
-        var removed = await Wear(alice, gear.Guid, remove: true);
+        var removed = await Wear(alice, gear[0].Guid, remove: true);
         Assert.Equal(0, removed.Result);
-        Assert.Equal(1, removed.RefineEffectLv);
+        Assert.Equal((0, 0), (removed.RefineEffectLv, removed.StrengthenEffectLv)); // the empty grid keeps its level, not its count
     }
 
     [ClientDataFact]
