@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Google.Protobuf;
+using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
@@ -63,6 +64,7 @@ public sealed partial class CombatService : IGameTicker
     private readonly GameData _data;
     private readonly GameLoop _loop;
     private readonly ILogger<CombatService> _log;
+    private readonly ServerOptions _options;
     /// <summary>The combat dice (hit, damage float, crit, effect procs). Tests whose subject is not chance swap in
     /// fixed rolls, so a prepared lethal basic attack cannot randomly miss (the "first swing missed" flaky class).</summary>
     internal CombatRolls Rolls { get; set; } = new();
@@ -501,8 +503,10 @@ public sealed partial class CombatService : IGameTicker
     public Func<GameSession, GameSession, JsonElement, Task<bool>>? ReviveItemSkill { get; set; }
 
     public CombatService(World world, MonsterService monsters, CharacterService character, SkillService skills, SceneService scene, BuffService buffs,
-        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log)
+        WorldData worldData, SessionRegistry sessions, GameData data, GameLoop loop, ILogger<CombatService> log,
+        IOptions<ServerOptions> options)
     {
+        this._options = options.Value;
         this._world = world;
         this._monsters = monsters;
         this._character = character;
@@ -1228,8 +1232,9 @@ public sealed partial class CombatService : IGameTicker
     /// HP/SP regeneration every 5 s, in combat too: FinalReHp = ReHP + MaxHP × per_rehp (117/118, inferred formula).
     /// AttributeConfig 117/118, the panel's HP/SP Recovery, read "Recovers ${1} MP every @{1} sec." with no condition; the
     /// out-of-combat recovery is its own pair, 120/121 rest_rehp/rest_resp, "... while out of combat", not implemented here.
+    /// A player meditating out of combat recovers ServerOptions.MeditationRecoveryPercent of it (100, the original, by default).
     /// </summary>
-    private async Task RegenAsync(GameSession s)
+    internal async Task RegenAsync(GameSession s)
     {
         if (s.Role == null || s.Progress == null) return;
         using var held = await CharacterService.Lock(s);
@@ -1241,8 +1246,20 @@ public sealed partial class CombatService : IGameTicker
         long rehp = st[107] + st[101] * st.Data.GetValueOrDefault(1071) / 10000;
         // 243 temporary_per_magicrecover: Meditatio "MP Recovery Speed", as 1081 per_resp beside it.
         long resp = st[108] + st[102] * (st.Data.GetValueOrDefault(1081) + st.Data.GetValueOrDefault(243)) / 10000;
-        await _character.SetHpSpAsync(s, st[2000] + Math.Max(1, rehp), st[2001] + Math.Max(1, resp));
+        int percent = MeditationPercent(s);
+        await _character.SetHpSpAsync(s, st[2000] + Math.Max(1, rehp * percent / 100), st[2001] + Math.Max(1, resp * percent / 100));
     }
+
+    /// <summary>
+    /// The share of a tick a player recovers: ServerOptions.MeditationRecoveryPercent while it plays Meditate (PerformanceConfig
+    /// 10001, "Meditate on the spot to recover.") out of combat, else 100. The client gives meditation no recovery of its
+    /// own; a faster one is a server choice (#633), off by default. Meditate cannot start in combat and ends once its player
+    /// fights (EmojiService.Validate, Tick), the FightBit check only covers the tick before that end.
+    /// </summary>
+    private int MeditationPercent(GameSession s) =>
+        (s.StatusBits & FightBit) == 0
+            && s.Social.Emote is { State: ObjectState.EObjectStateSmemojiPlay, EmojiId: EmojiService.Meditate }
+            ? _options.MeditationRecoveryPercent : 100;
 
     internal async Task ToPlayerAndViewersAsync(GameSession p, uint msgId, IMessage body)
     {
