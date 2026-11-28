@@ -29,7 +29,7 @@ public sealed class FriendGiftTests
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = sql;
-        return Convert.ToInt64(command.ExecuteScalar());
+        return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [Fact]
