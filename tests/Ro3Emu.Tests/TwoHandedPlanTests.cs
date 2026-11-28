@@ -74,7 +74,7 @@ public sealed class TwoHandedPlanTests : IAsyncDisposable
         int Stage(out List<InvItem> bag, params (int, long)[] target)
         {
             bag = Bag();
-            return character.StageEquipmentPlan(Plans(target), bag, 1, progress);
+            return character.StageEquipmentPlan(Plans(target), bag, 1, progress, 0);
         }
 
         Assert.Equal(0, Stage(out var bag, (1, GreatswordGuid), (2, GreatswordGuid)));
