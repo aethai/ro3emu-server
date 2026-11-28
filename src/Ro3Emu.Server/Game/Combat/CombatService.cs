@@ -522,6 +522,7 @@ public sealed partial class CombatService : IGameTicker
         _buffs.UnitChanged.Subscribe(PublishMonsterAttributesAsync);
         _monsters.Forbidden = _buffs.UnitForbidden;
         _monsters.TargetVisible = (m, p) => !Stealthed(p) && !Airborne(p) && _buffs.CanSeePosition(m, p.Position);
+        _monsters.TargetHidden = Stealthed;
         monsters.Attack = MonsterAttackAsync;
         buffs.ImmuneDeathDeclined = PlayerDiesAsync;
         scene.Leaving.Subscribe(ClearSkillsAsync, order: SceneService.LeaveOrderCombat);

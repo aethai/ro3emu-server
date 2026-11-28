@@ -56,6 +56,79 @@ public sealed class MonsterLeashTests
         Assert.Equal(heals ? monster.Template.MaxHp : half, await f.Read(() => monster.Hp));
     }
 
+    [Fact] // #648: a target that hides is held, unhealed and in place, and fought again once seen
+    public async Task AMonsterWhoseTargetHidesHoldsItAndFightsOnWhenItIsSeen()
+    {
+        await using var f = await Fixture.StartAsync();
+        var monster = await f.SpawnAsync(Healing, Reach + 2);
+        bool hidden = false;
+        long half = await f.Read(() =>
+        {
+            f.Monsters.TargetHidden = _ => hidden;
+            monster.Hp = monster.Template.MaxHp / 2;
+            f.Monsters.Engage(monster, f.Session);
+            return monster.Hp;
+        });
+        await f.HitAsync(monster);
+        await f.Read(() => hidden = true);
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 800));
+        Assert.True(await f.Read(() => ReferenceEquals(monster.Target, f.Session) && !monster.Returning && monster.Hp == half));
+        int hits = f.Hits(monster);
+        Assert.Equal(hits, await f.Read(() => f.Hits(monster))); // it does not swing at the hidden player
+        await f.Read(() => hidden = false);
+        await f.Until(() => f.Hits(monster) > hits);
+        Assert.True(f.Hits(monster) > hits);
+    }
+
+    [Fact] // #648: hidden for the fixture's HateClearTime (1.5 s), it gives up as a fight lost, healing on its return
+    public async Task AMonsterGivesUpOnATargetHiddenPastItsHateClearTime()
+    {
+        await using var f = await Fixture.StartAsync();
+        var monster = await f.SpawnAsync(Healing, Reach + 2);
+        await f.Read(() =>
+        {
+            f.Monsters.TargetHidden = _ => true;
+            monster.Hp = monster.Template.MaxHp / 2;
+            f.Monsters.Engage(monster, f.Session);
+            return 0;
+        });
+        await f.Until(() => monster.Target == null && !monster.Returning);
+        Assert.Null(await f.Read(() => monster.Target));
+        Assert.Equal(monster.Template.MaxHp, await f.Read(() => monster.Hp));
+    }
+
+    [Fact] // #648: a fight that ended while its target hid leaves no hiding clock: the next fight's target that hides is held
+    public async Task AFightEndedWhileItsTargetHidStartsTheNextHideAfresh()
+    {
+        await using var f = await Fixture.StartAsync();
+        var monster = await f.SpawnAsync(Healing, Reach + 2);
+        bool hidden = true;
+        await f.Read(() =>
+        {
+            f.Monsters.TargetHidden = _ => hidden;
+            f.Monsters.Engage(monster, f.Session);
+            return 0;
+        });
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 500)); // its hiding clock runs
+        await f.Read(() =>
+        {
+            f.Session.Position.X = PlayerX + 100; // out of its leash: lost while hidden
+            return 0;
+        });
+        await f.Until(() => monster.Target == null && !monster.Returning);
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 1500)); // past HateClearTime since that clock started
+        await f.Read(() =>
+        {
+            f.Session.Position.X = PlayerX;
+            hidden = false;
+            f.Monsters.Engage(monster, f.Session);
+            hidden = true;
+            return 0;
+        });
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 400));
+        Assert.True(await f.Read(() => ReferenceEquals(monster.Target, f.Session)));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "ro3emu-leash-" + Guid.NewGuid().ToString("N"));
@@ -97,6 +170,9 @@ public sealed class MonsterLeashTests
             npcs[Key(Healing)] = Npc(Healing, HealingAi);
             npcs[Key(Keeping)] = Npc(Keeping, KeepingAi);
             File.WriteAllText(Path.Combine(_root, "config", "NPCConfig.json"), npcs.ToJsonString());
+            var publicParams = JsonNode.Parse(File.ReadAllText(Path.Combine(_root, "config", "PublicParamConfig.json")))!.AsObject();
+            publicParams["HateClearTime"] = 1500;
+            File.WriteAllText(Path.Combine(_root, "config", "PublicParamConfig.json"), publicParams.ToJsonString());
             Write("AIConfig", new Dictionary<string, object>
             {
                 [Key(HealingAi)] = Ai(HealingAi, [MonsterService.ResetHealBuff, SpeedUp]),
@@ -141,6 +217,10 @@ public sealed class MonsterLeashTests
                 await Task.Delay(50);
             }
         }
+
+        /// <summary>The monster's normal attacks the player has seen land (31101 from it).</summary>
+        public int Hits(MonsterUnit m) => _bot.Inbox.Snapshot().Count(e => e.IsGame(CombatService.SkillHit)
+            && SkillHitInfo.Parser.ParseFrom(e.Body).SrcID == m.Uid);
 
         /// <summary>The monster's normal attack lands on the player (31101 from it).</summary>
         public Task<BotEvent> HitAsync(MonsterUnit m) => _bot.Inbox.WaitAsync(e => e.IsGame(CombatService.SkillHit)

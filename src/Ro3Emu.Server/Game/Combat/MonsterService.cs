@@ -442,6 +442,9 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
 
     internal Func<MonsterUnit, GameSession, bool>? TargetVisible { get; set; }
 
+    /// <summary>The player is hidden (CombatService.Stealthed): a target that hides is held, not lost (<see cref="HoldForHidden"/>).</summary>
+    internal Func<GameSession, bool>? TargetHidden { get; set; }
+
     /// <summary>Set by a gameplay: a player the monster never takes as its target (the siege castle spares its own
     /// camp, TerritoryWarsService.SiegeUnits).</summary>
     internal Func<MonsterUnit, GameSession, bool>? Spares { get; set; }
@@ -645,6 +648,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         var previous = monster.Target;
         if (ReferenceEquals(previous, target)) return;
         monster.Target = target;
+        monster.HiddenSinceMs = 0; // a new target (or none) starts no hiding clock
         if (previous == null && target != null) LeaveRoute(monster); // MonsterService.March
         ReleaseSurroundSlot(monster);
         foreach (var handler in TargetChanged.Handlers) _loop.TrackRuntimeDetached("monster target change", () => handler(monster, previous, target));
@@ -714,8 +718,9 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         var target = m.Target!;
         UpdateHatred(m, now); // MonsterService.Hatred: decline, and entries gone stale or far dropped
-        bool lost = target.Role == null || target.Dead || target.SceneLoading || TargetVisible?.Invoke(m, target) == false || target.WorldScene != m.WorldScene
-                    || OutOfLeash(m, target.Position.X, target.Position.Z) || !m.ThreatTable.ContainsKey(target);
+        bool hidden = TargetHidden?.Invoke(target) == true;
+        bool lost = target.Role == null || target.Dead || target.SceneLoading || !hidden && TargetVisible?.Invoke(m, target) == false
+                    || target.WorldScene != m.WorldScene || OutOfLeash(m, target.Position.X, target.Position.Z) || !m.ThreatTable.ContainsKey(target);
         if (lost)
         {
             // Attackers still near: it fights on, instead of resetting while it is being hit (inferred: the one with the
@@ -724,6 +729,12 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             else Disengage(m, map);
             return;
         }
+        if (hidden)
+        {
+            HoldForHidden(m, map, target, now);
+            return;
+        }
+        m.HiddenSinceMs = 0;
         if (m.BusyUntilMs > now)
         {
             // A special skill is being cast: the boss holds its ground and does not swing.
@@ -787,6 +798,50 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
             _loop.TrackRuntimeDetached("monster attack", () => Attack(m, target));
         }
     }
+
+    /// <summary>
+    /// The target hid (Hiding, Cloaking, Camouflage: "invisible and untargetable"), which the client gives no monster rule
+    /// for (#648, inferred): the monster turns to another player it hates and can see, else to a tower pet of its room;
+    /// with neither it stands and keeps the hidden player, unhealed, until HateClearTime passes, as an entry that stops
+    /// growing is dropped (MonsterService.Hatred), and then gives up. It takes the player again once seen.
+    /// </summary>
+    private void HoldForHidden(MonsterUnit m, MapInstance map, GameSession hidden, long now)
+    {
+        if (VisibleHated(m, hidden) is { } other)
+        {
+            SetTarget(m, other);
+            return;
+        }
+        if (NearestTowerPet(m, map) is { } pet)
+        {
+            m.HiddenSinceMs = 0; // the pet fight is no time spent waiting for the hidden player
+            Engage(m, pet);
+            return;
+        }
+        if (m.HiddenSinceMs == 0) m.HiddenSinceMs = now;
+        else if (HatredParams.ClearTimeMs > 0 && now - m.HiddenSinceMs >= HatredParams.ClearTimeMs)
+        {
+            Disengage(m, map);
+            return;
+        }
+        if (m.Moving)
+        {
+            m.Moving = false;
+            SendStop(m, now);
+        }
+    }
+
+    /// <summary>The player it hates most among the ones it can still fight and see, the hidden one aside; none removed.</summary>
+    private GameSession? VisibleHated(MonsterUnit m, GameSession hidden) => m.ThreatTable
+        .Where(e => e.Key != hidden && e.Key.Role != null && !e.Key.Dead && !e.Key.SceneLoading && e.Key.WorldScene == m.WorldScene
+            && TargetVisible?.Invoke(m, e.Key) != false && !OutOfLeash(m, e.Key.Position.X, e.Key.Position.Z))
+        .OrderByDescending(e => e.Value.Value).ThenBy(e => Distance(m.X, m.Z, e.Key.Position.X, e.Key.Position.Z))
+        .Select(e => e.Key).FirstOrDefault();
+
+    /// <summary>The nearest live tower pet of the monster's room within its leash.</summary>
+    private static TowerPetUnit? NearestTowerPet(MonsterUnit m, MapInstance map) => m.InstanceId == 0 ? null : map.Units
+        .OfType<TowerPetUnit>().Where(p => !p.Dead && p.Hp > 0 && p.WorldScene == m.WorldScene && !OutOfLeash(m, p.X, p.Z))
+        .OrderBy(p => Distance(m.X, m.Z, p.X, p.Z)).FirstOrDefault();
 
     private GameSession? NextHated(MonsterUnit m, GameSession lost)
     {
