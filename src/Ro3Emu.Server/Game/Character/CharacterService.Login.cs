@@ -102,11 +102,6 @@ public sealed partial class CharacterService
     }
 
     /// <summary>
-    /// (inferred) Legacy gear was always advertised as appraised and could share a stack/roll. Preserve its flag,
-    /// original GUID, grid and existing rolls; extra copies retain those rolls but get separate bag GUIDs. All
-    /// changes commit together before login sync, so restart cannot lose or duplicate the old stack's pieces.
-    /// </summary>
-    /// <summary>
     /// Worn gear the role may not wear (CharacterInventoryService.WearError: level, class, sex), put on before the server
     /// checked it or by a job change since, goes to the bag at login, even past its capacity rather than lost; the current
     /// plan forgets it, the other plans keep it and 31413 refuses them until the role qualifies (owner, 27 Nov 2026).
@@ -142,6 +137,11 @@ public sealed partial class CharacterService
     [LoggerMessage(Level = LogLevel.Information, Message = "{Name} cannot wear {Item} ({Entry}) in grid {Grid}: {Error}; moved to the bag")]
     private static partial void LogUnwearableMoved(ILogger logger, string name, long item, int entry, int grid, int error);
 
+    /// <summary>
+    /// (inferred) Legacy gear was always advertised as appraised and could share a stack/roll. Preserve its flag,
+    /// original GUID, grid and existing rolls; extra copies retain those rolls but get separate bag GUIDs. All
+    /// changes commit together before login sync, so restart cannot lose or duplicate the old stack's pieces.
+    /// </summary>
     private void MigrateEquipmentInstances(GameSession session)
     {
         var oldItems = session.Items.Where(i => IsEquipment(i.Entry) && (i.Stack > 1 || i.Attrs == null
