@@ -44,7 +44,7 @@ public sealed partial class CombatEffectsService
         foreach (var (effect, startMs, yaw) in skill.GroundWarnings)
         {
             var point = at.Clone();
-            float angle = (face + yaw) % 360;
+            float angle = ((face + yaw) % 360 + 360) % 360; // Maya 43410 turns some eruptions by -120 and -60
             ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, startMs + chant - skill.ChantMs)), () => !BossCastCurrent(boss, serial) ? Task.CompletedTask
                 : _world.ToUnitViewersAsync(boss, SkillEffect, new SkillEffectDisplayNotify
                 {
