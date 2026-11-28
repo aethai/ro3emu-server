@@ -48,7 +48,8 @@ public sealed partial class ScriptedDungeonService
         if (a.Riders.Count > 0) await PutDownRidersAsync(a);
         // A fight-only step has no client event to wait for: its kills complete it.
         a.StepDone = step.Complete.Count == 0;
-        await SyncSceneActorsAsync(a, step.Actors);
+        // A shell game shows its rings only once the Bells stop (ScriptedDungeonService.Shuffle).
+        await SyncSceneActorsAsync(a, step.Shuffle is { } held ? [.. step.Actors.Where(x => !held.After.Contains(x.NpcId))] : step.Actors);
         string actorsShown = _log.IsEnabled(LogLevel.Information)
             ? string.Join("; ", a.SceneActors.Select(u => $"{u.NpcId} at {u.X:0.0},{u.Z:0.0} buffs [{string.Join(',', u.Buffs.Select(b => b.ConfigId))}]"))
             : "";
@@ -58,6 +59,7 @@ public sealed partial class ScriptedDungeonService
         if (step.Seek is { } seek) StartSeek(a, seek);
         if (step.Shelter is { } shelter) StartShelter(a, shelter);
         if (step.React is { } react) StartReaction(a, react);
+        if (step.Shuffle is { } shuffle) await StartShuffleAsync(a, step, shuffle);
         if (step.Slide is { } slide) await StartSlideAsync(a, slide);
         await ShowStepGuideWaysAsync(a);
         if (step.Story != 0 && !a.Settled && !a.Room.Closed)
@@ -98,21 +100,28 @@ public sealed partial class ScriptedDungeonService
         foreach (var spec in added)
         {
             if (a.Settled || a.Room.Closed) return;
-            if (_catalog.ScenePoint(a.Plan.SceneEntry, spec.Point) is not { } at || _data.Row("NPCConfig", spec.NpcId) is not { } row)
-                continue; // the catalog validated both; a changed export only loses the actor
-            int type = (int)GameData.Int(row, "_iNPCType");
-            var unit = new SceneActorUnit
-            {
-                Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = a.Plan.SceneEntry,
-                InstanceId = a.Room.Id, X = at.X + spec.Dx, Y = at.Y, Z = at.Z + spec.Dz, Face = at.Face, NpcId = spec.NpcId, Point = spec.Point,
-                EntityType = type, Camp = GameData.Int(row, "_iCamp"), Name = type == 2 ? _data.TextOf(row, "_kName") : "",
-                Template = type == 1 ? _monsters.Template(spec.NpcId) : null, BornMs = _loop.NowMs,
-                CarrySpeed = _data.Row("VehicleConfig", spec.NpcId) != null && NPCConfig.Get(_data, spec.NpcId) is { } carrier
-                    && UnitConfig.Get(_data, carrier.UnitId) is { } carrierUnit ? (long)carrierUnit.Speed : 0,
-            };
-            unit.Buffs.AddRange(spec.Buffs.Select(id => ActorBuff(unit, id)));
-            if (await _instances.AddPropAsync(a.Room, unit)) a.SceneActors.Add(unit);
+            // The catalog validated the point and the row; a changed export only loses the actor.
+            if (NewSceneActor(a, spec) is { } unit && await _instances.AddPropAsync(a.Room, unit)) a.SceneActors.Add(unit);
         }
+    }
+
+    /// <summary>A scene actor for the step's spec at its scene-editor point, with its buffs; null when the point or the
+    /// NPCConfig row is missing.</summary>
+    private SceneActorUnit? NewSceneActor(Attempt a, ReconstructedDungeons.SceneActor spec)
+    {
+        if (_catalog.ScenePoint(a.Plan.SceneEntry, spec.Point) is not { } at || _data.Row("NPCConfig", spec.NpcId) is not { } row) return null;
+        int type = (int)GameData.Int(row, "_iNPCType");
+        var unit = new SceneActorUnit
+        {
+            Uid = SceneActorUidBase | Interlocked.Increment(ref _sceneActorSerial), SceneEntry = a.Plan.SceneEntry,
+            InstanceId = a.Room.Id, X = at.X + spec.Dx, Y = at.Y, Z = at.Z + spec.Dz, Face = at.Face, NpcId = spec.NpcId, Point = spec.Point,
+            EntityType = type, Camp = GameData.Int(row, "_iCamp"), Name = type == 2 ? _data.TextOf(row, "_kName") : "",
+            Template = type == 1 ? _monsters.Template(spec.NpcId) : null, BornMs = _loop.NowMs,
+            CarrySpeed = _data.Row("VehicleConfig", spec.NpcId) != null && NPCConfig.Get(_data, spec.NpcId) is { } carrier
+                && UnitConfig.Get(_data, carrier.UnitId) is { } carrierUnit ? (long)carrierUnit.Speed : 0,
+        };
+        unit.Buffs.AddRange(spec.Buffs.Select(id => ActorBuff(unit, id)));
+        return unit;
     }
 
     internal BuffInfo ActorBuff(SceneActorUnit unit, int configId) => new()

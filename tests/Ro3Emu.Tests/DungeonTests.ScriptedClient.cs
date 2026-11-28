@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Romsg;
 using Ro3Emu.Bot;
+using Ro3Emu.Server;
 using Ro3Emu.Server.Data;
 using Ro3Emu.Server.Game;
 using Ro3Emu.Server.Maps;
@@ -137,6 +139,8 @@ public sealed partial class DungeonTests
         await Gm(alice, "!actors use"); // outside a scene: refused, nothing happens
         // Payon Forest's DungeonConfig condition 1000000 is [1101, 10102200]: its story task is running.
         if (scene == 1022001) await Gm(alice, "!quest accept 10102200");
+        // Louie's shell game shows its rings once the Bells stop shuffling (ScriptedDungeonService.Shuffle).
+        if (scene == 3120703) Service<IOptions<ServerOptions>>().Value.ScriptedScenePacePercent = 10;
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
         long instance = await Load(alice, scene);
         var plan = Session(alice).DungeonAttempt!.Plan;

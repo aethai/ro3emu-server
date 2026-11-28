@@ -49,7 +49,8 @@ internal sealed class TrialUnit
 internal sealed class SceneActorUnit : WorldUnit
 {
     public required int NpcId { get; init; }
-    public required long Point { get; init; }
+    /// <summary>The scene-editor point it stands at; a shell game's shuffle moves a Bell to another (ScriptedDungeonService.Shuffle).</summary>
+    public required long Point { get; set; }
     public required int EntityType { get; init; }
     public required long Camp { get; init; }
     public required string Name { get; init; }

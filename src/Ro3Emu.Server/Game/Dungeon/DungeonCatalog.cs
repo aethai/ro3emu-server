@@ -377,6 +377,7 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
                     || ChatConfig.Get(data, shelter.Tip) == null || SkillConfig.Get(data, shelter.Skill) == null
                     || shelter.EveryMs <= shelter.WarnMs || shelter.WarnMs < 0 || shelter.Width <= 0 || shelter.Depth <= 0)) return [];
             if (step.React is { } react && !ReactionResolves(step, react)) return [];
+            if (step.Shuffle is { } shuffle && !ShuffleResolves(step, shuffle, map)) return [];
             if (step.Cannon is { } cannon && (step.Fight.Count == 0 || SkillConfig.Get(data, cannon.Fire) == null
                     || !step.Actors.Any(a => Interactions(a.NpcId).Contains(cannon.Interaction)))) return [];
             var fight = new List<Spawn>();
@@ -411,6 +412,23 @@ public sealed class DungeonCatalog(GameData data, WorldData worldData, MonsterSe
             || (r.Say == 0 || Line(r.Say)) && (r.Buff == 0
                 || Shown(r.On) && Data.Config.BuffConfig.Get(data, r.Buff) is { BuffId: > 0 });
         return Shown(react.Speaker) && react.Start.All(Line) && Resolves(react.Ignored) && Resolves(react.Complete);
+    }
+
+    /// <summary>
+    /// A shuffle resolves when its Bells stand at every point it swaps and has a mark in front of each, Katie's place and
+    /// NPC exist, its line is a ChatConfig row, the actors it holds back are the step's, and Katie's Bell, followed through
+    /// the swaps, ends where the winning ring stands.
+    /// </summary>
+    private bool ShuffleResolves(ReconstructedDungeons.ScriptedStep step, ReconstructedDungeons.Shuffle shuffle, MapWorld map)
+    {
+        var bells = step.Actors.Where(a => a.NpcId == shuffle.Bell).Select(a => a.Point).ToHashSet();
+        var ring = step.Actors.FirstOrDefault(a => a.NpcId == shuffle.Ring);
+        return bells.Contains(shuffle.Hidden) && shuffle.SpeedCm > 0 && shuffle.Swaps.Count > 0
+            && shuffle.Swaps.All(s => s.From != s.To && bells.Contains(s.From) && bells.Contains(s.To))
+            && bells.All(b => shuffle.Lanes.TryGetValue(b, out long lane) && map.Points.ContainsKey(lane))
+            && (shuffle.CatNpc == 0 || map.Points.ContainsKey(shuffle.CatFrom) && NPCConfig.Get(data, shuffle.CatNpc) is { NPCType: 1 or 2 })
+            && data.Row("ChatConfig", shuffle.Say) != null && shuffle.After.All(n => step.Actors.Any(a => a.NpcId == n))
+            && ring != null && shuffle.After.Contains(shuffle.Ring) && ring.Point == shuffle.Ends;
     }
 
     /// <summary>
