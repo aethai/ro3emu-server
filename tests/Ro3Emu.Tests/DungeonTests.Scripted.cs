@@ -563,6 +563,7 @@ public sealed partial class DungeonTests
     public async Task LouiesShellGameTakesTwoRightGuessesWhileWrongOnesChangeNothing()
     {
         const long scene = 3120703;
+        Service<IOptions<ServerOptions>>().Value.ScriptedScenePacePercent = 10; // the shuffle's walks and pauses
         await using var alice = await InWorld("Alice");
         await Gm(alice, "!quest accept 205170"); // A New Round: [101018, 3120703, 1]
         Assert.Equal(0, await Enter(alice, new EnterDungeonReq { SceneEntry = scene }));
@@ -573,6 +574,12 @@ public sealed partial class DungeonTests
         Assert.Equal([25L, 26L], round1.Where(a => a.NpcId is 400131 or 400132).Select(a => a.Point).Order()); // Louie, Martha
         Assert.Equal(3, round1.Count(a => a.NpcId == 400138)); // the Bells
         Assert.DoesNotContain(round1, a => a.NpcId == 400133); // Katie hides
+        // #627: Katie walked under her Bell and went, and the Bells walked (31081) before the rings came.
+        var moves = alice.Inbox.Snapshot().Where(e => e.IsGame(GameAoiSink.MovementChange))
+            .Select(e => MovementChangeNtf.Parser.ParseFrom(e.Body)).ToList();
+        var bells = round1.Where(a => a.NpcId == 400138).Select(a => a.Uid).ToHashSet();
+        Assert.True(moves.Count(m => bells.Contains(m.Uid)) >= 6, $"{moves.Count(m => bells.Contains(m.Uid))} Bell moves");
+        Assert.Contains(moves, m => !bells.Contains(m.Uid) && round1.All(a => a.Uid != m.Uid)); // Katie's walk
 
         // A wrong guess: the ring's dialogue opens, 'Choose this one!' sends message 12, and the round goes on.
         var wrong = round1.Single(a => a.NpcId == 400135);
@@ -702,7 +709,11 @@ public sealed partial class DungeonTests
     {
         var louie = new ReconstructedDungeons(Options.Create(new ServerOptions())).Scripted(3120703)!;
         Assert.All(louie.Steps, step => Assert.Equal(400131, step.React!.Speaker));
-        Assert.Equal([5310008, 5310002], louie.Steps[0].React!.Start);
+        Assert.Equal([5310008], louie.Steps[0].React!.Start); // 'Guess which Bell ...' comes once the Bells stop
+        Assert.Empty(louie.Steps[1].React!.Start);
+        Assert.Equal((31L, 31L), (louie.Steps[0].Shuffle!.Hidden, louie.Steps[0].Shuffle!.Ends));
+        Assert.Equal((31L, 29L), (louie.Steps[1].Shuffle!.Hidden, louie.Steps[1].Shuffle!.Ends));
+        Assert.Equal((400133, 0), (louie.Steps[0].Shuffle!.CatNpc, louie.Steps[1].Shuffle!.CatNpc));
         Assert.Equal(new ReconstructedDungeons.Response(5310004, 5402201, 400138), louie.Steps[0].React!.Ignored);
         Assert.Equal(new ReconstructedDungeons.Response(5310003, 5402101, 400138), louie.Steps[0].React!.Complete);
         Assert.Equal(new ReconstructedDungeons.Response(5310009, 5402101, 400138), louie.Steps[1].React!.Complete);

@@ -52,7 +52,7 @@ public sealed partial class RaidTrialsService
         await SetActorBuffsAsync(target, [.. others, buff]);
     }
 
-    private Task SayAsync(Attempt a, int speaker, int chat) => BroadcastAsync(a, SystemBroadcast, new SystemBoardCastMsgNtf
+    internal Task SayAsync(Attempt a, int speaker, int chat) => BroadcastAsync(a, SystemBroadcast, new SystemBoardCastMsgNtf
     { Source = MsgSource.Npc, ChatId = chat, PlayerId = a.SceneActors.FirstOrDefault(u => u.NpcId == speaker)?.Uid ?? 0 });
 
     private int LineMs(int chat) => _data.Row("ChatConfig", chat) is { } row ? (int)new ChatConfig(row).Time : 0;

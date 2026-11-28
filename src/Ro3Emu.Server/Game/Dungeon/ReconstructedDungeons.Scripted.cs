@@ -69,6 +69,24 @@ public sealed partial class ReconstructedDungeons
 
         /// <summary>The client's steerable slide while the step runs (DungeonService.Slide; null: none).</summary>
         public Slide? Slide { get; init; }
+
+        /// <summary>A shell game's shuffle at the step's start (ScriptedDungeonService.Shuffle; null: none).</summary>
+        public Shuffle? Shuffle { get; init; }
+    }
+
+    /// <summary>
+    /// A shell game's shuffle (inferred, Louie's 3120703): Katie (<paramref name="CatNpc"/>, 0: already hidden) walks from
+    /// the point <paramref name="CatFrom"/> under the <paramref name="Bell"/> at <paramref name="Hidden"/>; then each of
+    /// <paramref name="Swaps"/> trades the Bells at two points, one straight across and the other round by the marks in front
+    /// of them (<paramref name="Lanes"/>, Bell point to mark), at <paramref name="SpeedCm"/> cm/s. The step's actors of
+    /// the NPCs <paramref name="After"/> (the rings) appear only then, with the speaker's line <paramref name="Say"/>.
+    /// Katie's Bell, followed through the swaps, ends at the point of the <paramref name="Ring"/> actor that wins.
+    /// </summary>
+    public sealed record Shuffle(int Bell, long Hidden, IReadOnlyList<(long From, long To)> Swaps, IReadOnlyDictionary<long, long> Lanes,
+        int SpeedCm, IReadOnlyList<int> After, int Say, int Ring, int CatNpc = 0, long CatFrom = 0)
+    {
+        /// <summary>Where Katie's Bell stands once the swaps are done.</summary>
+        public long Ends => Swaps.Aggregate(Hidden, (at, s) => at == s.From ? s.To : at == s.To ? s.From : at);
     }
 
     /// <summary>
@@ -202,6 +220,7 @@ public sealed partial class ReconstructedDungeons
             Guides = s.TryGetProperty("guides", out var guides)
                 ? [.. guides.GetProperty("routes").EnumerateArray().Select(v => v.GetInt64())]
                 : null,
+            Shuffle = s.TryGetProperty("shuffle", out var shuffle) ? ParseShuffle(shuffle) : null,
             Slide = s.TryGetProperty("slide", out var slide)
                 ? new Slide(slide.GetProperty("side").GetInt32(), slide.GetProperty("down").GetInt32(),
                     slide.TryGetProperty("endSkill", out var endSkill) ? endSkill.GetInt32() : 0,
@@ -214,6 +233,14 @@ public sealed partial class ReconstructedDungeons
     private static SceneActor Actor(JsonElement x) => new(x.GetProperty("npc").GetInt32(), x.GetProperty("point").GetInt64(),
         x.TryGetProperty("buffs", out var b) ? b.EnumerateArray().Select(v => v.GetInt32()).ToArray() : [],
         x.TryGetProperty("offset", out var o) ? o[0].GetSingle() : 0, x.TryGetProperty("offset", out o) ? o[1].GetSingle() : 0);
+
+    private static Shuffle ParseShuffle(JsonElement x) => new(x.GetProperty("bell").GetInt32(), x.GetProperty("hidden").GetInt64(),
+        [.. x.GetProperty("swaps").EnumerateArray().Select(p => (p[0].GetInt64(), p[1].GetInt64()))],
+        x.GetProperty("lanes").EnumerateObject().ToDictionary(p => long.Parse(p.Name, System.Globalization.CultureInfo.InvariantCulture), p => p.Value.GetInt64()),
+        x.GetProperty("speed").GetInt32(), [.. x.GetProperty("after").EnumerateArray().Select(v => v.GetInt32())],
+        x.GetProperty("say").GetInt32(), x.GetProperty("ring").GetInt32(),
+        x.TryGetProperty("cat", out var cat) ? cat.GetProperty("npc").GetInt32() : 0,
+        x.TryGetProperty("cat", out cat) ? cat.GetProperty("from").GetInt64() : 0);
 
     private static Reaction ParseReaction(JsonElement r) => new(r.GetProperty("speaker").GetInt32(),
         r.TryGetProperty("start", out var start) ? [.. start.EnumerateArray().Select(v => v.GetInt32())] : [],

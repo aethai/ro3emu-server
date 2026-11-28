@@ -570,12 +570,12 @@
       ],
       "guessed": [
         "Two rounds, from Louis's lines (right: 'Let's go again', right again: 'I give up'); a wrong guess (message 12) does not end the round ('Let's try again').",
-        "When Louis's lines go out, from what they say: round 1 opens with 'Let's start the game!' and then 'Guess which Bell my cat is hiding in!', each when the previous one's _iTime has run out; round 2 opens with the second only; a wrong guess answers 'Sorry, wrong guess!'; a right one 'Congratulations ...' in round 1 and 'Darn ...' in round 2, and the next round (or the settlement) waits until that line's _iTime has run out. They go out as 1022 with Louie's uid, as Moonlight Flower's do.",
+        "When Louis's lines go out, from what they say: round 1 opens with 'Let's start the game! Guess where my cat will move!' and says 'Guess which Bell my cat is hiding in!' once the shuffle has stopped; round 2 says only the second, also once its Bells stop; a wrong guess answers 'Sorry, wrong guess!'; a right one 'Congratulations ...' in round 1 and 'Darn ...' in round 2, and the next round (or the settlement) waits until that line's _iTime has run out. They go out as 1022 with Louie's uid, as Moonlight Flower's do.",
         "The right/wrong effects (buffs 5402101 SXGD_RIGHT, 5402201 SXGD_WRONG: their sound and effects play when the buff starts) are put on the Bell under the ring the player chose; the Bells of the next round drop them. Not checked in the live client.",
         "The bubbles 5310019-5310033 are not sent: which unit says which, and when, is not in the client.",
-        "Katie hides under the Bell straight ahead of where she stands (point 31, east) in round 1 and moves to the west Bell (point 29) in round 2; the shuffle is not animated. Louie and Martha watch from group 24; Katie, hidden, is not shown.",
+        "Katie hides under the Bell straight ahead of where she stands (point 31, east): round 1 opens with her walking from point 27 under it (NPCConfig speed), then the Bells trade places (31-29, 29-30, 30-31) and hers ends back in the east; round 2 swaps 31-30 and 30-29, so it ends in the west (point 29), where the data puts her ring. In each swap one Bell goes straight across and the other round by the marks in front of the Bells (33-35), at 15 m/s instead of the Bells' 50 m/s so the eye can follow (checked in the client: 50 m/s is a blink); the rings appear and Louie asks 'Guess which Bell ...' only once the Bells stop. Louie and Martha watch from group 24.",
         "The Bells are 400138, the second Bell row (the Culvert uses 400137), at group 28 like the Culvert's; the rings stand on them.",
-        "Marks 33-35 and 37 are not used: the Culvert's mark 37 was the instrument, and this scene has no second quest."
+        "Marks 33-35 are the lanes of the shuffle; mark 37 is not used: the Culvert's mark 37 was the instrument, and this scene has no second quest."
       ],
       "steps": [
         {
@@ -597,9 +597,10 @@
           "ignore": [
             { "message": 12, "why": "the two other rings: a wrong guess, 'Let's try again'" }
           ],
+          "shuffle": { "bell": 400138, "hidden": 31, "cat": { "npc": 400133, "from": 27 }, "swaps": [[31, 29], [29, 30], [30, 31]], "lanes": { "29": 35, "30": 34, "31": 33 }, "speed": 1500, "after": [400134, 400135, 400136], "say": 5310002, "ring": 400134, "why": "Katie walks under the east Bell, the Bells trade places three times and end with hers back in the east; then the rings come and Louie asks" },
           "react": {
             "speaker": 400131,
-            "start": [5310008, 5310002],
+            "start": [5310008],
             "ignored": { "say": 5310004, "buff": 5402201, "on": 400138 },
             "complete": { "say": 5310003, "buff": 5402101, "on": 400138 },
             "why": "Louie opens the game, 'Sorry, wrong guess!' and the shattering Bell for a wrong ring, 'Congratulations ... Let's go again' and the right Bell's effect for Katie's"
@@ -624,9 +625,10 @@
           "ignore": [
             { "message": 12, "why": "a wrong guess, the round goes on" }
           ],
+          "shuffle": { "bell": 400138, "hidden": 31, "swaps": [[31, 30], [30, 29]], "lanes": { "29": 35, "30": 34, "31": 33 }, "speed": 1500, "after": [400134, 400135, 400136], "say": 5310002, "ring": 400134, "why": "harder: Katie's Bell goes east to centre to west; Louie asks once the Bells stop" },
           "react": {
             "speaker": 400131,
-            "start": [5310002],
+            "start": [],
             "ignored": { "say": 5310004, "buff": 5402201, "on": 400138 },
             "complete": { "say": 5310009, "buff": 5402101, "on": 400138 },
             "why": "'Guess which Bell ...' again, the same answer to a wrong ring, 'Darn, you got it right again! I give up.' for Katie's"
