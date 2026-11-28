@@ -758,6 +758,8 @@ public sealed partial class CombatService : IGameTicker
     internal const int PlayerRace = 2, PlayerSize = 2;
 
     /// <summary>What a hit reads on a player: the sheet without the buffs that have their own path and would count twice.</summary>
+    private static int UnitElement(Fighter f) => f.Kind != DamageAttributes.Kind.Player || f.Attributes == null ? f.Element : 0;
+
     internal Func<int, long> PlayerAttributes(GameSession p, StatSheet stats)
     {
         if (!p.Buffs.Any(BuffService.HasOwnDamagePath)) return id => stats[id];
@@ -833,9 +835,10 @@ public sealed partial class CombatService : IGameTicker
         dmg *= Math.Clamp(1 + DamageAttributes.CounteredElement(ElementFactor(element, b.Element), counterResistance) / 10000.0, 0.1, 10);
         if (a.Attributes == null && b.Attributes == null) return dmg;
         var row = new Data.Config.SkillConfig(skill);
-        // A player's Element here is the hit's, and the element monster attributes (321-340) only name monsters.
+        // A player's Element here is the hit's, and the element monster attributes (321-340) only name monsters: a monster's
+        // element counts with or without its debuffed attributes, a player's (attributes, Kind Player) never.
         return dmg * DamageAttributes.Factor(a.Attributes, b.Attributes, new DamageAttributes.Hit(magic, row.DistanceType == 2, !row.IsNormalAttack(_data), element,
-            a.Race, a.Size, a.Attributes == null ? a.Element : 0, b.Race, b.Size, b.Attributes == null ? b.Element : 0, a.Kind, b.Kind));
+            a.Race, a.Size, UnitElement(a), b.Race, b.Size, UnitElement(b), a.Kind, b.Kind));
     }
 
     /// <summary>
