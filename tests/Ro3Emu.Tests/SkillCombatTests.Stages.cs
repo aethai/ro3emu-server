@@ -36,6 +36,39 @@ public sealed partial class SkillCombatTests
         Assert.InRange(landed, expected - 50, expected + 250);
     }
 
+    [ClientDataFact] // "[High-Energy Pulse] ... up to @{5} (5) enemies within @{4} (8) m": eight dummies around, no hit takes more than five
+    public async Task HighEnergyPulsesHitAtMostFive()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 6400, 16307, 1630701);
+        await Teach("alice", 16304);
+        for (int i = 0; i < 7; i++)
+        {
+            var mark = await Target("alice", stationary: true, npcId: 5000002);
+            int n = i;
+            await Loop.InvokeAsync(() =>
+            {
+                mark.StaysOutOfBattle = true; mark.Hp = 1000000;
+                mark.X = a.Position.X + 2 + n % 3; mark.Y = a.Position.Y; mark.Z = a.Position.Z + n / 3;
+                return Task.CompletedTask;
+            });
+        }
+        await CastAtAsync(bot, 1630701, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.True(SpinWait.SpinUntil(() => a.Buffs.Any(b => b.ConfigId == 1633601), Wait)); // landed: the Tornado is enhanced
+        Assert.True(SpinWait.SpinUntil(() => a.SkillCast == null || a.SkillCast.Cancelled
+            || Loop.NowMs >= a.SkillCast.StartMs + a.SkillCast.ChantMs + a.SkillCast.ActionMs, Wait)); // and its show is over
+        await Loop.InvokeAsync(() => { a.Combat.SkillCds.Clear(); a.Combat.SkillModeCds.Clear(); return Task.CompletedTask; });
+        a.GmCastSkill = 1630401;
+        await CastAtAsync(bot, 1630401, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.True(SpinWait.SpinUntil(() => !a.Buffs.Any(b => b.ConfigId == 1633601), Wait)); // the pulses went off
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 1000));
+        var hits = bot.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body)).ToList();
+        Assert.Contains(hits, h => h.Dsts.Count(d => d.Damage > 0) == 5);
+        Assert.All(hits, h => Assert.True(h.Dsts.Count(d => d.Damage > 0) <= 5));
+    }
+
     [ClientDataFact] // Move back Shadow Echo: "Cast again within 6 seconds to return to the shadow"
     public async Task ShadowEchoReturnsOnTheSecondPress()
     {
