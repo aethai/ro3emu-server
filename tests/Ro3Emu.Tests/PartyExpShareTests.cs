@@ -129,4 +129,26 @@ public sealed class PartyExpShareTests
             granted: 4);
         Assert.Equal([KillExp, KillExp, KillExp, KillExp, KillExp, 0L], gained);
     }
+
+    [Fact]
+    public async Task ThePartyBonusesCountOnlyLiveMembersOfTheKillersGroup()
+    {
+        await using var host = await SyntheticHost.StartAsync();
+        var bots = new List<BotClient>();
+        try
+        {
+            for (int i = 0; i <= 5; i++) bots.Add(await host.InWorldAsync(i == 0 ? "Leader" : "Member" + i));
+            await PartyAsync(TeamType.Forty, bots[0], [.. bots.Skip(1)]);
+            var teams = host.Service<TeamService>();
+            var sessions = bots.Select(b => Session(host, b)).ToList();
+            // Slots 0-4 make five on the map: TeamExpBuffNum's last step, four extra members' drop weight (fixture 2000).
+            Assert.Equal((20000, 18000), await host.Service<GameLoop>().InvokeAsync(() => Task.FromResult((teams.ExpBonus(sessions[0]), teams.DropBonus(sessions[0])))));
+            sessions[1].Dead = true;
+            Assert.Equal((17500, 16000), await host.Service<GameLoop>().InvokeAsync(() => Task.FromResult((teams.ExpBonus(sessions[0]), teams.DropBonus(sessions[0])))));
+        }
+        finally
+        {
+            foreach (var bot in bots) await bot.DisposeAsync();
+        }
+    }
 }

@@ -74,6 +74,7 @@ public sealed class RewardService
         internal long BaseExp;
         internal long JobExp;
         internal List<(GameSession Member, long Exp)> Shares = [];
+        internal MonsterUnit? Monster; // the kill the shares come from
         internal bool SharesPosted;
         internal bool Published;
         /// <summary>The bag items the committed kill created (auto-decomposed ones are gone).</summary>
@@ -84,7 +85,7 @@ public sealed class RewardService
     /// <summary>Tests: the kill's drops and EXP pool (before each recipient's own level gap, field rate and catch-up).</summary>
     internal Func<GameSession, MonsterUnit, (List<(int Entry, int Count)> Items, long Pool)>? KillPoolForTest { get; set; }
     /// <summary>A party member was granted its part of a kill's EXP (PartyExpShare), after that grant committed.</summary>
-    internal AsyncHook<GameSession> PartyShareGranted { get; } = new("RewardService.PartyShareGranted");
+    internal AsyncHook<GameSession, MonsterUnit> PartyShareGranted { get; } = new("RewardService.PartyShareGranted");
 
     /// <summary>Resolve and admit once before any lethal hit/death packet. A rejected pre-admission hit is
     /// not a successful kill. An accepted write retains its role owner through detach and durable completion.</summary>
@@ -125,7 +126,11 @@ public sealed class RewardService
                 var (drops, baseExp, jobExp, shares) = ResolveKillWithParty(player, monster, bonus, fieldAutoBattle);
                 // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
                 drops = PassPrivileges.BoostDrops(_data, player, drops);
-                outcome = new KillOutcome { Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp, Shares = shares };
+                outcome = new KillOutcome
+                {
+                    Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp, Shares = shares,
+                    Monster = monster
+                };
                 if (fieldAutoBattle) outcome.Note = ExplorationNotes?.Choose(player);
                 _outcomes.Add(monster, outcome);
             }
@@ -287,7 +292,7 @@ public sealed class RewardService
     /// crash in between is not granted again (inferred: an operator option, not a durable obligation of the kill).</summary>
     private void PostShares(KillOutcome outcome)
     {
-        if (outcome.SharesPosted || _loop == null) return;
+        if (outcome.SharesPosted || _loop == null || outcome.Monster is not { } monster) return;
         outcome.SharesPosted = true;
         foreach (var (member, exp) in outcome.Shares)
         {
@@ -297,7 +302,7 @@ public sealed class RewardService
             _loop.PostOwned(member, async () =>
             {
                 await _character.AddExpAsync(member, exp, 0, Current);
-                if (Current()) await PartyShareGranted.InvokeAsync(member);
+                if (Current()) await PartyShareGranted.InvokeAsync(member, monster);
             }, "party exp share");
         }
     }
