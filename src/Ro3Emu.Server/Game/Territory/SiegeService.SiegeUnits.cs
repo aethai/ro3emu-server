@@ -202,7 +202,7 @@ public sealed partial class SiegeService
             var ladder = ladders.Where(l => MonsterService.Distance(archer.X, archer.Z, l.X, l.Z) <= archer.Template.AttackRange)
                 .MinBy(l => MonsterService.Distance(archer.X, archer.Z, l.X, l.Z));
             if (ladder == null) continue;
-            archer.NextSwingMs = now + archer.Template.SwingIntervalMs;
+            archer.NextSwingMs = now + archer.SwingIntervalMs;
             long[] from = NPCConfig.Get(_data, archer.Template.NpcId)?.NpcTag ?? [], to = NPCConfig.Get(_data, ladder.Template.NpcId)?.NpcTag ?? [];
             await _combat.MonsterStrikeAsync(archer, ladder, archer.Template.AttackRange, damage => TagDamage(from, to, damage));
         }

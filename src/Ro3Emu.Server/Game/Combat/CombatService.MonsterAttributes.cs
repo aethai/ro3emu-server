@@ -24,6 +24,7 @@ public sealed partial class CombatService
             [AttributeId.Mdef] = t.Mdef,
             [AttributeId.Hit] = t.Hit, [AttributeId.Flee] = t.Flee, [AttributeId.Cri] = t.Cri, [AttributeId.Speed] = t.SpeedCm,
             [AttributeId.CastSpeed] = t.CastSpeed, [AttributeId.EleReduce] = t.ElementCounterResistance,
+            [AttributeId.BaseAspd] = 100,
         };
         foreach (var (id, value) in _buffs.UnitCombatAttributes(unit)) raw[(int)id] = raw.GetValueOrDefault((int)id) + value;
         return StatCalculator.Compute(raw, _data);
@@ -66,6 +67,19 @@ public sealed partial class CombatService
         return (long)Math.Clamp(Math.Floor(amount * Math.Max(0, 1 + bonus / 10000)), 0, long.MaxValue);
     }
 
+    /// <summary>
+    /// A debuffed monster's swing interval: its template's divided by its attack speed, the client's FinalAtkSpeed
+    /// (LC_DAL_PlayerInfo: BaseAtkSpeed 115 x (1 + AtkSpeed 114) x (1 + PreAtkSpeed 1141) + 1142, StatCalculator), so Joint
+    /// Beat's -20% (1122301 [114,-20]) or Quagmire's -20% (1210405 [1141,-2000]) slow its swings. A monster's normal attack rows
+    /// carry _iActionTimeInfluence 0 (211 of 212), so the interval scales directly (inferred); the speed is clamped as a
+    /// player's is (0.1 to 5). Null when it is the template's.
+    /// </summary>
+    private static int? SwingInterval(MonsterTemplate t, StatSheet stats)
+    {
+        double aspd = Math.Clamp(stats[AttributeId.BaseAspd] / 100.0, 0.1, 5);
+        return Math.Abs(aspd - 1) < 1e-9 ? null : (int)Math.Round(t.SwingIntervalMs / aspd);
+    }
+
     private async Task PublishMonsterAttributesAsync(WorldUnit unit)
     {
         if (unit is not MonsterUnit monster) return;
@@ -80,9 +94,10 @@ public sealed partial class CombatService
         // Buffs that do not count (BuffService.CountsInUnitStats) leave the template's stats and speed as they were; publish
         // only changes that do and, once the last of them is gone, the return to the template.
         bool guardian = _buffs.HasUnitCombatBuffs(monster);
-        if (guardian || monster.BuffSpeedCm != null)
+        if (guardian || monster.BuffSpeedCm != null || monster.BuffSwingIntervalMs != null)
         {
             var stats = MonsterStats(monster);
+            monster.BuffSwingIntervalMs = guardian ? SwingInterval(monster.Template, stats) : null;
             await _monsters.SetBuffSpeedAsync(monster, guardian ? (int)Math.Clamp(stats[AttributeId.Speed], 0, int.MaxValue) : null);
             foreach (int id in PublishedMonsterAttributes)
                 changed.Property.Add(new AoIProperty { Idx = id, Data = stats[id], BaseData = stats.Base.GetValueOrDefault(id) });

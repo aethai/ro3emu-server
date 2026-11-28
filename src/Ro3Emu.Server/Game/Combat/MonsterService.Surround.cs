@@ -47,7 +47,7 @@ public sealed partial class MonsterService
     /// </summary>
     private bool SwingHolds(MonsterUnit m, long now) =>
         Attack != null
-        && (now >= m.NextSwingMs || now < m.NextSwingMs - m.Template.SwingIntervalMs + m.Template.SkillMs);
+        && (now >= m.NextSwingMs || now < m.NextSwingMs - m.SwingIntervalMs + m.Template.SkillMs);
 
     /// <summary>
     /// True when walking to the slot is this tick's action. In reach and between swings, a monster finishes its walk

@@ -16,7 +16,7 @@ public sealed partial class SkillCombatTests
         public override int Proc(int max) => 0;
     }
 
-    private const int WhiteImprisonBuff = 1230101, DarkIllusionSlow = 1530201, BossFrenzy = 5001001;
+    private const int WhiteImprisonBuff = 1230101, DarkIllusionSlow = 1530201, BossFrenzy = 5001001, JointBeatSlow = 1122301;
 
     private async Task<(MonsterUnit Dummy, CombatService Combat, BuffService Buffs, long Role)> DebuffDummyAsync()
     {
@@ -58,5 +58,18 @@ public sealed partial class SkillCombatTests
         await Loop.InvokeAsync(() => buffs.AddSupportAsync(dummy, DarkIllusionSlow, 60000, role));
         Assert.True(await Loop.InvokeAsync(() => Task.FromResult(buffs.HasUnitCombatBuffs(dummy))));
         Assert.True(await Loop.InvokeAsync(() => Task.FromResult(combat.MonsterStats(dummy)[AttributeId.Speed] < dummy.Template.SpeedCm)));
+    }
+
+    [ClientDataFact] // Joint Beat's attack speed down (1122301 [114,-20]) makes the monster swing 1/0.8 as slowly, until it ends
+    public async Task AnAttackSpeedDebuffSlowsTheMonstersSwings()
+    {
+        await using var alice = await InWorld("Alice");
+        var (dummy, _, buffs, role) = await DebuffDummyAsync();
+        int template = dummy.Template.SwingIntervalMs;
+        Assert.Equal(template, dummy.SwingIntervalMs);
+        await Loop.InvokeAsync(() => buffs.AddSupportAsync(dummy, JointBeatSlow, 60000, role));
+        Assert.Equal((int)Math.Round(template / 0.8), dummy.SwingIntervalMs);
+        await Loop.InvokeAsync(() => buffs.ClearUnitAsync(dummy));
+        Assert.Equal(template, dummy.SwingIntervalMs);
     }
 }

@@ -86,6 +86,9 @@ public class MonsterUnit : WorldUnit
     public int SlowMovementBp { get; set; }
     public long SlowMovementExpireMs { get; set; }
     public int? BuffSpeedCm { get; set; }
+    /// <summary>The swing interval its counted debuffs' attack speed gives (CombatService.PublishMonsterAttributesAsync); null: the template's.</summary>
+    public int? BuffSwingIntervalMs { get; set; }
+    public int SwingIntervalMs => BuffSwingIntervalMs ?? Template.SwingIntervalMs;
     public int SpeedCm(long nowMs) => Math.Min(BuffSpeedCm ?? Template.SpeedCm, SlowMovementExpireMs > nowMs
         ? (int)Math.Max(1, Template.SpeedCm * (10000L - SlowMovementBp) / 10000L) : int.MaxValue);
 
