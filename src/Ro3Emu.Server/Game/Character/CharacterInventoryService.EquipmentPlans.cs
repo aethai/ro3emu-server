@@ -1,6 +1,8 @@
 using Google.Protobuf;
 using Romsg;
 using Ro3Emu.Server.Accounts;
+using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 
 namespace Ro3Emu.Server.Game;
 
@@ -13,24 +15,16 @@ public sealed partial class CharacterInventoryService
     public const int EquipmentPlanCount = 3;
     private const int EquipmentPlanNameLimit = 8;
 
+    /// <summary>enum_EquipGridType MainHand / ViceHand and enum_EquipPosType TwoHand (ItemConfig._iEquipPart).</summary>
+    internal const int MainHandGrid = 1, ViceHandGrid = 2, TwoHandPart = 1;
+
     /// <summary>Stage 31413's validated grid move for a Genre composite; caller persists all owners together.</summary>
     internal int StageEquipmentPlan(DBEquipInfo state, List<InvItem> stagedItems, int index, RoleProgress progress, int sex,
         bool replaceCurrent = false)
     {
         if (!state.EquipPlans.TryGetValue(index, out var target)) return ErrorCodes.Parameter;
         if (index == state.CurrentEquipPlan && !replaceCurrent) return 0;
-        var incoming = new Dictionary<long, (InvItem Item, int Grid)>();
-        foreach (var (grid, guid) in target.ItemsEquipGrid)
-        {
-            var item = stagedItems.FirstOrDefault(i => i.Guid == guid);
-            if (item == null) return ErrorCodes.ItemMissing;
-            if (!IsEquipment(item.Entry)) return ErrorCodes.NotEquipment;
-            if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) return ErrorCodes.EquipNotInBag;
-            if (WearError(item.Entry, progress, sex) is var wear and not 0) return wear;
-            if (!GridsFor(item.Entry, progress).Contains(grid) || !incoming.TryAdd(guid, (item, grid))) return ErrorCodes.EquipSlot;
-        }
-        if (incoming.Values.Any(i => i.Grid == 1 && PartOf(i.Item.Entry) == 1) && incoming.Values.Any(i => i.Grid == 2))
-            return ErrorCodes.EquipSlot;
+        if (PlanPlacements(target, stagedItems, progress, sex, out var incoming) is var error and not 0) return error;
         var outgoing = stagedItems.Where(i => i.Grid > 0 && i.Pack == 2 && i.Grid <= 8).Where(i => !incoming.ContainsKey(i.Guid)).ToList();
         int bag = stagedItems.Count(i => i.Grid == 0 && i.Pack == 2);
         int projected = bag + outgoing.Count - incoming.Values.Count(i => i.Item.Grid == 0);
@@ -47,6 +41,37 @@ public sealed partial class CharacterInventoryService
         state.CurrentEquipPlan = index;
         return 0;
     }
+
+    /// <summary>
+    /// The gear a saved plan places, by guid, validated as 31400 would equip each piece. The client lists a two-handed
+    /// weapon (enum_EquipPosType.TwoHand) in both weapon grids of a plan: LC_SchemeMatchHelper.PutOnEquip (lua:502-599)
+    /// writes its guid into itemsEquipGrid[MainHand] and [ViceHand], and PutOffEquip clears both when they hold the same
+    /// guid; LC_DAL_Equipment's 31400 take-on (lua:994-1044) does the same in EquipGearDataMap. That repeat in grid 2 is
+    /// the grid 1 weapon, not a second placement, so it is skipped; the weapon itself sits in grid 1 (its only grid).
+    /// </summary>
+    private int PlanPlacements(DBEquipPlan plan, IReadOnlyList<InvItem> items, RoleProgress progress, int sex,
+        out Dictionary<long, (InvItem Item, int Grid)> incoming)
+    {
+        incoming = [];
+        foreach (var (grid, guid) in plan.ItemsEquipGrid)
+        {
+            var item = items.FirstOrDefault(i => i.Guid == guid);
+            if (item == null) return ErrorCodes.ItemMissing;
+            if (!IsEquipment(item.Entry)) return ErrorCodes.NotEquipment;
+            if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) return ErrorCodes.EquipNotInBag;
+            if (WearError(item.Entry, progress, sex) is var wear and not 0) return wear;
+            if (IsTwoHandRepeat(data, plan, grid, guid, item.Entry)) continue;
+            if (!GridsFor(item.Entry, progress).Contains(grid) || !incoming.TryAdd(guid, (item, grid))) return ErrorCodes.EquipSlot;
+        }
+        return incoming.Values.Any(i => i.Grid == MainHandGrid && PartOf(i.Item.Entry) == TwoHandPart)
+            && incoming.Values.Any(i => i.Grid == ViceHandGrid) ? ErrorCodes.EquipSlot : 0;
+    }
+
+    /// <summary>Grid 2 of a plan holding the two-handed weapon of its grid 1 (see <see cref="PlanPlacements"/>): the same
+    /// weapon, which neither places nor counts a second time.</summary>
+    internal static bool IsTwoHandRepeat(GameData data, DBEquipPlan plan, int grid, long guid, int entry) =>
+        grid == ViceHandGrid && plan.ItemsEquipGrid.TryGetValue(MainHandGrid, out long main) && main == guid
+        && ItemConfig.Get(data, entry)?.EquipPart == TwoHandPart;
 
     /// <summary>Migrate existing worn gear into plan 0, keep names and inactive GUID references.</summary>
     internal void LoadEquipmentPlans(GameSession session)
@@ -105,22 +130,8 @@ public sealed partial class CharacterInventoryService
         var state = session.Profile.EquipmentPlans;
         int result = state.EquipPlans.TryGetValue(req.TargetIndex, out var target) ? 0 : ErrorCodes.Parameter;
         var incoming = new Dictionary<long, (InvItem Item, int Grid)>();
-        if (result == 0)
-        {
-            foreach (var (grid, guid) in target!.ItemsEquipGrid)
-            {
-                var item = session.Items.FirstOrDefault(i => i.Guid == guid);
-                if (item == null) { result = ErrorCodes.ItemMissing; break; }
-                if (!IsEquipment(item.Entry)) { result = ErrorCodes.NotEquipment; break; }
-                if (item.Grid < 0 || item.Pack != 2 || item.Stack != 1) { result = ErrorCodes.EquipNotInBag; break; }
-                // Only the incoming gear: a role may always switch away from gear it can no longer wear.
-                if (WearError(item.Entry, session.Progress!, session.Role?.Sex ?? 0) is var wear and not 0) { result = wear; break; }
-                if (!GridsFor(item.Entry, session.Progress!).Contains(grid) || !incoming.TryAdd(guid, (item, grid)))
-                { result = ErrorCodes.EquipSlot; break; }
-            }
-            if (incoming.Values.Any(i => i.Grid == 1 && PartOf(i.Item.Entry) == 1) && incoming.Values.Any(i => i.Grid == 2))
-                result = ErrorCodes.EquipSlot;
-        }
+        // Only the incoming gear is checked: a role may always switch away from gear it can no longer wear.
+        if (result == 0) result = PlanPlacements(target!, session.Items, session.Progress!, session.Role?.Sex ?? 0, out incoming);
         if (result == 0 && req.TargetIndex != state.CurrentEquipPlan)
         {
             var outgoing = Equipped(session).Where(i => !incoming.ContainsKey(i.Guid)).ToList();

@@ -168,6 +168,11 @@ public readonly partial record struct PublicParams(IReadOnlyDictionary<string, J
     [ConfigConstant("PersonalSignatureLimit")] public partial long? PersonalSignatureLimit { get; }
     [ConfigConstant("PersonalTemplateLimit")] public partial long? PersonalTemplateLimit { get; }
     [ConfigConstant("PetAssistFieldNum")] public partial long? PetAssistFieldNum { get; }
+    /// <summary>[[attribute, value]]: the faction bonus of deployed pets (PetCampRules).</summary>
+    [ConfigConstant("PetCampDestinyAttribute")] public partial long[][]? PetCampDestinyAttribute { get; }
+    /// <summary>Lineup power added while a camp is active (UI_Sys_PetPanelModel.CalculateTotalPower).</summary>
+    [ConfigConstant("PetCampFightingCapacity")] public partial long? PetCampFightingCapacity { get; }
+    [ConfigConstant("PetCampLimitNum")] public partial long? PetCampLimitNum { get; }
     [ConfigConstant("PetFightFieldNum")] public partial long? PetFightFieldNum { get; }
     [ConfigConstant("PetIncubationAccelerate")] public partial long? PetIncubationAccelerate { get; }
     [ConfigConstant("PetIncubationAccelerateItemId")] public partial long? PetIncubationAccelerateItemId { get; }

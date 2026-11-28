@@ -510,7 +510,8 @@ public sealed partial class PetService
 
     /// <summary>
     /// Static lineup/collection bonuses from PetStarConfig. Scaling each slot by PetSetLimitConfig's addition and
-    /// summing active collection attributes is inferred. Reactive effects are separate from these attributes.
+    /// summing active collection attributes is inferred. Reactive effects are separate from these attributes. A deployed
+    /// pet of the active camp scales its attributes by PetCampRules (client rule).
     /// </summary>
     private IEnumerable<(long Id, double Value)> Attributes(GameSession s)
     {
@@ -519,12 +520,19 @@ public sealed partial class PetService
             if (StarRow(pet) is { } row)
                 foreach (var attr in GameData.Pairs(row, "_kCollectAttr")) yield return attr;
         if (s.Pets.SetupPlans.GetValueOrDefault(s.Pets.CurrentPlan) is not { } plan) yield break;
+        // (inferred) Only the set-up pets that also grant their attributes complete a camp: open slots, owned pets.
+        long camp = PetCampRules.ActiveCamp(_data, plan.SetUpPets.Where(p => SlotOpen(s, 1, p.Key) && s.Pets.ListPet.ContainsKey(p.Value))
+            .Select(p => p.Value));
         foreach (var source in new[] { 1, 2 })
             foreach (var (slot, id) in Slots(plan, source))
                 if (SlotOpen(s, source, slot) && s.Pets.ListPet.TryGetValue(id, out var pet)
                     && StarRow(pet) is { } row && _data.Row("PetSetLimitConfig", slot) is { } limit)
+                {
+                    bool boosted = source == 1 && camp != 0 && PetBaseConfig.Get(_data, id)?.Camp == camp;
                     foreach (var (attr, value) in GameData.Pairs(row, source == 1 ? "_kFightSkill" : "_kAssistSkill"))
-                        yield return (attr, value * GameData.Int(limit, source == 1 ? "_iFightAttrAddition" : "_iAssistAttrAddition") / 10000.0);
+                        yield return (attr, value * (boosted ? PetCampRules.Scale(_data, attr) : 1)
+                            * GameData.Int(limit, source == 1 ? "_iFightAttrAddition" : "_iAssistAttrAddition") / 10000.0);
+                }
     }
 
     /// <summary>Client displayed strength: star strength + floor(level strength * multiplier / 10000), §2.</summary>
@@ -534,11 +542,15 @@ public sealed partial class PetService
 
     private void UpdatePower(DBPetInfo next)
     {
-        // Plan power aggregation is inferred; pet strength itself follows LC_PetHelper.GetPetFight/AssistStrength.
+        // Plan power follows UI_Sys_PetPanelModel.CalculateTotalPower (lua:578-621; no Lua caller, so the plan-power use is
+        // inferred): the fight and support strength of its pets (LC_PetHelper.GetPetFight/AssistStrength), plus
+        // PublicParamConfig.PetCampFightingCapacity while a camp is active (GetActivateCamp != enum_PetCamp.None).
+        long campPower = Data.Config.PublicParams.Of(_data).PetCampFightingCapacity ?? 0;
         foreach (var plan in next.SetupPlans.Values)
         {
             long power = plan.SetUpPets.Values.Sum(id => next.ListPet.TryGetValue(id, out var p) ? Strength(p, false) : 0)
-                + plan.SupportPets.Values.Sum(id => next.ListPet.TryGetValue(id, out var p) ? Strength(p, true) : 0);
+                + plan.SupportPets.Values.Sum(id => next.ListPet.TryGetValue(id, out var p) ? Strength(p, true) : 0)
+                + (PetCampRules.ActiveCamp(_data, plan.SetUpPets.Values.Where(next.ListPet.ContainsKey)) != 0 ? campPower : 0);
             plan.Power = new PowerUnit { NormalPower = power };
         }
     }

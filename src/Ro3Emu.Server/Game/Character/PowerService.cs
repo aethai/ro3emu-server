@@ -318,11 +318,13 @@ public sealed partial class PowerService : IGameTicker
         }
     }
 
-    /// <summary>A gear plan: rank, refine and strengthen of the pieces it places (inferred aggregation).</summary>
+    /// <summary>A gear plan: rank, refine and strengthen of the pieces it places (inferred aggregation). A two-hander
+    /// listed again in grid 2 is the grid 1 weapon and counts once (CharacterInventoryService.IsTwoHandRepeat).</summary>
     private PowerUnit EquipPlan(GameSession s, DBEquipPlan plan)
     {
         var placed = plan.ItemsEquipGrid.Where(p => p.Value != 0 && p.Key is >= 1 and <= EquipGrids)
-            .Select(p => (Grid: p.Key, Item: s.Items.FirstOrDefault(i => i.Guid == p.Value))).Where(p => p.Item != null)
+            .Select(p => (Grid: p.Key, Item: s.Items.FirstOrDefault(i => i.Guid == p.Value)))
+            .Where(p => p.Item != null && !CharacterInventoryService.IsTwoHandRepeat(_data, plan, p.Grid, p.Item.Guid, p.Item.Entry))
             .Select(p => { var copy = p.Item!.Clone(); copy.Grid = p.Grid; return copy; }).ToList();
         var rank = EquipRank(s, placed);
         var refine = EquipRefine(s, placed);
