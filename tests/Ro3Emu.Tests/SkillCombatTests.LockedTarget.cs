@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using Ro3Emu.Server.Game;
 
@@ -67,6 +68,39 @@ public sealed partial class SkillCombatTests
         Assert.Equal(new[] { target.Uid, near.Uid, next.Uid }.Order(), strikes.Select(s => s.Target).Distinct().Order());
         Assert.Equal(third.Template.MaxHp, third.Hp);
         Assert.Equal(far.Template.MaxHp, far.Hp);
+    }
+
+    // Rain of Spears "to up to 5 enemies within a 5m*10m area in front of you", Sonic Burst "6-meter by 15-meter": the five nearest of six
+    // ahead, not one 4 m to the side.
+    [ClientDataTheory]
+    [InlineData(1400, 11310, 1, 1131001)]
+    [InlineData(1400, 11316, 1, 1131601)]
+    public async Task AFrontAreaSpearHitsFiveAheadAndNoneAside(int job, int group, int level, int row)
+    {
+        var (bot, me, strikes) = await Caster("Alice", job, group, level);
+        await using var _ = bot;
+        var target = await Mark(me, 1);
+        for (int i = 2; i <= 6; i++) await Mark(me, i);
+        var aside = await Mark(me, 2);
+        await Loop.InvokeAsync(() => { aside.Z += 4; return Task.CompletedTask; });
+        Assert.Equal(0, (await Cast(bot, me, row, target)).Result);
+        await Eventually(() => strikes.Select(s => s.Target).Distinct().Count() >= 5);
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 500));
+        Assert.Equal(5, strikes.Select(s => s.Target).Distinct().Count());
+        Assert.Contains(strikes, s => s.Target == target.Uid);
+        Assert.Equal(aside.Template.MaxHp, aside.Hp);
+    }
+
+    [ClientDataFact] // Sonic Burst "... inflicts Knock-Up and Immobilize": the Knock-Up (9018) lands with the hit
+    public async Task SonicBurstKnocksUp()
+    {
+        var (bot, me, strikes) = await Caster("Alice", 1400, 11316, 1);
+        await using var _ = bot;
+        var target = await Mark(me, 2);
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        bool knockedUp = false;
+        Assert.Equal(0, (await Cast(bot, me, 1131601, target)).Result);
+        Assert.True(SpinWait.SpinUntil(() => knockedUp |= buffs.UnitPiles(target, BuffService.KnockUpGroup) > 0, Wait));
     }
 
     [ClientDataFact] // "to a designated ST enemy within 3 meters"; its row's _iTargetMax 5 finds nobody else

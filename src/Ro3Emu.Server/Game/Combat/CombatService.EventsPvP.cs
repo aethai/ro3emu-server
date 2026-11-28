@@ -145,8 +145,19 @@ public sealed partial class CombatService
             await _buffs.AddAsync(target, buff, duration, source.Role!.Id);
     }
 
-    internal static IEnumerable<JsonElement> HostileBuffs(JsonElement row) =>
-        DescribedStun(row) is { } stun ? Tuples(row, "_kBuff2").Append(stun) : Tuples(row, "_kBuff2");
+    internal static IEnumerable<JsonElement> HostileBuffs(JsonElement row)
+    {
+        var buffs = Tuples(row, "_kBuff2");
+        return (DescribedStun(row) ?? DescribedKnockUp(row)) is { } described ? buffs.Append(described) : buffs;
+    }
+
+    /// <summary>Sonic Burst: "... inflicts Knock-Up and Immobilize for ${6} seconds". Its _kBuff2 holds the Immobilize only; the Knock-Up
+    /// (BuffConfig 9018's first row, _iTime 0) lasts its effect's lift, 1131604's m_iMovementTime 500 ms (inferred).</summary>
+    private static JsonElement? DescribedKnockUp(JsonElement row) => new Data.Config.SkillConfig(row).ScriptLogic == "Sonicblast"
+        ? DescribedStuns.GetOrAdd(-KnockUpMs, _ => JsonSerializer.SerializeToElement(new long[] { BuffService.KnockUpGroup * 100 + 1, 10000, KnockUpMs }))
+        : null;
+
+    private const long KnockUpMs = 500;
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement> DescribedStuns = new();
 
