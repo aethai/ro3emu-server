@@ -143,6 +143,7 @@ public static class ErrorCodes
     public const int LevelTooLow = 31016;       // UIWords 31016: the title rank's level requirement (inferred code)
     public const int SkillPrerequisite = 333;   // "The level of prerequisite skill is too low"
     public const int SkillNotInTree = 341;      // "This skill is not in the skill tree ..."
+    public const int BuildNotOfJob = 337;       // "This build does not belong to the selected job."
 
     // Season talent (ErrorCodeConfig / Localization_en)
     public const int TalentInvalid = 6258;      // "Invalid talent"

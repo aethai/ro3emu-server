@@ -401,9 +401,32 @@ public sealed class SkillGrowthTests : IAsyncLifetime
         Assert.Equal(0, (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result);
     }
 
+    // A Ranger at job level 26 choosing build 305 (profession 303): its row lists 28 points of Ranger skills where the job
+    // level earned 26. 13312 comes off (13310, the last listed, is what 13312 needs), the rest of the row stays.
+    [ClientDataFact]
+    public async Task ChoosingABuildOverTheJobLevelsPointsAllocatesWhatFits()
+    {
+        const int Ranger = 3400, Cut = 13312, Needed = 13310, Kept = 13307;
+        var skills = _app.Services.GetRequiredService<SkillService>();
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", $"!job {Ranger}");
+        var progress = Session(alice).Progress!;
+        progress.JobLevel = 26;
+
+        await alice.SendGameAsync(SkillService.SwitchGenre, new SkillSwitchGenreReq { Genre = 305 });
+        Assert.Equal(0, (await Next(alice, SkillService.SwitchGenre, SkillSwitchGenreResp.Parser)).Result);
+        var plan = skills.Build(Session(alice)).SkillAssignPlans[0];
+        Assert.Equal(305, plan.SkillGenre);
+        Assert.Equal(0, plan.SkillAssigns[Cut].SkillLevel);
+        Assert.Equal(1, plan.SkillAssigns[Needed].SkillLevel);
+        Assert.Equal(5, plan.SkillAssigns[Kept].SkillLevel);
+        Assert.Equal(26, skills.SpentPoints(Session(alice).Progress!, 5));
+    }
+
     [ClientDataFact]
     public async Task PlansNameGenreAndSelectedLevelsSurviveRelog()
     {
+        int built;
         await using (var alice = await InWorld("Alice"))
         {
             await Next(alice, SkillService.SkillDataSync, DBSkillDataIncrement.Parser);
@@ -425,12 +448,14 @@ public sealed class SkillGrowthTests : IAsyncLifetime
             await alice.SendGameAsync(SkillService.PlanNameChange, new SkillPlanChangeNameReq { Plan = 1, Name = "TooLong01" });
             Assert.Equal(ErrorCodes.Parameter,
                 (await Next(alice, SkillService.PlanNameChange, SkillPlanChangeNameResp.Parser)).Result);
-            await alice.SendGameAsync(SkillService.SwitchGenre, new SkillSwitchGenreReq { Genre = 2 });
-            Assert.Equal(0, (await Next(alice, SkillService.SwitchGenre, SkillSwitchGenreResp.Parser)).Result);
             learn.Plan = 1;
             learn.LevelUpList[11001] = new SkillData { SkillLevel = 2 };
             await alice.SendGameAsync(SkillService.PlanUpdate, learn);
             Assert.Equal(0, (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result);
+            // After the hand allocation, which cancels a chosen build: the Swordman's build 101 allocates its own levels.
+            await alice.SendGameAsync(SkillService.SwitchGenre, new SkillSwitchGenreReq { Genre = 101 });
+            Assert.Equal(0, (await Next(alice, SkillService.SwitchGenre, SkillSwitchGenreResp.Parser)).Result);
+            built = _app.Services.GetRequiredService<SkillService>().Build(Session(alice)).SkillAssignPlans[1].SkillAssigns[11001].SkillLevel;
             await alice.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 0 });
             Assert.Equal(ErrorCodes.Cooldown,
                 (await Next(alice, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
@@ -439,8 +464,8 @@ public sealed class SkillGrowthTests : IAsyncLifetime
         var reloaded = await Next(again, SkillService.SkillDataSync, DBSkillDataIncrement.Parser);
         Assert.Equal(1, reloaded.CurrentPlanIndex);
         Assert.Equal("Quest", reloaded.SkillAssignPlans.All.Value[1].Name);
-        Assert.Equal(2, reloaded.SkillAssignPlans.All.Value[1].SkillGenre);
-        Assert.Equal(2, reloaded.SkillAssignPlans.All.Value[1].SkillAssigns[11001].SkillLevel);
+        Assert.Equal(101, reloaded.SkillAssignPlans.All.Value[1].SkillGenre);
+        Assert.Equal(built, reloaded.SkillAssignPlans.All.Value[1].SkillAssigns[11001].SkillLevel);
         Assert.Equal(3, reloaded.SkillAssignPlans.All.Value[0].SkillAssigns[11001].SkillLevel);
         await again.SendGameAsync(SkillService.SwitchPlan, new SwitchPlanReq { Plan = 0 });
         Assert.Equal(0, (await Next(again, SkillService.SwitchPlan, SwitchPlanResp.Parser)).Result);
