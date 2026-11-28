@@ -145,7 +145,22 @@ public sealed partial class CombatService
             await _buffs.AddAsync(target, buff, duration, source.Role!.Id);
     }
 
-    internal static IEnumerable<JsonElement> HostileBuffs(JsonElement row) => Tuples(row, "_kBuff2");
+    internal static IEnumerable<JsonElement> HostileBuffs(JsonElement row) =>
+        DescribedStun(row) is { } stun ? Tuples(row, "_kBuff2").Append(stun) : Tuples(row, "_kBuff2");
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<long, JsonElement> DescribedStuns = new();
+
+    /// <summary>Pile Bunker: "... inflicting ${6}-meter Knockback, and inflicting Stun for ${7} seconds". Its rows hold no _kBuff2: the
+    /// Stun is the text's, BuffConfig 9016's first row for that long (inferred).</summary>
+    private static JsonElement? DescribedStun(JsonElement row)
+    {
+        var skill = new Data.Config.SkillConfig(row);
+        if (skill.ScriptLogic != "PileBunker" || skill.DescData is not [_, _, _, _, _, _, var text, ..]
+            || !double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
+            || seconds <= 0) return null;
+        long ms = (long)Math.Round(seconds * 1000);
+        return DescribedStuns.GetOrAdd(ms, d => JsonSerializer.SerializeToElement(new long[] { BuffService.StunGroup * 100 + 1, 10000, d }));
+    }
 
     private void TickEventPvP(long now)
     {

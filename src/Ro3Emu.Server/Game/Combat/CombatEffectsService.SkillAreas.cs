@@ -9,7 +9,7 @@ namespace Ro3Emu.Server.Game;
 
 /// <summary>
 /// What a skill reaches when its row's _kRange does not say it and its text does. A number the row holds stays the row's: Arm Cannon's
-/// _iTargetMax 5 stands against its "1 selected ... and up to 5 Other", and Pile Bunker's [100,1,0,0] against its "within 4 meters".
+/// and Pile Bunker's _iTargetMax 5 stand against their "1 selected ... and up to 5 Other" (inferred).
 /// </summary>
 public sealed partial class CombatEffectsService
 {
@@ -35,6 +35,12 @@ public sealed partial class CombatEffectsService
         if (script == "RuiLiSheJi" && logic is [var count, var width, ..]) return new(TextShape.LineToTarget, Desc(0), width / 100, 1 + (int)count); // "up to ${2} enemies in a line"
         if (script.StartsWith("AimedBolt", StringComparison.Ordinal)) return new(TextShape.LineToTarget, Desc(0), ArrowLineWidth, 1 + (int)Desc(1));
         if (script == "FlameLauncher") return new(TextShape.FrontRectangle, Desc(3), Desc(2), rowMax); // "up to ${5} targets in a ${3} * ${4}-meter rectangular area in front of you"
+        // Lord Knight talents: "the designated ST enemy ... and ${n} Other enemies within ${m} meters of the target" (their rows hold [0] and 1).
+        if (script == "BrandishBD01") return new(TextShape.AroundTarget, Desc(1), 0, 1 + (int)Desc(4)); // Cavalry's Might
+        if (script == "BoomerangBD02") return new(TextShape.AroundTarget, Desc(3), 0, 1 + (int)Desc(4)); // Explosive Spear
+        if (script == "LuoxuancijiBD01") return new(TextShape.AroundTarget, Desc(4), 0, 1 + (int)Desc(5)); // Spiral Blast
+        if (script == "QiaodaBD01") return new(TextShape.AroundTarget, Desc(8), 0, 1 + (int)Desc(9)); // Joint Beat Blast
+        if (script == "PileBunker") return new(TextShape.AroundTarget, Desc(2), 0, rowMax); // "up to ${4} enemies within ${3} meters of them"
         return null;
     }
 
