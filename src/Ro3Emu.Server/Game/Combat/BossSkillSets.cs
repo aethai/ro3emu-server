@@ -57,7 +57,17 @@ public sealed class BossSkill
     public int PushEffect { get; init; }
     public int PushMs { get; init; }
     public float PushDistance { get; init; }
+    /// <summary>The ground warnings only the server starts (BossSkillSets.Warnings): effect, when it starts on the cast
+    /// timeline, and the yaw it is turned by from the boss's facing.</summary>
+    public (int Effect, int StartMs, float YawDeg)[] GroundWarnings { get; init; } = [];
+    /// <summary>The ring each hit takes, one per <see cref="HitMs"/>, for an area around the boss whose show warns each wave
+    /// on its own ring (Ring of Light 52001: 0-8, 8-16, 16-24 m); null for one area every hit.</summary>
+    public (float Inner, float Outer)[]? HitRings { get; init; }
     public int BusyMs => ChantMs + ActionMs;
+
+    /// <summary>How far from the area's centre hit <paramref name="hit"/> can reach.</summary>
+    public float HitReach(int hit) => Area == BossSkillArea.Rect ? MathF.Sqrt(Radius * Radius + Width * Width)
+        : HitRings is { } rings && hit >= 0 && hit < rings.Length ? Math.Max(Radius, rings[hit].Outer) : Radius;
 }
 
 /// <summary>A boss's resolved special skills and phases. Immutable, shared by every unit of the NPC id.</summary>
@@ -125,7 +135,7 @@ public sealed class BossSkillRuntime(BossSkillBook book)
 /// successive phases, and a 9999999 ms cooldown row is cast once when the second phase begins; the HP thresholds are
 /// BossSkillOptions.PhaseHpPercents.
 /// </summary>
-public sealed class BossSkillSets(GameData data, BossSkillOptions options)
+public sealed partial class BossSkillSets(GameData data, BossSkillOptions options)
 {
     /// <summary>Field-MVP AI script → its special rows (by skill name; inferred).
     /// Sub-steps (selectors, damage parts, placeholders) are listed where the atlas lists them and drop out in the filter.</summary>
@@ -381,6 +391,7 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
         var hostile = buff2.Except(beneficial).ToArray();
         bool damages = (hostile.Length > 0 || beneficial.Length == 0)
             && (skill.DamageParam1.Any(v => v > 0) || skill.DamageParam2.Any(v => v > 0));
+        var hits = HitMoments(template, chant, action);
         return new BossSkill
         {
             Id = id, Row = skill.Row, Logic = logic, CdMs = cd, ChantMs = chant, ActionMs = action,
@@ -388,7 +399,9 @@ public sealed class BossSkillSets(GameData data, BossSkillOptions options)
             FromPhase = from, ToPhase = to, Once = once,
             Area = shape, Radius = radius, Width = width, AngleDeg = angle, Reach = reach,
             MaxTargets = (int)Math.Max(1, skill.TargetMax),
-            HitMs = HitMoments(template, chant, action), HighLevel = skill.SkillEffectLevel > 0,
+            HitMs = hits, HighLevel = skill.SkillEffectLevel > 0,
+            GroundWarnings = GroundWarnings(skill.ScriptShow, template, chant, action, hits),
+            HitRings = shape == BossSkillArea.AroundSelf ? HitRings(template, chant, action, hits) : null,
             Damages = damages, HitsPlayers = damages || hostile.Length > 0,
             SelfBuffs = [.. skill.Buff1.Where(b => b.Length >= 3 && b[0] > 0).Concat(beneficial).Select(b => ((int)b[0], (int)b[1], (int)b[2]))],
             SummonNpc = SummonNpc(skill), SummonCount = SummonCountOf(skill), SummonLifeMs = SummonLifeOf(skill), SummonBlast = SummonBlastOf(skill),

@@ -253,4 +253,42 @@ public sealed class BossSkillSchedulerTests : IAsyncLifetime
         Assert.True(await Loop.InvokeAsync(() => Task.FromResult(_server.Service<World>().AllUnits().OfType<MonsterUnit>()
             .Any(m => m.Template.NpcId == 5100000 && ReferenceEquals(m.Target, Session("alice"))))));
     }
+
+    /// <summary>#652: Ring of Light hits each wave on its own ring (0-8, 8-16, 16-24 m), so a player 12 m from the boss
+    /// is hit by the second wave only.</summary>
+    [ClientDataFact]
+    public async Task RingOfLightHitsAPlayerOnlyInItsOwnWave()
+    {
+        await using var alice = await InWorld("Alice");
+        Options.FirstCastDelayMs = 60_000;
+        var angeling = await Boss("alice", 81000001);
+        await Loop.InvokeAsync(() => { Session("alice").Position.X = angeling.X + 12; return Task.CompletedTask; });
+        await Gm("alice", "!boss cast 5201301");
+        var ring = await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == angeling.Uid && u.SkillID == 5201301);
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(12));
+        long me = Session("alice").Role!.Id;
+        var hits = alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillHit)).Select(e => SkillHitInfo.Parser.ParseFrom(e.Body))
+            .Where(h => h.SessionId == ring.SessionId && h.Dsts.Any(d => d.DstID == me)).ToList();
+        Assert.Single(hits);
+    }
+
+    /// <summary>#651: the Phantom Realm Orc Hero's fan (4314601) warns its three turned eruptions with WarningRange (6)
+    /// messages at the boss, turned 0, 120 and 240 degrees from its facing.</summary>
+    [ClientDataFact]
+    public async Task ATurningFanWarnsEachEruptionAtItsOwnAngle()
+    {
+        await using var alice = await InWorld("Alice");
+        Options.FirstCastDelayMs = 60_000;
+        var orc = await Boss("alice", 43100000);
+        await Loop.InvokeAsync(() => { Session("alice").Position.Z = orc.Z + 5; return Task.CompletedTask; });
+        await Gm("alice", "!boss cast 4314601");
+        var cast = await Next(alice, CombatService.UseInSkill, UseInSkillInfo.Parser, u => u.SrcID == orc.Uid && u.SkillID == 4314601);
+        await _server.AdvanceAsync(TimeSpan.FromSeconds(5));
+        var warnings = alice.Inbox.Snapshot().Where(e => e.IsGame(CombatService.SkillEffect))
+            .Select(e => SkillEffectDisplayNotify.Parser.ParseFrom(e.Body)).Where(w => w.SourceId == orc.Uid && w.SkillId == 4314601).ToList();
+        Assert.Equal([4314671, 4314672, 4314673], [.. warnings.Select(w => w.EffectId)]);
+        Assert.All(warnings, w => Assert.Equal(SkillCastingService.DisplayWarningRange, w.EffectType));
+        Assert.Equal([0f, 120f, 240f], [.. warnings.Select(w => ((w.Angle - cast.Face) % 360 + 360) % 360).Select(a => MathF.Round(a))]);
+        Assert.All(warnings, w => Assert.True(Math.Abs(w.TargetPos.X - orc.X) < 0.01 && Math.Abs(w.TargetPos.Z - orc.Z) < 0.01));
+    }
 }

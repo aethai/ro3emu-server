@@ -32,25 +32,24 @@ public sealed partial class CombatEffectsService
         !boss.Dead && boss.Hp > 0 && _world.Map(boss.WorldScene).Contains(boss) && !_buffs.UnitForbidden(boss, ForbiddenState.CastSkill)
             && boss.BossSkills is { } rt && rt.CastSerial == serial;
 
-    /// <summary>A boss's ground warnings. EffectData holds m_kWarningRange on 575 effects, 512 of them in no show's m_kShows, and the client draws them from an effect message
-    /// (LC_PerformEffect_Mgr), so only the server can start those. Each of this skill's (show * 100 up) ends at its first strike: the timing and the target point are (inferred).</summary>
-    private void BossGroundWarnings(MonsterUnit boss, BossSkill skill, long serial, Vec3 at, long targetId, int chant)
+    /// <summary>
+    /// A boss's ground warnings that only the server starts (BossSkill.GroundWarnings): an effect message of type
+    /// WarningRange (6), which LC_PerformEffect_Mgr.PlayWarningRange draws by the row's m_eTargetType: on the boss, on the
+    /// target (<paramref name="targetId"/>), or at <paramref name="at"/> turned to <c>angle</c>; a server-started warning
+    /// drops its m_kOffset and always takes its direction from the message (LC_Skill_Function.ExecuteSkillWarningHelper).
+    /// A warning starts its duration before the moment it marks, shifted with the cast's chant as the hits are.
+    /// </summary>
+    private void BossGroundWarnings(MonsterUnit boss, BossSkill skill, long serial, Vec3 at, long targetId, float face, int chant)
     {
-        if (skill.HitMs.Length == 0) return;
-        long show = new Data.Config.SkillConfig(skill.Row).ScriptShow;
-        var effects = _data.SkillTemplateTable("Lua_Config_EffectData");
-        var shown = _data.SkillTemplate(show) is { } template ? template.GetRawText() : "";
-        double firstStrike = Math.Max(0, skill.HitMs[0] + chant - skill.ChantMs);
-        for (long id = show * 100; id < show * 100 + 100; id++)
+        foreach (var (effect, startMs, yaw) in skill.GroundWarnings)
         {
-            if (!effects.TryGetValue(id.ToString(System.Globalization.CultureInfo.InvariantCulture), out var effect) || Data.Config.SkillEffectData.WarningSeconds(effect) is not { } seconds
-                || shown.Contains(id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)) continue;
-            int warning = (int)id;
             var point = at.Clone();
-            ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, firstStrike - seconds * 1000)), () => !BossCastCurrent(boss, serial) ? Task.CompletedTask
+            float angle = (face + yaw) % 360;
+            ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, startMs + chant - skill.ChantMs)), () => !BossCastCurrent(boss, serial) ? Task.CompletedTask
                 : _world.ToUnitViewersAsync(boss, SkillEffect, new SkillEffectDisplayNotify
                 {
-                    SourceId = boss.Uid, MasterId = boss.Uid, TargetId = targetId, EffectId = warning, EffectType = DisplayGfx, TargetPos = point, SkillId = skill.Id,
+                    SourceId = boss.Uid, MasterId = boss.Uid, TargetId = targetId, EffectId = effect, EffectType = DisplayWarningRange,
+                    TargetPos = point, Angle = angle, SkillId = skill.Id,
                 }));
         }
     }
@@ -86,12 +85,14 @@ public sealed partial class CombatEffectsService
         }, highLevel: skill.HighLevel);
         if (!skill.Once && skill.CdMs > 0) await BossCooldownStartedAsync(boss, skill.Id, now + skill.CdMs);
         await FightingAsync(boss);
-        BossGroundWarnings(boss, skill, serial, hasTarget ? targetPos : origin, targetId, chant);
+        // A position warning lies on the target for an area there, else on the boss; a target warning needs the target.
+        BossGroundWarnings(boss, skill, serial, skill.Area is BossSkillArea.Target or BossSkillArea.AroundTarget && hasTarget ? targetPos : origin,
+            hasTarget ? role?.Id ?? pet!.Uid : 0, face, chant);
         int show = HitEffect(GameData.Int(skill.Row, "_iScriptShow"));
         for (int i = 0; i < skill.HitMs.Length; i++)
         {
             var hit = new BossSkillHit(boss, player, role, pet, skill, serial, session, origin, center, face, show,
-                i == 0, options);
+                i, options);
             ScheduleRuntime(boss.WorldScene, TimeSpan.FromMilliseconds(Math.Max(0, skill.HitMs[i] + chant - skill.ChantMs)), () =>
                 BossSkillHitAsync(hit));
         }
@@ -99,12 +100,13 @@ public sealed partial class CombatEffectsService
     }
 
     private readonly record struct BossSkillHit(MonsterUnit Boss, GameSession? Player, Role? Role, TowerPetUnit? Pet,
-        BossSkill Skill, long Serial, long Session, Vec3 Origin, Vec3 Center, float Face, int Show, bool First,
+        BossSkill Skill, long Serial, long Session, Vec3 Origin, Vec3 Center, float Face, int Show, int Index,
         BossSkillOptions Options);
 
     private async Task BossSkillHitAsync(BossSkillHit hit)
     {
-        var (boss, player, role, pet, skill, serial, session, origin, center, face, show, first, options) = hit;
+        var (boss, player, role, pet, skill, serial, session, origin, center, face, show, index, options) = hit;
+        bool first = index == 0;
         if (!BossCastCurrent(boss, serial)) return;
         var rt = boss.BossSkills!;
         if (first)
@@ -139,16 +141,16 @@ public sealed partial class CombatEffectsService
         }
         else
         {
-            float reach = skill.Area == BossSkillArea.Rect ? MathF.Sqrt(skill.Radius * skill.Radius + skill.Width * skill.Width) : skill.Radius;
+            float reach = skill.HitReach(index);
             var near = new List<GameSession>();
             _world.CollectPlayers(boss.WorldScene, center.X, center.Z, reach + 0.5f, near);
             foreach (var p in near)
                 if (p.Role != null && !p.Dead && !p.SceneLoading && p.WorldScene == boss.WorldScene && !Airborne(p)
-                    && InBossArea(skill, origin, center, face, p.Position.X, p.Position.Z)) victims.Add(p);
+                    && InBossArea(skill, origin, center, face, p.Position.X, p.Position.Z, index)) victims.Add(p);
             if (boss.InstanceId != 0)
                 foreach (var unit in _world.Map(boss.WorldScene).Near(center.X, center.Z, reach + 0.5f))
-                    if (unit is TowerPetUnit tp && !tp.Dead && tp.Hp > 0 && InBossArea(skill, origin, center, face, tp.X, tp.Z)) pets.Add(tp);
-                    else if (unit is CompanionUnit c && !c.Dead && c.Hp > 0 && InBossArea(skill, origin, center, face, c.X, c.Z)) companions.Add(c);
+                    if (unit is TowerPetUnit tp && !tp.Dead && tp.Hp > 0 && InBossArea(skill, origin, center, face, tp.X, tp.Z, index)) pets.Add(tp);
+                    else if (unit is CompanionUnit c && !c.Dead && c.Hp > 0 && InBossArea(skill, origin, center, face, c.X, c.Z, index)) companions.Add(c);
             victims.Sort((a, b) => MonsterService.Distance(center.X, center.Z, a.Position.X, a.Position.Z)
                 .CompareTo(MonsterService.Distance(center.X, center.Z, b.Position.X, b.Position.Z)));
             if (victims.Count > skill.MaxTargets) victims.RemoveRange(skill.MaxTargets, victims.Count - skill.MaxTargets);
@@ -181,15 +183,21 @@ public sealed partial class CombatEffectsService
         }
     }
 
-    /// <summary>Whether (x, z) is inside the skill's area: a circle around the boss or its marked point, a fan or a
-    /// rectangle ahead of the boss in the direction it faced when the cast began.</summary>
-    internal static bool InBossArea(BossSkill skill, Vec3 origin, Vec3 center, float face, float x, float z)
+    /// <summary>Whether (x, z) is inside the skill's area: a circle around the boss or its marked point (for a ringed area,
+    /// hit <paramref name="hit"/>'s ring, BossSkill.HitRings), a fan or a rectangle ahead of the boss in the direction it
+    /// faced when the cast began.</summary>
+    internal static bool InBossArea(BossSkill skill, Vec3 origin, Vec3 center, float face, float x, float z, int hit = -1)
     {
         switch (skill.Area)
         {
             case BossSkillArea.AroundSelf:
             case BossSkillArea.AroundTarget:
-                return MonsterService.Distance(center.X, center.Z, x, z) <= skill.Radius + 0.1f;
+                {
+                    float d = MonsterService.Distance(center.X, center.Z, x, z);
+                    return skill.HitRings is { } rings && hit >= 0 && hit < rings.Length
+                        ? d >= rings[hit].Inner - 0.1f && d <= rings[hit].Outer + 0.1f
+                        : d <= skill.Radius + 0.1f;
+                }
             case BossSkillArea.Fan:
                 {
                     float dx = x - origin.X, dz = z - origin.Z;

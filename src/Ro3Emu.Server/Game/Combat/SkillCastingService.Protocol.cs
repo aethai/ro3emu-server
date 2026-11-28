@@ -280,6 +280,7 @@ public sealed partial class SkillCastingService
         });
 
     internal const int DisplayGfx = 2; // enum_DisplayEffectType.Gfx
+    internal const int DisplayWarningRange = 6; // enum_DisplayEffectType.WarningRange (LC_PerformEffect_Mgr.PlayWarningRange)
 
     /// <summary>Server-timed bullet only when a skill script owns projectile travel.</summary>
     public Task SendSkillBulletAsync(GameSession source, SkillFixTimeBulletNotify bullet, bool highLevel = false) =>

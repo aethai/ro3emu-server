@@ -10,6 +10,25 @@ internal static class SkillShow
         show is { } row && row.TryGetProperty("m_kAtkPoints", out var points) && points.ValueKind == JsonValueKind.Array
             ? [.. points.EnumerateArray().Select(point => GameData.Number(point) ?? 0)] : [];
 
+    /// <summary>
+    /// The show's timeline: each m_kShows entry's effect id (its [effect, kind] pair) with its m_kPoints time in seconds,
+    /// in table order. Both are keyed by the show's state ("1000000"); an empty Lua list exports as {}.
+    /// </summary>
+    public static (long Effect, double Seconds)[] Timeline(JsonElement? show)
+    {
+        if (show is not { } row || First(row, "m_kShows") is not { } shows || First(row, "m_kPoints") is not { } points) return [];
+        var times = points.EnumerateArray().Select(p => GameData.Number(p) ?? 0).ToArray();
+        return [.. shows.EnumerateArray().Select((entry, i) => (Entry: entry, Index: i))
+            .Where(e => e.Index < times.Length && e.Entry.ValueKind == JsonValueKind.Array && e.Entry.GetArrayLength() > 0)
+            .Select(e => ((long)(GameData.Number(e.Entry[0]) ?? 0), times[e.Index]))];
+    }
+
+    /// <summary>The first array under a state-keyed table (m_kShows, m_kPoints), or null.</summary>
+    private static JsonElement? First(JsonElement row, string field) =>
+        row.TryGetProperty(field, out var table) && table.ValueKind == JsonValueKind.Object
+            ? table.EnumerateObject().Select(p => p.Value).Cast<JsonElement?>().FirstOrDefault(v => v?.ValueKind == JsonValueKind.Array)
+            : null;
+
     /// <summary>The show's m_fTotalTime in seconds, or 0 when absent.</summary>
     public static double TotalTime(JsonElement? show) =>
         show is { } row && row.TryGetProperty("m_fTotalTime", out var total) ? GameData.Number(total) ?? 0 : 0;

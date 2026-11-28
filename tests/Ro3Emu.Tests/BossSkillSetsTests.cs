@@ -187,4 +187,41 @@ public sealed class BossSkillSetsTests(ITestOutputHelper output)
         }
         foreach (var (family, (b, s)) in families) output.WriteLine($"== {family}: {b} bosses, {s} skills");
     }
+
+    private static BossSkill Skill(int npc, int id) => Book(npc)!.Skills.Single(k => k.Id == id);
+
+    /// <summary>#652: Ring of Light (52001) and Ring of Darkness (52015) warn each wave on its own circle or ring around
+    /// the boss, each ending at one hit: the hits take 0-8, 8-16 and 16-24 m. A plain area keeps one circle.</summary>
+    [ClientDataFact]
+    public void RingedAreasHitOneRingPerWave()
+    {
+        (float, float)[] waves = [(0f, 8f), (8f, 16f), (16f, 24f)];
+        foreach (var (npc, id) in new[] { (5020001, 5201301), (5020003, 5202401) })
+        {
+            var ring = Skill(npc, id);
+            Assert.Equal(BossSkillArea.AroundSelf, ring.Area);
+            Assert.Equal(3, ring.HitMs.Length);
+            Assert.Equal(waves, ring.HitRings);
+            Assert.Equal(24f, ring.HitReach(2));
+        }
+        Assert.Null(Skill(5020004, 5203001).HitRings); // Terrifying Roar: one circle
+    }
+
+    /// <summary>#651: Rock-Shattering Strike's eruptions turn (52035: 0, 120, 240, 60, 180, 300); its four warnings, none in
+    /// m_kShows, are sent one per eruption, reused in id order, each turned as its eruption and ending at it. The Phantom
+    /// Realm variant (43146) pairs its three warnings with its three eruptions. Drake's Wavebreaker Strike turns its one
+    /// prefab one way only, so its warnings stay unturned.</summary>
+    [ClientDataFact]
+    public void TurningEruptionsGetOneTurnedWarningEach()
+    {
+        var strike = Skill(5020004, 5203501);
+        Assert.Equal([0f, 120f, 240f, 60f, 180f, 300f], [.. strike.GroundWarnings.Select(w => w.YawDeg)]);
+        Assert.Equal([5203506, 5203507, 5203508, 5203517, 5203506, 5203507], [.. strike.GroundWarnings.Select(w => w.Effect)]);
+        Assert.True(strike.GroundWarnings.Zip(strike.GroundWarnings.Skip(1)).Take(2).All(p => p.First.StartMs < p.Second.StartMs));
+        var phantom = Skill(43100000, 4314601);
+        Assert.Equal([0f, 120f, 240f], [.. phantom.GroundWarnings.Select(w => w.YawDeg)]);
+        Assert.Equal([4314671, 4314672, 4314673], [.. phantom.GroundWarnings.Select(w => w.Effect)]);
+        Assert.All(Skill(5020008, 5215101).GroundWarnings, w => Assert.Equal(0f, w.YawDeg));
+        output.WriteLine(string.Join(" ", strike.GroundWarnings.Select(w => $"{w.Effect}@{w.StartMs}/{w.YawDeg}")));
+    }
 }
