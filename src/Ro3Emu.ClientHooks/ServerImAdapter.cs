@@ -96,8 +96,9 @@ namespace Ro3Emu.ClientHooks
         {
             _status.Enqueue(StatusLogoutSucc);
             // NW_ChatNetworkManager:Disconnect on the way back to login or role select (GameLogic.lua), where UnInit
-            // (Obf_mkD) does not run: the next server sends its own chat cooldowns, or none.
+            // (Obf_mkD) does not run: the next server sends its own chat cooldowns and overhead guild mode, or none.
             ChatCooldown.ResetSession();
+            GuildOverhead.ResetSession();
         }
 
         public void Obf_mkD()
