@@ -57,7 +57,7 @@ public sealed partial class ResonancePassives
         long ends = action.StartMs + action.ChantMs + (long)(SkillShow.TotalTime(_data.SkillTemplate(stigma.ScriptShow)) * 1000);
         var center = (action.Request.TargetPos ?? s.Position).Clone();
         float radius = (organum.Range is [var range, ..] ? range : 0) / 100f;
-        Later(s, TimeSpan.FromMilliseconds(Math.Max(0, ends - _loop.NowMs)), async () =>
+        LaterHit(s, TimeSpan.FromMilliseconds(Math.Max(0, ends - _loop.NowMs)), async () =>
         {
             if (!Holds(s, EmblemService.Organum)) return;
             var targets = _combat.MonstersNear(s, center, radius).Where(m => m.Hp > 0).Take((int)Math.Max(1, organum.TargetMax)).ToList();
@@ -100,12 +100,12 @@ public sealed partial class ResonancePassives
             bubbles.Add(bubble);
             await _buffs.AddSupportAsync(monster, MelodyBubble, ms, role.Id);
             // "... it explodes and deals damage when its duration ends."
-            Later(s, TimeSpan.FromMilliseconds(ms), () => BurstAsync(monster, bubble), "melody bubble");
+            LaterHit(s, TimeSpan.FromMilliseconds(ms), () => BurstAsync(monster, bubble), "melody bubble");
         }
     }
 
     /// <summary>"Each time an enemy carrying [Melody Bubble] takes damage, the bubble expands. Upon reaching @{2} stacks, it
-    /// explodes". The burst lands after the hit that filled it, in its caster's own work; its damage expands the others.</summary>
+    /// explodes". The burst lands after the hit that filled it (ResonancePassives.LaterHit); its damage expands the others.</summary>
     private async Task BubblesTakeDamageAsync(GameSession s, MonsterUnit monster, long amount)
     {
         if (amount <= 0 || !_bubbles.TryGetValue(monster, out var bubbles) || bubbles.Count == 0) return;
@@ -114,7 +114,7 @@ public sealed partial class ResonancePassives
         {
             if (++bubble.Stacks >= most)
             {
-                Later(bubble.Caster, TimeSpan.Zero, () => BurstAsync(monster, bubble), "melody bubble");
+                LaterHit(bubble.Caster, TimeSpan.Zero, () => BurstAsync(monster, bubble), "melody bubble");
                 continue;
             }
             if (monster.Hp > 0 && bubble.Caster.Role is { } role && bubble.UntilMs > _loop.NowMs)

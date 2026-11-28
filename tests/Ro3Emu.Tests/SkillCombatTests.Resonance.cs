@@ -171,6 +171,24 @@ public sealed partial class SkillCombatTests
         Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 11431101 && h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0)));
     }
 
+    [ClientDataFact] // Organum lands later, so a kill it makes commits under every contributor's role, not only the caster's
+    public async Task AnOrganumKillWithAnotherContributorCommitsItsReward()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        var (bot, a, dummy) = await ReadyAsync(alice, 4400, 14314, 1431401);
+        await HoldResonanceAsync(a, MarkOfStage2Rows);
+        var b = Session("bob");
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        await Loop.InvokeAsync(() => { combat.Dealt.Invoke(b, dummy, 1); return Task.CompletedTask; }); // Bob hit it too
+        await CastAtAsync(bot, 1431401, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 1431401 && h.Dsts.Any(d => d.DstID == dummy.Uid));
+        await Loop.InvokeAsync(() => { dummy.Hp = 1; return Task.CompletedTask; }); // Organum, 3 s on, is the killing hit
+        Assert.NotNull(await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == 11431101 && h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0)));
+        Assert.True(SpinWait.SpinUntil(() => dummy.RewardSettlement?.Committed == true, Wait));
+    }
+
     [ClientDataFact] // Melody Cannon: Arm Cannon takes its Melody form, and its hit leaves a bubble that bursts when its time ends
     public async Task MelodyCannonBubbleBurstsAtItsEnd()
     {
