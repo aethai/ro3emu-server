@@ -213,6 +213,28 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
 
     private string Dir(string sub) => Path.Combine(options.Value.GameDataDir ?? options.Value.DataDir, sub);
 
+    /// <summary>The default born point of a scene editor file (m_kBornPoints, the isDefault one, else the first).</summary>
+    private static MapPoint? DefaultBorn(JsonElement se)
+    {
+        if (!se.TryGetProperty("m_kBornPoints", out var borns) || borns.ValueKind != JsonValueKind.Array) return null;
+        var list = borns.EnumerateArray().ToList();
+        var chosen = list.FirstOrDefault(b => b.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True);
+        if (chosen.ValueKind == JsonValueKind.Undefined && list.Count > 0) chosen = list[0];
+        return chosen.ValueKind != JsonValueKind.Undefined && chosen.TryGetProperty("position", out var pos)
+            ? new MapPoint(WorldNpc.Float(pos, "x"), WorldNpc.Float(pos, "y"), WorldNpc.Float(pos, "z"), WorldNpc.Float(chosen, "direction"))
+            : null;
+    }
+
+    /// <summary>The default born point of a MapResource scene no map or dungeon row loads (its _kResource's
+    /// "_sceneeditor" file), or null without one.</summary>
+    public MapPoint? ResourceBorn(long mapResourceId)
+    {
+        if (MapResource.Get(data, mapResourceId)?.Resource is not { Length: > 0 } scene
+            || DataFiles.Find(Dir("sceneeditor"), scene + "_sceneeditor.json") is not { } path) return null;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        return DefaultBorn(doc.RootElement);
+    }
+
     /// <summary>The map, or null for an unknown scene entry.</summary>
     public MapWorld? Map(long sceneEntry)
     {
@@ -370,14 +392,7 @@ public sealed partial class WorldData(IOptions<ServerOptions> options, GameData 
                 ? new MapPoint(WorldNpc.Float(pos, "x"), WorldNpc.Float(pos, "y"), WorldNpc.Float(pos, "z"), WorldNpc.Float(p, faceField))
                 : null;
 
-        MapPoint? born = null, revive = null;
-        if (se.TryGetProperty("m_kBornPoints", out var borns) && borns.ValueKind == JsonValueKind.Array)
-        {
-            var list = borns.EnumerateArray().ToList();
-            var chosen = list.FirstOrDefault(b => b.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True);
-            if (chosen.ValueKind == JsonValueKind.Undefined && list.Count > 0) chosen = list[0];
-            if (chosen.ValueKind != JsonValueKind.Undefined) born = Point(chosen, "direction");
-        }
+        MapPoint? born = DefaultBorn(se), revive = null;
         if (se.TryGetProperty("m_kResurrectionPointList", out var revives) && revives.ValueKind == JsonValueKind.Array && revives.GetArrayLength() > 0)
             revive = Point(revives[0], "direction");
 

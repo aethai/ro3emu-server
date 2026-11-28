@@ -1,6 +1,7 @@
 using Romsg;
 using Ro3Emu.Server.Accounts;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
 
@@ -12,7 +13,7 @@ namespace Ro3Emu.Server.Game;
 /// first entry and closes with its last member (inferred: the persisted scene id behaves the same for players).
 /// Guild events (Bonfire Party, later Dracula / Hunting Challenge / rally) attach to <see cref="RoomOf"/>.
 /// </summary>
-public sealed class GuildHomeService : IGameTicker
+public sealed partial class GuildHomeService : IGameTicker
 {
     public const uint EnterHome = 32256;
     public const long DefaultScene = 4000101;
@@ -31,12 +32,17 @@ public sealed class GuildHomeService : IGameTicker
     private readonly HashSet<GameSession> _ejecting = [];
     private long _lastSecond = -1;
     private readonly TimeProvider _time;
+    private readonly RoleStore _roles;
+    private readonly WorldData _maps;
 
     public GuildHomeService(GameData data, GuildStore guilds, FunctionService functions, InstanceService instances,
-        SceneService scene, DungeonService dungeons, GameLoop loop, TimeProvider time)
+        SceneService scene, DungeonService dungeons, GameLoop loop, TimeProvider time, RoleStore roles, WorldData maps)
     {
         this._data = data; this._guilds = guilds; this._functions = functions; this._instances = instances;
         this._scene = scene; this._dungeons = dungeons; this._loop = loop; this._time = time;
+        _roles = roles;
+        _maps = maps;
+        scene.Loaded.Subscribe(StatuesLoadedAsync);
         Scene = Data.Config.GuildSettings.Of(data).GuildMap is > 0 and var map ? map : DefaultScene;
         // (inferred, spec §6.5) Exiting the home revives a dead member on return, as ordinary dungeon runs do.
         dungeons.RecoverDeadOnLeave = roomId => GuildOfRoom(roomId) != null;
@@ -143,8 +149,10 @@ public sealed class GuildHomeService : IGameTicker
             {
                 _homes.Remove(guild);
                 _guildOfRoom.Remove(room.Id);
+                _statueRooms.Remove(room.Id);
                 continue;
             }
+            CheckStatues(guild, room);
             foreach (var member in room.ActiveMembers)
             {
                 var s = member.Session;

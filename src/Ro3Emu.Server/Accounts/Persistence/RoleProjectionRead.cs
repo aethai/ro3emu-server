@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace Ro3Emu.Server.Accounts.Persistence;
 
 /// <summary>Narrow detached role projections for micro auth/social; role mutations remain transitional legacy.</summary>
-internal enum RoleProjectionKind { ForAccount, ById, ByName, Wardrobe }
+internal enum RoleProjectionKind { ForAccount, ById, ByName, Wardrobe, WornGear }
 
 internal sealed class RoleProjectionRead(RoleProjectionKind kind, string? text = null, long id = 0) : DbReadPlan
 {
@@ -16,6 +16,15 @@ internal sealed class RoleProjectionRead(RoleProjectionKind kind, string? text =
             using var wardrobe = DbSql.Command(db, tx, "SELECT wardrobe FROM role WHERE id=$p AND deleted_time=0");
             wardrobe.Parameters.AddWithValue("$p", id);
             return wardrobe.ExecuteScalar() is byte[] blob ? (byte[])blob.Clone() : null;
+        }
+        if (kind == RoleProjectionKind.WornGear)
+        {
+            using var worn = DbSql.Command(db, tx, "SELECT grid, entry FROM item WHERE role_id=$p AND grid > 0 ORDER BY guid");
+            worn.Parameters.AddWithValue("$p", id);
+            var gear = new List<(int Grid, long Entry)>();
+            using var items = worn.ExecuteReader();
+            while (items.Read()) gear.Add((items.GetInt32(0), items.GetInt64(1)));
+            return gear;
         }
         string sql = kind switch
         {

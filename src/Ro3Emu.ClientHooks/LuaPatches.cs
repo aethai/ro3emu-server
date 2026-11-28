@@ -36,6 +36,7 @@ namespace Ro3Emu.ClientHooks
     /// <item>Skill displacements keep m_kMovement's position in sync with LC_PerformEffect_Agent so the next skill does not snap back (SkillMoveSync).</item>
     /// <item>LC_TriggerAreaManager_AreaData compares areaId, reason and callback object in addition to mapId so multi-area maps do not drop cutscene triggers (TriggerAreaFix).</item>
     /// <item>Overhead guild names and emblems follow the original map limits by default and expand to all maps when enabled by the server (GuildOverhead).</item>
+    /// <item>Guild statue NPCs get the display component their _iClientAct names, which this build's LC_Unit_NPC drops (NpcActComponents).</item>
     /// </list>
     /// </summary>
     public static class LuaPatches
@@ -117,6 +118,8 @@ namespace Ro3Emu.ClientHooks
                 TriggerAreaFix.Install(global, global.Obf_RuA<Obf_R.Obf_ff>("LC_TriggerAreaManager")
                     ?? Module(manager, global, "lc_triggerareamanager"));
                 GuildOverhead.Install(manager, (Obf_R.Obf_Cf)env, global);
+                NpcActComponents.Install((Obf_R.Obf_Cf)env, global, global.Obf_RuA<Obf_R.Obf_ff>("LC_Unit_NPC")
+                    ?? Module(manager, global, "lc_unit_npc"), Module(manager, global, "lua_unitactconfig"));
                 Debug.Log("[Ro3Emu.LuaPatches] lc_itemshowfunc: " + added + " card show-func method(s) added; stall name limit "
                     + (param != null ? StallNameMaxLength.ToString() : "not set (publicparamconfig missing)"));
             }
