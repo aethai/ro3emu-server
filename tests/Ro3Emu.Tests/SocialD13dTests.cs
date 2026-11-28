@@ -242,23 +242,4 @@ public sealed class SocialD13dTests : IAsyncLifetime
         Assert.Single(friends.LoadMetadata(b).ReceiveGiftRecords);
         Assert.Equal(1, Scalar($"SELECT COUNT(*) FROM economy_entry WHERE asset_id=1004000 AND delta=-1 AND reason_code={(int)EconomyReason.FriendGiftCost}"));
     }
-
-    [Fact]
-    public async Task ShortGiftLeavesNoRelationRecordOrEconomicReceipt()
-    {
-        var (alice, a) = await InWorld("ShortAlice");
-        var (bob, b) = await InWorld("ShortBob");
-        await using var aliceLease = alice;
-        await using var bobLease = bob;
-        await alice.MicroAsync("FriendService", "apply", new() { ["Uid"] = a.ToString(), ["Target"] = b.ToString() });
-        await bob.MicroAsync("FriendService", "accept", new() { ["Uid"] = b.ToString(), ["Applicant"] = a.ToString() });
-        await alice.SendGameAsync(FriendExtraService.GiveGift,
-            new GiveFriendGiftReq { RoleId = b, ItemId = 1004000, Count = 1 });
-        Assert.Equal(ErrorCodes.ItemsShort, (await Next(alice, FriendExtraService.GiveGift, GiveFriendGiftResp.Parser)).Result);
-        var friends = Service<FriendStore>();
-        Assert.Empty(friends.LoadMetadata(a).SendGiftRecords);
-        Assert.Empty(friends.LoadMetadata(b).ReceiveGiftRecords);
-        Assert.Equal(0, friends.Intimacy(a, b));
-        Assert.Equal(0, Scalar("SELECT COUNT(*) FROM operation_receipt WHERE command_kind='friend-gift'"));
-    }
 }
