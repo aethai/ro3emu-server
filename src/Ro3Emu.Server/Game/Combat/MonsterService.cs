@@ -648,6 +648,7 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
         var previous = monster.Target;
         if (ReferenceEquals(previous, target)) return;
         monster.Target = target;
+        monster.HiddenSinceMs = 0; // a new target (or none) starts no hiding clock
         if (previous == null && target != null) LeaveRoute(monster); // MonsterService.March
         ReleaseSurroundSlot(monster);
         foreach (var handler in TargetChanged.Handlers) _loop.TrackRuntimeDetached("monster target change", () => handler(monster, previous, target));
@@ -808,19 +809,18 @@ public sealed partial class MonsterService : IMonsterBrain, IGameTicker
     {
         if (VisibleHated(m, hidden) is { } other)
         {
-            m.HiddenSinceMs = 0;
             SetTarget(m, other);
             return;
         }
         if (NearestTowerPet(m, map) is { } pet)
         {
+            m.HiddenSinceMs = 0; // the pet fight is no time spent waiting for the hidden player
             Engage(m, pet);
             return;
         }
         if (m.HiddenSinceMs == 0) m.HiddenSinceMs = now;
         else if (HatredParams.ClearTimeMs > 0 && now - m.HiddenSinceMs >= HatredParams.ClearTimeMs)
         {
-            m.HiddenSinceMs = 0;
             Disengage(m, map);
             return;
         }

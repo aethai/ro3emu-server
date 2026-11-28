@@ -97,6 +97,38 @@ public sealed class MonsterLeashTests
         Assert.Equal(monster.Template.MaxHp, await f.Read(() => monster.Hp));
     }
 
+    [Fact] // #648: a fight that ended while its target hid leaves no hiding clock: the next fight's target that hides is held
+    public async Task AFightEndedWhileItsTargetHidStartsTheNextHideAfresh()
+    {
+        await using var f = await Fixture.StartAsync();
+        var monster = await f.SpawnAsync(Healing, Reach + 2);
+        bool hidden = true;
+        await f.Read(() =>
+        {
+            f.Monsters.TargetHidden = _ => hidden;
+            f.Monsters.Engage(monster, f.Session);
+            return 0;
+        });
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 500)); // its hiding clock runs
+        await f.Read(() =>
+        {
+            f.Session.Position.X = PlayerX + 100; // out of its leash: lost while hidden
+            return 0;
+        });
+        await f.Until(() => monster.Target == null && !monster.Returning);
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 1500)); // past HateClearTime since that clock started
+        await f.Read(() =>
+        {
+            f.Session.Position.X = PlayerX;
+            hidden = false;
+            f.Monsters.Engage(monster, f.Session);
+            hidden = true;
+            return 0;
+        });
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 400));
+        Assert.True(await f.Read(() => ReferenceEquals(monster.Target, f.Session)));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "ro3emu-leash-" + Guid.NewGuid().ToString("N"));
