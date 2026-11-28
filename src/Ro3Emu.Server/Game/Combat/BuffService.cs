@@ -396,6 +396,10 @@ public sealed partial class BuffService : IGameTicker
     internal int UnitPiles(WorldUnit unit, int buffGroup) => _unitBuffs.TryGetValue(unit.Uid, out var list)
         ? list.Where(b => b.ExpireMs > _loop.NowMs && b.ConfigId / 100 == buffGroup).Sum(b => b.PileCount) : 0;
 
+    /// <summary>Whether the player holds a live buff of the group (BuffConfig _iBuffID).</summary>
+    internal bool HoldsBuffGroup(GameSession p, long buffGroup) =>
+        p.Buffs.Any(b => b.ExpireMs > _loop.NowMs && BuffConfig.Get(_data, b.ConfigId)?.BuffId == buffGroup);
+
     public bool HasBuffPiles(GameSession p, int buffGroup, int count) => count > 0
         && p.Buffs.Where(b => b.ExpireMs > _loop.NowMs && _data.Row("BuffConfig", b.ConfigId) is { } row
             && GameData.Int(row, "_iBuffID") == buffGroup).Sum(b => b.PileCount) >= count;
