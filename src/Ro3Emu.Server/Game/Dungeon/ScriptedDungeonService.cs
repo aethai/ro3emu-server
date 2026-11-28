@@ -78,7 +78,8 @@ public sealed partial class ScriptedDungeonService(DungeonService dungeons, Worl
         _dungeons.Admission(s, plan, continuation);
     private Task BeginAsync(DungeonCatalog.Plan plan, GameSession[] members, long leader, long team, bool matched = false) =>
         _dungeons.BeginAsync(plan, members, leader, team, matched);
-    private Task EnterAsync(GameSession s, EnterDungeonReq req, bool alone = false) => _dungeons.EnterAsync(s, req, alone);
+    private Task EnterAsync(GameSession s, EnterDungeonReq req, DungeonService.EntryParty party = DungeonService.EntryParty.Team) =>
+        _dungeons.EnterAsync(s, req, party);
     private Task LeaveAsync(GameSession s) => _dungeons.LeaveAsync(s);
     private TimeSpan Paced(int ms) => Raids.Paced(ms);
     private Task BoardCannonAsync(Attempt a, GameSession s, SceneActorUnit actor, long interaction) =>

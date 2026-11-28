@@ -39,7 +39,7 @@ public sealed partial class ScriptedDungeonService
                 || s.SceneLoading || a.Room.Closed) return;
             // The same continuation entry the quest tracker's action 3000 sends from the settled room; the story's next
             // step was accepted with the clear, so admission is the server's own as for that click.
-            await EnterAsync(s, new EnterDungeonReq { SceneEntry = next }, alone: true);
+            await EnterAsync(s, new EnterDungeonReq { SceneEntry = next }, DungeonService.EntryParty.Alone);
         });
     }
 }
