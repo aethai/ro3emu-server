@@ -989,7 +989,7 @@ public sealed partial class SkillCastingService
         {
             // Clicking an enemy from afar: the client attacks on reaching range and stops a few ms later (in-game
             // 11.10), so that first stop is where the auto-attack starts, not a step away that ends it. The 300 ms grace is inferred.
-            if (a.StartedWalking && !s.WorldState.Walking && Now - a.StartMs <= 300
+            if (a.StartedWalking && !s.WorldState.Walking && Now - a.StartMs <= ArrivalGraceMs
                 && MonsterService.Distance(a.StartX, a.StartZ, s.Position.X, s.Position.Z) <= a.ArrivalSpeed * WalkedSeconds(a.WalkFromUtc, s.UtcNow) + 0.5)
             {
                 a.StartX = s.Position.X; a.StartZ = s.Position.Z;
@@ -1000,11 +1000,14 @@ public sealed partial class SkillCastingService
         if (s.SkillCast is not { } cast || new SkillConfig(cast.Row).Movement != 0) return;
         // A walk that sets off (not a stop) after the arrival grace ends a cast that holds the caster in place, even before it
         // has moved: the client interrupts such a cast to walk, and the walk budget is held until the cast ends.
-        if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.WorldState.Walking && Now - cast.StartMs > 300)) return;
+        if (Distance(cast.Origin, s.Position) <= 0.1f && !(s.WorldState.Walking && Now - cast.StartMs > ArrivalGraceMs)) return;
         // A cast that began in mid-walk: the client plays it and walks on with the key held, reporting steps and sending no
         // 31124 (in-game 3.11), and it casts on reaching range and stops 1 ms later (in-game 11.10). Neither ends the cast;
-        // the walk budget stays open for it, so the steps are still paced (inferred). A walk begun after a stop does end it.
-        if (cast.StartedWalking)
+        // the walk budget stays open for it, so the steps are still paced (inferred). A walk begun after a stop does end it,
+        // and so does one that goes on past the arrival grace while a chant still runs (#645, inferred): the client keeps a
+        // chanting cast from being interrupted and sends no 31124 for it (LC_Skill_RunTimeContext, Caster state), so the
+        // walk is the only sign the chant was left.
+        if (cast.StartedWalking && !WalkedOnFromChant(s, cast))
         {
             cast.Origin = s.Position.Clone();
             if (!s.WorldState.Walking) cast.StartedWalking = false;
@@ -1012,4 +1015,12 @@ public sealed partial class SkillCastingService
         }
         _loop.TrackRuntimeDetached("cast movement cancellation", () => CancelCastAsync(s, SkillInterruptedInfo.Types.SkillInterruptType.Move));
     }
+
+    /// <summary>The time after a cast or an attack starts in which a walk is still the arrival at range, not a step away
+    /// (inferred, in-game 11.10: the client stops a few ms after it casts on reaching range).</summary>
+    private const long ArrivalGraceMs = 300;
+
+    /// <summary>A cast pressed in mid-walk whose chant still runs while the walk goes on past the arrival grace.</summary>
+    private bool WalkedOnFromChant(GameSession s, ActiveSkillCast cast) =>
+        cast.ChantMs > 0 && Now < cast.StartMs + cast.ChantMs && s.WorldState.Walking && Now - cast.StartMs > ArrivalGraceMs;
 }
