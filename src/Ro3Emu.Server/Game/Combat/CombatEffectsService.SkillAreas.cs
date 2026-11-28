@@ -67,27 +67,53 @@ public sealed partial class CombatEffectsService
     private static bool AreaDespiteRangeType(SkillConfig skill) =>
         skill.RangeType == SkillRelease.SingleTarget && skill.TargetMax > 1 && skill.Range is [> 0, ..];
 
-    private List<MonsterUnit>? EnemiesByText(GameSession s, ActiveSkillCast action, Vec3 center)
+    /// <summary>A text area as a cast places it: its locked target (a monster or, in an event, a player), the point it is measured
+    /// around, and the facing a line or a front area takes (at the target, as the caster turns to it; without one, the cast's).</summary>
+    private readonly record struct TextAim(TextArea Area, MonsterUnit? Monster, GameSession? Player, Vec3 Around, float Face, float Height);
+
+    private TextAim? AimTextArea(GameSession s, ActiveSkillCast action, Vec3 center)
     {
         var row = action.Row;
         if (AreaByText(row) is not { } area) return null;
-        var aim = FindMonster(s.WorldScene, action.Request.TargetId) is { Hp: > 0 } locked && CanHitMonster(s, locked) ? locked : null;
-        if (area.Shape != TextShape.FrontRectangle && aim == null && new SkillConfig(row).RangeType == SkillRelease.SingleTarget) return [];
-        var around = aim?.Pos ?? center;
-        float height = new SkillConfig(row).AreaHeightRange / 100f;
-        // A line or a front area of a locked cast points at its target (the caster turns to it); without one, where the cast faced.
-        float aimFace = aim == null ? action.Request.Face : MonsterService.Angle(action.Origin.X, action.Origin.Z, aim.X, aim.Z);
-        bool Inside(MonsterUnit m)
-        {
-            if (height > 0 && MathF.Abs(m.Y - around.Y) > height) return false;
-            if (area.Shape == TextShape.AroundTarget) return Distance(around, m.Pos) <= area.Size + 0.1f;
-            var (forward, side) = FacingOffset(m.X - action.Origin.X, m.Z - action.Origin.Z, aimFace);
-            return Math.Abs(side) <= area.Width / 2 + .1 && forward >= -.5 && forward <= area.Size + .1;
-        }
-        var hit = _world.Map(s.WorldScene).Units.OfType<MonsterUnit>()
-            .Where(m => m != aim && m.Hp > 0 && CanHitMonster(s, m) && Relation(row, false, race: m.Template.Race) && Inside(m));
-        var others = area.Shuffled ? hit.OrderBy(_ => Rolls.Proc(10000)) : hit.OrderBy(m => Distance(around, m.Pos)).ThenBy(m => m.Uid);
-        return [.. (aim != null ? others.Prepend(aim) : others).Take(Math.Max(1, area.Count))];
+        var monster = FindMonster(s.WorldScene, action.Request.TargetId) is { Hp: > 0 } locked && CanHitMonster(s, locked) ? locked : null;
+        var player = monster == null ? EventTarget(s, action.Request.TargetId) : null;
+        var around = monster?.Pos ?? player?.Position ?? center;
+        bool aimed = (monster != null || player != null) && Distance(action.Origin, around) > 0.01f;
+        float face = aimed ? MonsterService.Angle(action.Origin.X, action.Origin.Z, around.X, around.Z) : action.Request.Face;
+        return new(area, monster, player, around, face, new SkillConfig(row).AreaHeightRange / 100f);
+    }
+
+    /// <summary>Whether a text area without its locked target hits nobody (a single-target row needs its target).</summary>
+    private static bool NeedsItsTarget(TextAim aim, JsonElement row) => aim.Area.Shape != TextShape.FrontRectangle
+        && aim.Monster == null && aim.Player == null && new SkillConfig(row).RangeType == SkillRelease.SingleTarget;
+
+    private static bool InsideTextArea(TextAim aim, Vec3 origin, Vec3 point)
+    {
+        if (aim.Height > 0 && MathF.Abs(point.Y - aim.Around.Y) > aim.Height) return false;
+        if (aim.Area.Shape == TextShape.AroundTarget) return Distance(aim.Around, point) <= aim.Area.Size + 0.1f;
+        var (forward, side) = FacingOffset(point.X - origin.X, point.Z - origin.Z, aim.Face);
+        return Math.Abs(side) <= aim.Area.Width / 2 + .1 && forward >= -.5 && forward <= aim.Area.Size + .1;
+    }
+
+    private List<MonsterUnit>? EnemiesByText(GameSession s, ActiveSkillCast action, Vec3 center)
+    {
+        var row = action.Row;
+        if (AimTextArea(s, action, center) is not { } aim) return null;
+        if (NeedsItsTarget(aim, row)) return [];
+        var hit = _world.Map(s.WorldScene).Units.OfType<MonsterUnit>().Where(m => m != aim.Monster && m.Hp > 0 && CanHitMonster(s, m)
+            && Relation(row, false, race: m.Template.Race) && InsideTextArea(aim, action.Origin, m.Pos));
+        var others = aim.Area.Shuffled ? hit.OrderBy(_ => Rolls.Proc(10000)) : hit.OrderBy(m => Distance(aim.Around, m.Pos)).ThenBy(m => m.Uid);
+        return [.. (aim.Monster != null ? others.Prepend(aim.Monster) : others).Take(Math.Max(1, aim.Area.Count))];
+    }
+
+    /// <summary>The event players a text area hits, measured as for monsters (<see cref="EnemiesByText"/>). Null for any other row.</summary>
+    private GameSession[]? PlayersByText(GameSession s, ActiveSkillCast action, Vec3 center)
+    {
+        if (AimTextArea(s, action, center) is not { } aim) return null;
+        if (NeedsItsTarget(aim, action.Row)) return [];
+        var hit = _sessions.All().Where(p => p != aim.Player && p.Role != null && CanPlayerHit(s, p) && InsideTextArea(aim, action.Origin, p.Position));
+        var others = aim.Area.Shuffled ? hit.OrderBy(_ => Rolls.Proc(10000)) : hit.OrderBy(p => Distance(aim.Around, p.Position)).ThenBy(p => p.Role?.Id ?? 0);
+        return [.. (aim.Player != null ? others.Prepend(aim.Player) : others).Take(Math.Max(1, aim.Area.Count))];
     }
 
     /// <summary>Adrenaline Rush: "If the target is a Blacksmith class, grants an Extra ...". Its enhanced row reads "regardless of Job Restriction".</summary>

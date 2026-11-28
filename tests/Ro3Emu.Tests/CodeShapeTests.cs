@@ -23,7 +23,7 @@ public sealed class CodeShapeTests
     private const int ClassesWith15OrMoreDependencies = 25;
     private const int ClassesOver20Dependencies = 0;
     private const int ClassesOver2500LinesInGame = 0;
-    private const int RoleNullForgiving = 957;
+    private const int RoleNullForgiving = 956;
     private const int LinesOver200Chars = 0;
     private const int ExposedHookLists = 0;
     private const int NumericIsOpenCalls = 0;

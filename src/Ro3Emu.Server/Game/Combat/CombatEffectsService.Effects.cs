@@ -282,10 +282,15 @@ public sealed partial class CombatEffectsService
         var playerTargets = EffectPlayerTargets(ctx.Caster, ctx.Action, ctx.Center);
         var alreadySlowed = GuardianPreviouslySlowed(ctx.Row, targets, playerTargets);
         if (playerTargets.Length == 0) return alreadySlowed;
-        int maxTargets = checked((int)Math.Max(1, GameData.Int(ctx.Row, "_iTargetMax")));
-        var selected = targets.Select(m => (Id: m.Uid, Distance: MonsterService.Distance(m, ctx.Caster)))
-            .Concat(playerTargets.Select(p => (Id: p.Role!.Id, Distance: PlayerDistance(ctx.Caster, p))))
-            .OrderBy(p => p.Distance).ThenBy(p => p.Id).Take(maxTargets).Select(p => p.Id).ToHashSet();
+        // A text area counts its own targets around its locked one, which comes first; any other area, the row's nearest the caster.
+        var aim = AimTextArea(ctx.Caster, ctx.Action, ctx.Center);
+        int maxTargets = aim?.Area.Count ?? checked((int)Math.Max(1, GameData.Int(ctx.Row, "_iTargetMax")));
+        var from = aim?.Around ?? ctx.Caster.Position;
+        long locked = ctx.Action.Request.TargetId;
+        var selected = targets.Select(m => (Id: m.Uid, Distance: m.Uid == locked && aim != null ? -1f : Distance(from, m.Pos)))
+            .Concat(playerTargets.Select(p => p.Role is { } r
+                ? (Id: r.Id, Distance: r.Id == locked && aim != null ? -1f : Distance(from, p.Position)) : (Id: 0L, Distance: float.MaxValue)))
+            .OrderBy(p => p.Distance).ThenBy(p => p.Id).Take(Math.Max(1, maxTargets)).Select(p => p.Id).ToHashSet();
         targets.RemoveAll(m => !selected.Contains(m.Uid));
         ctx.Action.PlayersStruck = [.. playerTargets.Where(p => selected.Contains(p.Role!.Id))];
         await HitEventPlayersAsync(ctx.Caster, ctx.Action.PlayersStruck,
@@ -1082,12 +1087,17 @@ public sealed partial class CombatEffectsService
         return true;
     }
 
-    /// <summary>The event players a cast can hit: its area's, a guardian's own area selection, or its locked target.</summary>
-    private GameSession[] EffectPlayerTargets(GameSession s, ActiveSkillCast action, Vec3 center) =>
-        GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area && (PetCombatService.IsGuardianEffect(action.Row) || !LocksItsTarget(action.Row))
-            ? PetCombatService.IsGuardianEffect(action.Row) ? PetCombat.GuardianPlayerTargets(s, action, center) : EventAreaTargets(s, action.Row)
-            : EventTarget(s, action.Request.TargetId) is { } eventTarget
-                && PlayerDistance(s, eventTarget) <= Range(action.Row) + 1.5f ? [eventTarget] : [];
+    /// <summary>The event players a cast can hit: a guardian's own area selection, its text area's (as for monsters), its area's, or
+    /// its locked target.</summary>
+    private GameSession[] EffectPlayerTargets(GameSession s, ActiveSkillCast action, Vec3 center)
+    {
+        bool area = GameData.Int(action.Row, "_iRangeType") == SkillRelease.Area;
+        if (area && PetCombatService.IsGuardianEffect(action.Row)) return PetCombat.GuardianPlayerTargets(s, action, center);
+        if (PlayersByText(s, action, center) is { } byText) return byText;
+        if (area && !LocksItsTarget(action.Row)) return EventAreaTargets(s, action.Row);
+        return EventTarget(s, action.Request.TargetId) is { } eventTarget && PlayerDistance(s, eventTarget) <= Range(action.Row) + 1.5f
+            ? [eventTarget] : [];
+    }
 
     /// <summary>One monster's damage from a player's cast: the hit, the guardian factors, the shared adjusters and a
     /// guardian's resistance changes. A guardian's fixed hit takes only its direct-damage factor.</summary>
