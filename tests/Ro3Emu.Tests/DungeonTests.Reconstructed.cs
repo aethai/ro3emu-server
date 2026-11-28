@@ -360,6 +360,29 @@ public sealed partial class DungeonTests
         Assert.Equal(0, (await Next(alice, DungeonService.Enter, EnterDungeonRsp.Parser)).Result);
     }
 
+    /// <summary>#646: the leader steps into the Culvert's region (10153 / 1010626001, 613 to 3120402 for 10106270) with one
+    /// member online and one offline: the online pair gets ready and enters, as 30400 alone would refuse with 1224.</summary>
+    [ClientDataFact]
+    public async Task ALeaderEntersAStoryRegionWithTheMembersOnline()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        var carol = await InWorld("Carol");
+        foreach (var bot in new[] { alice, bob, carol }) await Gm(bot, "!lvl 99");
+        await Party(alice, bob, carol);
+        await carol.DisposeAsync();
+        await Gm(alice, "!quest accept 10106270");
+        Assert.Equal(ErrorCodes.PlayerOffline, await Enter(alice, new EnterDungeonReq { SceneEntry = 3120402 }));
+
+        var region = Service<WorldData>().Map(10153)!.Regions[1010626001];
+        Assert.True(await Service<GameLoop>().InvokeAsync(() => Service<DungeonService>().EnterFromRegionAsync(Session(alice), region)));
+        Assert.Equal(0, (await Next(alice, DungeonService.Enter, EnterDungeonRsp.Parser, r => r.Result != ErrorCodes.PlayerOffline)).Result);
+        await bob.SendGameAsync(DungeonService.Confirm, new ConfirmTeamDungeonReq { IsAgree = true });
+        Assert.Equal(0, (await Next(bob, DungeonService.Confirm, ConfirmTeamDungeonRsp.Parser)).Result);
+        long room = await Load(alice, 3120402);
+        Assert.Equal(room, await Load(bob, 3120402));
+    }
+
     /// <summary>The living actors of the room's current wave, once all of them have spawned.</summary>
     private async Task<IReadOnlyList<MonsterUnit>> WaveIn(long instance, int count)
     {

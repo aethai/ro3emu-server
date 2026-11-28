@@ -27,7 +27,8 @@ public sealed partial class ScriptedDungeonService
     /// meaning (always 1) is unverified and unused. Admission, loading and settlement are 30400's own.
     /// The region belongs to the quest of the role that stepped in: a party member who is not the leader enters alone
     /// (inferred: 30400's leader rule would refuse it with 1204 every step, and the client never asked to bring the
-    /// party); the leader brings the party through the usual ready check, as a 30400 of theirs would.
+    /// party); the leader brings the party's online members through the usual ready check (inferred: 30400 refuses an
+    /// offline member with 1224, which here would answer every step and never let the leader in, #646).
     /// </summary>
     public async Task<bool> EnterFromRegionAsync(GameSession s, MapRegion region)
     {
@@ -43,8 +44,9 @@ public sealed partial class ScriptedDungeonService
             return false;
         _log.LogInformation("{Name} enters region {Region}: dungeon {Scene} for task {Task}", s.Role?.Name, region.Id, scene, task);
         var team = s.Role != null ? _teams.TeamOf(s.Role.Id) : default;
-        bool alone = team.TeamId != 0 && team.Leader != s.Role!.Id;
-        await EnterAsync(s, new EnterDungeonReq { SceneEntry = scene }, alone);
+        var party = team.TeamId == 0 ? DungeonService.EntryParty.Team
+            : team.Leader == s.Role!.Id ? DungeonService.EntryParty.OnlineTeam : DungeonService.EntryParty.Alone;
+        await EnterAsync(s, new EnterDungeonReq { SceneEntry = scene }, party);
         return true;
     }
 }

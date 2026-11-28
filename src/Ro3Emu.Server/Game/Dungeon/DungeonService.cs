@@ -322,12 +322,18 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         internal IDungeonMode? Mode { get; set; }
     }
 
+    /// <summary>Who a 30400-style entry brings: the party (30400's own rule, everyone online), the role alone, or the party's
+    /// online members (a story region the leader stepped into).</summary>
+    public enum EntryParty { Team, Alone, OnlineTeam }
+
     private sealed class Preparation
     {
         public required DungeonCatalog.Plan Plan;
         public required GameSession Leader;
         public required GameSession[] Members;
         public required long TeamId;
+        /// <summary>The party members an <see cref="EntryParty.OnlineTeam"/> entry left out, offline when it began.</summary>
+        public long[] LeftOut = [];
         public readonly HashSet<GameSession> Ready = [];
         public bool Closed;
     }
@@ -365,9 +371,9 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         return 0;
     }
 
-    /// <param name="alone">Enter only this role even in a party (a story region stepped into by a member who is not the
-    /// leader, <see cref="EnterFromRegionAsync"/>).</param>
-    public async Task EnterAsync(GameSession s, EnterDungeonReq req, bool alone = false)
+    /// <param name="party">Who enters: the party (30400), only this role (a story region stepped into by a member who is not
+    /// the leader), or the party's online members (one the leader stepped into, <see cref="EnterFromRegionAsync"/>).</param>
+    public async Task EnterAsync(GameSession s, EnterDungeonReq req, EntryParty party = EntryParty.Team)
     {
         await DeliverPendingAsync(s);
         if (GuildChallengeEnter != null && await GuildChallengeEnter(s, req)) return;
@@ -375,8 +381,9 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
         int error = plan == null ? ErrorCodes.DungeonDataMissing : Admission(s, plan, continuation: true);
         if (error == 0 && Preparing(s)) error = ErrorCodes.DungeonPreparing;
         var membership = s.Role != null ? _teams.TeamOf(s.Role.Id) : default;
-        long[] ids = s.Role == null ? [] : alone || plan?.MaxPlayers == 1 ? [s.Role.Id] : [.. _teams.MembersOf(s.Role.Id)];
         var online = _sessions.All().Where(p => p.Role != null).ToDictionary(p => p.Role!.Id);
+        long[] team = s.Role == null ? [] : party == EntryParty.Alone || plan?.MaxPlayers == 1 ? [s.Role.Id] : [.. _teams.MembersOf(s.Role.Id)];
+        long[] ids = party == EntryParty.OnlineTeam ? [.. team.Where(online.ContainsKey)] : team;
         var members = ids.Where(online.ContainsKey).Select(id => online[id]).ToArray();
         if (error == 0 && ids.Length > 1 && membership.Leader != s.Role!.Id) error = ErrorCodes.NoPermission;
         // GM "!dungeonsolo on" (test aid, not original behaviour): a lone role may also enter a team boss with 30400.
@@ -398,8 +405,8 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
             || selected.DungeonId != 0 && selected.DungeonId != s.InstanceId)) error = ErrorCodes.Parameter;
         await s.SendGameAsync(Enter, new EnterDungeonRsp { Result = error });
         if (error != 0) return;
-        if (members.Length == 1) { await BeginAsync(plan!, members, s.Role!.Id, alone ? 0 : membership.TeamId); return; }
-        var p = new Preparation { Plan = plan!, Members = members, Leader = s, TeamId = membership.TeamId };
+        if (members.Length == 1) { await BeginAsync(plan!, members, s.Role!.Id, party == EntryParty.Alone ? 0 : membership.TeamId); return; }
+        var p = new Preparation { Plan = plan!, Members = members, Leader = s, TeamId = membership.TeamId, LeftOut = [.. team.Except(ids)] };
         p.Ready.Add(s); // Initiating the request is the leader's affirmative answer (inferred).
         foreach (var member in members) _pending[member] = p;
         await BroadcastReadyAsync(p);
@@ -452,8 +459,9 @@ public sealed partial class DungeonService(GameData data, DungeonCatalog catalog
     {
         var p = _pending.GetValueOrDefault(s);
         int error = p == null || p.Closed ? ErrorCodes.Parameter : Admission(s, p.Plan, continuation: true);
+        // The party may not change while it gets ready; members an online-only entry left out stay out, even if they log in.
         if (error == 0 && (_teams.TeamOf(p!.Leader.Role!.Id) != (p.TeamId, p.Leader.Role.Id)
-            || !_teams.MembersOf(p.Leader.Role.Id).Order().SequenceEqual(p.Members.Select(m => m.Role?.Id ?? 0).Order())))
+            || !_teams.MembersOf(p.Leader.Role.Id).Except(p.LeftOut).Order().SequenceEqual(p.Members.Select(m => m.Role?.Id ?? 0).Order())))
             error = ErrorCodes.MemberLeft;
         await s.SendGameAsync(Confirm, new ConfirmTeamDungeonRsp { Result = error });
         if (p == null || p.Closed) return;
