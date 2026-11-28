@@ -91,12 +91,17 @@ public sealed partial class CombatService
         float reach = Math.Max(counter.DistanceMax, counter.Range is [var range, ..] ? range : 0) / 100f;
         var targets = MonstersNear(s, s.Position, reach)
             .Where(m => SkillAreaContains(row, s.Position, s.Position, s.Face, m.Pos)).Take((int)Math.Max(1, counter.TargetMax)).ToList();
-        await CastForPlayerAsync(s, row, targets);
         // Players the holder may fight, in the same area, up to the row's count with the monsters.
-        foreach (var enemy in AlliesNear(s, s.Position, reach)
+        var enemies = AlliesNear(s, s.Position, reach)
             .Where(p => p != s && CanPlayerHit(s, p) && SkillAreaContains(row, s.Position, s.Position, s.Face, p.Position))
-            .Take(Math.Max(0, (int)Math.Max(1, counter.TargetMax) - targets.Count)).ToList())
-            await CastExtraOnPlayerAsync(s, counter, enemy);
+            .Take(Math.Max(0, (int)Math.Max(1, counter.TargetMax) - targets.Count)).ToList();
+        // The counter lands under a runtime intent: a hit that kills commits under every contributor's role (GameLoop.PostRuntimeFor).
+        _loop.PostRuntimeFor(s, async () =>
+        {
+            if (s.Dead || s.SceneLoading || s.SceneGeneration != generation) return;
+            await CastForPlayerAsync(s, row, targets);
+            foreach (var enemy in enemies) await CastExtraOnPlayerAsync(s, counter, enemy);
+        }, "shield block counter");
     }
 
     /// <summary>A counter tapped while the block lives: the block gives way to it and its shared cooldown does not hold it back.</summary>

@@ -58,6 +58,27 @@ public sealed partial class SkillCombatTests
         await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == PowerfulCounterRow && h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
     }
 
+    [ClientDataFact] // The counter of a block that runs out lands later, so a kill it makes commits under every contributor's role
+    public async Task ABlockEndCounterKillWithAnotherContributorCommitsItsReward()
+    {
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        var (bot, a, dummy) = await ReadyAsync(alice, 1410, 11638, ShieldBlockRow);
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        await Loop.InvokeAsync(() =>
+        {
+            a.Face = FaceTo(a.Position, dummy.Pos);
+            combat.Dealt.Invoke(Session("bob"), dummy, 1); // Bob hit it too
+            return Task.CompletedTask;
+        });
+        await CastAtAsync(bot, ShieldBlockRow, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.True(SpinWait.SpinUntil(() => a.Buffs.Any(b => b.ConfigId == BlockParry), Wait));
+        await Loop.InvokeAsync(() => { dummy.Hp = 1; return Task.CompletedTask; }); // the end's counter is the killing hit
+        await Next(bot, CombatService.SkillHit, SkillHitInfo.Parser, h => h.SkillId == ShieldCounterRow && h.Dsts.Any(d => d.DstID == dummy.Uid && d.Damage > 0));
+        Assert.True(SpinWait.SpinUntil(() => dummy.RewardSettlement?.Committed == true, Wait));
+    }
+
     [ClientDataFact] // Absolute Defense (Soul Echo resonance): the block's form with twice the DEF and MDEF
     public async Task AbsoluteDefenseBlocksWithItsOwnForm()
     {

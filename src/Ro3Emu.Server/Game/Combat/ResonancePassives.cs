@@ -82,15 +82,11 @@ public sealed partial class ResonancePassives
     /// </summary>
     private void LaterHit(GameSession s, TimeSpan delay, Func<Task> work, string origin)
     {
-        if (s.Role is not { } role) return;
-        var owner = s.Owner;
-        var lease = s.Attachment;
+        if (s.Role == null) return;
         long scene = s.SceneGeneration;
-        bool Current() => ReferenceEquals(s.Role, role) && ReferenceEquals(s.Owner, owner) && ReferenceEquals(s.Attachment, lease)
-            && lease?.Cancelled != true && s.SceneGeneration == scene && !s.SceneLoading && !s.Dead;
-        Task Guarded() => Current() ? work() : Task.CompletedTask;
-        if (delay <= TimeSpan.Zero) _loop.PostRuntime(Guarded, origin);
-        else _loop.ScheduleRuntime(delay, Guarded, origin);
+        Task Guarded() => s.SceneGeneration == scene && !s.SceneLoading && !s.Dead ? work() : Task.CompletedTask;
+        if (delay <= TimeSpan.Zero) _loop.PostRuntimeFor(s, Guarded, origin);
+        else _loop.ScheduleRuntimeFor(s, delay, Guarded, origin);
     }
 
     private async Task OnCastResolvedAsync(GameSession s, ActiveSkillCast action, IReadOnlyList<MonsterUnit> processed, SkillHitInfo hit)

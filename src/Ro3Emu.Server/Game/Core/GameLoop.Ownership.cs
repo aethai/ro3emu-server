@@ -30,6 +30,35 @@ public sealed partial class GameLoop
     private Task RunLegacyAsync(string origin, Func<Task> work) => Owners is { } owners
         ? owners.RunAsync("timer/" + origin, [ReservationKey.Realm], work) : work();
 
+    /// <summary>
+    /// A role's later combat work (a delayed hit, a counter) under a runtime intent rather than the role's scope: a hit that
+    /// kills commits its reward under every contributor's role, which a role scope cannot widen to. It runs only while the
+    /// role is still current exactly as <see cref="PostOwned(GameSession, Func{Task}, string, Action?)"/> requires.
+    /// </summary>
+    public void PostRuntimeFor(GameSession session, Func<Task> work, [CallerMemberName] string origin = "role runtime")
+    {
+        var current = CurrentFor(session);
+        PostRuntime(() => current() ? work() : Task.CompletedTask, origin);
+    }
+
+    /// <summary><see cref="PostRuntimeFor"/> after a delay.</summary>
+    public void ScheduleRuntimeFor(GameSession session, TimeSpan delay, Func<Task> work, [CallerMemberName] string origin = "role runtime")
+    {
+        var current = CurrentFor(session);
+        ScheduleRuntime(delay, () => current() ? work() : Task.CompletedTask, origin);
+    }
+
+    private static Func<bool> CurrentFor(GameSession session)
+    {
+        var role = session.Role;
+        var lease = session.Attachment;
+        var owner = session.Owner;
+        return () => role != null && ReferenceEquals(session.Role, role) && ReferenceEquals(session.Owner, owner) &&
+            ReferenceEquals(session.Attachment, lease) && lease?.Cancelled != true &&
+            (owner == null ? lease == null : lease != null && ReferenceEquals(owner.Attachment, lease) &&
+                owner.State is RoleOwnerState.Loading or RoleOwnerState.Attached);
+    }
+
     /// <summary>A detached role timer captures its attachment before queueing; a role switch cancels its intent.</summary>
     public void PostOwned(GameSession session, Func<Task> work, [CallerMemberName] string origin = "role timer", Action? discarded = null)
         => PostOwned(session, [], work, origin, discarded);
