@@ -432,6 +432,9 @@ public sealed class RoleStore(AccountStore accounts)
     public void SaveMounts(long id, byte[] state, RoleItemPlanBuilder? transaction = null) => SaveBlob(id, "mounts", state, transaction);
     public byte[]? LoadWardrobe(long id) => LoadBlob(id, "wardrobe");
     public Task<byte[]?> LoadWardrobeAsync(long id) => _accounts.ReadAsync<byte[]?>(new RoleProjectionRead(RoleProjectionKind.Wardrobe, id: id));
+    /// <summary>The worn items (grid above 0) of a role, offline roles too, by grid and ItemConfig id.</summary>
+    public Task<List<(int Grid, long Entry)>> LoadWornGearAsync(long id) =>
+        _accounts.ReadAsync<List<(int Grid, long Entry)>>(new RoleProjectionRead(RoleProjectionKind.WornGear, id: id));
     public void SaveWardrobe(long id, byte[] state, RoleItemPlanBuilder? transaction = null) => SaveBlob(id, "wardrobe", state, transaction);
     public byte[]? LoadTotems(long id) => LoadBlob(id, "totems");
     public byte[]? LoadTotemRefineEpoch(long id) => LoadBlob(id, "totem_refine_epoch");

@@ -458,17 +458,28 @@ public sealed class GuildHomeTests : IAsyncLifetime
         var master = Assert.Single(statues, b => b.Name == "Alice");
         Assert.Equal(Session(alice).Progress!.Career, master.EffigyData.Carrer);
         Assert.Equal(Session(alice).Role!.Sex, master.Gender);
+        // The worn gear the model holds, as the officer's own entity shows it.
+        Assert.Equal(CharacterStatsService.EquipInfo(Session(alice)), master.EquipInfo);
         // The _002 layout moved to the home by the born offset: in front of the hall, below its born point.
         Assert.InRange(master.MovementInfo.Pos.X, 396f, 398f);
         Assert.InRange(master.MovementInfo.Pos.Z, 330f, 340f);
         Assert.All(statues.Where(b => b != master), b => Assert.Equal(1000, b.EffigyData.Carrer));
 
-        await alice.SendGameAsync(GuildService.ChangeOfficial, new GuildChangeOfficialReq { TarPlayerID = (long)bob.Self!.Uuid, TarOfficial = 2 });
+        // Bob's stored gear (read from the items, as for an offline officer): a weapon in grid 1, a head piece in grid 8 and
+        // a socketed card (a negative grid); only grids 1-7 go into equipInfo. The ids are invented.
+        const int Weapon = 9_100_001, Head = 9_100_002, Card = 9_100_003;
+        var items = Service<ItemStore>();
+        long bobId = (long)bob.Self!.Uuid;
+        items.Insert(bobId, new InvItem { Entry = Weapon, Stack = 1, Pack = 2, Grid = 1, Sort = 900 });
+        items.Insert(bobId, new InvItem { Entry = Head, Stack = 1, Pack = 2, Grid = 8, Sort = 901 });
+        items.Insert(bobId, new InvItem { Entry = Card, Stack = 1, Pack = 3, Grid = -11, Sort = 902 });
+        await alice.SendGameAsync(GuildService.ChangeOfficial, new GuildChangeOfficialReq { TarPlayerID = bobId, TarOfficial = 2 });
         Assert.Equal(0, (await Next(alice, GuildService.ChangeOfficial, GuildChangeOfficialResp.Parser)).Result);
         _clock.Advance(1); // the home's once-a-second Tick sees the new officer
         var redrawn = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
             v => v.Bases.Any(b => b.EntityTemplateID == StatueNpc && b.Name == "Bob"));
         Assert.Equal(3, redrawn.Bases.Count(b => b.EntityTemplateID == StatueNpc));
+        Assert.Equal([Weapon, 0, 0, 0, 0, 0, 0], redrawn.Bases.Single(b => b.Name == "Bob").EquipInfo);
         // New uids: the client would otherwise update the unit it is still removing instead of building a statue.
         var old = statues.Select(b => b.Uuid).ToHashSet();
         Assert.DoesNotContain(redrawn.Bases, b => old.Contains(b.Uuid));

@@ -13,8 +13,8 @@ namespace Ro3Emu.Server.Game;
 /// LC_Display_Agent_GuildStatue._createModel loads a character model (LC_ModelLoader.LoadRole) from the entity's
 /// effigyData.carrer, gender and curUseAppearances (LC_UnitBase.InitAppearance). So the server sends each statue as an
 /// NPC entity carrying an officer's look: the Guild Master, the Leader and the Charisma Baby (GuildPositionConfig 1, 2
-/// and 10, one seat each), in the order of the three settings (inferred from their names). The statues hold no weapon:
-/// the entity's equipInfo would need an offline officer's worn items, which the server does not read (inferred).
+/// and 10, one seat each), in the order of the three settings (inferred from their names). The entity's equipInfo gives
+/// the model the officer's worn weapons (LC_UnitBase.GetWeaponsID), read from the stored items for offline officers too.
 /// </summary>
 public sealed partial class GuildHomeService
 {
@@ -124,6 +124,7 @@ public sealed partial class GuildHomeService
             if (seats[i].Setting is not [var npcId, var x, var z, var face] || NPCConfig.Get(_data, (long)npcId) is not { } npc) continue;
             var role = holders[i] == 0 ? null : await _roles.GetAsync(holders[i]);
             var looks = role == null ? null : RoleProto.Appearances(role, await _roles.LoadWardrobeAsync(role.Id), _time);
+            long[] gear = role == null ? [] : EquipInfo(await _roles.LoadWornGearAsync(role.Id));
             var (px, pz) = InHomeLayout((float)x, (float)z);
             long uid = GuildCampfireService.HomeActorUid(room, StatuePoint + generation * seats.Length + i);
             var actor = SceneService.NpcEntity(new WorldNpc(uid, Scene, WorldNpcKind.Npc, (int)npcId,
@@ -132,12 +133,23 @@ public sealed partial class GuildHomeService
             actor.Gender = role?.Sex ?? 1;
             actor.EffigyData = new EffigyData { Carrer = role?.Career ?? NoviceCareer };
             if (looks != null) actor.CurUseAppearances.Add(looks);
+            actor.EquipInfo.AddRange(gear);
             view.Bases.Add(actor);
             signature.Append(i).Append(':').Append(actor.Name).Append('/').Append(actor.EffigyData.Carrer).Append('/')
                 .Append(actor.Gender).Append('/').AppendJoin(',', (looks ?? []).OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"))
+                .Append('/').AppendJoin(',', gear)
                 .Append(';');
         }
         return (view, signature.ToString());
+    }
+
+    /// <summary>EntityBase.equipInfo: ItemConfig ids of grids 1..7, 0 for empty (CharacterStatsService.EquipInfo).</summary>
+    private static long[] EquipInfo(List<(int Grid, long Entry)> worn)
+    {
+        var slots = new long[CharacterService.EquipInfoSlots];
+        foreach (var (grid, entry) in worn)
+            if (grid is >= 1 and <= CharacterService.EquipInfoSlots) slots[grid - 1] = entry;
+        return slots;
     }
 
     /// <summary>A settings point moved from the _002 layout into the home map by the offset between the two scenes' default
