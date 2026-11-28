@@ -1106,7 +1106,8 @@ public sealed partial class CombatEffectsService
             foreach (var modifier in DamageAdjusters.Handlers) amount = Math.Max(0, modifier(s, target, row, result, amount));
             foreach (var extra in ExtraHitDamage.Handlers) amount += Math.Max(0, extra(s, target, row, amount));
         }
-        return (PetCombatService.ApplyPetSupportResistance(amount, _buffs.UnitCombatAttributes(target), row, attacker.Element), result);
+        // The target's debuffs (damage taken, element resistances) are in its fighter's attributes, which Damage read.
+        return (amount, result);
     }
 
     /// <summary>Targets already slowed before this cast. Only Kuang Feng Xi Juan's second slow depends on that, so no

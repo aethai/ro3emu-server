@@ -28,15 +28,23 @@ public sealed partial class BuffService
     /// <summary>Active raw attribute contributions; the combat owner passes these through StatCalculator.</summary>
     /// <summary>The attribute changes of a guardian's live buffs on the unit. (inferred scope) Only these alter a monster's
     /// combat stats, damage and speed: ordinary unit buffs keep their previous, display-only behaviour.</summary>
-    /// <summary>The buffs that count toward a unit's combat attributes: a guardian's, and a debuff (BuffConfig _iType 2) from
-    /// any source, so Petrify's PDEF% and a frost's MSPD apply to a monster. (inferred) A monster's own standing buffs
-    /// (NPCConfig _kBornEventBuff, 102 monsters carry 235 and 236) stay out, so its template stats stay as tuned.</summary>
-    private bool CountsInUnitStats(ActiveBuff buff) => buff.ExpireMs > _loop.NowMs
-        && (buff.IsGuardianOwned || buff.Changes.Count > 0 && BuffConfig.Get(_data, buff.ConfigId)?.Type == NegativeBuffType);
+    /// <summary>
+    /// The buffs that count toward a unit's combat attributes: a guardian's, and a debuff from another unit, so Petrify's PDEF%,
+    /// a frost's MSPD and White Imprison's damage taken apply to a monster. A debuff is a BuffConfig _iType 2 row, or a _iType 0
+    /// or 1 row whose changes are all reductions: Dark Illusion's slow (1530201, _iType 0) and Warg Strike's (1331801, _iType 1)
+    /// are written that way, while a boss's Frenzy (5001001, _iType 1) raises its stats. (inferred) A monster's own standing
+    /// buffs (NPCConfig _kBornEventBuff, AIConfig _iUnFightBUFF, Tower suppression, all passive) and its self-buffs stay out,
+    /// so its template stats stay as tuned.
+    /// </summary>
+    private bool CountsInUnitStats(WorldUnit unit, ActiveBuff buff) => !buff.IsPassive && buff.ExpireMs > _loop.NowMs
+        && (buff.IsGuardianOwned || buff.Changes.Count > 0 && buff.SourceId != unit.Uid && IsUnitDebuff(buff));
+
+    private bool IsUnitDebuff(ActiveBuff buff) => BuffConfig.Get(_data, buff.ConfigId)?.Type is { } type
+        && (type == NegativeBuffType || type is 0 or 1 && buff.Changes.All(c => c.Value < 0));
 
     internal IEnumerable<(long Id, double Value)> UnitCombatAttributes(WorldUnit unit) =>
         _unitBuffs.TryGetValue(unit.Uid, out var buffs)
-            ? buffs.Where(CountsInUnitStats)
+            ? buffs.Where(b => CountsInUnitStats(unit, b))
                 .SelectMany(b => b.Changes.Select(change => (change.Attr, change.Value))).ToArray()
             : [];
 
@@ -54,7 +62,7 @@ public sealed partial class BuffService
         return StatCalculator.Compute(raw, _data);
     }
 
-    internal bool HasUnitCombatBuffs(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs) && buffs.Any(CountsInUnitStats);
+    internal bool HasUnitCombatBuffs(WorldUnit unit) => _unitBuffs.TryGetValue(unit.Uid, out var buffs) && buffs.Any(b => CountsInUnitStats(unit, b));
 
     public IEnumerable<(long Id, double Value)> UnitAttributes(WorldUnit unit) =>
         _unitBuffs.TryGetValue(unit.Uid, out var buffs)

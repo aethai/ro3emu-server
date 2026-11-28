@@ -23,7 +23,7 @@ public sealed partial class CombatService
             [AttributeId.MaxHp] = t.MaxHp, [AttributeId.Atk] = t.Atk, [AttributeId.Matk] = t.Matk, [AttributeId.Def] = t.Def,
             [AttributeId.Mdef] = t.Mdef,
             [AttributeId.Hit] = t.Hit, [AttributeId.Flee] = t.Flee, [AttributeId.Cri] = t.Cri, [AttributeId.Speed] = t.SpeedCm,
-            [AttributeId.CastSpeed] = t.CastSpeed,
+            [AttributeId.CastSpeed] = t.CastSpeed, [AttributeId.EleReduce] = t.ElementCounterResistance,
         };
         foreach (var (id, value) in _buffs.UnitCombatAttributes(unit)) raw[(int)id] = raw.GetValueOrDefault((int)id) + value;
         return StatCalculator.Compute(raw, _data);
@@ -45,8 +45,17 @@ public sealed partial class CombatService
         {
             Def = stats[AttributeId.Def], Mdef = stats[AttributeId.Mdef], Flee = stats[AttributeId.Flee], ResCri = stats[AttributeId.ResCri],
             Race = t.Race, Size = t.Size, Kind = KindOf(t), ElementCounterResistance = t.ElementCounterResistance,
+            Attributes = MonsterAttributes(stats),
         };
     }
+
+    /// <summary>
+    /// A debuffed monster's attributes for the hit formula (crit taken 238, damage taken 1212/1214/1216/226, element
+    /// resistances...). Its damage dealt 1215 and element bonuses 301-310 stay out: MonsterBuffDamage applies them to every
+    /// monster hit, the ones without a skill row too.
+    /// </summary>
+    private static Func<int, long> MonsterAttributes(StatSheet stats) => id =>
+        id == AttributeId.PerDmg1 || id is >= AttributeId.NoneEle and < AttributeId.NoneEle + AttributeId.ElementCount ? 0 : stats[id];
 
     internal long MonsterBuffDamage(MonsterUnit monster, JsonElement? skill, long amount)
     {
