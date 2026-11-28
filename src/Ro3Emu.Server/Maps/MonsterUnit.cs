@@ -105,6 +105,8 @@ public class MonsterUnit : WorldUnit
     public TowerPetUnit? PetTarget { get; set; }
     public long NextSwingMs { get; set; }
     public long NextChaseMs { get; set; }
+    /// <summary>When its target hid (MonsterService.HoldForHidden), 0 while it is seen.</summary>
+    public long HiddenSinceMs { get; set; }
     /// <summary>When this monster may search a way around an obstacle again: a straight walk failed, and the search is not free.</summary>
     public long NextPathMs { get; set; }
     public bool Returning { get; set; }
