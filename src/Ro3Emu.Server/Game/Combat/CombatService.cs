@@ -757,9 +757,10 @@ public sealed partial class CombatService : IGameTicker
     /// <summary>Every JobConfig row has _iRace 2 (Demi-Human) and _iSize 2 (Medium).</summary>
     internal const int PlayerRace = 2, PlayerSize = 2;
 
-    /// <summary>What a hit reads on a player: the sheet without the buffs that have their own path and would count twice.</summary>
+    /// <summary>A fighter's element for the element attributes (321-340): a monster's always, a player's never.</summary>
     private static int UnitElement(Fighter f) => f.Kind != DamageAttributes.Kind.Player || f.Attributes == null ? f.Element : 0;
 
+    /// <summary>What a hit reads on a player: the sheet without the buffs that have their own path and would count twice.</summary>
     internal Func<int, long> PlayerAttributes(GameSession p, StatSheet stats)
     {
         if (!p.Buffs.Any(BuffService.HasOwnDamagePath)) return id => stats[id];
