@@ -360,4 +360,28 @@ public sealed partial class SkillCombatTests
         await Next(alice, CombatService.SkillMove, SkillStartMoveNotify.Parser, m => m.EntityID == (ulong)victim.Role.Id);
         await Loop.InvokeAsync(() => { Assert.Equal(moved.EndPos, victim.Position); return Task.CompletedTask; });
     }
+
+    [ClientDataFact] // Pile Bunker: "up to 5 enemies within 4 meters of them ... inflicting Stun for 0.5 seconds"
+    public async Task PileBunkerHitsAroundItsTargetAndStuns()
+    {
+        await using var alice = await InWorld("Alice");
+        var (bot, a, dummy) = await ReadyAsync(alice, 6400, 16314, 1631401);
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        var near = await Target("alice", stationary: true, npcId: 5000002);
+        var far = await Target("alice", stationary: true, npcId: 5000002);
+        await Loop.InvokeAsync(() =>
+        {
+            foreach (var (m, metres) in new[] { (near, 3f), (far, 5.5f) })
+            {
+                m.StaysOutOfBattle = true; m.Hp = 1000000;
+                m.X = dummy.X + metres; m.Y = dummy.Y; m.Z = dummy.Z;
+            }
+            return Task.CompletedTask;
+        });
+        bool stunned = false;
+        await CastAtAsync(bot, 1631401, dummy);
+        Assert.Equal(0, (await Next(bot, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        Assert.True(SpinWait.SpinUntil(() => { stunned |= buffs.UnitPiles(near, BuffService.StunGroup) > 0; return near.Hp < 1000000 && stunned; }, Wait));
+        Assert.Equal(1000000, far.Hp);
+    }
 }

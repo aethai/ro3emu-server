@@ -111,8 +111,9 @@ public sealed partial class SkillCastingService
         if (IsArmCannon(script) && HeldFirepower(s) is { } fire && await _buffs.ConsumeBuffPilesAsync(s, fire.Group, 1)
             && !_buffs.HasBuffPiles(s, fire.Group, 1))
             foreach (var enhance in s.Buffs.Where(b => b.ConfigId == fire.Enhance).ToArray()) await _buffs.RemoveAsync(s, enhance);
-        // Joint Beat: "Each hit ... shatters the target's body parts in sequence": the buff's pile count names the part, 11222 to 11225, at their first row.
-        if (script == "Qiaoda" && skill.Buff2 is [[_, _, var partMs, ..], ..])
+        // Joint Beat (and its Blast talent row): "Each hit ... shatters the target's body parts in sequence": the buff's pile count names the
+        // part, 11222 to 11225, at their first row.
+        if (script is "Qiaoda" or "QiaodaBD01" && skill.Buff2 is [[_, _, var partMs, ..], ..])
             foreach (var target in processed.Where(m => m.Hp > 0))
                 if (_buffs.UnitPiles(target, JointBeatGroup) is > 0 and var piles)
                     await _buffs.AddSupportAsync(target, (ShatteredPartGroups + Math.Min(piles, 4) - 1) * 100 + 1, (int)partMs, s.Role!.Id);

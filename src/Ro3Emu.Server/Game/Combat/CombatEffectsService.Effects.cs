@@ -339,7 +339,7 @@ public sealed partial class CombatEffectsService
             processed.Add(target);
             if (damage) await ApplyMonsterHitDamageAsync(ctx, target, attacker, hit, killed);
             if (ctx.CanApplyMoreEffects())
-                foreach (var tuple in Tuples(ctx.Row, "_kBuff2"))
+                foreach (var tuple in HostileBuffs(ctx.Row))
                     // Signum Crucis on Holy Light: "reduces the Physical DEF of Undead-property targets and Demon Race targets"
                     if (ctx.CanApplyMoreEffects() && (ctx.Script != "HolyLight2" || target.Template.Race == DemonRace || target.Template.Element == UndeadElement)
                         && (ctx.Script != "LexDivina" || !target.Template.IsBoss) // "inflicts Silence on normal monsters or players"

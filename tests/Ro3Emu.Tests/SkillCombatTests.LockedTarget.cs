@@ -45,6 +45,30 @@ public sealed partial class SkillCombatTests
         Assert.True(mark.Hp < mark.Template.MaxHp);
     }
 
+    // Lord Knight talents: "... and 2 Other enemies within 4 meters of the target": the target and its two nearest, nobody 6 m away.
+    [ClientDataTheory]
+    [InlineData(1200, 11108, 1, 1110811, 10102127)] // Cavalry's Might
+    [InlineData(1200, 11110, 1, 1111021, 10102115)] // Explosive Spear
+    [InlineData(1300, 11213, 1, 1121311, 10103103)] // Spiral Blast
+    [InlineData(1300, 11221, 1, 1122111, 10104103)] // Joint Beat Blast
+    public async Task ASplashTalentAlsoHitsTwoOthersAroundItsTarget(int job, int group, int level, int row, int talent)
+    {
+        var (bot, me, strikes) = await Caster("Alice", job, group, level, talent);
+        await using var _ = bot;
+        var target = await Mark(me, 1);
+        var near = await Mark(me, 2);
+        var next = await Mark(me, 3);
+        var third = await Mark(me, 4);
+        var far = await Mark(me, 7);
+        Assert.Equal(0, (await Cast(bot, me, group * 100 + level, target)).Result);
+        await Eventually(() => strikes.Select(s => s.Target).Distinct().Count() >= 3);
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 500));
+        Assert.All(strikes, s => Assert.Equal(row, s.Row));
+        Assert.Equal(new[] { target.Uid, near.Uid, next.Uid }.Order(), strikes.Select(s => s.Target).Distinct().Order());
+        Assert.Equal(third.Template.MaxHp, third.Hp);
+        Assert.Equal(far.Template.MaxHp, far.Hp);
+    }
+
     [ClientDataFact] // "to a designated ST enemy within 3 meters"; its row's _iTargetMax 5 finds nobody else
     public async Task HolyCrossHitsOnlyItsTargetInACrowd()
     {
