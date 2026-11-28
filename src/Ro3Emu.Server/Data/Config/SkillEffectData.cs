@@ -42,6 +42,45 @@ public readonly record struct SkillEffectData(JsonElement Row)
     public static double? WarningSeconds(JsonElement row) => row.TryGetProperty("m_kPoint", out var point) && point.TryGetProperty("m_kWarningRange", out var warning)
         ? warning.TryGetProperty("m_fDuration", out var seconds) && seconds.TryGetDouble(out double value) ? value : 0 : null;
 
+    private JsonElement? Warning => Row.TryGetProperty("m_kPoint", out var point) && point.ValueKind == JsonValueKind.Object
+        && point.TryGetProperty("m_kWarningRange", out var warning) && warning.ValueKind == JsonValueKind.Object ? warning : null;
+
+    private double WarningNumber(string field) => Warning is { } w && w.TryGetProperty(field, out var v) ? GameData.Number(v) ?? 0 : 0;
+
+    /// <summary>The row draws a ground warning (m_kPoint.m_kWarningRange).</summary>
+    public bool HasWarning => Warning != null;
+
+    /// <summary>The warning's enum_SkillWarningRange shape (m_eShapeType; 1 circle, 2 fan, 5 ring; 0, a rectangle, when
+    /// omitted, as Lua_Config_EffectData.lua's defaults).</summary>
+    public int WarningShape => (int)WarningNumber("m_eShapeType");
+
+    /// <summary>What the warning is anchored on (m_eTargetType, enum_WarningRangeTarget: 0 the caster, the default; 1 its
+    /// target; 2 a position).</summary>
+    public int WarningTarget => (int)WarningNumber("m_eTargetType");
+
+    /// <summary>The warning's radius (m_fRadius), and a ring's inner and outer radius (m_fInnerRadius, m_fOuterRadius), in m.</summary>
+    public float WarningRadius => (float)WarningNumber("m_fRadius");
+    public float WarningInnerRadius => (float)WarningNumber("m_fInnerRadius");
+    public float WarningOuterRadius => (float)WarningNumber("m_fOuterRadius");
+
+    /// <summary>How long the warning is drawn (m_fDuration), in s.</summary>
+    public double WarningDuration => WarningNumber("m_fDuration");
+
+    /// <summary>The warning is moved off its anchor (m_kOffset), which a server-started one drops.</summary>
+    public bool HasWarningOffset => Warning is { } w && w.TryGetProperty("m_kOffset", out _);
+
+    private JsonElement? FirstGfx => Row.TryGetProperty("m_kPoint", out var point) && point.ValueKind == JsonValueKind.Object
+        && point.TryGetProperty("m_kGfxList", out var list) && list.ValueKind == JsonValueKind.Array && list.GetArrayLength() > 0
+        && list[0].ValueKind == JsonValueKind.Object ? list[0] : null;
+
+    /// <summary>The prefab of the row's first effect (m_kPoint.m_kGfxList[0].m_kGfxName), or null.</summary>
+    public string? GfxName => FirstGfx is { } gfx && gfx.TryGetProperty("m_kGfxName", out var name) && name.ValueKind == JsonValueKind.String
+        ? name.GetString() : null;
+
+    /// <summary>The yaw the first effect is turned by (m_kBindRotate [x, yaw, z]), 0 when it is not turned.</summary>
+    public float GfxYaw => FirstGfx is { } gfx && gfx.TryGetProperty("m_kBindRotate", out var rotate)
+        && rotate.ValueKind == JsonValueKind.Array && rotate.GetArrayLength() > 1 ? (float)(GameData.Number(rotate[1]) ?? 0) : 0;
+
     private JsonElement? MovementPoint => Row.TryGetProperty("m_kPoint", out var point) && point.ValueKind == JsonValueKind.Object
         && point.TryGetProperty("m_bMovement", out var moves) && moves.ValueKind == JsonValueKind.True ? point : null;
 

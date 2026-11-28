@@ -24,6 +24,7 @@ public sealed partial class CombatEffectsService
     private const uint AoiAttrChange = CombatService.AoiAttrChange;
     private const uint EntityBaseChange = CombatService.EntityBaseChange;
     private const int DisplayGfx = CombatService.DisplayGfx;
+    private const int DisplayWarningRange = SkillCastingService.DisplayWarningRange;
     private const int DefaultHitEffect = CombatService.DefaultHitEffect;
     private const int DemonRace = CombatService.DemonRace;
     private const int UndeadElement = CombatService.UndeadElement;
