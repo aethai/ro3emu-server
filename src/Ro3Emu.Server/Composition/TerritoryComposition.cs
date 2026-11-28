@@ -35,6 +35,11 @@ internal static class TerritoryComposition
         var ranks = app.Services.GetRequiredService<RankService>();
         territory.GloryBoardRank = role => ranks.RankOfAsync(RankService.BattleGlory, role);
         app.Services.GetRequiredService<GuildService>().ItemDataOf = escort.GuildItems;
+        var tech = app.Services.GetRequiredService<GuildTechService>();
+        tech.PlayingMethods.Subscribe(territory.GuildTechMethod);
+        tech.PlayingMethods.Subscribe(escort.GuildTechMethod);
+        territory.GuildTechSync = tech.SyncAsync;
+        escort.GuildTechSync = tech.SyncAsync;
     }
 
     public static void WireTerritoryTaskHooks(WebApplication app)

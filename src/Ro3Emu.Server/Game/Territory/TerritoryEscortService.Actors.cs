@@ -158,7 +158,7 @@ public sealed partial class TerritoryEscortService
         if (!Playing || _leavingEscort.ContainsKey(attacker) || _leavingEscort.ContainsKey(target)
             || !EscortLine(attacker) || !EscortLine(target) || attacker.WorldScene != target.WorldScene
             || attacker.Role == null || target.Role == null || attacker.Role.Id == target.Role.Id
-            || _data.Table("EscortPointAreaConfig").Values.All(row => GameData.Int(row, "_iMapId") != attacker.SceneEntry)) return false;
+            || !OnEscortMap(attacker)) return false;
         var a = Own(attacker); var b = Own(target);
         return a != null && b != null && a.Id != b.Id;
     }

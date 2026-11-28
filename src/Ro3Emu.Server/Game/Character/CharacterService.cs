@@ -83,6 +83,9 @@ public sealed partial class CharacterService(RoleStore roles, ItemStore itemStor
     internal Func<long>? TickSerial { get; set; }
     public Func<GameSession, long>? TitleOf { get; set; }
     public OrderedHook<Func<GameSession, IEnumerable<(long Id, double Value)>>> ExtraAttributes { get; } = new("CharacterService.ExtraAttributes");
+    /// <summary>What the Guild War Technology attributes depend on (GuildTechService.MemoKey): the playing method they count
+    /// for and the guild's level map, compared by reference. Part of the stats memo's key.</summary>
+    public Func<GameSession, (long Method, object? Levels)>? GuildTechKey { get; set; }
     public Func<GameSession, IReadOnlyList<(long Id, double Value)>?>? MatchAttributes { get; set; }
     public OrderedHook<Func<GameSession, IEnumerable<(int Id, long Value)>>> DynamicProperties { get; } = new("CharacterService.DynamicProperties");
     public Func<GameSession, int, int, Task>? GiveBuff { get; set; }

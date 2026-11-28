@@ -20,7 +20,7 @@ public sealed partial class FunctionService
     private const int CondBaseLevel = 1002, CondTowerFloor = 1014, CondJobRank = 1019, CondRoleHasTask = 1101,
         CondLearnedSkill = 1102, CondServerStage = 3031, CondServerStage2 = 3030, CondQuestDone = 4004, CondItemCount = 1020;
     private const int CondJourneyAttr = 15100, CondJourneyDialogue = 15101;
-    private const int CondGuildPosition = 9007;
+    private const int CondGuildPosition = 9007, CondGuildBuildingLevel = 9008;
     private const int CondChickenRank = 6508;
 
     private readonly GameData _data;
@@ -112,6 +112,10 @@ public sealed partial class FunctionService
     /// </summary>
     public Func<GameSession, long, bool?>? ConditionOverride { get; set; }
 
+    /// <summary>The level of a building of the session's guild (GuildBuildingsInfo[type].iLevel), null when the session has no
+    /// guild or the guild no such building. GuildService sets it.</summary>
+    public Func<GameSession, long, long?>? GuildBuildingLevel { get; set; }
+
     /// <summary>An LC_ConditionList entry (also TaskConfig._iCondition): every sub-condition holds.</summary>
     public bool ConditionMet(GameSession session, long conditionId)
     {
@@ -156,6 +160,10 @@ public sealed partial class FunctionService
                 // packs are [9007,6,3], Guild Master to Vice Guild Master. No guild: false.
                 CondGuildPosition => session.Guild is { GuildId: > 0 } guild && d.GetArrayLength() >= 3
                     && Compare(param, guild.Official, (long)(GameData.Number(d[2]) ?? 0)),
+                // LC_InteractCondition.CheckGuildBuildingLevel [9008, building, op, level] (:2908-2950): the guild's
+                // GuildBuildingsInfo[building].iLevel compared with the operator table; no guild or building: false.
+                CondGuildBuildingLevel => d.GetArrayLength() >= 4 && GuildBuildingLevel?.Invoke(session, param) is { } built
+                    && Compare((long)(GameData.Number(d[2]) ?? 0), built, (long)(GameData.Number(d[3]) ?? 0)),
                 // LC_InteractCondition.CheckChickenRankLevel [6508, op, rank] (:2096-2119): the Survivor Battle rank
                 // (LC_ChickenHelper.GetCurRankInfo) against the rank, 1 >=, 2 <=, 3 ==.
                 CondChickenRank => d.GetArrayLength() >= 3 && session.Instances.TimedBattle is { } battle

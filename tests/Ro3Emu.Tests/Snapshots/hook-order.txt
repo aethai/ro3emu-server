@@ -26,11 +26,12 @@ CharacterService.DynamicProperties (4)
   StealthEffects.Properties
 CharacterService.ExpCredited (1)
   CheatMonitor.ExpGained
-CharacterService.ExtraAttributes (11)
+CharacterService.ExtraAttributes (12)
   CombatService.PassiveAttributes
   CombatService.ResonanceAttributes
   MountService.Attributes
   LifeJobService.FoodAttributes
+  GuildTechService.Attributes
   EmblemService.ResonanceAttributes
   PetService.Attributes
   SeasonRefineService.ActiveAttributes
@@ -299,7 +300,8 @@ GuildChallengeService.Participated (1)
 GuildLeagueService.MatchCommitted (2)
   TaskService.OnGuildLeagueMatch
   TaskService.OnGuildLeagueFought
-GuildService.GuildIdChanged (1)
+GuildService.GuildIdChanged (2)
+  GuildTechService.SyncOnGuildIdChanged
   GuildComposition.ReshowPlayerOnGuildIdChanged
 GuildService.MembershipChanged (3)
   AchievementService.QueueRecheck
@@ -307,6 +309,9 @@ GuildService.MembershipChanged (3)
   GuildVoiceService.OnMembershipChanged
 GuildService.RightsChanged (1)
   GuildVoiceService.OnRightsChanged
+GuildTechService.PlayingMethods (2)
+  TerritoryWarsService.GuildTechMethod
+  TerritoryEscortService.GuildTechMethod
 LifeJobService.ProjectedRestrictions (2)
   ExplorationNoteDrops.Remaining
   RiftBattleService.RiftRestriction
@@ -396,7 +401,7 @@ SceneService.Leaving (28)
   EmojiService.LeavingAsync
 SceneService.LineSwitchChecks (1)
   WorldInteractionService.<.ctor> lambda
-SceneService.Loaded (25)
+SceneService.Loaded (26)
   DungeonService.LoadedAsync
   PronteraDefenseService.ApplyPrepBuffAsync
   AdventureActivityService.OnTreasureSceneLoadedAsync
@@ -405,6 +410,7 @@ SceneService.Loaded (25)
   CasualBattleService.LoadedAsync
   FestivalService.LoadedAsync
   TrainingService.LoadedAsync
+  GuildTechService.SyncAsync
   GuildCampfireService.LoadedAsync
   GuildHuntingService.LoadedAsync
   DraculaWeddingService.LoadedAsync

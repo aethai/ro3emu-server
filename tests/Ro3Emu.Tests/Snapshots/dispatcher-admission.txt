@@ -437,8 +437,8 @@
 32301	economic dispatcher/economic request	refused
 32302	economic dispatcher/economic request	refused
 32303	economic dispatcher/economic request	refused
-32304	session Realm:legacy: dispatcher/unrouted	refused
-32305	session Realm:legacy: dispatcher/unrouted	refused
+32304	economic dispatcher/economic request	refused
+32305	economic dispatcher/economic request	refused
 32306	session Realm:legacy: dispatcher/unrouted	refused
 32307	session Realm:legacy: dispatcher/unrouted	refused
 32308	session Realm:legacy: dispatcher/unrouted	refused

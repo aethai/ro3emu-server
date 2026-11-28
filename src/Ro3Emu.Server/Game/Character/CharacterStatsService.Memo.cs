@@ -37,6 +37,7 @@ public sealed partial class CharacterStatsService
         internal required long? CurrentHp;
         internal required bool Dead, ReadHp, AllFunctionsOpen, TalentEffects;
         internal required ActiveBuff[] Buffs;
+        internal required (long Method, object? Levels) GuildTech;
         internal required object?[] Inputs;
         internal required StatSheet Sheet;
     }
@@ -50,6 +51,8 @@ public sealed partial class CharacterStatsService
         s.Season.LifeRuntime, s.SeasonState, s.TalentProcBuffs, s.GmAttributes, s.Tasks, s.Guild, s.Instances.Tower,
         s.Instances.TimedBattle, s.Activities.NewActivities,
     ];
+
+    private (long Method, object? Levels) GuildTechKey(GameSession s) => character.GuildTechKey?.Invoke(s) ?? default;
 
     private static bool SameInputs(object?[] inputs, GameSession s) =>
         ReferenceEquals(inputs[0], s.Items) && ReferenceEquals(inputs[1], s.Profile.EquipLevels)
@@ -116,7 +119,9 @@ public sealed partial class CharacterStatsService
             || memo.Dead != session.Dead || memo.SceneGeneration != session.SceneGeneration
             || memo.AllFunctionsOpen != session.Profile.GmAllFunctionsOpen
             || memo.TalentEffects != session.Season.TalentEffectsEnabled
-            || memo.Buffs.Length != session.Buffs.Count || !SameInputs(memo.Inputs, session)) return false;
+            || memo.Buffs.Length != session.Buffs.Count || !SameInputs(memo.Inputs, session)
+            || GuildTechKey(session) is var tech && (tech.Method != memo.GuildTech.Method
+                || !ReferenceEquals(tech.Levels, memo.GuildTech.Levels))) return false;
         for (int i = 0; i < memo.Buffs.Length; i++)
             if (!ReferenceEquals(memo.Buffs[i], session.Buffs[i])) return false;
         return memo.Skills == SkillSignature(p) && memo.Items == ItemSignature(session.Items);
@@ -135,6 +140,7 @@ public sealed partial class CharacterStatsService
             SceneGeneration = session.SceneGeneration, Skills = SkillSignature(p), Items = ItemSignature(session.Items),
             CurrentHp = session.CurrentHp, Dead = session.Dead, ReadHp = readHp,
             AllFunctionsOpen = session.Profile.GmAllFunctionsOpen, TalentEffects = session.Season.TalentEffectsEnabled, Buffs = [.. session.Buffs], Inputs = Inputs(session),
+            GuildTech = GuildTechKey(session),
             Sheet = sheet,
         };
     }

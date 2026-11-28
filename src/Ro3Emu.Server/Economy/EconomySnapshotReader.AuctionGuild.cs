@@ -150,7 +150,7 @@ public static partial class EconomySnapshotReader
                             Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs FoundingItem FoundingCount Level "
                                 + "Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials "
                                 + "LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights "
-                                + "Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
+                                + "Buildings BuildingEndTimes TechLevels TechSeason CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
                                 + "ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs "
                                 + "ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec "
                                 + "MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");
@@ -191,7 +191,7 @@ public static partial class EconomySnapshotReader
                             Fields(state, "Id Name Announce Notice CreateTime Status HelperDeadlineMs FoundingItem FoundingCount Level "
                                 + "Background Icon AutoAccept AutoCreateHelper JoinLevelLimit Money Contribute Materials Reputation AuctionMaterials "
                                 + "LastChangeNameTime LastChangeNoticeTime LastRecruitMs HistoryNames Members Applications HelperApplies Rights "
-                                + "Buildings BuildingEndTimes CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
+                                + "Buildings BuildingEndTimes TechLevels TechSeason CurActivity LastWeekActivity ActivityWeek LeagueElites LeagueEliteVersion UnlockedHeadIcons "
                                 + "ShopCommodityBuys ShopCommodityWeek NextBroadEmailMs BroadEmailCount BroadEmailDay ImpeachOwner ImpeachEndMs "
                                 + "ImpeachNeed ImpeachResponders NextImpeachMs MergeInvites PendingMergeGuildId MergeAbsorbs MergeAtSec "
                                 + "MergeMemberIds MergeCooldownSec WartimeItems WartimeStocked WartimeSlots WartimePrepay");

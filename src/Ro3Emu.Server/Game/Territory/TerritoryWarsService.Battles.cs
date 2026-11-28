@@ -627,6 +627,7 @@ public sealed partial class TerritoryWarsService
         foreach (var (key, r) in state.Battles.ToArray())
         {
             _battles.TryGetValue(key, out var b);
+            if (b is { Room.Closed: false }) await RoleFanout.EachAsync(b.Room.ActiveMembers.Select(m => m.Session), GuildTechSync);
             if (r.Settled)
             {
                 if (b != null && _clock.Now >= r.End + (Data.Config.GvgConstants.Of(_data).GVGEndAutoLeaveTime ?? 5))

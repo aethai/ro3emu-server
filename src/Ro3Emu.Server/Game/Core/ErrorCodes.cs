@@ -236,6 +236,9 @@ public static class ErrorCodes
     // War machines: 530 "Cannot place this here." (enum_ErrorCode.ERR_GuildAttackCityBuildError, LC_GVGBuildCannon.Build),
     // 535 "Not enough guild supplies" (an empty war warehouse, inferred).
     public const int GuildCannonPlace = 530, GuildSupplies = 535;
+    // Guild War Technology: 541 "Guild Technology has reached Max level.", 542 "Guild Technology does not meet the
+    // Requirement to level up:" (GuildTechService).
+    public const int GuildTechMax = 541, GuildTechLocked = 542;
     // Guild League (ErrorCodeConfig 516-524).
     public const int LeagueClosed = 516, LeagueTemporary = 517, LeagueElite = 518, LeagueMainFull = 523;
     // Elite roster (ErrorCodeConfig 10046-10048, 10059): not a member, the roster changed meanwhile, position too low,
