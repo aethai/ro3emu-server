@@ -94,7 +94,7 @@ public sealed partial class MonsterService
     // The lambda lives here, not in FightsCompanion, so a tick that does not swing allocates no closure.
     private void SwingAtCompanion(MonsterUnit m, CompanionUnit target, long now)
     {
-        m.NextSwingMs = now + m.Template.SwingIntervalMs;
+        m.NextSwingMs = now + m.SwingIntervalMs;
         m.Face = Angle(m.X, m.Z, target.X, target.Z);
         _loop.TrackRuntimeDetached("monster companion attack", () => AttackCompanion!(m, target));
     }
