@@ -41,6 +41,9 @@ public sealed partial class CombatEffectsService
         if (script == "LuoxuancijiBD01") return new(TextShape.AroundTarget, Desc(4), 0, 1 + (int)Desc(5)); // Spiral Blast
         if (script == "QiaodaBD01") return new(TextShape.AroundTarget, Desc(8), 0, 1 + (int)Desc(9)); // Joint Beat Blast
         if (script == "PileBunker") return new(TextShape.AroundTarget, Desc(2), 0, rowMax); // "up to ${4} enemies within ${3} meters of them"
+        // Rain of Spears "to up to ${3} enemies within a ${1}m*${2}m area in front of you" (and its Ultimate form), Sonic Burst "in a ${1}-meter
+        // by ${2}-meter area in front of You": locked rows with _kRange [0]; their _kLogicData sizes are a metre larger than the text's.
+        if (script is "HundredSpears" or "UltimateSpears" or "Sonicblast") return new(TextShape.FrontRectangle, Desc(1), Desc(0), rowMax);
         return null;
     }
 
@@ -72,12 +75,13 @@ public sealed partial class CombatEffectsService
         if (area.Shape != TextShape.FrontRectangle && aim == null && new SkillConfig(row).RangeType == SkillRelease.SingleTarget) return [];
         var around = aim?.Pos ?? center;
         float height = new SkillConfig(row).AreaHeightRange / 100f;
+        // A line or a front area of a locked cast points at its target (the caster turns to it); without one, where the cast faced.
         float aimFace = aim == null ? action.Request.Face : MonsterService.Angle(action.Origin.X, action.Origin.Z, aim.X, aim.Z);
         bool Inside(MonsterUnit m)
         {
             if (height > 0 && MathF.Abs(m.Y - around.Y) > height) return false;
             if (area.Shape == TextShape.AroundTarget) return Distance(around, m.Pos) <= area.Size + 0.1f;
-            var (forward, side) = FacingOffset(m.X - action.Origin.X, m.Z - action.Origin.Z, area.Shape == TextShape.LineToTarget ? aimFace : action.Request.Face);
+            var (forward, side) = FacingOffset(m.X - action.Origin.X, m.Z - action.Origin.Z, aimFace);
             return Math.Abs(side) <= area.Width / 2 + .1 && forward >= -.5 && forward <= area.Size + .1;
         }
         var hit = _world.Map(s.WorldScene).Units.OfType<MonsterUnit>()
