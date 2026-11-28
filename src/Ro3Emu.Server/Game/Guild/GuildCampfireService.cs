@@ -196,6 +196,9 @@ public sealed partial class GuildCampfireService : IGameTicker, Messaging.INpcIn
         && session.Progress.Level >= GameData.Int(daily, "_iiLv")
         && _functions.IsOpen(session, Function);
 
+    /// <summary>A home actor's uid (below 2^53): the room and an actor point of up to 12 bits (GuildHomeService's statues too).</summary>
+    internal static long HomeActorUid(InstanceService.Room room, int point) => Uid(room, point);
+
     private static long Uid(InstanceService.Room room, int point) =>
         UidPrefix | ((room.Id & 0xFFFFFFL) << 12) | (uint)point;
 

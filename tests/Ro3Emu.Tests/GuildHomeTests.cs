@@ -440,4 +440,39 @@ public sealed class GuildHomeTests : IAsyncLifetime
             .FirstOrDefault(m => m.InstanceId == room && m.Template.NpcId == 7020012 && !m.Dead)) != null, "campfire boss");
         return boss!;
     }
+
+    /// <summary>GuildSettingConfig's three statue NPCs (25000001) show the Guild Master, the Leader and the Charisma Baby;
+    /// a vacant seat is a Novice under the statue's own name, and a new officer redraws theirs.</summary>
+    [ClientDataFact]
+    public async Task TheHomeStatuesShowTheGuildsOfficers()
+    {
+        const ulong StatueNpc = 25000001;
+        await using var alice = await InWorld("Alice");
+        await using var bob = await InWorld("Bob");
+        long guild = await CreateGuild(alice, "Statues");
+        await Join(alice, bob, guild);
+        await Enter(alice);
+        var view = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser, v => v.Bases.Any(b => b.EntityTemplateID == StatueNpc));
+        var statues = view.Bases.Where(b => b.EntityTemplateID == StatueNpc).ToList();
+        Assert.Equal(3, statues.Count);
+        var master = Assert.Single(statues, b => b.Name == "Alice");
+        Assert.Equal(Session(alice).Progress!.Career, master.EffigyData.Carrer);
+        Assert.Equal(Session(alice).Role!.Sex, master.Gender);
+        // The _002 layout moved to the home by the born offset: in front of the hall, below its born point.
+        Assert.InRange(master.MovementInfo.Pos.X, 396f, 398f);
+        Assert.InRange(master.MovementInfo.Pos.Z, 330f, 340f);
+        Assert.All(statues.Where(b => b != master), b => Assert.Equal(1000, b.EffigyData.Carrer));
+
+        await alice.SendGameAsync(GuildService.ChangeOfficial, new GuildChangeOfficialReq { TarPlayerID = (long)bob.Self!.Uuid, TarOfficial = 2 });
+        Assert.Equal(0, (await Next(alice, GuildService.ChangeOfficial, GuildChangeOfficialResp.Parser)).Result);
+        _clock.Advance(1); // the home's once-a-second Tick sees the new officer
+        var redrawn = await Next(alice, GameAoiSink.SyncAoiView, AoIViewChangeData.Parser,
+            v => v.Bases.Any(b => b.EntityTemplateID == StatueNpc && b.Name == "Bob"));
+        Assert.Equal(3, redrawn.Bases.Count(b => b.EntityTemplateID == StatueNpc));
+        // New uids: the client would otherwise update the unit it is still removing instead of building a statue.
+        var old = statues.Select(b => b.Uuid).ToHashSet();
+        Assert.DoesNotContain(redrawn.Bases, b => old.Contains(b.Uuid));
+        Assert.Contains(alice.Inbox.Snapshot(), e => e.IsGame(GameAoiSink.SyncAoiView)
+            && AoIViewChangeData.Parser.ParseFrom(e.Body).LeaveAoi.ToHashSet().SetEquals(old));
+    }
 }

@@ -99,4 +99,8 @@ public readonly partial record struct GuildSettings(IReadOnlyDictionary<string, 
     public partial long? GuildVoiceChannelInviteCooldown { get; }
     [ConfigConstant("GuildVoiceChannelInviteRejectDuration")]
     public partial long? GuildVoiceChannelInviteRejectDuration { get; }
+    /// <summary>[NPCConfig id, x, z, face] of the Guild Area Statues (GuildHomeService.Statues).</summary>
+    [ConfigConstant("BabyNpcPosition")] public partial double[]? BabyNpcPosition { get; }
+    [ConfigConstant("LeaderNpcPosition")] public partial double[]? LeaderNpcPosition { get; }
+    [ConfigConstant("PresentNpcPosition")] public partial double[]? PresentNpcPosition { get; }
 }

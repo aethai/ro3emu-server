@@ -401,7 +401,7 @@ SceneService.Leaving (28)
   EmojiService.LeavingAsync
 SceneService.LineSwitchChecks (1)
   WorldInteractionService.<.ctor> lambda
-SceneService.Loaded (26)
+SceneService.Loaded (27)
   DungeonService.LoadedAsync
   PronteraDefenseService.ApplyPrepBuffAsync
   AdventureActivityService.OnTreasureSceneLoadedAsync
@@ -411,6 +411,7 @@ SceneService.Loaded (26)
   FestivalService.LoadedAsync
   TrainingService.LoadedAsync
   GuildTechService.SyncAsync
+  GuildHomeService.StatuesLoadedAsync
   GuildCampfireService.LoadedAsync
   GuildHuntingService.LoadedAsync
   DraculaWeddingService.LoadedAsync
