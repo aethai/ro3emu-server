@@ -84,6 +84,13 @@ public sealed class ServerOptions
     /// client hook lifts the per-map limit everywhere.</summary>
     public bool GuildOverheadAllMaps { get; set; }
 
+    /// <summary>
+    /// The HP and SP a player meditating out of combat (emote 10001) recovers per tick, in percent of its normal recovery.
+    /// 100, the original, by default: the client gives meditation no recovery of its own (#633), so anything above is the
+    /// server's choice. Accepted from 100 to 1000.
+    /// </summary>
+    public int MeditationRecoveryPercent { get; set; } = 100;
+
     /// <summary>Game-message JSON log (data/logs/traffic-*.jsonl): "off", "on" or a comma-separated account list.
     /// Formatting and writes run off the game loop; keep it off for load tests and production.</summary>
     public string TrafficLog { get; set; } = "off";

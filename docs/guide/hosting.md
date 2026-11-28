@@ -53,6 +53,9 @@ Open TCP `5380`, `20000` and `33100`, and the voice port if you turn voice on wi
 - **Overhead guild names and emblems on all maps** (off by default, as in the client): `Ro3Emu__GuildOverheadAllMaps=true`
   lifts the client's 3-map limit so overhead guild names and emblems appear on every map instead of only the three
   configured maps.
+- **Faster recovery while meditating** (not the original game, off by default): `Ro3Emu__MeditationRecoveryPercent=300`
+  makes a player meditating out of combat (the Meditate emote) recover 300% of its normal HP and SP per 5 s tick. The
+  client gives meditation no recovery of its own; accepted values are 100 (the original) to 1000.
 - **Backups:** the database is backed up to `data/backups/` at start and every 6 hours (newest 20 kept). All but the
   newest two are gzip-compressed (`.db.gz`, about a quarter of the size); `Ro3Emu.Server --restore-backup` takes either
   kind. `Ro3Emu__Backup__Keep`, `Ro3Emu__Backup__IntervalHours` and `Ro3Emu__Backup__Uncompressed` (or `Backup` under

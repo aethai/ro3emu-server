@@ -13,7 +13,7 @@ show is playable from day one, without season or server-day gates ([details](gui
 - maps, portals, NPCs, Kafra travel, wings, map channels
 - monsters (they surround the player they attack, [monster AI](systems/monster-ai.md)), MVPs with their summons
   and fields, death and revive
-- silent reconnect, emotes and sitting
+- silent reconnect, emotes and sitting (optionally faster recovery while meditating, [hosting](guide/hosting.md))
 
 **Character and combat**
 - skills, buffs and debuffs, damage and healing over time, auras

@@ -84,4 +84,17 @@ public sealed class ServerOptionsTests
     {
         Assert.Throws<FormatException>(() => new ServerOptions { BindAddress = bindAddress }.ListenAddress());
     }
+
+    [Theory] // #633: a meditation recovery below the original's or past 1000% stops the start
+    [InlineData(99)]
+    [InlineData(1001)]
+    public void AMeditationRecoveryOutsideItsRangeIsRefused(int percent) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => ServerHost.ResolveOptions([$"--Ro3Emu:MeditationRecoveryPercent={percent}"]));
+
+    [Fact]
+    public void MeditationRecoversAsTheOriginalByDefault()
+    {
+        Assert.Equal(100, new ServerOptions().MeditationRecoveryPercent);
+        Assert.Equal(300, ServerHost.ResolveOptions(["--Ro3Emu:MeditationRecoveryPercent=300"]).MeditationRecoveryPercent);
+    }
 }
