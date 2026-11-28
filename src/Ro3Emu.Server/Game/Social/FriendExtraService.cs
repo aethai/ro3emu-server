@@ -211,7 +211,7 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
     private async Task GiftCoreAsync(GameSession s, GiveFriendGiftReq req, Action<int> committed)
     {
         long self = s.Role!.Id;
-        int code = req.ItemId is < 1004000 or > 1004006 || req.Count <= 0 || req.Message.Length > 20 ? ErrorCodes.Parameter
+        int code = !personal.IsFriendGift(req.ItemId) || req.Count <= 0 || req.Message.Length > 20 ? ErrorCodes.Parameter
             : req.RoleId == self || await roles.GetAsync(req.RoleId) == null || !await friends.AreFriendsAsync(self, req.RoleId) ? Denied : 0;
         if (code != 0) { await s.SendGameAsync(GiveGift, new GiveFriendGiftResp { Result = code }); return; }
         var owners = loop.Owners!;
@@ -231,7 +231,7 @@ public sealed partial class FriendExtraService(FriendStore friends, RoleStore ro
         int item = (int)req.ItemId;
         var sender = await friends.LoadMetadataAsync(self);
         var receiver = await friends.LoadMetadataAsync(req.RoleId);
-        int intimacy = (int)Math.Min(180000L, (long)await friends.IntimacyAsync(self, req.RoleId) + req.Count); // (inferred) one per gift unit.
+        int intimacy = (int)Math.Min(MaxIntimacy, await friends.IntimacyAsync(self, req.RoleId) + personal.GiftIntimacy(req.ItemId, req.Count));
         var record = new FriendGiftRecord
         {
             Sender = self, Receiver = req.RoleId, ItemId = req.ItemId, Count = req.Count, Message = req.Message,
