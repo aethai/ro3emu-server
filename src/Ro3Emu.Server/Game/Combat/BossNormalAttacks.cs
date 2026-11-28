@@ -33,6 +33,10 @@ public sealed class BossNormalAttacks(GameData data)
         [5020006] = 5204501, [5020007] = 5204601, [5020008] = 5215401, [5020009] = 5204901, [5020010] = 5204701,
         [5020011] = 5207001, [5020012] = 5204801, [5020013] = 5209101, [5020014] = 5212101, [5020015] = 5210501,
         [5020016] = 5210301, [5020017] = 5213301,
+        // (inferred) The treasure hunt guardians (TreasureHuntMonsterRewardConfig) run server-only AI scripts
+        // ("TreasureHunt1", "TreasureHunt2") and list no skills; they wear Phreeoni's and Drake's UnitConfig models
+        // (33011, 33008), so they swing those MVPs' normal attacks.
+        [80000001] = 5204801, [80000002] = 5215401,
     }.Concat(RiftBossNormalAttacks()).ToDictionary();
 
     /// <summary>

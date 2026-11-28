@@ -41,6 +41,8 @@ public sealed partial class SkillCombatTests
     [InlineData(5300046, 5351001)]   // airship Evil Hunter
     [InlineData(5300088, 5353801)]   // the shortest-cooldown swing it lists, not the 15 s 5354101
     [InlineData(5000001, 5001101)]   // a field Poring keeps its flagged _kSkills row
+    [InlineData(80000001, 5204801)]  // treasure hunt guardian on Phreeoni's model (#647)
+    [InlineData(80000002, 5215401)]  // treasure hunt guardian on Drake's model (#647)
     public void ABossSwingsItsOwnNormalAttack(int npc, int skill)
     {
         var template = _app.Services.GetRequiredService<MonsterService>().Template(npc);
