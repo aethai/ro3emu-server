@@ -323,14 +323,33 @@ public sealed partial class CombatEffectsService
         // the client sent, which nothing checks for those releases.
         var around = ctx.Field != null || new SkillConfig(ctx.Row).Release is SkillRelease.DragRect or SkillRelease.DragCircle
             ? ctx.Center : ctx.Action.Origin;
-        allies.AddRange(_world.PlayersIn(s.WorldScene).Where(p => !p.Dead && (Relation(ctx.Row, true, p == s) || ReachesAlliesDespiteSelector(ctx.Script))
-            && (!PartyOnly(ctx.Script) || p == s || IsSameParty(s, p))
-            && (ctx.Field != null && new SkillConfig(ctx.Row).Range.Length > 1 ? SkillAreaContains(ctx.Row, ctx.Action.Origin, ctx.Center, ctx.Action.Request.Face, p.Position)
-                : p == s || radius > 0 && Distance(p.Position, around) <= radius))
-            .OrderBy(p => OutsideThePartyAsLast(s, p, ctx.Script)).ThenBy(p => Distance(p.Position, around))
-            .Take(FieldTargets(ctx.Row) is > 0 and var fieldTargets ? fieldTargets : (int)Math.Max(1, new SkillConfig(ctx.Row).TargetMax)));
+        bool rectangle = ctx.Field != null && new SkillConfig(ctx.Row).Range.Length > 1;
+        allies.AddRange(AlliesAround(s, ctx.Row, ctx.Script, around, p => rectangle
+            ? SkillAreaContains(ctx.Row, ctx.Action.Origin, ctx.Center, ctx.Action.Request.Face, p.Position)
+            : p == s || radius > 0 && Distance(p.Position, around) <= radius));
         if (allies.Count == 0 && Relation(ctx.Row, true, true)) allies.Add(s);
         return allies;
+    }
+
+    /// <summary>The players an area row's friendly effects reach around a point: the ones its relation and script allow,
+    /// the party first where it counts, nearest first, up to its field's or the row's target count.</summary>
+    private IEnumerable<GameSession> AlliesAround(GameSession s, JsonElement row, string script, Vec3 around, Func<GameSession, bool> inArea) =>
+        _world.PlayersIn(s.WorldScene).Where(p => !p.Dead && (Relation(row, true, p == s) || ReachesAlliesDespiteSelector(script))
+                && (!PartyOnly(script) || p == s || IsSameParty(s, p)) && inArea(p))
+            .OrderBy(p => OutsideThePartyAsLast(s, p, script)).ThenBy(p => Distance(p.Position, around))
+            .Take(FieldTargets(row) is > 0 and var fieldTargets ? fieldTargets : (int)Math.Max(1, new SkillConfig(row).TargetMax));
+
+    /// <summary>
+    /// The players a buff row cast by <paramref name="s"/> on itself would reach, its party members among them only
+    /// (#643): the caster for a single-target row, else the ones <see cref="AlliesAround"/> picks around the caster.
+    /// </summary>
+    internal IEnumerable<GameSession> PartyRecipientsOfSelfCast(GameSession s, JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        if (skill.Release == SkillRelease.Lock) return [s];
+        float radius = (skill.Range.FirstOrDefault() is > 0 and var cm ? cm : 0) / 100f;
+        return AlliesAround(s, row, Script(row), s.Position, p => p == s || radius > 0 && Distance(p.Position, s.Position) <= radius)
+            .Where(p => p == s || IsSameParty(s, p)).Append(s).Distinct();
     }
 
     private async Task ApplyMonsterTargetsAsync(EffectContext ctx, List<MonsterUnit> targets, CombatService.Fighter attacker,

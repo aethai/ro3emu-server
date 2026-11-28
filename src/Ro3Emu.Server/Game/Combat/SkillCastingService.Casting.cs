@@ -265,7 +265,7 @@ public sealed partial class SkillCastingService
             var (group, level) = step.Members[index];
             int learned = _skills.Level(s.Progress, group);
             int id = learned > 0 ? _skills.RealId(group, Math.Min(level, learned)) : 0;
-            if (id <= 0) continue;
+            if (id <= 0 || BuffStillHeld(s, id)) continue;
             await CastAsync(s, new CastSkillReq { SkillId = id, TargetId = s.Role.Id, TargetPos = s.Position.Clone(), Face = s.Face }, lineup: true);
             if (s.SkillCast is not { Cancelled: false } cast || cast.Request.SkillId != id) continue; // skipped
             int next = index + 1;
@@ -276,6 +276,20 @@ public sealed partial class SkillCastingService
             return;
         }
         if (ReferenceEquals(s.LineupRun, step.Run)) s.LineupRun = null;
+    }
+
+    /// <summary>
+    /// A Skill Bar member whose buff everyone it would reach still holds is skipped (#643), as its own auto-battle tree
+    /// (SkillConfig _kAutoAttackAI, e.g. BattleChant: IsHasBuff 11505 UnExist, then CastSkill) casts only when the buff
+    /// of its first _kBuff1 entry is missing on the caster or, for a party buff, a teammate in range. The trees check no
+    /// margin (buffLeftTime 0); the effective row (talent variants) gives the buff. Skipping it on a manual press too is
+    /// inferred.
+    /// </summary>
+    private bool BuffStillHeld(GameSession s, int id)
+    {
+        if (EffectiveSkillRow(s, id) is not { } row || new SkillConfig(row).Buff1 is not [[var first, ..], ..]) return false;
+        long group = BuffConfig.Get(_data, first)?.BuffId ?? 0;
+        return group > 0 && Effects.PartyRecipientsOfSelfCast(s, row).All(p => _buffs.HoldsBuffGroup(p, group));
     }
 
     /// <summary>Cast item cost and frozen intent share one owner receipt; HP/SP/buffs remain runtime resources.

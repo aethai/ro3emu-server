@@ -93,4 +93,55 @@ public sealed partial class SkillCombatTests
         var second = await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, x => x.Buffs.Any(b => b.ConfigId == BlessingBuff));
         Assert.Contains(second.Buffs, b => b.ConfigId == BlessingBuff);
     }
+
+    /// <summary>
+    /// #643: a member whose buff the caster (alone, no party) still holds is skipped, as its auto-battle tree casts only
+    /// when its first _kBuff1 buff is missing (BehaviorTree Blessing: IsHasBuff 14001 UnExist); the one whose buff is gone
+    /// is cast again.
+    /// </summary>
+    [ClientDataFact]
+    public async Task TheSkillBarSkipsAMemberWhoseBuffIsStillHeld()
+    {
+        const int Blessing = 14001, IncreaseAgi = 14010, SkillBar = 1400001, BarGroup = 14000, BlessingBuff = 1400101, IncreaseAgiBuff = 1401001;
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 99 40");
+        await Gm("alice", "!job 4300");
+        var learn = new SkillGrowthSkillPlanUpdateReq { Plan = 0 };
+        foreach (var (group, level) in new[] { (14013, 5), (Blessing, 1), (14007, 5), (IncreaseAgi, 1) })
+            learn.LevelUpList[group] = new SkillData { SkillId = group, SkillLevel = level };
+        await alice.SendGameAsync(SkillService.PlanUpdate, learn);
+        Assert.Equal(0, (await Next(alice, SkillService.PlanUpdate, SkillGrowthSkillPlanUpdateResp.Parser)).Result);
+        int slot = 0;
+        foreach (int group in new[] { IncreaseAgi, Blessing })
+        {
+            await alice.SendGameAsync(SkillService.QueueUpdate, new SkillQueueUpdateReq
+            {
+                Plan = 0, OpType = SkillLoadOperation.SkillLoadOpLoad, QueueIndex = slot++,
+                Info = new SkillData { SkillId = group, SkillLevel = 1 }
+            });
+            Assert.Equal(0, (await Next(alice, SkillService.QueueUpdate, SkillQueueUpdateResp.Parser)).Result);
+        }
+        var me = Session("alice");
+        var buffs = _app.Services.GetRequiredService<BuffService>();
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = SkillBar, TargetId = me.Role!.Id });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser)).Result);
+        await Next(alice, BuffService.BuffUpdate, BuffUpdateNotify.Parser, x => x.Buffs.Any(b => b.ConfigId == BlessingBuff));
+
+        // Blessing wears off, Increase AGI is still up (cooldowns reset): the next press casts Blessing alone.
+        await Loop.InvokeAsync(async () =>
+        {
+            foreach (var buff in me.Buffs.Where(b => b.ConfigId == BlessingBuff).ToList()) await buffs.RemoveAsync(me, buff);
+            foreach (int group in new[] { BarGroup, Blessing, IncreaseAgi }) await CombatService.ResetCooldownAsync(me, group);
+        });
+        int Casts(int group) => alice.Inbox.Snapshot().Count(e => e.IsGame(CombatService.UseInSkill)
+            && UseInSkillInfo.Parser.ParseFrom(e.Body).SkillID / 100 == group);
+        int agi = Casts(IncreaseAgi), blessing = Casts(Blessing);
+        Assert.True(agi > 0 && blessing > 0);
+        await alice.SendGameAsync(CombatService.UseSkill, new CastSkillReq { SkillId = SkillBar, TargetId = me.Role!.Id });
+        Assert.Equal(0, (await Next(alice, CombatService.UseSkill, CastSkillRsp.Parser, r => true)).Result);
+        Assert.True(SpinWait.SpinUntil(() => Casts(Blessing) > blessing, Wait));
+        await Task.Run(() => SpinWait.SpinUntil(() => false, 500));
+        Assert.Equal(agi, Casts(IncreaseAgi));
+        Assert.True(await Loop.InvokeAsync(() => Task.FromResult(buffs.HoldsBuffGroup(me, IncreaseAgiBuff / 100))));
+    }
 }
