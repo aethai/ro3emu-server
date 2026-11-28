@@ -128,6 +128,20 @@ public sealed partial class CharacterInventoryService
 
     internal static IEnumerable<InvItem> Equipped(GameSession session) => session.Items.Where(i => i.Grid > 0);
 
+    /// <summary>
+    /// Whether a role may wear the piece, as LC_ItemHelper.CanUseByInfo decides it (the Equip button, CanTakeOn,
+    /// CanEquipToGrid): _iLevelNeed (657), then _kJobNeed without 0 or the career (655), then _iSexNeed other than 0 and
+    /// the role's sex (656). 0 when it may.
+    /// </summary>
+    internal int WearError(int entry, RoleProgress progress, int sex)
+    {
+        if (ItemConfig.Get(data, entry) is not { } item) return ErrorCodes.ItemNoConfig;
+        if (progress.Level < item.LevelNeed) return ErrorCodes.EquipLevel;
+        if (item.JobNeed is { Length: > 0 } jobs && !jobs.Contains(0) && !jobs.Contains(progress.Career)) return ErrorCodes.EquipJob;
+        if (item.SexNeed is var need and not 0 && need != sex) return ErrorCodes.EquipSex;
+        return 0;
+    }
+
     internal JsonElement? EquipRow(int entry) =>
         data.Row("ItemConfig", entry) is { } row && GameData.Int(row, "_iEquipId") is var equipId and > 0 ? data.Row("EquipConfig", equipId) : null;
 
@@ -185,6 +199,9 @@ public sealed partial class CharacterInventoryService
         }
         if (item != null && (int)req.Opr == 0 && IsEquipment(item.Entry) && !IsAppraised(item))
             result = ErrorCodes.EquipNotAppraised;
+        else if (item != null && (int)req.Opr == 0 && item.Grid == 0 && IsEquipment(item.Entry)
+            && WearError(item.Entry, session.Progress!, session.Role?.Sex ?? 0) is var wear and not 0)
+            result = wear; // checked where LC_EquipmentHelper.CanEquipToGrid does: after the appraisal, before the grid
         else if (item != null && (int)req.Opr == 0 && item.Grid == 0 && data.Row("ItemConfig", item.Entry) is { } row && GameData.Int(row, "_iType") == ItemTypeEquip)
         {
             int part = (int)GameData.Int(row, "_iEquipPart");

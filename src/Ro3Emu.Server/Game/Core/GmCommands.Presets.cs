@@ -57,7 +57,9 @@ public sealed partial class GmCommands
     /// GMEquipWeapon 173: wear an instance of the item from the bag (one is granted when the role has none), through
     /// 31400's own path, so 5009, 5007, the reply and the model change go out as for the client's equip; the grid is the
     /// item's own (EquipPosType). (inferred) A second step for the same item (the dual-dagger presets 5402, 6511 add two)
-    /// wears the second copy; where 31400 gives the item one grid it replaces the first, and the reply says so.
+    /// wears the second copy; where 31400 gives the item one grid it replaces the first, and the reply says so. 31400's
+    /// wear rules apply: two client presets (5100's 90000731, 1310's 90000046) name a weapon their level or job may not
+    /// wear, and a forced one would come off at the next login anyway.
     /// </summary>
     private async Task<string> EquipAsync(GameSession s, int entry)
     {
@@ -72,7 +74,7 @@ public sealed partial class GmCommands
         if (s.Items.Where(i => i.Entry == entry && i.Grid == 0).MaxBy(i => i.Guid) is not { } item) return $"{name} could not be granted.";
         await character.EquipAsync(s, new EquipItemOprReq { ItemGUID = item.Guid, Opr = EquipItemOprType.EquipOprTypeEquip });
         if (s.Items.FirstOrDefault(i => i.Guid == item.Guid) is not { Grid: > 0 } equipped)
-            return $"{name} could not be equipped (not appraised, or no grid for it).";
+            return $"{name} could not be equipped (not appraised, no grid for it, or the role's level or job may not wear it).";
         return $"Equipped {name} in grid {equipped.Grid}"
             + (worn > 0 && s.Items.Count(i => i.Entry == entry && i.Grid > 0) == worn ? ", replacing the copy worn there." : ".");
     }

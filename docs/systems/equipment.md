@@ -12,6 +12,27 @@ Assassin Cross `5300` and Guillotine Cross `5400` (`[2,3]`). The client asks for
 Equipment-plan validation and weapon-card sockets use the same second-hand rule, so saved plans and cards remain valid
 when an Assassin equips a dagger in each hand.
 
+## Who may wear a piece
+
+The client's `LC_ItemHelper.CanUseByInfo` decides it, in this order:
+
+1. `ItemConfig._iLevelNeed` up to the role's base level (657 "Wrong Level"). The 544 pieces of EquipConfig ranks 8-15 ask
+   level 999, so nobody wears them.
+2. `_kJobNeed` empty, or holding 0 or the role's career (655 "Incorrect equipment class").
+3. `_iSexNeed` 0 or the role's sex (656 "Incorrect equipment gender"). Every row has 0 today.
+
+The server checks it where the client's `CanEquipToGrid` does, after the appraisal and before the grid:
+
+- **31400 equip.** Refused with the code above.
+- **31413 plan switch and the Genre composites.** The gear coming in is checked, so a role can always switch away from
+  gear it can no longer wear.
+- **Login.** Gear worn against the rules goes to the bag (owner, 27 Nov 2026). It was put on before the server checked, or
+  a job change made it so. The move goes through even past the bag's capacity rather than lose the piece. The current
+  plan forgets it; other plans keep it, and 31413 refuses them until the role qualifies.
+
+GM preset op 173 goes through 31400 too, so the two client presets whose weapon their level or job may not wear (5100,
+1310) leave it in the bag.
+
 A card stays in its grid's socket when the gear leaves, across relogs too, but it only counts while the client calls that
 socket active (`EquipmentStunts.ActiveCards`, `LC_CardViewHelper.IsActive`): a worn item on the grid, always for the costume
 grids 8-10, and for the weapon grids by the career's weapon form and the weapon's part (one dagger on an Assassin opens

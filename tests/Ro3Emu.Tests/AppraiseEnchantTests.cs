@@ -77,6 +77,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
     {
         await Gm("alice", "!quest done 10103020");
         await Gm("alice", "!lvl 50");
+        await Gm("alice", "!job 1100"); // Gear asks a first job (_kJobNeed)
     }
 
     private async Task<InvItem> Give(int entry, int count = 1, string account = "alice")
@@ -103,6 +104,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
     {
         await using var alice = await InWorld("Alice");
         await Gm("alice", "!quest done 10103020");
+        await Gm("alice", "!lvl 20"); // Orange's _iLevelNeed
         var gear = await Give(Orange);
         await alice.SendGameAsync(AppraisalService.Appraise, new EquipAppraiseReq { ItemGuids = { gear.Guid } });
         Assert.Equal(0, (await Next(alice, AppraisalService.Appraise, EquipAppraiseResp.Parser)).Result);
@@ -131,6 +133,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
         await using (var alice = await InWorld("Alice"))
         {
             await Gm("alice", "!quest done 10103020");
+            await Gm("alice", "!lvl 20"); // Orange's _iLevelNeed
             var gear = await Give(Orange);
             guid = gear.Guid;
             attrs = new(gear.Attrs!);
@@ -523,6 +526,7 @@ public sealed class AppraiseEnchantTests : IAsyncLifetime
         long guid;
         await using (var alice = await InWorld("Alice"))
         {
+            await Gm("alice", "!lvl 20"); // Orange's _iLevelNeed, or it comes off at the next login
             var gear = await Give(Orange);
             guid = gear.Guid;
             await Service<GameLoop>().InvokeAsync(async () =>

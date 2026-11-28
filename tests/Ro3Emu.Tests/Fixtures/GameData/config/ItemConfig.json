@@ -17,5 +17,9 @@
   "3990011": { "_iID": 3990011, "_iType": 9, "_iSubType": 900, "_iBagTab": 4, "_iStackLimit": 999, "_iTrade": 1, "_iQuality": 2, "_iLevelNeed": 1, "_iName": [ 990000005 ] },
   "3990012": { "_iID": 3990012, "_iType": 7, "_iSubType": 700, "_iBagTab": 1, "_iStackLimit": 1, "_iTrade": 0, "_iQuality": 3, "_iLevelNeed": 1, "_iName": [ 990000005 ] },
   "3990013": { "_iID": 3990013, "_iType": 8, "_iSubType": 800, "_iBagTab": 1, "_iStackLimit": 1, "_iTrade": 0, "_iQuality": 3, "_iLevelNeed": 1, "_iName": [ 990000005 ] },
-  "3990014": { "_iID": 3990014, "_iType": 9, "_iSubType": 900, "_iBagTab": 3, "_iStackLimit": 999, "_iTrade": 1, "_iQuality": 2, "_iLevelNeed": 1, "_iName": [ 990000005 ] }
+  "3990014": { "_iID": 3990014, "_iType": 9, "_iSubType": 900, "_iBagTab": 3, "_iStackLimit": 999, "_iTrade": 1, "_iQuality": 2, "_iLevelNeed": 1, "_iName": [ 990000005 ] },
+  "3990101": { "_iID": 3990101, "_iType": 5, "_iBagTab": 2, "_iStackLimit": 1, "_iEquipPart": 2, "_iLevelNeed": 30, "_kJobNeed": [ 0 ] },
+  "3990102": { "_iID": 3990102, "_iType": 5, "_iBagTab": 2, "_iStackLimit": 1, "_iEquipPart": 2, "_iLevelNeed": 1, "_kJobNeed": [ 5100 ] },
+  "3990103": { "_iID": 3990103, "_iType": 5, "_iBagTab": 2, "_iStackLimit": 1, "_iEquipPart": 5, "_iLevelNeed": 1, "_iSexNeed": 9 },
+  "3990104": { "_iID": 3990104, "_iType": 5, "_iBagTab": 2, "_iStackLimit": 1, "_iEquipPart": 2, "_iLevelNeed": 1, "_kJobNeed": [ 0 ] }
 }

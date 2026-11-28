@@ -392,6 +392,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         var data = Service<GameData>();
         long gear = GameData.Int(data.Table("ItemConfig").Values.First(row => GameData.Int(row, "_iType") == 5
             && GameData.Int(row, "_iEquipPart") == 4 && GameData.Int(row, "_iLevelNeed") >= 20), "_iID");
+        await Gm($"!lvl {GameData.Int(Service<GameData>().Row("ItemConfig", (int)gear)!.Value, "_iLevelNeed")}"); // its _iLevelNeed
         await Gm($"!item {gear} 1");
         long guid = await Read(s => s.Items.First(i => i.Entry == gear).Guid);
         Assert.Equal(0, (await State(1700100)).CompleteNum[0]); // bag ownership is not equipped ownership
@@ -439,6 +440,7 @@ public sealed class QuestEngineTests : IAsyncLifetime
         await using var bot = await InWorld();
         long gear = GameData.Int(Service<GameData>().Table("ItemConfig").Values.First(row => GameData.Int(row, "_iType") == 5
             && GameData.Int(row, "_iEquipPart") == 4 && GameData.Int(row, "_iLevelNeed") >= 20), "_iID");
+        await Gm($"!lvl {GameData.Int(Service<GameData>().Row("ItemConfig", (int)gear)!.Value, "_iLevelNeed")}"); // its _iLevelNeed
         await Gm($"!item {gear} 1");
         long guid = await Read(s => s.Items.First(i => i.Entry == gear).Guid);
         await bot.SendGameAsync(CharacterService.EquipItemOpr, new EquipItemOprReq { ItemGUID = guid, Pos = (EquipGridType)3 });

@@ -46,6 +46,7 @@ public sealed partial class CharacterService
         MigrateAcquireTimeBoundItems(session);
         session.Profile.EquipLevels = roles.LoadEquipLevels(role.Id) is { } levels ? System.Text.Json.JsonSerializer.Deserialize<EquipLevels>(levels) ?? new() : new();
         LoadEquipmentPlans(session);
+        UnequipUnwearable(session);
         session.Profile.AutoDecompose = roles.LoadAutoDecompose(role.Id) is { } setting ? AutoDecomposeSetting.Parser.ParseFrom(setting) : new();
         session.Synced.Clear();
         session.SyncedPacked.Clear();
@@ -99,6 +100,42 @@ public sealed partial class CharacterService
             Refresh(session);
         }
     }
+
+    /// <summary>
+    /// Worn gear the role may not wear (CharacterInventoryService.WearError: level, class, sex), put on before the server
+    /// checked it or by a job change since, goes to the bag at login, even past its capacity rather than lost; the current
+    /// plan forgets it, the other plans keep it and 31413 refuses them until the role qualifies (owner, 27 Nov 2026).
+    /// </summary>
+    private void UnequipUnwearable(GameSession session)
+    {
+        if (session.Role is not { } role) return;
+        var off = session.Items.Where(i => i.Grid > 0 && i.Pack == 2 && IsEquipment(i.Entry))
+            .Select(i => (Item: i, Error: _inventory.WearError(i.Entry, session.Progress!, role.Sex)))
+            .Where(x => x.Error != 0).ToList();
+        if (off.Count == 0) return;
+        long sort = session.Items.Where(i => i.Grid == 0 && i.Pack == 2).Select(i => i.Sort).DefaultIfEmpty().Max();
+        var moved = new Dictionary<long, InvItem>();
+        var plans = session.Profile.EquipmentPlans.Clone();
+        var current = plans.EquipPlans[plans.CurrentEquipPlan];
+        var builder = roles.NewTransaction();
+        foreach (var (worn, error) in off)
+        {
+            var item = worn.Clone();
+            current.ItemsEquipGrid.Remove(worn.Grid);
+            item.Grid = 0;
+            item.Sort = ++sort;
+            moved[item.Guid] = item;
+            builder.ItemUpdate(item);
+            LogUnwearableMoved(log, role.Name, worn.Guid, worn.Entry, worn.Grid, error);
+        }
+        roles.SaveEquipPlans(role.Id, plans.ToByteArray(), builder);
+        roles.Commit(builder, "character/unequip-unwearable");
+        session.Items = [.. session.Items.Select(i => moved.GetValueOrDefault(i.Guid, i))];
+        session.Profile.EquipmentPlans = plans;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Name} cannot wear {Item} ({Entry}) in grid {Grid}: {Error}; moved to the bag")]
+    private static partial void LogUnwearableMoved(ILogger logger, string name, long item, int entry, int grid, int error);
 
     /// <summary>
     /// (inferred) Legacy gear was always advertised as appraised and could share a stack/roll. Preserve its flag,
