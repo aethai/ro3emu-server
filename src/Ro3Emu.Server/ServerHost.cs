@@ -90,6 +90,9 @@ public static class ServerHost
     {
         var options = configuration.GetSection("Ro3Emu").Get<ServerOptions>() ?? new ServerOptions();
         configure?.Invoke(options);
+        if (options.MeditationRecoveryPercent is < 100 or > 1000)
+            throw new ArgumentOutOfRangeException(nameof(configuration), options.MeditationRecoveryPercent,
+                "Ro3Emu:MeditationRecoveryPercent must be from 100 (the original) to 1000.");
         // An empty GM list means everyone only on a server that only this machine reaches, and not on a host started
         // as Production on purpose (docs/guide/gm-access.md). Only an explicit environment counts: the host's own
         // default is also "Production", and tests and local play set none.

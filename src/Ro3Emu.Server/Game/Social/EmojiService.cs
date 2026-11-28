@@ -30,6 +30,8 @@ public sealed partial class EmojiService : IGameTicker
         TooFrequent = 1211, Dead = 49, ForbiddenHere = 813;
 
     private const int SingleSort = 1, DoubleSort = 2, IdleSort = 4;
+    /// <summary>PerformanceConfig 10001 "Meditate": "Meditate on the spot to recover."</summary>
+    public const int Meditate = 10001;
     private const long FightBit = 1L << 15; // CombatService: eObjectStateBattling
     private const long PrepareTimeoutMs = 10_000; // (inferred) a Prepare the client never confirms
     private const long UnlockRecheckMs = 5_000;   // appearance light-up/expiry has no hook: recheck online roles

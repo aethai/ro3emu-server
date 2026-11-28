@@ -126,6 +126,39 @@ public sealed class EmojiTests : IAsyncLifetime
         await State(bob, Id(alice), ObjectState.EObjectStateSmidle);
     }
 
+    /// <summary>#633: Ro3Emu:MeditationRecoveryPercent scales a meditating player's recovery tick; standing, or at the
+    /// default 100, the tick is the plain one.</summary>
+    [ClientDataFact]
+    public async Task MeditatingRecoversTheConfiguredShareOfATick()
+    {
+        await using var alice = await InWorld("Alice");
+        await Gm("alice", "!lvl 50");
+        await LoadedAsync("Alice");
+        var loop = _app.Services.GetRequiredService<GameLoop>();
+        var combat = _app.Services.GetRequiredService<CombatService>();
+        var options = _app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value;
+        var s = await loop.InvokeAsync(() => Task.FromResult(_app.Services.GetRequiredService<SessionRegistry>().All()
+            .Single(x => x.Role?.Name == "Alice")));
+        Task<(long Hp, long Sp)> Tick() => loop.InvokeAsync(async () =>
+        {
+            s.CurrentHp = 1;
+            s.CurrentSp = 1;
+            await combat.RegenAsync(s);
+            return (s.CurrentHp!.Value - 1, s.CurrentSp!.Value - 1);
+        });
+
+        var standing = await Tick();
+        Assert.True(standing.Hp > 10 && standing.Sp > 10);
+        options.MeditationRecoveryPercent = 300;
+        Assert.Equal(standing, await Tick());
+        await PlayAsync(alice, Meditate);
+        var meditating = await Tick();
+        Assert.InRange(meditating.Hp, standing.Hp * 3 - 2, standing.Hp * 3);
+        Assert.InRange(meditating.Sp, standing.Sp * 3 - 2, standing.Sp * 3);
+        options.MeditationRecoveryPercent = 100;
+        Assert.Equal(standing, await Tick());
+    }
+
     [ClientDataFact]
     public async Task WalkingEndsAPlayingEmoteButNotAPreparedOne()
     {
