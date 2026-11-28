@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using Romsg;
 using Ro3Emu.Server.Data;
+using Ro3Emu.Server.Data.Config;
 using Ro3Emu.Server.Maps;
 
 namespace Ro3Emu.Server.Game;
@@ -186,18 +188,9 @@ public sealed partial class PetCombatService
             if (pet.Dead || pet.Hp <= 0 || owner.Dead || owner.SceneLoading || !ReferenceEquals(owner.Role, castingRole)
                 || owner.Instances.TowerAttempt is not { Loaded: true, Settled: false } a
                 || a.InstanceId != pet.InstanceId || !a.Pets.Contains(pet)) return;
-            float radius = row.TryGetProperty("_kRange", out var area) && area.ValueKind == JsonValueKind.Array
-                && area.GetArrayLength() > 0 ? (float)(GameData.Number(area[0]) ?? 0) / 100f : 0f;
-            int limit = (int)Math.Max(1, GameData.Int(row, "_iTargetMax"));
-            var targets = GameData.Int(row, "_iRangeType") == 2 && radius > 0
-                ? _world.Map(pet.WorldScene).Near(pet.X, pet.Z, radius + 1).OfType<MonsterUnit>()
-                    .Where(m => !m.Dead && m.Hp > 0 && m.InstanceId == pet.InstanceId
-                        && MonsterService.Distance(pet.X, pet.Z, m.X, m.Z) <= radius + 0.5f)
-                    .OrderBy(m => MonsterService.Distance(pet.X, pet.Z, m.X, m.Z)).Take(limit).ToList()
-                : !target.Dead && target.Hp > 0 && target.InstanceId == pet.InstanceId
-                    && MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) <= pet.AttackSkills.First(s => s.Id == skillId).Range + 2f
-                    ? [target] : [];
+            var targets = TowerPetTargets(pet, target, row, pet.AttackSkills.First(s => s.Id == skillId).Range);
             if (targets.Count == 0) return;
+            var fire = SarahFireHit(row);
             var stats = pet.CombatStats;
             var attacker = new CombatService.Fighter(stats[AttributeId.Atk], stats[AttributeId.Matk], stats[AttributeId.Hit], stats[AttributeId.Cri], pet.Level, pet.Element);
             var hit = new SkillHitInfo
@@ -215,6 +208,7 @@ public sealed partial class PetCombatService
                     processed.Add(monster);
                     var defender = MonsterFighter(monster);
                     var (damage, result) = Damage(attacker, defender, row);
+                    if (fire is { } extra) damage += Damage(attacker, defender, extra).Damage;
                     foreach (var adjust in MonsterDamageAdjusters.Handlers) damage = adjust(monster, damage, false);
                     long previousHp = monster.Hp;
                     monster.Hp = Math.Max(0, monster.Hp - damage);
@@ -228,6 +222,7 @@ public sealed partial class PetCombatService
                 }
                 foreach (var viewer in processed.SelectMany(m => m.Viewers).Append(owner).Distinct())
                     await viewer.SendGameAsync(SkillHit, hit);
+                if (processed.Count > 0) await SurgeryHealAsync(pet, row);
                 foreach (var monster in processed)
                 {
                     if (a.Settled || owner.Dead) return;
@@ -269,6 +264,60 @@ public sealed partial class PetCombatService
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// The monsters a tower pet's attack hits: a Rect360 row the ones in its rectangle ahead of the pet, turned to its
+    /// target (<see cref="SkillAreaContains"/>, _kRange [length, width]); another area row (_iRangeType 2) the ones within
+    /// _kRange[0] of the pet; else the target. Nearest first, up to _iTargetMax.
+    /// </summary>
+    private List<MonsterUnit> TowerPetTargets(TowerPetUnit pet, MonsterUnit target, JsonElement row, float range)
+    {
+        var skill = new SkillConfig(row);
+        float reach = (skill.Range.FirstOrDefault() is > 0 and var cm ? cm : 0) / 100f;
+        int limit = (int)Math.Max(1, skill.TargetMax);
+        bool rectangle = skill.Release == SkillRelease.Rect360;
+        if (skill.RangeType != 2 || reach <= 0)
+            return !target.Dead && target.Hp > 0 && target.InstanceId == pet.InstanceId
+                && MonsterService.Distance(pet.X, pet.Z, target.X, target.Z) <= range + 2f ? [target] : [];
+        float face = MonsterService.Angle(pet.X, pet.Z, target.X, target.Z);
+        return [.. _world.Map(pet.WorldScene).Near(pet.X, pet.Z, reach + 1).OfType<MonsterUnit>()
+            .Where(m => !m.Dead && m.Hp > 0 && m.InstanceId == pet.InstanceId && (rectangle
+                ? SkillAreaContains(row, pet.Pos, target.Pos, face, m.Pos)
+                : MonsterService.Distance(pet.X, pet.Z, m.X, m.Z) <= reach + 0.5f))
+            .OrderBy(m => MonsterService.Distance(pet.X, pet.Z, m.X, m.Z)).Take(limit)];
+    }
+
+    /// <summary>
+    /// Sarah's Blazing Thrust (2334401, script Pet_MmSarah_23344): "a ${5}% Chance to additionally deal @{1} hits of Fire
+    /// ... totaling Pet Magic ATK*${6}%", once per cast. The extra hit is the row's second damage branch (_kDamageParam1[1],
+    /// ${6} x 100) as Fire (4); the hit's damage type stays the row's (inferred). Null when it does not proc.
+    /// </summary>
+    private JsonElement? SarahFireHit(JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        if (Script(row) != SarahScript || skill.DamageParam1.ElementAtOrDefault(1) <= 0) return null;
+        int chance = int.TryParse(skill.DescData.ElementAtOrDefault(4), NumberStyles.Integer, CultureInfo.InvariantCulture, out int c) ? c : 0;
+        return Rolls.Proc(100) < chance ? skill.AsDescribedHit(skill.DamageParam1[1], 0, FireElement) : null;
+    }
+
+    private const string SarahScript = "Pet_MmSarah_23344", SurgeryScript = "QunTiShouShu";
+    private const long FireElement = 4;
+
+    /// <summary>
+    /// Aliot's AoE Surgery (2314401, script QunTiShouShu): "converting the damage coefficient * ${4}% into Healing for
+    /// Aliot". The row's second damage value is that share of the first at every level (2314401 [18400, 3680] up to 2314406
+    /// [36800, 7360]), so Aliot heals PATK x _kDamageParam1[1] / 10000 once per cast that hits (inferred).
+    /// </summary>
+    private async Task SurgeryHealAsync(TowerPetUnit pet, JsonElement row)
+    {
+        var skill = new SkillConfig(row);
+        if (Script(row) != SurgeryScript || skill.DamageParam1.ElementAtOrDefault(1) <= 0 || pet.Dead || pet.Hp <= 0) return;
+        long amount = (long)Math.Floor(pet.CombatStats[AttributeId.Atk] * skill.DamageParam1[1] / 10000.0);
+        long actual = Math.Min(amount, Math.Max(0, pet.MaxHp - pet.Hp));
+        if (actual <= 0) return;
+        pet.Hp += actual;
+        await _world.ToUnitViewersAsync(pet, AoiAttrChange, pet.HpChange());
     }
 
     private async Task MonsterAttackPetAsync(MonsterUnit monster, TowerPetUnit pet)

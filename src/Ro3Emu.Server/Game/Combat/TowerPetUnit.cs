@@ -104,7 +104,8 @@ public sealed class TowerPetUnit : WorldUnit
                 else if (row.TryGetProperty("_kDamageParam1", out var damage)
                     && damage.ValueKind == System.Text.Json.JsonValueKind.Array && damage.GetArrayLength() > 0
                     && GameData.Number(damage[0]) is > 0
-                    && GameData.Int(row, "_iRelease") is 1 or 2
+                    // Rect360 (6) too: Sarah's Blazing Thrust 2334401, "a 10-meter-by-5-meter rectangular area ahead" (#649).
+                    && GameData.Int(row, "_iRelease") is 1 or 2 or SkillRelease.Rect360
                     && GameData.Int(row, "_iRangeType") is 1 or 2)
                     attackSkills.Add(skill);
             }
