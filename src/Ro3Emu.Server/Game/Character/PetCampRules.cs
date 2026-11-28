@@ -22,7 +22,7 @@ internal static class PetCampRules
     internal static long ActiveCamp(GameData data, IEnumerable<int> setUpPets)
     {
         if (PublicParams.Of(data).PetCampLimitNum is not { } limit) return 0;
-        return setUpPets.Where(id => id != 0).Select(id => PetBaseConfig.Get(data, id)?.Camp ?? 0).Where(camp => camp != 0)
+        return setUpPets.Where(id => id != 0).Distinct().Select(id => PetBaseConfig.Get(data, id)?.Camp ?? 0).Where(camp => camp != 0)
             .GroupBy(camp => camp).Where(g => g.Count() >= limit).Select(g => g.Key).DefaultIfEmpty().Min();
     }
 

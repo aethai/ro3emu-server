@@ -14,7 +14,7 @@ public sealed class PetCampTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ro3emu-petcamp-" + Guid.NewGuid().ToString("N"));
     private const int Red1 = 801, Red2 = 802, Red3 = 803, Blue1 = 811, Blue2 = 812;
-    private const int RedCamp = 2, BlueCamp = 3;
+    private const int RedCamp = 2, BlueCamp = 3, CampPower = 77;
     private static readonly int[] AtkChange = [AttributeId.Atk, 10];
     private static readonly int[] HpChange = [AttributeId.MaxHp, 40];
     private static readonly int[] PercentAtkBonus = [1039, 2000]; // +20% on the pet's own Atk (1039's _iPreAttri)
@@ -42,6 +42,7 @@ public sealed class PetCampTests : IDisposable
         }
         var parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(Config("PublicParamConfig")))!;
         parameters["PetCampLimitNum"] = JsonSerializer.SerializeToElement(3);
+        parameters["PetCampFightingCapacity"] = JsonSerializer.SerializeToElement(CampPower);
         parameters["PetCampDestinyAttribute"] = JsonSerializer.SerializeToElement(new[] { PercentAtkBonus });
         File.WriteAllText(Config("PublicParamConfig"), JsonSerializer.Serialize(parameters));
         Write("AttributeConfig", new Dictionary<string, object> { ["1039"] = new { _iID = 1039, _iPreAttri = AttributeId.Atk } });
@@ -89,11 +90,11 @@ public sealed class PetCampTests : IDisposable
         var loop = host.Service<GameLoop>();
         var character = host.Service<CharacterService>();
         var session = host.Service<SessionRegistry>().All().Single(s => s.Role != null);
-        async Task<long> AtkWith(DBPetSetUpPlan plan) => await loop.InvokeAsync(async () =>
+        async Task<long> AtkWith(DBPetSetUpPlan plan, int unowned = 0) => await loop.InvokeAsync(async () =>
         {
             session.Progress!.Level = 40;
             var pets = new DBPetInfo { CurrentPlan = 0 };
-            foreach (int id in AllPets) pets.ListPet[id] = new PetData { PetId = id, Star = 1 };
+            foreach (int id in AllPets.Where(id => id != unowned)) pets.ListPet[id] = new PetData { PetId = id, Star = 1 };
             pets.SetupPlans[0] = plan;
             session.Pets = pets;
             await character.RefreshStatsAsync(session);
@@ -106,6 +107,36 @@ public sealed class PetCampTests : IDisposable
         Assert.Equal(none + 40, mixed);
         // Three red pets at 10 * 1.2 each, the blue one at 10, the support copy unscaled at 10.
         Assert.Equal(none + 36 + 10 + 10, red);
+
+        // A red pet that is not owned, sits in a closed slot (5 > PetFightFieldNum 4) or repeats does not complete the camp.
+        long notOwned = await AtkWith(new DBPetSetUpPlan { SetUpPets = { [1] = Red1, [2] = Red2, [3] = Red3, [4] = Blue1 } }, unowned: Red3);
+        long closed = await AtkWith(new DBPetSetUpPlan { SetUpPets = { [1] = Red1, [2] = Red2, [4] = Blue1, [5] = Red3 } });
+        long repeated = await AtkWith(new DBPetSetUpPlan { SetUpPets = { [1] = Red1, [2] = Red2, [3] = Red1, [4] = Blue1 } });
+        Assert.Equal(none + 30, notOwned);
+        Assert.Equal(none + 30, closed);
+        Assert.Equal(none + 40, repeated);
+    }
+
+    [Fact]
+    public async Task AnActiveCampAddsPetCampFightingCapacityToItsPlansPower()
+    {
+        await using var host = await SyntheticHost.StartAsync(o => o.GameDataDir = Copy());
+        await using var bot = await host.InWorldAsync("Camper");
+        var session = host.Service<SessionRegistry>().All().Single(s => s.Role != null);
+        var pets = host.Service<PetService>();
+        var state = new DBPetInfo { CurrentPlan = 0 };
+        foreach (int id in AllPets) state.ListPet[id] = new PetData { PetId = id, Star = 1 };
+        state.SetupPlans[0] = new DBPetSetUpPlan { SetUpPets = { [1] = Red1, [2] = Red2, [3] = Red3 } };
+        state.SetupPlans[1] = new DBPetSetUpPlan { SetUpPets = { [1] = Red1, [2] = Red2, [3] = Blue1 } };
+        int result = await host.Service<GameLoop>().InvokeAsync(() =>
+        {
+            session.Progress!.Level = 40;
+            return Task.FromResult(pets.ValidateGenrePlan(session, state, 0));
+        });
+        Assert.Equal(0, result);
+        // The synthetic pets have no level rows, so their own strength is 0 and only the camp term remains.
+        Assert.Equal(CampPower, state.SetupPlans[0].Power.NormalPower);
+        Assert.Equal(0, state.SetupPlans[1].Power.NormalPower);
     }
 
     [ClientDataFact]
