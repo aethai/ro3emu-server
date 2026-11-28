@@ -86,17 +86,27 @@ public sealed partial class CombatService
         if (parry != null) await _buffs.RemoveAsync(s, parry);
         int mode = BuffModes(block.Parry);
         if (mode == 0 || RowInMode(ShieldBlockGroup, level, mode) is not { } plain) return;
-        var row = SkillParameterRules.Effective(s, _data, plain);
-        var counter = new SkillConfig(row);
-        float reach = Math.Max(counter.DistanceMax, counter.Range is [var range, ..] ? range : 0) / 100f;
-        var targets = MonstersNear(s, s.Position, reach)
-            .Where(m => SkillAreaContains(row, s.Position, s.Position, s.Face, m.Pos)).Take((int)Math.Max(1, counter.TargetMax)).ToList();
-        await CastForPlayerAsync(s, row, targets);
-        // Players the holder may fight, in the same area, up to the row's count with the monsters.
-        foreach (var enemy in AlliesNear(s, s.Position, reach)
-            .Where(p => p != s && CanPlayerHit(s, p) && SkillAreaContains(row, s.Position, s.Position, s.Face, p.Position))
-            .Take(Math.Max(0, (int)Math.Max(1, counter.TargetMax) - targets.Count)).ToList())
-            await CastExtraOnPlayerAsync(s, counter, enemy);
+        // The counter lands under a runtime intent: a hit that kills commits under every contributor's role (GameLoop.PostRuntimeFor).
+        // Its targets are those in its area when it lands.
+        _loop.PostRuntimeFor(s, async () =>
+        {
+            if (s.Dead || s.SceneLoading || s.SceneGeneration != generation) return;
+            var row = SkillParameterRules.Effective(s, _data, plain);
+            var counter = new SkillConfig(row);
+            float reach = Math.Max(counter.DistanceMax, counter.Range is [var range, ..] ? range : 0) / 100f;
+            var targets = MonstersNear(s, s.Position, reach)
+                .Where(m => SkillAreaContains(row, s.Position, s.Position, s.Face, m.Pos)).Take((int)Math.Max(1, counter.TargetMax)).ToList();
+            await CastForPlayerAsync(s, row, targets);
+            if (s.Dead || s.SceneLoading || s.SceneGeneration != generation) return;
+            // Players the holder may fight, in the same area, up to the row's count with the monsters.
+            foreach (var enemy in AlliesNear(s, s.Position, reach)
+                .Where(p => p != s && CanPlayerHit(s, p) && SkillAreaContains(row, s.Position, s.Position, s.Face, p.Position))
+                .Take(Math.Max(0, (int)Math.Max(1, counter.TargetMax) - targets.Count)).ToList())
+            {
+                if (s.Dead || s.SceneLoading || s.SceneGeneration != generation) return;
+                await CastExtraOnPlayerAsync(s, counter, enemy);
+            }
+        }, "shield block counter");
     }
 
     /// <summary>A counter tapped while the block lives: the block gives way to it and its shared cooldown does not hold it back.</summary>
