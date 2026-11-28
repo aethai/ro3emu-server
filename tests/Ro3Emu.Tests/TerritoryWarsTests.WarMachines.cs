@@ -182,9 +182,12 @@ public sealed partial class TerritoryWarsTests
         await Fire(0, new Vec3 { Y = 0.2f, Z = 1 }); // no gravity: it would fly its 12 s, some 470 m
         await Next(a, WorldInteractionService.Action, UseInteractActionRes.Parser);
         Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));
-        // The volley started the cannon's cooldown: the skill's _iCD or its reload, the longer.
+        // The volley started the cannon's cooldown (the skill's _iCD or its reload, the longer), told in 32705. The loop's clock
+        // ran on while the battle was set up and the pinned wall clock did not: wait until the end it sent, not a fixed time.
         var skill = Ro3Emu.Server.Data.Config.SkillConfig.Get(Service<Ro3Emu.Server.Data.GameData>(), 4900701)!.Value;
-        _clock.AdvanceMs(Math.Max(skill.Cd, 3000) + 300);
+        var cd = (await Next(a, TerritoryWarsService.NpcSkillCd, NpcSkillsCdNotify.Parser, n => n.SkillCds.TryGetValue(4900701, out var c)
+            && c.CdEndTimestampMs - c.CdStartTimestampMs >= Math.Max(skill.Cd, 3000))).SkillCds[4900701];
+        _clock.AdvanceMs(Math.Max(0, cd.CdEndTimestampMs - _clock.GetUtcNow().ToUnixTimeMilliseconds()) + 300);
         await Fire(1500, new Vec3 { Y = 1, Z = 0.02f }); // what the client sends: up and down near the cannon
         Assert.Equal(0, (await Next(a, WorldInteractionService.Action, UseInteractActionRes.Parser)).Result);
         Assert.Equal(1, cheats.LoggedCount(a.Account!, CheatMonitor.Cannon));
