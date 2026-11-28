@@ -90,6 +90,8 @@ public static class ServerHost
     {
         var options = configuration.GetSection("Ro3Emu").Get<ServerOptions>() ?? new ServerOptions();
         configure?.Invoke(options);
+        if (options.ChatCooldowns.Any(c => c.Value is < 0 or > 3600))
+            throw new ArgumentOutOfRangeException(nameof(configuration), "Ro3Emu:ChatCooldowns takes 0 to 3600 seconds per channel.");
         // An empty GM list means everyone only on a server that only this machine reaches, and not on a host started
         // as Production on purpose (docs/guide/gm-access.md). Only an explicit environment counts: the host's own
         // default is also "Production", and tests and local play set none.

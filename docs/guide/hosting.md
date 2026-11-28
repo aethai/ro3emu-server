@@ -112,6 +112,7 @@ not. Each is an option and off by default, so a plain `host` or `server.sh` inst
 | `Ro3Emu:ChatFlood:PrivateLines` | `10` | lines per window on whispers, party, guild and friend-group chat, counted apart |
 | `Ro3Emu:ChatFlood:DuplicateSeconds` | `30` | a line with the same text (case and spaces aside) to the same channel or player within this time is dropped; `0` turns it off |
 | `Ro3Emu:ChatFlood:MuteSeconds` | `60` | going past a budget mutes the account for this long, on every channel, across relogs |
+| `Ro3Emu:ChatCooldowns` | empty (the client's) | the seconds the client waits between two lines on a channel, by ChatChannelConfig `_iID`: `1` world (client 10 s), `2` guild (5 s), `3` party (3 s), `4` nearby (15 s), `5` whisper (0), `6` build (15 s), `7` tree hollow (10 s), `8` recruit (0), `10` tavern (5 s), `11` ritual (5 s); 0 to 3600, e.g. `Ro3Emu__ChatCooldowns__2=0` and `Ro3Emu__ChatCooldowns__3=0`. Sent on login to the client hook (needs the patched client of this release); `AntiCheat:ChatLines` and `ChatFlood` still limit the lines |
 | `Ro3Emu:Panel:SignUpsPerAddressPerDay` | `0` (no limit) | accounts the panel's sign-up creates for one client address (an IPv6 one by its /64) in any 24 hours |
 | `Ro3Emu:Panel:SignUpsPerHour` | `0` (no limit) | accounts the sign-up creates in any hour from all addresses together, a brake on a sign-up flood from many addresses |
 

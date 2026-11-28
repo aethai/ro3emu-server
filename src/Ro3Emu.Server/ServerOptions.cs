@@ -219,6 +219,14 @@ public sealed class ServerOptions
     public ChatFloodOptions ChatFlood { get; set; } = new();
 
     /// <summary>
+    /// The cooldown the client keeps between two lines on a chat channel (#632): ChatChannelConfig _iID (1 world, 2 guild,
+    /// 3 party ...) to seconds, from 0 to 3600. Empty by default: the client's own _iCD. The client alone keeps the
+    /// cooldown (tip 34047), so the server sends the listed channels on login ("chatcd" over message 77012) and the
+    /// client hook Ro3Emu.ClientHooks.ChatCooldown answers them; AntiCheat:ChatLines and ChatFlood still apply.
+    /// </summary>
+    public Dictionary<int, int> ChatCooldowns { get; set; } = [];
+
+    /// <summary>
     /// Gift code attempts (POST /gift-card/use/v2, docs/systems/gift-codes.md) one remote address, and separately one
     /// account, may make per minute; past it the server answers the refusal code GiftCardRateLimited without looking
     /// the code up. Loopback is exempt from the address budget, as for <see cref="LoginAttemptsPerMinute"/>, but not
@@ -466,7 +474,7 @@ public sealed class FeedbackOptions
 
 /// <summary>
 /// Ro3Emu:ChatFlood (Game.ChatFloodGuard): per-account chat limits for a public server, off by default. The numbers
-/// stay above the client's own channel cooldowns (ChatChannelConfig _iCD: world 5 s), so an unmodified client typing
+/// stay above the client's own channel cooldowns (ChatChannelConfig _iCD: world 10 s), so an unmodified client typing
 /// at its fastest is never refused. GM accounts (Ro3Emu:GmAccounts) are exempt.
 /// </summary>
 public sealed class ChatFloodOptions
