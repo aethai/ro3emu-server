@@ -735,8 +735,11 @@ public sealed partial class SkillService
     /// (inferred) It costs nothing and is never applied (StageSkillPlan only applies levels above the free one, Level gives
     /// a group outside the tree no free level), so it is passed over; a paid level of another tree is still refused.
     /// </summary>
-    private bool IsEarlierCareersFreeLevel(IReadOnlyDictionary<int, int> tree, int group, int level) => level > 0
+    private bool IsEarlierCareersFreeLevel(Dictionary<int, int> tree, int group, int level) => level > 0
         && !tree.ContainsKey(group) && SkillConfig.Get(_data, RealId(group, 1)) is { } row && level <= row.InitialLevel;
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Name} keeps the skills of plan {Plan}: build of profession {Profession} refused ({Code})")]
+    private static partial void LogBuildRefused(ILogger logger, string? name, int plan, long profession, int code);
 
     public async Task SwitchPlanAsync(GameSession session, SwitchPlanReq req)
     {
@@ -1148,8 +1151,7 @@ public sealed partial class SkillService
         var staged = StageProfessionBuild(session, plans, candidate, profession, fitPoints: true);
         if (staged.Code != 0)
         {
-            _log.LogInformation("{Name} keeps the skills of plan {Plan}: build of profession {Profession} refused ({Code})",
-                session.Role?.Name, plans.CurrentPlanIndex, profession, staged.Code);
+            LogBuildRefused(_log, session.Role?.Name, plans.CurrentPlanIndex, profession, staged.Code);
             return staged.Code;
         }
         PruneLoads(plans.SkillAssignPlans[plans.CurrentPlanIndex], candidate);
