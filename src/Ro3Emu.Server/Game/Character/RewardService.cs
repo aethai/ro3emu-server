@@ -36,7 +36,7 @@ public sealed class RewardService
     private readonly FieldExpRule[] _configuredFieldExp; // Ro3Emu:FieldExpRates (inferred), empty unless an operator set it
     private volatile FieldExpRule[] _fieldExp; // the rules in force: the configured ones until a GM changes them
     private readonly GameLoop? _loop;
-    private readonly PartyExpShareOptions? _partyShare; // Ro3Emu:PartyExpShare (inferred), null unless an operator enabled it
+    private readonly PartyExpShareOptions? _partyShare; // Ro3Emu:PartyExpShare (inferred), null when an operator turned it off
 
     /// <summary>Field AFK selects the enhanced _iDrop table only for qualified ordinary field kills.
     /// Other kills use environment 0, preserving ordinary rewards (localization 10960000077; mapping inferred).</summary>
@@ -74,6 +74,7 @@ public sealed class RewardService
         internal long BaseExp;
         internal long JobExp;
         internal List<(GameSession Member, long Exp)> Shares = [];
+        internal MonsterUnit? Monster; // the kill the shares come from
         internal bool SharesPosted;
         internal bool Published;
         /// <summary>The bag items the committed kill created (auto-decomposed ones are gone).</summary>
@@ -81,6 +82,10 @@ public sealed class RewardService
     }
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<MonsterUnit, KillOutcome> _outcomes = [];
     internal Func<GameSession, MonsterUnit, (List<(int Entry, int Count)> Items, long BaseExp, long JobExp)>? ResolveKillForTest { get; set; }
+    /// <summary>Tests: the kill's drops and EXP pool (before each recipient's own level gap, field rate and catch-up).</summary>
+    internal Func<GameSession, MonsterUnit, (List<(int Entry, int Count)> Items, long Pool)>? KillPoolForTest { get; set; }
+    /// <summary>A party member was granted its part of a kill's EXP (PartyExpShare), after that grant committed.</summary>
+    internal AsyncHook<GameSession, MonsterUnit> PartyShareGranted { get; } = new("RewardService.PartyShareGranted");
 
     /// <summary>Resolve and admit once before any lethal hit/death packet. A rejected pre-admission hit is
     /// not a successful kill. An accepted write retains its role owner through detach and durable completion.</summary>
@@ -118,11 +123,14 @@ public sealed class RewardService
             if (!_outcomes.TryGetValue(monster, out var outcome))
             {
                 bool fieldAutoBattle = IsFieldAutoBattle?.Invoke(player, monster) == true;
-                var (drops, baseExp, jobExp) = ResolveKill(player, monster, bonus, fieldAutoBattle);
+                var (drops, baseExp, jobExp, shares) = ResolveKillWithParty(player, monster, bonus, fieldAutoBattle);
                 // An advanced pass raises a currency's drops (PassPrivileges.CopperEffAdd).
                 drops = PassPrivileges.BoostDrops(_data, player, drops);
-                outcome = new KillOutcome { Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp };
-                ShareWithParty(player, outcome);
+                outcome = new KillOutcome
+                {
+                    Role = role, Items = drops, BaseExp = baseExp, JobExp = jobExp, Shares = shares,
+                    Monster = monster
+                };
                 if (fieldAutoBattle) outcome.Note = ExplorationNotes?.Choose(player);
                 _outcomes.Add(monster, outcome);
             }
@@ -190,68 +198,112 @@ public sealed class RewardService
         }
     }
 
+    /// <summary>The killer's own reward for a kill nobody shares.</summary>
     internal (List<(int Entry, int Count)> Items, long BaseExp, long JobExp) ResolveKill(GameSession player, MonsterUnit monster, bool bonus, bool fieldAutoBattle = false)
     {
         if (ResolveKillForTest != null) return ResolveKillForTest(player, monster);
+        var (items, pool) = KillPool(player, monster, bonus);
+        long baseExp = KillerExp(player, monster, pool, fieldAutoBattle);
+        return (items, baseExp, _character.JobExpFromBase(baseExp));
+    }
+
+    /// <summary>
+    /// The drops and the EXP pool of a kill: the Base EXP items dropped, times the party bonus (TeamExpBuffNum by the
+    /// killer's group on the map). Each recipient's own factors come after (<see cref="PersonalExp"/>).
+    /// </summary>
+    private (List<(int Entry, int Count)> Items, long Pool) KillPool(GameSession player, MonsterUnit monster, bool bonus)
+    {
+        if (KillPoolForTest != null) return KillPoolForTest(player, monster);
         // Team-boss personal awards have their own durable dungeon obligation; ordinary loot stays empty.
         if (player.DungeonAttempt is { Plan.Multi: not null } dungeon && monster.InstanceId == dungeon.Room.Id)
-            return ([], 0, 0);
-        if (_data.Row("NPCConfig", monster.Template.NpcId) is not { } npc) return ([], 0, 0);
+            return ([], 0);
+        if (_data.Row("NPCConfig", monster.Template.NpcId) is not { } npc) return ([], 0);
         var drops = new List<(int Entry, int Count)>();
         int partyRate = _teams.DropBonus(player);
         foreach (var (row, maps) in KillDropRows(_data, npc, bonus))
             if (maps.Count == 0 || maps.Contains(player.SceneEntry)) RollPools(row, player, drops, monster.Template.Level, partyRate);
 
         foreach (var extra in ExtraKillDrops.Handlers) drops.AddRange(extra(player, monster));
-        long baseExp = drops.Where(d => d.Entry == BaseExpItem).Sum(d => (long)d.Count);
+        long pool = drops.Where(d => d.Entry == BaseExpItem).Sum(d => (long)d.Count);
         var items = drops.Where(d => d.Entry is not (BaseExpItem or JobExpItem) && _data.Row("ItemConfig", d.Entry) != null).ToList();
-        if (baseExp > 0)
-        {
-            long gap = player.Progress!.Level - monster.Template.Level;
-            baseExp = baseExp * Correction((int)Math.Clamp(gap, -200, 200)) / 10000;
-            baseExp = Math.Max(1, baseExp * _teams.ExpBonus(player) / 10000);
-            baseExp = ScaleFieldExp(monster.Template.NpcId, player.Progress!.Level, baseExp);
-            if (fieldAutoBattle && player.Instances.OdinStatue is { CurLv: > 0 } statue)
-                baseExp += baseExp * _statueFieldExp.GetValueOrDefault(statue.CurLv) / 10000;
-        }
-        // BaseExpAddConfig catch-up below the server level (CharacterService.LevelRules).
-        baseExp = _character.WithPursueBonus(player.Progress!.Level, baseExp);
-        return (items, baseExp, _character.JobExpFromBase(baseExp));
+        if (pool > 0) pool = Math.Max(1, pool * _teams.ExpBonus(player) / 10000);
+        return (items, pool);
     }
 
     /// <summary>
-    /// PartyExpShare (inferred, an operator option): a kill's Base EXP as the killer earned it, shared with the party members
-    /// alive on the same map line. Split divides it evenly between the killer and them (the killer's Job EXP follows its
-    /// part), Full gives each member all of it. The members' parts are granted after the kill commits
-    /// (<see cref="PostShares"/>) as each member's own EXP grant (CharacterService.AddExpAsync: its Job EXP and catch-up).
+    /// One recipient's Base EXP from its part of a kill's pool: its own level gap to the monster (LvExpCorrectionConfig,
+    /// at least 1 EXP from a kill that pays EXP, docs/systems/monster-ai.md), the FieldExpRates rule of its own level, and
+    /// the Odin Statue's field bonus when it is the killer fighting on field auto-battle (docs/systems/leveling.md).
     /// </summary>
-    private void ShareWithParty(GameSession player, KillOutcome outcome)
+    private long PersonalExp(GameSession who, MonsterUnit monster, long exp, bool fieldAutoBattle)
     {
-        if (_partyShare is not { } share || _loop == null || outcome.BaseExp <= 0) return;
-        var members = _teams.SameMapMembers(player);
-        if (members.Count == 0) return;
-        long part = outcome.BaseExp;
-        if (share.Mode == PartyExpShareMode.Split)
+        if (exp <= 0) return 0;
+        long level = who.Progress!.Level;
+        exp = Math.Max(1, exp * Correction((int)Math.Clamp(level - monster.Template.Level, -200, 200)) / 10000);
+        exp = ScaleFieldExp(monster.Template.NpcId, level, exp);
+        if (fieldAutoBattle && who.Instances.OdinStatue is { CurLv: > 0 } statue)
+            exp += exp * _statueFieldExp.GetValueOrDefault(statue.CurLv) / 10000;
+        return exp;
+    }
+
+    /// <summary>The killer's Base EXP: its own factors, then the BaseExpAddConfig catch-up below the server level
+    /// (CharacterService.LevelRules). A member's catch-up comes with its own grant (CharacterService.AddExpAsync).</summary>
+    private long KillerExp(GameSession player, MonsterUnit monster, long part, bool fieldAutoBattle) =>
+        _character.WithPursueBonus(player.Progress!.Level, PersonalExp(player, monster, part, fieldAutoBattle));
+
+    /// <summary>
+    /// PartyExpShare (inferred, an operator option, on by default): a kill's EXP pool shared with the killer's party members
+    /// alive on its map line (TeamService.SameMapMembers). Split divides the pool evenly between the killer and them, Full
+    /// gives each of them all of it; then each part gets its recipient's own factors (<see cref="PersonalExp"/>). The
+    /// members' parts are granted after the kill commits (<see cref="PostShares"/>) as each member's own EXP grant, which
+    /// adds its Job EXP and catch-up once.
+    /// </summary>
+    private (List<(int Entry, int Count)> Items, long BaseExp, long JobExp, List<(GameSession Member, long Exp)> Shares)
+        ResolveKillWithParty(GameSession player, MonsterUnit monster, bool bonus, bool fieldAutoBattle)
+    {
+        var members = _partyShare != null && _loop != null ? _teams.SameMapMembers(player) : [];
+        if (members.Count == 0 || ResolveKillForTest != null)
         {
-            part = Math.Max(1, outcome.BaseExp / (members.Count + 1));
-            outcome.BaseExp = part;
-            outcome.JobExp = _character.JobExpFromBase(part);
+            var (items, baseExp, jobExp) = ResolveKill(player, monster, bonus, fieldAutoBattle);
+            var stub = StubShares(members, ref baseExp, ref jobExp);
+            return (items, baseExp, jobExp, stub);
         }
-        outcome.Shares = [.. members.Select(m => (m, part))];
+        var (drops, pool) = KillPool(player, monster, bonus);
+        if (pool <= 0) return (drops, 0, 0, []);
+        long part = Part(pool, members.Count);
+        long killer = KillerExp(player, monster, part, fieldAutoBattle);
+        var shares = members.Select(m => (m, PersonalExp(m, monster, part, false))).Where(s => s.Item2 > 0).ToList();
+        return (drops, killer, _character.JobExpFromBase(killer), shares);
+    }
+
+    private long Part(long pool, int members) =>
+        _partyShare?.Mode == PartyExpShareMode.Split ? Math.Max(1, pool / (members + 1)) : pool;
+
+    /// <summary>Tests that fix the killer's reward (ResolveKillForTest) share it as the pool, with no personal factors.</summary>
+    private List<(GameSession Member, long Exp)> StubShares(List<GameSession> members, ref long baseExp, ref long jobExp)
+    {
+        if (members.Count == 0 || baseExp <= 0) return [];
+        long part = Part(baseExp, members.Count);
+        if (part != baseExp) (baseExp, jobExp) = (part, _character.JobExpFromBase(part));
+        return [.. members.Select(m => (m, part))];
     }
 
     /// <summary>Each member's part as that role's own EXP grant, once, after the killer's reward committed. A part lost to a
     /// crash in between is not granted again (inferred: an operator option, not a durable obligation of the kill).</summary>
     private void PostShares(KillOutcome outcome)
     {
-        if (outcome.SharesPosted || _loop == null) return;
+        if (outcome.SharesPosted || _loop == null || outcome.Monster is not { } monster) return;
         outcome.SharesPosted = true;
         foreach (var (member, exp) in outcome.Shares)
         {
             var role = member.Role;
             bool Current() => role != null && ReferenceEquals(member.Role, role) && member.Progress != null
                 && member.Attachment?.Cancelled != true;
-            _loop.PostOwned(member, () => _character.AddExpAsync(member, exp, 0, Current), "party exp share");
+            _loop.PostOwned(member, async () =>
+            {
+                await _character.AddExpAsync(member, exp, 0, Current);
+                if (Current()) await PartyShareGranted.InvokeAsync(member, monster);
+            }, "party exp share");
         }
     }
 

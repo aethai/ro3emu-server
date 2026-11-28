@@ -300,8 +300,10 @@ public sealed class ServerOptions
     public List<FieldExpRule> FieldExpRates { get; set; } = [];
 
     /// <summary>
-    /// Kill EXP shared with the killer's party (Ro3Emu:PartyExpShare). Off by default: the killer alone gets a kill's EXP, as
-    /// on the original server. (inferred: the original had no such knob; the client's own party bonus is TeamExpBuffNum.)
+    /// Kill EXP shared with the killer's party (Ro3Emu:PartyExpShare). On by default (owner, 27 Nov 2026), Split. The client
+    /// says nothing on how the original split a kill's EXP; its party tip only promises the TeamExpBuffNum bonus for
+    /// fighting together on one field map (Localization 24112-24116). `Enabled: false` gives a kill's EXP to the killer
+    /// alone. (inferred)
     /// </summary>
     public PartyExpShareOptions PartyExpShare { get; set; } = new();
 
@@ -732,12 +734,13 @@ public sealed class SpawnLimitRule
 }
 
 /// <summary>
-/// <see cref="ServerOptions.PartyExpShare"/>: with <see cref="Enabled"/>, a kill's Base EXP (after the level gap, the party
-/// bonus and FieldExpRates) is shared with the killer's party members who are alive on the same map line.
+/// <see cref="ServerOptions.PartyExpShare"/>: with <see cref="Enabled"/>, a kill's EXP pool (the Base EXP dropped times the
+/// party bonus) is shared with the killer's party members who are alive on the same map line (in a 40-member team, the
+/// killer's group of five). Each part then gets its recipient's own level gap, FieldExpRates rule and catch-up.
 /// </summary>
 public sealed class PartyExpShareOptions
 {
-    public bool Enabled { get; set; }
+    public bool Enabled { get; set; } = true;
     public PartyExpShareMode Mode { get; set; } = PartyExpShareMode.Split;
 }
 
